@@ -1,0 +1,111 @@
+# Pulse project charter for @tiphys/kernel 0.1.0.
+# Owner: Thomas. Validates against the kernel's schemas/charter.schema.json.
+# Placement: charter.yaml in the context directory the kernel reads
+# (delivery artifacts land in delivery/ beside it).
+kind: charter
+identity:
+  name: pulse
+  repo: git@github.com:ThomasHendrickx/pulse.git
+  kernel-version-pin: 0.1.0
+delivery-mode: full
+assurance-tier: full
+yolo-permissions:
+  enabled: false
+  scope: []
+irreversible-decisions:
+  stack: >-
+    Node LTS, Next.js App Router, TypeScript strict, Prisma, Postgres
+    (dedicated Supabase project, never shared with Hemma; local dev via
+    supabase start in Docker), Tailwind v4, Vitest, Playwright, npm only.
+  language: TypeScript
+  framework: Next.js App Router, React Server Components first
+  core-data-model: >-
+    Facts versus interpretation. Imported transaction rows are immutable
+    facts; merchant assignment, flow classification and transfer pairing are
+    derived and fully rebuildable from facts plus user declarations. Three
+    rings: pot (current accounts, cards), reserves (savings, investments,
+    registered by IBAN only, statements not imported), outside. Flow is one
+    of INCOME, SPEND, INTERNAL, RESERVE, UNRESOLVED. Amounts are integer
+    cents. The reconciliation identity, income minus spend minus net to
+    reserves equals change in pot, holds exactly or the difference is shown.
+  tenancy: >-
+    Shared database, row-level household scoping. The tenant is the
+    household, never the user; every table except Household carries a
+    non-null householdId and every repository query filters on it, with
+    Postgres RLS as backstop only.
+  auth: >-
+    Supabase Auth with email and password. No OAuth, no magic links, no
+    local password handling outside Supabase. One user per household in v1.
+  deployment-topology: >-
+    Single Vercel project, single dedicated Supabase project, one region,
+    no queue, no cron, no background workers. Claude API server side only,
+    from slice 5 onward.
+product-intent: |
+  A personal finance overview for a Belgian household. The user exports
+  transactions from their bank once a month, drops one file per account in,
+  and gets one two-sided calendar-month picture: where income came from,
+  what money was spent on, what moved to reserves, and what changed against
+  the previous month. All pot accounts read as one pot; movements between
+  own accounts cancel out. Import is a conversation: at first sight of an
+  account or file format the user declares it once, and is never asked
+  again. Success is that the owner imports a real month in under two
+  minutes, the books close to zero, and the overview answers where the
+  money went without any configuration screen.
+  Not in scope for v1: bank API connections (PSD2/Ibanity), budgets, goals,
+  forecasting, notifications, a conversational ask box, multi-currency,
+  mobile, investment value tracking, a second household member's invite
+  flow.
+constraints:
+  - npm only, never pnpm or yarn.
+  - >-
+    English for everything in the codebase: identifiers, comments, commits,
+    file names, URL paths, database columns. Dutch and French exist only as
+    translated user-facing content via next-intl message catalogs, language
+    order EN, NL, FR.
+  - Monetary amounts are integer cents end to end; no floats, ever.
+  - >-
+    No literal colours, font sizes or spacing in components; design tokens
+    from tokens.css only.
+  - >-
+    Facts are never edited to fix an interpretation; user corrections are
+    written as declarations (rules, profiles) and recompute applies them.
+  - >-
+    UNRESOLVED transactions and unmatched transfer legs are shown, never
+    silently dropped or defaulted into a total.
+  - >-
+    The two-gate test discipline holds: fast in-process gate (unit and
+    property tests, including the reconciliation invariant) every
+    iteration, Playwright golden journey before a phase closes.
+  - >-
+    The deliberately-absent list is binding: no queue, cron, event bus,
+    caching layer, state management library, component library, or
+    per-transaction override table.
+escalation-contract:
+  stop-for:
+    - any irreversible choice the charter is silent on
+    - a change from a declared release verification to `none`
+    - >-
+      any change to the reconciliation identity, the flow classification
+      semantics, or the meaning of the four corrections (card settlement,
+      reserve drawdown, refunds, cash withdrawals)
+    - >-
+      adding anything on the deliberately-absent list, or any new runtime
+      dependency beyond the declared stack
+    - >-
+      any schema migration that drops or rewrites rows in the facts layer
+      (Import, Transaction raw fields)
+  route: >-
+    The orchestrator raises a decision record and notifies the owner
+    asynchronously; work on the affected phase stops until the owner
+    decides.
+release-verification:
+  mode: reserved
+  note: >-
+    Pulse is the first real project charter on the kernel, so per DR-0014
+    this field's real shape is settled here. Until the owner decides it,
+    reserved; the working candidate is the Playwright golden journey plus
+    the fast gate, green on the release commit.
+retention:
+  work-history: delivery/work-history/
+  evidence: delivery/evidence/
+  tuition: delivery/tuition/
