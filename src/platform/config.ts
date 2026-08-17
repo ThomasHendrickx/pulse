@@ -46,6 +46,13 @@ export const supabaseConfig = (): SupabaseConfig =>
 
 export const isProduction = (): boolean => process.env.NODE_ENV === "production";
 
+// Raw, optional reads for the connectivity triage (deploy-verify round 6).
+// Server side only; the health route derives BOOLEANS from these and never
+// echoes any part of the value. Kept here so process.env stays confined to
+// this module (plus the documented guard-cli exemption).
+export const rawDatabaseUrl = (): string | undefined => process.env.DATABASE_URL;
+export const rawDirectUrl = (): string | undefined => process.env.DIRECT_URL;
+
 export type DatabaseUrlDiagnostic = {
   readonly ok: boolean;
   readonly summary: string;
