@@ -184,11 +184,19 @@ describe("householdId-on-every-model (DMMF)", () => {
 
   test("the checker reds on a missing and on an optional householdId", async () => {
     const fixture = `
-      model Household { id String @id }
-      model Orphan { id String @id }
-      model Loose { id String @id
-        householdId String? }
-    `;
+model Household {
+  id String @id
+}
+
+model Orphan {
+  id String @id
+}
+
+model Loose {
+  id          String  @id
+  householdId String?
+}
+`;
     const models = await modelsOf(fixture);
     expect(modelsMissingHouseholdId(models)).toEqual(["Orphan", "Loose"]);
   });
@@ -201,16 +209,31 @@ describe("money-fields-are-integer-cents (DMMF)", () => {
   });
 
   test("the checker reds on Float and Decimal money fields and accepts Int", async () => {
+    // The datasource block makes Decimal legal in the fixture; without a
+    // connector Prisma rejects the type before the checker can see it.
     const fixture = `
-      model Household { id String @id }
-      model Wrong { id String @id
-        householdId String
-        amountCents Float
-        balanceTotal Decimal }
-      model Right { id String @id
-        householdId String
-        totalCents Int }
-    `;
+datasource db {
+  provider = "postgresql"
+  url      = "postgresql://localhost:5432/fixture"
+}
+
+model Household {
+  id String @id
+}
+
+model Wrong {
+  id           String  @id
+  householdId  String
+  amountCents  Float
+  balanceTotal Decimal
+}
+
+model Right {
+  id          String @id
+  householdId String
+  totalCents  Int
+}
+`;
     const models = await modelsOf(fixture);
     expect(moneyFieldViolations(models)).toEqual([
       "Wrong.amountCents is Float",
