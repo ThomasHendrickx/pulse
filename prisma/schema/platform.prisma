@@ -1,0 +1,33 @@
+// Platform-owned tables: the tenancy backbone (architecture section 9).
+//
+// TENANCY PATTERN, copied by every later table in every module schema file:
+// every model except Household carries a NON-NULL householdId column with a
+// relation to Household and an index. The tenant is the household, never the
+// user. Repositories take the household context explicitly and filter on it;
+// test/schema/tenancy.test.ts asserts the column rule over the DMMF for
+// every model in this folder, present and future.
+
+model Household {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime @default(now())
+
+  users User[]
+
+  @@map("households")
+}
+
+// One user per household in v1 (charter auth decision). User.id is the
+// Supabase Auth user id: auth identities live in Supabase, never locally,
+// and this row links an authenticated user to their household.
+model User {
+  id          String   @id @db.Uuid
+  email       String   @unique
+  householdId String   @db.Uuid
+  createdAt   DateTime @default(now())
+
+  household Household @relation(fields: [householdId], references: [id])
+
+  @@index([householdId])
+  @@map("users")
+}
