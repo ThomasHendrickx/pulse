@@ -79,3 +79,6 @@ The session shell carries ambient DATABASE_URL, DIRECT_URL, E2E_DATABASE_URL, NE
 - npm run lint: exit 0. Tail: "> lint / > eslint ." (no findings).
 - npm test: exit 0. Tail: "Test Files 1 passed (1) / Tests 7 passed (7)", 0 skipped, 0 todo. Toolchain node v26.7.0, vitest 3.2.4, invocation npm test.
 Work history m1-p1.yaml validates: `tiphys validate --type work-history` exit 0.
+
+## Gate confirmation at d20b4e6
+npm run typecheck exit 0, npm run lint exit 0, npm test exit 0 (Tests 7 passed (7), 0 skipped). The branch head after this notes append differs from d20b4e6 only by delivery/work-history lines, which no gate reads.
