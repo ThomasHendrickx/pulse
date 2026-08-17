@@ -1,6 +1,8 @@
 # pulse v1 delivery plan, written by the M0-P1 scout (plan-writer).
 # Input report: delivery/intake/pulse-v1-plan.md, pulse-v1-architecture.md,
-# acceptance-criteria.md, tiphys-pilot-success.md, plus charter.yaml.
+# acceptance-criteria.md, tiphys-pilot-success.md, plus charter.yaml; and,
+# since fix round 2, delivery/intake/pulse-v0.2-pdf-addendum.md (main commit
+# 669fd71), whose section 5 rule amendments explicitly bind v0.1.
 # Baseline: c940e4d. Verification pass ran against the tree at that commit.
 #
 # work-log (incremental, newest last):
@@ -23,6 +25,16 @@
 #   PR-001..PR-014), notes/export-format-facts.md (fresh evidence from two
 #   real statements), decisions DR-0001 (now decided) and DR-0003; applied
 #   all fourteen findings, disputed none; re-validated to exit 0
+# - fix round 2 (owner-directed): read pulse-v0.2-pdf-addendum.md from
+#   origin/main (669fd71); realigned the card settlement mechanism to the
+#   owner's section 5 amendment (supersedes the fix round 1 PR-002
+#   mechanism, recorded as decision D-11); verified the dedup occurrence
+#   mechanism already yields the addendum's cross-import end state
+#   (ordinal-keyed insert-ignore keeps, per tuple, the highest occurrence
+#   count seen) and strengthened criterion 1.2 to witness the
+#   partial-overlap case; confirmed no v0.2 scope (PDF parsing, layout
+#   templates, balance gate, mobile upload) leaks into v1; re-validated to
+#   exit 0
 kind: plan
 status: draft
 baseline-commit: c940e4d
@@ -66,6 +78,22 @@ standing-context: |
   card settlement appears on both sides with linkable references. The owner
   resolved that CSV from PC banking is the v1 input; CSV column layouts
   remain unverified against real exports.
+
+  Revision note, fix round 2, owner-directed: the owner landed
+  delivery/intake/pulse-v0.2-pdf-addendum.md on main (commit 669fd71). It is
+  v0.2 intake (PDF import, out of v1 scope), but its section 5 declares two
+  rule amendments that bind v0.1. First, the dedup occurrence index, which
+  this plan has carried since fix round 1: its cross-import semantics
+  (highest occurrence count per tuple wins) are what the ordinal-keyed
+  insert-ignore already produces, and criterion 1.2 now witnesses the
+  partial-overlap case explicitly. Second, a card settlement mechanism that
+  SUPERSEDES the fix round 1 resolution of finding PR-002 (user-declared
+  settlement-counterparty identifiers): classification gains a step between
+  the declared-set checks and the sign fallback, matching settlement-pattern
+  debits by amount against an imported card statement's settlement total
+  within a date window, recorded as decision D-11. Everything else in the
+  addendum (PDF parsing, layout templates, the balance contract, mobile
+  share-sheet upload) is v0.2 machinery and stays out of this plan.
 
   Decision records touching this plan:
   DR-0001 is DECIDED (owner, 2026-08-17): the Playwright golden journey plus
@@ -402,7 +430,11 @@ phases:
           identical rows (observed in the real KBC statement) get distinct
           keys while re-uploading the same file maps each row to the same
           key and adds nothing (finding PR-001; the ordinal-free recipe in
-          pulse-domain SKILL.md collapses them). Unique index per household,
+          pulse-domain SKILL.md collapses them; confirmed by the owner's
+          v0.2 addendum section 5, which binds v0.1). Across imports, the
+          insert-ignore over ordinal-suffixed keys keeps, per identical
+          tuple, the highest occurrence count seen, which is exactly the
+          addendum's cross-import rule. Unique index per household,
           insert with duplicate skipping so re-upload is one statement not a
           read-then-write loop (pulse-v1-architecture.md:65). A file
           resolving to more than one account fails the entire import with
@@ -442,10 +474,13 @@ phases:
           test/application/ingest.test.ts asserts that importing fixture A
           then re-importing an overlapping fixture A2 adds exactly the
           non-overlapping rows and reports added versus already-known counts;
-          dedup keys are unique per household; and a fixture containing two
+          dedup keys are unique per household; a fixture containing two
           identical same-day same-amount same-merchant rows stores two
           Transaction rows, with a re-upload of that same fixture adding
-          zero.
+          zero; and in the partial-overlap case (import A carries one
+          occurrence of an identical tuple, a later overlapping import B
+          carries two) the end state is exactly two rows, the cross-import
+          rule of the owner's v0.2 addendum section 5.
       - id: "1.3"
         criterion: >-
           A fixture containing rows from two accounts fails the import with
@@ -538,30 +573,34 @@ phases:
       - text: >-
           Flow classification as pure domain functions over the declared
           sets: counterparty in the declared reserve set gives RESERVE signed
-          by direction; in the declared pot set gives INTERNAL; unmatched
-          INTERNAL stays INTERNAL and is flagged; otherwise sign decides
-          SPEND or INCOME; then the corrections (pulse-v1-plan.md:99-105).
-          UNRESOLVED is shown, never dropped or defaulted into a total
-          (charter.yaml:72-74).
+          by direction; in the declared pot set gives INTERNAL; then, between
+          the declared-set checks and the sign fallback, the settlement-match
+          step of the owner's v0.2 addendum section 5 (which binds v0.1,
+          decision D-11) as specified in the corrections step below;
+          unmatched INTERNAL stays INTERNAL and is flagged; otherwise sign
+          decides SPEND or INCOME; then the remaining corrections
+          (pulse-v1-plan.md:99-105). UNRESOLVED is shown, never dropped or
+          defaulted into a total (charter.yaml:72-74).
       - text: >-
           The four corrections, each a named pure function
-          (pulse-v1-plan.md:111-116). Card settlement is recognised by
-          declaration, not by counterparty-set membership, because the
-          observed real legs defeat set matching
-          (notes/export-format-facts.md: the account-side leg is a direct
-          debit to the issuer's collection identity naming the card
-          statement number, and the card-side format carries no
-          counterparty-account column at all): the card Account carries
-          user-declared settlement-counterparty identifiers (creditor IBAN
-          and/or a description pattern such as the card statement
-          reference), declared at first sight like every other declaration,
-          and BOTH settlement legs classify INTERNAL, the account-side
-          direct debit and the card-side positive settlement row, leaving
-          the card line items as the only counted spend (finding PR-002).
-          Reserve drawdown: return from reserves is a negative reserve
-          movement, never income. Refunds: incoming from a counterparty
-          with outgoing history is SPEND with positive amount. Cash
-          withdrawals: their own destination, never split.
+          (pulse-v1-plan.md:111-116). Card settlement follows the owner's
+          v0.2 addendum section 5 amendment, which binds v0.1 and supersedes
+          the fix round 1 declared-identifier mechanism (decision D-11):
+          a debit matching a settlement description pattern (code-owned,
+          for example MASTERCARD AFREKENING NUMMER) whose amount equals an
+          imported card statement's settlement total (the total the
+          statement carries, otherwise the sum of its line items), within a
+          date window held as a named constant, classifies INTERNAL and is
+          paired to that card import; the card-side positive settlement row
+          classifies INTERNAL as the mirror leg; the card line items remain
+          the only counted spend. If no matching card import exists (a card
+          whose statements the household does not import), the settlement
+          debit stays SPEND aggregated against the card issuer as merchant,
+          the honest reading of an unitemised card, never INTERNAL and
+          never UNRESOLVED. Reserve drawdown: return from reserves is a
+          negative reserve movement, never income. Refunds: incoming from a
+          counterparty with outgoing history is SPEND with positive amount.
+          Cash withdrawals: their own destination, never split.
       - text: >-
           Transfer pairing, deterministic and order-independent: both legs in
           pot accounts of the same household, amounts exactly opposite,
@@ -589,7 +628,6 @@ phases:
     files-to-touch:
       - src/modules/ledger/
       - src/modules/import/
-      - src/modules/accounts/
       - prisma/
       - test/domain/classify-flow.test.ts
       - test/domain/pair-transfers.test.ts
@@ -616,12 +654,14 @@ phases:
           test/domain/corrections.test.ts, one describe block per correction
           (card settlement, reserve drawdown, refund, cash withdrawal). The
           card settlement fixtures mirror the observed real shapes: the
-          account-side debit carries a counterparty that does not equal the
-          declared card account identity and names the card statement number
-          in its description, the card-side fixture carries a positive
-          settlement row with no counterparty account column, and the test
-          asserts both legs are INTERNAL and the card line items are the
-          only counted spend.
+          account-side debit carries no counterparty IBAN, names the card
+          statement number in its settlement-pattern description, and its
+          amount equals the card import's settlement total within the date
+          window; the card-side fixture carries a positive settlement row
+          with no counterparty account column; the test asserts the debit
+          classifies INTERNAL paired to the card import, the card-side
+          settlement row classifies INTERNAL as the mirror leg, and the
+          card line items are the only counted spend.
       - id: "2.4"
         criterion: >-
           test/property/reconciliation.test.ts passes: a fast-check property
@@ -651,6 +691,13 @@ phases:
           action rebuilds the affected import's fact rows from stored
           rawLine with corrected amounts, without re-upload, and with
           account declarations, merchant rules and dedup behaviour intact.
+      - id: "2.8"
+        criterion: >-
+          With a settlement-pattern debit and no matching card import inside
+          the date window, test/domain/corrections.test.ts asserts the debit
+          classifies SPEND, never INTERNAL and never UNRESOLVED, and enters
+          the spend total exactly once; its grouping under the card issuer
+          as merchant rides the normal resolver chain once M1-P4 lands.
     hazard-classes:
       - id: H2.1
         statement: >-
@@ -678,11 +725,17 @@ phases:
           path that repairs them from rawLine does not exist or loses
           declarations, the continuation of M1-P2's hazard H1.3.
         addressed-by: criterion 2.7
+      - id: H2.6
+        statement: >-
+          A settlement debit for a card whose statements are not imported
+          classified INTERNAL (spend vanishes) or left UNRESOLVED (permanent
+          gap), instead of honest aggregate SPEND against the issuer.
+        addressed-by: criterion 2.8
     migrations: >-
       One migration adding TransferLink (householdId, paired leg references,
-      unique per leg) and the declared settlement-counterparty identifier
-      fields on Account (declaration layer, finding PR-002). Facts tables
-      are untouched.
+      unique per leg), which also carries the settlement pairing of a
+      settlement debit to a card Import (owner v0.2 addendum section 5,
+      decision D-11). Facts tables are untouched.
     conflicts-with: []
     parallelizable: false
     citations:
@@ -1223,6 +1276,20 @@ decisions:
       and :166) are off-by-one leftovers of an earlier slice count and are
       read as slices 5 and 6, so M2-P1 and M2-P2 follow the table and no
       reordering of the intake has happened (finding PR-014).
+  - id: D-11
+    statement: >-
+      Card settlement recognition follows the owner's v0.2 addendum section
+      5 (delivery/intake/pulse-v0.2-pdf-addendum.md on main, commit 669fd71),
+      which binds v0.1: between the declared-set checks and the sign
+      fallback, a settlement-pattern debit whose amount equals an imported
+      card statement's settlement total within a date window classifies
+      INTERNAL paired to that card import, and with no matching card import
+      it stays SPEND aggregated against the card issuer as merchant. This
+      SUPERSEDES the fix round 1 resolution of finding PR-002 (user-declared
+      settlement-counterparty identifiers on the card Account): owner-
+      authored intake outranks the reviewer-proposed mechanism. The
+      real-shape fixtures from that round remain in criterion 2.3; the
+      unimported-card SPEND fallback gains its own criterion 2.8.
 open-questions:
   - DR-0002
 parked:
@@ -1254,11 +1321,16 @@ parked:
       pulse-v1-plan.md:121 and the charter's deliberately-absent list
       (charter.yaml:79-82): not needed to see the picture; corrections live
       on rules and merchants.
-  - item: PDF statement import.
+  - item: >-
+      PDF statement import, layout templates, the balance contract gate,
+      and mobile share-sheet upload.
     reason: >-
-      notes/export-format-facts.md: the owner's habitual mobile export
-      produces PDFs, but CSV from PC banking is the resolved v1 input; PDF
-      import stays a parked idea until the owner asks for it.
+      All v0.2 machinery per the owner's addendum
+      (delivery/intake/pulse-v0.2-pdf-addendum.md on main, commit 669fd71):
+      CSV from PC banking is the resolved v1 input, and only the addendum's
+      section 5 rule amendments (dedup occurrence index, settlement
+      matching) bind v0.1. The balance contract is compatible with v1 but
+      is not pulled in.
   - item: >-
       Queue, cron, event bus, caching layer, state management library,
       component library.
