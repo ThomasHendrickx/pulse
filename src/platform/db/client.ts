@@ -15,7 +15,25 @@ const diagnostic = databaseUrlDiagnostic();
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export const prisma: PrismaClient = globalForPrisma.prisma ?? new PrismaClient();
+// Construction happens AFTER the diagnostic above by statement order, and a
+// constructor throw (typically a client that was never generated in this
+// runtime) is logged with the same prefix and rethrown, so the failure is
+// readable in the function logs instead of dying silently at import time.
+// The error text never includes the connection URL and none is added here.
+const constructClient = (): PrismaClient => {
+  try {
+    return new PrismaClient();
+  } catch (cause) {
+    const name = cause instanceof Error ? cause.name : "non-error";
+    const message = cause instanceof Error ? cause.message : String(cause);
+    console.error(
+      `[pulse:db] PrismaClient construction failed at import time: name=${name} message=${message}`,
+    );
+    throw cause;
+  }
+};
+
+export const prisma: PrismaClient = globalForPrisma.prisma ?? constructClient();
 
 if (!isProduction()) {
   globalForPrisma.prisma = prisma;
