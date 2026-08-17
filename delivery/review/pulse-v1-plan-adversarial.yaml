@@ -1,0 +1,476 @@
+# Adversarial plan review of delivery/plan/pulse-v1.yaml (dispatch M0-P1,
+# reviewer worktree m0-p1-plan-review, branch claude/m0-p1-plan-review).
+#
+# work-log (incremental, newest last):
+# - created this file as beacon before deep reading
+# - read: role brief, dispatch contract, plan.schema.json, finding.schema.json,
+#   the plan under review (delivery/plan/pulse-v1.yaml, 7 phases)
+# - read: all four intake documents, charter.yaml, CLAUDE.md, all three
+#   .claude/skills/*/SKILL.md, notes/export-format-facts.md (fresh evidence),
+#   decisions DR-0001 (decided 2026-08-17), DR-0003, DR-0012
+# - verified the plan's tree claims myself at c940e4d:
+#   git ls-tree -r c940e4d --name-only prints 15 paths, none of them product
+#   code (no src/, no app/, no prisma/, no package.json, no test files);
+#   git diff c940e4d -- delivery/intake/ is empty (exit 0);
+#   pulse-prototype.html 395 lines, pulse-tokens.css 172 lines,
+#   pulse-theme.css 53 lines, messages en/nl/fr 2890/3139/3220 bytes,
+#   prototype greps hit "Sign in", "email", "password". Every number in the
+#   plan's standing-context matched exactly. Spot-checked roughly thirty of
+#   the plan's file-and-line citations into the intake documents and the
+#   charter; all resolved to the claimed content.
+# - adversarial pass per criterion: for each acceptance criterion tried to
+#   construct an implementation that satisfies it as written and is still
+#   wrong; the constructions that succeeded are the findings below
+# - checked the plan against fresh evidence the plan could not have seen
+#   (notes/export-format-facts.md, DR-0001 resolution)
+# - wrote findings, validated with npx tiphys validate --type finding
+kind: finding
+verdict: revise
+produced-by: claude (Fable 5, claude-fable-5)
+findings:
+  - id: PR-001
+    severity: critical
+    evidence:
+      - >-
+        delivery/plan/pulse-v1.yaml:336-344 (M1-P2 step): dedup key is
+        "natural key where present, otherwise hash of accountId, bookingDate,
+        amount, normalisedCounterparty, reference", unique index, duplicate
+        skipping.
+      - >-
+        delivery/plan/pulse-v1.yaml:368-373 (criterion 1.2): only asserts
+        overlapping re-import adds the non-overlapping rows; no fixture
+        contains two legitimately identical rows.
+      - >-
+        /home/user/pulse-fleet/notes/export-format-facts.md:52-54: "Duplicate
+        same-day same-amount same-merchant rows occur legitimately (observed
+        twice in one statement), which any dedup key must not collapse."
+      - >-
+        notes/export-format-facts.md:44-46: the KBC Mastercard format has no
+        per-row sequence number, so these rows are exactly the rows that take
+        the hash path.
+      - >-
+        .claude/skills/pulse-domain/SKILL.md:121-123 carries the same hash
+        recipe, so the defect is inherited from a project rule, not invented
+        by the plan; the plan may not silently follow it into data loss.
+    concrete-edit: >-
+      In M1-P2, rewrite the ingest step's hash fallback to include a
+      per-import occurrence ordinal: the dedup key for a hash-path row is the
+      content hash plus the ordinal of that row among identical-content rows
+      within the same file, so two legitimate identical rows get distinct
+      keys while re-uploading the same file still maps each row to the same
+      key. Extend criterion 1.2 with: "a fixture containing two identical
+      same-day same-amount same-merchant rows stores two Transaction rows,
+      and re-uploading that fixture adds zero", and add a report-code
+      disagreement entry (phase M1-P2, verified false) recording that
+      pulse-domain SKILL.md section 6 specifies a key that collapses
+      legitimate duplicates, escalating the skill correction to the
+      orchestrator rather than editing it.
+    analysis: >-
+      The construction that passes every criterion and is still wrong: an
+      importer with the plan's exact key imports the real KBC statement, the
+      second identical coffee-shop row hashes to the same key, duplicate
+      skipping silently drops it, and criterion 1.2's "already known" count
+      even reports it as a feature. Reconciliation cannot catch it, because
+      both sides of the identity are computed from the stored facts, so the
+      books close while a real spend row is gone. Silent loss of a fact row
+      is the single failure the facts-are-immutable spine exists to prevent.
+  - id: PR-002
+    severity: critical
+    evidence:
+      - >-
+        delivery/plan/pulse-v1.yaml:469-476 (M1-P3 step): "card settlement
+        (the direct debit paying the card account is INTERNAL, card
+        transactions are the spend)"; classification reaches INTERNAL only
+        via "counterparty in the declared pot set" (plan lines 461-468).
+      - >-
+        delivery/plan/pulse-v1.yaml:477-485 (pairing): a pair requires "each
+        leg's counterparty account matching the other leg's account".
+      - >-
+        notes/export-format-facts.md:33-35: the account-side leg is a
+        European direct debit "MASTERCARD AFREKENING NUMMER nnn"; its
+        counterparty is the issuer's collection identity, not the declared
+        card account reference.
+      - >-
+        notes/export-format-facts.md:43-46 and 50-52: KBC card rows carry no
+        counterparty-account column at all, and the statement contains a
+        positive mirror row "DOMICILIERING VIA JE BANK" for the settlement.
+      - >-
+        delivery/plan/pulse-v1.yaml:522-526 (criterion 2.3) only requires "a
+        named passing test per correction", which synthetic fixtures with a
+        conveniently matching counterparty satisfy.
+      - >-
+        delivery/intake/pulse-v1-plan.md:113: card settlement is "the single
+        biggest trap in the model".
+    concrete-edit: >-
+      In M1-P3, extend the corrections step to specify the recognition
+      mechanism as a declaration: the card Account carries user-declared
+      settlement-counterparty identifiers (creditor IBAN and/or a
+      description pattern such as the card statement reference), declared at
+      first sight like everything else, and BOTH settlement legs classify
+      INTERNAL: the account-side direct debit and the card-side positive
+      settlement row. Extend criterion 2.3's card settlement clause to:
+      "the card settlement fixtures mirror the observed real shapes: the
+      account-side debit carries a counterparty that does not equal the
+      declared card account identity and names the card statement number in
+      its description; the card-side fixture carries a positive settlement
+      row with no counterparty account column; the test asserts both legs
+      are INTERNAL and the card line items are the only counted spend."
+    analysis: >-
+      Two constructions pass criterion 2.3 as written and are wrong on the
+      first real month. (1) The account-side debit: its counterparty IBAN is
+      not in the declared pot set (it is KBC's collection account, not the
+      card reference the card was declared under), so rule 2 never fires,
+      sign classifies it SPEND, and every month double counts card spending,
+      the exact hazard H2.1 claims to address. (2) The card-side mirror row:
+      positive, no counterparty account exists in the format, so sign
+      classifies it INCOME and income inflates by the full settlement amount
+      every month. Pairing cannot rescue either leg because condition 4
+      (counterparty matches the other leg's account) is unsatisfiable in
+      these formats. The plan's fixtures are free to encode the convenient
+      world; the fresh evidence shows the real world is not it.
+  - id: PR-003
+    severity: high
+    evidence:
+      - >-
+        delivery/plan/pulse-v1.yaml:527-532 (criterion 2.4): "a fast-check
+        property test over generated datasets asserting income minus spend
+        minus net-to-reserves equals change in pot ... across at least 500
+        generated cases". Nothing constrains how change in pot is computed
+        or what the generators must cover.
+      - >-
+        delivery/intake/pulse-v1-architecture.md:19: the reconciliation
+        check is meant to be "a pure function over facts".
+      - >-
+        charter.yaml:29-30: the identity "holds exactly or the difference is
+        shown".
+    concrete-edit: >-
+      Rewrite criterion 2.4 to pin both ends: "change in pot is computed
+      from the facts side only, as the sum of raw transaction amounts over
+      pot accounts, while income, spend and net-to-reserves come from the
+      interpretation output; generators produce datasets covering all five
+      flow values, unmatched internal legs, and all four correction shapes;
+      the property asserts the identity holds exactly when no UNRESOLVED
+      rows or unmatched legs exist, and that otherwise the computed
+      difference equals the sum of the surfaced gaps, in integer cents,
+      across at least 500 generated cases."
+    analysis: >-
+      The tautological construction: compute change in pot as income minus
+      spend minus reserves over the same classified rows. The identity then
+      holds by arithmetic for every implementation, including one that
+      inverts every sign or classifies everything INCOME, and 500 cases of
+      it prove nothing. The test only bites when the right-hand side is
+      anchored in raw facts and the generators are forced through the states
+      where the model can actually break. Criterion 4.1 partially
+      compensates via fixture totals, but the property test is the artifact
+      the intake calls the quality bar, so it must not be satisfiable by a
+      tautology.
+  - id: PR-004
+    severity: high
+    evidence:
+      - >-
+        delivery/plan/pulse-v1.yaml:405-410: hazard H1.3 (wrong confirmed
+        profile writes wrong facts) is discharged with "later-phase: M1-P3".
+      - >-
+        delivery/plan/pulse-v1.yaml:487-494: M1-P3's step 4 mentions the
+        profile-fix re-parse from rawLine, "closing hazard H1.3".
+      - >-
+        delivery/plan/pulse-v1.yaml:510-542: none of M1-P3's criteria 2.1
+        through 2.6 mentions re-parse, rawLine, or a profile fix; every one
+        can pass with no re-parse code existing.
+    concrete-edit: >-
+      Add to M1-P3 an acceptance criterion: "2.7: test/application/
+      interpret.test.ts (or test/application/reparse.test.ts) asserts that
+      after correcting a SourceProfile with a wrong amount representation,
+      the re-parse action rebuilds the affected import's fact rows from
+      stored rawLine with corrected amounts, without re-upload, and with
+      account declarations, merchant rules and dedup behaviour intact", and
+      change H1.3's addressed-by in M1-P2 to name that criterion via
+      later-phase M1-P3 as it does now, with M1-P3's H-list carrying the
+      hazard against criterion 2.7.
+    analysis: >-
+      The construction: implement M1-P3 exactly to its criteria, skip the
+      re-parse entirely, merge green. The hazard chain then points at a
+      phase that never tested the thing, and the one declaration that
+      crosses into the facts layer (the intake calls it out as needing
+      explicit handling) ships with zero coverage. A later-phase discharge
+      is only honest if the later phase's acceptance actually carries it.
+  - id: PR-005
+    severity: high
+    evidence:
+      - >-
+        delivery/plan/pulse-v1.yaml:716-722 and 759-766 (M1-P5 step 1 and
+        criterion 4.1): the golden journey uploads account A and account B
+        fixtures with a transfer leg pair; no card fixture, no settlement.
+      - >-
+        delivery/intake/pulse-v1-plan.md:113: card settlement "is the reason
+        the card export has to be in v1 rather than after it".
+      - >-
+        notes/export-format-facts.md:60-62: two banks means at least two
+        source profiles from the first real import, and the settlement
+        pairing appears on both sides.
+      - >-
+        delivery/intake/pulse-v1-architecture.md:243: the golden journey is
+        "the strongest spec artifact in the project".
+    concrete-edit: >-
+      Extend M1-P5 step 1 and criterion 4.1 to a three-file journey: sign
+      in, upload the current-account fixture (profile 1), upload the second
+      pot account fixture containing the other transfer leg, upload a card
+      fixture (profile 2: no counterparty account column, no sequence
+      numbers, containing line items plus the settlement mirror row), then
+      assert on the month view that card line items are counted as spend
+      exactly once, the settlement pair is excluded from both sides, and
+      income, spend, reserves, pot-change and the zero reconciliation line
+      match the fixtures' known values.
+    analysis: >-
+      The construction: a golden journey with two same-bank current
+      accounts passes 4.1 while the product's stated hardest problem (card
+      settlement across two banks, two profiles) is never exercised
+      end to end. Given DR-0001 has made golden journey plus fast gate the
+      binding release verification, whatever the journey does not cover is
+      not verified at release at all. The strongest spec artifact should
+      walk the trap the intake spent its longest paragraph on.
+  - id: PR-006
+    severity: medium
+    evidence:
+      - >-
+        charter.yaml:72-74: "UNRESOLVED transactions and unmatched transfer
+        legs are shown, never silently dropped or defaulted into a total"
+        (a binding constraint).
+      - >-
+        delivery/plan/pulse-v1.yaml:772-776 (criterion 4.3): the only
+        visibility criterion, and its fixture is "deliberately gapped",
+        which produces unmatched legs, not UNRESOLVED rows.
+      - >-
+        delivery/plan/pulse-v1.yaml:729-737 (M1-P5 step): UNRESOLVED
+        visibility appears in step prose only; no criterion in any phase
+        asserts an UNRESOLVED row renders.
+    concrete-edit: >-
+      Extend criterion 4.3 with: "and with a fixture containing a
+      transaction no rule can classify, the view renders it as a visible
+      UNRESOLVED gap, its amount appears in no income, spend or reserves
+      total, and the reconciliation difference names it", so both halves of
+      the charter constraint (unmatched legs and UNRESOLVED rows) are
+      asserted by a test.
+    analysis: >-
+      The construction: the view queries filter to the four counted flows,
+      UNRESOLVED rows vanish from the screen entirely, criterion 4.3 still
+      passes because its gapped fixture only produces unmatched legs, and
+      every phase merges while a binding charter constraint is violated.
+  - id: PR-007
+    severity: medium
+    evidence:
+      - >-
+        charter.yaml:65 and CLAUDE.md non-negotiable 3: integer cents end to
+        end, never a float for a monetary total in the database.
+      - >-
+        delivery/plan/pulse-v1.yaml:226-232 (criterion 0.4) asserts
+        householdId via DMMF but nothing about monetary column types;
+        criteria 1.1 and 2.4 mention cents only inside test data, not
+        storage.
+    concrete-edit: >-
+      Extend criterion 0.4's schema test clause with: "and the same DMMF
+      test asserts every model field whose name matches
+      /amount|balance|total|cents/i has Prisma type Int or BigInt, never
+      Float or Decimal", and extend criterion 1.1 with "parsed amounts are
+      asserted to be integers (whole cents) for every decimal-style
+      fixture".
+    analysis: >-
+      The construction: store amounts as Decimal or Float, parse "1.234,56"
+      to 1234.56, and every criterion in the plan still passes, because no
+      test looks at the column type or the parsed value's integrality. The
+      non-negotiable is enforced only by reviewer attention, which is
+      exactly what a schema-reading test in the phase that owns the pattern
+      would replace.
+  - id: PR-008
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v1.yaml:777-783 (criterion 4.4): "a grep gate
+        over src/modules/**/ui exits 1 for hardcoded user-facing strings",
+        with no pattern named; "hardcoded user-facing string" is not a
+        greppable predicate.
+      - >-
+        delivery/plan/pulse-v1.yaml:891-898 (criterion 5.1): "no test
+        imports the real Claude adapter (grep exits 1 over test/)", with no
+        pattern named.
+      - >-
+        By contrast criteria 0.5 and 4.5 name their patterns exactly, which
+        is the shape these two should copy.
+    concrete-edit: >-
+      Pin both gates to executable commands: in criterion 4.4 replace the
+      grep clause with "the ESLint rule react/jsx-no-literals (or an
+      equivalent named lint rule) is enabled for src/modules/**/ui and npm
+      run lint exits 0"; in criterion 5.1 replace the grep clause with
+      "grep -r 'adapters/claude' test/ exits 1, where adapters/claude is
+      the real adapter's import path fixed by this phase".
+    analysis: >-
+      The construction for both: a gate that greps for a pattern that can
+      never occur (or greps the wrong directory) exits 1 forever, the
+      criterion is green on day one and green after the violation lands.
+      A criterion that names a gate without naming its pattern delegates
+      its own falsifiability to the implementer it is supposed to bind.
+  - id: PR-009
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v1.yaml:256-261: hazard H0.3 (migrations run
+        over the pooled connection string, "the single most common way this
+        stack breaks on first deploy") is addressed-by criterion 0.6.
+      - >-
+        delivery/plan/pulse-v1.yaml:239-243 (criterion 0.6): curl printing
+        200 on the deployed URL plus a localized sign-in heading, a check a
+        static page satisfies with no database at all.
+    concrete-edit: >-
+      Extend criterion 0.6 with a database-backed assertion: "and a request
+      exercising a database read against the deployed environment succeeds:
+      either the auth sign-up flow of test/e2e/auth.spec.ts run against the
+      deployed URL, or a curl to a route that performs a database query and
+      returns 200 with expected content; migration state on the deployed
+      database is confirmed with npx prisma migrate status exiting 0
+      against the direct connection string."
+    analysis: >-
+      The construction: deploy with runtime and migration URLs swapped, the
+      sign-in page (static server component) renders 200, criterion 0.6 is
+      green, and the first real sign-up in production fails on missing
+      tables. The hazard names the failure precisely and the criterion it
+      points at cannot see it, which makes H0.3 decorative as addressed.
+  - id: PR-010
+    severity: low
+    evidence:
+      - >-
+        /home/user/pulse-fleet/decisions/DR-0001.yaml: status decided,
+        2026-08-17, "the Playwright golden journey plus the fast gate, both
+        green on the release commit, are the release verification".
+      - >-
+        delivery/plan/pulse-v1.yaml:53-57 (standing-context) says "the
+        owner has not yet decided"; line 1080 lists DR-0001 under
+        open-questions; lines 741-747 (M1-P5 step) call the shape "open as
+        DR-0001".
+    concrete-edit: >-
+      Remove DR-0001 from open-questions, update the standing-context
+      paragraph to record DR-0001 as decided (working candidate accepted as
+      binding, owner, 2026-08-17), and rewrite M1-P5's release step to
+      "exercise the binding release verification per DR-0001: golden
+      journey plus fast gate, green on the release commit"; criterion 4.6
+      stays as written.
+    analysis: >-
+      The plan predates the decision and correctly designed M1-P5 so its
+      acceptance is invariant under any resolution, so nothing breaks. But
+      the plan's own binding rule sends unanswered questions to the
+      orchestrator, and a register that shows an answered question as open
+      invites a stall or a duplicate decision at M1-P5 close.
+  - id: PR-011
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v1.yaml:307-315 (M1-P2 verification-first step)
+        still says "when the owner's first anonymised real export arrives,
+        verify the natural-key claim against it"; that arrival has
+        happened.
+      - >-
+        notes/export-format-facts.md:25-27 and 44-46: the natural key HOLDS
+        for Belfius and FAILS for KBC Mastercard; it is a per-format
+        property, not a Belgian-export property as pulse-v1-plan.md:124
+        claims.
+      - >-
+        notes/export-format-facts.md:47-49 and 63-70: FX sub-lines exist on
+        card rows, and the owner resolved the input question: CSV from PC
+        banking is the v1 source, with CSV column layouts still unverified.
+      - >-
+        delivery/plan/pulse-v1.yaml:360-367 (criterion 1.1): the fixture
+        list contains no card-shaped fixture (no counterparty-account
+        column, no statement or sequence numbers, FX sub-lines, legitimate
+        duplicates).
+    concrete-edit: >-
+      Rewrite M1-P2's verification-first step to cite the recorded
+      evidence: the natural key is confirmed for the Belfius account format
+      and refuted for the KBC card format, so the key choice is per
+      SourceProfile with the hash path mandatory for card profiles; the
+      remaining verification target is the CSV column layouts of real PC
+      exports, checked when the first anonymised CSV arrives. Extend
+      criterion 1.1's fixture list with a card-profile fixture family: no
+      counterparty-account column, no statement or sequence numbers, at
+      least one FX row carrying original-amount and exchange-rate sub-line
+      content, and the two legitimate duplicate rows of PR-001.
+    analysis: >-
+      The plan's hash-fallback stance survives the fresh evidence, which is
+      to its credit, but its verification step now instructs a future that
+      already happened and its fixtures encode only current-account shapes.
+      An M1-P2 built to the current text would meet every criterion and
+      still meet the first real KBC card CSV unprepared on the exact axes
+      the evidence names.
+  - id: PR-012
+    severity: low
+    evidence:
+      - >-
+        delivery/plan/pulse-v1.yaml:1037-1043 (decision D-4) plus
+        files-to-touch styles/tokens.css (line 207): M1-P1 creates a second
+        token file carrying pulse-tokens.css content under the tokens.css
+        name, with criterion 0.5 asserting byte-identical declarations.
+      - >-
+        CLAUDE.md non-negotiable 4: "Missing token means add it to
+        tokens.css first"; after M1-P1 two token files exist and only one
+        is the one the rule names.
+    concrete-edit: >-
+      Amend D-4 and the M1-P1 wiring step to make styles/tokens.css the
+      single canonical source going forward: the content moves, and in the
+      same commit styles/pulse-tokens.css is either deleted or reduced to
+      an import of tokens.css, with criterion 0.5's byte-identity assertion
+      applying to the migration commit only and a note that later token
+      additions land in tokens.css alone.
+    analysis: >-
+      The construction: M1-P4 adds a token to pulse-tokens.css (the file
+      the tree suggests is canonical) while the app reads tokens.css; both
+      files drift, criterion 0.5 has long since passed, and the design
+      system has two truths. Byte-identity at one commit does not prevent
+      divergence at the next.
+  - id: PR-013
+    severity: low
+    evidence:
+      - >-
+        delivery/plan/pulse-v1.yaml:226-232 (criterion 0.4): "asserted by
+        test/schema/tenancy.test.ts reading the DMMF, and the same test
+        asserts every exported repository function signature takes the
+        household context as an explicit argument"; the DMMF describes the
+        schema and cannot see TypeScript function signatures.
+    concrete-edit: >-
+      Split criterion 0.4's second clause and name its mechanism: "a
+      separate assertion in test/schema/tenancy.test.ts statically analyses
+      src/modules/**/adapters (ts-morph or the TypeScript compiler API) and
+      asserts every exported repository function declares a parameter of
+      the household context type", or downgrade the clause to a named
+      review checklist item if static analysis is judged too heavy for
+      M1-P1.
+    analysis: >-
+      As written the two assertions are attributed to one mechanism that
+      can only perform the first. The construction: the test reads the DMMF
+      (passes), asserts signatures by grepping for the string "household"
+      anywhere in the file (passes vacuously or trivially), and criterion
+      0.4 is green while a repository function reads ambient session state,
+      the exact hazard H0.1 names.
+  - id: PR-014
+    severity: low
+    evidence:
+      - >-
+        delivery/intake/pulse-v1-plan.md:120 says recurring is derived "in
+        slice 5"; line 137 puts ClaudeResolver at "slice 4"; lines 152-158
+        (the slice table) and acceptance-criteria.md put Claude at slice 5
+        and recurring at slice 6; the intake disagrees with itself.
+      - >-
+        delivery/plan/pulse-v1.yaml:944-947 and 1004-1006: M2-P2 cites
+        pulse-v1-plan.md:120 and :166 (both saying slice 5) for a phase the
+        plan maps to slice 6, with no recorded resolution of the mismatch.
+    concrete-edit: >-
+      Add a decision (D-10): "The intake's slice numbering authority is the
+      delivery table at pulse-v1-plan.md:150-158 together with
+      acceptance-criteria.md; the prose references to slice 4 (line 137)
+      and slice 5 (lines 120, 166) for the Claude resolver and recurring
+      detection are off-by-one leftovers of an earlier slice count and are
+      read as slices 5 and 6", so a reader following M2-P2's citations does
+      not conclude the plan reordered the intake.
+    analysis: >-
+      The plan resolved the contradiction the right way (the table, the
+      acceptance document and charter.yaml:41-42 agree), but resolved it
+      silently. Decision records exist precisely so that disagreement
+      targets a number instead of re-deriving which of three line citations
+      to trust.
