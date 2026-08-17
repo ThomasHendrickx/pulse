@@ -18,6 +18,11 @@
 #   password strings
 # - wrote the plan below, then validated with tiphys validate, iterating on
 #   diagnostics until exit 0
+# - fix round 1 (R-061): read the adversarial review
+#   delivery/review/pulse-v1-plan-adversarial.yaml (verdict revise, findings
+#   PR-001..PR-014), notes/export-format-facts.md (fresh evidence from two
+#   real statements), decisions DR-0001 (now decided) and DR-0003; applied
+#   all fourteen findings, disputed none; re-validated to exit 0
 kind: plan
 status: draft
 baseline-commit: c940e4d
@@ -48,19 +53,31 @@ standing-context: |
   retention directories under delivery/, and a session-start hook; they add no
   product code either. Deploy state: none, nothing has ever been deployed.
 
-  Open questions carried as decision records, statements here because the
-  register itself is the orchestrator's to raise:
-  DR-0001: the binding shape of release verification for pulse. charter.yaml
-  lines 101 to 107 set mode reserved and name a working candidate (Playwright
-  golden journey plus fast gate, green on the release commit); the owner has
-  not yet decided. Phase M1-P5 exercises the working candidate and its
-  acceptance does not change under any resolution.
-  DR-0002: whether intake slices 5 and 6 proceed as specified after the owner
-  has used the walking skeleton for one real month. pulse-v1-plan.md line 160
-  defers this explicitly ("Ship them, use them for one real month, then decide
-  whether 5 and 6 still look right"). Phases M2-P1 and M2-P2 are planned to
-  review quality but their fill-in stays unfilled until DR-0002 resolves, so
-  they are valid for review and invalid for dispatch by construction.
+  Revision note, fix round 1 under R-061: the adversarial plan review
+  (delivery/review/pulse-v1-plan-adversarial.yaml on branch
+  claude/m0-p1-plan-review, verdict revise, findings PR-001 to PR-014) is
+  applied in full in this revision, no finding disputed. Fresh evidence that
+  postdates the first draft and grounds several findings: the fleet note
+  notes/export-format-facts.md (2026-08-17) records structural facts from two
+  real statements the owner provided. Belfius current account: the
+  statement-plus-sequence natural key holds. KBC Mastercard: no per-row
+  sequence exists so the hash path is mandatory, legitimate same-day
+  same-amount same-merchant duplicate rows occur, FX sub-lines exist, and the
+  card settlement appears on both sides with linkable references. The owner
+  resolved that CSV from PC banking is the v1 input; CSV column layouts
+  remain unverified against real exports.
+
+  Decision records touching this plan:
+  DR-0001 is DECIDED (owner, 2026-08-17): the Playwright golden journey plus
+  the fast gate, both green on the release commit, are the binding release
+  verification for pulse v1. Phase M1-P5 exercises exactly that.
+  DR-0002 remains OPEN: whether intake slices 5 and 6 proceed as specified
+  after the owner has used the walking skeleton for one real month.
+  pulse-v1-plan.md line 160 defers this explicitly ("Ship them, use them for
+  one real month, then decide whether 5 and 6 still look right"). Phases
+  M2-P1 and M2-P2 are planned to review quality but their fill-in stays
+  unfilled until DR-0002 resolves, so they are valid for review and invalid
+  for dispatch by construction.
 report-code-disagreement:
   - phase: M1-P1
     claim: >-
@@ -110,11 +127,29 @@ report-code-disagreement:
   - phase: M1-P2
     claim: >-
       pulse-v1-plan.md line 124 claims Belgian bank exports carry a statement
-      number plus sequence number as a stable natural key per account. Not
-      verifiable against the tree: no real or synthetic export fixture exists
-      at c940e4d, so the claim rests on domain knowledge only. The dedup
-      design must not depend on it being universally true; the hash fallback
-      is the guaranteed path.
+      number plus sequence number as a stable natural key per account. No
+      export fixture exists at c940e4d; the owner's two real statements
+      (notes/export-format-facts.md, 2026-08-17) settle it: the key HOLDS for
+      the Belfius current account format and FAILS for the KBC Mastercard
+      format, which has no per-row sequence number. The claim as written, a
+      property of Belgian exports in general, is false: it is a per-format
+      property, so the key choice is per SourceProfile and the hash path is
+      mandatory for card profiles. Still open: the CSV column layouts of real
+      PC-banking exports (the owner's examples were PDF, CSV is the v1
+      input).
+    verified: false
+  - phase: M1-P2
+    claim: >-
+      .claude/skills/pulse-domain/SKILL.md section 6 specifies the hash
+      fallback dedup key as accountId, bookingDate, amount,
+      normalisedCounterparty, reference. notes/export-format-facts.md lines
+      52 to 54 record legitimate duplicate same-day same-amount same-merchant
+      card rows, which that key collapses under duplicate skipping, silently
+      dropping a real fact row while the books still close (finding PR-001).
+      The skill's recipe does not survive the evidence: this plan amends the
+      key with a per-import occurrence ordinal in M1-P2, and the correction
+      of the skill text itself is escalated to the orchestrator rather than
+      edited here.
     verified: false
   - phase: M1-P5
     claim: >-
@@ -161,10 +196,10 @@ phases:
           (a) no tokens.css exists, the committed token source is
           styles/pulse-tokens.css plus styles/pulse-theme.css; (b) no npm
           scripts exist at the baseline. Write the confirmation into the work
-          history, then build so both claims become true: the app's token
-          entry point is the committed pulse-tokens.css content under the
-          name the rules use (decision D-4), and every command CLAUDE.md
-          names exists in package.json.
+          history, then build so both claims become true: the token content
+          moves to styles/tokens.css as the single canonical source
+          (decision D-4), and every command CLAUDE.md names exists in
+          package.json.
       - text: >-
           Scaffold Next.js App Router with TypeScript strict under src/, npm
           only, with the module layout from pulse-v1-architecture.md:73-97
@@ -183,10 +218,15 @@ phases:
           repositories (pulse-v1-architecture.md:217). Seed one household
           with one user for local dev and tests.
       - text: >-
-          Wire the design tokens (styles/pulse-tokens.css and
-          styles/pulse-theme.css) as the app's only styling source next to
-          Tailwind v4, and next-intl with the committed messages/en.json,
-          messages/nl.json, messages/fr.json, language order EN, NL, FR.
+          Wire the design tokens: move the content of styles/pulse-tokens.css
+          to styles/tokens.css as the single canonical token source, and in
+          the same commit delete styles/pulse-tokens.css or reduce it to one
+          import line, so exactly one file answers the tokens.css name
+          CLAUDE.md non-negotiable 4 uses from then on (decision D-4). Wire
+          tokens.css and styles/pulse-theme.css as the app's only styling
+          source next to Tailwind v4, and next-intl with the committed
+          messages/en.json, messages/nl.json, messages/fr.json, language
+          order EN, NL, FR.
       - text: >-
           Set up Vitest (fast gate) and Playwright (slow gate) with a fixed
           injected clock and a seeded household (pulse-v1-architecture.md:247),
@@ -205,6 +245,7 @@ phases:
       - prisma/
       - src/
       - styles/tokens.css
+      - styles/pulse-tokens.css
       - test/schema/tenancy.test.ts
       - test/e2e/auth.spec.ts
     extras: []
@@ -225,22 +266,34 @@ phases:
           asserts an authenticated household context renders.
       - id: "0.4"
         criterion: >-
-          Every Prisma model except Household carries a non-null householdId,
-          asserted by test/schema/tenancy.test.ts reading the DMMF, and the
-          same test asserts every exported repository function signature takes
-          the household context as an explicit argument; npm test reports the
-          file passing.
+          test/schema/tenancy.test.ts passes under npm test with three named
+          assertions and the mechanism for each named: (a) reading the Prisma
+          DMMF, every model except Household carries a non-null householdId;
+          (b) reading the same DMMF, every model field whose name matches
+          /amount|balance|total|cents/i has type Int or BigInt, never Float
+          or Decimal; (c) a static analysis over src/modules/**/adapters
+          using the TypeScript compiler API (or ts-morph) asserts every
+          exported repository function declares a parameter of the household
+          context type.
       - id: "0.5"
         criterion: >-
-          The app's global stylesheet chain resolves to the committed token
-          source (byte-identical token declarations to styles/pulse-tokens.css
-          at the baseline), and grep -rE "oklch\(|#[0-9a-fA-F]{3,8}" over
-          src/ excluding the token and theme files exits 1 (no matches).
+          On the commit that moves the tokens, styles/tokens.css carries
+          token declarations byte-identical to styles/pulse-tokens.css at
+          baseline c940e4d, and at most one canonical token file remains
+          (pulse-tokens.css deleted or reduced to a single import line);
+          later token additions land in tokens.css alone. grep -rE
+          "oklch\(|#[0-9a-fA-F]{3,8}" over src/ excluding the token and
+          theme files exits 1 (no matches).
       - id: "0.6"
         criterion: >-
           curl -s -o /dev/null -w "%{http_code}" against the deployed Vercel
-          URL prints 200, and the sign-in page HTML contains the localized
-          sign-in heading.
+          URL prints 200 and the sign-in page HTML contains the localized
+          sign-in heading; a database-backed path is exercised against the
+          deployed environment (the sign-up flow of test/e2e/auth.spec.ts
+          run against the deployed URL, or a curl to a route performing a
+          database query returning 200 with expected content); and npx
+          prisma migrate status exits 0 against the deployed database over
+          the direct connection string, reporting no pending migrations.
     hazard-classes:
       - id: H0.1
         statement: >-
@@ -300,19 +353,26 @@ phases:
     severity: high
     verified-root-cause: >-
       Not a defect phase. The verification-first step exists because the
-      natural-key claim (statement plus sequence number in Belgian exports,
-      pulse-v1-plan.md:124) could not be verified against the tree: no export
-      fixture of any kind exists at c940e4d.
+      intake's natural-key claim (pulse-v1-plan.md:124) is refuted as a
+      general property by the recorded evidence (per-format only, see the
+      report-code-disagreement entries), because the skill's hash recipe
+      collapses legitimate duplicate rows (finding PR-001), and because the
+      CSV column layouts of real PC-banking exports remain unverified.
     steps:
       - kind: verification-first
         text: >-
-          The statement-plus-sequence natural key claim is unverified: no real
-          export exists in the tree. Build the committed synthetic fixtures to
-          exercise both key paths (natural key present, hash fallback), treat
-          the hash fallback as the guaranteed path, and when the owner's first
-          anonymised real export arrives, verify the natural-key claim against
-          it and record the outcome in the work history before widening
-          reliance on it.
+          The natural-key question is part-answered by recorded evidence
+          (notes/export-format-facts.md, two real statements, 2026-08-17):
+          the statement-plus-sequence key HOLDS for the Belfius current
+          account format and FAILS for the KBC Mastercard format, which
+          carries no per-row sequence number. The key choice is therefore a
+          per-SourceProfile property: natural key where the profile has one,
+          content hash mandatory for card profiles. The remaining unverified
+          claim is the CSV column layouts of real PC-banking exports (the
+          owner's examples were PDF; CSV is the v1 input): when the first
+          anonymised real CSV arrives, verify the committed fixture layouts
+          against it and record the outcome in the work history before
+          widening reliance on them.
       - text: >-
           SourceProfile as a declaration-layer model carrying delimiter,
           encoding, header row index, date format, decimal style, amount
@@ -334,14 +394,20 @@ phases:
           first sight, against parsed data, before anything reaches the
           ledger (pulse-v1-architecture.md:153).
       - text: >-
-          Ingest: dedup key per row (natural key where present, otherwise
-          hash of accountId, bookingDate, amount, normalisedCounterparty,
-          reference), unique index per household, insert with duplicate
-          skipping so re-upload is one statement not a read-then-write loop
-          (pulse-v1-architecture.md:65). A file resolving to more than one
-          account fails the entire import with status FAILED and zero rows
-          written. rawLine stored on every transaction
-          (pulse-v1-architecture.md:37).
+          Ingest: dedup key per row. Natural key where the profile has one;
+          otherwise the hash path, and the hash key is the content hash over
+          accountId, bookingDate, amount, normalisedCounterparty and
+          reference PLUS the occurrence ordinal of that row among
+          identical-content rows within the same file, so two legitimate
+          identical rows (observed in the real KBC statement) get distinct
+          keys while re-uploading the same file maps each row to the same
+          key and adds nothing (finding PR-001; the ordinal-free recipe in
+          pulse-domain SKILL.md collapses them). Unique index per household,
+          insert with duplicate skipping so re-upload is one statement not a
+          read-then-write loop (pulse-v1-architecture.md:65). A file
+          resolving to more than one account fails the entire import with
+          status FAILED and zero rows written. rawLine stored on every
+          transaction (pulse-v1-architecture.md:37).
       - text: >-
           Upload UI: file in, detected profile proposed with five parsed rows
           rendered as they will be stored, user confirms or fixes and names
@@ -364,13 +430,22 @@ phases:
           Windows-1252), header row offset, date formats DD/MM/YYYY and
           YYYY-MM-DD and DD.MM.YY, decimal styles 1.234,56 and 1234.56, and
           all three amount representations against committed synthetic
-          fixtures in test/fixtures/.
+          fixtures in test/fixtures/. The fixture set includes a card-profile
+          family mirroring the observed KBC shape: no counterparty-account
+          column, no statement or sequence numbers, at least one FX row
+          carrying original-amount and exchange-rate sub-line content, and
+          two legitimate identical same-day same-amount same-merchant rows.
+          Every decimal-style fixture asserts the parsed amount is an
+          integer number of cents.
       - id: "1.2"
         criterion: >-
           test/application/ingest.test.ts asserts that importing fixture A
           then re-importing an overlapping fixture A2 adds exactly the
           non-overlapping rows and reports added versus already-known counts;
-          dedup keys are unique per household.
+          dedup keys are unique per household; and a fixture containing two
+          identical same-day same-amount same-merchant rows stores two
+          Transaction rows, with a re-upload of that same fixture adding
+          zero.
       - id: "1.3"
         criterion: >-
           A fixture containing rows from two accounts fails the import with
@@ -424,9 +499,11 @@ phases:
     fill-in:
       filled: true
       root-cause: >-
-        Greenfield, no defect. Depends on M1-P1's scaffold; the one
-        unverified input claim (natural dedup key) is handled by the
-        verification-first step and the hash fallback.
+        Greenfield, no defect. Depends on M1-P1's scaffold; the unverified
+        input claims (per-format natural key, the skill's collapsing hash
+        recipe, unverified CSV column layouts) are handled by the
+        verification-first step, the per-profile key choice and the
+        ordinal-extended hash key.
       fix-shape: >-
         Parser port, profile detection, declaration flow, idempotent ingest,
         facts layer complete.
@@ -467,13 +544,24 @@ phases:
           UNRESOLVED is shown, never dropped or defaulted into a total
           (charter.yaml:72-74).
       - text: >-
-          The four corrections, each a named pure function: card settlement
-          (the direct debit paying the card account is INTERNAL, card
-          transactions are the spend), reserve drawdown (return from reserves
-          is a negative reserve movement, never income), refunds (incoming
-          from a counterparty with outgoing history is SPEND with positive
-          amount), cash withdrawals (their own destination, never split)
-          (pulse-v1-plan.md:111-116).
+          The four corrections, each a named pure function
+          (pulse-v1-plan.md:111-116). Card settlement is recognised by
+          declaration, not by counterparty-set membership, because the
+          observed real legs defeat set matching
+          (notes/export-format-facts.md: the account-side leg is a direct
+          debit to the issuer's collection identity naming the card
+          statement number, and the card-side format carries no
+          counterparty-account column at all): the card Account carries
+          user-declared settlement-counterparty identifiers (creditor IBAN
+          and/or a description pattern such as the card statement
+          reference), declared at first sight like every other declaration,
+          and BOTH settlement legs classify INTERNAL, the account-side
+          direct debit and the card-side positive settlement row, leaving
+          the card line items as the only counted spend (finding PR-002).
+          Reserve drawdown: return from reserves is a negative reserve
+          movement, never income. Refunds: incoming from a counterparty
+          with outgoing history is SPEND with positive amount. Cash
+          withdrawals: their own destination, never split.
       - text: >-
           Transfer pairing, deterministic and order-independent: both legs in
           pot accounts of the same household, amounts exactly opposite,
@@ -491,7 +579,8 @@ phases:
           action (pulse-v1-architecture.md:159). The profile-fix re-parse
           rebuilds facts of affected imports from stored rawLine without
           re-upload and without losing declarations
-          (pulse-v1-architecture.md:37), closing hazard H1.3.
+          (pulse-v1-architecture.md:37), closing hazard H1.3 under
+          criterion 2.7.
       - text: >-
           The reconciliation identity as a pure function over facts plus
           interpretation: income minus spend minus net-to-reserves equals
@@ -500,12 +589,14 @@ phases:
     files-to-touch:
       - src/modules/ledger/
       - src/modules/import/
+      - src/modules/accounts/
       - prisma/
       - test/domain/classify-flow.test.ts
       - test/domain/pair-transfers.test.ts
       - test/domain/corrections.test.ts
       - test/property/reconciliation.test.ts
       - test/application/interpret.test.ts
+      - test/application/reparse.test.ts
     extras: []
     acceptance:
       - id: "2.1"
@@ -523,12 +614,25 @@ phases:
         criterion: >-
           The four corrections each have a named passing test in
           test/domain/corrections.test.ts, one describe block per correction
-          (card settlement, reserve drawdown, refund, cash withdrawal).
+          (card settlement, reserve drawdown, refund, cash withdrawal). The
+          card settlement fixtures mirror the observed real shapes: the
+          account-side debit carries a counterparty that does not equal the
+          declared card account identity and names the card statement number
+          in its description, the card-side fixture carries a positive
+          settlement row with no counterparty account column, and the test
+          asserts both legs are INTERNAL and the card line items are the
+          only counted spend.
       - id: "2.4"
         criterion: >-
           test/property/reconciliation.test.ts passes: a fast-check property
-          test over generated datasets asserting income minus spend minus
-          net-to-reserves equals change in pot, exactly, in integer cents,
+          test where change in pot is computed from the facts side only, as
+          the sum of raw transaction amounts over pot accounts, while
+          income, spend and net-to-reserves come from the interpretation
+          output; the generators produce datasets covering all five flow
+          values, unmatched internal legs, and all four correction shapes;
+          the property asserts the identity holds exactly when no UNRESOLVED
+          rows or unmatched legs exist, and that otherwise the computed
+          difference equals the sum of the surfaced gaps, in integer cents,
           across at least 500 generated cases.
       - id: "2.5"
         criterion: >-
@@ -540,6 +644,13 @@ phases:
         criterion: >-
           npm run typecheck && npm run lint && npm test exit 0 and npm run
           test:e2e exits 0 at the phase head.
+      - id: "2.7"
+        criterion: >-
+          test/application/reparse.test.ts asserts that after correcting a
+          SourceProfile with a wrong amount representation, the re-parse
+          action rebuilds the affected import's fact rows from stored
+          rawLine with corrected amounts, without re-upload, and with
+          account declarations, merchant rules and dedup behaviour intact.
     hazard-classes:
       - id: H2.1
         statement: >-
@@ -561,10 +672,17 @@ phases:
           The reconciliation identity holding only on the cases someone
           thought of, instead of on any dataset the model admits.
         addressed-by: criterion 2.4
+      - id: H2.5
+        statement: >-
+          A wrong confirmed profile has written wrong facts and the re-parse
+          path that repairs them from rawLine does not exist or loses
+          declarations, the continuation of M1-P2's hazard H1.3.
+        addressed-by: criterion 2.7
     migrations: >-
       One migration adding TransferLink (householdId, paired leg references,
-      unique per leg). Facts tables are untouched; interpretation columns
-      only.
+      unique per leg) and the declared settlement-counterparty identifier
+      fields on Account (declaration layer, finding PR-002). Facts tables
+      are untouched.
     conflicts-with: []
     parallelizable: false
     citations:
@@ -714,12 +832,17 @@ phases:
       failure here is a query or rendering defect, never staleness.
     steps:
       - text: >-
-          Write test/e2e/golden-journey.spec.ts first, before the view: sign
-          in, upload account A's fixture, declare and confirm, upload account
-          B's fixture containing the other transfer leg, open the month view,
-          assert income, spend, reserves and pot-change totals against the
-          fixture's known values, assert the reconciliation line reads zero
-          difference (pulse-v1-architecture.md:243).
+          Write test/e2e/golden-journey.spec.ts first, before the view, as a
+          three-file journey across two source profiles: sign in, upload the
+          current-account fixture (profile 1), declare and confirm, upload
+          the second pot account fixture containing the other transfer leg,
+          upload a card fixture (profile 2: no counterparty-account column,
+          no sequence numbers, line items plus the settlement mirror row),
+          open the month view, assert card line items are counted as spend
+          exactly once and the settlement pair is excluded from both sides,
+          and assert income, spend, reserves and pot-change totals against
+          the fixtures' known values with the reconciliation line reading
+          zero difference (pulse-v1-architecture.md:243, finding PR-005).
       - text: >-
           The month projection as four grouped queries plus the same four for
           the previous month, raw SQL in the repository where Prisma is weak
@@ -739,12 +862,11 @@ phases:
           The current month renders as in progress and is never compared to a
           full month; only closed months are compared (pulse-v1-plan.md:206).
       - text: >-
-          Exercise the working release-verification candidate on the phase
-          head: golden journey plus fast gate, green on the release commit.
-          The binding shape of release verification is open as DR-0001; the
-          owner's resolution slots in here without changing this phase's
-          acceptance, and a resolution to anything weaker than a declared
-          verification is an escalation per charter.yaml:86.
+          Exercise the binding release verification per DR-0001 (decided by
+          the owner, 2026-08-17): the Playwright golden journey plus the
+          fast gate, both green on the release commit. A change from this
+          declared verification to anything weaker is an escalation per
+          charter.yaml:86.
     files-to-touch:
       - src/modules/overview/
       - src/app/
@@ -759,11 +881,16 @@ phases:
       - id: "4.1"
         criterion: >-
           npm run test:e2e exits 0 with test/e2e/golden-journey.spec.ts
-          passing end to end: sign in, upload account A's fixture, declare
-          and confirm, upload account B's fixture containing the other
-          transfer leg, open the month view, assert income, spend, reserves
-          and pot-change totals against the fixture's known values, and
-          assert the reconciliation line reads zero difference.
+          passing end to end as a three-file journey: sign in, upload the
+          current-account fixture (profile 1), declare and confirm, upload
+          the second pot account fixture containing the other transfer leg,
+          upload a card fixture (profile 2: no counterparty-account column,
+          no sequence numbers, line items plus the settlement mirror row),
+          open the month view, assert card line items are counted as spend
+          exactly once, assert the settlement pair is excluded from both
+          sides, and assert income, spend, reserves and pot-change totals
+          against the fixtures' known values with the reconciliation line
+          reading zero difference.
       - id: "4.2"
         criterion: >-
           The partial current month renders the in-progress state and no
@@ -773,19 +900,25 @@ phases:
         criterion: >-
           With a deliberately gapped fixture, the view shows the unexplained
           difference in the alarm treatment and names unmatched legs,
-          asserted in test/e2e/month-view.spec.ts.
+          asserted in test/e2e/month-view.spec.ts; and with a fixture
+          containing a transaction no rule can classify, the view renders it
+          as a visible UNRESOLVED gap, its amount appears in no income,
+          spend or reserves total, and the reconciliation difference names
+          it, asserted in the same file.
       - id: "4.4"
         criterion: >-
           All three locales render the month view without truncation or
           layout overflow, asserted per locale in
           test/e2e/month-view.spec.ts; message catalogs for en, nl, fr load
-          via next-intl and a grep gate over src/modules/**/ui exits 1 for
-          hardcoded user-facing strings.
+          via next-intl; and the ESLint rule react/jsx-no-literals (or an
+          equivalent named lint rule, the chosen name recorded in the phase
+          work history) is enabled for src/modules/**/ui with npm run lint
+          exiting 0.
       - id: "4.5"
         criterion: >-
-          A grep gate asserts no literal oklch(, no hex colour, and no px
-          font-size inside src/modules/**/ui components; the grep exits 1
-          (tokens only) and the gate command exits 0.
+          grep -rE "oklch\(|#[0-9a-fA-F]{3,8}|font-size:\s*[0-9.]+px" over
+          src/modules/**/ui exits 1 (tokens only), and the npm script that
+          wraps it as a gate exits 0.
       - id: "4.6"
         criterion: >-
           npm run typecheck && npm run lint && npm test exit 0 at the phase
@@ -894,8 +1027,10 @@ phases:
           passing against a fake adapter only; it asserts one batched call
           per import carrying distinct unresolved strings, threshold routing
           to the review queue, and accepted answers persisted as
-          MerchantRules. A repo-wide grep gate asserts no test imports the
-          real Claude adapter (grep exits 1 over test/).
+          MerchantRules. The real adapter's import path is fixed by this
+          phase at src/modules/merchants/adapters/claude, and grep -r
+          "adapters/claude" test/ exits 1, so no test imports the real
+          Claude adapter.
       - id: "5.2"
         criterion: >-
           npm run typecheck && npm run lint && npm test exit 0 and npm run
@@ -1036,11 +1171,14 @@ decisions:
       so adding Membership later is additive.
   - id: D-4
     statement: >-
-      The canonical token source is the committed styles/pulse-tokens.css;
-      M1-P1 wires its content in under the tokens.css name the charter and
-      CLAUDE.md use, with criterion 0.5 asserting the declarations stay
-      byte-identical, so the constraint text and the tree converge instead of
-      renaming history or editing intake facts.
+      styles/tokens.css becomes the single canonical token source: M1-P1
+      moves the content of the committed styles/pulse-tokens.css there and
+      in the same commit deletes pulse-tokens.css or reduces it to one
+      import line, criterion 0.5 asserts byte-identity on that migration
+      commit only, and every later token addition lands in tokens.css alone,
+      so exactly one file answers the tokens.css name the charter and
+      CLAUDE.md use and the two-truths drift finding PR-012 names cannot
+      start.
   - id: D-5
     statement: >-
       The counterparty registration prompt threshold (pulse-v1-plan.md:82,
@@ -1076,8 +1214,16 @@ decisions:
       an explicit owner checkpoint (DR-0002) rather than a scheduling
       accident. Intake slice ordering is preserved exactly, including slice
       2 ahead of merchant resolution (pulse-v1-plan.md:162).
+  - id: D-10
+    statement: >-
+      The intake's slice numbering authority is the delivery table at
+      pulse-v1-plan.md:150-158 together with acceptance-criteria.md. The
+      prose references putting the Claude resolver at slice 4
+      (pulse-v1-plan.md:137) and recurring at slice 5 (pulse-v1-plan.md:120
+      and :166) are off-by-one leftovers of an earlier slice count and are
+      read as slices 5 and 6, so M2-P1 and M2-P2 follow the table and no
+      reordering of the intake has happened (finding PR-014).
 open-questions:
-  - DR-0001
   - DR-0002
 parked:
   - item: PSD2 / Ibanity bank connection.
@@ -1108,6 +1254,11 @@ parked:
       pulse-v1-plan.md:121 and the charter's deliberately-absent list
       (charter.yaml:79-82): not needed to see the picture; corrections live
       on rules and merchants.
+  - item: PDF statement import.
+    reason: >-
+      notes/export-format-facts.md: the owner's habitual mobile export
+      produces PDFs, but CSV from PC banking is the resolved v1 input; PDF
+      import stays a parked idea until the owner asks for it.
   - item: >-
       Queue, cron, event bus, caching layer, state management library,
       component library.
