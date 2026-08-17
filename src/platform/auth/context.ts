@@ -19,9 +19,15 @@ export const requireHouseholdContext = async (): Promise<HouseholdContext> => {
 
   const row = await prisma.user.findUnique({ where: { id: user.id } });
   if (!row) {
-    // An authenticated Supabase user without a household link cannot act as
-    // a tenant. Send them back to sign-in rather than inventing a context.
-    redirect("/sign-in");
+    // An authenticated Supabase user without a users row is a broken
+    // half-session (an interrupted sign-up, or an auth user created outside
+    // the app). Destroy the session BEFORE redirecting: with it still
+    // alive, the middleware bounces /sign-in back to / and this guard
+    // bounces / back to /sign-in, so the browser live-locks with sign-out
+    // unreachable (fix round 1, finding CR-001 in both M1-P1 verdicts).
+    // Signing out here is what makes the redirect target reachable.
+    await supabase.auth.signOut();
+    redirect("/sign-in?status=incomplete-signup");
   }
 
   return { householdId: householdId(row.householdId), userId: userId(row.id) };
