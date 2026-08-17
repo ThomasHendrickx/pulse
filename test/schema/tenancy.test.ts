@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join, relative } from "node:path";
 import { getDMMF } from "@prisma/internals";
 import ts from "typescript";
 import { describe, expect, test } from "vitest";
@@ -12,9 +12,15 @@ import { describe, expect, test } from "vitest";
 //       whose name matches /amount|balance|total|cents/i has type Int or
 //       BigInt, never Float or Decimal.
 //   (c) repositories-take-household-context: a static analysis over
-//       src/modules/**/adapters using the TypeScript compiler API asserts
-//       every exported repository function declares a parameter of the
-//       household context type (HouseholdContext).
+//       src/modules using the TypeScript compiler API. FAIL CLOSED since fix
+//       round 1 (finding CR-003 in both M1-P1 verdicts): importing the
+//       database client is what makes a file a repository file, wherever it
+//       lives; such a file must sit in an adapters/ directory, and every
+//       value it exports must be a function declaring a parameter typed
+//       exactly HouseholdContext. Export shapes the analyzer cannot
+//       positively verify (object literals, wrapped factories, classes,
+//       enums, default exports, re-exports from other files) are VIOLATIONS,
+//       so an uninspected shape reddens the suite instead of passing it.
 // Each mechanism is additionally exercised against inline fixtures that MUST
 // produce violations, so a checker that silently stopped finding anything
 // turns the suite red instead of going vacuously green.
@@ -84,28 +90,60 @@ const moneyFieldViolations = (models: readonly DmmfModel[]): string[] =>
   );
 
 // ---------------------------------------------------------------------------
-// Mechanism (c): exported functions in module adapters declare a parameter
-// of the household context type. TypeScript compiler API, no execution.
+// Mechanism (c): fail-closed static analysis over src/modules.
+// A file is HELD TO THE REPOSITORY RULE when it imports the database client
+// (@prisma/client or platform/db/client) or its basename names a repository.
+// Held files must live under adapters/, and every exported VALUE must be a
+// function declaring a parameter whose type text is exactly
+// HouseholdContext. Type-only exports (interface, type alias, export type)
+// are exempt: they carry no runtime behaviour. Everything else exported
+// from a held file is a violation by construction (fail closed).
 // ---------------------------------------------------------------------------
 
 const HOUSEHOLD_CONTEXT_TYPE = "HouseholdContext";
+const DB_CLIENT_IMPORT = /(@prisma\/client|platform\/db\/client)/;
+const REPOSITORY_FILE_NAME = /repositor/i;
 
-type RepositoryViolation = {
+type TenancyViolation = {
   readonly file: string;
-  readonly exportName: string;
+  readonly name: string;
+  readonly reason: string;
 };
 
-const analyzeAdapterSource = (
+const analyzeModuleSource = (
   sourceText: string,
-  fileName: string,
-): RepositoryViolation[] => {
+  filePath: string,
+): TenancyViolation[] => {
   const sourceFile = ts.createSourceFile(
-    fileName,
+    filePath,
     sourceText,
     ts.ScriptTarget.Latest,
     true,
   );
-  const violations: RepositoryViolation[] = [];
+  const violations: TenancyViolation[] = [];
+
+  const importsDbClient = sourceFile.statements.some(
+    (statement) =>
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      DB_CLIENT_IMPORT.test(statement.moduleSpecifier.text),
+  );
+  const inAdapters = filePath.split(/[\\/]/).includes("adapters");
+  const heldToRule =
+    importsDbClient || REPOSITORY_FILE_NAME.test(basename(filePath));
+
+  if (importsDbClient && !inAdapters) {
+    violations.push({
+      file: filePath,
+      name: "(file)",
+      reason:
+        "imports the database client outside an adapters directory; only adapters may touch the database",
+    });
+  }
+
+  if (!heldToRule) {
+    return violations;
+  }
 
   const isExported = (node: ts.HasModifiers): boolean =>
     ts
@@ -116,40 +154,115 @@ const analyzeAdapterSource = (
     fn.parameters.some(
       (parameter) =>
         parameter.type !== undefined &&
-        parameter.type.getText(sourceFile).includes(HOUSEHOLD_CONTEXT_TYPE),
+        parameter.type.getText(sourceFile).trim() === HOUSEHOLD_CONTEXT_TYPE,
     );
 
-  const visit = (node: ts.Node): void => {
-    if (ts.isFunctionDeclaration(node) && isExported(node)) {
-      if (!declaresContextParameter(node)) {
-        violations.push({
-          file: fileName,
-          exportName: node.name?.text ?? "(anonymous)",
-        });
-      }
-    } else if (ts.isVariableStatement(node) && isExported(node)) {
-      for (const declaration of node.declarationList.declarations) {
-        const initializer = declaration.initializer;
-        if (
-          initializer !== undefined &&
-          (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) &&
-          !declaresContextParameter(initializer)
-        ) {
-          violations.push({
-            file: fileName,
-            exportName: declaration.name.getText(sourceFile),
-          });
+  // First pass: index top-level declarations so export lists can resolve.
+  const topLevelFunctions = new Map<string, ts.FunctionDeclaration>();
+  const topLevelInitializers = new Map<string, ts.Expression | undefined>();
+  for (const statement of sourceFile.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name) {
+      topLevelFunctions.set(statement.name.text, statement);
+    } else if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name)) {
+          topLevelInitializers.set(declaration.name.text, declaration.initializer);
         }
       }
     }
-    ts.forEachChild(node, visit);
+  }
+
+  const checkFunctionLike = (
+    fn: ts.SignatureDeclaration,
+    exportName: string,
+  ): void => {
+    if (!declaresContextParameter(fn)) {
+      violations.push({
+        file: filePath,
+        name: exportName,
+        reason: `exported function does not declare a parameter typed exactly ${HOUSEHOLD_CONTEXT_TYPE}`,
+      });
+    }
   };
 
-  visit(sourceFile);
+  const flagUnverifiable = (exportName: string, shape: string): void => {
+    violations.push({
+      file: filePath,
+      name: exportName,
+      reason: `exported ${shape} is not a shape this gate can verify; repository files export only functions taking ${HOUSEHOLD_CONTEXT_TYPE}`,
+    });
+  };
+
+  for (const statement of sourceFile.statements) {
+    if (ts.isFunctionDeclaration(statement) && isExported(statement)) {
+      checkFunctionLike(statement, statement.name?.text ?? "(anonymous)");
+    } else if (ts.isVariableStatement(statement) && isExported(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        const name = declaration.name.getText(sourceFile);
+        const initializer = declaration.initializer;
+        if (
+          initializer !== undefined &&
+          (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer))
+        ) {
+          checkFunctionLike(initializer, name);
+        } else {
+          flagUnverifiable(
+            name,
+            "non-function value (object literal, call result or other initializer)",
+          );
+        }
+      }
+    } else if (ts.isClassDeclaration(statement) && isExported(statement)) {
+      flagUnverifiable(statement.name?.text ?? "(anonymous class)", "class");
+    } else if (ts.isEnumDeclaration(statement) && isExported(statement)) {
+      flagUnverifiable(statement.name.text, "enum");
+    } else if (ts.isExportAssignment(statement)) {
+      flagUnverifiable("(default export)", "default export");
+    } else if (ts.isExportDeclaration(statement)) {
+      if (statement.isTypeOnly) {
+        continue;
+      }
+      if (statement.moduleSpecifier !== undefined) {
+        flagUnverifiable(
+          statement.getText(sourceFile).slice(0, 60),
+          "re-export from another file (opaque to this gate)",
+        );
+        continue;
+      }
+      if (
+        statement.exportClause !== undefined &&
+        ts.isNamedExports(statement.exportClause)
+      ) {
+        for (const specifier of statement.exportClause.elements) {
+          if (specifier.isTypeOnly) {
+            continue;
+          }
+          const localName = (specifier.propertyName ?? specifier.name).text;
+          const exportedName = specifier.name.text;
+          const fn = topLevelFunctions.get(localName);
+          const initializer = topLevelInitializers.get(localName);
+          if (fn !== undefined) {
+            checkFunctionLike(fn, exportedName);
+          } else if (
+            initializer !== undefined &&
+            (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer))
+          ) {
+            checkFunctionLike(initializer, exportedName);
+          } else {
+            flagUnverifiable(
+              exportedName,
+              "export-list entry not resolvable to a local function",
+            );
+          }
+        }
+      }
+    }
+  }
+
   return violations;
 };
 
-const collectAdapterFiles = (): string[] => {
+const collectModuleFiles = (): string[] => {
   const modulesRoot = join(projectRoot, "src", "modules");
   const found: string[] = [];
 
@@ -158,10 +271,7 @@ const collectAdapterFiles = (): string[] => {
       const fullPath = join(dir, entry);
       if (statSync(fullPath).isDirectory()) {
         walk(fullPath);
-      } else if (
-        /\.(ts|tsx)$/.test(entry) &&
-        fullPath.split(/[\\/]/).includes("adapters")
-      ) {
+      } else if (/\.(ts|tsx)$/.test(entry) && !entry.endsWith(".d.ts")) {
         found.push(fullPath);
       }
     }
@@ -242,41 +352,134 @@ model Right {
   });
 });
 
-describe("repositories-take-household-context (TypeScript compiler API)", () => {
-  test("every exported function under src/modules/**/adapters declares a HouseholdContext parameter", () => {
-    const files = collectAdapterFiles();
+describe("repositories-take-household-context (TypeScript compiler API, fail closed)", () => {
+  const DB_IMPORT_LINE = `import { prisma } from "@/platform/db/client";\n`;
+  const ADAPTER_PATH = "src/modules/accounts/adapters/account-repository.ts";
+
+  test("the real src/modules tree has no tenancy violations", () => {
+    const files = collectModuleFiles();
     const violations = files.flatMap((file) =>
-      analyzeAdapterSource(readFileSync(file, "utf-8"), file),
+      analyzeModuleSource(readFileSync(file, "utf-8"), relative(projectRoot, file)),
     );
-    // No adapters exist yet in the skeleton (modules land with their own
-    // phases); the mechanism tests below keep this from being vacuous.
+    // No repository files exist yet in the skeleton (modules land with
+    // their own phases); the mechanism tests below keep this from being
+    // vacuous by proving the analyzer reds on every unverifiable shape.
     expect(violations).toEqual([]);
   });
 
-  test("the analyzer reds on two shapes of context-free exported functions", () => {
-    const badDeclaration = `
-      export async function findTransactions(month: string) { return []; }
-    `;
-    const badArrow = `
-      export const listAccounts = async (ids: string[]) => [];
-    `;
-    expect(analyzeAdapterSource(badDeclaration, "bad-declaration.ts")).toEqual([
-      { file: "bad-declaration.ts", exportName: "findTransactions" },
+  test("reds on inline exported functions missing the context parameter", () => {
+    const decl =
+      DB_IMPORT_LINE +
+      `export async function findTransactions(month: string) { return prisma; }\n`;
+    const arrow =
+      DB_IMPORT_LINE + `export const listAccounts = async (ids: string[]) => prisma;\n`;
+    expect(analyzeModuleSource(decl, ADAPTER_PATH).map((v) => v.name)).toEqual([
+      "findTransactions",
     ]);
-    expect(analyzeAdapterSource(badArrow, "bad-arrow.ts")).toEqual([
-      { file: "bad-arrow.ts", exportName: "listAccounts" },
+    expect(analyzeModuleSource(arrow, ADAPTER_PATH).map((v) => v.name)).toEqual([
+      "listAccounts",
     ]);
   });
 
-  test("the analyzer accepts a repository function taking the context", () => {
-    const good = `
-      import type { HouseholdContext } from "@/platform/tenancy";
-      export const findTransactions = async (
-        context: HouseholdContext,
-        month: string,
-      ) => [];
-      export function countAccounts(context: HouseholdContext) { return 0; }
-    `;
-    expect(analyzeAdapterSource(good, "good.ts")).toEqual([]);
+  test("reds on the object-literal repository shape (fail-open before fix round 1)", () => {
+    const source =
+      DB_IMPORT_LINE +
+      `export const accountRepository = {\n  list: async (month: string) => prisma,\n};\n`;
+    expect(analyzeModuleSource(source, ADAPTER_PATH).map((v) => v.name)).toEqual([
+      "accountRepository",
+    ]);
+  });
+
+  test("reds on the wrapped-factory shape such as cache() (fail-open before fix round 1)", () => {
+    const source =
+      `import { cache } from "react";\n` +
+      DB_IMPORT_LINE +
+      `export const getAccounts = cache(async (id: string) => prisma);\n`;
+    expect(analyzeModuleSource(source, ADAPTER_PATH).map((v) => v.name)).toEqual([
+      "getAccounts",
+    ]);
+  });
+
+  test("reds on the class repository shape (fail-open before fix round 1)", () => {
+    const source =
+      DB_IMPORT_LINE +
+      `export class AccountRepository {\n  async list(month: string) { return prisma; }\n}\n`;
+    expect(analyzeModuleSource(source, ADAPTER_PATH).map((v) => v.name)).toEqual([
+      "AccountRepository",
+    ]);
+  });
+
+  test("reds on a context-free function exported via an export list (fail-open before fix round 1)", () => {
+    const source =
+      DB_IMPORT_LINE +
+      `const listAccounts = async (month: string) => prisma;\nexport { listAccounts };\n`;
+    expect(analyzeModuleSource(source, ADAPTER_PATH).map((v) => v.name)).toEqual([
+      "listAccounts",
+    ]);
+  });
+
+  test("accepts a context-taking function exported via an export list", () => {
+    const source =
+      DB_IMPORT_LINE +
+      `import type { HouseholdContext } from "@/platform/tenancy";\n` +
+      `const listAccounts = async (context: HouseholdContext) => prisma;\nexport { listAccounts };\n`;
+    expect(analyzeModuleSource(source, ADAPTER_PATH)).toEqual([]);
+  });
+
+  test("reds on a re-export from another file (opaque, so refused)", () => {
+    const source = DB_IMPORT_LINE + `export { listAccounts } from "./impl";\n`;
+    const violations = analyzeModuleSource(source, ADAPTER_PATH);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.reason).toContain("re-export");
+  });
+
+  test("reds on a database client import outside an adapters directory", () => {
+    const source =
+      DB_IMPORT_LINE +
+      `import type { HouseholdContext } from "@/platform/tenancy";\n` +
+      `export const sumTotals = async (context: HouseholdContext) => prisma;\n`;
+    const violations = analyzeModuleSource(
+      source,
+      "src/modules/ledger/domain/totals.ts",
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.reason).toContain("outside an adapters directory");
+  });
+
+  test("reds on a wrapper around the context type (exact match required)", () => {
+    const source =
+      DB_IMPORT_LINE +
+      `import type { HouseholdContext } from "@/platform/tenancy";\n` +
+      `export const listAccounts = async (context: Partial<HouseholdContext>) => prisma;\n`;
+    expect(analyzeModuleSource(source, ADAPTER_PATH).map((v) => v.name)).toEqual([
+      "listAccounts",
+    ]);
+  });
+
+  test("holds repository-named adapter files to the rule even without a db import", () => {
+    const source = `export const listAccounts = async (month: string) => [];\n`;
+    const violations = analyzeModuleSource(
+      source,
+      "src/modules/accounts/adapters/csv-account-repository.ts",
+    );
+    expect(violations.map((v) => v.name)).toEqual(["listAccounts"]);
+  });
+
+  test("accepts a compliant repository file including type-only exports", () => {
+    const source =
+      DB_IMPORT_LINE +
+      `import type { HouseholdContext } from "@/platform/tenancy";\n` +
+      `export type AccountRow = { id: string };\n` +
+      `export interface AccountFilter { month: string }\n` +
+      `export async function findAccounts(context: HouseholdContext) { return prisma; }\n` +
+      `export const countAccounts = async (context: HouseholdContext) => prisma;\n`;
+    expect(analyzeModuleSource(source, ADAPTER_PATH)).toEqual([]);
+  });
+
+  test("leaves non-repository adapter files (no db import) unconstrained, as documented", () => {
+    const source = `export const parseStatementLine = (line: string) => line.split(";");\n`;
+    expect(
+      analyzeModuleSource(source, "src/modules/import/adapters/csv-parser.ts"),
+    ).toEqual([]);
   });
 });
