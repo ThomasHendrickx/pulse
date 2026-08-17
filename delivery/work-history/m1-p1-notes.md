@@ -82,3 +82,51 @@ Work history m1-p1.yaml validates: `tiphys validate --type work-history` exit 0.
 
 ## Gate confirmation at d20b4e6
 npm run typecheck exit 0, npm run lint exit 0, npm test exit 0 (Tests 7 passed (7), 0 skipped). The branch head after this notes append differs from d20b4e6 only by delivery/work-history lines, which no gate reads.
+
+# FIX ROUND 1 (R-061), resumed session
+Read both verdicts in full (m1-p1-hazard.yaml CR-001..CR-005, m1-p1-criteria.yaml CR-001..CR-002). Disputing nothing: every finding reproduces against the shipped code by reading, and two were constructed live by the reviewers.
+Mechanisms, not instances:
+1. Redirect live-lock: mechanism = a redirect emitted from inside the guarded region toward a page the middleware bounces straight back, with the only recovery control rendered behind the guard that redirects first. Fix both arms: recovery (destroy the broken session at the boundary before redirecting) and entry (a failed household create after auth.signUp signs the half-session out).
+2. db:reset: mechanism = a destructive command resolving its target from ambient environment with no interlock. Fix: host guard in front of every destructive db script, fail closed, explicit override variable, with its own refusal test.
+3. Tenancy analyzer: mechanism = a static gate that silently passes what it cannot classify (fail open by shape) plus fail-open membership (only adapters dirs scanned) plus a substring type match. Fix: fail-closed analyzer over all of src/modules (db-client import is what makes a file a repository file, plus a repository filename trigger), exact context type match, every unverifiable export shape a violation, honest comment stating the enforcement boundary.
+4. Auth failure opacity: surface distinct localized status lines through redirect query params, whitelist-mapped, EN NL FR.
+5. Seed orphan row: without the service role key the seed writes the household only and says the dev login was not created.
+Order: e2e red witnesses first against the unfixed app, then guard test red, then analyzer red probe, then fixes, then all gates.
+
+## Fix round 1: execution log
+Red witnesses BEFORE fixing (R-037a, captured):
+- New e2e specs against the unfixed app: `npx playwright test --grep "wrong password|recovers to sign-in"` exit 1, both specs red ("element(s) not found" for the auth-status line; the orphan spec red the same way while the page looped).
+- Old analyzer probe: extracted analyzeAdapterSource verbatim from git HEAD (53 lines) and ran it against four repository shapes; observed `object-literal violations: [] / cache-wrapped violations: [] / export-list violations: [] / class-repo violations: []`, exit 0. The danger state reproduced with my own executed construction, matching both reviewers.
+- Guard test before the guard existed: `npx vitest run test/db/db-guard.test.ts` exit 1 (module absent, no tests collected).
+Fixes applied (mechanisms):
+1. Live-lock: requireHouseholdContext destroys the half-session (supabase.auth.signOut()) before redirecting to /sign-in?status=incomplete-signup; signUpAction wraps the household create, signs out on failure, and handles the no-session (email confirmation) branch with /sign-in?status=confirm-email. Redirect call-site derivation below.
+2. db guard: src/platform/db/guard.ts (pure verdict, contract stated at the definition with the sibling note) + guard-cli.ts (env resolution mirroring Prisma: shell wins, .env fallback); db:reset AND db:migrate now run the guard first. Live probe: `npm run db:reset` under the fleet's real ambient foreign env exited 1 with "db guard: DATABASE_URL points at non-local host \"aws-1-eu-north-1.pooler.supabase.com\"" BEFORE prisma ran. Pinned local run exits 0 through the guard.
+3. Analyzer fail closed: rewritten in test/schema/tenancy.test.ts; db-client import (or repositor* filename) is what holds a file to the rule; db import outside adapters/ is itself a violation; exact HouseholdContext type text required; object literals, call results, classes, enums, default exports, re-exports and unresolvable export-list entries are violations; type-only exports exempt. 12 mechanism tests, each shape with its own red fixture. src/platform/tenancy.ts comment corrected in place, loudly, stating exactly what is and is not enforced.
+4. Auth status surfacing: whitelisted ?status= values -> localized lines (signinFailed, signupIncomplete, confirmEmail) in EN/NL/FR (3 keys per catalog), rendered by src/app/(auth)/auth-status.tsx with --color-flag-bg treatment, wrong-password e2e asserts the EN line.
+5. Seed: no users row without an auth identity; household-only seeding prints that the dev login was not created.
+Gate runs after fixes (this worktree):
+- npm test exit 0: Test Files 2 passed (2), Tests 25 passed (25), 0 skipped (node v26.7.0, vitest 3.2.4).
+- npm run typecheck exit 0; npm run lint exit 0.
+- npm run test:e2e (pinned env incl. service role key) exit 0: 3 passed (24.6s), including both fix-round witnesses.
+- npm run db:reset pinned exit 0 through the guard (migrations + seed); unpinned refused by guard exit 1.
+Redirect call-site derivation (mechanism 1): `grep -rn "redirect(" src/` full output:
+src/middleware.ts:41:    return NextResponse.redirect(target);
+src/middleware.ts:47:    return NextResponse.redirect(target);
+src/platform/auth/context.ts:17:    redirect("/sign-in");
+src/platform/auth/context.ts:30:    redirect("/sign-in?status=incomplete-signup");
+src/platform/auth/actions.ts:22:    redirect("/sign-up?status=signup-failed");
+src/platform/auth/actions.ts:28:    redirect("/sign-up?status=signup-failed");
+src/platform/auth/actions.ts:44:    redirect("/sign-up?status=signup-failed");
+src/platform/auth/actions.ts:51:    redirect("/sign-in?status=confirm-email");
+src/platform/auth/actions.ts:54:  redirect("/");
+src/platform/auth/actions.ts:60:    redirect("/sign-in?status=signin-failed");
+src/platform/auth/actions.ts:66:    redirect("/sign-in?status=signin-failed");
+src/platform/auth/actions.ts:69:  redirect("/");
+src/platform/auth/actions.ts:75:  redirect("/sign-in");
+Every redirect above either targets a route reachable in the redirecting state (sign-in/sign-up after signOut, or / with a live linked session) or is the middleware's own pair, whose only loop partner (context.ts) now signs out first. Destructive-command derivation (mechanism 2): `grep -n "prisma migrate\|prisma db" package.json` shows db:reset and db:migrate only, both behind the guard; no other script invokes prisma.
+Not covered by the derivations: scripts outside package.json (none exist today), raw SQL entry points (none exist), future phases' additions (the guard.ts sibling note and the destructiveCommands note below are the handoff), and the analyzer residue stated in the tenancy.ts comment (call sites; injected-client repositories in files not named repository).
+Note on the destructive-authority clause: this repository carries no gates.manifest.json of its own (the only one is the vendored kernel copy under node_modules, not editable from this phase); the guard's destructive-adjacent contract is stated at its definition and recorded here for the orchestrator to register when a project-level manifest exists.
+
+## Fix round 1 claim-grep pass and head gate confirmation
+Claim-grep re-run over both documents after the round: every hit is either settled above with its captured command, inside the verbatim prompt block, inside an open-question claim, or a quotation of the mandated grep pattern itself (the flattened pass counts the pattern's own tokens once each from the quoted command on the earlier pass line). No unsettled claims.
+Gates at 9928710: npm run typecheck exit 0, npm run lint exit 0, npm test exit 0 (Test Files 2 passed (2), Tests 25 passed (25), 0 skipped); npm run test:e2e exit 0 (3 passed) and pinned db:reset exit 0 recorded above. The commit after this line adds only delivery/work-history files, which no gate reads.

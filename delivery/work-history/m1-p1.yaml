@@ -120,6 +120,10 @@ files-touched:
   - messages/fr.json
   - supabase/config.toml
   - supabase/.gitignore
+  - src/platform/db/guard.ts
+  - src/platform/db/guard-cli.ts
+  - src/app/(auth)/auth-status.tsx
+  - test/db/db-guard.test.ts
   - delivery/work-history/m1-p1-notes.md
   - delivery/work-history/m1-p1.yaml
 per-step-commits:
@@ -131,6 +135,20 @@ per-step-commits:
     subject: "feat: application skeleton with Supabase auth and tenancy backbone"
   - sha: 8585c5f
     subject: "test: red-driven fixes to the DMMF fixtures, build artifacts"
+  - sha: 517d215
+    subject: "docs: M1-P1 work history, schema-validated, with gate evidence"
+  - sha: d20b4e6
+    subject: "chore: strip em dashes from the generated supabase config comments"
+  - sha: f3dfdff
+    subject: "docs: close out M1-P1 notes with the head gate confirmation"
+  - sha: 9bafc77
+    subject: "fix(m1-p1): break the auth live-lock on both arms and surface auth failure"
+  - sha: 3ba1778
+    subject: "fix(m1-p1): seed no users row without an auth identity"
+  - sha: "068e683"
+    subject: "fix(m1-p1): destructive db scripts refuse non-local targets"
+  - sha: "9928710"
+    subject: "fix(m1-p1): tenancy analyzer fails closed and its comment stops overstating"
 key-decisions:
   - decision: >-
       pulse-tokens.css was reduced to the single line `@import "./tokens.css";`
@@ -230,6 +248,14 @@ deviations:
       supabase-generated supabase/.gitignore). All are off-list; listed the
       moment found in the work notes for the same declaration amendment.
   - plan-clause: >-
+      files-to-touch (fix round 1 additions)
+    why: >-
+      The reviewer-mandated db guard needed src/platform/db/guard.ts,
+      guard-cli.ts and its own refusal test at test/db/db-guard.test.ts, and
+      the auth status line needed src/app/(auth)/auth-status.tsx plus three
+      catalog keys per language; test/db/ is a new test path outside the two
+      named test files, added for the same declaration amendment.
+  - plan-clause: >-
       Step 6, "deploy to Vercel with the pooled connection string at runtime
       and the direct connection string for migrations", and criterion 0.6
     why: >-
@@ -311,8 +337,157 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
+  - gate: "fix round 1 fast suite (npm test at 9928710)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 25
+    passed: 25
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fix round 1 typecheck (npm run typecheck at 9928710)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fix round 1 lint (npm run lint at 9928710)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fix round 1 e2e (npm run test:e2e, pinned env, includes both new witnesses)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 3
+    passed: 3
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fix round 1 db:reset through the new guard (pinned local env)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
   - gate: "deploy-verify assertions of criterion 0.6 (deployed URL curl, deployed sign-up flow, migrate status over the deployed direct connection string)"
     result: not-applicable
+fix-round:
+  - mechanism: >-
+      A redirect emitted from inside the guarded region toward a page the
+      middleware bounces straight back, with the only recovery control
+      rendered behind the guard that redirects first (auth live-lock,
+      findings CR-001 in both verdicts). Fixed on both arms: the boundary
+      destroys the broken half-session before redirecting, and a failed
+      household create after signUp signs the fresh session out.
+    derivation:
+      command: grep -rn "redirect(" src/
+      output: |
+        src/middleware.ts:44:    return NextResponse.redirect(target);
+        src/middleware.ts:50:    return NextResponse.redirect(target);
+        src/platform/auth/context.ts:17:    redirect("/sign-in");
+        src/platform/auth/context.ts:31:    redirect("/sign-in?status=incomplete-signup");
+        src/platform/auth/actions.ts:22:    redirect("/sign-up?status=signup-failed");
+        src/platform/auth/actions.ts:28:    redirect("/sign-up?status=signup-failed");
+        src/platform/auth/actions.ts:44:    redirect("/sign-up?status=signup-failed");
+        src/platform/auth/actions.ts:51:    redirect("/sign-in?status=confirm-email");
+        src/platform/auth/actions.ts:54:    redirect("/");
+        src/platform/auth/actions.ts:61:    redirect("/sign-in?status=signin-failed");
+        src/platform/auth/actions.ts:67:    redirect("/sign-in?status=signin-failed");
+        src/platform/auth/actions.ts:70:    redirect("/");
+        src/platform/auth/actions.ts:76:    redirect("/sign-in");
+    not-covered: >-
+      The derivation enumerates redirect call sites under src/ only; no
+      other directory ships routing code today. It reasons over the two
+      middleware bounce rules by reading; a future third bounce rule in the
+      middleware would need the same walk again, and the e2e witness (the
+      orphan-user spec) is what reddens if any future pair recreates the
+      loop. Client-side navigation loops that involve no redirect() call are
+      outside this derivation.
+  - mechanism: >-
+      A destructive command resolving its target from ambient environment
+      with no interlock (finding CR-002, hazard verdict). Fixed with a
+      fail-closed host guard run by every destructive db script before
+      prisma, override only via PULSE_ALLOW_REMOTE_DB_DESTRUCTION=1.
+    derivation:
+      command: grep -n "prisma migrate\|prisma db\|migrate reset" package.json
+      output: |
+        13:    "db:reset": "tsx src/platform/db/guard-cli.ts && prisma migrate reset --force",
+        14:    "db:migrate": "tsx src/platform/db/guard-cli.ts && prisma migrate dev"
+    not-covered: >-
+      The derivation covers npm scripts in package.json; no other script
+      files exist in the repository today and no raw SQL entry point exists.
+      A developer invoking npx prisma migrate reset directly bypasses the
+      guard by construction; the guard.ts header carries the sibling note
+      obliging future destructive entry points to route through it, and the
+      repository has no project-level gates.manifest.json to register the
+      command in (only the vendored kernel copy under node_modules), which
+      is recorded for the orchestrator.
+  - mechanism: >-
+      A static gate that silently passes what it cannot classify, fail open
+      by shape and by membership (findings CR-003 hazard, CR-002 criteria).
+      Fixed by inverting the default: a db-client import is what holds a
+      file to the repository rule wherever it lives, and every export shape
+      the analyzer cannot positively verify is a violation.
+    derivation:
+      command: npx tsx .probe-tmp/old-analyzer-probe.ts (old analyzer extracted verbatim from git HEAD f3dfdff, run against the reviewer shapes)
+      output: |
+        object-literal violations: []
+        cache-wrapped violations: []
+        export-list violations: []
+        class-repo violations: []
+    not-covered: >-
+      Stated in the corrected src/platform/tenancy.ts comment: call sites
+      are not analyzed, and a repository that receives its database client
+      by injection from a file whose name does not contain repository
+      escapes the trigger; both remain review territory. Dynamic import()
+      of the db client is likewise outside the import-declaration scan.
+  - mechanism: >-
+      Failure collapsed into the success path: every auth failure redirected
+      to the same bare form (finding CR-004, hazard verdict). Fixed with
+      whitelisted status parameters rendered as localized lines.
+    derivation:
+      command: grep -n "redirect(\"/sign" src/platform/auth/actions.ts src/platform/auth/context.ts
+      output: |
+        src/platform/auth/actions.ts:22:    redirect("/sign-up?status=signup-failed");
+        src/platform/auth/actions.ts:28:    redirect("/sign-up?status=signup-failed");
+        src/platform/auth/actions.ts:44:    redirect("/sign-up?status=signup-failed");
+        src/platform/auth/actions.ts:51:    redirect("/sign-in?status=confirm-email");
+        src/platform/auth/actions.ts:61:    redirect("/sign-in?status=signin-failed");
+        src/platform/auth/actions.ts:67:    redirect("/sign-in?status=signin-failed");
+        src/platform/auth/context.ts:31:    redirect("/sign-in?status=incomplete-signup");
+    not-covered: >-
+      signOutAction still redirects to a bare /sign-in, which is the
+      success path of sign-out and carries no failure to surface. Supabase
+      error CODES are not differentiated further (wrong password versus
+      rate limit render the same line); slice 0 scope, recorded for the
+      copy phase.
+  - mechanism: >-
+      A seed writing a row whose owning identity does not exist (finding
+      CR-005, hazard verdict), arming the live-lock collision locally.
+      Fixed by seeding the household only when no auth identity can be
+      created, and saying so.
+    derivation:
+      command: grep -n "prisma.user" prisma/seed.ts
+      output: |
+        75:  await prisma.user.upsert({
+    not-covered: >-
+      The derivation shows the single users write in the seed, now behind
+      the authUserId null check at prisma/seed.ts:66-71; other writers of
+      users rows (signUpAction) create the auth identity first by
+      construction. Seeds added by later phases are the sibling handoff.
 claims:
   - id: M1P1-C1
     kind: coverage
@@ -347,6 +522,28 @@ claims:
         command: npm test (test/schema/tenancy.test.ts, fixture-mechanism tests)
         exit-code: 0
         output: "7 passed (7); the fixture tests assert violations equal to the expected non-empty lists, so an inert checker reddens the suite"
+  - id: M1P1-C4
+    kind: coverage
+    statement: >-
+      The destructive-db guard refuses this fleet's real ambient foreign
+      environment before prisma runs, and the refusal is wired through the
+      npm script, not only the pure function.
+    settled-by:
+      executed-construction:
+        command: npm run db:reset (run WITHOUT pinning, under the session's ambient env carrying the foreign pooler)
+        exit-code: 1
+        output: 'db guard: DATABASE_URL points at non-local host "aws-1-eu-north-1.pooler.supabase.com"; refusing to run a destructive database command against it. Set PULSE_ALLOW_REMOTE_DB_DESTRUCTION=1 only for a deliberate remote reset.'
+  - id: M1P1-C5
+    kind: coverage
+    statement: >-
+      Both fix-round e2e witnesses red on the unfixed app and green after
+      the fix, and the pre-fix analyzer passes all four reviewer shapes
+      silently while the rewritten one flags each.
+    settled-by:
+      executed-construction:
+        command: npx playwright test --grep "wrong password|recovers to sign-in" (at f3dfdff, before the fix); npx tsx .probe-tmp/old-analyzer-probe.ts; npm run test:e2e (after the fix)
+        exit-code: 0
+        output: "pre-fix e2e: exit 1, 2 failed; old-analyzer probe: object-literal/cache-wrapped/export-list/class-repo all violations: []; post-fix e2e: exit 0, 3 passed (24.6s)"
   - id: M1P1-Q1
     kind: open-question
     statement: >-
