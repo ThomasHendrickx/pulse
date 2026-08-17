@@ -8,8 +8,10 @@ import { fixedClock } from "../src/platform/clock";
 //
 // The auth identity lives in Supabase, never locally. When the service role
 // key is available (local `supabase start`), the seed creates the matching
-// confirmed auth user so the seeded login works end to end. Without it the
-// database rows are still seeded and a warning is printed.
+// confirmed auth user so the seeded login works end to end. Without it only
+// the household is seeded and the warning says the dev login was not
+// created: a users row with no auth identity would be an orphan that arms
+// the half-session collision (fix round 1, finding CR-005).
 
 const SEED_HOUSEHOLD_ID = "00000000-0000-4000-8000-000000000001";
 const SEED_USER_ID = "00000000-0000-4000-8000-000000000002";
@@ -22,7 +24,7 @@ const seedAuthUser = async (email: string, password: string): Promise<string | n
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceRoleKey) {
     console.warn(
-      "SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_URL missing: seeding database rows only, no auth user.",
+      "SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_URL missing: the seeded dev login was NOT created. Seeding the household only; no users row is written, because a users row without an auth identity is an orphan that collides with a later real sign-up (fix round 1, finding CR-005).",
     );
     return null;
   }
@@ -56,7 +58,7 @@ const main = async () => {
   const email = process.env.SEED_USER_EMAIL ?? "dev@pulse.local";
   const password = process.env.SEED_USER_PASSWORD ?? "pulse-dev-password";
 
-  const authUserId = (await seedAuthUser(email, password)) ?? SEED_USER_ID;
+  const authUserId = await seedAuthUser(email, password);
   const createdAt = SEED_CLOCK.now();
 
   await prisma.household.upsert({
@@ -64,6 +66,13 @@ const main = async () => {
     update: {},
     create: { id: SEED_HOUSEHOLD_ID, name: "Seed household", createdAt },
   });
+
+  if (authUserId === null) {
+    console.log(
+      `Seeded household ${SEED_HOUSEHOLD_ID} only; no dev login exists in this configuration.`,
+    );
+    return;
+  }
 
   await prisma.user.upsert({
     where: { id: authUserId },
