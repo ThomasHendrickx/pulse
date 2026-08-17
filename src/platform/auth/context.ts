@@ -26,6 +26,9 @@ export const requireHouseholdContext = async (): Promise<HouseholdContext> => {
     // bounces / back to /sign-in, so the browser live-locks with sign-out
     // unreachable (fix round 1, finding CR-001 in both M1-P1 verdicts).
     // Signing out here is what makes the redirect target reachable.
+    console.error(
+      `[pulse:auth] orphan-recovery: authenticated user ${user.email ?? user.id} has no users row; destroying the session and returning to sign-in`,
+    );
     await supabase.auth.signOut();
     redirect("/sign-in?status=incomplete-signup");
   }
