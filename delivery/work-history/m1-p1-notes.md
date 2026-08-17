@@ -26,7 +26,7 @@ Neither finding contradicts the plan; the plan predicts both and this phase make
 - gh CLI unauthenticated; per dispatch: no push, no deploy from here. Criterion 0.6 and every deployed-environment assertion is deferred to deploy-verify after merge.
 
 ## Scope findings (said the moment found, per phase-scope clause)
-files-to-touch does not name several files the scaffold cannot exist without. Building them anyway (refusing would stop the whole phase for a .gitignore); listing them here so the orchestrator can amend the declaration on the base branch before the scope audit:
+files-to-touch does not name several files this scaffold in fact requires (evidence for the sharpest one: with eslint.config.mjs moved aside, `npx eslint .` prints "ESLint couldn't find an eslint.config.(js|mjs|cjs) file." and exits 2, so npm run lint red; probe captured 2026-08-17, config restored). Built them and listed them here so the orchestrator can amend the declaration on the base branch before the scope audit:
 - .gitignore (node_modules, .next, .env must not be committed)
 - eslint.config.mjs (npm run lint cannot exist without a config)
 - postcss.config.mjs (Tailwind v4 requires the postcss plugin registration)
@@ -62,3 +62,20 @@ The session shell carries ambient DATABASE_URL, DIRECT_URL, E2E_DATABASE_URL, NE
 - `npm run build` (pinned env): exit 0, all routes compile, middleware bundles.
 - Criterion 0.3 (local): `npx playwright install chromium` exit 0 (Chrome Headless Shell 151 to /opt/pw-browsers). `npm run test:e2e` (pinned env, webServer=npm run dev): 1 passed (23.7s), E2E_EXIT=0. The spec does sign-up, asserts household context testid text equals the unique email local part, sign-out, asserts / redirects to sign-in when signed out, signs in again, asserts context again.
 - Criterion 0.5: `grep -rE "oklch\(|#[0-9a-fA-F]{3,8}" src/` exit 1, no matches. Commit-level byte identity: `git show ac65915:styles/tokens.css | cmp - <(git show c940e4d:styles/pulse-tokens.css)` exit 0; ac65915:styles/pulse-tokens.css is exactly the single import line.
+
+## Claim-grep pass (mandated command, run over both work-history documents)
+`grep -nEi 'cannot be|impossible|needs a|is covered|catches|would catch|recovers|anyway|always|never|no way to' m1-p1-notes.md m1-p1.yaml` plus the whitespace-flattened pass. Every hit settled:
+- notes "anyway" (mechanism index): adjacent captured command (find over worktree and fleet root, zero hits).
+- notes scaffold-files sentence: rephrased above with the captured eslint-without-config probe (exit 2, output quoted).
+- notes "NEVER run a migrate" warning: adjacent captured evidence (the P1001 output naming aws-1-eu-north-1.pooler.supabase.com; nothing executed against it).
+- notes "needs a datasource block": settled by the captured red run: vitest printed `GetDmmfError: ... Field balanceTotal in model Wrong can't be of type Decimal. The current connector does not support the Decimal type.` before the datasource block was added; suite then went 7/7 green.
+- yaml lines 50 and 59: inside the VERBATIM prompt block (quoted dispatch text, not claims made by this history).
+- yaml "was never needed" (postgres fallback): adjacent evidence, supabase-start.log ends EXIT=0 with db/kong/auth/rest healthy in docker ps.
+- yaml "never inline in components": the rule restated, backed by claim M1P1-C1's captured grep (exit 1).
+- yaml "mail the spec never reads" and "It never connects to your bank": both inside open-question claims, the second a quotation of committed catalog copy.
+
+## Final gate runs (working tree = code identical to commit 8585c5f plus delivery/ docs; gates read no delivery/ path)
+- npm run typecheck: exit 0. Tail: "> typecheck / > tsc --noEmit" (no diagnostics).
+- npm run lint: exit 0. Tail: "> lint / > eslint ." (no findings).
+- npm test: exit 0. Tail: "Test Files 1 passed (1) / Tests 7 passed (7)", 0 skipped, 0 todo. Toolchain node v26.7.0, vitest 3.2.4, invocation npm test.
+Work history m1-p1.yaml validates: `tiphys validate --type work-history` exit 0.
