@@ -1,0 +1,243 @@
+# Clean-room HAZARD review of phase M1-P1.
+# HEAD UNDER REVIEW: 8e5be19 (fix round 1; gate-bearing code commit 9928710).
+# History: round 0 reviewed f3dfdff (diff 59ad3bc..f3dfdff) and returned
+# FIX-ROUND-NEEDED with findings CR-001..CR-005; this document now speaks
+# about the fix-round head after a delta pass over f3dfdff..9928710.
+# Reviewer clone: worktrees/m1-p1-review-hazard, no implementation session
+# seen in either round. Framing: destructive-paths, contract: hazard.
+#
+# FIX ROUND 1 RESOLUTION LEDGER (per finding; the findings[] array below
+# carries only findings that APPLY to head 8e5be19, because the verdict
+# schema has no resolved-marker field and an APPROVE cannot sit beside a
+# high finding):
+# - CR-001 (auth redirect live-lock, high): RESOLVED at 9bafc77. Both arms
+#   verified by reading: the entry arm (src/platform/auth/actions.ts:36-46)
+#   wraps the household create in try/catch covering BOTH the unique-email
+#   collision and any transient failure, signs the half-session out in the
+#   catch, and handles the no-session email-confirmation branch separately;
+#   the recovery arm (src/platform/auth/context.ts:29-30) destroys the
+#   session BEFORE redirecting, so the middleware's bounce partner is gone
+#   on the next request. Redirect call-site walk re-done at this head: every
+#   redirect target is reachable in the redirecting state. One mechanism
+#   nuance verified: the recovery signOut runs during a server component
+#   render where cookie writes are swallowed (src/platform/auth/
+#   supabase-server.ts catch), so recovery rests on the server-side session
+#   revocation making the middleware's getUser return null; that is sound,
+#   and the new orphan-user e2e spec (test/e2e/auth.spec.ts:68) is the red
+#   witness of exactly this path. E2e execution belongs to the criteria
+#   reviewer; my verification is the code reading above plus the spec text.
+# - CR-002 (forced db reset with env-resolved target, high): RESOLVED at
+#   068e683. package.json:12-13 front BOTH db:reset and db:migrate with the
+#   guard CLI; the guard is fail closed (missing, empty, unparseable or
+#   non-local strings all refuse), env resolution mirrors Prisma (shell
+#   wins, .env fallback), single explicit override variable. Attacked: npm
+#   script arg injection cannot skip the guard (npm appends args after the
+#   whole script line); host tricks (127.0.0.1.evil.com, empty hostname,
+#   case, bracketed ::1) handled; .env divergences from Prisma's dotenv
+#   (export-prefixed lines, inline comments, prisma/.env) all land on the
+#   refusing side; the override variable is absent from this fleet's
+#   ambient env (checked). Executed here: npm test exit 0 including
+#   test/db/db-guard.test.ts (assessment tests plus two process-level CLI
+#   spawns, foreign host exit 1, local exit 0). RESIDUAL, acceptable and
+#   stated where required: a direct npx prisma migrate reset bypasses the
+#   guard by construction; the work history states it explicitly
+#   (delivery/work-history/m1-p1.yaml, not-covered block of the CR-002
+#   mechanism entry) and guard.ts carries the sibling note obliging future
+#   destructive entry points to route through it.
+# - CR-003 (fail-open tenancy analyzer, medium): RESOLVED at 9928710 for
+#   every shape round 0 demonstrated: re-ran the verbatim-extracted NEW
+#   analyzer (sha256 8f10775fe6c6f020) against the round 0 bypass shapes;
+#   object literal, cache() wrapper, class and re-export are now violations,
+#   export lists resolve to their local declarations, db-client import
+#   outside adapters/ is itself a violation, exact type-text match required.
+#   A residue of three unidiomatic shapes remains and the corrected comment
+#   still slightly overclaims; that is the new LOW finding CR-007 below,
+#   not a reopening of CR-003.
+# - CR-004 (silent auth failure, low): RESOLVED at 9bafc77. Distinct
+#   whitelisted status values render localized lines in EN NL FR; the
+#   confirm-email branch exists; the new CSS is tokens only (--color-flag-bg
+#   resolves in styles/tokens.css:58). One hole in the whitelist mechanism
+#   is the new LOW finding CR-006 below.
+# - CR-005 (orphan seed row, low): RESOLVED at 3ba1778. Without the service
+#   role key the seed writes the household only, returns before the user
+#   upsert, and the warning says plainly that no dev login was created.
+#   Honest output verified by reading prisma/seed.ts:26-31 and 70-74.
+#
+# EXECUTED AT THIS HEAD in this clone (exit codes): npm run typecheck 0,
+# npm run lint 0, npm test 0 (Test Files 2 passed, Tests 25 passed, 0
+# skipped), criterion 0.5 grep over src/ exit 1 (no matches), em-dash count
+# over the f3dfdff..9928710 diff 0, analyzer probe via verbatim extraction
+# (output quoted in CR-007), prototype-chain probe via node (output quoted
+# in CR-006). npm ci was executed in this clone at f3dfdff and
+# package-lock.json is unchanged between f3dfdff and 8e5be19, so it was not
+# re-run. Deliberately NOT executed here, unchanged from round 0: db:reset,
+# prisma migrate, and the e2e gate (the local Supabase stack belongs to the
+# criteria reviewer); every deployed-environment assertion of criterion 0.6
+# (no deployment exists).
+#
+# VALIDATION RECORD, unchanged mechanics from round 0. tiphys validate
+# resolves plan.yaml, work-history.yaml and assurance-modes.yaml directly in
+# the context directory; this repo keeps them at delivery/plan/pulse-v1.yaml,
+# delivery/work-history/m1-p1.yaml and the fleet root, so validation runs
+# with those three provided as context-directory symlinks. The single
+# remaining violation is dual-review-decorrelation and it stays ESCALATED,
+# never faked: both clean-room verdicts for M1-P1 truthfully record
+# produced-by claude, and DR-0012 condition 1 requires two model families;
+# writing a different family here would be false. Every other check
+# (schema, intra-document rules, criteria completeness, deviations judged,
+# hazard classes complete, finding references resolve) passes.
+kind: verdict
+phase: M1-P1
+verdict: APPROVE
+produced-by: claude
+framing: destructive-paths
+review-contract: hazard
+
+findings:
+  - id: CR-006
+    severity: low
+    evidence:
+      - "src/app/(auth)/auth-status.tsx:18 implements the status whitelist as value in STATUS_KEYS over a plain object literal; the in operator walks the prototype chain, so inherited keys pass the guard. Executed probe: node -e with the same four-key object printed constructor true function, toString true function, hasOwnProperty true function, valueOf true function."
+      - "For an admitted prototype key, src/app/(auth)/auth-status.tsx:31 passes STATUS_KEYS[status] (a Function object, not a message key) to t(), so a crafted link such as /sign-in?status=constructor drives the translator with a non-string key during render; the comment at src/app/(auth)/auth-status.tsx:3 claims the parameter is whitelisted, which the prototype chain makes narrowly false."
+    concrete-fix: >-
+      Replace the membership test with an own-property check:
+      Object.hasOwn(STATUS_KEYS, value) (or build STATUS_KEYS with
+      Object.create(null), or test against an explicit array of the four
+      literals). One line, and the existing type predicate keeps compiling.
+    analysis: >-
+      Shipped behaviour at risk: a crafted status query parameter on the
+      public auth screens escapes the whitelist and reaches the translator
+      with a function value, at worst rendering an error page instead of
+      sign-in for whoever follows the link. No injection surface (React
+      escapes text and the value never reaches HTML raw) and no open
+      redirect (the parameter never feeds a redirect target), so low; but
+      the mechanism is exactly the whitelist the fix round introduced, so it
+      should close all the way.
+
+  - id: CR-007
+    severity: low
+    evidence:
+      - "Executed construction against the hardened analyzer, extracted verbatim from test/schema/tenancy.test.ts lines 103-111 and 113-263 (sha256 8f10775fe6c6f020bcd59de02ae996aac2f0d2d8f338f80f3a46443a80ff9d41): a dynamic import of the db client (await import inside an adapters file not named repository) yields [], an import-equals form (import db = require) yields [], and an exported namespace wrapping context-free functions in a held file yields []; for contrast an exported async generator missing the context is correctly flagged."
+      - "test/schema/tenancy.test.ts:20-23 and src/platform/tenancy.ts:13-15 state that export shapes the analyzer cannot positively verify are violations; an exported namespace is such a shape and passes silently (ts.isModuleDeclaration has no arm in the statement chain ending at test/schema/tenancy.test.ts:262), and a file reaching the client only through dynamic import or import-equals is never held to the rule at all (test/schema/tenancy.test.ts:124-129 inspects only ImportDeclaration statements), so the corrected comment still claims slightly more than the gate enforces (R-087)."
+    concrete-fix: >-
+      Invert the statement chain's default: after the explicit arms, flag any
+      remaining exported statement kind (module and namespace declarations
+      and exported import-equals included) as unverifiable, and detect
+      held-to-rule membership with a source-text scan for the client module
+      specifiers in addition to ImportDeclaration walking, so dynamic import
+      and import-equals hold the file to the rule. Add the three shapes as
+      red fixtures, and add the residue that remains (call sites, injected
+      clients) to the tenancy.ts comment's not-enforced list, which already
+      names injection.
+    analysis: >-
+      The idiomatic escapes round 0 demonstrated are all closed and each now
+      has its own red fixture; what remains are unidiomatic shapes a
+      deliberate evader would reach for, and a static gate cannot beat a
+      determined adversary anyway (the comment honestly routes that to
+      review). Low, filed so the gate's own description and its behaviour
+      converge and the next phase inherits an accurate contract.
+
+criteria:
+  - id: "0.1"
+    quote: "npm ci && npm run typecheck && npm run lint && npm test exit 0 on a clean clone."
+    evidence:
+      - "Executed in this review clone at head 8e5be19: npm run typecheck exit 0, npm run lint exit 0, npm test exit 0 with Test Files 2 passed (2), Tests 25 passed (25), 0 skipped. npm ci exit 0 was executed in this same clone at f3dfdff and package-lock.json is unchanged between the two heads."
+    met: true
+  - id: "0.2"
+    quote: "npm run db:reset exits 0 against local supabase start, applying all migrations; npx prisma migrate status exits 0 and reports no pending migrations."
+    evidence:
+      - "Deliberately not executed by this reviewer in either round: the shared local Supabase stack is owned by the criteria reviewer. Statically at this head: the migration set is unchanged, db:reset now runs the host guard first (package.json:12) and still reaches prisma migrate reset for a local target; the implementer's captured fix-round runs record pinned db:reset exit 0 through the guard and the unpinned run refused by the guard with exit 1 before prisma ran."
+    met: true
+  - id: "0.3"
+    quote: "npm run test:e2e exits 0 with test/e2e/auth.spec.ts passing: it signs up with email and password, signs out, signs in again, and asserts an authenticated household context renders."
+    evidence:
+      - "Not executed by this reviewer (shared stack). The criterion's spec is unchanged and two fix-round specs were added: the wrong-password status witness and the orphan-user recovery witness that constructs the CR-001 state through the admin API and asserts a rendered sign-in screen instead of a loop; the implementer's captured run records 3 passed, exit 0, with both witnesses red against the unfixed app first."
+    met: true
+  - id: "0.4"
+    quote: "test/schema/tenancy.test.ts passes under npm test with three named assertions and the mechanism for each named: (a) reading the Prisma DMMF, every model except Household carries a non-null householdId; (b) reading the same DMMF, every model field whose name matches /amount|balance|total|cents/i has type Int or BigInt, never Float or Decimal; (c) a static analysis over src/modules/**/adapters using the TypeScript compiler API (or ts-morph) asserts every exported repository function declares a parameter of the household context type."
+    evidence:
+      - "Executed here at 8e5be19: npm test exit 0, 25 passed, the three mechanisms present with the analyzer now fail closed and twelve shape fixtures each asserting a non-empty violation list, so every red is structurally real. The remaining unidiomatic analyzer escapes are finding CR-007, a gate-strength note rather than a criterion failure."
+    met: true
+  - id: "0.5"
+    quote: "On the commit that moves the tokens, styles/tokens.css carries token declarations byte-identical to styles/pulse-tokens.css at baseline c940e4d, and at most one canonical token file remains (pulse-tokens.css deleted or reduced to a single import line); later token additions land in tokens.css alone. grep -rE \"oklch\\(|#[0-9a-fA-F]{3,8}\" over src/ excluding the token and theme files exits 1 (no matches)."
+    evidence:
+      - "Round 0 verified the byte identity at the moving commit (cmp exit 0) and the single-import reduction; re-executed at this head: the criterion grep over src/ exits 1, the fix round's only styling addition (.auth-status in src/app/globals.css) uses tokens exclusively, and --color-flag-bg resolves at styles/tokens.css:58."
+    met: true
+  - id: "0.6"
+    quote: "curl -s -o /dev/null -w \"%{http_code}\" against the deployed Vercel URL prints 200 and the sign-in page HTML contains the localized sign-in heading; a database-backed path is exercised against the deployed environment; and npx prisma migrate status exits 0 against the deployed database over the direct connection string, reporting no pending migrations."
+    evidence:
+      - "Still not met at this head and unchanged by the fix round: no deployment exists and none can be made from a review or implementation worktree. The deferral to the deploy-verify stage is declared in the work history and judged legitimate below; everything the deployment needs remains present statically (directUrl in the datasource, pooled-versus-direct rule in .env.example, no migrate step in build). This open criterion belongs to the post-merge deploy-verify stage, not to another fix round on this diff, which is why it does not block the verdict on this head."
+    met: false
+
+deviations-judged:
+  - deviation: "files-to-touch (13 entries; messages/*.json not among them)"
+    serves-plan-intent: true
+    reasoning: >-
+      Unchanged from round 0: criterion 0.3 needs sign-up and sign-out copy
+      the committed catalogs lacked; two keys per catalog, order preserved.
+      Hides no scope.
+  - deviation: "files-to-touch (scaffold support files)"
+    serves-plan-intent: true
+    reasoning: >-
+      Unchanged from round 0: the named npm scripts do not run without these
+      configs, no secrets committed, declared for amendment. Hides no risk.
+  - deviation: "files-to-touch (fix round 1 additions)"
+    serves-plan-intent: true
+    reasoning: >-
+      New this round and caused by the review itself: the db guard pair, its
+      refusal test under the new test/db/ path, the auth-status component
+      and three catalog keys per language are exactly the files the five
+      findings demanded and nothing beyond them; verified against the
+      f3dfdff..9928710 diff, which contains no unrelated change. Declared
+      for the same amendment.
+  - deviation: >-
+      Step 6, "deploy to Vercel with the pooled connection string at runtime
+      and the direct connection string for migrations", and criterion 0.6
+    serves-plan-intent: true
+    reasoning: >-
+      Unchanged from round 0: no deploy credentials in the worktree and the
+      dispatch forbids deploying; nothing deferred is claimed as run, and
+      criterion 0.6 is recorded as not met above rather than assumed.
+
+hazard-classes-addressed:
+  - class-id: H0.1
+    probed: >-
+      Round 0: read every query path (context resolved once at the boundary,
+      passed explicitly) and broke the enforcement gate with an executed
+      construction (four idiomatic repository shapes passed silently). This
+      round: re-extracted the hardened analyzer verbatim and re-attacked it
+      with the round 0 shapes (all now violations, each with its own red
+      fixture) plus five evasive shapes (dynamic import, import-equals,
+      exported namespace, async generator, exported let); three unidiomatic
+      shapes still escape and the corrected comment still slightly
+      overclaims, filed as CR-007. The gate is now fail closed for every
+      shape a later phase would write in good faith.
+    finding: CR-007
+  - class-id: H0.2
+    probed: >-
+      Re-executed the criterion 0.5 grep at this head (exit 1, no matches)
+      and read the fix round's only styling addition line by line: the
+      .auth-status rule in src/app/globals.css uses spacing, radius, colour
+      and type tokens exclusively, and --color-flag-bg resolves in
+      styles/tokens.css. Round 0's byte-identity and single-canonical-file
+      verifications stand unchanged (that commit history is immutable).
+    cleared-because: >-
+      No literal colour, font size or spacing value exists in any shipped
+      component or stylesheet under src/ at 8e5be19; the fix round added
+      styling through tokens only and the grep gate re-executed here exits 1.
+  - class-id: H0.3
+    probed: >-
+      Unchanged datasource (url plus directUrl) and still no migrate step in
+      any runtime script; the fix round additionally placed the fail-closed
+      host guard in front of both migrate-capable scripts, which narrows the
+      surrounding destructive surface (CR-002 resolved, direct npx
+      invocation the stated residual). The deployed half of the probe
+      (migrate status over the deployed direct string) remains impossible
+      from this worktree and belongs to the deploy-verify stage per the
+      judged deviation.
+    cleared-because: >-
+      Migrations cannot route over the pooled string by construction
+      (directUrl set, migrate commands take it automatically, no migrate in
+      build or start), and the destructive scripts now refuse non-local
+      targets before prisma runs; the residual is operational at
+      deploy-verify time, which criterion 0.6's open deferral already owns.
