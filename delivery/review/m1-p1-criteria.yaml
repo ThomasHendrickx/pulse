@@ -1,20 +1,35 @@
 kind: verdict
 phase: M1-P1
-verdict: FIX-ROUND-NEEDED
+verdict: APPROVE
 produced-by: claude
 framing: criteria-contract
 review-contract: criteria
 
-# Clean-room criteria review of main (59ad3bc) to head f3dfdff, gate-bearing
-# code state d20b4e6. Verified myself: git diff d20b4e6..f3dfdff touches only
-# delivery/work-history/m1-p1-notes.md (+3), 517d215 touches only
+# Clean-room criteria review, TWO ROUNDS, both by execution in a fresh clone,
+# never adopting the implementer's claims. All database commands pinned to the
+# local stack at 127.0.0.1:54322 (container supabase_db_m1-p1-skeleton) per
+# fleet environment warning 1; the ambient foreign credentials were never used.
+#
+# ROUND 1 (original review): main (59ad3bc) to head f3dfdff, gate-bearing code
+# state d20b4e6 (verified: the commits above d20b4e6 touch only
 # delivery/work-history/, and d20b4e6 itself is a 2-line comment punctuation
-# change in supabase/config.toml. All executions below were performed by this
-# reviewer in a fresh clone of the branch at f3dfdff, never adopted from the
-# implementer's work history. All database commands were pinned explicitly to
-# the local stack at 127.0.0.1:54322 (container supabase_db_m1-p1-skeleton)
-# per fleet environment warning 1; the ambient foreign credentials were never
-# used.
+# change in supabase/config.toml). Verdict at that head: FIX-ROUND-NEEDED on
+# findings CR-001 (medium) and CR-002 (low) below.
+#
+# ROUND 2 (fix-round delta, T-003 pass): head 8e5be19, gate-bearing code state
+# 9928710 (verified myself: git diff 9928710..8e5be19 touches only
+# delivery/work-history/m1-p1-notes.md and m1-p1.yaml, +245 lines, docs only).
+# Both findings are RESOLVED at 9928710, each verified by execution in both
+# directions (see the per-finding resolution evidence). Full gate re-walk at
+# 8e5be19: npm ci EXIT=0, typecheck EXIT=0, lint EXIT=0, npm test EXIT=0
+# (2 files, 25 passed, 0 failed), npm run test:e2e EXIT=0 (3 passed, 0
+# skipped, the orphan-recovery spec ran with the service role key present),
+# npm run build EXIT=0, prisma migrate deploy from a fresh empty database
+# EXIT=0, prisma migrate status EXIT=0 no pending, seed EXIT=0. No criterion
+# regressed; the criteria entries below carry the round 2 evidence appended.
+# Nothing high or medium remains unresolved, so this verdict for head 8e5be19
+# is APPROVE. The two findings kept below are the round 1 record with their
+# resolutions; neither is open.
 #
 # VALIDATION RECORD, stated plainly because the mandated command cannot reach
 # exit 0 with truthful fields in this fleet. npx tiphys validate --type
@@ -35,128 +50,129 @@ findings:
   - id: CR-001
     severity: medium
     evidence:
-      - "Constructed live against the local stack: created a confirmed GoTrue auth user with no users row (the state an interrupted sign-up leaves, since src/platform/auth/actions.ts:28 creates the household only after auth.signUp has already succeeded), signed in through the UI. Observed: 20 main-frame navigations in 10 seconds, page never settles, body remains raw flight data, no UI renders; Playwright probe output captured OUTCOME no-error, NAVIGATIONS in 10s: 20."
-      - "The loop mechanism, reader-resolvable: src/platform/auth/context.ts:24 redirects an authenticated user without a users row to /sign-in; src/middleware.ts:44 redirects any authenticated user off /sign-in back to /; neither side can break the cycle, and because the route redirect is emitted during streaming render it is a client-side redirect, so the browser never even hits ERR_TOO_MANY_REDIRECTS and spins indefinitely."
-      - "No exit exists from inside the product: sign-out is a button in the (app) shell at src/app/(app)/layout.tsx:21-26, which never renders in this state; /sign-up is equally bounced by src/middleware.ts:44."
+      - "ROUND 1, constructed live against the local stack: created a confirmed GoTrue auth user with no users row (the state an interrupted sign-up leaves, since the pre-fix src/platform/auth/actions.ts created the household only after auth.signUp had already succeeded), signed in through the UI. Observed: 20 main-frame navigations in 10 seconds, page never settles, no UI renders; Playwright probe captured OUTCOME no-error, NAVIGATIONS in 10s: 20."
+      - "ROUND 1 mechanism, reader-resolvable at f3dfdff: src/platform/auth/context.ts redirected an authenticated user without a users row to /sign-in; src/middleware.ts:44 redirects any authenticated user off /sign-in back to /; neither side could break the cycle, and sign-out only renders behind the guard, so no exit existed from inside the product."
+      - "ROUND 2 RESOLUTION, verified by execution at 9928710: both arms present (src/platform/auth/context.ts:29-31 destroys the half-session via supabase.auth.signOut() before redirecting; src/platform/auth/actions.ts:33-44 signs a fresh session out when the household create fails after signUp). The new e2e spec at test/e2e/auth.spec.ts:68 reproduces this reviewer's exact construction through the admin API. Executed green at 8e5be19: npm run test:e2e EXIT=0 with the orphan-recovery test passing, not skipped. Executed red against the f3dfdff app code: the same spec with src, messages and package.json checked out at f3dfdff exited 1 (toHaveText on auth-status failed, element not found), so the witness demonstrably reddens on the pre-fix behaviour. RESOLVED."
     concrete-fix: >-
-      In requireHouseholdContext (src/platform/auth/context.ts:21-26), when an
-      authenticated Supabase user has no users row, call supabase.auth.signOut()
-      before redirect("/sign-in") so the broken half-session is destroyed and
-      the sign-in screen actually renders; optionally also make sign-up
-      self-heal by calling createHouseholdForNewUser at that boundary.
+      Applied in fix round 1: signOut before redirect in requireHouseholdContext
+      plus entry prevention in signUpAction, witnessed by the orphan-recovery
+      e2e spec. No further action needed.
     analysis: >-
-      Shipped behaviour at risk: any sign-up interrupted between Supabase auth
-      user creation and household creation (a database error or crash in that
-      window, or any auth user created outside the app flow) leaves that
-      browser permanently reloading between / and /sign-in with no rendered UI
-      and no reachable sign-out; recovery requires the user to manually clear
-      cookies. Ranked medium, not high: the entry state is narrow, no data is
-      lost or leaked across tenants, and the deployed sign-up happy path is
-      unaffected.
+      Shipped behaviour that was at risk: any sign-up interrupted between
+      Supabase auth user creation and household creation left that browser
+      permanently reloading between / and /sign-in with no rendered UI and no
+      reachable sign-out, recoverable only by manually clearing cookies.
+      Ranked medium in round 1; resolved at 9928710 with the recovery arm, the
+      prevention arm and a red-verified e2e witness.
 
   - id: CR-002
     severity: low
     evidence:
-      - "Constructed in the review clone: a context-free repository function exported via an export list (const listAccounts = async (month: string) => []; export { listAccounts }; placed under src/modules/accounts/adapters/) leaves npm test GREEN, observed exit 0, while the structurally identical inline-exported forms redden the suite (constructed: inline const arrow export and inline function declaration export both gave npm test exit 1, and a default export also gave exit 1)."
-      - "Cause: the analyzer in test/schema/tenancy.test.ts:122-146 visits only FunctionDeclaration and VariableStatement nodes carrying an export modifier; a separate ExportDeclaration (export { name }) is never visited, so the declaration it exports is invisible."
-      - "The comment at test/schema/tenancy.test.ts:16 and the criterion mechanism both promise the check covers every exported repository function; the export-list form, which the pulse-typescript named-exports-only rule makes entirely legal, is not covered."
+      - "ROUND 1, constructed in the review clone at f3dfdff: a context-free repository function exported via an export list (export { listAccounts };) under src/modules/**/adapters left npm test GREEN (exit 0) while the structurally identical inline-exported forms reddened it; cause was the analyzer visiting only FunctionDeclaration and VariableStatement nodes carrying an export modifier."
+      - "ROUND 2 RESOLUTION, verified by execution at 9928710: the analyzer (test/schema/tenancy.test.ts:93-263) is fail closed: files importing the db client anywhere under src/modules, plus repository-named adapter files, must export only functions declaring a parameter typed exactly HouseholdContext; export lists are resolved to their local declarations, and every shape the analyzer cannot positively verify (object literal, wrapped factory, class, enum, default export, re-export) is a violation by construction, with 12 shape fixtures in the suite. Spot-checked by this reviewer at head: an export-list context-free function in a db-importing adapters file turned npm test to EXIT=1, the same shape in a repository-named file without a db import also EXIT=1, restore EXIT=0. The overstating comment in src/platform/tenancy.ts was corrected to state exactly what is and is not enforced. RESOLVED."
     concrete-fix: >-
-      Extend analyzeAdapterSource to collect names from ts.isExportDeclaration
-      export specifiers and check the local declarations they resolve to, or
-      invert the scan to flag every top-level function-valued declaration in an
-      adapters file that lacks a HouseholdContext parameter regardless of
-      export syntax.
+      Applied in fix round 1: fail-closed analyzer with export-list resolution
+      and unverifiable-shape refusal, plus the corrected contract comment. No
+      further action needed.
     analysis: >-
-      Shipped behaviour at risk: the tenancy gate shipped as the enforcement of
-      hazard H0.1 silently passes a future adapter that exports context-free
-      repository functions via an export list, re-opening ambient tenant
-      scoping exactly where the plan says it cannot be retrofitted. Low because
-      no adapter code exists yet and the gate still catches the two most common
-      export forms.
+      Shipped behaviour that was at risk: the tenancy gate shipped as H0.1's
+      enforcement silently passed future adapters exporting context-free
+      repository functions via an export list. Resolved at 9928710; the
+      remaining non-enforced territory (call sites, injected clients in files
+      not named repository, dynamic import) is now stated honestly in
+      src/platform/tenancy.ts rather than claimed covered.
 
 criteria:
   - id: "0.1"
     quote: "npm ci && npm run typecheck && npm run lint && npm test exit 0 on a clean clone."
     evidence:
-      - "Executed by this reviewer in a fresh git clone of the branch at f3dfdff: npm ci EXIT=0 (467 packages, the committed allowScripts block covered the install scripts), npm run typecheck EXIT=0, npm run lint EXIT=0, npm test EXIT=0 (vitest run: 1 file, 7 passed, 0 failed). Captured in the clone's gate-01.log."
+      - "Round 1 at f3dfdff, fresh clone of the branch: npm ci EXIT=0, typecheck EXIT=0, lint EXIT=0, npm test EXIT=0 (7 passed)."
+      - "Round 2 at 8e5be19, same clone reset to the new head: npm ci EXIT=0, npm run typecheck EXIT=0, npm run lint EXIT=0, npm test EXIT=0 (vitest: 2 files, 25 passed, 0 failed: 17 tenancy-gate tests including the analyzer shape fixtures, 8 db-guard tests)."
     met: true
   - id: "0.2"
     quote: "npm run db:reset exits 0 against local supabase start, applying all migrations; npx prisma migrate status exits 0 and reports no pending migrations."
     evidence:
-      - "Executed by this reviewer with connection strings pinned to the local stack (127.0.0.1:54322): npx prisma migrate deploy against a freshly created empty database pulse_review_02 EXIT=0, applying 20260817081819_initial_household_and_user from zero; npx prisma migrate status EXIT=0 printing 'Database schema is up to date!' on both pulse_review_02 and the stack's main postgres database; npx tsx prisma/seed.ts EXIT=0 (Seeded household 00000000-0000-4000-8000-000000000001)."
-      - "Residue named honestly: the literal wrapper npm run db:reset exited 1 in THIS session at Prisma 6.19's AI-agent consent guard, before any database action, and this reviewer's permission layer blocks the consent variable, so the destructive drop step itself could not be exercised here. The guard is agent-specific (fleet warning 3: humans running npm run db:reset do not hit it). The criterion's substance, all migrations applying from zero plus a green no-pending status, was executed and observed by this reviewer; the reset wrapper's own exit 0 rests on the implementer's captured run plus the verified script line package.json:12."
+      - "Round 2 at 8e5be19, connection strings pinned local: npx prisma migrate deploy against a freshly created empty database EXIT=0 applying 20260817081819_initial_household_and_user from zero; npx prisma migrate status EXIT=0 'Database schema is up to date!'; npx tsx prisma/seed.ts EXIT=0. Round 1 executed the same substance with the same results."
+      - "The db:reset wrapper now runs the fix round's target guard first, exercised by this reviewer in both directions: pinned local, the guard prints 'both connection strings target the local stack' and proceeds; pointed at a foreign pooler host, npm run db:reset EXIT=1 with the refusal naming the host, before any prisma command; with DATABASE_URL unset, EXIT=1 refusing the unknown target."
+      - "Residue named honestly, unchanged from round 1: after the guard passes, the literal wrapper still exits 1 in THIS session at Prisma 6.19's AI-agent consent guard, before any database action; the guard is agent-specific (fleet warning 3: humans do not hit it) and this reviewer's permission layer blocks the consent variable. The criterion's substance, migrations applying from zero plus a green no-pending status, was executed and observed in both rounds."
     met: true
   - id: "0.3"
     quote: "npm run test:e2e exits 0 with test/e2e/auth.spec.ts passing: it signs up with email and password, signs out, signs in again, and asserts an authenticated household context renders."
     evidence:
-      - "Executed by this reviewer in the clean clone against the local stack (Playwright chromium installed fresh, env pinned): npm run test:e2e EXIT=0, 1 passed (20.4s), chromium, spec test/e2e/auth.spec.ts. Captured in the clone's gate-03-e2e.log."
-      - "Spec content matches the criterion's four clauses: sign-up with email and password at test/e2e/auth.spec.ts:18-22, household context assertion via the household-context test id carrying the unique email local part at test/e2e/auth.spec.ts:26, sign-out at test/e2e/auth.spec.ts:30-36 including the signed-out redirect assertion, sign-in again at test/e2e/auth.spec.ts:39-42 re-asserting the context. The unique per-run email makes the context assertion unable to pass against a stale session."
+      - "Round 1 at f3dfdff: npm run test:e2e EXIT=0, 1 passed; spec covers all four clauses (sign-up with email and password, household context assertion via the unique household name, sign-out with signed-out redirect assertion, sign-in again)."
+      - "Round 2 at 8e5be19: npm run test:e2e EXIT=0, 3 passed 0 skipped (the golden-path spec unchanged at test/e2e/auth.spec.ts:11-44, the sign-in failure line spec, and the orphan-recovery spec, the last running unskipped because the service role key was provided)."
     met: true
   - id: "0.4"
     quote: "test/schema/tenancy.test.ts passes under npm test with three named assertions and the mechanism for each named: (a) reading the Prisma DMMF, every model except Household carries a non-null householdId; (b) reading the same DMMF, every model field whose name matches /amount|balance|total|cents/i has type Int or BigInt, never Float or Decimal; (c) a static analysis over src/modules/**/adapters using the TypeScript compiler API (or ts-morph) asserts every exported repository function declares a parameter of the household context type."
     evidence:
-      - "npm test EXIT=0 in the clean clone with all 7 tests in test/schema/tenancy.test.ts passing. The three assertions exist, named, with the named mechanisms: (a) DMMF via @prisma/internals getDMMF at test/schema/tenancy.test.ts:58-70 and 178-203; (b) same DMMF, money-name regex and Int/BigInt check at test/schema/tenancy.test.ts:76-84 and 205-243; (c) TypeScript compiler API walk over src/modules/**/adapters at test/schema/tenancy.test.ts:98-172 and 245-282."
-      - "Red direction executed by this reviewer against the REAL tree, not only the in-suite fixtures: appending a model without householdId to prisma/schema/platform.prisma turned npm test red (exit 1); appending a Float money field turned it red (exit 1); adding a context-free inline-exported adapter function under src/modules/accounts/adapters/ turned it red (exit 1); restoring gave exit 0 each time."
-      - "One reach limit in mechanism (c) recorded as finding CR-002: a context-free function exported via a separate export list is not caught (constructed, npm test stayed exit 0). The criterion's three assertions and mechanisms are otherwise present, named and live."
+      - "Round 2 at 8e5be19: npm test EXIT=0 with all 17 tenancy tests passing; the three named assertions with the named mechanisms remain ((a) and (b) unchanged DMMF checks, (c) the hardened fail-closed compiler-API analysis at test/schema/tenancy.test.ts:93-263, now stronger than the criterion asks: it holds any db-client-importing file under src/modules to the rule, not only adapters/)."
+      - "Red direction verified in round 1 against the real tree (model without householdId, Float money field, context-free inline-exported adapter: each npm test EXIT=1, restore EXIT=0) and extended in round 2 for the previously blind export-list shape (EXIT=1 via both the db-import trigger and the repository-name trigger, restore EXIT=0)."
     met: true
   - id: "0.5"
     quote: "On the commit that moves the tokens, styles/tokens.css carries token declarations byte-identical to styles/pulse-tokens.css at baseline c940e4d, and at most one canonical token file remains (pulse-tokens.css deleted or reduced to a single import line); later token additions land in tokens.css alone. grep -rE \"oklch\\(|#[0-9a-fA-F]{3,8}\" over src/ excluding the token and theme files exits 1 (no matches)."
     evidence:
-      - "Byte identity executed: git show ac65915:styles/tokens.css | cmp - <(git show c940e4d:styles/pulse-tokens.css) printed nothing, cmp EXIT=0. On the same commit ac65915 and at head, styles/pulse-tokens.css is exactly one line: the tokens.css import."
-      - "Later additions: the only post-move token change is --border-hairline, added in styles/tokens.css (head styles/tokens.css:130-132) and consumed via var() in src/app/globals.css; no token landed anywhere else."
-      - "The grep executed over src/ (the token and theme files live under styles/, outside src/): EXIT=1, no matches. Both directions: the same grep over a planted witness directory containing one hex colour and one oklch() literal returned both, EXIT=0, so the pattern demonstrably catches what it exists to catch."
+      - "Round 1: cmp of ac65915 styles/tokens.css against c940e4d styles/pulse-tokens.css EXIT=0 byte-identical; pulse-tokens.css exactly one import line at the move commit and at head; the only later token (--border-hairline) landed in tokens.css; grep over src/ EXIT=1, and the same grep over a planted hex-plus-oklch witness caught both (EXIT=0)."
+      - "Round 2 at 8e5be19: git diff f3dfdff..8e5be19 -- styles/ is empty (0 lines), the grep over src/ still EXIT=1, and the fix round's one new styled block (.auth-status in src/app/globals.css:46-54) uses tokens only (--space-4, --space-5, --radius-md, --color-flag-bg, --color-ink, --text-sm, --leading-normal). No regression."
     met: true
   - id: "0.6"
     quote: "curl -s -o /dev/null -w \"%{http_code}\" against the deployed Vercel URL prints 200 and the sign-in page HTML contains the localized sign-in heading; a database-backed path is exercised against the deployed environment (the sign-up flow of test/e2e/auth.spec.ts run against the deployed URL, or a curl to a route performing a database query returning 200 with expected content); and npx prisma migrate status exits 0 against the deployed database over the direct connection string, reporting no pending migrations."
     evidence:
-      - "Not executable in this review: all three assertions are against the deployed environment, and this phase's dispatch defers them to the deploy-verify stage; no deploy exists and no deploy credentials exist in this worktree. What would have been needed: the deployed Vercel URL and the deployed database's direct connection string."
-      - "Deferral honesty verified, nothing locally verifiable was left unverified: npm run build EXIT=0 in the clean clone (production build); the prisma datasource carries url plus directUrl (prisma/schema/schema.prisma:14-17); .env.example:3-10 documents the pooled-runtime versus direct-migrations rule that hazard H0.3 names; the localized sign-in heading renders locally (asserted by the passing e2e run); a database-backed path (the sign-up flow) was exercised locally; playwright.config.ts:6-8 supports PLAYWRIGHT_BASE_URL so deploy-verify can rerun the same spec against the deployed URL; and the work history records the deployed email-confirmation precondition rather than hiding it."
+      - "Not executable in this review, both rounds: all three assertions are against the deployed environment, deferred to the deploy-verify stage by dispatch design; no deploy exists and no deploy credentials exist in this worktree. What would have been needed: the deployed Vercel URL and the deployed database's direct connection string."
+      - "Deferral honesty re-verified at 8e5be19, nothing locally verifiable left unverified: npm run build EXIT=0; prisma datasource carries url plus directUrl (prisma/schema/schema.prisma:14-17); .env.example:3-10 documents the pooled-runtime versus direct-migrations rule (hazard H0.3); the localized sign-in heading and a database-backed path (sign-up flow) exercised locally by the passing e2e run; playwright.config.ts:6-8 supports PLAYWRIGHT_BASE_URL for rerunning the specs against the deployed URL, and the new orphan spec self-skips visibly when no service role key exists so it cannot false-green a deployed run; the fix round's signUpAction also handles the deployed email-confirmation case explicitly (src/platform/auth/actions.ts:46-51)."
     met: false
 
 deviations-judged:
   - deviation: "files-to-touch (13 entries; messages/*.json not among them)"
     serves-plan-intent: true
     reasoning: >-
-      Judged necessary and minimal. Criterion 0.3 requires sign-up and
-      sign-out flows and the baseline catalogs carry no copy for either;
-      hardcoding the strings would break the pulse-frontend no-hardcoded-copy
-      rule. Verified in the diff: exactly two keys (signup, signout) added per
-      catalog, EN NL FR all at 54 keys with identical key sets, order
-      preserved, translations plausible and neutral in register.
+      Judged necessary and minimal. Criterion 0.3 needs sign-up and sign-out
+      copy the baseline catalogs lack; hardcoding would break the
+      pulse-frontend no-hardcoded-copy rule. Verified: exactly two keys added
+      per catalog in round 1, EN NL FR parity intact.
   - deviation: "files-to-touch (scaffold support files)"
     serves-plan-intent: true
     reasoning: >-
-      Judged necessary and minimal. The off-list files are .gitignore,
-      eslint.config.mjs, postcss.config.mjs, next-env.d.ts, supabase/config.toml
-      and the supabase-generated supabase/.gitignore. The lint gate the phase
-      mandates cannot run without an eslint config, Tailwind v4 does not load
-      without the postcss config, next-env.d.ts is generated and required by
-      the committed tsconfig include, and supabase start (the phase's own step
-      4 dependency) does not run without config.toml. Nothing in the set
-      exceeds what the mandated commands need, and the declaration was raised
+      Judged necessary and minimal. Each off-list file (.gitignore,
+      eslint.config.mjs, postcss.config.mjs, next-env.d.ts, supabase/config.toml,
+      supabase/.gitignore) is required by a command the phase itself mandates;
+      nothing exceeds what those commands need, and the declaration was raised
       for a scope-audit amendment rather than slipped in silently.
+  - deviation: "files-to-touch (fix round 1 additions)"
+    serves-plan-intent: true
+    reasoning: >-
+      Judged necessary and minimal. The additions are exactly the reviewer-
+      mandated fixes: src/platform/db/guard.ts, src/platform/db/guard-cli.ts
+      and test/db/db-guard.test.ts implement and test the destructive-target
+      interlock (this reviewer executed the refusal on a foreign host, on an
+      unset variable, and the local pass, all behaving as declared);
+      src/app/(auth)/auth-status.tsx plus three whitelisted-status catalog
+      keys per language surface auth failures without rendering raw query
+      input, catalogs verified at 57/57/57 key parity, styling tokens-only.
+      Nothing beyond the findings' remit rode along: the fix diff
+      f3dfdff..9928710 touches 17 files, all traceable to the five
+      consolidated findings, zero em dashes in added lines and commit
+      messages, English throughout, no new URL paths.
   - deviation: "Step 6, \"deploy to Vercel with the pooled connection string at runtime and the direct connection string for migrations\", and criterion 0.6"
     serves-plan-intent: true
     reasoning: >-
-      Judged honestly scoped. The worktree holds no deploy credentials and the
-      implementer's dispatch forbade deploying; the deferral is to the
-      deploy-verify stage this process runs anyway. I verified every locally
-      verifiable precursor myself (build exit 0, directUrl in the datasource,
-      pooled-versus-direct documented in .env.example, PLAYWRIGHT_BASE_URL
-      support for rerunning the auth spec against the deployed URL), and the
-      work history's gate table marks the deployed assertions not-applicable
-      instead of claiming them, with the email-confirmation precondition for
-      the deployed sign-up flow recorded. Nothing locally verifiable hid under
-      the deferral.
-# A fourth choice the dispatch asked this review to judge, pulse-tokens.css
-# reduced to a single import line rather than deleted, is deliberately NOT an
-# entry above: the work history's deviations[] does not declare it (it sits in
-# key-decisions), and the verdict-deviations-judged check rightly rejects
-# judging an undeclared deviation. Judged here instead: it is not a deviation
-# at all, since step 5 and criterion 0.5 both allow "deleted or reduced to a
-# single import line". The stated reason also verifies: styles/pulse-theme.css:3-7
-# documents an import order naming pulse-tokens.css, that file is untouched
-# since baseline c940e4d and is outside this phase's files-to-touch, and a
-# repository-wide search finds pulse-theme.css as the only reference, so the
-# one-line import keeps the documented order true while tokens.css remains the
-# single canonical source. Necessary and minimal.
+      Judged honestly scoped, both rounds. No deploy credentials exist in the
+      worktree and the implementer dispatch forbade deploying. Every locally
+      verifiable precursor was executed by this reviewer at both heads (build
+      exit 0, directUrl present, pooled-versus-direct documented,
+      PLAYWRIGHT_BASE_URL support), and the work history marks the deployed
+      assertions not-applicable instead of claiming them, with the
+      email-confirmation precondition now additionally handled in code.
+
+# A fifth choice the round 1 dispatch asked this review to judge,
+# pulse-tokens.css reduced to a single import line rather than deleted, is
+# deliberately NOT an entry above: the work history's deviations[] does not
+# declare it (it sits in key-decisions), and the verdict-deviations-judged
+# check rightly rejects judging an undeclared deviation. Judged here instead:
+# it is not a deviation at all, since step 5 and criterion 0.5 both allow
+# "deleted or reduced to a single import line". The stated reason also
+# verifies: styles/pulse-theme.css:3-7 documents an import order naming
+# pulse-tokens.css, that file is untouched since baseline c940e4d and is
+# outside this phase's files-to-touch, and a repository-wide search finds
+# pulse-theme.css as the only reference, so the one-line import keeps the
+# documented order true while tokens.css remains the single canonical source.
+# Necessary and minimal.
