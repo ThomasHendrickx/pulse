@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { logAuthFailure } from "./diagnostics";
 import { createHouseholdForNewUser } from "./household";
 import { createSupabaseServerClient } from "./supabase-server";
 
@@ -37,7 +38,8 @@ export const signUpAction = async (formData: FormData): Promise<void> => {
   try {
     await createHouseholdForNewUser({ authUserId: data.user.id, email });
     created = true;
-  } catch {
+  } catch (cause) {
+    logAuthFailure("sign-up household-create", email, cause);
     await supabase.auth.signOut();
   }
   if (!created) {
