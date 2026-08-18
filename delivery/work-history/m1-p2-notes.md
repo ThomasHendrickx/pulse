@@ -99,3 +99,8 @@ ACTION NEEDED FROM ORCHESTRATOR: amend the phase declaration on the base branch 
 - npm test: exit 0, Test Files 8 passed (8), Tests 77 passed (77), 0 skipped (vitest lists none skipped), invocation: vitest run, Node v26.7.0, no build needed
 - npm run test:e2e (pinned env): exit 0, 4 passed (34.4s), 0 skipped: the orphan-recovery auth spec did NOT skip because the local service role key is pinned in the run env
 - git status clean apart from these notes.
+
+## Work history written and validated
+- delivery/work-history/m1-p2.yaml: npx tiphys validate --type work-history exit 0 (Node v26.7.0).
+- Claim-grep run exactly as the brief carries it, line-based AND whitespace-flattened. Two hits in my own prose settled by rewording to name the executed evidence (rls.test.ts red-then-green; "still applied"); remaining hits sit in the verbatim dispatch prompt (schema requires verbatim reproduction) and in the literal CR-006 commit subject, both quoted artifacts rather than claims of mine, each verifiable (git log acaa820).
+- Amendment items A-D are listed in the work history's key-decisions with their evidence.
