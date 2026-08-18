@@ -62,3 +62,11 @@ Incremental log. Appended as work happens.
   - Mutation 2: debitCredit branch stops negating debit -> 1 failed | 23 passed (generic debits-negative test red).
   - Mutation 3: detected decimal style arms swapped in detect-profile.ts -> suite red at collect: "detection failed for belfius-account-a.csv: no-amount-column", Tests: no tests, exit nonzero. A misdetected style cannot even find the amount column, so the suite reddens loudly rather than passing wrong cents.
 - After restores: 24 passed (24). git status clean of mutations.
+
+## Criteria 1.2/1.3/1.4: ingest tests green + mutation red witnesses
+- GREEN: npx vitest run test/application/ingest.test.ts -> 8 passed (8). Covers: A then A2 overlap (added 3, known 3, 9 rows); per-household key uniqueness incl. a second household importing the same file (6 own rows); DMMF unique [householdId,dedupKey] by name; identical-duplicates store 2 rows and re-upload adds 0/known 6; partial overlap ends at exactly 2 rows (added 2, known 1); mixed-account FAILED zero rows on upload AND confirm paths; rawLine verbatim vs both fixture files (windows-1252 and utf-8 decode).
+- Mutation red witnesses (applied to committed code, captured, restored):
+  - ordinal removed from hash key (the skill's OLD recipe): 3 failed | 5 passed (identical-rows, partial-overlap, and rawLine multiset collapse). This is PR-001's defect reproduced red.
+  - mixed check defanged (>1 -> >99): 2 failed | 6 passed (both criterion 1.3 tests).
+  - rawLine sliced: 1 failed | 7 passed.
+- After restores: 8 passed, git status clean (delivery notes only).
