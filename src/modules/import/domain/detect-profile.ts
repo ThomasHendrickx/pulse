@@ -230,20 +230,34 @@ export const detectSourceProfile = (
       : [firstAmountColumn, secondAmountColumn];
     amountRepresentation = { kind: "debitCredit", debitColumn, creditColumn };
   } else {
-    const values = nonEmptyValues(table, firstAmountColumn);
-    const hasNegative = values.some((value) => value.startsWith("-"));
-    const indicator = hasNegative
-      ? undefined
-      : findIndicatorColumn(table, width, [...dateColumns, ...amountColumns]);
-    amountRepresentation = indicator
-      ? {
-          kind: "indicator",
-          amountColumn: firstAmountColumn,
-          indicatorColumn: indicator.column,
-          debitValue: indicator.debitValue,
-          creditValue: indicator.creditValue,
-        }
-      : { kind: "signed", column: firstAmountColumn };
+    // ONE amount-shaped column. Before reading it as signed or
+    // indicator-driven, look for a header-hinted debit/credit sibling that
+    // is simply EMPTY this month (finding F3): a no-credits month must
+    // still detect the pair, or every debit is proposed POSITIVE, hazard
+    // H1.1 realized outside the fixture matrix.
+    const emptyPair = findEmptySiblingPair(table, width, firstAmountColumn);
+    if (emptyPair !== undefined) {
+      amountRepresentation = {
+        kind: "debitCredit",
+        debitColumn: emptyPair.debitColumn,
+        creditColumn: emptyPair.creditColumn,
+      };
+    } else {
+      const values = nonEmptyValues(table, firstAmountColumn);
+      const hasNegative = values.some((value) => value.startsWith("-"));
+      const indicator = hasNegative
+        ? undefined
+        : findIndicatorColumn(table, width, [...dateColumns, ...amountColumns]);
+      amountRepresentation = indicator
+        ? {
+            kind: "indicator",
+            amountColumn: firstAmountColumn,
+            indicatorColumn: indicator.column,
+            debitValue: indicator.debitValue,
+            creditValue: indicator.creditValue,
+          }
+        : { kind: "signed", column: firstAmountColumn };
+    }
   }
 
   // Role assignment for the remaining columns.
@@ -254,6 +268,12 @@ export const detectSourceProfile = (
   }
   if (amountRepresentation.kind === "indicator") {
     assigned.add(amountRepresentation.indicatorColumn);
+  }
+  if (amountRepresentation.kind === "debitCredit") {
+    // Covers the empty-sibling pair (finding F3), whose second column is
+    // not in amountColumns.
+    assigned.add(amountRepresentation.debitColumn);
+    assigned.add(amountRepresentation.creditColumn);
   }
 
   const columns: {
@@ -388,6 +408,43 @@ export const detectSourceProfile = (
     amountRepresentation,
     columns: columns as ColumnRoles,
   });
+};
+
+// Header hints for the debit and credit halves of a column pair, word
+// bounded so "creditor" or "afschrift" cannot be read as a pair half.
+const DEBIT_HEADER = /\bdebit\b|\bdebet\b|\baf\b/;
+const CREDIT_HEADER = /\bcredit\b|\bbij\b/;
+
+// Finding F3: given the ONE amount-shaped column, find its header-hinted
+// sibling that carries no values at all this period. Both directions are
+// covered: a debits-only month (credit column empty) and a credits-only
+// month (debit column empty).
+const findEmptySiblingPair = (
+  table: Table,
+  width: number,
+  amountColumn: number,
+): { debitColumn: number; creditColumn: number } | undefined => {
+  const header = table.header[amountColumn] ?? "";
+  const amountIsDebit = DEBIT_HEADER.test(header);
+  const amountIsCredit = !amountIsDebit && CREDIT_HEADER.test(header);
+  if (!amountIsDebit && !amountIsCredit) {
+    return undefined;
+  }
+  const siblingHint = amountIsDebit ? CREDIT_HEADER : DEBIT_HEADER;
+  for (let column = 0; column < width; column += 1) {
+    if (column === amountColumn) {
+      continue;
+    }
+    if (
+      siblingHint.test(table.header[column] ?? "") &&
+      nonEmptyValues(table, column).length === 0
+    ) {
+      return amountIsDebit
+        ? { debitColumn: amountColumn, creditColumn: column }
+        : { debitColumn: column, creditColumn: amountColumn };
+    }
+  }
+  return undefined;
 };
 
 const findIndicatorColumn = (
