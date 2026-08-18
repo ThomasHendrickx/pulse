@@ -49,3 +49,8 @@ Incremental log. Appended as work happens.
 - Applied to local stack; prisma migrate status: "Database schema is up to date!".
 - Live check: pg_class relrowsecurity = t for accounts, households, imports, source_profiles, transactions, users. _prisma_migrations stays f: it is not a table Prisma DECLARES (not in the DMMF), so outside amendment A's stated scope; recorded rather than silently skipped.
 - Schema test suite now: all green.
+
+## Domain layer in progress
+- platform/money.ts (Cents), platform/plain-date.ts (PlainDate + db boundary converters), platform/result.ts.
+- import/domain: source-profile.ts (spec union + boundary parser + specEquals canonical-JSON), parse-amount.ts (string-arithmetic cents, no floats), parse-date.ts (three formats -> PlainDate), delimited-text.ts (encoding probe, line split preserving rawLine, RFC4180-ish field split).
+- Next: parse-statement.ts (generic parser behind StatementParser port), detect-profile.ts (deterministic detection), then fixtures + profile-detection tests (red first via stub-less run).
