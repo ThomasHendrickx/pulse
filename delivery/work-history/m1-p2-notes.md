@@ -36,3 +36,16 @@ Incremental log. Appended as work happens.
 - RED captured first: 4 new fixtures (dynamic import held, import-equals held, exported namespace default-flagged, dynamic import outside adapters) -> `npx vitest run test/schema/tenancy.test.ts`: 4 failed | 17 passed.
 - Fix: (1) held-to-rule detection is now a source-text scan DB_CLIENT_IMPORT.test(sourceText), covering dynamic import and import-equals; (2) final else arm default-flags ANY exported statement kind without a positive arm (ts.canHaveModifiers + export modifier), interfaces/type aliases exempt as type-only; (3) comments in src/platform/tenancy.ts and the test header corrected LOUDLY (R-087), residue list extended (call sites, injected clients, alias modules).
 - GREEN: 21 passed (21).
+
+## Amendment D (skill section 6)
+- Edited .claude/skills/pulse-domain/SKILL.md section 6: per-profile key choice, ordinal-extended hash, cross-import highest-occurrence rule, loud correction note (R-087). Committed.
+
+## Next: schema + migration (with RLS, amendment A). RLS test written RED first.
+
+## Schema + migration (amendment A)
+- test/schema/rls.test.ts written first; RED captured: 1 failed | 2 passed (declared tables missing transactions/imports AND rls absent). Checker mechanism fixtures (missing table by name, DISABLE not fooled) green.
+- prisma/schema/accounts.prisma + import.prisma written; Household back-relations added in platform.prisma. npx prisma validate OK.
+- Migration 20260818154929_import_facts_and_declarations created (pinned env via scratchpad/pin.sh; ambient Hemma creds confirmed present in shell and never used). RLS ENABLE appended for all six tables incl. households/users, with the no-policies rationale in the SQL comment.
+- Applied to local stack; prisma migrate status: "Database schema is up to date!".
+- Live check: pg_class relrowsecurity = t for accounts, households, imports, source_profiles, transactions, users. _prisma_migrations stays f: it is not a table Prisma DECLARES (not in the DMMF), so outside amendment A's stated scope; recorded rather than silently skipped.
+- Schema test suite now: all green.

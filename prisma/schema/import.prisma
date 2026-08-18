@@ -1,0 +1,122 @@
+// Import module tables. Two layers meet here and must not be confused
+// (pulse-domain section 2): SourceProfile is a DECLARATION the user
+// confirms once per source; Import and Transaction are FACTS, written by
+// ingest only, append only. No code path updates a Transaction row; a
+// wrong profile is repaired by re-parsing from rawLine (M1-P3), never by
+// editing facts.
+
+enum ImportStatus {
+  PARSED
+  AWAITING_DECLARATION
+  INGESTED
+  INTERPRETED
+  FAILED
+}
+
+// Present from this phase so the facts table never needs a column
+// migration for interpretation; populated by M1-P3's classifier only.
+enum Flow {
+  INCOME
+  SPEND
+  INTERNAL
+  RESERVE
+  UNRESOLVED
+}
+
+model SourceProfile {
+  id          String   @id @default(uuid()) @db.Uuid
+  householdId String   @db.Uuid
+  name        String
+  // The full parsing spec as one validated JSON document: delimiter,
+  // encoding, headerRowIndex, dateFormat, decimalStyle, the
+  // amount-representation discriminated union, and column roles. One Json
+  // column rather than a column per field because the amount
+  // representation is a discriminated union that must never decay into
+  // three optional columns (pulse-typescript section 4), and because a
+  // column named after the amount field would trip the money-name gate,
+  // which is for integer-cent columns. Parsed at the repository boundary
+  // by parseSourceProfileSpec, never cast.
+  spec        Json
+  // Bound account for profiles whose files carry no own-account column
+  // (the card shape): the account is declared at the profile's first
+  // sight and recognised through this binding on re-upload.
+  accountId   String?  @db.Uuid
+  createdAt   DateTime @default(now())
+
+  household Household @relation(fields: [householdId], references: [id])
+  account   Account?  @relation(fields: [accountId], references: [id])
+  imports   Import[]
+
+  @@unique([householdId, name])
+  @@index([householdId])
+  @@map("source_profiles")
+}
+
+model Import {
+  id              String       @id @default(uuid()) @db.Uuid
+  householdId     String       @db.Uuid
+  sourceProfileId String?      @db.Uuid
+  accountId       String?      @db.Uuid
+  status          ImportStatus
+  fileName        String
+  // The uploaded bytes exactly as received, kept so the confirm step and a
+  // later profile-fix re-parse read the same input the user uploaded.
+  rawContent      Bytes
+  // Ingest report: rows newly stored versus rows already known. Null until
+  // the import reaches INGESTED.
+  rowsAdded       Int?
+  rowsKnown       Int?
+  // Machine-readable failure tag for FAILED imports (for example
+  // "mixed-accounts"); the UI translates it, so never an English sentence.
+  failureReason   String?
+  createdAt       DateTime     @default(now())
+
+  household     Household      @relation(fields: [householdId], references: [id])
+  sourceProfile SourceProfile? @relation(fields: [sourceProfileId], references: [id])
+  account       Account?       @relation(fields: [accountId], references: [id])
+  transactions  Transaction[]
+
+  @@index([householdId])
+  @@map("imports")
+}
+
+model Transaction {
+  id               String    @id @default(uuid()) @db.Uuid
+  householdId      String    @db.Uuid
+  accountId        String    @db.Uuid
+  importId         String    @db.Uuid
+  // Business dates: calendar dates with no time and no zone, stored as
+  // DATE and converted to branded PlainDate strings at the repository
+  // boundary (pulse-typescript section 2).
+  bookingDate      DateTime  @db.Date
+  valueDate        DateTime? @db.Date
+  // Integer cents, signed: negative leaves the pot, positive enters.
+  amountCents      Int
+  counterpartyName String?
+  counterpartyIban String?
+  description      String
+  reference        String?
+  statementNumber  String?
+  sequenceNumber   String?
+  // The source line this row was parsed from, verbatim. What makes a
+  // profile fix repairable by re-parse instead of re-upload.
+  rawLine          String
+  // Per-profile dedup key: statement-plus-sequence natural key where the
+  // profile has one, otherwise the content hash PLUS the occurrence
+  // ordinal among identical-content rows in the same file (finding
+  // PR-001). Unique per household; ingest inserts with duplicates
+  // skipped, so re-upload is one statement, never a read-then-write loop.
+  dedupKey         String
+  // Interpretation column, written by M1-P3's classifier only. Facts
+  // ingest leaves it null.
+  flow             Flow?
+  createdAt        DateTime  @default(now())
+
+  household Household @relation(fields: [householdId], references: [id])
+  account   Account   @relation(fields: [accountId], references: [id])
+  import    Import    @relation(fields: [importId], references: [id])
+
+  @@unique([householdId, dedupKey])
+  @@index([householdId, accountId, bookingDate])
+  @@map("transactions")
+}
