@@ -70,3 +70,13 @@ Incremental log. Appended as work happens.
   - mixed check defanged (>1 -> >99): 2 failed | 6 passed (both criterion 1.3 tests).
   - rawLine sliced: 1 failed | 7 passed.
 - After restores: 8 passed, git status clean (delivery notes only).
+
+## SCOPE ESCALATION (say it the moment you find it, brief clause phase-scope)
+The phase's files-to-touch lists src/modules/accounts/, src/modules/import/, prisma/, and the four test paths. Step 7 (upload UI) and criterion 1.5 (Playwright flow over real routes) REQUIRE files outside that list:
+- src/app/(app)/import/page.tsx and src/app/(app)/import/[id]/page.tsx (thin routes; pulse-frontend mandates thin app/ routes composing module UI, so the UI cannot live only under src/modules)
+- src/app/globals.css (import screen classes, tokens only)
+- messages/en.json, nl.json, fr.json (no user-facing string may be hardcoded; new import keys)
+- vitest.config.ts (the "@" path alias so tests resolve domain imports; mechanical)
+- src/platform/{money,plain-date,result}.ts and src/platform/ui/amount.tsx (shared primitives pulse-typescript mandates; platform is the only legal home)
+Amendment items A-D touch their own files by orchestrator declaration (migration+test, auth-status, tenancy test/comment, skill file).
+ACTION NEEDED FROM ORCHESTRATOR: amend the phase declaration on the base branch to include these paths before the scope gate runs. Proceeding, because the alternative (no routes, no catalogs) fails criteria 1.5 and the frontend skill's own rules; every extra path above is load-bearing for a phase step, none is scope creep.
