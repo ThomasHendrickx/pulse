@@ -54,3 +54,11 @@ Incremental log. Appended as work happens.
 - platform/money.ts (Cents), platform/plain-date.ts (PlainDate + db boundary converters), platform/result.ts.
 - import/domain: source-profile.ts (spec union + boundary parser + specEquals canonical-JSON), parse-amount.ts (string-arithmetic cents, no floats), parse-date.ts (three formats -> PlainDate), delimited-text.ts (encoding probe, line split preserving rawLine, RFC4180-ish field split).
 - Next: parse-statement.ts (generic parser behind StatementParser port), detect-profile.ts (deterministic detection), then fixtures + profile-detection tests (red first via stub-less run).
+
+## Criterion 1.1: profile-detection tests green + red witnesses by mutation
+- GREEN: npx vitest run test/domain/profile-detection.test.ts -> 24 passed (24).
+- Red witnesses against the DANGEROUS STATE (hazard H1.1, two structurally different members of the sign class plus a detection member), each applied to committed code, run, captured, restored:
+  - Mutation 1: indicator branch sign flipped (debit -> +) in parse-statement.ts -> 2 failed | 22 passed (card FX row and identical-rows/settlement tests red).
+  - Mutation 2: debitCredit branch stops negating debit -> 1 failed | 23 passed (generic debits-negative test red).
+  - Mutation 3: detected decimal style arms swapped in detect-profile.ts -> suite red at collect: "detection failed for belfius-account-a.csv: no-amount-column", Tests: no tests, exit nonzero. A misdetected style cannot even find the amount column, so the suite reddens loudly rather than passing wrong cents.
+- After restores: 24 passed (24). git status clean of mutations.
