@@ -92,3 +92,10 @@ ACTION NEEDED FROM ORCHESTRATOR: amend the phase declaration on the base branch 
   - auth.spec.ts: 3 passed (unchanged M1-P1 specs still green on this branch).
   - import.spec.ts: first upload -> confirm screen with 5 preview rows ("2026-08-03", "2.500,00" via the shared formatter), account declaration visible; declared label/bank/ring POT + profile name; result rows-added=6 rows-known=0; re-upload same file -> result rows-added=0 rows-known=6, no declaration fieldset, no confirm heading (nothing asked).
 - Session note: two transient server-side API terminations occurred around this point; worktree survived, no work lost, resuming with smaller commits.
+
+## Gate runs at phase head dffbeac
+- npm run typecheck: exit 0
+- npm run lint: exit 0
+- npm test: exit 0, Test Files 8 passed (8), Tests 77 passed (77), 0 skipped (vitest lists none skipped), invocation: vitest run, Node v26.7.0, no build needed
+- npm run test:e2e (pinned env): exit 0, 4 passed (34.4s), 0 skipped: the orphan-recovery auth spec did NOT skip because the local service role key is pinned in the run env
+- git status clean apart from these notes.
