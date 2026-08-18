@@ -118,7 +118,7 @@ Flow: detect deterministically from the first lines, propose, show five parsed r
 
 ## 6. Dedup
 
-Belgian exports carry a statement number plus a sequence number, a stable natural key per account. Where absent, hash `accountId + bookingDate + amount + normalisedCounterparty + reference`.
+Belgian current-account exports carry a statement number plus a sequence number, a stable natural key per account. Card exports carry no per-row sequence, so the key choice is a per-SourceProfile property: natural key where the profile has one, content hash otherwise. The hash is over `accountId + bookingDate + amount + normalisedCounterparty + reference` PLUS the occurrence ordinal of the row among identical-content rows within the same file. The ordinal is not optional: two legitimate identical rows (same day, same amount, same merchant, observed in a real card statement) collapse into one under duplicate skipping without it, silently dropping a fact row while the books still close. With it, re-uploading the same file maps each row to the same key and adds nothing, and across overlapping imports the insert-ignore keeps, per identical tuple, the highest occurrence count seen. (This paragraph previously taught the ordinal-free hash; that recipe was refuted by a real statement and is corrected here rather than silently rewritten. See finding PR-001 and the owner's v0.2 addendum section 5.)
 
 Store the key, unique index it per household, insert with duplicates skipped. Re-uploading an overlapping file is a normal operation that reports rows added and rows already known. Never a read-then-write loop.
 
