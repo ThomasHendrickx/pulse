@@ -80,3 +80,15 @@ The phase's files-to-touch lists src/modules/accounts/, src/modules/import/, pri
 - src/platform/{money,plain-date,result}.ts and src/platform/ui/amount.tsx (shared primitives pulse-typescript mandates; platform is the only legal home)
 Amendment items A-D touch their own files by orchestrator declaration (migration+test, auth-status, tenancy test/comment, skill file).
 ACTION NEEDED FROM ORCHESTRATOR: amend the phase declaration on the base branch to include these paths before the scope gate runs. Proceeding, because the alternative (no routes, no catalogs) fails criteria 1.5 and the frontend skill's own rules; every extra path above is load-bearing for a phase step, none is scope creep.
+
+## UI slice committed
+- Routes /import and /import/[id] (thin), module ui components, import status whitelist via Object.hasOwn, messages en/nl/fr extended (85 keys parity true), token-only CSS appended to globals.css.
+- typecheck 0, lint 0, npm test 77 passed.
+- Next: e2e spec + local run (db reset pinned, playwright chromium).
+
+## Criterion 1.5: e2e gate GREEN (captured before the second interruption)
+- Pinned db reset: npm run db:reset (env pinned via scratchpad/pin.sh, Prisma AI-consent var quoting the dispatch) -> migrations applied incl. 20260818154929, seed OK.
+- npm run test:e2e (pinned env, webServer npm run dev, chromium at /opt/pw-browsers): 4 passed (56.8s), E2E_EXIT=0.
+  - auth.spec.ts: 3 passed (unchanged M1-P1 specs still green on this branch).
+  - import.spec.ts: first upload -> confirm screen with 5 preview rows ("2026-08-03", "2.500,00" via the shared formatter), account declaration visible; declared label/bank/ring POT + profile name; result rows-added=6 rows-known=0; re-upload same file -> result rows-added=0 rows-known=6, no declaration fieldset, no confirm heading (nothing asked).
+- Session note: two transient server-side API terminations occurred around this point; worktree survived, no work lost, resuming with smaller commits.
