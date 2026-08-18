@@ -106,6 +106,7 @@ describe("card fixture family mirroring the observed KBC shape (indicator)", () 
       amountColumn: 3,
       indicatorColumn: 4,
       debitValue: "D",
+      creditValue: "C",
     });
   });
 
@@ -218,6 +219,48 @@ describe("amount parsing never leaves integer cents (both decimal styles)", () =
     expect(parseAmountToCents("12,50", "dot").ok).toBe(false);
     expect(parseAmountToCents("abc", "comma").ok).toBe(false);
     expect(parseAmountToCents("1,234.56", "comma").ok).toBe(false);
+  });
+});
+
+describe("an indicator value outside the detected pair fails the row (finding F2)", () => {
+  // A sign is never guessed. The card spec's indicator pair is D/C; a row
+  // whose marker is neither token (STORNO) or is blank must fail the row,
+  // which fails the import loudly with nothing written, the same
+  // discipline as the mixed-account check.
+  const spec = detectOrThrow("kbc-card.csv");
+
+  test("an unknown marker (STORNO) is a row error, not a guessed credit", () => {
+    const parsed = parseStatement(fixture("kbc-card-storno.csv"), spec);
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) {
+      return;
+    }
+    expect(parsed.error).toMatchObject({
+      kind: "row-error",
+      problem: "indicator",
+      lineNumber: 4,
+    });
+  });
+
+  test("a blank marker is a row error, not a guessed credit", () => {
+    const parsed = parseStatement(fixture("kbc-card-blank-indicator.csv"), spec);
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) {
+      return;
+    }
+    expect(parsed.error).toMatchObject({
+      kind: "row-error",
+      problem: "indicator",
+      lineNumber: 4,
+    });
+  });
+
+  test("the detected card spec names both members of the indicator pair", () => {
+    expect(spec.amountRepresentation).toMatchObject({
+      kind: "indicator",
+      debitValue: "D",
+      creditValue: "C",
+    });
   });
 });
 

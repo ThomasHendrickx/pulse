@@ -241,6 +241,7 @@ export const detectSourceProfile = (
           amountColumn: firstAmountColumn,
           indicatorColumn: indicator.column,
           debitValue: indicator.debitValue,
+          creditValue: indicator.creditValue,
         }
       : { kind: "signed", column: firstAmountColumn };
   }
@@ -393,7 +394,7 @@ const findIndicatorColumn = (
   table: Table,
   width: number,
   excluded: readonly number[],
-): { column: number; debitValue: string } | undefined => {
+): { column: number; debitValue: string; creditValue: string } | undefined => {
   for (let column = 0; column < width; column += 1) {
     if (excluded.includes(column)) {
       continue;
@@ -410,7 +411,7 @@ const findIndicatorColumn = (
         [...distinct].every((value) => known.has(value)) &&
         distinct.has(debit)
       ) {
-        return { column, debitValue: debit };
+        return { column, debitValue: debit, creditValue: credit };
       }
     }
   }

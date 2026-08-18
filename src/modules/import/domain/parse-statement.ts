@@ -46,7 +46,7 @@ export type StatementParseError =
       readonly kind: "row-error";
       readonly lineNumber: number;
       readonly rawLine: string;
-      readonly problem: "date" | "amount" | "missing-column";
+      readonly problem: "date" | "amount" | "missing-column" | "indicator";
     };
 
 const cellAt = (fields: readonly string[], index: number): string =>
@@ -155,7 +155,7 @@ export const parseStatement = (
 const amountOf = (
   fields: readonly string[],
   spec: SourceProfileSpec,
-): Result<Cents, "amount" | "missing-column"> => {
+): Result<Cents, "amount" | "missing-column" | "indicator"> => {
   const representation = spec.amountRepresentation;
   if (representation.kind === "signed") {
     const parsed = parseAmountToCents(
@@ -190,9 +190,18 @@ const amountOf = (
   if (!parsed.ok) {
     return err("amount" as const);
   }
-  const indicator = cellAt(fields, representation.indicatorColumn);
+  // A sign is NEVER guessed (finding F2): the marker must equal one of the
+  // pair's two declared tokens, compared case-insensitively because
+  // detection normalises the tokens to uppercase. Anything else, a blank
+  // cell included, fails the row, which fails the import loudly with
+  // nothing written, the same discipline as the mixed-account check.
+  const indicator = cellAt(fields, representation.indicatorColumn).toUpperCase();
   const magnitude = Math.abs(parsed.value);
-  return ok(
-    (indicator === representation.debitValue ? -magnitude : magnitude) as Cents,
-  );
+  if (indicator === representation.debitValue.toUpperCase()) {
+    return ok((-magnitude) as Cents);
+  }
+  if (indicator === representation.creditValue.toUpperCase()) {
+    return ok(magnitude as Cents);
+  }
+  return err("indicator" as const);
 };

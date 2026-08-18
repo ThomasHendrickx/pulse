@@ -26,6 +26,9 @@ export type AmountRepresentation =
       readonly amountColumn: number;
       readonly indicatorColumn: number;
       readonly debitValue: string;
+      // Both members of the marker pair are declared. A marker matching
+      // neither fails the row: a sign is never guessed (finding F2).
+      readonly creditValue: string;
     };
 
 // Column roles, by zero-based column index. bookingDate and description
@@ -132,13 +135,16 @@ export const parseSourceProfileSpec = (
     isIndex(repRecord.amountColumn) &&
     isIndex(repRecord.indicatorColumn) &&
     typeof repRecord.debitValue === "string" &&
-    repRecord.debitValue !== ""
+    repRecord.debitValue !== "" &&
+    typeof repRecord.creditValue === "string" &&
+    repRecord.creditValue !== ""
   ) {
     amountRepresentation = {
       kind: "indicator",
       amountColumn: repRecord.amountColumn,
       indicatorColumn: repRecord.indicatorColumn,
       debitValue: repRecord.debitValue,
+      creditValue: repRecord.creditValue,
     };
   } else {
     return err({ kind: "invalid-spec" as const, at: "amountRepresentation" });

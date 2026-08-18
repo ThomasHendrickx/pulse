@@ -42,7 +42,13 @@ export const confirmImport = async (
 
   const parsed = deps.parser.parse(record.rawContent, input.spec);
   if (!parsed.ok) {
-    return { kind: "rejected", reason: "declaration-needed" };
+    // A file that does not parse under the confirmed spec (an unknown
+    // indicator marker included, finding F2) fails the import loudly with
+    // nothing written, the same discipline as the mixed-account check. A
+    // bricked import is re-uploadable; a silently mis-signed one is not
+    // repairable at all.
+    await deps.imports.markImportFailed(context, record.id, "unparseable");
+    return { kind: "failed", importId: record.id, reason: "unparseable" };
   }
   if (parsed.value.accountIbans.length > 1) {
     // Confirmed or not, a mixed-account file writes NOTHING (hazard H1.2):

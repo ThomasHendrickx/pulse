@@ -104,3 +104,7 @@ ACTION NEEDED FROM ORCHESTRATOR: amend the phase declaration on the base branch 
 - delivery/work-history/m1-p2.yaml: npx tiphys validate --type work-history exit 0 (Node v26.7.0).
 - Claim-grep run exactly as the brief carries it, line-based AND whitespace-flattened. Two hits in my own prose settled by rewording to name the executed evidence (rls.test.ts red-then-green; "still applied"); remaining hits sit in the verbatim dispatch prompt (schema requires verbatim reproduction) and in the literal CR-006 commit subject, both quoted artifacts rather than claims of mine, each verifiable (git log acaa820).
 - Amendment items A-D are listed in the work history's key-decisions with their evidence.
+
+# FIX ROUND 1 (dual clean-room verdicts at 10beb40, consolidated in /home/user/pulse-fleet/findings-m1-p2-round1.md)
+Findings F1-F8 accepted, none disputed; every one was probe-backed. Order of work: F2, F3, F5+F6, F7, F4, F1, F8, then gates, work history fix-round section, push.
+- F1 scope this round is transparency only (name the landing account on confirm and result screens); the full fix is an owner decision, recorded as residual deviation.

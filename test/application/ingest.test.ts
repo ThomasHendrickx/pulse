@@ -255,6 +255,30 @@ describe("mixed-account files fail loudly with nothing written (criterion 1.3)",
   });
 });
 
+describe("unknown indicator markers fail the import loudly at confirm time (finding F2)", () => {
+  test("a STORNO row confirmed with the card spec ends FAILED unparseable with zero rows", async () => {
+    const world = makeFakeImportWorld();
+    const awaiting = await world.deps.imports.createImport(context, {
+      fileName: "kbc-card-storno.csv",
+      rawContent: fixture("kbc-card-storno.csv"),
+      status: "AWAITING_DECLARATION",
+    });
+    const confirmed = await confirmImport(context, world.deps, {
+      importId: awaiting.id,
+      profileName: "card profile",
+      spec: detectedSpec("kbc-card.csv"),
+      declaration: { label: "Credit card", bank: "Demokaart", role: "POT" },
+    });
+    expect(confirmed.kind).toBe("failed");
+    if (confirmed.kind === "failed") {
+      expect(confirmed.reason).toBe("unparseable");
+    }
+    expect(world.imports.get(awaiting.id)?.status).toBe("FAILED");
+    expect(world.imports.get(awaiting.id)?.failureReason).toBe("unparseable");
+    expect(world.transactions).toHaveLength(0);
+  });
+});
+
 describe("every stored Transaction carries its verbatim source line (criterion 1.4)", () => {
   test("rawLine equals the source line for every ingested row, both fixtures", async () => {
     const world = makeFakeImportWorld();
