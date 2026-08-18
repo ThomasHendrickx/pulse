@@ -31,3 +31,8 @@ Incremental log. Appended as work happens.
 - Extracted whitelist to src/app/(auth)/status-keys.ts VERBATIM (still `in`), wrote test/app/auth-status.test.ts.
 - RED captured: `npx vitest run test/app/auth-status.test.ts` -> 1 failed | 3 passed; failing assert isKnownStatus("constructor") toBe(false) at test line 14 (the `in` operator admits prototype keys).
 - Fix: Object.hasOwn(STATUS_KEYS, value). GREEN: 4 passed (output pasted next).
+
+## Amendment C (CR-007, tenancy analyzer)
+- RED captured first: 4 new fixtures (dynamic import held, import-equals held, exported namespace default-flagged, dynamic import outside adapters) -> `npx vitest run test/schema/tenancy.test.ts`: 4 failed | 17 passed.
+- Fix: (1) held-to-rule detection is now a source-text scan DB_CLIENT_IMPORT.test(sourceText), covering dynamic import and import-equals; (2) final else arm default-flags ANY exported statement kind without a positive arm (ts.canHaveModifiers + export modifier), interfaces/type aliases exempt as type-only; (3) comments in src/platform/tenancy.ts and the test header corrected LOUDLY (R-087), residue list extended (call sites, injected clients, alias modules).
+- GREEN: 21 passed (21).
