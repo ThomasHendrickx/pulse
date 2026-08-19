@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import { detectSourceProfile } from "../../src/modules/import/domain/detect-profile";
 import { parseAmountToCents } from "../../src/modules/import/domain/parse-amount";
 import { parseStatement } from "../../src/modules/import/domain/parse-statement";
+import { parseSourceProfileSpec } from "../../src/modules/import/domain/source-profile";
 import type { SourceProfileSpec } from "../../src/modules/import/domain/source-profile";
 
 // Criterion 1.1: deterministic profile detection and parsing against the
@@ -189,6 +190,55 @@ describe("generic comma-delimited fixture (debit and credit pair)", () => {
       expect(Number.isInteger(amount)).toBe(true);
     }
     expect(parsed.value.rows[0]?.counterpartyName).toBe("Müller GmbH");
+  });
+});
+
+describe("case-colliding indicator tokens are rejected at the boundary (finding CR-209)", () => {
+  // parseStatement compares indicator markers case-insensitively (the
+  // detector normalises tokens to uppercase), so a spec whose two tokens
+  // are equal after uppercasing has an UNREACHABLE credit token: every
+  // matching row would sign as debit with no error. The validator refuses
+  // the degenerate pair at the boundary instead of letting a sign become
+  // a foregone conclusion.
+  const indicatorSpec = (debitValue: string, creditValue: string): unknown => ({
+    delimiter: ";",
+    encoding: "utf-8",
+    headerRowIndex: 1,
+    dateFormat: "DD.MM.YY",
+    decimalStyle: "comma",
+    amountRepresentation: {
+      kind: "indicator",
+      amountColumn: 3,
+      indicatorColumn: 4,
+      debitValue,
+      creditValue,
+    },
+    columns: { bookingDate: 0, description: 2 },
+  });
+
+  test("tokens differing only in case are rejected: the credit token would be unreachable", () => {
+    const parsed = parseSourceProfileSpec(indicatorSpec("X", "x"));
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error).toEqual({
+        kind: "invalid-spec",
+        at: "amountRepresentation",
+      });
+    }
+  });
+
+  test("identical tokens are rejected the same way", () => {
+    const parsed = parseSourceProfileSpec(indicatorSpec("D", "D"));
+    expect(parsed.ok).toBe(false);
+  });
+
+  test("distinct tokens keep validating", () => {
+    const parsed = parseSourceProfileSpec(indicatorSpec("D", "C"));
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok && parsed.value.amountRepresentation.kind === "indicator") {
+      expect(parsed.value.amountRepresentation.debitValue).toBe("D");
+      expect(parsed.value.amountRepresentation.creditValue).toBe("C");
+    }
   });
 });
 

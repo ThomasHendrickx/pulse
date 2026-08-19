@@ -288,3 +288,37 @@ Prisma). Re-run with all five env values pinned in the invoking shell:
 npm run test:e2e exit 0, 4 passed (auth x3, import x1), which also
 exercises the new pipeline interpret stage inside the real journey (the
 import completes at status INTERPRETED and the result page renders).
+
+## Session kill, base repair, rebase, CR-209 (coordinator-directed)
+
+The session was killed by a transient connection error while the work
+history was being started; commits through 0eec116 survived and work
+resumed from them (no restart). The coordinator confirmed the escalation:
+main HAD been missing the approved M1-P2 fix round (PR #9 merged the
+pre-fix head; the fix-round push never landed on origin). RESOLUTION: the
+repair merged as 6fc43c9, whose code tree is exactly the reviewed 41ff037
+state. The escalation entries above are kept as written (they were true
+when written); this entry records the resolution rather than deleting
+them.
+
+Rebase of claude/m1-p3-one-pot onto origin/main 6fc43c9: conflicts only in
+src/modules/import (upload-statement, confirm-import, ports, index,
+import-repository), resolved by taking main's fix-round side as base and
+re-applying this phase's additions on top (the interpret call after a
+successful ingest claim; the four re-parse port methods beside main's F4
+boolean markImportFailed and claimed ingestRows). parseStatementRow's
+error union gained the fix round's "indicator" member; the CR-208 sibling
+comment in parse-statement.ts was CORRECTED IN PLACE (R-087): its claim
+that the F2 repair was absent from the base was true when written and
+became false at 6fc43c9; the correction says so instead of silently
+rewriting. Post-rebase gates: typecheck exit 0; npm test 138 passed
+(this branch's 123 plus main's fix-round suites), exit 0.
+
+CR-209, now implementable (creditValue exists on this base): red witness
+FIRST, captured: the new describe block in
+test/domain/profile-detection.test.ts ran against the rebased committed
+code with "Tests 2 failed | 34 passed (36)" (case-variant pair X/x
+accepted; identical pair D/D accepted). Fix: parseSourceProfileSpec's
+indicator arm rejects pairs equal after uppercasing (invalid-spec at
+amountRepresentation), reason recorded at the check. After fix:
+profile-detection 36 passed; full fast suite 141 passed, exit 0.
