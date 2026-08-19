@@ -135,3 +135,32 @@ reverted after its run (structurally different members per class):
 - M8 unmatched transfer legs no longer surfaced: exit 1, 1 failed | 34 passed
 (M3, a non-compiling variant of M3b, also exited 1 but with a TS error
 rather than test failures; superseded by M3b and not counted.)
+
+## Criterion 2.4: reconciliation property test
+
+test/property/reconciliation.test.ts: fast-check 4.9.0 added as a
+devDependency (test-only; the criterion names fast-check explicitly).
+Generator vocabulary: income, spend, refund pair, cash withdrawal,
+reserve park, reserve drawdown, matched transfer (lag 0..4 days),
+unmatched internal leg, full card-settlement shape (1..3 line items,
+settle lag 1..10 days, mirror present or absent), unitemised settlement
+debit (2.8 shape), zero row; 1..12 shapes per dataset, insertion order
+scrambled per run, numRuns 500. changeInPot is computed by reconcile from
+raw amounts only (facts side); income, spend, net-to-reserves from the
+interpretation. Assertions: every reported figure is an integer; with no
+surfaced gaps the identity holds exactly and reconciles is true; with
+gaps the difference equals unresolvedGap plus unmatchedInternalGap
+exactly; coverage tallies assert all five flow values, unmatched legs and
+all four correction shapes actually occurred across the run. Green: 1
+passed, and full suite green (117 passed).
+
+Property red witnesses (mutations, each reverted after its run):
+- P1 unmatched transfer legs dropped from surfacing: exit 1, 1 failed
+- P2 mirrorless settlement debit treated as matched: exit 1, 1 failed
+- P3 zero rows defaulted into SPEND (UNRESOLVED erased): exit 1, 1 failed
+  (caught by the run-wide coverage assertion: the charter's "never
+  defaulted into a total" at property level)
+Note: category-swap mutations (for example a refund counted INCOME) do
+NOT break the identity, because both sides of the equation move together;
+those are guarded by the unit suites (M1..M8 above), which is why both
+layers exist.
