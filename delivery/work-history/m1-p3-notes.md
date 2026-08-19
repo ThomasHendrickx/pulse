@@ -322,3 +322,31 @@ accepted; identical pair D/D accepted). Fix: parseSourceProfileSpec's
 indicator arm rejects pairs equal after uppercasing (invalid-spec at
 amountRepresentation), reason recorded at the check. After fix:
 profile-detection 36 passed; full fast suite 141 passed, exit 0.
+
+## Work history, validation, claim grep
+
+delivery/work-history/m1-p3.yaml written and validated: tiphys validate
+--type work-history --context (scratch dir symlinking plan.yaml,
+work-history.yaml, assurance-modes.yaml, the M1-P2 reviewers' pattern),
+exit 0 under Node v26.7.0. Two first-pass validation failures were
+repaired: an open-question claim carrying the universal token "every"
+(reworded), and a contradicts-plan false record carrying a
+plan-language-note over token-free prose (note dropped; the oneOf takes
+token-free prose on the cheap branch only).
+
+Claim grep (clause claim-grep), run exactly as written plus the
+whitespace-flattened variant. Remaining hits, each settled: three inside
+the VERBATIM prompt (quoted dispatch instructions, not claims made by
+this history); one in a quoted commit subject whose behavior is settled
+by claim M1P3-C5's executed red-witness construction; one "never reached
+origin" inside environment warning 4, settled by the adjacent evidence
+field (the two captured git diff --stat outputs) and the coordinator's
+resolution message. The unexecuted "would catch" remedy sentence was
+restated as an explicit unexecuted proposal.
+
+Gate runs at the final CODE head 9b49cfb: typecheck 0, lint 0, npm test
+141 passed 0 skipped exit 0, db:reset from scratch then test:e2e 4
+passed exit 0 (all five env values pinned). Commits after 9b49cfb touch
+delivery/work-history/ only, verifiable with git diff 9b49cfb..HEAD
+--name-only. No em dash appears in any file this phase touched (grep
+executed, zero hits).
