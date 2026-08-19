@@ -19,7 +19,8 @@ export type ConfirmOutcome =
       readonly reason:
         | "import-not-found"
         | "not-awaiting-declaration"
-        | "declaration-needed";
+        | "declaration-needed"
+        | "already-confirmed";
     };
 
 export const confirmImport = async (
@@ -47,13 +48,28 @@ export const confirmImport = async (
     // nothing written, the same discipline as the mixed-account check. A
     // bricked import is re-uploadable; a silently mis-signed one is not
     // repairable at all.
-    await deps.imports.markImportFailed(context, record.id, "unparseable");
+    const marked = await deps.imports.markImportFailed(
+      context,
+      record.id,
+      "unparseable",
+    );
+    if (!marked) {
+      // A racer ingested it between the read and this write (finding F4).
+      return { kind: "rejected", reason: "already-confirmed" };
+    }
     return { kind: "failed", importId: record.id, reason: "unparseable" };
   }
   if (parsed.value.accountIbans.length > 1) {
     // Confirmed or not, a mixed-account file writes NOTHING (hazard H1.2):
     // the existing import row moves to FAILED and no transaction row lands.
-    await deps.imports.markImportFailed(context, record.id, "mixed-accounts");
+    const marked = await deps.imports.markImportFailed(
+      context,
+      record.id,
+      "mixed-accounts",
+    );
+    if (!marked) {
+      return { kind: "rejected", reason: "already-confirmed" };
+    }
     return { kind: "failed", importId: record.id, reason: "mixed-accounts" };
   }
 
@@ -88,12 +104,25 @@ export const confirmImport = async (
     }));
 
   const keys = assignDedupKeys(accountId, parsed.value.rows, input.spec);
-  const { added, known } = await deps.imports.ingestRows(context, {
+  const ingested = await deps.imports.ingestRows(context, {
     importId: record.id,
     accountId,
     sourceProfileId: profile.id,
+    // The atomic claim (finding F4): the read-time status check above is
+    // advisory only; two racing confirms both pass it, and the claim
+    // inside the ingest transaction is what arbitrates. The loser writes
+    // nothing and reports already-confirmed.
+    fromStatus: "AWAITING_DECLARATION",
     // zipRowsWithDedupKeys THROWS on a row/key desync (finding F7).
     rows: zipRowsWithDedupKeys(parsed.value.rows, keys),
   });
-  return { kind: "ingested", importId: record.id, added, known };
+  if (!ingested.ok) {
+    return { kind: "rejected", reason: "already-confirmed" };
+  }
+  return {
+    kind: "ingested",
+    importId: record.id,
+    added: ingested.added,
+    known: ingested.known,
+  };
 };

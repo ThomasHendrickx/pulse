@@ -5,6 +5,8 @@ import { describe, expect, test } from "vitest";
 import { confirmImport } from "../../src/modules/import/application/confirm-import";
 import { uploadStatement } from "../../src/modules/import/application/upload-statement";
 import { detectSourceProfile } from "../../src/modules/import/domain/detect-profile";
+import { assignDedupKeys, zipRowsWithDedupKeys } from "../../src/modules/import/domain/dedup";
+import { parseStatement } from "../../src/modules/import/domain/parse-statement";
 import { householdId, userId, type HouseholdContext } from "../../src/platform/tenancy";
 import { makeFakeImportWorld, type FakeImportWorld } from "./fake-import-world";
 
@@ -308,5 +310,95 @@ describe("every stored Transaction carries its verbatim source line (criterion 1
     const stored = world.transactions.map((row) => row.rawLine);
     expect(stored).toHaveLength(expected.length);
     expect([...stored].sort()).toEqual([...expected].sort());
+  });
+});
+
+describe("racing confirms cannot double-ingest one awaiting import (finding F4)", () => {
+  test("the status transition is claimed atomically: the second ingest is refused with zero rows", async () => {
+    const world = makeFakeImportWorld();
+    const awaiting = await world.deps.imports.createImport(context, {
+      fileName: "kbc-card.csv",
+      rawContent: fixture("kbc-card.csv"),
+      status: "AWAITING_DECLARATION",
+    });
+    const spec = detectedSpec("kbc-card.csv");
+    const parsed = parseStatement(fixture("kbc-card.csv"), spec);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+    const accountA = await world.deps.accounts.declareAccount(context, {
+      label: "Card A",
+      bank: "Demokaart",
+      role: "POT",
+    });
+    const accountB = await world.deps.accounts.declareAccount(context, {
+      label: "Card B",
+      bank: "Demokaart",
+      role: "POT",
+    });
+    const profile = await world.deps.imports.createProfile(context, {
+      name: "card",
+      spec,
+      accountId: accountA.id,
+    });
+
+    // Both racers passed the read-time status check; the claim inside the
+    // ingest transaction is what must arbitrate.
+    const ingestAs = (accountId: string) =>
+      world.deps.imports.ingestRows(context, {
+        importId: awaiting.id,
+        accountId,
+        sourceProfileId: profile.id,
+        fromStatus: "AWAITING_DECLARATION",
+        rows: zipRowsWithDedupKeys(
+          parsed.value.rows,
+          assignDedupKeys(accountId, parsed.value.rows, spec),
+        ),
+      });
+
+    const first = await ingestAs(accountA.id);
+    expect(first.ok).toBe(true);
+    if (first.ok) {
+      expect(first.added).toBe(6);
+    }
+
+    const second = await ingestAs(accountB.id);
+    expect(second.ok).toBe(false);
+    if (!second.ok) {
+      expect(second.error).toBe("not-in-expected-status");
+    }
+    // Nothing from the losing racer landed: six rows, all on account A.
+    expect(world.transactions).toHaveLength(6);
+    expect(
+      world.transactions.filter((row) => row.accountId === accountB.id),
+    ).toHaveLength(0);
+  });
+
+  test("a second confirm of an already-confirmed import is rejected with zero new rows", async () => {
+    const world = makeFakeImportWorld();
+    const awaiting = await world.deps.imports.createImport(context, {
+      fileName: "kbc-card.csv",
+      rawContent: fixture("kbc-card.csv"),
+      status: "AWAITING_DECLARATION",
+    });
+    const spec = detectedSpec("kbc-card.csv");
+    const first = await confirmImport(context, world.deps, {
+      importId: awaiting.id,
+      profileName: "card profile",
+      spec,
+      declaration: { label: "Card A", bank: "Demokaart", role: "POT" },
+    });
+    expect(first.kind).toBe("ingested");
+    const countAfterFirst = world.transactions.length;
+
+    const second = await confirmImport(context, world.deps, {
+      importId: awaiting.id,
+      profileName: "card profile twin",
+      spec,
+      declaration: { label: "Card B", bank: "Demokaart", role: "POT" },
+    });
+    expect(second.kind).toBe("rejected");
+    expect(world.transactions).toHaveLength(countAfterFirst);
   });
 });

@@ -71,15 +71,30 @@ export const uploadStatement = async (
     sourceProfileId: profile.id,
   });
   const keys = assignDedupKeys(account, parsed.value.rows, detected.value);
-  const { added, known } = await deps.imports.ingestRows(context, {
+  const ingested = await deps.imports.ingestRows(context, {
     importId: record.id,
     accountId: account,
     sourceProfileId: profile.id,
+    // The import row was created as PARSED two statements ago in this
+    // same request; a failed claim here is a BUG, so it throws (finding
+    // F4 gives ingestRows its conditional claim, and expected losers
+    // exist only on the confirm path).
+    fromStatus: "PARSED",
     // zipRowsWithDedupKeys THROWS on a row/key desync (finding F7): a
     // softened empty key would be silent multi-row loss.
     rows: zipRowsWithDedupKeys(parsed.value.rows, keys),
   });
-  return { kind: "ingested", importId: record.id, added, known };
+  if (!ingested.ok) {
+    throw new Error(
+      `Freshly created import ${record.id} could not be claimed for ingest`,
+    );
+  }
+  return {
+    kind: "ingested",
+    importId: record.id,
+    added: ingested.added,
+    known: ingested.known,
+  };
 };
 
 export const findProfileBySpec = async (
