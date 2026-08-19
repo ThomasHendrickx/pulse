@@ -193,6 +193,52 @@ describe("generic comma-delimited fixture (debit and credit pair)", () => {
   });
 });
 
+describe("a signed cell under an indicator representation fails loud (finding CR-305)", () => {
+  // Sibling of CR-208's class: under the indicator representation the
+  // MARKER is the sign authority and the amount cell must be a bare
+  // magnitude. Before this fix the branch took Math.abs of the cell, so
+  // "-742,10" beside marker C silently parsed +74210: sign information
+  // present in the cell was discarded instead of refused.
+  const indicatorSpec: SourceProfileSpec = {
+    delimiter: ";",
+    encoding: "utf-8",
+    headerRowIndex: 0,
+    dateFormat: "DD.MM.YY",
+    decimalStyle: "comma",
+    amountRepresentation: {
+      kind: "indicator",
+      amountColumn: 1,
+      indicatorColumn: 2,
+      debitValue: "D",
+      creditValue: "C",
+    },
+    columns: { bookingDate: 0, description: 3 },
+  };
+  const rowBytes = (row: string): Uint8Array =>
+    new TextEncoder().encode(["Datum;Bedrag;D/C;Omschrijving", row].join("\n"));
+
+  test("a negative cell beside a credit marker is a row error, never absoluted", () => {
+    const parsed = parseStatement(rowBytes("03.08.26;-742,10;C;ACME STORE"), indicatorSpec);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error).toMatchObject({ kind: "row-error", problem: "amount" });
+    }
+  });
+
+  test("an explicit plus sign beside a debit marker is a row error", () => {
+    const parsed = parseStatement(rowBytes("03.08.26;+15,25;D;ACME STORE"), indicatorSpec);
+    expect(parsed.ok).toBe(false);
+  });
+
+  test("bare magnitudes keep parsing, signed by the marker", () => {
+    const parsed = parseStatement(rowBytes("03.08.26;742,10;D;ACME STORE"), indicatorSpec);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.value.rows[0]?.amountCents).toBe(-74210);
+    }
+  });
+});
+
 describe("case-colliding indicator tokens are rejected at the boundary (finding CR-209)", () => {
   // parseStatement compares indicator markers case-insensitively (the
   // detector normalises tokens to uppercase), so a spec whose two tokens

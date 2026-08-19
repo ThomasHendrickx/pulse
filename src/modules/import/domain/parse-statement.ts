@@ -179,10 +179,10 @@ export const parseStatement = (
 // base, which was true when written (the M1-P2 squash had missed the fix
 // round) and became false when the base was repaired at 6fc43c9; the
 // M1-P3 work history records that escalation and its resolution. The
-// indicator branch still takes Math.abs of the cell, so an explicitly
-// signed cell there is absoluted, with the sign authority staying on the
-// marker; making a signed cell fail loud there too is a candidate
-// follow-up, not silently added here.
+// indicator branch used to take Math.abs of the cell, absoluting an
+// explicitly signed value; finding CR-305 (fix round 1) closed that arm
+// too, so all three directional shapes now refuse a cell that carries its
+// own sign.
 const carriesExplicitSign = (text: string): boolean =>
   text.startsWith("-") || text.startsWith("+");
 
@@ -223,10 +223,16 @@ const amountOf = (
     return err("missing-column" as const);
   }
   // indicator
-  const parsed = parseAmountToCents(
-    cellAt(fields, representation.amountColumn),
-    spec.decimalStyle,
-  );
+  const amountText = cellAt(fields, representation.amountColumn);
+  // Finding CR-305, closing the sibling CR-208's comment named: under the
+  // indicator representation the MARKER is the sign authority, so a cell
+  // carrying its own sign is a convention the profile did not declare and
+  // the row fails loud (the branch used to take Math.abs, silently
+  // discarding the cell's sign).
+  if (carriesExplicitSign(amountText)) {
+    return err("amount" as const);
+  }
+  const parsed = parseAmountToCents(amountText, spec.decimalStyle);
   if (!parsed.ok) {
     return err("amount" as const);
   }
@@ -236,7 +242,7 @@ const amountOf = (
   // cell included, fails the row, which fails the import loudly with
   // nothing written, the same discipline as the mixed-account check.
   const indicator = cellAt(fields, representation.indicatorColumn).toUpperCase();
-  const magnitude = Math.abs(parsed.value);
+  const magnitude = parsed.value;
   if (indicator === representation.debitValue.toUpperCase()) {
     return ok((-magnitude) as Cents);
   }

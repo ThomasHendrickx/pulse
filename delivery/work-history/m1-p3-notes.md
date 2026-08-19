@@ -350,3 +350,17 @@ passed exit 0 (all five env values pinned). Commits after 9b49cfb touch
 delivery/work-history/ only, verifiable with git diff 9b49cfb..HEAD
 --name-only. No em dash appears in any file this phase touched (grep
 executed, zero hits).
+
+## FIX ROUND 1 (hazard verdict at f274d30, six findings)
+
+### CR-305: signed cell under an indicator representation fails loud
+
+Red witness FIRST, captured: new describe block in
+test/domain/profile-detection.test.ts against committed code: "Tests 2
+failed | 37 passed (39)" (-742,10 beside marker C parsed +74210; +15,25
+beside D parsed -1525). Fix: carriesExplicitSign guard in the indicator
+branch of amountOf, row error problem "amount"; Math.abs removed (the
+guard makes the parsed value non-negative). The CR-208 mechanism comment
+corrected in place: the candidate-follow-up sentence now records CR-305
+closed the arm. After: 39 passed; full suite 144 passed, exit 0. Storno
+and blank-indicator fixtures carry unsigned cells, unaffected.
