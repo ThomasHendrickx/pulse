@@ -31,6 +31,7 @@ files-touched:
   - src/modules/import/application/ports.ts
   - src/modules/import/application/upload-statement.ts
   - src/modules/import/domain/dedup.ts
+  - src/modules/import/domain/parse-amount.ts
   - src/modules/import/domain/parse-statement.ts
   - src/modules/import/domain/source-profile.ts
   - src/modules/ledger/adapters/ledger-repository.ts
@@ -90,6 +91,10 @@ per-step-commits:
     subject: "Close CR-306: at most one settlement debit per card import, deterministic tie-break, losers stay honest SPEND"
   - sha: be49a82
     subject: "Close CR-302 and CR-304: re-parse keys from the full file with insert-ignore semantics; facts rewrite downgrades imports to INGESTED atomically"
+  - sha: c3f566a
+    subject: "Fix round 1 recorded in the work history, schema-validated"
+  - sha: 8b3059f
+    subject: "Close CR-307: directional cells parse through an unsigned entry point, guard and parser judge one normalised string"
 key-decisions:
   - decision: >-
       The settlement date window is SETTLEMENT_DATE_WINDOW_DAYS = 45, a
@@ -322,7 +327,7 @@ deviations:
       package-lock.json: fast-check devDependency required by criterion
       2.4. delivery/work-history files are standing extras per the brief.
 gate-evidence:
-  - gate: npm run typecheck (tsc --noEmit, Node v26.7.0, fix-round head be49a82)
+  - gate: npm run typecheck (tsc --noEmit, Node v26.7.0, fix-round-2 head 8b3059f)
     result: green
     wrapper-exit-code: 0
     discovered: 0
@@ -331,7 +336,7 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
-  - gate: npm run lint (eslint ., Node v26.7.0, fix-round head be49a82)
+  - gate: npm run lint (eslint ., Node v26.7.0, fix-round-2 head 8b3059f)
     result: green
     wrapper-exit-code: 0
     discovered: 0
@@ -340,18 +345,18 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
-  - gate: npm test (vitest run, Node v26.7.0, no build step required, fix-round head be49a82)
+  - gate: npm test (vitest run, Node v26.7.0, no build step required, fix-round-2 head 8b3059f)
     result: green
     wrapper-exit-code: 0
-    discovered: 152
-    passed: 152
+    discovered: 155
+    passed: 155
     failed: 0
     skipped: 0
     todo: 0
     did-not-run: 0
   - gate: >-
       npm run test:e2e (playwright test, chromium, dev webServer,
-      fix-round head be49a82, after npm run db:reset re-applied all three migrations
+      fix-round-2 head 8b3059f, after npm run db:reset re-applied all three migrations
       from scratch and seeded; DATABASE_URL, DIRECT_URL,
       NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY and
       SUPABASE_SERVICE_ROLE_KEY all pinned to the local supabase stack in
@@ -482,6 +487,53 @@ fix-round:
       canonical repair, unchanged this round), and e2e coverage of the
       re-parse path (fast-gate port-level only; no UI surface calls
       fixSourceProfile yet).
+  - mechanism: >-
+      Fix round 2 (finding CR-307, hazard delta sweep): a guard and the
+      operation it guards judging DIFFERENT strings, because the operation
+      normalises its input after the guard has already read it. Instance:
+      carriesExplicitSign tested the raw cell's first character while
+      parseAmountToCents stripped currency noise (EUR, the euro sign)
+      before reading a sign, so "EUR -742,10" passed every directional
+      guard and parsed signed: a credit stored negative under an
+      indicator marker, and the exact CR-208 inversion in a debit column.
+      The fix moves the guard INSIDE the parser (parseUnsignedAmountToCents
+      rejects any sign remaining AFTER the shared normalisation), so the
+      two judgements are one function over one string by construction.
+    derivation:
+      command: >-
+        grep -rn "parseAmountToCents\|parseUnsignedAmountToCents\|stripCurrencyNoise\|carriesExplicitSign"
+        src --include=*.ts
+      output: |
+        src/modules/import/domain/parse-statement.ts:14:import { parseAmountToCents, parseUnsignedAmountToCents } from "./parse-amount";
+        src/modules/import/domain/parse-statement.ts:187:// guard now lives INSIDE the parser as parseUnsignedAmountToCents (see
+        src/modules/import/domain/parse-statement.ts:196:    const parsed = parseAmountToCents(
+        src/modules/import/domain/parse-statement.ts:209:      const parsed = parseUnsignedAmountToCents(debitText, spec.decimalStyle);
+        src/modules/import/domain/parse-statement.ts:215:      const parsed = parseUnsignedAmountToCents(creditText, spec.decimalStyle);
+        src/modules/import/domain/parse-statement.ts:225:  const parsed = parseUnsignedAmountToCents(
+        src/modules/import/domain/parse-amount.ts:25:const stripCurrencyNoise = (rawText: string): string =>
+        src/modules/import/domain/parse-amount.ts:28:export const parseAmountToCents = (
+        src/modules/import/domain/parse-amount.ts:32:  let text = stripCurrencyNoise(rawText);
+        src/modules/import/domain/parse-amount.ts:62:  parseAmountToCents(text, style).ok;
+        src/modules/import/domain/parse-amount.ts:75:export const parseUnsignedAmountToCents = (
+        src/modules/import/domain/parse-amount.ts:79:  const text = stripCurrencyNoise(rawText);
+        src/modules/import/domain/parse-amount.ts:83:  return parseAmountToCents(text, style);
+        [reading of every site, post-fix, command run at commit 8b3059f in
+        the phase worktree: the ONLY remaining direct parseAmountToCents
+        call sites in parse-statement are the signed representation
+        (parse-statement line 196), where a cell sign is the declared
+        convention, and the detection probe isAmountLike (parse-amount
+        line 62); all three directional branches (parse-statement lines
+        209, 215, 225) go through the unsigned entry point;
+        carriesExplicitSign no longer exists anywhere in src]
+    not-covered: >-
+      Currency noise vocabulary: stripCurrencyNoise removes exactly EUR
+      and the euro sign, the shipped normalisation since M1-P2; a future
+      widening of that vocabulary inherits the unsigned guard by
+      construction (one shared function), but any NEW normalisation added
+      elsewhere in the parse path would need the same one-string rule,
+      stated at both definitions. Detection's isAmountLike still uses the
+      signed parser deliberately: detection scores column shapes over
+      signed columns too and writes nothing.
 claims:
   - id: M1P3-C1
     kind: coverage
@@ -662,6 +714,25 @@ claims:
           Enforcement alone: 20 passed. With the overlap witnesses: 3
           failed | 3 passed, both CR-302 reds aborting on
           h:bf5ac2e4...#0.
+  - id: M1P3-C12
+    kind: coverage
+    statement: >-
+      Fix round 2, CR-307 red-witnessed against the committed code before
+      the fix, both reviewer shapes: the indicator cell "EUR -742,10"
+      beside marker C parsed instead of erroring, and the debitCredit
+      debit cell "EUR -742.10" parsed to the CR-208 inversion; after the
+      fix both are row errors and the unsigned control ("EUR 742,10")
+      still parses.
+    settled-by:
+      executed-construction:
+        command: >-
+          npx vitest run test/domain/profile-detection.test.ts, first
+          with the two CR-307 witnesses against the pre-fix parser, then
+          after the parseUnsignedAmountToCents fix
+        exit-code: 1
+        output: >-
+          Red: Tests 2 failed | 40 passed (42). After the fix: 42 passed
+          (42); full suite 155 passed, exit 0.
   - id: M1P3-C7
     kind: open-question
     statement: >-

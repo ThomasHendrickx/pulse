@@ -512,3 +512,15 @@ positive control asserts "EUR 742,10" without a sign still parses.
 Mechanism comments updated at both definitions. After: profile-detection
 42 passed; full suite 155 passed; typecheck 0; lint 0; db:reset plus
 test:e2e 4 passed exit 0 with all five env values pinned.
+
+### Fix round 2 close-out
+
+Work history updated: round-2 fix-round entry with the REAL derivation
+capture (grep over parseAmountToCents/parseUnsignedAmountToCents/
+stripCurrencyNoise/carriesExplicitSign at 8b3059f, full output, per-site
+reading, not-covered stated), commits appended, gate evidence moved to
+8b3059f (155 passed), claim M1P3-C12 added; tiphys validate exit 0.
+Claim-grep re-run over the flattened document: hit classes unchanged
+(verbatim prompt, quoted commit subjects settled by the red-witness
+constructions, sentences inside executed derivation blocks, the settled
+warning-4 sentence). No em dashes in any touched file.
