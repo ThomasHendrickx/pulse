@@ -237,6 +237,26 @@ describe("a signed cell under an indicator representation fails loud (finding CR
       expect(parsed.value.rows[0]?.amountCents).toBe(-74210);
     }
   });
+
+  test("a sign hidden behind currency noise is still a row error (finding CR-307)", () => {
+    // The guard and the parser must judge the SAME normalised string:
+    // "EUR -742,10" starts with "E", so a first-character guard passes
+    // it, while the parser strips the currency noise and then reads the
+    // sign, storing a credit as -74210.
+    const parsed = parseStatement(rowBytes("03.08.26;EUR -742,10;C;ACME STORE"), indicatorSpec);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error).toMatchObject({ kind: "row-error", problem: "amount" });
+    }
+  });
+
+  test("currency noise without a sign keeps parsing (finding CR-307 control)", () => {
+    const parsed = parseStatement(rowBytes("03.08.26;EUR 742,10;D;ACME STORE"), indicatorSpec);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.value.rows[0]?.amountCents).toBe(-74210);
+    }
+  });
 });
 
 describe("case-colliding indicator tokens are rejected at the boundary (finding CR-209)", () => {
@@ -327,6 +347,14 @@ describe("signed values in directional columns fail loud (finding CR-208)", () =
 
   test("an explicit plus sign inside the debit column is a row error", () => {
     expectRowError("2026-08-05,+88.00,,ACME STORE");
+  });
+
+  test("a sign hidden behind currency noise in a debit column is a row error (finding CR-307)", () => {
+    // "EUR -742,10" slips past a first-character sign guard and the
+    // debitCredit branch then negates the PARSED (already negative)
+    // value: +74210 stored under a Debit header, the exact CR-208
+    // inversion one normalisation step deeper.
+    expectRowError("2026-08-03,EUR -742.10,,ACME STORE");
   });
 
   test("unsigned magnitudes keep parsing: debit negative, credit positive", () => {

@@ -11,7 +11,7 @@ import {
   splitDelimitedLine,
   splitLines,
 } from "./delimited-text";
-import { parseAmountToCents } from "./parse-amount";
+import { parseAmountToCents, parseUnsignedAmountToCents } from "./parse-amount";
 import { parseBusinessDate } from "./parse-date";
 import type { SourceProfileSpec } from "./source-profile";
 
@@ -180,12 +180,13 @@ export const parseStatement = (
 // round) and became false when the base was repaired at 6fc43c9; the
 // M1-P3 work history records that escalation and its resolution. The
 // indicator branch used to take Math.abs of the cell, absoluting an
-// explicitly signed value; finding CR-305 (fix round 1) closed that arm
-// too, so all three directional shapes now refuse a cell that carries its
-// own sign.
-const carriesExplicitSign = (text: string): boolean =>
-  text.startsWith("-") || text.startsWith("+");
-
+// explicitly signed value; finding CR-305 (fix round 1) closed that arm.
+// FIX ROUND 2, finding CR-307: the guard here used to test the RAW cell's
+// first character while the parser stripped currency noise before reading
+// a sign, so "EUR -742,10" slipped past every directional guard. The
+// guard now lives INSIDE the parser as parseUnsignedAmountToCents (see
+// parse-amount.ts), where it judges the same normalised string the parse
+// does; every directional branch below calls that entry point.
 const amountOf = (
   fields: readonly string[],
   spec: SourceProfileSpec,
@@ -205,34 +206,26 @@ const amountOf = (
       return err("amount" as const);
     }
     if (debitText !== "") {
-      if (carriesExplicitSign(debitText)) {
-        return err("amount" as const);
-      }
-      const parsed = parseAmountToCents(debitText, spec.decimalStyle);
+      const parsed = parseUnsignedAmountToCents(debitText, spec.decimalStyle);
       return parsed.ok
         ? ok((-parsed.value) as Cents)
         : err("amount" as const);
     }
     if (creditText !== "") {
-      if (carriesExplicitSign(creditText)) {
-        return err("amount" as const);
-      }
-      const parsed = parseAmountToCents(creditText, spec.decimalStyle);
+      const parsed = parseUnsignedAmountToCents(creditText, spec.decimalStyle);
       return parsed.ok ? parsed : err("amount" as const);
     }
     return err("missing-column" as const);
   }
   // indicator
-  const amountText = cellAt(fields, representation.amountColumn);
-  // Finding CR-305, closing the sibling CR-208's comment named: under the
-  // indicator representation the MARKER is the sign authority, so a cell
-  // carrying its own sign is a convention the profile did not declare and
-  // the row fails loud (the branch used to take Math.abs, silently
-  // discarding the cell's sign).
-  if (carriesExplicitSign(amountText)) {
-    return err("amount" as const);
-  }
-  const parsed = parseAmountToCents(amountText, spec.decimalStyle);
+  // Finding CR-305: under the indicator representation the MARKER is the
+  // sign authority, so a cell carrying its own sign is a row error (the
+  // branch used to take Math.abs, silently discarding the cell's sign);
+  // the unsigned entry point judges the normalised string (CR-307).
+  const parsed = parseUnsignedAmountToCents(
+    cellAt(fields, representation.amountColumn),
+    spec.decimalStyle,
+  );
   if (!parsed.ok) {
     return err("amount" as const);
   }

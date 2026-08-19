@@ -482,3 +482,33 @@ claims M1P3-C10/C11 added; tiphys validate --type work-history exit 0.
 Claim-grep re-run: new hits are quoted commit subjects (settled by the
 red-witness constructions in claims), sentences inside the executed
 derivation block, and the previously settled warning-4 sentence.
+
+## FIX ROUND 2 (hazard delta sweep, one new finding)
+
+### CR-307: the sign guard and the parser judge the same normalised string
+
+Round-1 delta: both reviewers confirmed all six round-1 fixes resolved by
+execution; criteria delta APPROVE; CR-307 is the one new medium.
+
+Red witnesses FIRST, captured: two new tests against the committed code,
+"Tests 2 failed | 40 passed (42)":
+- indicator: "EUR -742,10" beside marker C parsed ok (stored -74210, a
+  credit stored negative) instead of erroring;
+- debitCredit: "EUR -742.10" in the Debit column parsed ok (stored
+  +74210, the exact CR-208 inversion) instead of erroring.
+Both slipped past the round-1 guards because carriesExplicitSign tested
+the RAW cell's first character ("E") while parseAmountToCents stripped
+currency noise before reading the sign: guard and parser judged different
+strings.
+
+Fix, as the reviewer specified: stripCurrencyNoise extracted as the one
+shared normalisation in parse-amount.ts; new entry point
+parseUnsignedAmountToCents rejects any sign remaining AFTER that
+normalisation, then delegates to the signed parser; BOTH directional
+branches (debitCredit debit, debitCredit credit, indicator) now call it,
+and carriesExplicitSign is deleted (its job moved inside the parser where
+divergence is impossible by construction: one function, one string). A
+positive control asserts "EUR 742,10" without a sign still parses.
+Mechanism comments updated at both definitions. After: profile-detection
+42 passed; full suite 155 passed; typecheck 0; lint 0; db:reset plus
+test:e2e 4 passed exit 0 with all five env values pinned.
