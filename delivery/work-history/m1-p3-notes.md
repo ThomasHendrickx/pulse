@@ -466,3 +466,19 @@ import INTERPRETED to INGESTED; the reinterpretation that follows
 restores INTERPRETED, and the test walks the recovery (a later interpret
 run over the corrected facts). Port contract updated to state the status
 transition. After: 6 passed; full suite 152 passed, typecheck 0, lint 0.
+
+### Fix round 1 close-out
+
+Gates at fix-round head be49a82, all executed in this worktree:
+npm run typecheck exit 0; npm run lint exit 0; npm test exit 0 (15 files,
+152 passed, 0 skipped); npm run db:reset exit 0 (all three migrations
+from scratch plus seed) then npm run test:e2e exit 0 (4 passed), all five
+env values pinned per fleet warning 6. Work history updated: fix-round
+mechanism entry with executed derivation (grep over
+summarizeCardImports/buildOutgoingHistoryKeys/assignDedupKeys/
+outgoingHistoryKeys, full output, per-site reading, not-covered stated),
+five fix commits appended, gate evidence moved to be49a82, coverage
+claims M1P3-C10/C11 added; tiphys validate --type work-history exit 0.
+Claim-grep re-run: new hits are quoted commit subjects (settled by the
+red-witness constructions in claims), sentences inside the executed
+derivation block, and the previously settled warning-4 sentence.
