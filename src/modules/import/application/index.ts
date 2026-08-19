@@ -9,6 +9,7 @@ import {
   findAccountByIban,
   getAccountById,
 } from "@/modules/accounts/application";
+import { interpretForImport } from "@/modules/ledger/application";
 import { delimitedFileParser } from "../adapters/delimited-file-parser";
 import * as repository from "../adapters/import-repository";
 import type { NewAccount } from "@/modules/accounts/application";
@@ -45,6 +46,9 @@ const liveDependencies: ImportDependencies = {
     ingestRows: repository.ingestRows,
   },
   accounts: { findAccountByIban, getAccountById, declareAccount },
+  interpret: async (context, importId) => {
+    await interpretForImport(context, importId);
+  },
 };
 
 export const uploadStatement = (

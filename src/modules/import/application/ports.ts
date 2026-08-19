@@ -138,4 +138,13 @@ export type ImportDependencies = {
   readonly parser: StatementParser;
   readonly imports: ImportRepositoryPort;
   readonly accounts: AccountsGateway;
+  // The interpret stage of the pipeline (parse -> identify -> declare ->
+  // ingest -> interpret): after a successful ingest, the ledger re-runs
+  // interpretation over the affected period window across all pot
+  // accounts, so an unmatched transfer leg heals on the next upload.
+  // Bound to the ledger module's published application interface.
+  readonly interpret: (
+    context: HouseholdContext,
+    importId: string,
+  ) => Promise<void>;
 };

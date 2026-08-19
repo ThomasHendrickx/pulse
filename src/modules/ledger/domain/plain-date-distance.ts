@@ -2,7 +2,7 @@
 // arithmetic: PlainDate strings go through Date.UTC so no timezone can
 // shift a booking date (pulse-typescript section 2).
 
-import type { PlainDate } from "@/platform/plain-date";
+import { plainDate, type PlainDate } from "@/platform/plain-date";
 
 const epochDays = (date: PlainDate): number => {
   const year = Number(date.slice(0, 4));
@@ -13,3 +13,8 @@ const epochDays = (date: PlainDate): number => {
 
 export const dayDistance = (a: PlainDate, b: PlainDate): number =>
   Math.abs(epochDays(a) - epochDays(b));
+
+export const addDays = (date: PlainDate, days: number): PlainDate => {
+  const shifted = new Date((epochDays(date) + days) * 86_400_000);
+  return plainDate(shifted.toISOString().slice(0, 10));
+};

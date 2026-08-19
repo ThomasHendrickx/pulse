@@ -27,6 +27,16 @@ export const SETTLEMENT_CREDIT_PATTERNS: readonly RegExp[] = [
   /DOMICILIERING\s+VIA\s+JE\s+BANK/i,
 ];
 
+// How far the interpretation window is padded on both sides when loading
+// context around an import's period: wide enough that every settlement
+// match (45 days) and every transfer partner (4 days) of a row inside the
+// period is loaded. RESIDUE, STATED: a pair whose one leg sits exactly in
+// the outer padding rim while its partner lies beyond it can be re-marked
+// unmatched by a window run; recompute over everything is the canonical
+// repair and the read model surfaces the leg rather than hiding it.
+export const INTERPRETATION_WINDOW_PADDING_DAYS =
+  SETTLEMENT_DATE_WINDOW_DAYS + TRANSFER_DATE_TOLERANCE_DAYS;
+
 // Cash withdrawal patterns, code-owned. Money that leaves the pot through
 // one of these has "cash" as its own destination, never split, never
 // guessed at (pulse-domain section 3).

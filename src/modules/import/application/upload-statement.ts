@@ -89,6 +89,7 @@ export const uploadStatement = async (
       `Freshly created import ${record.id} could not be claimed for ingest`,
     );
   }
+  await deps.interpret(context, record.id);
   return {
     kind: "ingested",
     importId: record.id,

@@ -25,6 +25,9 @@ export type AccountRepositoryPort = {
     context: HouseholdContext,
     input: NewAccount,
   ) => Promise<AccountRecord>;
+  readonly listAccounts: (
+    context: HouseholdContext,
+  ) => Promise<readonly AccountRecord[]>;
   readonly findAccountByIban: (
     context: HouseholdContext,
     iban: string,
