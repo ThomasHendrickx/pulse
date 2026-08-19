@@ -74,12 +74,16 @@ files-touched:
   - test/app/auth-status.test.ts
   - test/application/fake-import-world.ts
   - test/application/ingest.test.ts
+  - test/domain/dedup.test.ts
   - test/domain/profile-detection.test.ts
   - test/e2e/import.spec.ts
   - test/fixtures/belfius-account-a.csv
   - test/fixtures/belfius-account-a2.csv
   - test/fixtures/generic-debit-credit.csv
+  - test/fixtures/generic-debits-only.csv
   - test/fixtures/kbc-card-b.csv
+  - test/fixtures/kbc-card-blank-indicator.csv
+  - test/fixtures/kbc-card-storno.csv
   - test/fixtures/kbc-card.csv
   - test/fixtures/mixed-accounts.csv
   - test/schema/rls.test.ts
@@ -106,6 +110,22 @@ per-step-commits:
     subject: "Playwright import journey: declare once, confirm over five rows, idempotent re-upload"
   - sha: 7380dcd
     subject: "Record phase-head gate runs in the work notes"
+  - sha: 10beb40
+    subject: "docs: M1-P2 work history, schema-validated"
+  - sha: e10b0cc
+    subject: "F2: a sign is never guessed from an indicator marker"
+  - sha: "490806b"
+    subject: "F3: an empty credit column this month still detects the debit and credit pair"
+  - sha: c920c14
+    subject: "F5 and F6: the ordinal counts hash-path rows only, over a collision-safe tuple"
+  - sha: 95a196c
+    subject: "F7: a row/key desync throws instead of softening to an empty dedup key"
+  - sha: d36a011
+    subject: "F4 and F8: the import status transition is claimed atomically; drop the dead count export"
+  - sha: 06e997b
+    subject: "F1 transparency: the landing account is named everywhere the user sees an import"
+  - sha: e6afafc
+    subject: "Record fix round 1 execution log in the work notes"
 key-decisions:
   - decision: >-
       Amendment A (carried, done): the phase migration enables ROW LEVEL
@@ -269,8 +289,21 @@ deviations:
       items A to D touch their own files (migration, rls test, auth-status,
       tenancy test, skill file) under the orchestrator's declared
       authority.
+  - plan-clause: >-
+      Fix round 1 finding F1 (CR-201/CR-008, high): full remediation of the
+      second-same-format-card misbinding
+    why: >-
+      Escalated to the owner by the orchestrator rather than fixed here:
+      the full fix (a per-upload account question when a household holds
+      two accounts on one profile spec, or file-carried card identity once
+      claim M1P2-C1 verifies real CSV layouts) changes the acceptance
+      contract that a card re-upload asks nothing. This round shipped
+      transparency only: the landing account is named on the confirmation
+      and result screens, and the confirm use case resolves the account by
+      the same rule the screens render. The residual hazard stands until
+      the owner decides, and is restated as claim M1P2-C6.
 gate-evidence:
-  - gate: npm run typecheck (tsc --noEmit, Node v26.7.0)
+  - gate: npm run typecheck (tsc --noEmit, Node v26.7.0, at fix-round head 06e997b)
     result: green
     wrapper-exit-code: 0
     discovered: 0
@@ -279,7 +312,7 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
-  - gate: npm run lint (eslint ., Node v26.7.0)
+  - gate: npm run lint (eslint ., Node v26.7.0, at fix-round head 06e997b)
     result: green
     wrapper-exit-code: 0
     discovered: 0
@@ -288,18 +321,19 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
-  - gate: npm test (vitest run, Node v26.7.0, no build step required)
+  - gate: npm test (vitest run, Node v26.7.0, no build step required, at fix-round head 06e997b)
     result: green
     wrapper-exit-code: 0
-    discovered: 77
-    passed: 77
+    discovered: 92
+    passed: 92
     failed: 0
     skipped: 0
     todo: 0
     did-not-run: 0
   - gate: >-
       npm run test:e2e (playwright test, chromium, dev webServer, env
-      pinned to the local supabase stack per fleet warning 1)
+      pinned to the local supabase stack per fleet warning 1, at fix-round
+      head 06e997b)
     result: green
     wrapper-exit-code: 0
     discovered: 4
@@ -398,6 +432,90 @@ claims:
           indicator flip: Tests 2 failed | 22 passed (24); debit negation
           dropped: Tests 1 failed | 23 passed (24); after restore: 24
           passed (24)
+  - id: M1P2-C6
+    kind: open-question
+    statement: >-
+      Which account a second card in the same bank format should land in is
+      an owner decision still pending: spec-equality profile binding sends
+      it to the first card's account today, now visibly (the landing
+      account is named on the confirmation and result screens), and
+      identical cross-card tuples would share hash inputs apart from the
+      accountId. Options raised with the owner alongside the round:
+      a per-upload account choice when a household holds two or more
+      accounts on one profile spec, or file-carried card identity once the
+      real CSV layouts are verified (claim M1P2-C1).
+fix-round:
+  - mechanism: >-
+      Assigning a monetary sign from input the code did not positively
+      recognise (an unknown indicator marker guessed as credit, F2; a
+      missing credit column read as a signed all-positive history, F3).
+    derivation:
+      command: >-
+        grep -n "magnitude|(-parsed.value)|kind === \"signed\"|debitCredit|indicator"
+        src/modules/import/domain/parse-statement.ts
+        src/modules/import/domain/detect-profile.ts (run as three greps,
+        outputs concatenated)
+      output: >-
+        parse-statement.ts amountOf: three representation branches (signed
+        at the parseAmountToCents sign, debitCredit negating the debit
+        column, indicator now matching debitValue then creditValue then
+        err("indicator")); detect-profile.ts: representation decision
+        sites at the two-amount-column branch, the empty-sibling-pair
+        branch (new), the indicator search and the signed fallback. No
+        other sign-assignment site exists under src/modules/import. All
+        three greps exit 0.
+    not-covered: >-
+      The signed representation still trusts a leading minus as the whole
+      sign story: an export with a reversed sign convention is
+      shape-indistinguishable, and the five-row confirm preview is the
+      guard there. Detection of an indicator pair whose tokens are outside
+      the pinned INDICATOR_PAIRS list stays fail-closed to signed, which
+      the strict parser then refuses to sign wrongly only if a minus is
+      present; a new token pair must be added to the pinned list rather
+      than guessed.
+  - mechanism: >-
+      Read-then-act on a status machine with unconditional writers (F4).
+    derivation:
+      command: >-
+        grep -n "status" src/modules/import/adapters/import-repository.ts |
+        grep -iE "updateMany|status:"
+      output: >-
+        Lines 35/45/63/74 are type fields and the initial createImport
+        value (not transitions); line 170-172 markImportFailed, now
+        conditional where status AWAITING_DECLARATION; line 199-202 the
+        ingest claim, conditional where status equals fromStatus inside
+        the ingest transaction. No other writer touches Import.status; no
+        code path writes Transaction rows outside ingestRows. Grep exit 0.
+    not-covered: >-
+      The losing confirm may have declared an account before losing the
+      claim, leaving an unused empty account row (no transactions
+      reference it). Making the account declaration part of the ingest
+      transaction would cross the accounts module's application boundary,
+      so it was left out knowingly; the row is harmless, visible, and
+      deletable by a later phase's account management.
+  - mechanism: >-
+      A dedup key derived from an unstable ordinal population, a
+      non-injective tuple encoding, and a desync softened to a default
+      (F5, F6, F7).
+    derivation:
+      command: >-
+        grep -rn "contentTuple|assignDedupKeys|zipRowsWithDedupKeys" src/
+        && grep -rn "keys\[index\]" src/
+      output: >-
+        All construction sites live in src/modules/import/domain/dedup.ts
+        (contentTuple line 39, zipRowsWithDedupKeys line 54,
+        assignDedupKeys line 80); the only consumers are the two use-case
+        call sites (upload-statement.ts lines 73-85, confirm-import.ts
+        lines 113-124), both routing through zipRowsWithDedupKeys; the
+        only remaining keys[index] read is the checked one inside
+        zipRowsWithDedupKeys line 64. No other file builds or consumes a
+        dedup key. (Both greps exit 0.)
+    not-covered: >-
+      Keys already stored in a production database (none exists: nothing
+      has been deployed and local databases reset per run), which is the
+      once-only window this recipe change used; after production data
+      exists the frozen recipe, JSON encoding included, must not change
+      again without a keyed migration.
 environment-warnings:
   - warning: >-
       Restarting the dead docker daemon auto-revives the m1-p1-skeleton
