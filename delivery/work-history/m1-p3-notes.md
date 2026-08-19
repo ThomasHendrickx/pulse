@@ -423,3 +423,46 @@ period end, debit id, import id), each side used once; losers get SPEND
 in the flows map and never enter the unmatched set. After: corrections 16
 passed; full suite 149 passed, exit 0 (the 500-case property stayed
 green over the allocation change).
+
+### CR-302 (high): re-parse keys from the full re-parsed file
+
+Red witnesses FIRST, captured. The fake's applyReparse now enforces the
+per-household unique (householdId, dedupKey) index its own header claims
+to mirror, staged and all-or-nothing like the adapter's transaction
+(existing suites stayed green under the enforcement alone). Two new tests
+over the overlap family (file A: twin pair plus one row; file B: A's rows
+plus a third twin and one new row; ingest of B added 2 known 3, the
+reviewer's captured shape) then ran red against the committed code, both
+aborting exactly as the real adapter does:
+- unchanged-spec strict no-op: "Unique constraint violation on
+  (householdId, dedupKey): h:...#0"
+- corrected-spec convergence: same abort
+(3 failed | 3 passed together with the CR-304 witness below.)
+
+Fix: fix-profile.ts re-derives keys from the FULL re-parse of each
+import's rawContent, simulating ingest's cross-import insert-ignore in
+import (creation) order: file occurrences grouped by rawLine, stored
+twins ranked by their existing key (numeric-aware compareDedupKeys, ten
+plus twins keep order), each stored row takes the earliest unconsumed
+occurrence's key not already assigned, with nextFreeDedupKey as the
+merged-tuple fallback (both helpers live at the dedup mechanism's
+definition, recipe untouched). listFactRowsForImport now returns
+dedupKey (port, adapter, fake). The two R-087 false comments corrected
+loudly in place: fix-profile's old same-key-set claim (now the header's
+correction record) and the applyReparse port contract's re-uploads
+sentence (rewritten with the correction named). After: reparse suite 6
+passed; unchanged-spec re-parse asserts [id, key] pairs identical and
+re-upload adds 0; corrected-spec asserts both imports corrected, all
+keys unique, the twin family at three distinct keys, re-upload adds 0.
+
+### CR-304: re-parse invalidates interpretation in the same transaction
+
+Red witness FIRST, captured (same run): with an interpret dependency that
+throws after the facts transaction, the affected import still read
+INTERPRETED over corrected facts: "expected 'INTERPRETED' to be
+'INGESTED'". Fix: applyReparse (adapter, inside the same database
+transaction as the facts rewrite; fake mirrors it) moves every affected
+import INTERPRETED to INGESTED; the reinterpretation that follows
+restores INTERPRETED, and the test walks the recovery (a later interpret
+run over the corrected facts). Port contract updated to state the status
+transition. After: 6 passed; full suite 152 passed, typecheck 0, lint 0.

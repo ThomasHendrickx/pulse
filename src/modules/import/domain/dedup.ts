@@ -101,3 +101,66 @@ export const assignDedupKeys = (
     return `h:${digest}#${ordinal}`;
   });
 };
+
+// Re-parse allocation helpers (finding CR-302). The re-parse rebuilds an
+// import's keys from the FULL re-parsed file with the same cross-import
+// insert-ignore semantics ingest has, so stored twins across overlapping
+// imports keep one key each. These helpers live here, at the mechanism's
+// definition, because they read the hash key's "#ordinal" suffix: any
+// change to the key recipe above must keep them in step.
+
+// Numeric-aware comparison of two dedup keys: hash keys compare by digest
+// then by NUMERIC ordinal (lexicographic order breaks at ten twins:
+// "#10" < "#2"). Non-hash keys compare lexicographically.
+export const compareDedupKeys = (a: string, b: string): number => {
+  const splitKey = (key: string): { base: string; ordinal: number | null } => {
+    if (!key.startsWith("h:")) {
+      return { base: key, ordinal: null };
+    }
+    const hashIndex = key.lastIndexOf("#");
+    if (hashIndex < 0) {
+      return { base: key, ordinal: null };
+    }
+    const ordinal = Number(key.slice(hashIndex + 1));
+    return Number.isInteger(ordinal)
+      ? { base: key.slice(0, hashIndex), ordinal }
+      : { base: key, ordinal: null };
+  };
+  const left = splitKey(a);
+  const right = splitKey(b);
+  if (left.base !== right.base || left.ordinal === null || right.ordinal === null) {
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
+  return left.ordinal - right.ordinal;
+};
+
+// The next free ordinal for a hash key's tuple: the cross-import end state
+// when every file occurrence's key is already held elsewhere (a spec
+// correction merged previously distinct tuples). Throws for natural keys:
+// a taken natural key has no ordinal dimension and means corrupted state.
+export const nextFreeDedupKey = (
+  baseKey: string,
+  isTaken: (key: string) => boolean,
+): string => {
+  if (!isTaken(baseKey)) {
+    return baseKey;
+  }
+  if (!baseKey.startsWith("h:")) {
+    throw new Error(`Natural dedup key ${baseKey} is already taken`);
+  }
+  const hashIndex = baseKey.lastIndexOf("#");
+  if (hashIndex < 0) {
+    throw new Error(`Hash dedup key ${baseKey} carries no ordinal`);
+  }
+  const base = baseKey.slice(0, hashIndex);
+  let ordinal = Number(baseKey.slice(hashIndex + 1));
+  if (!Number.isInteger(ordinal)) {
+    throw new Error(`Hash dedup key ${baseKey} carries a non-numeric ordinal`);
+  }
+  let candidate = baseKey;
+  while (isTaken(candidate)) {
+    ordinal += 1;
+    candidate = `${base}#${ordinal}`;
+  }
+  return candidate;
+};

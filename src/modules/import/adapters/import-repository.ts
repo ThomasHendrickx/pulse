@@ -198,12 +198,17 @@ export const listFactRowsForImport = async (
   context: HouseholdContext,
   importId: string,
 ): Promise<
-  readonly { readonly id: string; readonly accountId: string; readonly rawLine: string }[]
+  readonly {
+    readonly id: string;
+    readonly accountId: string;
+    readonly rawLine: string;
+    readonly dedupKey: string;
+  }[]
 > => {
   const rows = await prisma.transaction.findMany({
     where: { householdId: context.householdId, importId },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { id: true, accountId: true, rawLine: true },
+    select: { id: true, accountId: true, rawLine: true, dedupKey: true },
   });
   return rows;
 };
@@ -270,6 +275,20 @@ export const applyReparse = async (
         });
       }
     }
+    // Finding CR-304: the facts rewrite invalidates the stored
+    // interpretation, so the SAME transaction moves every affected import
+    // back to INGESTED, the pipeline's visible needs-interpretation
+    // marker. The reinterpretation that follows restores INTERPRETED; a
+    // death between the two leaves the marker, and recovery is the
+    // existing pipeline.
+    await tx.import.updateMany({
+      where: {
+        householdId: context.householdId,
+        id: { in: input.imports.map((entry) => entry.importId) },
+        status: "INTERPRETED",
+      },
+      data: { status: "INGESTED" },
+    });
   });
 };
 

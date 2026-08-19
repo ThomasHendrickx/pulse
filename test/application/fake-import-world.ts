@@ -144,11 +144,53 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
           id: stored.id,
           accountId: stored.accountId,
           rawLine: stored.rawLine,
+          dedupKey: stored.dedupKey,
         })),
     applyReparse: async (context, input) => {
       // Mirrors the adapter's contract: the profile spec and every listed
       // row's fact columns move together; row identity, importId,
-      // accountId and rawLine never change.
+      // accountId and rawLine never change. Finding CR-302: this fake now
+      // ALSO enforces the per-household unique (householdId, dedupKey)
+      // index the schema carries, all-or-nothing like the adapter's
+      // database transaction: the rewrite is staged and committed only if
+      // no key collides, and a collision throws with nothing applied
+      // (before this, the header's claim of mirrored insert semantics was
+      // false for this method and the fast gate could not see the abort).
+      const staged = transactions.map((stored) => ({ ...stored }));
+      for (const entry of input.imports) {
+        for (const row of entry.rows) {
+          const index = staged.findIndex(
+            (stored) =>
+              stored.householdId === context.householdId &&
+              stored.id === row.transactionId,
+          );
+          const stored = staged[index];
+          if (index < 0 || stored === undefined) {
+            continue;
+          }
+          const { transactionId, ...parsed } = row;
+          void transactionId;
+          staged[index] = {
+            ...parsed,
+            id: stored.id,
+            householdId: stored.householdId,
+            accountId: stored.accountId,
+            importId: stored.importId,
+            rawLine: stored.rawLine,
+            ...(stored.flow === undefined ? {} : { flow: stored.flow }),
+          };
+        }
+      }
+      const seen = new Set<string>();
+      for (const stored of staged) {
+        const key = `${stored.householdId}|${stored.dedupKey}`;
+        if (seen.has(key)) {
+          throw new Error(
+            `Unique constraint violation on (householdId, dedupKey): ${stored.dedupKey}`,
+          );
+        }
+        seen.add(key);
+      }
       const profileIndex = profiles.findIndex(
         (candidate) =>
           candidate.householdId === context.householdId &&
@@ -158,28 +200,17 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       if (profileIndex >= 0 && existing !== undefined) {
         profiles[profileIndex] = { ...existing, spec: input.spec };
       }
+      transactions.splice(0, transactions.length, ...staged);
+      // Finding CR-304, mirroring the adapter: the facts rewrite and the
+      // INTERPRETED -> INGESTED downgrade commit together.
       for (const entry of input.imports) {
-        for (const row of entry.rows) {
-          const index = transactions.findIndex(
-            (stored) =>
-              stored.householdId === context.householdId &&
-              stored.id === row.transactionId,
-          );
-          const stored = transactions[index];
-          if (index < 0 || stored === undefined) {
-            continue;
-          }
-          const { transactionId, ...parsed } = row;
-          void transactionId;
-          transactions[index] = {
-            ...parsed,
-            id: stored.id,
-            householdId: stored.householdId,
-            accountId: stored.accountId,
-            importId: stored.importId,
-            rawLine: stored.rawLine,
-            ...(stored.flow === undefined ? {} : { flow: stored.flow }),
-          };
+        const record = imports.get(entry.importId);
+        if (
+          record !== undefined &&
+          record.householdId === context.householdId &&
+          record.status === "INTERPRETED"
+        ) {
+          record.status = "INGESTED";
         }
       }
     },

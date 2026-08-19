@@ -80,6 +80,193 @@ const setupWrongProfile = async (): Promise<{
   };
 };
 
+// The overlap family (finding CR-302): two overlapping card exports
+// sharing a keyless identical twin, the fixture-observed real shape. File
+// B carries file A's rows plus a THIRD twin occurrence and one new row,
+// so ingest of B adds 2 and knows 3, and the cross-import twin keys are
+// #0, #1 (import A) and #2 (import B).
+const overlapFileA = [
+  "Kaartuitgaven export - uitgavenstaat 42",
+  "Datum;Datum verrekening;Omschrijving;Bedrag;D/C",
+  "03.08.26;04.08.26;STARBUCKS ANTWERPEN;4,80;D",
+  "03.08.26;04.08.26;STARBUCKS ANTWERPEN;4,80;D",
+  "05.08.26;06.08.26;PIZZA NAPOLI BRUSSEL;18,50;D",
+].join("\n");
+const overlapFileB = [
+  "Kaartuitgaven export - uitgavenstaat 42",
+  "Datum;Datum verrekening;Omschrijving;Bedrag;D/C",
+  "03.08.26;04.08.26;STARBUCKS ANTWERPEN;4,80;D",
+  "03.08.26;04.08.26;STARBUCKS ANTWERPEN;4,80;D",
+  "03.08.26;04.08.26;STARBUCKS ANTWERPEN;4,80;D",
+  "05.08.26;06.08.26;PIZZA NAPOLI BRUSSEL;18,50;D",
+  "12.08.26;13.08.26;BAKKERIJ CENTRUM BRUGGE;6,90;D",
+].join("\n");
+
+const setupOverlapWorld = async (
+  confirmSpec: (detected: SourceProfileSpec) => SourceProfileSpec,
+): Promise<{
+  world: ReturnType<typeof makeFakeImportWorld>;
+  profileId: string;
+  detectedSpec: SourceProfileSpec;
+}> => {
+  const world = makeFakeImportWorld();
+  const bytesA = new TextEncoder().encode(overlapFileA);
+  const bytesB = new TextEncoder().encode(overlapFileB);
+  const detected = world.deps.parser.detect(bytesA);
+  expect(detected.ok).toBe(true);
+  if (!detected.ok) {
+    throw new Error("unreachable");
+  }
+  const uploadedA = await uploadStatement(context, world.deps, {
+    fileName: "kaart-a.csv",
+    bytes: bytesA,
+  });
+  expect(uploadedA.kind).toBe("awaiting-declaration");
+  if (uploadedA.kind !== "awaiting-declaration") {
+    throw new Error("unreachable");
+  }
+  const confirmed = await confirmImport(context, world.deps, {
+    importId: uploadedA.importId,
+    profileName: "Card export",
+    spec: confirmSpec(detected.value),
+    declaration: { label: "Mastercard", bank: "Demobank", role: "POT" },
+  });
+  expect(confirmed.kind).toBe("ingested");
+  // Upload B: with an unchanged (detected) spec the stored profile is
+  // recognised and ingest is automatic; with a user-fixed spec, detection
+  // does not match the stored profile, so the confirm path re-runs with
+  // the same fixed spec and resolves the account through the binding.
+  const uploadedB = await uploadStatement(context, world.deps, {
+    fileName: "kaart-b.csv",
+    bytes: bytesB,
+  });
+  let ingestB: { added: number; known: number } | undefined;
+  if (uploadedB.kind === "ingested") {
+    ingestB = { added: uploadedB.added, known: uploadedB.known };
+  } else {
+    expect(uploadedB.kind).toBe("awaiting-declaration");
+    if (uploadedB.kind !== "awaiting-declaration") {
+      throw new Error("unreachable");
+    }
+    const confirmedB = await confirmImport(context, world.deps, {
+      importId: uploadedB.importId,
+      profileName: "Card export",
+      spec: confirmSpec(detected.value),
+    });
+    expect(confirmedB.kind).toBe("ingested");
+    if (confirmedB.kind === "ingested") {
+      ingestB = { added: confirmedB.added, known: confirmedB.known };
+    }
+  }
+  expect(ingestB).toEqual({ added: 2, known: 3 });
+  const profileId = world.profiles[0]?.id;
+  if (profileId === undefined) {
+    throw new Error("no profile stored");
+  }
+  return { world, profileId, detectedSpec: detected.value };
+};
+
+describe("re-parse over overlapping imports sharing a keyless twin (finding CR-302)", () => {
+  test("an unchanged-spec re-parse is a strict no-op: keys identical, re-upload adds zero", async () => {
+    const { world, profileId, detectedSpec } = await setupOverlapWorld(
+      (detected) => detected,
+    );
+    const keysBefore = world.transactions.map((t) => [t.id, t.dedupKey]);
+
+    const outcome = await fixSourceProfile(context, world.deps, {
+      profileId,
+      spec: detectedSpec,
+    });
+    expect(outcome.ok).toBe(true);
+
+    expect(world.transactions.map((t) => [t.id, t.dedupKey])).toEqual(keysBefore);
+
+    const reupload = await uploadStatement(context, world.deps, {
+      fileName: "kaart-b.csv",
+      bytes: new TextEncoder().encode(overlapFileB),
+    });
+    expect(reupload.kind).toBe("ingested");
+    if (reupload.kind === "ingested") {
+      expect(reupload.added).toBe(0);
+    }
+    expect(world.transactions).toHaveLength(5);
+  });
+
+  test("a corrected-spec re-parse converges across the overlapping imports", async () => {
+    const { world, profileId, detectedSpec } = await setupOverlapWorld(
+      (detected) => ({
+        ...detected,
+        amountRepresentation: { kind: "signed", column: 3 },
+      }),
+    );
+    // The wrong spec stored every magnitude positive.
+    expect(world.transactions.every((t) => t.amountCents > 0)).toBe(true);
+
+    const outcome = await fixSourceProfile(context, world.deps, {
+      profileId,
+      spec: detectedSpec,
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    expect(outcome.value.importsReparsed).toBe(2);
+
+    // Corrected amounts on BOTH imports, unique keys across the household,
+    // and the cross-import twin family intact (three distinct keys).
+    expect(world.transactions.every((t) => t.amountCents < 0)).toBe(true);
+    const keys = world.transactions.map((t) => t.dedupKey);
+    expect(new Set(keys).size).toBe(keys.length);
+    const twinKeys = world.transactions
+      .filter((t) => t.description === "STARBUCKS ANTWERPEN")
+      .map((t) => t.dedupKey);
+    expect(new Set(twinKeys).size).toBe(3);
+
+    // Dedup behaviour intact: the same overlapping file adds nothing.
+    const reupload = await uploadStatement(context, world.deps, {
+      fileName: "kaart-b.csv",
+      bytes: new TextEncoder().encode(overlapFileB),
+    });
+    expect(reupload.kind).toBe("ingested");
+    if (reupload.kind === "ingested") {
+      expect(reupload.added).toBe(0);
+    }
+    expect(world.transactions).toHaveLength(5);
+  });
+});
+
+describe("a re-parse invalidates interpretation until it is rebuilt (finding CR-304)", () => {
+  test("a death between the facts rewrite and reinterpretation leaves a visible marker, never INTERPRETED", async () => {
+    const { world, importId, profileId, detectedSpec } = await setupWrongProfile();
+    expect(world.imports.get(importId)?.status).toBe("INTERPRETED");
+
+    // The interpret stage dies after the facts transaction committed.
+    const dyingDeps = {
+      ...world.deps,
+      interpret: async (): Promise<void> => {
+        throw new Error("simulated crash before reinterpretation");
+      },
+    };
+    await expect(
+      fixSourceProfile(context, dyingDeps, { profileId, spec: detectedSpec }),
+    ).rejects.toThrow("simulated crash");
+
+    // Facts were corrected (the rewrite committed first, by design)...
+    expect(world.transactions.map((t) => t.amountCents)).toEqual([
+      85000, -480, -480, -2303, -1850,
+    ]);
+    // ...so the import must NOT read as INTERPRETED: the same visible
+    // needs-interpretation marker the upload path has (INGESTED), from
+    // the same transaction that committed the facts.
+    expect(world.imports.get(importId)?.status).toBe("INGESTED");
+
+    // Recovery is the existing pipeline: the next interpretation restores
+    // INTERPRETED over the corrected facts.
+    await world.deps.interpret(context, importId);
+    expect(world.imports.get(importId)?.status).toBe("INTERPRETED");
+  });
+});
+
 describe("the profile-fix re-parse rebuilds facts from stored rawLine", () => {
   test("corrected amounts, preserved identity, intact declarations and dedup behaviour, no re-upload", async () => {
     const { world, importId, profileId, detectedSpec } = await setupWrongProfile();
