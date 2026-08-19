@@ -93,3 +93,45 @@ test/domain/profile-detection.test.ts, which is NOT on the M1-P3
 files-to-touch list (the assigned backlog item names src/modules/import as
 the scope hook). The declaration amendment on the base branch must cover
 it, as M1-P2's extras did for its fix-round test files.
+
+## Ledger domain: classification, corrections, pairing, reconciliation
+
+Files: src/modules/ledger/domain/{flow,ledger-transaction,constants,
+plain-date-distance,corrections,classify-flow,pair-transfers,interpret,
+reconciliation}.ts. Tests: test/domain/classify-flow.test.ts (13),
+test/domain/pair-transfers.test.ts (9), test/domain/corrections.test.ts
+(13). All green; full fast suite green after the addition.
+
+Key mechanical decisions (recorded for the work history):
+- Settlement window SETTLEMENT_DATE_WINDOW_DAYS = 45 (named constant per
+  D-11, value unpinned by the plan; the match also needs pattern plus
+  exact amount, so width buys robustness, not false positives).
+- Card account identification: a POT account without an IBAN (observed
+  card exports carry no own-account identifier; such accounts are bound
+  via SourceProfile). Used to compute card-import summaries.
+- CSV card statements carry no settlement-total field, so the total is
+  the sum of the import's debit line items (the addendum's "otherwise the
+  sum of its line items" arm); settlement credit rows are not line items.
+- The card-side mirror row links to the settlement debit within the D-7
+  4-day tolerance (same movement seen twice), tie-broken by date distance
+  then id; an unlinked settlement leg (either side) joins the unmatched
+  internal set and is surfaced.
+- UNRESOLVED arises exactly for zero-amount rows: every nonzero row is
+  classified by the declared sets, the settlement step or the sign
+  fallback.
+- reconcile() computes changeInPot from facts only (sum of raw amounts)
+  and difference = unmatchedInternalGap + unresolvedGap by construction;
+  0 - x instead of unary minus so a zero total is +0, never -0.
+
+Mutation red witnesses, all executed against the green tree, each mutation
+reverted after its run (structurally different members per class):
+- M1 drawdown-as-INCOME (H2.2 dangerous state): exit 1, 5 failed | 30 passed
+- M2 pot-before-reserve precedence swap: exit 1, 1 failed | 34 passed
+- M3b correctCardSettlement always undefined (H2.1): exit 1, 5 failed | 30 passed
+- M4 pairing content sort removed, insertion order decides (H2.3): exit 1, 3 failed | 32 passed
+- M5 pairing window unbound (400 days): exit 1, 1 failed | 34 passed
+- M6 refund correction defanged: exit 1, 3 failed | 32 passed
+- M7 cash withdrawal correction defanged: exit 1, 2 failed | 33 passed
+- M8 unmatched transfer legs no longer surfaced: exit 1, 1 failed | 34 passed
+(M3, a non-compiling variant of M3b, also exited 1 but with a TS error
+rather than test failures; superseded by M3b and not counted.)
