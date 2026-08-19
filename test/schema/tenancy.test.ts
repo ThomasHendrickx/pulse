@@ -13,14 +13,19 @@ import { describe, expect, test } from "vitest";
 //       BigInt, never Float or Decimal.
 //   (c) repositories-take-household-context: a static analysis over
 //       src/modules using the TypeScript compiler API. FAIL CLOSED since fix
-//       round 1 (finding CR-003 in both M1-P1 verdicts): importing the
-//       database client is what makes a file a repository file, wherever it
-//       lives; such a file must sit in an adapters/ directory, and every
-//       value it exports must be a function declaring a parameter typed
-//       exactly HouseholdContext. Export shapes the analyzer cannot
-//       positively verify (object literals, wrapped factories, classes,
-//       enums, default exports, re-exports from other files) are VIOLATIONS,
-//       so an uninspected shape reddens the suite instead of passing it.
+//       round 1 (finding CR-003 in both M1-P1 verdicts), widened in M1-P2
+//       for finding CR-007: NAMING the database client module anywhere in
+//       the source text (static import, dynamic import, import-equals) is
+//       what holds a file to the rule, wherever it lives; such a file must
+//       sit in an adapters/ directory, and every value it exports must be a
+//       function declaring a parameter typed exactly HouseholdContext.
+//       Every exported statement kind without a positive analyzer arm
+//       (object literals, wrapped factories, classes, enums, namespaces,
+//       default exports, re-exports, exported import-equals) is a VIOLATION
+//       by default, so an uninspected shape reddens the suite instead of
+//       passing it. Residue, stated rather than implied: call sites,
+//       injected clients, and aliasing modules that hide the client
+//       specifier stay review territory.
 // Each mechanism is additionally exercised against inline fixtures that MUST
 // produce violations, so a checker that silently stopped finding anything
 // turns the suite red instead of going vacuously green.
@@ -122,12 +127,13 @@ const analyzeModuleSource = (
   );
   const violations: TenancyViolation[] = [];
 
-  const importsDbClient = sourceFile.statements.some(
-    (statement) =>
-      ts.isImportDeclaration(statement) &&
-      ts.isStringLiteral(statement.moduleSpecifier) &&
-      DB_CLIENT_IMPORT.test(statement.moduleSpecifier.text),
-  );
+  // Held-to-rule detection is a SOURCE-TEXT scan, not an import-statement
+  // walk: a dynamic `await import(...)`, an import-equals form and any
+  // other way of naming the client module all hold the file to the rule
+  // (finding CR-007). Fail closed: a file merely mentioning the client
+  // specifier (even in a comment) is held, which errs in the direction of
+  // demanding the context parameter rather than skipping the check.
+  const importsDbClient = DB_CLIENT_IMPORT.test(sourceText);
   const inAdapters = filePath.split(/[\\/]/).includes("adapters");
   const heldToRule =
     importsDbClient || REPOSITORY_FILE_NAME.test(basename(filePath));
@@ -256,6 +262,26 @@ const analyzeModuleSource = (
           }
         }
       }
+    } else if (
+      ts.isInterfaceDeclaration(statement) ||
+      ts.isTypeAliasDeclaration(statement)
+    ) {
+      // Type-only declarations carry no runtime behaviour: exempt.
+    } else if (ts.canHaveModifiers(statement) && isExported(statement)) {
+      // FAIL-CLOSED DEFAULT (finding CR-007): any exported statement kind
+      // without an explicit arm above (namespace and module declarations,
+      // exported import-equals, and whatever TypeScript grows next) is a
+      // violation by construction, so a new shape reddens the gate instead
+      // of slipping through it.
+      const name =
+        ts.isModuleDeclaration(statement) ||
+        ts.isImportEqualsDeclaration(statement)
+          ? statement.name.getText(sourceFile)
+          : statement.getText(sourceFile).slice(0, 60);
+      flagUnverifiable(
+        name,
+        `statement of kind ${ts.SyntaxKind[statement.kind]} (no analyzer arm, default-flagged)`,
+      );
     }
   }
 
@@ -481,5 +507,55 @@ describe("repositories-take-household-context (TypeScript compiler API, fail clo
     expect(
       analyzeModuleSource(source, "src/modules/import/adapters/csv-parser.ts"),
     ).toEqual([]);
+  });
+
+  // Finding CR-007 (M1-P1 hazard review): three unidiomatic shapes escaped
+  // the analyzer entirely. Each is a red fixture now: a checker that stops
+  // seeing them turns this suite red instead of vacuously green.
+
+  test("reds on a dynamic import of the db client (held to the rule by source-text scan)", () => {
+    const source =
+      `export const listAccounts = async (month: string) =>\n` +
+      `  (await import("@/platform/db/client")).prisma;\n`;
+    expect(
+      analyzeModuleSource(
+        source,
+        "src/modules/accounts/adapters/account-loader.ts",
+      ).map((v) => v.name),
+    ).toEqual(["listAccounts"]);
+  });
+
+  test("reds on an import-equals form reaching the db client", () => {
+    const source =
+      `import db = require("@/platform/db/client");\n` +
+      `export const listAccounts = async (month: string) => db.prisma;\n`;
+    expect(
+      analyzeModuleSource(
+        source,
+        "src/modules/accounts/adapters/account-loader.ts",
+      ).map((v) => v.name),
+    ).toEqual(["listAccounts"]);
+  });
+
+  test("reds on an exported namespace in a held file (default-flagged statement kind)", () => {
+    const source =
+      DB_IMPORT_LINE +
+      `export namespace accountRepo {\n` +
+      `  export const list = async (month: string) => prisma;\n` +
+      `}\n`;
+    const violations = analyzeModuleSource(source, ADAPTER_PATH);
+    expect(violations.map((v) => v.name)).toEqual(["accountRepo"]);
+  });
+
+  test("reds on a dynamic db import outside an adapters directory", () => {
+    const source =
+      `export const sneak = async () => (await import("@prisma/client")).PrismaClient;\n`;
+    const violations = analyzeModuleSource(
+      source,
+      "src/modules/ledger/domain/sneak.ts",
+    );
+    expect(
+      violations.some((v) => v.reason.includes("outside an adapters directory")),
+    ).toBe(true);
   });
 });
