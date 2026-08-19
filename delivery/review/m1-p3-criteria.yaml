@@ -5,12 +5,13 @@ produced-by: claude
 framing: criteria-contract
 review-contract: criteria
 
-# Clean-room criteria review, TWO ROUNDS, both by execution in this fresh
-# clone, never adopting the implementer's claims. All database commands
+# Clean-room criteria review, THREE ROUNDS, all by execution in this fresh
+# clone, never adopting the implementer's claims. Head under review after
+# fix round 2: cd788c4 (code head 8b3059f). All database commands
 # pinned to the local supabase stack at 127.0.0.1:54322 and 127.0.0.1:54321
 # per fleet environment warning 1; the ambient foreign (Hemma) credentials
 # were verified present in the shell and never used. Warning 6 honored in
-# both rounds: all five values (DATABASE_URL, DIRECT_URL,
+# all three rounds: all five values (DATABASE_URL, DIRECT_URL,
 # NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
 # SUPABASE_SERVICE_ROLE_KEY) pinned in the shell that invoked the e2e gate.
 #
@@ -116,6 +117,58 @@ review-contract: criteria
 # e2e at be49a82) matches this reviewer's runs at c3f566a exactly, and
 # the code trees of be49a82 and c3f566a are identical.
 #
+# ROUND 3 (fix round 2 delta, micro scope): c3f566a..cd788c4, two
+# commits; verified myself that the code head is 8b3059f and the commit
+# above it touches only delivery/work-history/ (git diff
+# 8b3059f..cd788c4 --stat: two work-history files). One fix, CR-307
+# (hazard-driven): a sign hidden behind currency noise ("EUR -742,10")
+# slipped past the fix round 1 first-character guard because the guard
+# judged the RAW cell while the parser stripped currency noise before
+# reading the sign. The fix moves the guard INSIDE the parser as an
+# unsigned entry point sharing the parser's own normalisation
+# (src/modules/import/domain/parse-amount.ts:74-82, stripCurrencyNoise at
+# src/modules/import/domain/parse-amount.ts:26-27), and every directional
+# branch calls it (src/modules/import/domain/parse-statement.ts:209-217
+# and the indicator arm at
+# src/modules/import/domain/parse-statement.ts:222-228). The signed
+# representation still parses signed, so CR-208's declared scope is
+# unchanged. DELTA SHAPE verified myself: git diff c3f566a..cd788c4
+# --name-only lists exactly parse-amount.ts, parse-statement.ts,
+# test/domain/profile-detection.test.ts and the two work-history files;
+# the test delta is purely additive (three new tests, zero deleted
+# lines); all six 2.x criterion test files and test/fixtures/ are
+# BYTE-IDENTICAL to the round 2 approved state (git diff --quiet per
+# file, verified). DELTA GATES, all executed by this reviewer at cd788c4:
+# npm run typecheck EXIT=0, npm run lint EXIT=0, npm test EXIT=0 (15
+# files, 155 passed, 0 failed, 0 skipped), the literal chain EXIT=0;
+# because parse-statement.ts sits in the e2e import journey's upload
+# path, the e2e gate was re-run rather than waived: fresh database built
+# from zero a third time (CREATE DATABASE pulse_review_p3r3, npx prisma
+# migrate deploy EXIT=0 all three migrations, seed EXIT=0, pinned local),
+# npm run test:e2e EXIT=0 (4 passed, 30.5s, all five values pinned).
+# Criterion 1.1's suite (M1-P2 contract, regression-guarded here):
+# profile-detection 42 passed EXIT=0, including the CR-307 control that
+# currency-noise cells WITHOUT a sign still parse (magnitude signed by
+# the marker) and the untouched round 1 fixture matrix, so legitimate
+# unsigned directional cells keep parsing. DELTA RED SPOT-CHECK on the
+# new code, applied, captured, restored green: D6 defanged the unsigned
+# entry point (post-normalisation sign rejection removed): EXIT=1, 7
+# failed, exactly the union of the CR-208, CR-305 and CR-307 witnesses,
+# proving the consolidated single guard carries all three findings;
+# restored, 42 passed, tree clean, full suite re-run 155 passed. DELTA
+# HYGIENE: zero em dashes in the delta's added lines (grep count 0), no
+# colour or px (no UI file touched), no migration, no new dependency.
+# WORK-HISTORY DELTA judged: deviation list UNCHANGED (still exactly one,
+# judged below; all five delta files are inside files-to-touch plus the
+# declared extras); new claim M1P3-C12 (CR-307 red-witnessed before the
+# fix, both directional shapes, control still parsing) is consistent with
+# my D6 execution, which reddens the same witnesses today; gate evidence
+# at 8b3059f (155 fast, 4 e2e) matches this reviewer's runs at cd788c4
+# exactly, the two trees being code-identical. Nothing on the charter's
+# stop-for list is touched: fail-loud on undeclared sign conventions is
+# the same rule CR-208 established, applied one normalisation step
+# deeper; no flow semantics, correction meaning or identity change.
+#
 # DECORRELATION RECORD PER DR-0003, stated rather than faked: this verdict
 # truthfully records produced-by claude. Both M1-P3 clean-room reviews are
 # dispatched on the Claude model family, so the model-family dimension of
@@ -144,7 +197,8 @@ review-contract: criteria
 # statement about this phase's contract, not a completeness claim about
 # the artifact.
 #
-# VALIDATION RECORD, measured at round 2: npx tiphys validate --type
+# VALIDATION RECORD, measured at round 2 and re-run at round 3 with the
+# work-history at cd788c4: npx tiphys validate --type
 # verdict (Node v26.7.0) against a reviewer-built context directory
 # (never a shared scratch dir) carrying plan.yaml
 # (delivery/plan/pulse-v1.yaml at this head), the M1-P3 work-history.yaml
@@ -176,6 +230,7 @@ criteria:
     evidence:
       - "Round 1 at f274d30: npm test EXIT=0 (141 passed) and npx vitest run test/domain/classify-flow.test.ts EXIT=0 (13 passed). All five values each reachable and asserted by name (test/domain/classify-flow.test.ts:68-96, UNRESOLVED for the zero-amount row at test/domain/classify-flow.test.ts:92-95, never dropped). Precedence pinned in the code order (src/modules/ledger/domain/classify-flow.ts:57-115) and in dedicated tests including the degenerate both-sets IBAN (test/domain/classify-flow.test.ts:98-125) and the settlement-between tests (test/domain/classify-flow.test.ts:127-183). Red direction: reviewer mutations RM1 (precedence swap, the exact both-sets test failed) and RM8 (no-match settlement debit to UNRESOLVED, 2 failed), each restored green."
       - "Round 2 at c3f566a: the suite is byte-identical to the approved round 1 file (git diff empty) and re-runs green (13 passed, EXIT=0) inside npm test EXIT=0 (152 passed). The refund correction is now history-fed through an optional outgoingHistoryKeys input (src/modules/ledger/domain/interpret.ts:56-69); when absent it derives from the given transactions, so every round 1 classification assertion holds unchanged. Delta red spot-check D3 (refund history window-scoped again): the CR-303 test failed, EXIT=1, restored green, so the history feed is load-bearing and tested."
+      - "Round 3 at cd788c4: suite byte-identical (git diff --quiet c3f566a cd788c4 exit 0) and re-run green (13 passed, EXIT=0) inside npm test EXIT=0 (155 passed). The CR-307 delta does not touch the ledger domain."
     met: true
   - id: "2.2"
     quote: >-
@@ -185,6 +240,7 @@ criteria:
     evidence:
       - "Round 1 at f274d30: npx vitest run EXIT=0 (9 passed); five-seed shuffle with identical pair and unmatched sets (test/domain/pair-transfers.test.ts:92-104), idempotence (test/domain/pair-transfers.test.ts:106-110), tie-break both halves (test/domain/pair-transfers.test.ts:114-134), 4-day named constant edge-tested (test/domain/pair-transfers.test.ts:140-147, src/modules/ledger/domain/constants.ts:7). Red direction: mutation RM2 (content sort removed) EXIT=1, 3 failed, restored 9 passed."
       - "Round 2 at c3f566a: the delta does not touch src/modules/ledger/domain/pair-transfers.ts and the test file is byte-identical; re-run EXIT=0 (9 passed). No regression."
+      - "Round 3 at cd788c4: suite and pair-transfers.ts byte-identical; re-run green (9 passed, EXIT=0) inside the 155. No regression."
     met: true
   - id: "2.3"
     quote: >-
@@ -202,6 +258,7 @@ criteria:
     evidence:
       - "Round 1 at f274d30: npx vitest run EXIT=0 (13 passed), four describe blocks named card settlement, reserve drawdown, refund, cash withdrawal (test/domain/corrections.test.ts:63, :190, :229, :282); every fixture clause verified in the file (no counterparty IBAN on the debit, statement number in MASTERCARD AFREKENING NUMMER 42, exact line-item total, positive DOMICILIERING VIA JE BANK mirror with no counterparty field; INTERNAL both legs, line items the only counted spend with the books closing at test/domain/corrections.test.ts:128-135; window bound tested). Correction meanings match the plan exactly (drawdown negative reserve movement never income, refund SPEND with positive amount, cash its own destination never split)."
       - "Round 2 at c3f566a: settlement allocation rewritten to be exclusive per card import (finding CR-306, src/modules/ledger/domain/interpret.ts:83-129 with the extracted candidate enumeration at src/modules/ledger/domain/corrections.ts:78-104). Every round 1 assertion retained verbatim (zero deleted lines in the test file) and re-run green; three new tests pin exclusivity, the id tie-break and the two-imports allocation, suite now 16 passed EXIT=0. Delta red spot-check D1 (exclusivity removed so one card import can absorb two debits): EXIT=1, exactly the 3 CR-306 tests failed, restored 16 passed. The loser of the tie-break stays honest SPEND, the criterion 2.8 arm, so H2.1's double-count and its inverse (spend vanishing onto a settled statement) are both guarded now."
+      - "Round 3 at cd788c4: suite byte-identical and re-run green (16 passed, EXIT=0). The corrections module is untouched by the CR-307 delta."
     met: true
   - id: "2.4"
     quote: >-
@@ -218,6 +275,7 @@ criteria:
     evidence:
       - "Round 1 at f274d30: npx vitest run EXIT=0 (1 passed), numRuns 500 (test/property/reconciliation.test.ts:362), facts-side changeInPot (src/modules/ledger/domain/reconciliation.ts:46-61), both identity directions asserted (test/property/reconciliation.test.ts:342-359), integer cents on all seven report figures (test/property/reconciliation.test.ts:327-337), coverage TALLIED FROM EXECUTION for all five flows and all shapes (test/property/reconciliation.test.ts:369-389). Red direction: mutation RM3 (unmatched legs unsurfaced) failed the property within the 500 runs, restored green."
       - "Round 2 at c3f566a: the property file is byte-identical (git diff empty) and re-runs green at 500 runs EXIT=0 against the rewritten exclusive-allocation engine, so the identity and its gap accounting survived the CR-306 rewrite on every generated dataset, not on chosen examples. reconciliation.ts is untouched by the delta."
+      - "Round 3 at cd788c4: the property file remains byte-identical and re-runs green at 500 runs EXIT=0 inside the 155."
     met: true
   - id: "2.5"
     quote: >-
@@ -228,6 +286,7 @@ criteria:
     evidence:
       - "Round 1 at f274d30: first half at test/domain/pair-transfers.test.ts:161-186 (leg stays INTERNAL, enters neither side, difference EQUALS the leg), reddened under RM3; second half at test/application/interpret.test.ts:93-145 (two uploads, two imports, legs pair ACROSS imports with one persisted link carrying householdId), reddened under RM7 (padding removed), both restored green."
       - "Round 2 at c3f566a: both assertions retained verbatim and re-run green (interpret suite 5 passed EXIT=0). The window loading changed for CR-301: card accounts are loaded UNBOUNDED while other pot accounts stay windowed (src/modules/ledger/application/interpret-window.ts:38-56), so a later import's window can no longer truncate a card import's settlement total; the new test pins that a settled debit survives a later unrelated import's window. Delta red spot-check D2 (card load re-windowed): EXIT=1, exactly that test failed, restored 5 passed. The healing path itself is unchanged and still green; the corrected padding comment (src/modules/ledger/domain/constants.ts:33-42) now states the padding protects transfer pairing only, a loud R-087-conformant correction of the round 1 comment rather than a silent rewrite."
+      - "Round 3 at cd788c4: both suites byte-identical and re-run green (pair-transfers 9, interpret 5, each EXIT=0). The interpretation window code is untouched by the CR-307 delta."
     met: true
   - id: "2.6"
     quote: >-
@@ -236,6 +295,7 @@ criteria:
     evidence:
       - "Round 1 at f274d30: the literal chained command EXIT=0 (141 passed); npm run test:e2e EXIT=0 (4 passed, 34.3s) against a database built from zero (pulse_review_p3), all five env values pinned local."
       - "Round 2 at c3f566a: the literal chained command EXIT=0 in this clone (tsc clean, eslint clean, 15 files, 152 passed, 0 failed, 0 skipped); npm run test:e2e EXIT=0 (4 passed, 31.3s) against a SECOND database built from zero (pulse_review_p3r2: CREATE DATABASE, npx prisma migrate deploy EXIT=0 all three migrations, seed EXIT=0), all five env values pinned local per warnings 1 and 6. The head's two commits above be49a82 are work-history only (verified: git diff be49a82..c3f566a --stat), so the gates bear on the exact code tree at the phase head."
+      - "Round 3 at cd788c4: the literal chained command EXIT=0 (15 files, 155 passed, 0 failed, 0 skipped); npm run test:e2e EXIT=0 (4 passed, 30.5s) against a THIRD database built from zero (pulse_review_p3r3, same pinned route), re-run rather than waived because the CR-307 delta touches parse-statement.ts in the e2e import journey's upload path. The commit above code head 8b3059f is work-history only (verified: git diff 8b3059f..cd788c4 --stat)."
     met: true
   - id: "2.7"
     quote: >-
@@ -248,6 +308,7 @@ criteria:
       - "Round 1 at f274d30: npx vitest run EXIT=0 (3 passed); corrected amounts rebuilt in place with row ids and rawLines identical before and after (test/application/reparse.test.ts:84-123), declarations intact (accounts deep-equal, profile name and binding unchanged), dedup behaviour intact (re-upload adds 0 knows 5), unparseable correction rewrites nothing. Red direction: mutation RM4 (old spec persisted) EXIT=1, restored green."
       - "Round 2 at c3f566a: every round 1 assertion retained verbatim and green; the re-key now derives from the FULL re-parse of each import's rawContent with cross-import insert-ignore simulation (finding CR-302, src/modules/import/application/fix-profile.ts:85-99 and the allocation at src/modules/import/application/fix-profile.ts:150-215), fixing a mechanism whose old in-file claim the fix round names as FALSE for subset-storing imports, stated loudly in the file header per R-087 (src/modules/import/application/fix-profile.ts:12-25). New tests pin the overlap no-op and the corrected-spec convergence, both riding the fake's newly enforced per-household unique (householdId, dedupKey) index; the status discipline is new too (finding CR-304): the facts rewrite downgrades affected imports INTERPRETED to INGESTED inside the SAME transaction (src/modules/import/adapters/import-repository.ts:278-291, mirrored at test/application/fake-import-world.ts:205-213), and a dying interpret leaves the visible marker, asserted in the new death test. Suite 6 passed EXIT=0. Delta red spot-check D5 (cross-import key accumulation removed): EXIT=1, both CR-302 witnesses failed through the unique-index abort, restored 6 passed."
       - "The merchant-rules clause remains VACUOUS on this base and is reported as such rather than counted met by execution: grep for MerchantRule over src/ and prisma/ returns nothing (the tables arrive with M1-P4); every clause that exists on this base is met by execution."
+      - "Round 3 at cd788c4: suite byte-identical and re-run green (6 passed, EXIT=0). The re-parse path parses through the same parser the upload path uses, so it now rides the CR-307 unsigned entry point for directional cells automatically; the unchanged-spec no-op and convergence tests stay green over it."
     met: true
   - id: "2.8"
     quote: >-
@@ -259,6 +320,7 @@ criteria:
     evidence:
       - "Round 1 at f274d30: test/domain/corrections.test.ts:137-169 asserts flow SPEND, not INTERNAL, not UNRESOLVED, spendCents exactly 85000 with the books reconciling; the outside-window variant returns the unitemised-card-spend arm. Red direction: mutation RM8 (that arm changed to UNRESOLVED, hazard H2.6's exact dangerous state) EXIT=1, 2 failed, restored green."
       - "Round 2 at c3f566a: the assertion is retained verbatim and green under the exclusive allocation, which STRENGTHENS this criterion: a debit that loses the exclusivity tie-break (an exact-cent coincidence on an already-settled statement) now falls to the SAME honest-SPEND arm, asserted in the new CR-306 tests and reddened by delta spot-check D1. The no-match path itself is unchanged (src/modules/ledger/domain/classify-flow.ts:92-95); no merchant code exists on this base (grep-verified), so nothing pre-empts the M1-P4 resolver chain."
+      - "Round 3 at cd788c4: suite byte-identical and re-run green (16 passed, EXIT=0). The classification arm is untouched by the CR-307 delta."
     met: true
 
 deviations-judged:
