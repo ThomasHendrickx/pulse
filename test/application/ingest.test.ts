@@ -402,3 +402,48 @@ describe("racing confirms cannot double-ingest one awaiting import (finding F4)"
     expect(world.transactions).toHaveLength(countAfterFirst);
   });
 });
+
+describe("the landing account is resolved as the screens name it (finding F1)", () => {
+  test("a card file confirmed while a spec-identical bound profile exists lands in the bound account, no declaration needed", async () => {
+    const world = makeFakeImportWorld();
+    await uploadAndDeclare(world, context, "kbc-card.csv", {
+      label: "Credit card",
+      bank: "Demokaart",
+      role: "POT",
+    });
+    const boundAccountId = world.accounts[0]?.id;
+    expect(boundAccountId).toBeDefined();
+
+    // An overlapping card export in the same format, reaching the confirm
+    // path directly: the account rides the stored profile's binding, the
+    // exact rule the confirmation screen renders as the landing account.
+    const awaiting = await world.deps.imports.createImport(context, {
+      fileName: "kbc-card-b.csv",
+      rawContent: fixture("kbc-card-b.csv"),
+      status: "AWAITING_DECLARATION",
+    });
+    const confirmed = await confirmImport(context, world.deps, {
+      importId: awaiting.id,
+      profileName: "unused twin name",
+      spec: detectedSpec("kbc-card-b.csv"),
+    });
+    expect(confirmed.kind).toBe("ingested");
+    if (confirmed.kind !== "ingested") {
+      return;
+    }
+    expect(confirmed.added).toBe(2);
+    expect(confirmed.known).toBe(1);
+    // Every stored row from that import sits on the BOUND account: what
+    // the screen names is what the ingest used.
+    const rowsFromB = world.transactions.filter(
+      (row) => row.importId === awaiting.id,
+    );
+    expect(rowsFromB.length).toBeGreaterThan(0);
+    for (const row of rowsFromB) {
+      expect(row.accountId).toBe(boundAccountId);
+    }
+    // No second account and no twin profile appeared.
+    expect(world.accounts).toHaveLength(1);
+    expect(world.profiles).toHaveLength(1);
+  });
+});

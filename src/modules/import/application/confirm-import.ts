@@ -73,11 +73,19 @@ export const confirmImport = async (
     return { kind: "failed", importId: record.id, reason: "mixed-accounts" };
   }
 
+  // Account resolution mirrors the upload path EXACTLY, because the
+  // confirmation screen names the landing account from the same rule
+  // (finding F1, transparency): the file's own IBAN first, then the
+  // binding of a spec-identical stored profile, then, and only then, the
+  // user's declaration.
+  const existingProfile = await findProfileBySpec(context, deps, input.spec);
   const fileIban = parsed.value.accountIbans[0];
   let accountId: string | undefined;
   if (fileIban !== undefined) {
     const existing = await deps.accounts.findAccountByIban(context, fileIban);
     accountId = existing?.id;
+  } else {
+    accountId = existingProfile?.accountId;
   }
   if (accountId === undefined) {
     if (input.declaration === undefined) {
@@ -94,7 +102,6 @@ export const confirmImport = async (
   // profile is bound to the account exactly when the file itself carries
   // no own-account column (the card shape), so a later re-upload can
   // resolve its account without asking.
-  const existingProfile = await findProfileBySpec(context, deps, input.spec);
   const profile =
     existingProfile ??
     (await deps.imports.createProfile(context, {

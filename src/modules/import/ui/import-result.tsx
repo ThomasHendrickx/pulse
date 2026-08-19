@@ -13,8 +13,13 @@ const FAILURE_KEYS: Record<ImportFailureReason, string> = {
 
 export const ImportResult = async ({
   record,
+  accountLabel,
 }: {
   readonly record: ImportRecord;
+  // The account the counts refer to (finding F1): a result that does not
+  // name where the rows landed hides exactly the misbinding the second
+  // same-format card can hit.
+  readonly accountLabel: string | undefined;
 }) => {
   const t = await getTranslations();
 
@@ -33,6 +38,14 @@ export const ImportResult = async ({
     <section className="import-screen" data-testid="import-result">
       <h1>{t("importCompleted")}</h1>
       <dl className="import-counts">
+        {accountLabel === undefined ? null : (
+          <div>
+            <dt>{t("importInto")}</dt>
+            <dd className="import-count" data-testid="landing-account">
+              {accountLabel}
+            </dd>
+          </div>
+        )}
         <div>
           <dt>{t("rowsAddedLabel")}</dt>
           <dd className="import-count" data-testid="rows-added">
