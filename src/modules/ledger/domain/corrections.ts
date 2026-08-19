@@ -53,15 +53,7 @@ export const correctCardSettlement = (
   ) {
     return undefined;
   }
-  const magnitude = -transaction.amountCents;
-  const candidates = cardImports.filter(
-    (candidate) =>
-      candidate.accountId !== transaction.accountId &&
-      candidate.settlementTotalCents === magnitude &&
-      candidate.settlementTotalCents > 0 &&
-      dayDistance(transaction.bookingDate, candidate.periodEnd) <=
-        SETTLEMENT_DATE_WINDOW_DAYS,
-  );
+  const candidates = settlementCandidateImports(transaction, cardImports);
   if (candidates.length === 0) {
     return { kind: "unitemised-card-spend" };
   }
@@ -81,6 +73,34 @@ export const correctCardSettlement = (
     return { kind: "unitemised-card-spend" };
   }
   return { kind: "settled-debit", cardImportId: best.importId };
+};
+
+// Every card import a settlement-pattern debit COULD settle: different
+// account, exact total, positive total, inside the settlement window.
+// Exported separately (finding CR-306) because exclusivity is decided
+// across debits: interpretLedger allocates each card import to at most
+// one debit over these candidate sets, and correctCardSettlement's own
+// best-candidate answer is the single-debit special case of that
+// allocation.
+export const settlementCandidateImports = (
+  transaction: LedgerTransaction,
+  cardImports: readonly CardImportSummary[],
+): readonly CardImportSummary[] => {
+  if (
+    transaction.amountCents >= 0 ||
+    !matchesAny(transaction.description, SETTLEMENT_DEBIT_PATTERNS)
+  ) {
+    return [];
+  }
+  const magnitude = -transaction.amountCents;
+  return cardImports.filter(
+    (candidate) =>
+      candidate.accountId !== transaction.accountId &&
+      candidate.settlementTotalCents === magnitude &&
+      candidate.settlementTotalCents > 0 &&
+      dayDistance(transaction.bookingDate, candidate.periodEnd) <=
+        SETTLEMENT_DATE_WINDOW_DAYS,
+  );
 };
 
 // CORRECTION 2: reserve drawdown (hazard H2.2). Money coming back from a

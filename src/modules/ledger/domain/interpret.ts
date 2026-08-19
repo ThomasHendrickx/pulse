@@ -11,7 +11,10 @@
 
 import { classifyFlow, type Classification } from "./classify-flow";
 import { TRANSFER_DATE_TOLERANCE_DAYS } from "./constants";
-import { buildOutgoingHistoryKeys } from "./corrections";
+import {
+  buildOutgoingHistoryKeys,
+  settlementCandidateImports,
+} from "./corrections";
 import type { Flow } from "./flow";
 import {
   deriveDeclaredSets,
@@ -77,14 +80,61 @@ export const interpretLedger = (input: {
     flows.set(transaction.id, classification.flow);
   }
 
-  // Settlement links: pair each settled debit with the card-side mirror
+  // Exclusive settlement allocation (finding CR-306): a statement is
+  // settled ONCE, so each card import pairs with AT MOST ONE settlement
+  // debit. Candidates are enumerated per debit and allocated globally by
+  // the D-7-style tie-break (smallest date distance to the statement's
+  // period end, then lowest transaction id, then lowest import id);
+  // losers fall through to the sign rule's honest unitemised SPEND, the
+  // same arm a no-match debit takes, so an exact-cent coincidence can
+  // never make real spend vanish onto an already-settled statement.
+  const patternDebits = potTransactions
+    .filter((t) => classifications.get(t.id)?.settledCardImportId !== undefined)
+    .sort((a, b) => compareIds(a.id, b.id));
+  const settlementEdges = patternDebits
+    .flatMap((debit) =>
+      settlementCandidateImports(debit, cardImports).map((candidate) => ({
+        debit,
+        candidate,
+        distance: dayDistance(debit.bookingDate, candidate.periodEnd),
+      })),
+    )
+    .sort(
+      (a, b) =>
+        a.distance - b.distance ||
+        compareIds(a.debit.id, b.debit.id) ||
+        compareIds(a.candidate.importId, b.candidate.importId),
+    );
+  const allocatedDebits = new Set<string>();
+  const allocatedImports = new Set<string>();
+  const allocations = new Map<string, string>();
+  for (const edge of settlementEdges) {
+    if (
+      allocatedDebits.has(edge.debit.id) ||
+      allocatedImports.has(edge.candidate.importId)
+    ) {
+      continue;
+    }
+    allocatedDebits.add(edge.debit.id);
+    allocatedImports.add(edge.candidate.importId);
+    allocations.set(edge.debit.id, edge.candidate.importId);
+  }
+  const settledDebits: LedgerTransaction[] = [];
+  for (const debit of patternDebits) {
+    if (allocations.has(debit.id)) {
+      settledDebits.push(debit);
+    } else {
+      // The loser of the exclusivity tie-break: honest aggregate SPEND,
+      // never INTERNAL, never a surfaced gap.
+      flows.set(debit.id, "SPEND");
+    }
+  }
+
+  // Settlement links: pair each allocated debit with the card-side mirror
   // row on the settled statement's account, deterministically (smallest
   // date distance, then lowest transaction id; each row used once). The
   // date window between the two legs of one direct debit is the transfer
   // tolerance (decision D-7): they are the same movement seen twice.
-  const settledDebits = potTransactions
-    .filter((t) => classifications.get(t.id)?.settledCardImportId !== undefined)
-    .sort((a, b) => compareIds(a.id, b.id));
   const mirrorCredits = potTransactions
     .filter((t) => classifications.get(t.id)?.settlementMirror === true)
     .sort((a, b) => compareIds(a.id, b.id));
@@ -92,7 +142,7 @@ export const interpretLedger = (input: {
   const usedMirrors = new Set<string>();
   const settlements: SettlementLink[] = [];
   for (const debit of settledDebits) {
-    const cardImportId = classifications.get(debit.id)?.settledCardImportId;
+    const cardImportId = allocations.get(debit.id);
     if (cardImportId === undefined) {
       continue;
     }

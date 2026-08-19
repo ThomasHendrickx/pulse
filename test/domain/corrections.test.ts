@@ -168,6 +168,107 @@ describe("card settlement", () => {
     // resolver chain once M1-P4 lands; nothing here pre-empts that.
   });
 
+  test("settlement matching is exclusive per card import (finding CR-306)", () => {
+    // Two equal-amount settlement-pattern debits, one imported statement:
+    // a statement is settled once, so exactly ONE debit pairs (smallest
+    // date distance to the statement's period end, then lowest id) and
+    // the loser falls through to the honest unitemised SPEND, keeping the
+    // month's spend from vanishing on an exact-cent coincidence.
+    const secondAccounts: readonly DeclaredAccount[] = [
+      ...ACCOUNTS,
+      { id: "acc-second", role: "POT", iban: "BE71096123456769" },
+    ];
+    const nearDebit = tx({
+      id: "d-near",
+      accountId: "acc-current",
+      importId: "current-8",
+      date: "2026-08-02",
+      amount: -statement42Total,
+      description: "MASTERCARD AFREKENING NUMMER 42",
+    });
+    const farDebit = tx({
+      id: "d-far",
+      accountId: "acc-second",
+      importId: "second-3",
+      date: "2026-08-09",
+      amount: -statement42Total,
+      description: "MASTERCARD AFREKENING NUMMER 42",
+    });
+    const world = [...cardStatement42, nearDebit, farDebit];
+    const interpretation = interpretLedger({ transactions: world, accounts: secondAccounts });
+    expect(interpretation.settlements).toEqual([
+      { debitTransactionId: "d-near", cardImportId: "card-42" },
+    ]);
+    expect(interpretation.flows.get("d-near")).toBe("INTERNAL");
+    expect(interpretation.flows.get("d-far")).toBe("SPEND");
+    // The loser is honest SPEND, not a surfaced gap and not UNRESOLVED.
+    expect(interpretation.unmatchedInternalIds).not.toContain("d-far");
+  });
+
+  test("at equal date distance the lowest transaction id wins the settlement (finding CR-306)", () => {
+    const secondAccounts: readonly DeclaredAccount[] = [
+      ...ACCOUNTS,
+      { id: "acc-second", role: "POT", iban: "BE71096123456769" },
+    ];
+    const debitB = tx({
+      id: "d-b",
+      accountId: "acc-second",
+      importId: "second-3",
+      date: "2026-08-02",
+      amount: -statement42Total,
+      description: "MASTERCARD AFREKENING NUMMER 42",
+    });
+    const debitA = tx({
+      id: "d-a",
+      accountId: "acc-current",
+      importId: "current-8",
+      date: "2026-08-02",
+      amount: -statement42Total,
+      description: "MASTERCARD AFREKENING NUMMER 42",
+    });
+    const interpretation = interpretLedger({
+      transactions: [...cardStatement42, debitB, debitA],
+      accounts: secondAccounts,
+    });
+    expect(interpretation.settlements).toEqual([
+      { debitTransactionId: "d-a", cardImportId: "card-42" },
+    ]);
+    expect(interpretation.flows.get("d-b")).toBe("SPEND");
+  });
+
+  test("two card imports and two debits allocate one settlement each", () => {
+    const otherStatement = [
+      tx({ id: "c9", accountId: "acc-card", importId: "card-43", date: "2026-08-01", amount: -statement42Total, description: "KAARTBETALING HANDELAAR" }),
+    ];
+    const debitOne = tx({
+      id: "d-one",
+      accountId: "acc-current",
+      importId: "current-8",
+      date: "2026-08-02",
+      amount: -statement42Total,
+      description: "MASTERCARD AFREKENING NUMMER 42",
+    });
+    const debitTwo = tx({
+      id: "d-two",
+      accountId: "acc-current",
+      importId: "current-8",
+      date: "2026-08-05",
+      amount: -statement42Total,
+      description: "MASTERCARD AFREKENING NUMMER 43",
+    });
+    const interpretation = interpretLedger({
+      transactions: [...cardStatement42, ...otherStatement, debitOne, debitTwo],
+      accounts: ACCOUNTS,
+    });
+    const byDebit = new Map(
+      interpretation.settlements.map((link) => [link.debitTransactionId, link.cardImportId]),
+    );
+    expect(byDebit.size).toBe(2);
+    expect(new Set(byDebit.values()).size).toBe(2);
+    expect(interpretation.flows.get("d-one")).toBe("INTERNAL");
+    expect(interpretation.flows.get("d-two")).toBe("INTERNAL");
+  });
+
   test("the date window binds: a card import outside SETTLEMENT_DATE_WINDOW_DAYS does not match", () => {
     const staleDebit = tx({
       id: "d2",

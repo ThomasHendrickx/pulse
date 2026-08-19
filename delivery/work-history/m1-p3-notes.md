@@ -400,3 +400,26 @@ pure-domain/property tests, whose datasets are complete, unchanged).
 counterpartyKey's parameter narrowed structurally to CounterpartyRef.
 Adapter, composition root and fake ledger port extended. After: interpret
 suite 5 passed; full suite 146 passed, exit 0.
+
+### CR-306: settlement matching exclusive per card import
+
+Stop-for judgement, recorded: the orchestrator-approved rule (at most one
+settlement debit per card import, D-7-style deterministic tie-break,
+losers to SPEND) resolves an ambiguity the correction text leaves open
+when two debits both satisfy pattern plus amount plus window; both arms
+keep their written meaning (matched INTERNAL paired to the import,
+unmatched honest unitemised SPEND). Judged a tie-break, not a meaning
+change; implemented, no escalation.
+
+Red witnesses FIRST, captured: three new tests in the card settlement
+describe of test/domain/corrections.test.ts ran red against committed
+code: "Tests 3 failed | 13 passed (16)" (two equal debits both INTERNAL
+onto one import; equal-distance id tie-break unenforced; two-imports
+two-debits both linking one import). Fix: settlementCandidateImports
+extracted in corrections.ts (correctCardSettlement now the single-debit
+special case of it, observable behavior unchanged); interpretLedger
+allocates globally over (debit, import) edges sorted by (date distance to
+period end, debit id, import id), each side used once; losers get SPEND
+in the flows map and never enter the unmatched set. After: corrections 16
+passed; full suite 149 passed, exit 0 (the 500-case property stayed
+green over the allocation change).
