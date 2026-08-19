@@ -1,280 +1,209 @@
 # Clean-room HAZARD review of phase M1-P2 (import).
-# HEAD UNDER REVIEW: 10beb40 (diff main 99642c1..10beb40).
-# Reviewer clone: worktrees/m1-p2-review-hazard, no implementation session
-# seen. Framing: destructive-paths, contract: hazard. Starting question per
-# the contract: what can corrupt, lose, duplicate, leak or silently
-# misstate the household's financial facts. The acceptance criteria were
-# read LAST, as one more input.
+# HEAD UNDER REVIEW: 41ff037 (fix round 1; gate-bearing code commits
+# e10b0cc..06e997b). History: round 0 reviewed 10beb40 (diff
+# 99642c1..10beb40) and returned FIX-ROUND-NEEDED with findings
+# CR-201..CR-207; this document now speaks about the fix-round head after
+# a delta pass over 10beb40..41ff037 with every round 0 probe re-executed
+# against the new tree. Reviewer clone: worktrees/m1-p2-review-hazard, no
+# implementation session seen in either round. Framing: destructive-paths,
+# contract: hazard.
 #
-# EXECUTED IN THIS CLONE (exit codes): npm ci 0, npm run typecheck 0,
-# npm run lint 0, npm test 0 (Test Files 8 passed, Tests 77 passed, 0
-# skipped), grep for Transaction update paths over src/ (only
-# import.updateMany at src/modules/import/adapters/import-repository.ts
-# lines 163 and 201; no transaction.update, no transaction.delete, no
-# upsert, no raw SQL outside the health probe), grep for process.env in
-# all new module and platform files (no matches), and six hazard probe
-# constructions (P1..P6) bundled from the committed domain and application
-# sources via esbuild and executed with node; their captured output is
-# quoted verbatim in the findings below. The probes ran the REAL parser,
-# REAL dedup and REAL use cases against the committed in-memory port fakes
-# from test/application/fake-import-world.ts; no worktree file was edited.
+# FIX ROUND 1 RESOLUTION LEDGER (per finding; findings[] below carries
+# only findings that APPLY to head 41ff037, because the verdict schema has
+# no resolved-marker field and an APPROVE cannot sit beside a high
+# finding):
+# - CR-201 (second same-format card silently merged into the first card's
+#   account, high): TRANSPARENCY SHIPPED, BINDING UNCHANGED BY DECLARED
+#   ESCALATION. Re-executed probe P5 at this head: card B's upload still
+#   auto-ingests into card A's account with the identical cross-card row
+#   dropped as known (captured: added 1, known 1, all rows on account-2).
+#   What the round shipped and I verified: the landing account is named on
+#   the confirmation screen (profile-confirmation.tsx landing-account /
+#   landing-new testids) and on the result screen (import-result.tsx
+#   landing-account), resolved by the SAME rule the confirm use case now
+#   applies (file IBAN first, then the spec-identical profile's binding:
+#   src/app/(app)/import/[id]/page.tsx:77-85 mirrors
+#   confirm-import.ts:82-91), so screen and ingest cannot disagree. The
+#   full fix is escalated to the owner as a contract question (a per-upload
+#   account choice changes criterion 1.5's ask-nothing re-upload), recorded
+#   as a declared deviation and open claim M1P2-C6 in
+#   delivery/work-history/m1-p2.yaml; judged below in deviations-judged.
+#   The residual hazard therefore STANDS AND IS OWNED BY THE OWNER
+#   DECISION, not by another fix round on this diff, which is why it does
+#   not appear in findings[]; any reader weighing this APPROVE should read
+#   M1P2-C6 first.
+# - CR-202 (unknown indicator silently signed credit, medium): RESOLVED at
+#   e10b0cc. Re-executed probe P3: indicator STORNO and a blank cell now
+#   return a row-error (problem "indicator") that fails the import loudly
+#   with zero rows on both paths; case-insensitive matching verified ("c"
+#   credit, "d" debit); the spec now carries creditValue and
+#   parseSourceProfileSpec rejects its absence. One validation gap remains
+#   as new LOW finding CR-209.
+# - CR-203 (all-debit month of a debit/credit export detected as signed,
+#   medium): RESOLVED at 490806b for the fixture vocabulary. Re-executed
+#   probe P4: the debits-only file now detects the debitCredit pair via
+#   the empty header-hinted sibling and stores -74210, -1525, -8800. The
+#   widened pair path exposes a sign edge filed as new LOW finding CR-208.
+#   Residue, named: the header vocabulary is en/nl word-bounded
+#   (debit|debet|af, credit|bij); accented French pair headers match
+#   nothing and fall back to the old behaviour. That gap predates the
+#   delta and no observed export needs it yet.
+# - CR-204 (racing confirms double-ingest, medium): RESOLVED at d36a011.
+#   Re-executed probe P6: one racer ingests (3 rows), the loser is
+#   rejected already-confirmed with zero transaction writes; the claim is
+#   a conditional update out of fromStatus INSIDE the same database
+#   transaction as the insert (import-repository.ts ingestRows), so a
+#   crash after the claim rolls both back, and under ReadCommitted the
+#   loser's conditional update re-evaluates against the winner's committed
+#   row and matches nothing. markImportFailed is now conditional from
+#   AWAITING_DECLARATION so a settled import can never be overwritten with
+#   a failure that lies about its stored rows. Declared not-covered and
+#   accepted: the loser's pre-declared account row (and a twin profile
+#   under a different name) survives unused; declaration-layer junk with
+#   no money attached, and future uploads resolve deterministically to the
+#   winner's earlier profile (listProfiles createdAt asc, first match).
+# - CR-205 (hash ordinal counted natural-keyed twins, low): RESOLVED at
+#   c920c14. Re-executed probe P1: the keyless twin now gets h:...#0 in
+#   both the twin-carrying and twin-free file, so the overlapping
+#   re-export dedups instead of duplicating; the false comment is replaced
+#   by one that matches the code and names the old defect (R-087
+#   discharged). New unit tests cover exactly this construction
+#   (test/domain/dedup.test.ts:43,65).
+# - CR-206 (join('|') tuple collision, low): RESOLVED at c920c14. The
+#   tuple is now JSON-encoded (injective); re-executed probe P2 plus a
+#   quote-targeted variant: no collision. The recipe change lands inside
+#   its once-only window: the deployed database carries only the M1-P1
+#   schema (notes/deployed-infrastructure.md; the M1-P2 migration has not
+#   been deploy-verified), so no production transaction row holds an
+#   old-recipe key, and the comment re-freezes the encoding.
+# - CR-207 (keys[index] ?? "" landmine, low): RESOLVED at 95a196c.
+#   zipRowsWithDedupKeys throws on length desync and on an empty key
+#   (probe P8: both throws captured), both use cases route through it, and
+#   the soft fallback is gone from the callers.
 #
-# DELIBERATELY NOT EXECUTED HERE, with reasons: npm run test:e2e, npm run
-# db:reset, prisma migrate (the local Supabase stack belongs to the
-# criteria reviewer per dispatch); any query against the deployed Supabase
-# project (review worktrees hold no deploy credentials and deploy-verify
-# owns that surface); a live-database RLS lockout probe (would need the
-# shared stack; judged statically instead, see H-RLS below and the
-# work history's captured pg_class output).
+# EXECUTED AT THIS HEAD in this clone (exit codes), via detached checkout
+# of 41ff037 for the gates and a git-archive extraction for the probes:
+# npm run typecheck 0, npm run lint 0, npm test 0 (Test Files 9 passed,
+# Tests 92 passed, 0 skipped), immutability grep at the fix head (no
+# update, delete or upsert on Transaction anywhere under src/; the three
+# updateMany calls all touch Import status fields and two are now
+# conditional claims), probes P1..P8 bundled with esbuild from the
+# extracted 41ff037 tree and executed with node (real parser, real dedup,
+# real use cases, committed port fakes; output quoted in the ledger and
+# findings). npm ci was executed in this clone at 10beb40 and
+# package-lock.json is unchanged in the delta, so it was not re-run.
 #
-# RLS JUDGMENT (the sharpest deployed-behavior risk named in the dispatch,
-# judged statically): the migration enables RLS policy-free on all six
-# tables (prisma/schema/migrations/20260818154929_import_facts_and_declarations/migration.sql
-# lines 131-136). Locally the implementer captured pg_class relrowsecurity
-# = t for all six tables with the app green (work history claim M1P2-C4).
-# Deployed: per notes/deployed-infrastructure.md the M1-P1 schema was
-# applied via the Supabase management API SQL route and baselined in
-# _prisma_migrations, and per fleet warning 5 BOTH deployed connection
-# strings are the session pooler with the project ref in the username,
-# which authenticates the postgres role; prisma migrate deploy will
-# therefore run as the same role the runtime uses. If that role owns the
-# tables (the management API SQL route and the pooler login both resolve
-# to postgres), owner bypass makes the policy-free enablement a no-op for
-# the app, which is the migration comment's claim. If ownership were
-# instead held by a different admin role, ALTER TABLE ... ENABLE ROW LEVEL
-# SECURITY on households/users would fail with a must-be-owner error and
-# the whole migration rolls back: a LOUD deploy failure, not a silent
-# lockout, because Prisma applies a migration file transactionally. The
-# one silent-lockout shape (migration succeeds as owner, runtime connects
-# as a different non-owner role) is excluded by warning 5's fact that both
-# URLs carry the same pooler username. Residual, named: the Supabase Data
-# API is disabled per the infrastructure note, so no PostgREST role reads
-# these tables; if it is ever re-enabled, policy-free RLS blocks it
-# entirely, which is the intended backstop. No finding.
+# DELIBERATELY NOT EXECUTED HERE, unchanged from round 0: npm run
+# test:e2e, db:reset, prisma migrate (the shared local Supabase stack
+# belongs to the criteria reviewer; the work history records the e2e gate
+# green, 4 passed, at the fix-round head); deployed-database probes (no
+# credentials in a review worktree; the round 0 RLS judgment is unchanged
+# because the delta does not touch the migration).
 #
-# UPLOAD INPUT HANDLING, judged: no explicit size cap in
-# src/modules/import/ui/actions.ts, but next.config.ts sets no
-# serverActions.bodySizeLimit so the Next.js default (1 MB) refuses larger
-# bodies loudly before the action runs; real monthly exports are far
-# smaller. rawContent is stored as bytes and decoding is per confirmed
-# spec; a wrong encoding confirmation corrupts rawLine but Import.rawContent
-# keeps the original bytes, so re-parse (M1-P3) recovers. rawLine is
-# rendered only through React text nodes (no dangerouslySetInnerHTML or
-# innerHTML anywhere under src/, grep executed), and nothing re-exports
-# CSV, so formula-injection has no sink in this phase. No finding.
+# NEW-DESTRUCTIVE-PATH SWEEP OVER THE DELTA, per the dispatch: the
+# conditional-claim change was attacked with the race probe (P6) and read
+# for claim-then-crash atomicity (single $transaction, claim first, loser
+# commits nothing); the detection change was attacked with the
+# negative-valued-debit construction (found CR-208, the one real new
+# reachability); the tuple encoding change was checked against its frozen
+# window (no production rows exist, ledger entry CR-206) and against
+# JSON-targeted collision shapes (none collide); the confirm path's new
+# brick-on-unparseable behaviour writes nothing and moves the import to
+# FAILED conditionally, so a racer cannot be overwritten and a re-upload
+# recovers; the fake repository's claim mirrors the adapter's semantics
+# synchronously, so the race probe's arbitration is faithful to the
+# database's row-lock behaviour.
 #
-# VALIDATION RECORD, measured (tiphys 0.1.0, Node v26.7.0 via nvm).
-# tiphys validate --type verdict resolves plan.yaml, work-history.yaml and
-# assurance-modes.yaml in the context directory; this repo keeps them at
-# delivery/plan/pulse-v1.yaml, delivery/work-history/m1-p2.yaml and the
-# fleet root, so validation ran with context-directory symlinks. With
-# those three provided: EXIT 0 (schema, intra-document rules, criteria
-# completeness, deviations judged, hazard classes complete, finding
-# references resolve all pass), plus a REPORT line that the context
-# declares no delivery mode so dual-review-decorrelation was not
-# evaluated. Adding charter.yaml and delivery/review to the context makes
-# that one check red ("only 1 verdict document(s) exist under
-# delivery/review for phase M1-P2"): the sibling criteria verdict lives in
-# the other reviewer's worktree, and once both are collected the check
+# VALIDATION RECORD, mechanics unchanged from round 0 (tiphys 0.1.0, Node
+# v26.7.0 via nvm, context-directory symlinks for plan.yaml,
+# work-history.yaml and assurance-modes.yaml): EXIT 0, with the REPORT
+# line that the context declares no delivery mode so
+# dual-review-decorrelation was not evaluated there. With charter.yaml and
+# delivery/review mounted, that one check reds on verdict count until the
+# sibling criteria verdict is collected, and once both are collected it
 # will still red on model family because BOTH M1-P2 verdicts truthfully
 # record produced-by claude while DR-0012 condition 1 wants two families.
-# That decorrelation-family failure is ESCALATED to the orchestrator here,
+# That decorrelation-family failure stays ESCALATED to the orchestrator,
 # never faked: writing a different family would be false.
 kind: verdict
 phase: M1-P2
-verdict: FIX-ROUND-NEEDED
+verdict: APPROVE
 produced-by: claude
 framing: destructive-paths
 review-contract: hazard
 
 findings:
-  - id: CR-201
-    severity: high
-    evidence:
-      - "Executed construction P5 against the committed use cases and real parser: confirm a first KBC-shaped card file with a declared account, then upload a SECOND physical card's file with the same structure. Captured output: 'P5 upload card B (a DIFFERENT physical card): {\"kind\":\"ingested\",\"importId\":\"import-4\",\"added\":1,\"known\":1}' and 'P5 accounts declared: [ account-2 ]' with all four stored rows carrying accountId account-2. The second card's rows were silently ingested into the FIRST card's account, no question asked, and its PIZZA NAPOLI row (a real transaction on card B, same day, amount and merchant as a card A row) was reported known: 1, meaning it was silently dropped by the dedup key, which hashes over the shared accountId (src/modules/import/domain/dedup.ts:33-40)."
-      - "Mechanism in the shipped code: src/modules/import/application/upload-statement.ts:109 resolves a card-shape file's account from the spec-matching profile's binding, and the match is pure structural spec equality (src/modules/import/application/upload-statement.ts:92, src/modules/import/domain/source-profile.ts:205-206). Two cards of the same bank product produce byte-different files with IDENTICAL detected specs (detection is deterministic over structure, src/modules/import/domain/detect-profile.ts:1-6), and the card shape carries no own-account identifier at all (notes/export-format-facts.md, KBC section), so nothing in the system can tell the second card from a re-upload of the first. The confirm path reinforces it: src/modules/import/application/confirm-import.ts:75-82 reuses any spec-identical stored profile, so a second same-spec profile bound to a second account can never be created through the UI. The result screen (src/modules/import/ui/import-result.tsx) does not even name the account the rows landed in."
-    concrete-fix: >-
-      Make account attachment explicit for files that carry no own-account
-      identifier. Minimum sound shape: (a) when an upload resolves its
-      account through a profile binding, the outcome and the result screen
-      must NAME the target account label; (b) the confirm flow must accept
-      attaching to an EXISTING account (an accountId in the confirm input)
-      as an alternative to declaring a new one, and when a declaration
-      creates a new account, create a NEW profile row bound to it even if a
-      spec-identical profile exists (drop the unconditional reuse at
-      confirm-import.ts:75-82; the unique (householdId, name) index already
-      distinguishes the twins); (c) on upload, when MORE than one stored
-      profile matches the detected spec, return awaiting-declaration with
-      the candidate accounts listed instead of silently picking the first
-      (listProfiles orders by createdAt, upload-statement.ts:92 takes
-      find()'s first hit). With exactly one match, current behaviour stands
-      and criterion 1.5's ask-nothing re-upload is preserved.
-    analysis: >-
-      Shipped behaviour at risk: a Belgian household with two cards of the
-      same bank product (his and hers KBC Mastercard, exactly the owner's
-      recorded bank mix) has the second card's entire history silently
-      booked onto the first card's account, and every same-day same-amount
-      same-merchant coincidence ACROSS the two cards is silently dropped as
-      already-known, losing real facts. Both corruptions survive every
-      recompute (account attribution and row existence are facts, not
-      interpretation), the drop is not recoverable by M1-P3's re-parse
-      because the row was never stored, and the import report actively
-      misstates the drop as known rows. This passes every acceptance
-      criterion: 1.5 only exercises one account per shape.
-
-  - id: CR-202
-    severity: medium
-    evidence:
-      - "Executed construction P3: parseStatement with a confirmed indicator spec (debitValue D) over a file whose rows carry indicators D, STORNO and empty. Captured output: 'P3 amounts for D / STORNO / empty indicator: [ -1850, 9999, 1200 ]'. The unknown STORNO row and the missing-indicator row were both silently stored as POSITIVE amounts."
-      - "Mechanism: src/modules/import/domain/parse-statement.ts:193-197 signs the amount negative when the indicator equals debitValue and positive OTHERWISE, with no closed vocabulary; the stored spec cannot even express one because it carries only debitValue (src/modules/import/domain/source-profile.ts:24-29). Detection pins a closed indicator pair over the sampled file (detect-profile.ts:54-59), but parse runs over every FUTURE file of that source with the stored spec, where a third token or a blank cell parses silently. The real KBC CSV column layout is still unverified (work history claim M1P2-C1), so unknown tokens are live, not hypothetical."
-    concrete-fix: >-
-      Store creditValue alongside debitValue in the indicator
-      representation (detection already knows the pair it matched), and
-      make parseStatement return a row-error for any indicator cell that is
-      neither, failing the whole file loudly like an unparseable amount
-      does today.
-    analysis: >-
-      Shipped behaviour at risk: a future statement of an already-confirmed
-      card source containing any indicator token outside the sampled pair
-      (reversal, correction, or an empty cell on a malformed line) books
-      that row as money ENTERING the pot. Sign errors on facts survive
-      recompute and misstate spend and income until a human notices one row.
-      This is hazard class H1.1's harm arriving through the parse path
-      rather than the detection path the fixtures cover.
-
-  - id: CR-203
-    severity: medium
-    evidence:
-      - "Executed construction P4: detectSourceProfile over a debit-and-credit-pair export whose credit column happens to be empty this month (three debit rows, header row 'Date,Counterparty account,Name,Details,Debit,Credit,Account' identical to the committed generic-debit-credit.csv fixture). Captured output: 'P4 detected representation: {\"kind\":\"signed\",\"column\":4}' then 'P4 stored cents for three debits: [ 74210, 1525, 8800 ]'. Every debit proposed as a POSITIVE amount: a 742.10 invoice payment previews and would be stored as +74210 cents."
-      - "Mechanism: an all-empty credit column has no non-empty values so it never qualifies as an amount column (src/modules/import/domain/detect-profile.ts:187-195), leaving one amount column with no negatives, no indicator pair, and the silent fallback to kind signed at detect-profile.ts:245. The header tokens 'Debit' and 'Credit' are consulted only to ORDER an already-found pair (detect-profile.ts:227), never to recognise that a pair exists."
-    concrete-fix: >-
-      In the single-amount-column branch, before falling back to signed,
-      look for a sibling column whose HEADER matches the debit/credit
-      vocabulary already used at detect-profile.ts:227 (credit|bij, plus
-      debit|af) and whose cells are all empty; when found, propose
-      debitCredit over the pair. When the single amount column itself
-      carries a debit-flavoured header and no negative values, refuse with
-      an undetectable ambiguous-amount-columns error instead of proposing
-      signed, so the user is asked rather than handed an inverted proposal.
-    analysis: >-
-      Shipped behaviour at risk: the first month a household imports a
-      debit/credit-pair export that happens to contain only spend (a
-      low-activity account, a short overlap export), the proposed profile
-      silently inverts every sign; the five-row preview does show positive
-      amounts, but positive numbers next to merchant names do not read as
-      wrong to a user who has never seen the convention. If confirmed, the
-      wrong facts land and, worse, the confirmed signed spec no longer
-      structurally equals the spec a fuller month detects, so the source
-      forks into two profiles. Recoverable via M1-P3 re-parse (rawLine kept),
-      which with the preview mitigation is why this is medium, not high.
-
-  - id: CR-204
-    severity: medium
-    evidence:
-      - "Executed construction P6: two confirmImport calls for the SAME awaiting card import racing under Promise.all, each carrying a declaration, against the committed use case and fakes. Captured output: 'P6 confirm outcomes: ingested ingested', 'P6 accounts created: 2', 'P6 transaction rows stored (file has 3 rows): 6'. Every row of the file was stored TWICE, once per freshly declared account."
-      - "The real write path has the same read-then-act shape with no guard: confirm-import.ts:35-41 reads the status and proceeds; ingestRows' status transition is an unconditional updateMany filtered only on id and householdId (src/modules/import/adapters/import-repository.ts:201-210), so it cannot detect that a rival confirm already moved the import to INGESTED; account creation cannot collide for card accounts because iban is null and the (householdId, iban) unique index treats nulls as distinct (migration.sql:79). The only accidental guard is the (householdId, name) unique index on source_profiles when both racers carry the same profile name AND the loser's findProfileBySpec runs before the winner's createProfile commits; the interleaving where it runs after reuses the winner's profile and double-ingests under the loser's account."
-    concrete-fix: >-
-      Make the status transition the guard: inside ingestRows' transaction,
-      updateMany with where status in (PARSED, AWAITING_DECLARATION) and
-      throw when the update count is 0 so the whole transaction (including
-      createMany) rolls back; have confirmImport map that to the existing
-      not-awaiting-declaration rejection. Belt: disable the confirm button
-      on submit in profile-confirmation.tsx.
-    analysis: >-
-      Shipped behaviour at risk: a double-clicked confirm button (the form
-      has no double-submit guard) can duplicate an entire card statement
-      under a ghost second account plus a twin profile. The facts layer is
-      append-only by design, so the product ships no operation that can
-      repair it; cleanup is manual SQL. Probability is a race window
-      spanning several sequential awaits, consequence is unrepairable
-      duplicated money, hence medium. Note the upload path does NOT share
-      this defect: racing uploads of a known source converge on the same
-      dedup keys and ON CONFLICT DO NOTHING makes the second add zero.
-
-  - id: CR-205
+  - id: CR-208
     severity: low
     evidence:
-      - "Executed construction P1: a natural-key profile file where one row carries statement and sequence numbers and an identical-content row misses them, then an overlapping re-export carrying only the keyless row. Captured output: 'P1 fileA keys: [ nat:acc-1:7:0319, h:d32a48e0...#1 ]', 'P1 fileB keys: [ h:d32a48e0...#0 ]', 'P1 keyless row keyed h:#1 in A but h:#0 in B (cross-import duplicate): true'. The same physical transaction gets key #1 in one import and #0 in the other, so the insert-ignore stores it twice."
-      - "The comment at src/modules/import/domain/dedup.ts:50-51 states the fallback ordinal counts 'its position among equally-keyless identical rows'; the loop at dedup.ts:69-74 counts ALL earlier identical-content rows including ones that took the natural key. A false present-tense claim in a comment is itself a finding under R-087."
+      - "Executed construction P7 against the 41ff037 tree: a file whose Debit-headed column carries explicitly NEGATIVE values (-742.10, -15.25) with an empty Credit sibling detects as debitCredit via the new empty-sibling pairing and parses to [ 74210, 1525 ]: every debit stored POSITIVE, a full sign inversion. Captured detection output {\"kind\":\"debitCredit\",\"debitColumn\":3,\"creditColumn\":4}."
+      - "Executed construction P7b: the same inversion exists on the ORIGINAL two-populated-column pair path (-742.10 in a Debit column next to a filled Credit column parses to +74210), so the defect predates the delta; the delta's findEmptySiblingPair (src/modules/import/domain/detect-profile.ts) only widens the family of files that reach the negating branch. Mechanism: the debitCredit branch of amountOf (src/modules/import/domain/parse-statement.ts) negates the parsed value instead of negating a magnitude, so a value already carrying a minus flips positive; the indicator branch by contrast takes Math.abs before signing."
     concrete-fix: >-
-      In the hasNaturalKey branch, compute the hash ordinal only over
-      earlier rows that themselves lack the natural key (filter before
-      counting, or pass the keyless subset to hashKey), making the comment
-      true; keep the pure-hash branch as is. This changes no stored key for
-      any pure-card profile, so the frozen-inputs stability contract at
-      dedup.ts:18-22 is not violated for the shipped card path.
+      In the debitCredit branch of amountOf, return a row error when the
+      cell text carries an explicit sign (equivalently, when the parsed
+      value is negative), the same fail-loud discipline F2 established for
+      unknown indicator markers: a signed value inside a directional
+      column is a convention the profile did not declare, and a sign is
+      never guessed. One conditional per sub-branch plus a red fixture.
     analysis: >-
-      Shipped behaviour at risk: for a natural-key source that
-      occasionally emits rows without statement or sequence values, an
-      overlapping re-export duplicates such a row whenever its
-      identical-content keyed sibling is present in one file and absent in
-      the other. Requires a keyless row content-identical to a keyed one,
-      so low; filed loudly because the comment claims the safe semantics
-      while the code ships the unsafe one.
+      Shipped behaviour at risk: an export convention writing signed
+      negatives inside a debit column would have every debit silently
+      inverted into apparent income. Low, not medium, because neither
+      recorded real format (Belfius signed column, KBC indicator) nor any
+      observed pair export uses signed values in directional columns, the
+      five-row preview shows the flipped signs before confirm, and the fix
+      is one loud refusal; filed so the pair branch reaches the same
+      never-guess bar the fix round set everywhere else.
 
-  - id: CR-206
+  - id: CR-209
     severity: low
     evidence:
-      - "Executed construction P2: two structurally DIFFERENT rows, counterparty 'FOO|BAR' with reference 'X' versus counterparty 'FOO' with reference 'BAR|X', same date and amount. Captured output: 'P2 distinct rows, colliding keys: true h:87117cbe...#0'. contentTuple at src/modules/import/domain/dedup.ts:33-40 joins the five hash inputs with an unescaped '|', so field content containing the separator shifts the boundaries and two different transactions hash identically; across two imports the second is silently dropped as known."
+      - "Executed construction P3b against the 41ff037 tree: parseSourceProfileSpec ACCEPTS an indicator representation whose two tokens are case-variants of one value (debitValue X, creditValue x), captured 'accepted: true'; parseStatement then compares case-insensitively (amountOf uppercases both sides in src/modules/import/domain/parse-statement.ts), so the credit token is unreachable and an 'x' row the user meant as credit parses to -1850, silently signed debit."
+      - "Reachability: detection can never produce such a pair (INDICATOR_PAIRS tokens stay distinct after uppercasing), but the confirm form's editable spec JSON goes through parseSourceProfileSpec and nothing rejects the degenerate pair (the indicator arm in src/modules/import/domain/source-profile.ts checks only that each token is a non-empty string)."
     concrete-fix: >-
-      Canonicalise the tuple unambiguously before hashing: length-prefix
-      each field (or JSON.stringify the array) inside contentTuple. This
-      changes every stored hash key, so it must land BEFORE first real use,
-      while the frozen-inputs contract at dedup.ts:18-22 is still cheap to
-      re-freeze; shipping it later costs a full duplicate re-import.
+      In parseSourceProfileSpec's indicator arm, reject the spec when
+      debitValue.toUpperCase() equals creditValue.toUpperCase()
+      (invalid-spec at amountRepresentation), so the degenerate pair
+      bounces at the boundary with the existing bad-spec status instead of
+      parsing with an unreachable credit token.
     analysis: >-
-      Shipped behaviour at risk: a counterparty or reference string
-      containing a pipe character (free-text fields from real exports)
-      can collide two distinct facts into one dedup key, dropping a real
-      row on a later overlapping import. Probability is low but the fix
-      window is closing: the key recipe is declared frozen at first use.
-
-  - id: CR-207
-    severity: low
-    evidence:
-      - "src/modules/import/application/upload-statement.ts:80 and src/modules/import/application/confirm-import.ts:91 both fill a missing dedup key with the empty string (keys[index] ?? ''). assignDedupKeys returns exactly rows.map(...) (src/modules/import/domain/dedup.ts:46-58) so the branch is unreachable today, but if any future edit ever de-synchronises the arrays, every affected row shares dedupKey '' and the (householdId, dedupKey) unique index (migration.sql:94) makes skipDuplicates keep ONE of them and silently drop the rest, reported as known."
-    concrete-fix: >-
-      Replace the '?? \"\"' fallback with a thrown invariant error (a bug,
-      so an exception per pulse-typescript section 5), or have
-      assignDedupKeys return rows zipped with their keys so the index
-      lookup disappears from the type.
-    analysis: >-
-      Shipped behaviour at risk: none today; the finding is that the
-      chosen appeasement of noUncheckedIndexedAccess converts a future
-      programming error from a loud crash into silent row loss on the
-      facts layer, which is the exact failure class this product exists to
-      avoid. One line to make it fail loud.
+      Shipped behaviour at risk: a hand-edited spec with case-colliding
+      indicator tokens signs every matching row as debit with no error.
+      Requires the user to type a self-contradictory pair into the spec
+      textarea, so low; filed because the fix round's own rule is that a
+      sign is never guessed, and a spec whose credit token cannot match
+      makes every sign a foregone conclusion the validator should refuse.
 
 criteria:
   - id: "1.1"
     quote: "npm test exits 0 with test/domain/profile-detection.test.ts passing, covering delimiter (\";\" and \",\"), encoding (UTF-8 and Windows-1252), header row offset, date formats DD/MM/YYYY and YYYY-MM-DD and DD.MM.YY, decimal styles 1.234,56 and 1234.56, and all three amount representations against committed synthetic fixtures in test/fixtures/. The fixture set includes a card-profile family mirroring the observed KBC shape: no counterparty-account column, no statement or sequence numbers, at least one FX row carrying original-amount and exchange-rate sub-line content, and two legitimate identical same-day same-amount same-merchant rows. Every decimal-style fixture asserts the parsed amount is an integer number of cents."
     evidence:
-      - "Executed here at 10beb40: npm test exit 0, 77 passed. Read: test/domain/profile-detection.test.ts covers both delimiters, the Windows-1252 belfius fixture (verified 0xE9 bytes in test/fixtures/belfius-account-a.csv), the three date formats, both decimal styles, and all three representations; test/fixtures/kbc-card.csv carries the FX sub-line rows and the identical duplicate pair, kbc-card-b.csv the cross-import overlap. The all-debit month and unknown-indicator gaps inside this coverage are findings CR-203 and CR-202, not criterion failures: the criterion's named fixture classes are all present and green."
+      - "Executed here at 41ff037 (detached checkout): npm test exit 0, 92 passed. The fix round extends the matrix with the debits-only pair fixture, the storno and blank-indicator card fixtures and the dedup unit family; every fixture class the criterion names remains present and green (round 0 verification of the classes stands, that history is immutable)."
     met: true
   - id: "1.2"
     quote: "test/application/ingest.test.ts asserts that importing fixture A then re-importing an overlapping fixture A2 adds exactly the non-overlapping rows and reports added versus already-known counts; dedup keys are unique per household; a fixture containing two identical same-day same-amount same-merchant rows stores two Transaction rows, with a re-upload of that same fixture adding zero; and in the partial-overlap case (import A carries one occurrence of an identical tuple, a later overlapping import B carries two) the end state is exactly two rows, the cross-import rule of the owner's v0.2 addendum section 5."
     evidence:
-      - "Executed here: npm test exit 0 including all five named ingest describe blocks (overlap counts, per-household uniqueness plus the DMMF-asserted unique index, identical-rows pair, partial-overlap highest-occurrence rule). The fake repository's insert semantics were read against the real adapter and match (ON CONFLICT DO NOTHING over (householdId, dedupKey))."
+      - "Executed here at 41ff037: npm test exit 0 with the ingest suite extended for the fix round; the key recipe change (JSON tuple, hash-path-only ordinal) is covered by the new domain tests including the cross-file keyless-twin construction at test/domain/dedup.test.ts:43, and the addendum's partial-overlap end state is re-verified by the unchanged overlap tests plus probe P1."
     met: true
   - id: "1.3"
     quote: "A fixture containing rows from two accounts fails the import with status FAILED and zero rows written, asserted in test/application/ingest.test.ts."
     evidence:
-      - "Executed here: npm test exit 0 with both mixed-account tests (upload path and confirm path) passing; the work history's mutation witness M1P2-C3 records both reddening together when the check is defanged. Code reading confirms zero transaction writes on either failure path (the FAILED Import row is the only write)."
+      - "Executed here at 41ff037: npm test exit 0 including both mixed-account tests; the confirm-path failure write is now a CONDITIONAL transition (markImportFailed from AWAITING_DECLARATION only), which strengthens the zero-write property under races rather than weakening it."
     met: true
   - id: "1.4"
     quote: "Every stored Transaction carries rawLine equal to its source line, asserted in test/application/ingest.test.ts."
     evidence:
-      - "Executed here: npm test exit 0 including the rawLine-equals-source-line test over both fixtures; parseStatement stores the exact decoded line (src/modules/import/domain/parse-statement.ts:115) and splitLines preserves line text."
+      - "Executed here at 41ff037: npm test exit 0 including the rawLine assertions over both fixtures; the delta does not touch rawLine capture (parse-statement stores the exact decoded line as before)."
     met: true
   - id: "1.5"
     quote: "npm run test:e2e exits 0 with test/e2e/import.spec.ts passing: it uploads a first file, is asked to declare the account (label, bank, ring) and confirm the detected profile over a five-row preview, completes, re-uploads the same file, and asserts zero new rows and no questions asked."
     evidence:
-      - "Not executed by this reviewer (the shared local Supabase stack belongs to the criteria reviewer). The spec text at test/e2e/import.spec.ts implements exactly the described journey, and the work history records the gate green (4 passed, exit 0) at the phase head. The journey's silence on re-upload is also the mechanism finding CR-201 exploits for a DIFFERENT second file; that does not contradict this criterion's own scope."
+      - "Not executed by this reviewer (the shared local Supabase stack belongs to the criteria reviewer). The spec is extended at the fix head to assert the landing-account naming (test/e2e/import.spec.ts delta) and the work history records the gate green (4 passed, exit 0) at fix-round head 06e997b; the journey's code path is unchanged apart from the transparency additions verified by reading."
     met: true
   - id: "1.6"
     quote: "npm run typecheck && npm run lint && npm test exit 0 at the phase head."
     evidence:
-      - "Executed here at 10beb40 in this clone: typecheck 0, lint 0, npm test 0 (77 passed)."
+      - "Executed here at 41ff037 in this clone (detached checkout): typecheck 0, lint 0, npm test 0 (92 passed)."
     met: true
 
 deviations-judged:
@@ -285,76 +214,92 @@ deviations-judged:
       test/e2e/import.spec.ts)
     serves-plan-intent: true
     reasoning: >-
-      The out-of-list files are exactly what step 7 and criterion 1.5
-      require to run over real routes (app routes, message catalogs,
-      token-only CSS, vitest alias config) plus the platform primitives the
-      skills mandate to live in src/platform, plus the four amendment items
-      the orchestrator declared. Walked the 99642c1..10beb40 diff stat
-      against that account: every touched file is attributable to a phase
-      step or a named amendment, none hides scope, and the deviation was
-      escalated in the notes for a declaration amendment rather than
-      assumed.
+      Unchanged from round 0: the out-of-list files are what step 7,
+      criterion 1.5 and the four orchestrator amendments require, none
+      hides scope, and the deviation was escalated for a declaration
+      amendment. The fix round adds only finding-driven files (three
+      fixtures, one domain test file), attributable line by line to
+      findings F1 to F8 in the 10beb40..41ff037 diff, which contains no
+      unrelated change.
+  - deviation: >-
+      Fix round 1 finding F1 (CR-201/CR-008, high): full remediation of the
+      second-same-format-card misbinding
+    serves-plan-intent: true
+    reasoning: >-
+      The full fix (a per-upload account question when one profile spec
+      covers two accounts, or file-carried card identity once claim
+      M1P2-C1 verifies real CSV layouts) genuinely changes the acceptance
+      contract that a card re-upload asks nothing (criterion 1.5), so
+      deciding it inside a fix round would let an implementer rewrite a
+      criterion, which is exactly what escalation exists to prevent. The
+      round shipped what does not need the owner: the landing account
+      named on both screens by the same resolution rule the ingest uses
+      (verified by execution and reading, probe P5 plus the page and
+      use-case alignment), and the residual restated as open claim
+      M1P2-C6 rather than buried. Judged: the escalation serves the
+      plan's intent; the residual hazard remains real, visible now rather
+      than silent, and its disposition belongs to the owner decision the
+      claim tracks.
 
 hazard-classes-addressed:
   - class-id: H1.1
     probed: >-
-      Attacked the amount pipeline from text to stored cents with executed
-      constructions rather than reading alone: verified no float touches
-      the path (parse-amount assembles digits with integer arithmetic;
-      Number.isSafeInteger guards overflow; probing '1.234' comma-style and
-      both misdeclared-style crossings fails loudly); flipped
-      representation shapes against detection (P4: a debit/credit export
-      with an all-empty credit column detects as signed and proposes every
-      debit POSITIVE, captured output in CR-203); fed a confirmed indicator
-      profile unknown and empty indicator tokens (P3: both silently stored
-      positive, captured output in CR-202); checked the fixtures' Windows-
-      1252 bytes decode through the detected encoding without corrupting
-      rawLine. The criterion 1.1 fixture families are real and green, and
-      the two constructions above name what still slips through them.
-    finding: CR-203
+      Round 0 attacked the amount pipeline with executed constructions and
+      found the indicator guess (CR-202) and the all-debit misdetection
+      (CR-203). This round re-executed every construction against
+      41ff037: unknown and blank indicators now fail the row and the
+      import loudly on both paths (probe P3, captured row-errors), the
+      debits-only pair file detects debitCredit and stores negatives
+      (probe P4, captured -74210, -1525, -8800), and the integer-cents
+      path is unchanged. Two new constructions attacked the DELTA itself:
+      negative values inside a directional column flip sign through the
+      pair-negation branch on both the new empty-sibling path and the
+      pre-existing two-column path (probes P7 and P7b, new finding
+      CR-208), and a case-colliding indicator token pair passes spec
+      validation making the credit token unreachable (probe P3b, new
+      finding CR-209). Both are low-reachability edges of a sign
+      discipline that is otherwise fail-closed by execution.
+    finding: CR-208
   - class-id: H1.2
     probed: >-
-      Walked both write paths for a partial-write escape. Upload path:
-      the mixed check runs on parsed data before any transaction write and
-      the FAILED Import row is the only write (upload-statement.ts:50-52,
-      28-36); confirm path re-parses under the CONFIRMED spec and re-checks
-      before ingest (confirm-import.ts:43-52). ingestRows wraps the row
-      createMany and the status transition in one prisma.$transaction
-      (import-repository.ts:178-212), so a crash mid-batch rolls both
-      back; a crash between createImport(PARSED) and ingest leaves a
-      zombie PARSED import with ZERO transaction rows, which is a stuck
-      state, not a partial ledger. Executed: both mixed-account tests green
-      under npm test here; the work history's defang witness reddens both
-      together. Residual, named and inherent: a concatenation of two CARD
-      files is undetectable because the card shape carries no own-account
-      identifier; nothing in this phase can close that.
+      Re-walked both write paths at the fix head. The mixed check still
+      precedes every transaction write; the FAILED transitions are now
+      CONDITIONAL claims (markImportFailed from AWAITING_DECLARATION only,
+      the ingest claim from fromStatus inside the ingest transaction), so
+      the round 0 clearance strengthens: no interleaving can produce a
+      half-ingested file or a settled import overwritten by a failure
+      label that lies about its rows. Probe P6 executed the race: winner
+      3 rows, loser zero writes and already-confirmed. The confirm path's
+      new brick-on-unparseable behaviour writes nothing and is
+      re-uploadable. Residual unchanged and inherent: a concatenation of
+      two CARD files carries no own-account identifier and cannot be
+      detected as mixed; the owner escalation under M1P2-C6 covers the
+      adjacent card-identity question.
     cleared-because: >-
-      No path writes a subset of a mixed-account file: the mixed check
-      precedes every transaction write on both paths, the ingest is
-      transactional with the status transition inside it, and the only
-      writes on failure paths are the FAILED Import row. The undetectable
-      card-shape concatenation is an input-identity limit, not a partial
-      write.
+      No path writes a subset of a mixed-account file at this head: the
+      mixed check precedes every write on both paths, the ingest claim and
+      insert share one database transaction, the failure transitions are
+      conditional, and the executed race probe shows the loser writing
+      nothing. The undetectable card-shape concatenation remains an
+      input-identity limit, not a partial write.
   - class-id: H1.3
     probed: >-
-      This class is declared addressed-by M1-P3; what this phase must
-      deliver is the preserved input. Verified: every stored row carries
-      rawLine equal to its decoded source line (criterion 1.4 test,
-      executed green here; parse-statement.ts:115), the original BYTES ride
-      Import.rawContent (import.prisma:64), and immutability holds at this
-      head: grep over src/ finds no update, delete or upsert on
-      Transaction anywhere; the only updateMany calls touch Import status
-      fields (import-repository.ts:163, 201). The ingest write is
-      createMany with skipDuplicates, never an upsert, so a re-upload can
-      not overwrite an existing fact row. Named residue for the M1-P3
-      re-parse to mind: rows a wrong profile caused to be silently DROPPED
-      (CR-201's cross-card collision, CR-206's tuple collision) were never
-      stored, so a re-parse from stored Transaction.rawLine cannot recover
-      them; recovery needs Import.rawContent, which is kept.
+      Unchanged plan disposition (addressed-by M1-P3); re-verified this
+      phase's half at the fix head: rawLine capture untouched by the
+      delta, Import.rawContent still stores the uploaded bytes, and the
+      immutability grep re-executed at 41ff037 finds no update, delete or
+      upsert on Transaction anywhere under src/ (three updateMany calls,
+      all on Import status fields, two now conditional). The dedup key
+      RECIPE changed inside the delta (JSON tuple, hash-path-only
+      ordinal); verified the once-only window claim against
+      notes/deployed-infrastructure.md: the deployed database carries only
+      the M1-P1 schema, so no production row holds an old-recipe key and
+      re-parse continuity is unaffected. Rows silently dropped by the
+      residual card merge (M1P2-C6) predate storage and would need
+      Import.rawContent for recovery, which is kept.
     cleared-because: >-
-      The phase's half of the hazard is delivered: rawLine verbatim on
+      The phase's half of the hazard holds at 41ff037: verbatim rawLine on
       every stored row, original bytes on the Import, no Transaction
-      update path in the diff, and the ingest upsert shape is insert-with-
-      skip, never update. The re-parse that consumes it ships with M1-P3
-      as the plan declares; the dropped-row recovery caveat is recorded
-      above and in CR-201.
+      update path, insert-with-skip ingest shape, and the key-recipe
+      change landed before any production key existed and is re-frozen
+      with the encoding named in the recipe comment.
