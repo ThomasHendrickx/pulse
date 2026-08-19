@@ -30,48 +30,74 @@ import type { ParsedRow } from "./parse-statement";
 export const normalizeCounterpartyForKey = (value: string): string =>
   value.toUpperCase().replace(/\s+/g, " ").trim();
 
+// The tuple is JSON-encoded (finding F6): a plain join lets a field value
+// carrying the delimiter shift the boundaries so two distinct
+// transactions collide onto one key. JSON escaping makes the encoding
+// injective over the five fields. Fixed in the once-only window before
+// any production transaction existed; the encoding is part of the frozen
+// recipe from here on.
 const contentTuple = (accountId: string, row: ParsedRow): string =>
-  [
+  JSON.stringify([
     accountId,
     row.bookingDate,
     String(row.amountCents),
     normalizeCounterpartyForKey(row.counterpartyName ?? row.description),
     row.reference ?? "",
-  ].join("|");
+  ]);
 
+// Pair rows with their assigned keys positionally. A length mismatch or
+// an empty key is a BUG (a desync between assignDedupKeys and its caller)
+// and throws rather than softening (finding F7): an empty dedup key would
+// collapse every affected row onto one stored row under duplicate
+// skipping, which is silent multi-row loss, the worst failure this module
+// has. Unexpected failures are exceptions (pulse-typescript section 5).
+export const zipRowsWithDedupKeys = <R>(
+  rows: readonly R[],
+  keys: readonly string[],
+): readonly (R & { readonly dedupKey: string })[] => {
+  if (rows.length !== keys.length) {
+    throw new Error(
+      `Dedup key desync: ${rows.length} rows but ${keys.length} keys`,
+    );
+  }
+  return rows.map((row, index) => {
+    const dedupKey = keys[index];
+    if (dedupKey === undefined || dedupKey === "") {
+      throw new Error(`Dedup key desync: empty key at row ${index}`);
+    }
+    return { ...row, dedupKey };
+  });
+};
+
+// The ordinal counts occurrences among HASH-PATH identical-content rows
+// ONLY (finding F5, owner v0.2 addendum section 5). Counting natural-keyed
+// twins as well would make a keyless row's key depend on which siblings
+// its file happens to carry, so an overlapping re-export would store the
+// same fact twice (ordinal 1 in one file, ordinal 0 in the other). An
+// earlier version of this file counted every identical-content row while
+// its comment claimed the hash-path-only rule; the code was wrong and the
+// comment right, corrected here rather than silently (R-087).
 export const assignDedupKeys = (
   accountId: string,
   rows: readonly ParsedRow[],
   spec: SourceProfileSpec,
 ): readonly string[] => {
-  if (hasNaturalKey(spec)) {
-    return rows.map((row, index) => {
-      // The profile declares both columns, but a single row may still miss
-      // a value; such a row falls back to the hash path with an ordinal of
-      // its position among equally-keyless identical rows.
-      if (row.statementNumber !== undefined && row.sequenceNumber !== undefined) {
-        return `nat:${accountId}:${row.statementNumber}:${row.sequenceNumber}`;
-      }
-      return hashKey(accountId, rows, row, index);
-    });
-  }
-  return rows.map((row, index) => hashKey(accountId, rows, row, index));
-};
-
-const hashKey = (
-  accountId: string,
-  rows: readonly ParsedRow[],
-  row: ParsedRow,
-  index: number,
-): string => {
-  const tuple = contentTuple(accountId, row);
-  let ordinal = 0;
-  for (let i = 0; i < index; i += 1) {
-    const earlier = rows[i];
-    if (earlier !== undefined && contentTuple(accountId, earlier) === tuple) {
-      ordinal += 1;
+  const natural = hasNaturalKey(spec);
+  const hashPathOrdinals = new Map<string, number>();
+  return rows.map((row) => {
+    // The profile may declare both columns while a single row still
+    // misses a value; such a row falls back to the hash path.
+    if (
+      natural &&
+      row.statementNumber !== undefined &&
+      row.sequenceNumber !== undefined
+    ) {
+      return `nat:${accountId}:${row.statementNumber}:${row.sequenceNumber}`;
     }
-  }
-  const digest = createHash("sha256").update(tuple).digest("hex");
-  return `h:${digest}#${ordinal}`;
+    const tuple = contentTuple(accountId, row);
+    const ordinal = hashPathOrdinals.get(tuple) ?? 0;
+    hashPathOrdinals.set(tuple, ordinal + 1);
+    const digest = createHash("sha256").update(tuple).digest("hex");
+    return `h:${digest}#${ordinal}`;
+  });
 };

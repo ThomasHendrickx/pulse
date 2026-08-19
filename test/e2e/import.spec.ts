@@ -36,6 +36,9 @@ test("first upload asks once; re-upload adds zero and asks nothing", async ({
     page.getByRole("heading", { name: "Confirm the detected format" }),
   ).toBeVisible();
   await expect(page.getByTestId("preview-row")).toHaveCount(5);
+  // Finding F1 (transparency): the account is not known yet, and the
+  // screen says so before asking for the declaration.
+  await expect(page.getByTestId("landing-new")).toBeVisible();
   // The preview renders rows as they will be stored: booking date as a
   // plain date, the amount in Belgian notation through the shared
   // formatter.
@@ -49,8 +52,10 @@ test("first upload asks once; re-upload adds zero and asks nothing", async ({
   await page.getByLabel("Ring").selectOption("POT");
   await page.getByTestId("confirm-import").click();
 
-  // Completed: six rows in, none previously known.
+  // Completed: six rows in, none previously known, INTO the named
+  // account (finding F1: counts never render without their account).
   await expect(page.getByTestId("import-result")).toBeVisible();
+  await expect(page.getByTestId("landing-account")).toHaveText("Daily account");
   await expect(page.getByTestId("rows-added")).toHaveText("6");
   await expect(page.getByTestId("rows-known")).toHaveText("0");
 
@@ -61,6 +66,7 @@ test("first upload asks once; re-upload adds zero and asks nothing", async ({
   await page.getByRole("button", { name: "Upload" }).click();
 
   await expect(page.getByTestId("import-result")).toBeVisible();
+  await expect(page.getByTestId("landing-account")).toHaveText("Daily account");
   await expect(page.getByTestId("rows-added")).toHaveText("0");
   await expect(page.getByTestId("rows-known")).toHaveText("6");
   // No questions were asked on the way: the result screen is the landing

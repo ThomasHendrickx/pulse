@@ -155,15 +155,23 @@ export const createProfile = async (
   };
 };
 
+// Conditional transition (finding F4): FAILED is claimed only from
+// AWAITING_DECLARATION, so a racer that already ingested the import can
+// never be overwritten with a failure that lies about its stored rows.
 export const markImportFailed = async (
   context: HouseholdContext,
   importId: string,
   reason: ImportFailureReason,
-): Promise<void> => {
-  await prisma.import.updateMany({
-    where: { id: importId, householdId: context.householdId },
+): Promise<boolean> => {
+  const updated = await prisma.import.updateMany({
+    where: {
+      id: importId,
+      householdId: context.householdId,
+      status: "AWAITING_DECLARATION",
+    },
     data: { status: "FAILED", failureReason: reason },
   });
+  return updated.count === 1;
 };
 
 export const ingestRows = async (
@@ -172,10 +180,33 @@ export const ingestRows = async (
     readonly importId: string;
     readonly accountId: string;
     readonly sourceProfileId: string;
+    readonly fromStatus: ImportStatus;
     readonly rows: readonly IngestRow[];
   },
-): Promise<{ readonly added: number; readonly known: number }> => {
+): Promise<
+  | { readonly ok: true; readonly added: number; readonly known: number }
+  | { readonly ok: false; readonly error: "not-in-expected-status" }
+> => {
   return prisma.$transaction(async (tx) => {
+    // THE CLAIM, first and conditional (finding F4): exactly one racer
+    // can move the import out of fromStatus. Running inside the same
+    // transaction as the insert means a loser observed here has written
+    // nothing, and a crash after the claim rolls the claim back too.
+    const claimed = await tx.import.updateMany({
+      where: {
+        id: input.importId,
+        householdId: context.householdId,
+        status: input.fromStatus,
+      },
+      data: {
+        status: "INGESTED",
+        accountId: input.accountId,
+        sourceProfileId: input.sourceProfileId,
+      },
+    });
+    if (claimed.count !== 1) {
+      return { ok: false, error: "not-in-expected-status" as const };
+    }
     const created = await tx.transaction.createMany({
       data: input.rows.map((row) => ({
         householdId: context.householdId,
@@ -200,24 +231,8 @@ export const ingestRows = async (
     const known = input.rows.length - added;
     await tx.import.updateMany({
       where: { id: input.importId, householdId: context.householdId },
-      data: {
-        status: "INGESTED",
-        accountId: input.accountId,
-        sourceProfileId: input.sourceProfileId,
-        rowsAdded: added,
-        rowsKnown: known,
-      },
+      data: { rowsAdded: added, rowsKnown: known },
     });
-    return { added, known };
+    return { ok: true, added, known };
   });
 };
-
-// Read side for the import screens and the e2e assertions: how many
-// transaction rows an account carries.
-export const countTransactionsForAccount = async (
-  context: HouseholdContext,
-  accountId: string,
-): Promise<number> =>
-  prisma.transaction.count({
-    where: { householdId: context.householdId, accountId },
-  });

@@ -14,7 +14,11 @@ import * as repository from "../adapters/import-repository";
 import type { NewAccount } from "@/modules/accounts/application";
 import type { SourceProfileSpec } from "../domain/source-profile";
 import { confirmImport as confirmImportUseCase, type ConfirmOutcome } from "./confirm-import";
-import { uploadStatement as uploadStatementUseCase, type UploadOutcome } from "./upload-statement";
+import {
+  findProfileBySpec,
+  uploadStatement as uploadStatementUseCase,
+  type UploadOutcome,
+} from "./upload-statement";
 import type { ImportDependencies, ImportRecord } from "./ports";
 
 export type { ConfirmOutcome } from "./confirm-import";
@@ -59,6 +63,14 @@ export const confirmImport = (
   },
 ): Promise<ConfirmOutcome> =>
   confirmImportUseCase(context, liveDependencies, input);
+
+// Which stored profile a detected spec resolves to, so the confirmation
+// screen can name the landing account the ingest will actually use
+// (finding F1, transparency).
+export const findProfileForSpec = (
+  context: HouseholdContext,
+  spec: SourceProfileSpec,
+) => findProfileBySpec(context, liveDependencies, spec);
 
 export const getImport = (
   context: HouseholdContext,

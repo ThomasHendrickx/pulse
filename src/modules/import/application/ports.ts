@@ -87,25 +87,34 @@ export type ImportRepositoryPort = {
       readonly accountId?: string;
     },
   ) => Promise<StoredProfile>;
-  // The one status transition a confirm-time failure needs: to FAILED,
-  // with the reason. Never touches transaction rows.
+  // Conditional transition to FAILED, claimed only from
+  // AWAITING_DECLARATION (finding F4: no unconditional status writes).
+  // Returns whether this caller made the transition; false means another
+  // writer got there first. Never touches transaction rows.
   readonly markImportFailed: (
     context: HouseholdContext,
     importId: string,
     reason: ImportFailureReason,
-  ) => Promise<void>;
-  // Transactional: inserts the rows with duplicate dedup keys skipped
-  // (one statement, never a read-then-write loop) and moves the import to
-  // INGESTED with the added and already-known counts, atomically.
+  ) => Promise<boolean>;
+  // Transactional AND guarded (finding F4): the import row is claimed by
+  // a conditional update from `fromStatus` FIRST, inside the same
+  // database transaction as the row insert, so two racing ingests of one
+  // import cannot both land. The loser gets not-in-expected-status and
+  // writes nothing. The insert itself skips duplicate dedup keys in one
+  // statement, never a read-then-write loop.
   readonly ingestRows: (
     context: HouseholdContext,
     input: {
       readonly importId: string;
       readonly accountId: string;
       readonly sourceProfileId: string;
+      readonly fromStatus: ImportStatus;
       readonly rows: readonly IngestRow[];
     },
-  ) => Promise<{ readonly added: number; readonly known: number }>;
+  ) => Promise<
+    | { readonly ok: true; readonly added: number; readonly known: number }
+    | { readonly ok: false; readonly error: "not-in-expected-status" }
+  >;
 };
 
 // The slice of the accounts module the import use cases need, satisfied by

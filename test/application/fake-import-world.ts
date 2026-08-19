@@ -97,16 +97,37 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       return profile;
     },
     markImportFailed: async (context, importId, reason) => {
+      // Conditional, mirroring the adapter (finding F4): FAILED is
+      // claimed only from AWAITING_DECLARATION.
       const record = imports.get(importId);
-      if (record !== undefined && record.householdId === context.householdId) {
-        record.status = "FAILED";
-        record.failureReason = reason;
+      if (
+        record === undefined ||
+        record.householdId !== context.householdId ||
+        record.status !== "AWAITING_DECLARATION"
+      ) {
+        return false;
       }
+      record.status = "FAILED";
+      record.failureReason = reason;
+      return true;
     },
     ingestRows: async (context, input) => {
-      // Insert-with-duplicates-skipped over the per-household unique key,
-      // exactly the semantics of the schema's @@unique([householdId,
-      // dedupKey]) plus createMany({ skipDuplicates: true }).
+      // Mirrors the adapter's semantics: the CLAIM first (a conditional
+      // transition out of fromStatus, finding F4), then
+      // insert-with-duplicates-skipped over the per-household unique key,
+      // exactly @@unique([householdId, dedupKey]) plus
+      // createMany({ skipDuplicates: true }).
+      const record = imports.get(input.importId);
+      if (
+        record === undefined ||
+        record.householdId !== context.householdId ||
+        record.status !== input.fromStatus
+      ) {
+        return { ok: false, error: "not-in-expected-status" as const };
+      }
+      record.status = "INGESTED";
+      record.accountId = input.accountId;
+      record.sourceProfileId = input.sourceProfileId;
       let added = 0;
       for (const row of input.rows) {
         const exists = transactions.some(
@@ -125,15 +146,9 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
         }
       }
       const known = input.rows.length - added;
-      const record = imports.get(input.importId);
-      if (record !== undefined && record.householdId === context.householdId) {
-        record.status = "INGESTED";
-        record.accountId = input.accountId;
-        record.sourceProfileId = input.sourceProfileId;
-        record.rowsAdded = added;
-        record.rowsKnown = known;
-      }
-      return { added, known };
+      record.rowsAdded = added;
+      record.rowsKnown = known;
+      return { ok: true, added, known };
     },
   };
 

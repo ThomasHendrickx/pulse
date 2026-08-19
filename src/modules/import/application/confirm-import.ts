@@ -5,7 +5,7 @@
 // spec fix can change which column is the account column.
 
 import type { HouseholdContext } from "@/platform/tenancy";
-import { assignDedupKeys } from "../domain/dedup";
+import { assignDedupKeys, zipRowsWithDedupKeys } from "../domain/dedup";
 import type { SourceProfileSpec } from "../domain/source-profile";
 import type { NewAccount } from "@/modules/accounts/application";
 import { findProfileBySpec } from "./upload-statement";
@@ -19,7 +19,8 @@ export type ConfirmOutcome =
       readonly reason:
         | "import-not-found"
         | "not-awaiting-declaration"
-        | "declaration-needed";
+        | "declaration-needed"
+        | "already-confirmed";
     };
 
 export const confirmImport = async (
@@ -42,20 +43,49 @@ export const confirmImport = async (
 
   const parsed = deps.parser.parse(record.rawContent, input.spec);
   if (!parsed.ok) {
-    return { kind: "rejected", reason: "declaration-needed" };
+    // A file that does not parse under the confirmed spec (an unknown
+    // indicator marker included, finding F2) fails the import loudly with
+    // nothing written, the same discipline as the mixed-account check. A
+    // bricked import is re-uploadable; a silently mis-signed one is not
+    // repairable at all.
+    const marked = await deps.imports.markImportFailed(
+      context,
+      record.id,
+      "unparseable",
+    );
+    if (!marked) {
+      // A racer ingested it between the read and this write (finding F4).
+      return { kind: "rejected", reason: "already-confirmed" };
+    }
+    return { kind: "failed", importId: record.id, reason: "unparseable" };
   }
   if (parsed.value.accountIbans.length > 1) {
     // Confirmed or not, a mixed-account file writes NOTHING (hazard H1.2):
     // the existing import row moves to FAILED and no transaction row lands.
-    await deps.imports.markImportFailed(context, record.id, "mixed-accounts");
+    const marked = await deps.imports.markImportFailed(
+      context,
+      record.id,
+      "mixed-accounts",
+    );
+    if (!marked) {
+      return { kind: "rejected", reason: "already-confirmed" };
+    }
     return { kind: "failed", importId: record.id, reason: "mixed-accounts" };
   }
 
+  // Account resolution mirrors the upload path EXACTLY, because the
+  // confirmation screen names the landing account from the same rule
+  // (finding F1, transparency): the file's own IBAN first, then the
+  // binding of a spec-identical stored profile, then, and only then, the
+  // user's declaration.
+  const existingProfile = await findProfileBySpec(context, deps, input.spec);
   const fileIban = parsed.value.accountIbans[0];
   let accountId: string | undefined;
   if (fileIban !== undefined) {
     const existing = await deps.accounts.findAccountByIban(context, fileIban);
     accountId = existing?.id;
+  } else {
+    accountId = existingProfile?.accountId;
   }
   if (accountId === undefined) {
     if (input.declaration === undefined) {
@@ -72,7 +102,6 @@ export const confirmImport = async (
   // profile is bound to the account exactly when the file itself carries
   // no own-account column (the card shape), so a later re-upload can
   // resolve its account without asking.
-  const existingProfile = await findProfileBySpec(context, deps, input.spec);
   const profile =
     existingProfile ??
     (await deps.imports.createProfile(context, {
@@ -82,14 +111,25 @@ export const confirmImport = async (
     }));
 
   const keys = assignDedupKeys(accountId, parsed.value.rows, input.spec);
-  const { added, known } = await deps.imports.ingestRows(context, {
+  const ingested = await deps.imports.ingestRows(context, {
     importId: record.id,
     accountId,
     sourceProfileId: profile.id,
-    rows: parsed.value.rows.map((row, index) => ({
-      ...row,
-      dedupKey: keys[index] ?? "",
-    })),
+    // The atomic claim (finding F4): the read-time status check above is
+    // advisory only; two racing confirms both pass it, and the claim
+    // inside the ingest transaction is what arbitrates. The loser writes
+    // nothing and reports already-confirmed.
+    fromStatus: "AWAITING_DECLARATION",
+    // zipRowsWithDedupKeys THROWS on a row/key desync (finding F7).
+    rows: zipRowsWithDedupKeys(parsed.value.rows, keys),
   });
-  return { kind: "ingested", importId: record.id, added, known };
+  if (!ingested.ok) {
+    return { kind: "rejected", reason: "already-confirmed" };
+  }
+  return {
+    kind: "ingested",
+    importId: record.id,
+    added: ingested.added,
+    known: ingested.known,
+  };
 };

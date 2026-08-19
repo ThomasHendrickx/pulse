@@ -89,6 +89,14 @@ export const confirmImportAction = async (
     ...(declaration === undefined ? {} : { declaration }),
   });
   if (outcome.kind === "rejected") {
+    if (
+      outcome.reason === "already-confirmed" ||
+      outcome.reason === "not-awaiting-declaration"
+    ) {
+      // Settled by another confirm (finding F4): the detail page renders
+      // the settled result; nothing to re-ask.
+      redirect(`/import/${safeId}`);
+    }
     redirect(
       outcome.reason === "declaration-needed"
         ? `/import/${safeId}?status=declaration-needed`

@@ -14,23 +14,37 @@ export const ProfileConfirmation = async ({
   importId,
   specJson,
   previewRows,
-  needsDeclaration,
+  landingLabel,
   parseFailed,
   status,
 }: {
   readonly importId: string;
   readonly specJson: string;
   readonly previewRows: readonly ParsedRow[];
-  readonly needsDeclaration: boolean;
+  // The label of the account this file's rows will land in, resolved by
+  // the same rule the confirm use case applies; undefined means a new
+  // account will be declared here (finding F1: the landing account is
+  // named everywhere the user sees the import).
+  readonly landingLabel: string | undefined;
   readonly parseFailed: boolean;
   readonly status: string | undefined;
 }) => {
   const t = await getTranslations();
+  const needsDeclaration = landingLabel === undefined;
   return (
     <section className="import-screen">
       <h1>{t("confirmFormat")}</h1>
       <p className="import-lead">{t("confirmBody")}</p>
       <ImportStatusLine status={status} />
+      {landingLabel === undefined ? (
+        <p className="import-note" data-testid="landing-new">
+          {t("landingNew")}
+        </p>
+      ) : (
+        <p className="import-note" data-testid="landing-account">
+          {t("landingKnown", { label: landingLabel })}
+        </p>
+      )}
 
       {parseFailed ? (
         <p className="import-status" data-testid="preview-parse-failed">

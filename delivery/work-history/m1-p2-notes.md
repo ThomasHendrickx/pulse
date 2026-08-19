@@ -104,3 +104,20 @@ ACTION NEEDED FROM ORCHESTRATOR: amend the phase declaration on the base branch 
 - delivery/work-history/m1-p2.yaml: npx tiphys validate --type work-history exit 0 (Node v26.7.0).
 - Claim-grep run exactly as the brief carries it, line-based AND whitespace-flattened. Two hits in my own prose settled by rewording to name the executed evidence (rls.test.ts red-then-green; "still applied"); remaining hits sit in the verbatim dispatch prompt (schema requires verbatim reproduction) and in the literal CR-006 commit subject, both quoted artifacts rather than claims of mine, each verifiable (git log acaa820).
 - Amendment items A-D are listed in the work history's key-decisions with their evidence.
+
+# FIX ROUND 1 (dual clean-room verdicts at 10beb40, consolidated in /home/user/pulse-fleet/findings-m1-p2-round1.md)
+Findings F1-F8 accepted, none disputed; every one was probe-backed. Order of work: F2, F3, F5+F6, F7, F4, F1, F8, then gates, work history fix-round section, push.
+- F1 scope this round is transparency only (name the landing account on confirm and result screens); the full fix is an owner decision, recorded as residual deviation.
+
+## Fix round 1 execution log
+- F2 (e10b0cc): red first: 3 failed detection-level (STORNO parsed ok as credit, blank parsed ok, spec had no creditValue), 1 failed confirm-level. Fix: indicator spec carries creditValue (detection supplies the pair's credit token), parser errs "indicator" on any non-member marker incl. blank, confirm parse-fail marks FAILED unparseable. Green: 27 detection, ingest suite green.
+- F3 (490806b): red first: detected {kind:'signed',column:4} and amounts [31840,1275,8800] POSITIVE for the credits-empty month. Fix: header-hinted empty-sibling pair (both directions, word-bounded hints). Green: 29 passed.
+- F5+F6 (c920c14): red first: cross-file keyless ordinal mismatch (#1 vs #0) and shifted-boundary collision (equal keys). Fix: ordinal counts hash-path rows only via per-tuple map; tuple JSON-encoded; false comment corrected loudly. Green: 12 passed.
+- F7 (95a196c): red as absent function (3 failed), then softened-fallback mutation red (2 failed | 4 passed), restored. NOTE trap hit: the first mutation restore also reverted the uncommitted helper (git restore restores the committed state); helper re-applied and committed immediately. Lesson noted: commit before mutating.
+- F4+F8 (d36a011): red first: port-level race simulation stored 6 ghost rows under a second account (1 failed | 10 passed). Fix: conditional claim FIRST inside the ingest transaction, markImportFailed conditional from AWAITING_DECLARATION, fake mirrors, confirm maps loser to rejected already-confirmed, UI maps settled rejections to the detail page. F8: countTransactionsForAccount removed (grep: no caller).
+- F1 (06e997b): transparency only per the round's scope: landingKnown/landingNew/importInto keys (en/nl/fr, parity 88), confirmation names the landing account or the coming declaration, result screen names the account beside the counts, confirm use case resolves the account by the same rule (file IBAN, then profile binding, then declaration) with a unit test binding rows to the bound account, e2e asserts landing-new then "Daily account" twice. Residual (second same-format card) escalated to the owner, recorded as deviation.
+- Gates at 06e997b: typecheck 0, lint 0, npm test 0 (9 files, 92 passed, 0 skipped), test:e2e 0 (4 passed, 1.0m, pinned env; dockerd had died again and was restarted, containers auto-revived).
+
+## Fix-round work history recorded and validated
+- m1-p2.yaml gained: six fix-round commits in per-step-commits, three fix-round entries (mechanism, derivation command with full output, not-covered), the F1 residual deviation pointing at the owner escalation, open-question claim M1P2-C6, and gate evidence re-pointed at fix-round head 06e997b (typecheck 0, lint 0, npm test 92/92, e2e 4/4).
+- tiphys validate exit 0. Claim-grep re-run flat and line-based: remaining hits are the verbatim prompt and two literal commit subjects (quoted artifacts, verifiable via git log).

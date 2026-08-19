@@ -106,6 +106,7 @@ describe("card fixture family mirroring the observed KBC shape (indicator)", () 
       amountColumn: 3,
       indicatorColumn: 4,
       debitValue: "D",
+      creditValue: "C",
     });
   });
 
@@ -218,6 +219,76 @@ describe("amount parsing never leaves integer cents (both decimal styles)", () =
     expect(parseAmountToCents("12,50", "dot").ok).toBe(false);
     expect(parseAmountToCents("abc", "comma").ok).toBe(false);
     expect(parseAmountToCents("1,234.56", "comma").ok).toBe(false);
+  });
+});
+
+describe("a debit and credit pair with an empty credit column this month (finding F3)", () => {
+  // Hazard H1.1 outside the fixture matrix: a month with no credits must
+  // not detect as a signed column and propose every debit POSITIVE. The
+  // headers name the pair; an empty sibling column completes it.
+  const spec = detectOrThrow("generic-debits-only.csv");
+
+  test("detects the debit and credit pair, not a signed column", () => {
+    expect(spec.amountRepresentation).toEqual({
+      kind: "debitCredit",
+      debitColumn: 4,
+      creditColumn: 5,
+    });
+  });
+
+  test("parses every debit NEGATIVE, in integer cents", () => {
+    const parsed = parseStatement(fixture("generic-debits-only.csv"), spec);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+    const amounts = parsed.value.rows.map((row) => row.amountCents);
+    expect(amounts).toEqual([-31840, -1275, -8800]);
+    for (const amount of amounts) {
+      expect(Number.isInteger(amount)).toBe(true);
+    }
+  });
+});
+
+describe("an indicator value outside the detected pair fails the row (finding F2)", () => {
+  // A sign is never guessed. The card spec's indicator pair is D/C; a row
+  // whose marker is neither token (STORNO) or is blank must fail the row,
+  // which fails the import loudly with nothing written, the same
+  // discipline as the mixed-account check.
+  const spec = detectOrThrow("kbc-card.csv");
+
+  test("an unknown marker (STORNO) is a row error, not a guessed credit", () => {
+    const parsed = parseStatement(fixture("kbc-card-storno.csv"), spec);
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) {
+      return;
+    }
+    expect(parsed.error).toMatchObject({
+      kind: "row-error",
+      problem: "indicator",
+      lineNumber: 4,
+    });
+  });
+
+  test("a blank marker is a row error, not a guessed credit", () => {
+    const parsed = parseStatement(fixture("kbc-card-blank-indicator.csv"), spec);
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) {
+      return;
+    }
+    expect(parsed.error).toMatchObject({
+      kind: "row-error",
+      problem: "indicator",
+      lineNumber: 4,
+    });
+  });
+
+  test("the detected card spec names both members of the indicator pair", () => {
+    expect(spec.amountRepresentation).toMatchObject({
+      kind: "indicator",
+      debitValue: "D",
+      creditValue: "C",
+    });
   });
 });
 

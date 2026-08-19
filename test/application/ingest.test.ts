@@ -5,6 +5,8 @@ import { describe, expect, test } from "vitest";
 import { confirmImport } from "../../src/modules/import/application/confirm-import";
 import { uploadStatement } from "../../src/modules/import/application/upload-statement";
 import { detectSourceProfile } from "../../src/modules/import/domain/detect-profile";
+import { assignDedupKeys, zipRowsWithDedupKeys } from "../../src/modules/import/domain/dedup";
+import { parseStatement } from "../../src/modules/import/domain/parse-statement";
 import { householdId, userId, type HouseholdContext } from "../../src/platform/tenancy";
 import { makeFakeImportWorld, type FakeImportWorld } from "./fake-import-world";
 
@@ -255,6 +257,30 @@ describe("mixed-account files fail loudly with nothing written (criterion 1.3)",
   });
 });
 
+describe("unknown indicator markers fail the import loudly at confirm time (finding F2)", () => {
+  test("a STORNO row confirmed with the card spec ends FAILED unparseable with zero rows", async () => {
+    const world = makeFakeImportWorld();
+    const awaiting = await world.deps.imports.createImport(context, {
+      fileName: "kbc-card-storno.csv",
+      rawContent: fixture("kbc-card-storno.csv"),
+      status: "AWAITING_DECLARATION",
+    });
+    const confirmed = await confirmImport(context, world.deps, {
+      importId: awaiting.id,
+      profileName: "card profile",
+      spec: detectedSpec("kbc-card.csv"),
+      declaration: { label: "Credit card", bank: "Demokaart", role: "POT" },
+    });
+    expect(confirmed.kind).toBe("failed");
+    if (confirmed.kind === "failed") {
+      expect(confirmed.reason).toBe("unparseable");
+    }
+    expect(world.imports.get(awaiting.id)?.status).toBe("FAILED");
+    expect(world.imports.get(awaiting.id)?.failureReason).toBe("unparseable");
+    expect(world.transactions).toHaveLength(0);
+  });
+});
+
 describe("every stored Transaction carries its verbatim source line (criterion 1.4)", () => {
   test("rawLine equals the source line for every ingested row, both fixtures", async () => {
     const world = makeFakeImportWorld();
@@ -284,5 +310,140 @@ describe("every stored Transaction carries its verbatim source line (criterion 1
     const stored = world.transactions.map((row) => row.rawLine);
     expect(stored).toHaveLength(expected.length);
     expect([...stored].sort()).toEqual([...expected].sort());
+  });
+});
+
+describe("racing confirms cannot double-ingest one awaiting import (finding F4)", () => {
+  test("the status transition is claimed atomically: the second ingest is refused with zero rows", async () => {
+    const world = makeFakeImportWorld();
+    const awaiting = await world.deps.imports.createImport(context, {
+      fileName: "kbc-card.csv",
+      rawContent: fixture("kbc-card.csv"),
+      status: "AWAITING_DECLARATION",
+    });
+    const spec = detectedSpec("kbc-card.csv");
+    const parsed = parseStatement(fixture("kbc-card.csv"), spec);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+    const accountA = await world.deps.accounts.declareAccount(context, {
+      label: "Card A",
+      bank: "Demokaart",
+      role: "POT",
+    });
+    const accountB = await world.deps.accounts.declareAccount(context, {
+      label: "Card B",
+      bank: "Demokaart",
+      role: "POT",
+    });
+    const profile = await world.deps.imports.createProfile(context, {
+      name: "card",
+      spec,
+      accountId: accountA.id,
+    });
+
+    // Both racers passed the read-time status check; the claim inside the
+    // ingest transaction is what must arbitrate.
+    const ingestAs = (accountId: string) =>
+      world.deps.imports.ingestRows(context, {
+        importId: awaiting.id,
+        accountId,
+        sourceProfileId: profile.id,
+        fromStatus: "AWAITING_DECLARATION",
+        rows: zipRowsWithDedupKeys(
+          parsed.value.rows,
+          assignDedupKeys(accountId, parsed.value.rows, spec),
+        ),
+      });
+
+    const first = await ingestAs(accountA.id);
+    expect(first.ok).toBe(true);
+    if (first.ok) {
+      expect(first.added).toBe(6);
+    }
+
+    const second = await ingestAs(accountB.id);
+    expect(second.ok).toBe(false);
+    if (!second.ok) {
+      expect(second.error).toBe("not-in-expected-status");
+    }
+    // Nothing from the losing racer landed: six rows, all on account A.
+    expect(world.transactions).toHaveLength(6);
+    expect(
+      world.transactions.filter((row) => row.accountId === accountB.id),
+    ).toHaveLength(0);
+  });
+
+  test("a second confirm of an already-confirmed import is rejected with zero new rows", async () => {
+    const world = makeFakeImportWorld();
+    const awaiting = await world.deps.imports.createImport(context, {
+      fileName: "kbc-card.csv",
+      rawContent: fixture("kbc-card.csv"),
+      status: "AWAITING_DECLARATION",
+    });
+    const spec = detectedSpec("kbc-card.csv");
+    const first = await confirmImport(context, world.deps, {
+      importId: awaiting.id,
+      profileName: "card profile",
+      spec,
+      declaration: { label: "Card A", bank: "Demokaart", role: "POT" },
+    });
+    expect(first.kind).toBe("ingested");
+    const countAfterFirst = world.transactions.length;
+
+    const second = await confirmImport(context, world.deps, {
+      importId: awaiting.id,
+      profileName: "card profile twin",
+      spec,
+      declaration: { label: "Card B", bank: "Demokaart", role: "POT" },
+    });
+    expect(second.kind).toBe("rejected");
+    expect(world.transactions).toHaveLength(countAfterFirst);
+  });
+});
+
+describe("the landing account is resolved as the screens name it (finding F1)", () => {
+  test("a card file confirmed while a spec-identical bound profile exists lands in the bound account, no declaration needed", async () => {
+    const world = makeFakeImportWorld();
+    await uploadAndDeclare(world, context, "kbc-card.csv", {
+      label: "Credit card",
+      bank: "Demokaart",
+      role: "POT",
+    });
+    const boundAccountId = world.accounts[0]?.id;
+    expect(boundAccountId).toBeDefined();
+
+    // An overlapping card export in the same format, reaching the confirm
+    // path directly: the account rides the stored profile's binding, the
+    // exact rule the confirmation screen renders as the landing account.
+    const awaiting = await world.deps.imports.createImport(context, {
+      fileName: "kbc-card-b.csv",
+      rawContent: fixture("kbc-card-b.csv"),
+      status: "AWAITING_DECLARATION",
+    });
+    const confirmed = await confirmImport(context, world.deps, {
+      importId: awaiting.id,
+      profileName: "unused twin name",
+      spec: detectedSpec("kbc-card-b.csv"),
+    });
+    expect(confirmed.kind).toBe("ingested");
+    if (confirmed.kind !== "ingested") {
+      return;
+    }
+    expect(confirmed.added).toBe(2);
+    expect(confirmed.known).toBe(1);
+    // Every stored row from that import sits on the BOUND account: what
+    // the screen names is what the ingest used.
+    const rowsFromB = world.transactions.filter(
+      (row) => row.importId === awaiting.id,
+    );
+    expect(rowsFromB.length).toBeGreaterThan(0);
+    for (const row of rowsFromB) {
+      expect(row.accountId).toBe(boundAccountId);
+    }
+    // No second account and no twin profile appeared.
+    expect(world.accounts).toHaveLength(1);
+    expect(world.profiles).toHaveLength(1);
   });
 });
