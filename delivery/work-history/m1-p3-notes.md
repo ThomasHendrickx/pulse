@@ -269,3 +269,22 @@ Red witnesses (mutations in src, reverted after each run):
 - R2 corrected spec not persisted (declaration lost): exit 1, 1 failed | 2 passed
 - R3 unparseable rows skipped instead of failing loud: exit 1, 1 failed | 2 passed
 Full fast suite: 123 passed, exit 0. typecheck exit 0.
+
+## Recompute dev action and the e2e gate
+
+src/modules/ledger/ui/actions.ts: recomputeAction, a server action that
+resolves the household context, calls recomputeInterpretation and
+revalidates; refuses in production. The dev-only screen carrying its
+button belongs to the month view phase (M1-P5); no src/app route is added
+here (src/app is not on this phase's declaration).
+
+E2E: db:reset against the local stack (guard satisfied, Prisma consent
+env set) applied all three migrations from scratch and seeded; pg_class
+reports relrowsecurity=t for all eight application tables. First e2e run
+had 3 failures: the dev server inherited the AMBIENT foreign
+NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (Hemma), which
+override .env (fleet warning 1 bites through the webServer too, not only
+Prisma). Re-run with all five env values pinned in the invoking shell:
+npm run test:e2e exit 0, 4 passed (auth x3, import x1), which also
+exercises the new pipeline interpret stage inside the real journey (the
+import completes at status INTERPRETED and the result page renders).
