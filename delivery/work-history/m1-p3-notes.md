@@ -188,3 +188,49 @@ db:reset re-applying the whole chain is run before the e2e gate below.
 
 Docker daemon was dead (fleet warning); sudo dockerd revived the
 m1-p1-skeleton supabase containers exactly as the M1-P2 warning recorded.
+
+## Ledger application layer, pipeline wiring, criterion 2.5 healing
+
+src/modules/ledger/application/{ports,interpret-window,index}.ts,
+src/modules/ledger/adapters/ledger-repository.ts. Interpretation runs over
+the import's booking-date span padded by
+INTERPRETATION_WINDOW_PADDING_DAYS (settlement window 45 + transfer
+tolerance 4 = 49 days) across ALL pot accounts; recompute is the same step
+with no bounds. Persistence is one transaction: delete links touching the
+interpreted set, write flows set-based per flow value, insert links, move
+the touched imports INGESTED -> INTERPRETED. The rim residue of window
+runs is stated at the constant's definition (a pair straddling the padded
+edge; recompute is the canonical repair).
+
+Scope deviations found and declared the moment they arose (the phase list
+names src/modules/ledger, src/modules/import, prisma and six test files):
+- src/modules/accounts/{application/ports.ts,application/index.ts,
+  adapters/account-repository.ts}: listAccounts added; the ledger engine
+  needs the declared account list through the accounts module's PUBLISHED
+  interface (the alternative, querying accounts from the ledger adapter,
+  crosses table ownership). Mirrors M1-P2's declared-deviation pattern.
+- test/application/fake-import-world.ts (M1-P2 test infrastructure, not
+  on the M1-P3 list): extended with ids, a flow column mirror, a links
+  store and a ledger-port fake so the REAL interpret use case runs in the
+  fast gate.
+- test/domain/profile-detection.test.ts: CR-208 witness (noted earlier).
+The orchestrator must amend the phase declaration on the base branch to
+cover these before the scope gate runs.
+
+Import pipeline: ImportDependencies gains the interpret stage; upload and
+confirm call it after every successful ingest (pipeline: parse ->
+identify -> declare -> ingest -> interpret). Composition root binds it to
+ledger interpretForImport.
+
+test/application/interpret.test.ts (criterion 2.5): with account B
+declared at an earlier first sight, file A's outgoing leg lands INTERNAL
+with no link (surfaced waiting state); uploading account B's file (a
+different import) heals it: one TransferLink across imports, both legs
+INTERNAL, salary INCOME, groceries SPEND, imports INTERPRETED. Also:
+re-upload idempotence (identical links and flows, zero rows added) and
+recompute-over-everything reproducing the identical state. 3 passed.
+
+Red witnesses (mutations, reverted after each run):
+- W1 window collapsed to the import's own rows' dates: exit 1, 2 failed | 1 passed
+- W2 window no longer spans all pot accounts: exit 1, 2 failed | 1 passed
+Full fast suite after the slice: 120 passed, exit 0.
