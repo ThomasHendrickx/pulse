@@ -305,6 +305,23 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
               (input.to === undefined || stored.bookingDate <= input.to),
           )
           .map(toLedgerTransaction),
+      listOutgoingCounterpartyRefs: async (context, input) =>
+        transactions
+          .filter(
+            (stored) =>
+              stored.householdId === context.householdId &&
+              input.accountIds.includes(stored.accountId) &&
+              stored.amountCents < 0,
+          )
+          .map((stored) => ({
+            description: stored.description,
+            ...(stored.counterpartyIban === undefined
+              ? {}
+              : { counterpartyIban: stored.counterpartyIban }),
+            ...(stored.counterpartyName === undefined
+              ? {}
+              : { counterpartyName: stored.counterpartyName }),
+          })),
       importPeriod: async (context, importId) => {
         const dates = transactions
           .filter(

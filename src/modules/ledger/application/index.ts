@@ -44,6 +44,7 @@ const liveDependencies: LedgerDependencies = {
   },
   ledger: {
     listPotTransactions: repository.listPotTransactions,
+    listOutgoingCounterpartyRefs: repository.listOutgoingCounterpartyRefs,
     importPeriod: repository.importPeriod,
     replaceInterpretation: repository.replaceInterpretation,
   },

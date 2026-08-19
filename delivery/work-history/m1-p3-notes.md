@@ -384,3 +384,19 @@ INTERNAL-to-SPEND flip through a partial card view is structurally gone
 misleading padding comment at constants.ts corrected in place (R-087):
 the padding protects transfer pairing only, not settlement matching.
 After fix: interpret suite 4 passed; full suite 145 passed, exit 0.
+
+### CR-303: refund outgoing history reads the whole ledger
+
+Red witness FIRST, captured: reviewer probe P9 as
+test/application/interpret.test.ts "a refund of a January payment
+classifies SPEND under the June window": failed with "expected 'INCOME'
+to be 'SPEND'" against committed code (1 failed | 4 passed). Fix: new
+ledger port read listOutgoingCounterpartyRefs (unbounded, negative rows'
+counterparty fields over the pot accounts, tenancy-filtered);
+interpret-window builds outgoingHistoryKeys from it and passes them into
+interpretLedger, which now takes an optional outgoingHistoryKeys and
+derives from the given transactions only when absent (recompute and the
+pure-domain/property tests, whose datasets are complete, unchanged).
+counterpartyKey's parameter narrowed structurally to CounterpartyRef.
+Adapter, composition root and fake ledger port extended. After: interpret
+suite 5 passed; full suite 146 passed, exit 0.

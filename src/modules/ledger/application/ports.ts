@@ -6,6 +6,7 @@
 
 import type { PlainDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
+import type { CounterpartyRef } from "../domain/corrections";
 import type { Flow } from "../domain/flow";
 import type {
   DeclaredAccount,
@@ -37,6 +38,13 @@ export type LedgerRepositoryPort = {
       readonly to?: PlainDate;
     },
   ) => Promise<readonly LedgerTransaction[]>;
+  // Every outgoing (negative) row's counterparty fields over the given
+  // accounts, UNBOUNDED: the refund correction's history is scope-free
+  // (finding CR-303), so window runs read it from the whole ledger.
+  readonly listOutgoingCounterpartyRefs: (
+    context: HouseholdContext,
+    input: { readonly accountIds: readonly string[] },
+  ) => Promise<readonly CounterpartyRef[]>;
   // The booking-date span of one import's fact rows; null when the import
   // has no rows.
   readonly importPeriod: (

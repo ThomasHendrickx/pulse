@@ -64,6 +64,39 @@ export const listPotTransactions = async (
   }));
 };
 
+export const listOutgoingCounterpartyRefs = async (
+  context: HouseholdContext,
+  input: { readonly accountIds: readonly string[] },
+): Promise<
+  readonly {
+    readonly counterpartyIban?: string;
+    readonly counterpartyName?: string;
+    readonly description: string;
+  }[]
+> => {
+  const rows = await prisma.transaction.findMany({
+    where: {
+      householdId: context.householdId,
+      accountId: { in: [...input.accountIds] },
+      amountCents: { lt: 0 },
+    },
+    select: {
+      counterpartyIban: true,
+      counterpartyName: true,
+      description: true,
+    },
+  });
+  return rows.map((row) => ({
+    description: row.description,
+    ...(row.counterpartyIban === null
+      ? {}
+      : { counterpartyIban: row.counterpartyIban }),
+    ...(row.counterpartyName === null
+      ? {}
+      : { counterpartyName: row.counterpartyName }),
+  }));
+};
+
 export const importPeriod = async (
   context: HouseholdContext,
   importId: string,

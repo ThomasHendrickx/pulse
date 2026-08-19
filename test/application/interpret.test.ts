@@ -162,6 +162,47 @@ describe("a settled debit survives a later import's window (finding CR-301)", ()
   });
 });
 
+describe("refund history reads the full ledger, not the window (finding CR-303)", () => {
+  // The reviewer's probe P9 as a regression test: the plan's refund rule
+  // is scope-free (incoming from a counterparty with outgoing history is
+  // SPEND), so an outgoing payment older than the window padding must
+  // still make a later refund classify SPEND under a window run, exactly
+  // as it does under recompute.
+  const checkingJanuary = [
+    "Demobank NV - Verrichtingen export",
+    "Afschrift;Volgnummer;Boekingsdatum;Valutadatum;Rekening;Tegenrekening;Naam;Omschrijving;Bedrag",
+    `1;0101;10/01/2026;10/01/2026;${IBAN_A};BE54540123456789;Webshop NV;BETALING WEBSHOP;-49,99`,
+  ].join("\n");
+  const checkingJuneRefund = [
+    "Demobank NV - Verrichtingen export",
+    "Afschrift;Volgnummer;Boekingsdatum;Valutadatum;Rekening;Tegenrekening;Naam;Omschrijving;Bedrag",
+    `6;0501;15/06/2026;15/06/2026;${IBAN_A};BE54540123456789;Webshop NV;TERUGBETALING WEBSHOP;+49,99`,
+    `6;0502;16/06/2026;16/06/2026;${IBAN_A};BE39103123456719;Acme Salaris BV;LOON JUNI 2026;+2.500,00`,
+  ].join("\n");
+
+  test("a refund of a January payment classifies SPEND under the June window", async () => {
+    const world = makeFakeImportWorld();
+    await uploadAndDeclare(world, "checking-january.csv", checkingJanuary, {
+      label: "Checking",
+      bank: "Demobank",
+    });
+    const june = await uploadStatement(context, world.deps, {
+      fileName: "checking-june-refund.csv",
+      bytes: bytes(checkingJuneRefund),
+    });
+    expect(june.kind).toBe("ingested");
+
+    const refund = world.transactions.find(
+      (t) => t.description === "TERUGBETALING WEBSHOP",
+    );
+    const salary = world.transactions.find(
+      (t) => t.description === "LOON JUNI 2026",
+    );
+    expect(refund?.flow).toBe("SPEND");
+    expect(salary?.flow).toBe("INCOME");
+  });
+});
+
 describe("interpretation over the period window across accounts", () => {
   test("an unmatched leg from an earlier import heals when the second file arrives", async () => {
     const world = makeFakeImportWorld();

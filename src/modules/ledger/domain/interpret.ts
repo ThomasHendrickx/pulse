@@ -50,13 +50,20 @@ const compareIds = (a: string, b: string): number =>
 export const interpretLedger = (input: {
   readonly transactions: readonly LedgerTransaction[];
   readonly accounts: readonly DeclaredAccount[];
+  // The refund correction's outgoing history is SCOPE-FREE (finding
+  // CR-303): a window run passes the household's full outgoing history
+  // here so the same row classifies identically under a window and under
+  // recompute. When absent (recompute, pure-domain tests over complete
+  // datasets), history is derived from the given transactions.
+  readonly outgoingHistoryKeys?: ReadonlySet<string>;
 }): LedgerInterpretation => {
   const sets = deriveDeclaredSets(input.accounts);
   const potTransactions = input.transactions.filter((transaction) =>
     sets.potAccountIds.has(transaction.accountId),
   );
   const cardImports = summarizeCardImports(potTransactions, sets);
-  const outgoingHistoryKeys = buildOutgoingHistoryKeys(potTransactions);
+  const outgoingHistoryKeys =
+    input.outgoingHistoryKeys ?? buildOutgoingHistoryKeys(potTransactions);
 
   const classifications = new Map<string, Classification>();
   const flows = new Map<string, Flow>();

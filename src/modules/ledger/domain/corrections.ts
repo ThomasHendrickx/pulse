@@ -130,7 +130,14 @@ export const correctCashWithdrawal = (
 // name, otherwise the description, normalised the minimal way (uppercase,
 // collapse whitespace, trim). This is NOT the merchants module's richer
 // normalisation (M1-P4); it exists so refunds work before merchants do.
-export const counterpartyKey = (transaction: LedgerTransaction): string => {
+// Structural parameter on purpose: the full-ledger history read (finding
+// CR-303) returns only these three fields.
+export type CounterpartyRef = Pick<
+  LedgerTransaction,
+  "counterpartyIban" | "counterpartyName" | "description"
+>;
+
+export const counterpartyKey = (transaction: CounterpartyRef): string => {
   if (transaction.counterpartyIban !== undefined) {
     return `iban:${transaction.counterpartyIban.toUpperCase().replace(/\s+/g, "")}`;
   }

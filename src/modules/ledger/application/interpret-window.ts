@@ -8,6 +8,7 @@
 import type { PlainDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
 import { INTERPRETATION_WINDOW_PADDING_DAYS } from "../domain/constants";
+import { counterpartyKey } from "../domain/corrections";
 import { interpretLedger } from "../domain/interpret";
 import { deriveDeclaredSets } from "../domain/ledger-transaction";
 import { addDays } from "../domain/plain-date-distance";
@@ -54,7 +55,19 @@ export const interpretWindow = async (
         });
   const transactions = [...windowed, ...cardRows];
 
-  const interpretation = interpretLedger({ transactions, accounts });
+  // Finding CR-303: refund history over the WHOLE ledger, so a window run
+  // and a recompute agree on every refund. The read happens after ingest
+  // persisted the new rows, so it includes the window's own outgoing rows.
+  const historyRefs = await deps.ledger.listOutgoingCounterpartyRefs(context, {
+    accountIds: [...sets.potAccountIds],
+  });
+  const outgoingHistoryKeys = new Set(historyRefs.map(counterpartyKey));
+
+  const interpretation = interpretLedger({
+    transactions,
+    accounts,
+    outgoingHistoryKeys,
+  });
 
   const links = [
     ...interpretation.transferPairs.map((pair) => ({
