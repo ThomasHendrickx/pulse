@@ -30,10 +30,16 @@ export const SETTLEMENT_CREDIT_PATTERNS: readonly RegExp[] = [
 // How far the interpretation window is padded on both sides when loading
 // context around an import's period: wide enough that every settlement
 // match (45 days) and every transfer partner (4 days) of a row inside the
-// period is loaded. RESIDUE, STATED: a pair whose one leg sits exactly in
-// the outer padding rim while its partner lies beyond it can be re-marked
-// unmatched by a window run; recompute over everything is the canonical
-// repair and the read model surfaces the leg rather than hiding it.
+// period is loaded. CORRECTED IN FIX ROUND 1 (finding CR-301) rather than
+// quietly rewritten: this padding is NOT what protects settlement
+// matching. A padded window can still truncate or hide a card import, so
+// interpret-window.ts loads card accounts UNBOUNDED and settlement totals
+// are always computed over complete card imports; the padding protects
+// transfer pairing and nothing else. RESIDUE, STATED: a pair whose one
+// leg sits exactly in the outer padding rim while its partner lies beyond
+// it can be re-marked unmatched by a window run; recompute over
+// everything is the canonical repair and the read model surfaces the leg
+// rather than hiding it.
 export const INTERPRETATION_WINDOW_PADDING_DAYS =
   SETTLEMENT_DATE_WINDOW_DAYS + TRANSFER_DATE_TOLERANCE_DAYS;
 

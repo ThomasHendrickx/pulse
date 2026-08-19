@@ -9,6 +9,7 @@ import type { PlainDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
 import { INTERPRETATION_WINDOW_PADDING_DAYS } from "../domain/constants";
 import { interpretLedger } from "../domain/interpret";
+import { deriveDeclaredSets } from "../domain/ledger-transaction";
 import { addDays } from "../domain/plain-date-distance";
 import type { LedgerDependencies } from "./ports";
 
@@ -26,15 +27,32 @@ export const interpretWindow = async (
   window: { readonly from?: PlainDate; readonly to?: PlainDate },
 ): Promise<InterpretationSummary> => {
   const accounts = await deps.accounts.listAccounts(context);
-  const potAccountIds = accounts
-    .filter((account) => account.role === "POT")
-    .map((account) => account.id);
+  const sets = deriveDeclaredSets(accounts);
+  const cardAccountIds = [...sets.cardAccountIds];
+  const windowedAccountIds = [...sets.potAccountIds].filter(
+    (accountId) => !sets.cardAccountIds.has(accountId),
+  );
 
-  const transactions = await deps.ledger.listPotTransactions(context, {
-    accountIds: potAccountIds,
+  // Finding CR-301: settlement matching resolves against card IMPORTS,
+  // whole, never against the slice of them a window happens to load. A
+  // date-bounded load of a card account can truncate an import's
+  // settlement total or hide it entirely, flipping an already settled
+  // debit to SPEND and double counting the card month while the books
+  // still reconcile. So card accounts are loaded UNBOUNDED (every card
+  // import complete, cheap at household scale) and only the other pot
+  // accounts are windowed.
+  const windowed = await deps.ledger.listPotTransactions(context, {
+    accountIds: windowedAccountIds,
     ...(window.from === undefined ? {} : { from: window.from }),
     ...(window.to === undefined ? {} : { to: window.to }),
   });
+  const cardRows =
+    cardAccountIds.length === 0
+      ? []
+      : await deps.ledger.listPotTransactions(context, {
+          accountIds: cardAccountIds,
+        });
+  const transactions = [...windowed, ...cardRows];
 
   const interpretation = interpretLedger({ transactions, accounts });
 

@@ -89,6 +89,79 @@ const declareAccountB = async (
   });
 };
 
+describe("a settled debit survives a later import's window (finding CR-301)", () => {
+  // The reviewer's two-upload flip probe as a regression test. A March
+  // card statement and its April settlement debit interpret correctly;
+  // a JUNE checking import's padded window [2026-04-13, 2026-08-18]
+  // loads the debit but none of the March card rows. Settlement matching
+  // must resolve against card IMPORTS loaded whole, so the debit stays
+  // INTERNAL and linked; before the fix the window-sliced summary
+  // flipped it to SPEND and deleted the link while the books still
+  // reconciled (spend double counted, hazard H2.1).
+  const cardFile = [
+    "Kaartuitgaven export - uitgavenstaat 42",
+    "Datum;Datum verrekening;Omschrijving;Bedrag;D/C",
+    "05.03.26;06.03.26;STARBUCKS ANTWERPEN;600,00;D",
+    "20.03.26;21.03.26;PIZZA NAPOLI BRUSSEL;400,00;D",
+  ].join("\n");
+  const checkingApril = [
+    "Demobank NV - Verrichtingen export",
+    "Afschrift;Volgnummer;Boekingsdatum;Valutadatum;Rekening;Tegenrekening;Naam;Omschrijving;Bedrag",
+    `4;0201;14/04/2026;14/04/2026;${IBAN_A};;;MASTERCARD AFREKENING NUMMER 42;-1.000,00`,
+    `4;0202;15/04/2026;15/04/2026;${IBAN_A};BE54540123456789;Supermarkt Noord;BETALING MET DEBETKAART;-50,00`,
+  ].join("\n");
+  const checkingJune = [
+    "Demobank NV - Verrichtingen export",
+    "Afschrift;Volgnummer;Boekingsdatum;Valutadatum;Rekening;Tegenrekening;Naam;Omschrijving;Bedrag",
+    `6;0301;01/06/2026;01/06/2026;${IBAN_A};BE54540123456789;Supermarkt Noord;BETALING MET DEBETKAART;-30,00`,
+    `6;0302;30/06/2026;30/06/2026;${IBAN_A};BE39103123456719;Acme Salaris BV;LOON JUNI 2026;+2.500,00`,
+  ].join("\n");
+
+  test("a later unrelated import's interpretation does not flip the settled debit", async () => {
+    const world = makeFakeImportWorld();
+    await uploadAndDeclare(world, "kaart-42.csv", cardFile, {
+      label: "Mastercard",
+      bank: "Demobank",
+    });
+    await uploadAndDeclare(world, "checking-april.csv", checkingApril, {
+      label: "Checking",
+      bank: "Demobank",
+    });
+
+    const debit = world.transactions.find((t) =>
+      t.description.startsWith("MASTERCARD AFREKENING"),
+    );
+    expect(debit).toBeDefined();
+    expect(debit?.flow).toBe("INTERNAL");
+    const cardImportId = world.transactions.find(
+      (t) => t.description === "STARBUCKS ANTWERPEN",
+    )?.importId;
+    expect(world.links).toEqual([
+      {
+        householdId: "household-1",
+        outgoingTransactionId: debit?.id,
+        settlementImportId: cardImportId,
+      },
+    ]);
+
+    // The June upload: same checking account, known profile, no questions.
+    // Its padded window contains the April debit and none of the March
+    // card rows.
+    const june = await uploadStatement(context, world.deps, {
+      fileName: "checking-june.csv",
+      bytes: bytes(checkingJune),
+    });
+    expect(june.kind).toBe("ingested");
+
+    expect(debit?.flow).toBe("INTERNAL");
+    expect(world.links).toContainEqual({
+      householdId: "household-1",
+      outgoingTransactionId: debit?.id,
+      settlementImportId: cardImportId,
+    });
+  });
+});
+
 describe("interpretation over the period window across accounts", () => {
   test("an unmatched leg from an earlier import heals when the second file arrives", async () => {
     const world = makeFakeImportWorld();

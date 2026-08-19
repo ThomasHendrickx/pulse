@@ -364,3 +364,23 @@ guard makes the parsed value non-negative). The CR-208 mechanism comment
 corrected in place: the candidate-follow-up sentence now records CR-305
 closed the arm. After: 39 passed; full suite 144 passed, exit 0. Storno
 and blank-indicator fixtures carry unsigned cells, unaffected.
+
+### CR-301 (critical): settlement totals from card IMPORTS, never the window slice
+
+Red witness FIRST, captured: the reviewer's two-upload flip probe as
+test/application/interpret.test.ts "a settled debit survives a later
+import's window": March card import (total 100000) plus its April 14
+settlement debit interpret INTERNAL with the settlement link; a June
+checking upload (padded window 2026-04-13..2026-08-18, contains the debit,
+not the card rows) then ran and the test failed with "expected 'SPEND' to
+be 'INTERNAL'", exactly probe P1.b's flip: 1 failed | 3 passed.
+
+Fix: interpret-window.ts loads card accounts (pot, no IBAN, via
+deriveDeclaredSets) UNBOUNDED and windows only the other pot accounts, so
+summarizeCardImports always sees every card import whole and a settled
+debit inside any window re-matches against the complete import; the
+INTERNAL-to-SPEND flip through a partial card view is structurally gone
+(the debit is only ever classified with full card context present). The
+misleading padding comment at constants.ts corrected in place (R-087):
+the padding protects transfer pairing only, not settlement matching.
+After fix: interpret suite 4 passed; full suite 145 passed, exit 0.
