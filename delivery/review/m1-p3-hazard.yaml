@@ -1,7 +1,13 @@
 # Clean-room HAZARD review of phase M1-P3 (one pot).
-# HEAD UNDER REVIEW: f274d30. Reviewer clone: worktrees/m1-p3-review-hazard,
-# branch claude/m1-p3-review-hazard; no implementation session seen.
-# Framing: destructive-paths, contract: hazard.
+# HEAD UNDER REVIEW: c3f566a (fix round 1; last code commit be49a82, the
+# later commit is work-history only, verified: git diff be49a82 c3f566a
+# over src, test, prisma and package.json is empty). History: round 0
+# reviewed f274d30 and returned FIX-ROUND-NEEDED with findings
+# CR-301..CR-306; this document now speaks about the fix-round head after
+# a delta pass over f274d30..c3f566a with every round 0 probe re-executed
+# against the new tree. Reviewer clone: worktrees/m1-p3-review-hazard
+# (review branch rebased onto c3f566a); no implementation session seen in
+# either round. Framing: destructive-paths, contract: hazard.
 #
 # DR-0003 DECORRELATION ESCALATION, recorded honestly per the pilot record:
 # this verdict is produced by the Claude family, as is the paired criteria
@@ -11,89 +17,136 @@
 # framing (destructive-paths vs the criteria walk) are distinct across the
 # pair. This header is the required record of that narrowing.
 #
-# METHOD. Started from the six declared hazard classes, never from the
-# criteria (read last, walked below). Static reading of the whole ledger
-# and import diff; executed grep over every Prisma write path; the fast
-# gate re-executed at this head (npm test exit 0, 141 tests; npm run
-# typecheck exit 0; npm run lint exit 0); ten executed probes over the
-# committed code (esbuild-bundled node runs of the pure domain engine plus
-# end-to-end runs of the committed use cases against the committed test
-# fake, scripts in the reviewer session's scratchpad, full output captured
-# in session). The database was not touched (criteria reviewer owns the
-# stack); npm run test:e2e was not independently re-executed, the work
-# history's gate evidence at 9b49cfb is relied on for it and git diff
-# 9b49cfb f274d30 over src, test, prisma and package.json is empty.
+# FIX ROUND 1 RESOLUTION LEDGER (per round 0 finding; findings[] below
+# carries only what APPLIES to head c3f566a):
+# - CR-301 (window slice flips settled debits INTERNAL to SPEND, critical):
+#   RESOLVED at 1f7e1ea. interpret-window now loads card accounts
+#   UNBOUNDED (every card import whole) and windows only the other pot
+#   accounts (src/modules/ledger/application/interpret-window.ts:37-53),
+#   so settlement totals are always computed over complete card imports.
+#   Re-executed probe D1 through the REAL interpretForImport over an
+#   in-memory ledger port: the April run settles the debit INTERNAL, and
+#   round 0's destructive June run (window 2026-04-13 to 2026-08-18,
+#   which excludes every March card row by date) now KEEPS the debit
+#   INTERNAL with its settlement link (captured flow=INTERNAL, link to
+#   imp-card-march). The truncated-total variant P1.d is closed by the
+#   same construction (no partial card load exists any more). The false
+#   padding comment is corrected in place and names the old defect
+#   (src/modules/ledger/domain/constants.ts:33-38). A committed
+#   regression test pins it (test/application/interpret.test.ts, "a
+#   settled debit survives a later import's window").
+# - CR-302 (re-parse renumbered subset ordinals onto occupied keys, high):
+#   RESOLVED at be49a82. Keys are re-derived from the FULL re-parse of
+#   each import's rawContent, simulating ingest's cross-import
+#   insert-ignore in import creation order, stored twins ranked by their
+#   existing key numeric-aware, with a next-free-ordinal fallback for
+#   tuples a spec correction merges
+#   (src/modules/import/application/fix-profile.ts:107-219,
+#   src/modules/import/domain/dedup.ts:105-166). Re-executed round 0's
+#   exact end-to-end construction (probe R1): the unchanged-spec fix over
+#   the overlap pair now succeeds as a strict key no-op (keys identical,
+#   zero duplicates) and the overlap re-upload adds zero with three
+#   stored twin facts (round 0 captured four). The H1.1 repair variant
+#   (probe R2: both files under one wrong signed profile, fixed to the
+#   detected indicator spec) rewrites all five amounts negative,
+#   preserves ids, keeps keys unique, and both re-uploads add zero. The
+#   committed fake now enforces the per-household unique key
+#   all-or-nothing (test/application/fake-import-world.ts:148-196),
+#   verified by direct collision probe R4 (throws, nothing applied); both
+#   R-087 false comments are corrected in place and name the old defect
+#   (fix-profile.ts header, import/application/ports.ts applyReparse
+#   contract). RESIDUE, NAMED: keys can still collide with rows OUTSIDE
+#   the fixed profile (the wrong-then-right double-confirm landscape
+#   where the same file was ingested twice under two specs on one
+#   account); there the corrected keys equal the other profile's keys and
+#   the unique index aborts the repair LOUDLY with nothing rewritten,
+#   which is the right outcome over already-duplicated facts, and that
+#   landscape is the already-escalated M1-P2 territory (CR-201, open
+#   claim M1P2-C6), not this phase's defect.
+# - CR-303 (refund history window-scoped, medium): RESOLVED at 015b1c7.
+#   A tenancy-filtered unbounded read
+#   (src/modules/ledger/adapters/ledger-repository.ts:67, householdId in
+#   the where clause) feeds full-ledger outgoing history into every
+#   window run. Re-executed probe D2: the January purchase plus June
+#   refund now classifies SPEND under the June import's window, agreeing
+#   with recompute. Regression test committed.
+# - CR-304 (facts rewrite left stale flows with no marker, medium):
+#   RESOLVED at be49a82. applyReparse moves every affected import
+#   INTERPRETED to INGESTED inside the SAME database transaction as the
+#   facts rewrite (src/modules/import/adapters/import-repository.ts:278);
+#   the fake mirrors it. Re-executed probe R3 with a dying interpret
+#   dependency: the fix throws, facts are corrected, and the import is
+#   left INGESTED (the pipeline's visible needs-interpretation marker),
+#   never INTERPRETED over stale flows.
+# - CR-305 (indicator branch absoluted a signed cell, low): RESOLVED at
+#   0e9bdbc. carriesExplicitSign now guards the indicator branch and
+#   Math.abs is gone (src/modules/import/domain/parse-statement.ts:226).
+#   Re-executed probe D4.a: '-742,10' beside a C marker is a row error.
+#   The delta sweep found a shared hole in the guard itself, filed as new
+#   finding CR-307 below.
+# - CR-306 (two debits settle one import, low): RESOLVED at 6fe07de.
+#   Global exclusive allocation over debit-import candidate edges, sorted
+#   by (date distance, debit id, import id), each side used once, losers
+#   through the existing honest-SPEND no-match arm
+#   (src/modules/ledger/domain/interpret.ts:83-124). Re-executed probes
+#   D3.a-D3.d: exactly one debit settles, the loser is SPEND with no
+#   surfaced gap, the allocation is identical across 25 shuffles, the
+#   equal-distance tie breaks by import id, and two debits with two
+#   equal-total imports allocate one each with no side reused.
+#   STOP-FOR JUDGEMENT, judged here as the review's half: the implementer
+#   recorded (work history decisions, orchestrator-approved) that
+#   exclusivity is a deterministic tie-break over an ambiguity the
+#   correction text leaves open, not a change to the correction's
+#   meaning. This review AGREES: the addendum's two written arms (match
+#   gives INTERNAL paired, no match gives honest SPEND) both keep their
+#   semantics; the text speaks of THE settlement of a statement, singular,
+#   and does not decide the two-debits-one-import case at all; the loser
+#   lands on an arm the text already defines rather than a new flow; and
+#   the tie-break has the same shape as decision D-7's. A tie-break over
+#   an undecided case, recorded with the orchestrator's approval, honours
+#   the charter's stop-for discipline.
 #
-# WORK LOG (incremental, per clause incremental-output). Newest last.
-# - Scaffold created before review work began. Probes and findings follow.
-# - Read ledger domain (classify-flow, corrections, pair-transfers,
-#   interpret, reconciliation, constants, ledger-transaction) and the
-#   application layer (interpret-window, ports, ledger-repository).
-#   Derivation done by hand: difference always equals sum(INTERNAL rows not
-#   in a zero-sum link) + sum(UNRESOLVED), so the identity is blind to any
-#   INCOME/SPEND/RESERVE shuffle by construction (property of the spec, not
-#   a code bug). Hunting therefore focuses on INTERNAL handling and flow
-#   flips.
-# - Executed grep over src for every Prisma Transaction write:
-#   grep -rn "updateMany|deleteMany|.update(|.delete(" src --include=*.ts
-#   Result: transaction writes ONLY at ledger-repository.ts:120 (flow
-#   column), import-repository.ts:255 (applyReparse) and :328 (ingest
-#   createMany), plus the reparse-tmp $executeRaw at 245. No Transaction
-#   delete path exists anywhere. Facts cannot be deleted; the re-parse is
-#   the only fact rewrite.
-# - npm test at f274d30: exit 0, 15 files, 141 tests. Read the property
-#   test, interpret/reparse tests, fake-import-world, the parser and dedup
-#   domain, the schema and migration.
-# - EXECUTED PROBES (probe.ts, esbuild-bundled over committed src):
-#   P1.a settlement debit INTERNAL with full context. P1.b the June
-#   window [2026-04-13, 2026-08-18] (exactly interpretForImport's window
-#   for a June import) flips it to SPEND. P1.c reconcile over the merged
-#   persisted flows: reconciles=true, difference=0, spend=204500 where
-#   true spend is 104500. P1.d partial truncation variant flips too.
-#   P2 the transfer-pair rim keeps flow INTERNAL and is surfaced (the
-#   declared residue, for contrast). P3.a re-parse renumbers a stored
-#   cross-import twin onto an occupied dedup key. P4.a CR-208 verified
-#   closed (both '-' and '+' cells error under a directional column).
-#   P4.b indicator branch absolutes a signed cell (declared residue).
-#   P5 CR-209 verified closed (d/D pair bounces at the boundary).
-#   P6 boundaries: settlement matches at exactly 45 days from the last
-#   card row and not at 46; transfers pair at exactly 4 days and not 5.
-#   P7 the engine is a fixed point under re-run and 25 adversarial
-#   shuffles. P8 two equal-amount settlement debits both classify
-#   INTERNAL onto ONE card import, both surfaced unmatched. P8b a greedy
-#   tie chain leaves a matchable pair unmatched (spec-conform tie-break,
-#   surfaced, totals safe). P9 the refund correction is window-scoped:
-#   the same row is SPEND under recompute and INCOME under the June
-#   window.
-# - EXECUTED PROBE probe2.ts (end-to-end through committed use cases and
-#   the committed fake): upload A, overlap upload B (added 2 known 3),
-#   fixSourceProfile with UNCHANGED spec succeeds in the fake and leaves
-#   DUPLICATE dedup keys; re-upload of file B then stores a FOURTH copy of
-#   a fact the household holds three of. The real adapter aborts on the
-#   unique index instead: the repair path is denied.
-# - Criteria read LAST and walked below.
-# - VALIDATION RECORD, honest. tiphys validate --type verdict was run with
-#   this reviewer's OWN private context dir (plan.yaml, work-history.yaml,
-#   charter.yaml, assurance-modes.yaml, and delivery/review holding the
-#   verdicts). Three runs: (1) against the real pair of this head (this
-#   document beside the criteria verdict), the ONLY diagnostic is the
-#   dual-review-decorrelation check reddening on produced-by, because both
-#   verdicts are honestly claude; that is precisely the condition DR-0003
-#   narrows for the pilot (contract and framing ARE distinct across the
-#   pair, which the same run confirmed by not naming them), and this
-#   header carries the required escalation record rather than a faked
-#   family. (2) With this document alone the same check asks for two
-#   reviews, as it should. (3) To isolate this document's own validity, a
-#   synthetic stand-in second verdict differing in produced-by, framing
-#   and contract was placed in the private sandbox context: exit 0,
-#   REPORT dual-review-decorrelation distinct on all three axes, no other
-#   diagnostic. So this document is schema-valid and passes every Kind B
-#   completeness check (criteria complete, hazard classes complete,
-#   finding references resolve, deviations judged); the family
-#   decorrelation residue is DR-0003's, not this document's. A first
-#   validation attempt used a scratchpad dir name that turned out to be
-#   SHARED with another session (it already held the criteria verdict);
-#   it was abandoned for the private dir, per the brief's warning.
+# METHOD, DELTA ROUND. Started from the fix commits and the load-semantics
+# changes they introduce, not from the criteria. Full read of the delta
+# diff f274d30..c3f566a; fast gates re-executed at the head (npm test exit
+# 0 with 152 tests, npm run typecheck exit 0, npm run lint exit 0);
+# every round 0 probe re-executed (probe-delta.ts, probe-delta2.ts,
+# esbuild-bundled over the committed code, plus the committed fake for the
+# end-to-end re-parse runs); new adversarial probes against the delta
+# itself: unbounded card load (tenancy read statically: both new reads
+# filter householdId at ledger-repository.ts:32 and :78), exclusive
+# allocation under shuffles and equal-distance ties, full-file re-key
+# collision hunting, the INGESTED transition under a dying interpret, and
+# application-level idempotency (window re-run a strict fixed point;
+# recompute agrees on every shared row and only adds coverage for rows no
+# window run ever touched). Database untouched; npm run test:e2e relied on
+# the work history's gate evidence at be49a82 (the code head).
+#
+# WORK LOG (incremental). Round 0 log is in this file's git history at
+# review commit 4983134; this revision is the delta round.
+# - Rebased the review branch onto c3f566a; confirmed be49a82 is the last
+#   code commit.
+# - Read the full delta diff; identified the four load-semantics changes
+#   to press (unbounded card load, exclusive allocation, full-file
+#   re-key, INGESTED downgrade).
+# - Executed probe-delta.ts: D1.a/D1.b (CR-301 fixed through the real
+#   interpretForImport), D2 (CR-303 fixed), D9 (idempotency; first
+#   assertion was too strict, recompute legitimately ADDED a flow for a
+#   January import no window run had ever interpreted, re-asserted as
+#   agreement-on-shared-rows plus coverage-only additions, then green),
+#   D3.a-d (CR-306 exclusive allocation, shuffles, ties), D4.a (CR-305
+#   fixed), D4.b/D4.c (NEW: currency-prefix sign bypass witnessed, both
+#   branches).
+# - Executed probe-delta2.ts: R1 (round 0 CR-302 construction now a
+#   no-op), R2 (corrected-spec overlap repair converges; first probe
+#   build accidentally reconstructed the M1-P2 twin-account landscape by
+#   confirming file B under a second profile, rebuilt on one profile,
+#   green; the twin-account variant is recorded as residue above), R3
+#   (CR-304 marker), R4 (fake unique enforcement). Final: 0 failed
+#   checks.
+# - Assembled this delta verdict; validated schema plus Kind B checks in
+#   a private context dir exactly as in round 0 (the family-decorrelation
+#   red against the real pair is DR-0003's narrowing, recorded above).
 
 kind: verdict
 phase: M1-P3
@@ -103,274 +156,56 @@ framing: destructive-paths
 review-contract: hazard
 
 findings:
-  - id: CR-301
-    severity: critical
-    evidence:
-      - >-
-        Executed probe P1 over the committed engine: a March card import
-        (rows 2026-03-05 and 2026-03-20, total 100000 cents) plus its
-        settlement debit on checking booked 2026-04-14 classifies the
-        debit INTERNAL with a settlement link under full context
-        (captured: flow=INTERNAL, settlements=[{debitTransactionId:
-        t-settle, cardImportId: imp-card-march}]).
-      - >-
-        Executed probe P1.b: the identical engine run over the window
-        [2026-04-13, 2026-08-18], which is exactly the window
-        interpretForImport derives for a June checking import
-        (src/modules/ledger/application/interpret-window.ts:92 pads the
-        import period by INTERPRETATION_WINDOW_PADDING_DAYS = 49), loads
-        the debit but none of the March card rows and returns flow=SPEND
-        for the settled debit. replaceInterpretation then persists SPEND
-        over the stored INTERNAL and deletes the settlement link
-        (src/modules/ledger/adapters/ledger-repository.ts:99 and :120).
-      - >-
-        Executed probe P1.c: reconcile over the merged persisted state
-        (window rows new generation, March card rows old generation)
-        captured reconciles=true, differenceCents=0, spendCents=204500
-        where true spend is 104500. The books close while every card
-        month is double counted: the silently swallowed difference.
-      - >-
-        Executed probe P1.d: a window cutting a card import in HALF
-        (from 2026-03-13) computes a truncated settlement total (70000,
-        not 100000), so the equality check at
-        src/modules/ledger/domain/corrections.ts:60 fails and the debit
-        flips to SPEND through the unitemised fallback at
-        src/modules/ledger/domain/corrections.ts:65.
-      - >-
-        Root cause by reading: src/modules/ledger/domain/interpret.ts:58
-        computes summarizeCardImports over potTransactions, which
-        interpret-window loaded date-bounded
-        (src/modules/ledger/adapters/ledger-repository.ts:38), so a card
-        import's settlement total is the sum of the rows THE WINDOW
-        HAPPENED TO LOAD, not of the import. The padding comment at
-        src/modules/ledger/domain/constants.ts:30 declares only the
-        transfer-pair rim residue, whose failure mode keeps flow INTERNAL
-        and is surfaced (probe P2 confirmed that contrast); the
-        settlement variant flips a counted total and surfaces nothing
-        once the mirror row is absent or outside the window.
-      - >-
-        Reachability under normal use, derived: a KBC settlement debit
-        lags its statement period end by roughly two weeks, so it sits 14
-        to 45 days after the last card row; any later import whose padded
-        window starts between the card rows and the debit (for monthly
-        checking uploads, the import two months after the card statement)
-        performs exactly probe P1.b's flip. No later upload's window
-        reaches back far enough to heal it, and recompute is a dev-only
-        action (src/modules/ledger/ui/actions.ts:16).
-    concrete-fix: >-
-      Compute card import summaries from the COMPLETE import, never from
-      the window slice: either have listPotTransactions include every row
-      of any card import that intersects the window (a second query by
-      importId over the card imports seen in the slice), or load
-      settlement totals per import with a dedicated repository read
-      keyed by importId, and only allow the INTERNAL to SPEND
-      reclassification of a previously settled debit when the full card
-      import context is present. Add a regression test that interprets a
-      later import's window over a database state containing an
-      out-of-window card import and asserts the settled debit's flow
-      survives.
-    analysis: >-
-      Hazard H2.1 realized through the window mechanism rather than the
-      matcher: classification of a settlement debit is a function of how
-      much context the window loaded, and criterion 2.8's honest-SPEND
-      fallback is the flip destination, so the destructive outcome is the
-      exact double count the phase calls the single biggest trap. The
-      reconciliation identity cannot catch it because the identity is
-      algebraically blind to INCOME/SPEND/RESERVE reclassification (the
-      by-hand derivation in the work log above), which is also why the
-      500-case property test stays green: it interprets one consistent
-      set, never a window slice against persisted state from a wider run.
-  - id: CR-302
-    severity: high
-    evidence:
-      - >-
-        Executed probe P3.a over committed dedup code: file A stores a
-        keyless identical twin pair (keys h:...#0 and h:...#1); an
-        overlapping file B carrying the same pair plus a THIRD occurrence
-        stores only that third row under key h:...#2 (ingest computes
-        ordinals over the full file). The re-parse recomputes keys over
-        the STORED SUBSET (src/modules/import/application/fix-profile.ts:88
-        passes only the import's stored rows to assignDedupKeys), so
-        import B's row renumbers to h:...#0, a key import A's row already
-        holds.
-      - >-
-        Executed probe P10 (probe2.ts) end-to-end through the committed
-        use cases: upload A, overlap upload B (captured added 2 known 3),
-        then fixSourceProfile with the spec UNCHANGED returned ok and
-        left duplicate dedup keys in the store; the next re-upload of
-        file B then reported added 1 and the household held FOUR copies
-        of a fact it has three of. Captured output in the work log above.
-      - >-
-        Against the real adapter the same operation aborts instead: the
-        per-household unique index (prisma/schema/import.prisma, the
-        unique on householdId and dedupKey) rejects the second h:...#0 in
-        applyReparse's transaction
-        (src/modules/import/adapters/import-repository.ts:253), nothing
-        is rewritten, and fixSourceProfile throws. The H2.5 repair path
-        is then permanently unavailable for any household whose imports
-        overlap around a keyless twin, which the committed fixtures
-        themselves present as the observed real card shape (two identical
-        STARBUCKS rows in test/application/reparse.test.ts:25).
-      - >-
-        The divergence exists because the committed fake's applyReparse
-        enforces no key uniqueness
-        (test/application/fake-import-world.ts:148) while its own header
-        claims it reproduces the real insert semantics the schema
-        enforces (test/application/fake-import-world.ts:3), so no fast
-        gate test can see either outcome.
-      - >-
-        R-087 false claims, named precisely: the comment at
-        src/modules/import/application/fix-profile.ts:87 states that any
-        deterministic row order yields the same key SET as a fresh parse
-        of the file, which is false whenever an import stored a proper
-        subset of its file's rows; the port contract at
-        src/modules/import/application/ports.ts:127 states that dedup
-        keys are recomputed so re-uploads keep mapping onto the same
-        rows, which probe P10 falsifies by executed construction.
-    concrete-fix: >-
-      Recompute re-parse dedup keys from the same basis ingest used: for
-      hash-path rows, preserve each stored row's existing ordinal suffix
-      and recompute only the content hash (the ordinal was assigned
-      against the full file at ingest and is part of the row's stored
-      identity), or re-derive ordinals per import by ranking stored twins
-      by their stored ordinal rather than by subset position. Make the
-      fake's applyReparse enforce the unique key the way its ingestRows
-      already does, correct the two false comments, and add a reparse
-      test with two overlapping imports sharing a keyless twin.
-    analysis: >-
-      Continuation of H2.5: the one sanctioned facts rebuild fails
-      exactly on the data shape (overlapping card re-exports with
-      legitimate identical rows) that the dedup design treats as normal.
-      Loud in production (denied repair, wrong facts stand), silent in
-      the fast gate (fact duplication through sanctioned paths), and the
-      test double diverges from the schema on the one constraint this
-      path depends on.
-  - id: CR-303
+  - id: CR-307
     severity: medium
     evidence:
       - >-
-        Executed probe P9: an outgoing payment booked 2026-01-10 and its
-        refund booked 2026-06-15 classify the refund SPEND under a full
-        recompute and INCOME under the June import's window (captured:
-        full-history flow=SPEND, June-window flow=INCOME), because
-        src/modules/ledger/domain/interpret.ts:59 builds
-        outgoingHistoryKeys from the window-loaded transactions only.
+        Executed probe D4.b at head: under the indicator representation
+        the cell 'EUR -742,10' beside marker C parses OK and stores
+        -74210, a credit stored negative; beside marker D it stores
+        +74210, a debit stored positive. Captured output in the work log
+        above.
       - >-
-        The plan's refund rule is scope-free: incoming from a
-        counterparty that has outgoing history is SPEND with a positive
-        amount (delivery/intake/pulse-v1-plan.md:113); the implementation
-        narrows history to the loaded window, undeclared. The
-        work-history open question M1P3-C9
-        (delivery/work-history/m1-p3.yaml:517) names key spelling as the
-        refund residue and does not name window scoping.
+        Executed probe D4.c: the same cell inside a debitCredit DEBIT
+        column parses OK and stores +74210, the exact CR-208 inversion,
+        reachable at this head.
       - >-
-        Consequence, derived and identity-checked: income and spend both
-        inflate by the refund amount relative to the recompute reading,
-        the identity holds either way (probe P9 note), and which reading
-        is persisted depends on which run last touched the row, the same
-        mixed-generation class as CR-301 with a milder outcome.
+        Root cause by reading: the guard carriesExplicitSign
+        (src/modules/import/domain/parse-statement.ts:186) tests the RAW
+        cell's first character, while parseAmountToCents first strips
+        currency noise and THEN reads a sign
+        (src/modules/import/domain/parse-amount.ts:26-34, the EUR and
+        euro-symbol replace runs before the startsWith('-') check). So a
+        sign written after a currency prefix passes every directional
+        guard (the CR-208 pair at parse-statement.ts:208 and :217, and
+        the CR-305 guard at parse-statement.ts:230) and the parser signs
+        the value anyway; the directional branches then negate or trust
+        it, silently inverting the stored amount. The currency strip
+        exists precisely because observed exports carry EUR noise in
+        amount cells, so the combination is not a fantasy shape.
+      - >-
+        Trailing signs are safe (the amount grammars at
+        src/modules/import/domain/parse-amount.ts:19-20 admit digits and
+        separators only), so the prefix-noise path is the one hole; the
+        signed representation is unaffected (there the cell sign IS the
+        declared convention).
     concrete-fix: >-
-      Build outgoingHistoryKeys from the household's full outgoing
-      history (a dedicated repository read over counterparty keys, cheap
-      at this scale), or at minimum document and test the window bound as
-      a deliberate narrowing and make window runs and recompute agree on
-      it. Add a test with an outgoing row older than the padding and a
-      refund inside the window.
-  - id: CR-304
-    severity: medium
-    evidence:
-      - >-
-        src/modules/import/application/fix-profile.ts:100 commits the
-        facts rewrite (applyReparse, one database transaction), and
-        src/modules/import/application/fix-profile.ts:108 then rebuilds
-        interpretation per affected import in separate, later
-        transactions. A crash or error between the two leaves corrected
-        facts under stale flows.
-      - >-
-        Unlike the upload path, where a failed interpret leaves the
-        import in status INGESTED as a visible marker
-        (src/modules/import/application/confirm-import.ts:129 runs after
-        ingestRows set INGESTED, and replaceInterpretation is what moves
-        it to INTERPRETED), applyReparse does not reset the affected
-        imports' status: they remain INTERPRETED
-        (src/modules/import/adapters/import-repository.ts:218 touches
-        sourceProfile and transactions only), so nothing records that the
-        stored interpretation no longer derives from the stored facts.
-      - >-
-        Destructive shape, concrete: a re-parse that flips signs (the
-        criterion 2.7 scenario) can leave a row whose stored flow is
-        INCOME while its corrected amount is negative; every read of the
-        persisted flow column until some later window run happens to
-        cover that row reports a wrong month, with no surfaced gap and no
-        marker that a recompute is needed. Recompute is dev-only
-        (src/modules/ledger/ui/actions.ts:16).
-    concrete-fix: >-
-      Inside applyReparse's transaction, downgrade every affected import
-      from INTERPRETED to INGESTED (interpretation invalidated with the
-      facts rewrite, restored by the interpret step that follows), so a
-      death between the two phases leaves the same visible
-      needs-interpretation marker the ingest path already has. Add a test
-      that fails the interpret dependency after a re-parse and asserts
-      the affected import is not left INTERPRETED.
-  - id: CR-305
-    severity: low
-    evidence:
-      - >-
-        Executed probe P4.b: under the indicator representation the cell
-        -742,10 with marker C parses to +74210
-        (src/modules/import/domain/parse-statement.ts:239 takes Math.abs
-        of the parsed value), so sign information present in the cell is
-        silently discarded where the sibling debitCredit branch now fails
-        loud on the same input (probe P4.a, CR-208 fix verified at
-        src/modules/import/domain/parse-statement.ts:208 and :217).
-      - >-
-        The residue is declared, not hidden: the comment at
-        src/modules/import/domain/parse-statement.ts:181 and the
-        work-history not-covered at delivery/work-history/m1-p3.yaml:331
-        both name it as a candidate follow-up. It remains the one parser
-        branch where a cell that contradicts the declared sign authority
-        is reinterpreted instead of refused, the exact mechanism class
-        CR-208 names.
-    concrete-fix: >-
-      Extend carriesExplicitSign to the indicator branch: a signed
-      amount cell under an indicator representation is a row error
-      (problem "amount"), same discipline as the directional columns; on
-      observed exports where signed cells legitimately co-exist with
-      markers, require the sign to AGREE with the marker instead of
-      absoluting it. One red-witness test beside the CR-208 block.
-  - id: CR-306
-    severity: low
-    evidence:
-      - >-
-        Executed probe P8: two settlement-pattern debits of the same
-        amount (accounts acc-checking and acc-b) against ONE imported
-        card statement both classify INTERNAL and both link to the same
-        card import (captured links t-settle to imp-card-march and
-        t-settle-2 to imp-card-march), because
-        src/modules/ledger/domain/corrections.ts:57 filters candidates
-        by amount, window and account only, and each debit is classified
-        independently with no exclusivity across debits.
-      - >-
-        Consequence for hazard H2.6: a settlement debit paying a card
-        whose statements are NOT imported, whose amount coincides to the
-        cent with another card's imported total inside the 45-day
-        window, classifies INTERNAL instead of the honest aggregate
-        SPEND: that spend leaves the spend side. It is not silent (both
-        debits surface as unmatched, captured in P8) and it requires an
-        exact-cent collision between two settlement debits, but it never
-        heals and the month's spend stays understated while it stands.
-      - >-
-        The persisted shape is also two TransferLink rows carrying the
-        same settlementImportId (the schema's uniques are per leg only,
-        prisma/schema/migrations/20260819152307_transfer_links/migration.sql),
-        recording one statement as paid twice.
-    concrete-fix: >-
-      Make settlement matching exclusive per card import inside
-      interpretLedger the way mirror matching already is (usedMirrors at
-      src/modules/ledger/domain/interpret.ts:85): allocate each card
-      import to at most one settlement debit by the same deterministic
-      tie-break, and let the loser fall through to the unitemised SPEND
-      fallback. Add a two-debits-one-import test.
+      Align the guard with the parser: either normalise before guarding
+      (strip the same currency noise, then test for a sign) or, cleaner,
+      give parse-amount an unsigned entry point (parseUnsignedMagnitude
+      that REJECTS any sign it finds after normalisation) and call it
+      from the debitCredit and indicator branches, so the two functions
+      cannot drift again. One red-witness test per branch with an
+      'EUR -' cell, beside the existing CR-208 and CR-305 blocks.
+    analysis: >-
+      Same mechanism class as CR-208 and CR-305 (sign information in the
+      cell silently reinterpreted where the column or marker is the
+      declared sign authority), found by sweeping the delta that hardened
+      that exact guard: the guard and the parser disagree about what
+      string they are judging. Filed medium because the outcome is a
+      silent full inversion of affected rows (H1.1 class) while the
+      triggering shape (currency prefix plus sign in a directional or
+      indicator column) is not yet observed in a real export.
 
 criteria:
   - id: "2.1"
@@ -380,12 +215,10 @@ criteria:
       before pot set before sign).
     evidence:
       - >-
-        npm test executed by this review at f274d30: exit 0, 141 tests.
-        test/domain/classify-flow.test.ts:68 covers the five values one
-        by one; test/domain/classify-flow.test.ts:98 covers reserve
-        before pot before sign, including the both-sets IBAN and the
-        reserve-beats-refund case at
-        test/domain/classify-flow.test.ts:119.
+        npm test executed by this review at head c3f566a: exit 0, 152
+        tests. test/domain/classify-flow.test.ts:68 covers the five
+        values; test/domain/classify-flow.test.ts:98 covers the
+        precedence, unchanged by the delta.
     met: true
   - id: "2.2"
     quote: >-
@@ -395,12 +228,11 @@ criteria:
       id.
     evidence:
       - >-
-        test/domain/pair-transfers.test.ts:92 walks every insertion order
-        of the fixture and asserts the identical pair set;
-        test/domain/pair-transfers.test.ts:114 and :125 pin both
-        tie-break stages. Corroborated by executed probe P7 (25
-        adversarial shuffles of a settlement-bearing world, identical
-        canonical output every round).
+        test/domain/pair-transfers.test.ts:92 (every insertion order) and
+        :114/:125 (tie-break stages), unchanged by the delta and green in
+        this review's run. Delta probe D3.b extends the property to the
+        new exclusive settlement allocation: identical canonical output
+        across 25 shuffles.
     met: true
   - id: "2.3"
     quote: >-
@@ -418,13 +250,11 @@ criteria:
       line items are the only counted spend.
     evidence:
       - >-
-        Four describe blocks at test/domain/corrections.test.ts:63,
-        :190, :229 and :282; the settlement fixture assertions at
-        test/domain/corrections.test.ts:99, :119 and :128 match the
-        criterion's shapes. Met as written; note that CR-301 shows the
-        same debit reclassified SPEND when a later window run loads the
-        debit without its card import, a state no single-interpretation
-        test can reach.
+        Four describe blocks at test/domain/corrections.test.ts:63, :190,
+        :229 and :282 as in round 0; the delta adds the exclusivity tests
+        ("settlement matching is exclusive per card import") to the card
+        settlement block. Round 0's caveat is CLOSED: probe D1.b shows a
+        later window run no longer reclassifies the settled debit.
     met: true
   - id: "2.4"
     quote: >-
@@ -440,14 +270,10 @@ criteria:
       least 500 generated cases.
     evidence:
       - >-
-        test/property/reconciliation.test.ts:304 runs 500 cases
-        (numRuns at test/property/reconciliation.test.ts:362), facts-side
-        changeInPot inside reconcile
-        (src/modules/ledger/domain/reconciliation.ts:53), gap equality at
-        test/property/reconciliation.test.ts:346, and run-wide coverage
-        assertions over flows and shapes at
-        test/property/reconciliation.test.ts:369. Executed green in this
-        review's npm test run.
+        test/property/reconciliation.test.ts:304 with numRuns 500,
+        unchanged by the delta except that the engine under it now
+        allocates settlements exclusively; executed green in this
+        review's npm test run at the head.
     met: true
   - id: "2.5"
     quote: >-
@@ -457,11 +283,10 @@ criteria:
       asserted in test/application/interpret.test.ts.
     evidence:
       - >-
-        test/domain/pair-transfers.test.ts:161 asserts exclusion and the
-        exact surfaced difference; test/application/interpret.test.ts:93
-        walks the two-upload healing through the real use cases over the
-        fake ports and asserts the pair link appears only after the
-        second file.
+        test/domain/pair-transfers.test.ts:161 and
+        test/application/interpret.test.ts:93 as in round 0, green at the
+        head; the delta adds the CR-301 and CR-303 healing regressions to
+        the same suite.
     met: true
   - id: "2.6"
     quote: >-
@@ -469,14 +294,13 @@ criteria:
       test:e2e exits 0 at the phase head.
     evidence:
       - >-
-        Executed by this review at f274d30: npm run typecheck exit 0, npm
-        run lint exit 0, npm test exit 0 (141 tests). npm run test:e2e
-        was NOT independently re-executed (the local database stack is
-        the criteria reviewer's, off-limits to this contract); the work
-        history records it green at 9b49cfb with the fully pinned local
-        env (delivery/work-history/m1-p3.yaml:298), and git diff 9b49cfb
-        f274d30 over src, test, prisma and package.json is empty, so the
-        e2e evidence covers the identical code tree.
+        Executed by this review at c3f566a: npm run typecheck exit 0, npm
+        run lint exit 0, npm test exit 0 (152 tests). npm run test:e2e
+        was NOT independently re-executed (the database stack is the
+        criteria reviewer's); the work history records it green at the
+        fix-round code head be49a82 with the fully pinned local env
+        (delivery/work-history/m1-p3.yaml gate-evidence), and git diff
+        be49a82 c3f566a over src, test, prisma and package.json is empty.
     met: true
   - id: "2.7"
     quote: >-
@@ -487,14 +311,13 @@ criteria:
       declarations, merchant rules and dedup behaviour intact.
     evidence:
       - >-
-        test/application/reparse.test.ts:84 asserts corrected amounts,
-        preserved row identity and rawLine, intact declarations, and a
-        zero-add re-upload afterwards; test/application/reparse.test.ts:160
-        asserts the unparseable correction rewrites nothing. The
-        criterion's letter is met for the single-import case it tests;
-        finding CR-302 shows the dedup-behaviour-intact promise breaking
-        by executed construction as soon as two overlapping imports share
-        a keyless twin, a case the suite does not contain.
+        test/application/reparse.test.ts:84 as in round 0, plus the
+        delta's overlap suite ("re-parse over overlapping imports sharing
+        a keyless twin", both the unchanged-spec no-op and the
+        corrected-spec convergence) and the CR-304 marker test, all green
+        at the head. Round 0's caveat is CLOSED by executed probes R1 and
+        R2: the dedup-behaviour-intact promise now holds on the overlap
+        construction that broke it.
     met: true
   - id: "2.8"
     quote: >-
@@ -505,15 +328,12 @@ criteria:
       merchant rides the normal resolver chain once M1-P4 lands.
     evidence:
       - >-
-        test/domain/corrections.test.ts:137 asserts SPEND exactly once
-        with no card import matching, and
-        test/domain/corrections.test.ts:171 pins the window bound;
-        executed probe P6 confirmed the bound is inclusive at 45 days
-        from the last card row and rejects 46. Met as written; CR-301
-        shows the same fallback firing WRONGLY when the card import
-        exists but sits outside a later run's window, and CR-306 shows
-        the converse coincidental match. Both are findings against the
-        surrounding machinery, not against this criterion's own case.
+        test/domain/corrections.test.ts:137 and :171 as in round 0, green
+        at the head. Both round 0 caveats are CLOSED: the wrong-firing of
+        this fallback through window truncation is gone (probe D1), and
+        the coincidental cross-match now loses the exclusive allocation
+        and takes this arm honestly (probe D3.a: the loser debit is
+        SPEND, not INTERNAL, with no surfaced gap).
     met: true
 
 deviations-judged:
@@ -525,142 +345,119 @@ deviations-judged:
       test/application/interpret.test.ts, test/application/reparse.test.ts)
     serves-plan-intent: true
     reasoning: >-
-      The four extra groups (accounts listAccounts through the published
-      interface, the fake-world extension so the real interpret use case
-      runs in the fast gate, the profile-detection test home for the
-      CR-208/CR-209 red witnesses, and the fast-check devDependency
-      criterion 2.4 requires) are each the minimal enabling change for a
-      declared step of this phase, none moves business logic outside the
-      declared modules, and the plan's extras list at the phase already
-      carries all four (the brief's extras section names them), so the
-      declaration and the tree agree. Judged from the artifact: the
-      accounts diff adds one read method and no behaviour change
-      (src/modules/accounts/adapters/account-repository.ts:42).
+      Judged in round 0 and unchanged by the delta: the four extra groups
+      (accounts listAccounts through the published interface, the
+      fake-world extension, the profile-detection test home for the
+      red witnesses, the fast-check devDependency) are each the minimal
+      enabling change for a declared step, and the fix round stayed
+      inside the same file set. The fix round's CR-306 exclusivity
+      judgement is recorded in the work history's decisions with
+      orchestrator approval and is judged sound in this verdict's
+      resolution ledger: a deterministic tie-break over a case the
+      correction text does not decide, both written arms keeping their
+      semantics.
 
 hazard-classes-addressed:
   - class-id: H2.1
     probed: >-
-      Constructed the double count three ways by executed probe over the
-      committed engine: (1) full-context interpretation of a card import
-      plus its settlement debit (correctly INTERNAL, P1.a); (2) the same
-      database state re-interpreted through the exact window
-      interpretForImport derives for a later checking import, which
-      loads the debit without its card rows and flips it to SPEND (P1.b),
-      with reconcile over the merged persisted flows closing the books at
-      difference 0 while spend is double counted (P1.c, captured
-      spend=204500 against true 104500); (3) a window cutting the card
-      import in half, so the truncated total fails the exact-amount match
-      (P1.d). Also verified the in-window matcher itself holds: the
-      corrections suite plus probe P6 window bounds, and probe P8's
-      two-debit construction where the double-INTERNAL is surfaced rather
-      than silent.
-    finding: CR-301
+      Round 0's three double-count constructions re-executed against the
+      fix (probe D1 through the real interpretForImport over an in-memory
+      ledger port): the April run settles the debit, round 0's
+      destructive June run now keeps it INTERNAL with its link, and the
+      truncated-total variant cannot be built any more because card
+      accounts are loaded unbounded (read statically at
+      src/modules/ledger/application/interpret-window.ts:37-53, tenancy
+      filter confirmed at ledger-repository.ts:32). Idempotency re-probed
+      at the application level (D9): the window re-run is a strict fixed
+      point and recompute agrees on every shared row. The in-window
+      matcher evidence from round 0 (corrections suite, window-bound
+      probes) still holds at the head.
+    cleared-because: >-
+      CR-301 is resolved by executed re-probe of the exact round 0
+      constructions plus a committed regression test; no remaining path
+      was found in which a settled debit's classification depends on how
+      much context a window loaded. New finding CR-307 is a parser-layer
+      sign defect, a different class (H1.1 shape), recorded under its own
+      finding.
   - class-id: H2.2
     probed: >-
-      Read the classification order (reserve set is checked first at
-      src/modules/ledger/domain/classify-flow.ts:59, both directions,
-      before the refund correction can see the row) and re-executed the
-      suite that pins it: test/domain/classify-flow.test.ts:119 (a
-      drawdown is RESERVE even with outgoing history at the same
-      counterparty) and the reserve drawdown describe block at
-      test/domain/corrections.test.ts:190, green in this review's npm
-      test run. Tried to construct a drawdown-as-INCOME path: a reserve
-      IBAN present in both declared sets resolves RESERVE
-      (test/domain/classify-flow.test.ts:99), and an UNDECLARED reserve
-      IBAN classifies INCOME by design (declaration-driven
-      classification is the plan's own contract), which is a declaration
-      gap, not an implementation path.
+      Unchanged by the delta: the reserve-set check still precedes every
+      other rule for both signs
+      (src/modules/ledger/domain/classify-flow.ts:59) and the round 0
+      suite evidence re-ran green at the head (npm test, 152 tests). The
+      new full-ledger history read cannot pull RESERVE rows into the
+      refund correction because the reserve check returns first.
     cleared-because: >-
       No implementation path reaches INCOME for a declared reserve
-      counterparty: the reserve-set check precedes every other rule for
-      both signs, the correction has its own named function and tests,
-      and the mutation evidence in the work history (M1P3-C1, drawdown
-      classified INCOME reddened five tests) matches what this review
-      re-executed.
+      counterparty at this head, as in round 0.
   - class-id: H2.3
     probed: >-
-      Re-executed the order-independence suite
-      (test/domain/pair-transfers.test.ts:92, every insertion order) and
-      ran probe P7: 25 seeded shuffles of a world carrying transfers,
-      settlements, a mirror, refund history and income against the pure
-      engine, identical canonical output every round, plus a re-run fixed
-      point. Read the mechanism: edges are sorted by (date distance,
-      outgoing id, incoming id), all data properties
-      (src/modules/ledger/domain/pair-transfers.ts:94), and the
-      persistence rewrite is delete-then-insert over the loaded set in
-      one transaction
-      (src/modules/ledger/adapters/ledger-repository.ts:98). Probed the
-      greedy tie chain (P8b): out2 takes in1 at distance 0 and the
-      perfect matching out1-in1, out2-in2 is forgone; both leftovers are
-      surfaced unmatched and excluded from both sides, deterministic and
-      spec-conform (the plan words the tie-break exactly this way).
-      Cross-household legs cannot meet: the repository loads one
-      household (src/modules/ledger/adapters/ledger-repository.ts:34) and
-      link writes filter householdId. Reserve legs classified RESERVE
-      never enter pairing (src/modules/ledger/domain/interpret.ts:135
-      filters INTERNAL only; test/domain/pair-transfers.test.ts:189).
-      Racing window runs cannot double-pair a leg: the per-leg unique
-      indexes in the migration refuse a second link on either side, so
-      the worst interleaving is a deleted link or an aborted transaction,
-      both healed by the next run over the window.
+      Re-probed with the delta's new ordering surface included: the
+      exclusive settlement allocation is sorted purely on data (distance,
+      debit id, import id at src/modules/ledger/domain/interpret.ts:96),
+      re-executed under 25 adversarial shuffles with identical canonical
+      output (probe D3.b), the equal-distance tie breaks by import id
+      (D3.c), and two debits with two equal-total imports allocate one
+      each with neither side reused (D3.d). Transfer pairing itself is
+      untouched by the delta and its round 0 evidence re-ran green.
     cleared-because: >-
-      Order-independence, idempotency and tenancy hold by executed probe
-      and by constraint; the one residue (greedy is not maximum matching)
-      is deterministic, surfaced and matches the plan's stated tie-break,
-      so it is recorded here rather than as a finding.
+      Order-independence and idempotency hold by executed probe on both
+      the old pairing surface and the new allocation surface; the
+      persisted rewrite is unchanged (delete then insert over the loaded
+      set in one transaction, per-leg unique indexes standing).
   - class-id: H2.4
     probed: >-
-      Read and re-executed the 500-case property
-      (test/property/reconciliation.test.ts, green in this review's npm
-      test), checked its generators genuinely produce all five flows,
-      unmatched legs and all four correction shapes (run-wide assertions
-      at test/property/reconciliation.test.ts:369), and derived the
-      identity by hand: difference always equals the sum of INTERNAL rows
-      outside zero-sum links plus UNRESOLVED rows, because every linked
-      pair and settlement is exact-opposite by construction. That
-      derivation also bounds what the identity can ever witness: it is
-      blind to INCOME/SPEND/RESERVE reclassifications (both sides of the
-      equation move together), so it cannot catch CR-301's double count,
-      and a set of unmatched legs netting to zero yields reconciles=true
-      with legs still waiting (observed in probe P8b's world), which the
-      read model must surface from unmatchedInternalIds rather than from
-      the flag.
+      The 500-case property re-executed green at the head over the new
+      allocation semantics. The round 0 algebraic bound stands (the
+      identity is blind to INCOME/SPEND/RESERVE shuffles by
+      construction), and the one exploit of that blindness this review
+      had found (CR-301's silent double count behind a closed
+      difference) is now unreachable by the re-executed construction.
     cleared-because: >-
-      The identity holds on any dataset the model admits, by property
-      test and by algebra, and the gap accounting is exact; the class's
-      failure mode (holding only on chosen cases) is not present. Its
-      structural blind spot is recorded inside finding CR-301, where the
-      harm actually lands.
+      The identity holds on any dataset the model admits and its gap
+      accounting is exact, as in round 0; the blindness residue is
+      recorded and its known exploit is fixed.
   - class-id: H2.5
     probed: >-
-      Walked the re-parse end to end: executed the committed reparse
-      suite (green), then constructed the overlap case it lacks: probe
-      P3.a (subset ordinal renumbering collides with a stored key) and
-      probe P10 (the committed use cases over the committed fake:
-      fixSourceProfile with an unchanged spec leaves duplicate dedup keys
-      and the next boring re-upload duplicates a fact; the real adapter's
-      unique index aborts the repair instead). Also verified by executed
-      grep that no other code path updates or deletes Transaction rows
-      (the only writers are the flow column update, applyReparse and
-      ingest createMany), that applyReparse preserves row identity,
-      importId, accountId and rawLine by reading its update set, that
-      row count is structurally preserved (one ParsedRow per stored
-      rawLine, positional mapping at
-      src/modules/import/application/fix-profile.ts:91), and that a
-      failed parse rewrites nothing. Probed the seam between the facts
-      rewrite and the interpretation rebuild: they are separate
-      transactions with no staleness marker (CR-304).
-    finding: CR-302
+      The full re-parse family re-executed end to end at the head
+      (probes R1-R4): round 0's collision construction is now a strict
+      no-op, the corrected-spec overlap repair converges with unique keys
+      and zero-add re-uploads, a dying interpret leaves the INGESTED
+      marker with corrected facts, and the fake refuses a colliding key
+      all-or-nothing exactly like the schema. The executed write-path
+      grep from round 0 re-checked against the delta: the only new
+      Transaction-adjacent write is applyReparse's status downgrade of
+      imports (import-repository.ts:281), which touches no fact column.
+      Hunted the new algorithm's own destructive paths: key movement onto
+      another import's key inside the profile is prevented by the
+      accumulated assignedKeys simulation; movement onto a row OUTSIDE
+      the profile (the double-confirm twin-profile landscape) aborts
+      loudly on the unique index with nothing rewritten, named as residue
+      in the ledger above; a concurrent window run racing the re-parse
+      can still re-mark a downgraded import INTERPRETED from a
+      pre-rewrite read (the generic read-to-write gap every concurrent
+      interpretation has, healed by the next covering run), recorded here
+      as a known narrow race rather than a finding because it predates
+      the delta, requires simultaneous user actions in a seconds-wide
+      window, and self-heals.
+    cleared-because: >-
+      CR-302 and CR-304 are resolved by executed re-probe of the exact
+      round 0 constructions plus committed regression tests; the
+      remaining residues (loud abort over pre-duplicated cross-profile
+      facts, the narrow re-parse-versus-window race) are named, loud or
+      self-healing, and none of them silently rewrites or loses a fact.
   - class-id: H2.6
     probed: >-
-      Re-executed the criterion 2.8 test (SPEND exactly once, never
-      INTERNAL, never UNRESOLVED, window bound pinned) and probed the
-      boundary inclusively at 45 days from the last card row (probe P6;
-      note the periodEnd proxy is the max card row date, which only
-      SHORTENS the window, the safe direction). Constructed the
-      false-positive direction the class also names: a second
-      settlement-pattern debit whose amount coincides exactly with
-      another card's imported total classifies INTERNAL onto that import
-      (probe P8), which is the spend-vanishes half of this class,
-      surfaced but never healing.
-    finding: CR-306
+      Round 0's coincidental cross-match construction re-executed (probe
+      D3.a): the losing settlement-pattern debit now classifies honest
+      SPEND through the existing no-match arm, never INTERNAL, with no
+      surfaced gap, so an unimported card's spend can no longer vanish
+      onto an already-settled statement; the criterion 2.8 tests re-ran
+      green and the window bound evidence from round 0 stands. The
+      stop-for judgement attached to this fix is judged sound in the
+      resolution ledger above.
+    cleared-because: >-
+      CR-306 is resolved by executed re-probe with the allocation
+      invariants (each side once, deterministic ties) verified under
+      shuffles; the honest-SPEND arm now covers both the no-match and the
+      lost-tie cases.
