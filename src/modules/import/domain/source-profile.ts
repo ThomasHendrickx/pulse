@@ -137,7 +137,13 @@ export const parseSourceProfileSpec = (
     typeof repRecord.debitValue === "string" &&
     repRecord.debitValue !== "" &&
     typeof repRecord.creditValue === "string" &&
-    repRecord.creditValue !== ""
+    repRecord.creditValue !== "" &&
+    // Finding CR-209: the parser compares indicator markers
+    // case-insensitively (detection normalises tokens to uppercase), so a
+    // pair equal after uppercasing makes the credit token UNREACHABLE and
+    // every matching row a silent debit. The degenerate pair bounces here,
+    // at the boundary, with the existing bad-spec error.
+    repRecord.debitValue.toUpperCase() !== repRecord.creditValue.toUpperCase()
   ) {
     amountRepresentation = {
       kind: "indicator",

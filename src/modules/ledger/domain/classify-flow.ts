@@ -1,0 +1,116 @@
+// Deterministic flow classification against the sets the user DECLARED,
+// never sets the system guessed (pulse-v1-plan.md classification order;
+// phase M1-P3 step 1). The order is the semantics:
+//
+//   1. Counterparty in the declared reserve set: RESERVE, signed by
+//      direction (the incoming half is the reserve drawdown correction).
+//   2. Counterparty in the declared pot set: INTERNAL.
+//   3. The settlement-match step (owner v0.2 addendum section 5, decision
+//      D-11), BETWEEN the declared-set checks and the sign fallback.
+//   4. Otherwise sign decides: negative SPEND, positive INCOME, with the
+//      refund and cash-withdrawal corrections applied on the way.
+//
+// A row none of that reaches (a zero amount: no direction to read) is
+// UNRESOLVED: shown as a visible gap, never dropped, never defaulted into
+// a total (charter constraint).
+//
+// Whether an INTERNAL leg finds its partner is pairing's question, not
+// classification's: an unmatched leg STAYS INTERNAL and is flagged by the
+// interpretation (pulse-domain section 4).
+
+import type { Flow } from "./flow";
+import {
+  correctCardSettlement,
+  correctCashWithdrawal,
+  correctRefund,
+  correctReserveDrawdown,
+} from "./corrections";
+import type {
+  CardImportSummary,
+  DeclaredSets,
+  LedgerTransaction,
+} from "./ledger-transaction";
+
+export type ClassificationContext = {
+  readonly sets: DeclaredSets;
+  readonly cardImports: readonly CardImportSummary[];
+  readonly outgoingHistoryKeys: ReadonlySet<string>;
+};
+
+export type Classification = {
+  readonly flow: Flow;
+  // Set when the settlement-match step paired this debit to a card import.
+  readonly settledCardImportId?: string;
+  // Set on the card-side positive settlement row (the mirror leg).
+  readonly settlementMirror?: boolean;
+  // Set by the cash-withdrawal correction: the row's destination is
+  // "cash", its own destination, never split.
+  readonly cashDestination?: boolean;
+};
+
+export const classifyFlow = (
+  transaction: LedgerTransaction,
+  context: ClassificationContext,
+): Classification => {
+  const { sets } = context;
+
+  // 1. Declared reserve set, both directions. Outgoing parks money;
+  // incoming is the drawdown correction: RESERVE, never INCOME.
+  if (
+    transaction.counterpartyIban !== undefined &&
+    sets.reserveIbans.has(transaction.counterpartyIban)
+  ) {
+    return transaction.amountCents > 0
+      ? { flow: correctReserveDrawdown(transaction, sets.reserveIbans) ?? "RESERVE" }
+      : { flow: "RESERVE" };
+  }
+
+  // 2. Declared pot set: a movement between two of the household's own
+  // pot accounts, excluded from both sides whatever pairing finds.
+  if (
+    transaction.counterpartyIban !== undefined &&
+    sets.potIbans.has(transaction.counterpartyIban)
+  ) {
+    return { flow: "INTERNAL" };
+  }
+
+  // 3. The settlement-match step, between the declared-set checks and the
+  // sign fallback: the settlement debit carries no counterparty IBAN, so
+  // only its pattern, amount and date can identify it (decision D-11).
+  const settlement = correctCardSettlement(
+    transaction,
+    sets,
+    context.cardImports,
+  );
+  if (settlement !== undefined) {
+    if (settlement.kind === "settled-debit") {
+      return { flow: "INTERNAL", settledCardImportId: settlement.cardImportId };
+    }
+    if (settlement.kind === "mirror-credit") {
+      return { flow: "INTERNAL", settlementMirror: true };
+    }
+    // A settlement-pattern debit with no matching card import: honest
+    // aggregate SPEND against the issuer, never INTERNAL, never
+    // UNRESOLVED (criterion 2.8, hazard H2.6).
+    return { flow: "SPEND" };
+  }
+
+  // 4. Sign decides, with the remaining corrections.
+  if (transaction.amountCents < 0) {
+    const cash = correctCashWithdrawal(transaction);
+    if (cash !== undefined) {
+      return { flow: cash.flow, cashDestination: true };
+    }
+    return { flow: "SPEND" };
+  }
+  if (transaction.amountCents > 0) {
+    const refund = correctRefund(transaction, context.outgoingHistoryKeys);
+    if (refund !== undefined) {
+      return { flow: refund };
+    }
+    return { flow: "INCOME" };
+  }
+
+  // A zero amount has no direction to read.
+  return { flow: "UNRESOLVED" };
+};

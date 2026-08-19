@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import { detectSourceProfile } from "../../src/modules/import/domain/detect-profile";
 import { parseAmountToCents } from "../../src/modules/import/domain/parse-amount";
 import { parseStatement } from "../../src/modules/import/domain/parse-statement";
+import { parseSourceProfileSpec } from "../../src/modules/import/domain/source-profile";
 import type { SourceProfileSpec } from "../../src/modules/import/domain/source-profile";
 
 // Criterion 1.1: deterministic profile detection and parsing against the
@@ -189,6 +190,183 @@ describe("generic comma-delimited fixture (debit and credit pair)", () => {
       expect(Number.isInteger(amount)).toBe(true);
     }
     expect(parsed.value.rows[0]?.counterpartyName).toBe("Müller GmbH");
+  });
+});
+
+describe("a signed cell under an indicator representation fails loud (finding CR-305)", () => {
+  // Sibling of CR-208's class: under the indicator representation the
+  // MARKER is the sign authority and the amount cell must be a bare
+  // magnitude. Before this fix the branch took Math.abs of the cell, so
+  // "-742,10" beside marker C silently parsed +74210: sign information
+  // present in the cell was discarded instead of refused.
+  const indicatorSpec: SourceProfileSpec = {
+    delimiter: ";",
+    encoding: "utf-8",
+    headerRowIndex: 0,
+    dateFormat: "DD.MM.YY",
+    decimalStyle: "comma",
+    amountRepresentation: {
+      kind: "indicator",
+      amountColumn: 1,
+      indicatorColumn: 2,
+      debitValue: "D",
+      creditValue: "C",
+    },
+    columns: { bookingDate: 0, description: 3 },
+  };
+  const rowBytes = (row: string): Uint8Array =>
+    new TextEncoder().encode(["Datum;Bedrag;D/C;Omschrijving", row].join("\n"));
+
+  test("a negative cell beside a credit marker is a row error, never absoluted", () => {
+    const parsed = parseStatement(rowBytes("03.08.26;-742,10;C;ACME STORE"), indicatorSpec);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error).toMatchObject({ kind: "row-error", problem: "amount" });
+    }
+  });
+
+  test("an explicit plus sign beside a debit marker is a row error", () => {
+    const parsed = parseStatement(rowBytes("03.08.26;+15,25;D;ACME STORE"), indicatorSpec);
+    expect(parsed.ok).toBe(false);
+  });
+
+  test("bare magnitudes keep parsing, signed by the marker", () => {
+    const parsed = parseStatement(rowBytes("03.08.26;742,10;D;ACME STORE"), indicatorSpec);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.value.rows[0]?.amountCents).toBe(-74210);
+    }
+  });
+
+  test("a sign hidden behind currency noise is still a row error (finding CR-307)", () => {
+    // The guard and the parser must judge the SAME normalised string:
+    // "EUR -742,10" starts with "E", so a first-character guard passes
+    // it, while the parser strips the currency noise and then reads the
+    // sign, storing a credit as -74210.
+    const parsed = parseStatement(rowBytes("03.08.26;EUR -742,10;C;ACME STORE"), indicatorSpec);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error).toMatchObject({ kind: "row-error", problem: "amount" });
+    }
+  });
+
+  test("currency noise without a sign keeps parsing (finding CR-307 control)", () => {
+    const parsed = parseStatement(rowBytes("03.08.26;EUR 742,10;D;ACME STORE"), indicatorSpec);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.value.rows[0]?.amountCents).toBe(-74210);
+    }
+  });
+});
+
+describe("case-colliding indicator tokens are rejected at the boundary (finding CR-209)", () => {
+  // parseStatement compares indicator markers case-insensitively (the
+  // detector normalises tokens to uppercase), so a spec whose two tokens
+  // are equal after uppercasing has an UNREACHABLE credit token: every
+  // matching row would sign as debit with no error. The validator refuses
+  // the degenerate pair at the boundary instead of letting a sign become
+  // a foregone conclusion.
+  const indicatorSpec = (debitValue: string, creditValue: string): unknown => ({
+    delimiter: ";",
+    encoding: "utf-8",
+    headerRowIndex: 1,
+    dateFormat: "DD.MM.YY",
+    decimalStyle: "comma",
+    amountRepresentation: {
+      kind: "indicator",
+      amountColumn: 3,
+      indicatorColumn: 4,
+      debitValue,
+      creditValue,
+    },
+    columns: { bookingDate: 0, description: 2 },
+  });
+
+  test("tokens differing only in case are rejected: the credit token would be unreachable", () => {
+    const parsed = parseSourceProfileSpec(indicatorSpec("X", "x"));
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error).toEqual({
+        kind: "invalid-spec",
+        at: "amountRepresentation",
+      });
+    }
+  });
+
+  test("identical tokens are rejected the same way", () => {
+    const parsed = parseSourceProfileSpec(indicatorSpec("D", "D"));
+    expect(parsed.ok).toBe(false);
+  });
+
+  test("distinct tokens keep validating", () => {
+    const parsed = parseSourceProfileSpec(indicatorSpec("D", "C"));
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok && parsed.value.amountRepresentation.kind === "indicator") {
+      expect(parsed.value.amountRepresentation.debitValue).toBe("D");
+      expect(parsed.value.amountRepresentation.creditValue).toBe("C");
+    }
+  });
+});
+
+describe("signed values in directional columns fail loud (finding CR-208)", () => {
+  // A debit or credit column is DIRECTIONAL: the column decides the sign,
+  // so a cell that carries its own sign is a convention the profile did
+  // not declare. Before this fix, the debitCredit branch negated the
+  // parsed value instead of a magnitude, so "-742.10" in a Debit column
+  // silently stored +74210: a full sign inversion (reviewer construction
+  // P7b, filed as CR-208). A sign is never guessed: the row fails, which
+  // fails the import loudly with zero rows written.
+  const pairSpec: SourceProfileSpec = {
+    delimiter: ",",
+    encoding: "utf-8",
+    headerRowIndex: 0,
+    dateFormat: "YYYY-MM-DD",
+    decimalStyle: "dot",
+    amountRepresentation: { kind: "debitCredit", debitColumn: 1, creditColumn: 2 },
+    columns: { bookingDate: 0, description: 3 },
+  };
+  const bytes = (rows: readonly string[]): Uint8Array =>
+    new TextEncoder().encode(["Date,Debit,Credit,Description", ...rows].join("\n"));
+
+  const expectRowError = (row: string): void => {
+    const parsed = parseStatement(bytes([row]), pairSpec);
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) {
+      return;
+    }
+    expect(parsed.error).toMatchObject({ kind: "row-error", problem: "amount" });
+  };
+
+  test("a negative value inside the debit column is a row error, never an inverted sign", () => {
+    expectRowError("2026-08-03,-742.10,,ACME STORE");
+  });
+
+  test("a negative value inside the credit column is a row error", () => {
+    expectRowError("2026-08-04,,-15.25,REFUND CORNER SHOP");
+  });
+
+  test("an explicit plus sign inside the debit column is a row error", () => {
+    expectRowError("2026-08-05,+88.00,,ACME STORE");
+  });
+
+  test("a sign hidden behind currency noise in a debit column is a row error (finding CR-307)", () => {
+    // "EUR -742,10" slips past a first-character sign guard and the
+    // debitCredit branch then negates the PARSED (already negative)
+    // value: +74210 stored under a Debit header, the exact CR-208
+    // inversion one normalisation step deeper.
+    expectRowError("2026-08-03,EUR -742.10,,ACME STORE");
+  });
+
+  test("unsigned magnitudes keep parsing: debit negative, credit positive", () => {
+    const parsed = parseStatement(
+      bytes(["2026-08-03,742.10,,ACME STORE", "2026-08-04,,15.25,REFUND"]),
+      pairSpec,
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+    expect(parsed.value.rows.map((row) => row.amountCents)).toEqual([-74210, 1525]);
   });
 });
 

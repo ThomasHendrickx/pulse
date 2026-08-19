@@ -1,0 +1,813 @@
+kind: work-history
+phase: M1-P3
+prompt: |
+  You are the implementer for phase M1-P3 (one pot) of the Pulse delivery. Your brief is /home/user/pulse-fleet/implementer-brief-m1-p3.md: read it fully first, including the appended fleet warnings, and follow it as your contract. Your working tree is the fresh clone /home/user/pulse-fleet/worktrees/m1-p3-one-pot on branch claude/m1-p3-one-pot (based on main 12de8f5, which contains the merged M1-P2 import phase). Do all work there, never in /home/user/pulse.
+
+  Read the three repo skills before writing code: .claude/skills/pulse-domain/SKILL.md (mandatory: flow classification, transfer pairing, the four corrections, reconciliation identity, facts vs interpretation), pulse-typescript, and pulse-frontend for any UI work. The phase spec in the brief is exact on: declared-set precedence (reserve before pot before the settlement-match step before sign), the owner's v0.2 addendum section 5 settlement matching (pattern plus amount plus date window, D-11, supersedes any declared-identifier mechanism), transfer pairing determinism with D-7's 4-day window and date-then-id tie-breaks, interpretation over the period window across accounts (never over imported rows), recompute, profile-fix re-parse from rawLine (closes hazard H1.3), and the reconciliation identity as a property test in integer cents. The charter's stop-for list covers the reconciliation identity, flow semantics and the meaning of the four corrections: implement them exactly as specified, and if you believe the spec itself is wrong, STOP and report rather than improvising.
+
+  Two carried backlog items are assigned to this round and are in scope (src/modules/import is on files-to-touch): CR-208, a negative value inside a Debit-headed or Credit-headed directional column currently parses sign-inverted, fix by failing loud (row error, import FAILED, zero rows) on signed values in directional columns, red witness first. CR-209, parseSourceProfileSpec accepts case-colliding indicator tokens (debitValue "X", creditValue "x") making the credit token unreachable, fix by rejecting equal-after-uppercase pairs, red witness first.
+
+  Environment facts (also in the brief's warnings): never use ambient DATABASE_URL/DIRECT_URL (they point at a foreign project), pin connection strings to the local supabase stack explicitly; the docker daemon may be dead, restart with sudo dockerd if supabase start fails; Node for tiphys commands needs export NVM_DIR=/opt/nvm && . /opt/nvm/nvm.sh; npm only; integer cents; imported facts immutable (interpretation lives in its own columns/tables, the re-parse path is the ONLY facts rebuild and it must preserve declarations); every table carries householdId with RLS enabled in any new migration; no em dashes anywhere; English everywhere.
+
+  Work in small commits pushed incrementally to origin claude/m1-p3-one-pot (git push -u origin claude/m1-p3-one-pot on first push) so nothing is lost if you are killed; if you are killed and resumed, reread your last commits and continue rather than restarting. Red witness before green for every behavior. Before reporting done: npm run typecheck, npm run lint, npm test, npm run test:e2e all exit 0 in your clone, and delivery/work-history/m1-p3.yaml written and schema-valid (npx tiphys validate --type work-history with a context containing the plan), with notes in delivery/work-history/m1-p3-notes.md. Your final message is a report: per-criterion status with executed evidence, deviations declared, open questions, head sha.
+
+  MID-PHASE COORDINATOR MESSAGE, verbatim in substance: the session was killed by a transient connection error while starting the work history; commits through 0eec116 are safe, resume, do not restart. The escalation in f2dc75b was correct and is resolved: main DID lack the approved M1-P2 fix round (PR #9 merged the pre-fix head because the fix-round push had not landed on origin). The repair is merged: main is now 6fc43c9, whose code tree is exactly the reviewed 41ff037 state, including creditValue and the parseSourceProfileSpec needed for CR-209. Do in order: rebase onto origin/main (take incoming main in src/modules/import conflicts, re-apply CR-208 on top), re-run all gates, implement CR-209 red witness first, update the escalation note to record the resolution rather than deleting it, finish the work history, validate with tiphys, push with --force-with-lease, report per criterion with head sha.
+files-touched:
+  - delivery/work-history/m1-p3-notes.md
+  - delivery/work-history/m1-p3.yaml
+  - package.json
+  - package-lock.json
+  - prisma/schema/import.prisma
+  - prisma/schema/ledger.prisma
+  - prisma/schema/migrations/20260819152307_transfer_links/migration.sql
+  - prisma/schema/platform.prisma
+  - src/modules/accounts/adapters/account-repository.ts
+  - src/modules/accounts/application/index.ts
+  - src/modules/accounts/application/ports.ts
+  - src/modules/import/adapters/import-repository.ts
+  - src/modules/import/application/confirm-import.ts
+  - src/modules/import/application/fix-profile.ts
+  - src/modules/import/application/index.ts
+  - src/modules/import/application/ports.ts
+  - src/modules/import/application/upload-statement.ts
+  - src/modules/import/domain/dedup.ts
+  - src/modules/import/domain/parse-amount.ts
+  - src/modules/import/domain/parse-statement.ts
+  - src/modules/import/domain/source-profile.ts
+  - src/modules/ledger/adapters/ledger-repository.ts
+  - src/modules/ledger/application/index.ts
+  - src/modules/ledger/application/interpret-window.ts
+  - src/modules/ledger/application/ports.ts
+  - src/modules/ledger/domain/classify-flow.ts
+  - src/modules/ledger/domain/constants.ts
+  - src/modules/ledger/domain/corrections.ts
+  - src/modules/ledger/domain/flow.ts
+  - src/modules/ledger/domain/interpret.ts
+  - src/modules/ledger/domain/ledger-transaction.ts
+  - src/modules/ledger/domain/pair-transfers.ts
+  - src/modules/ledger/domain/plain-date-distance.ts
+  - src/modules/ledger/domain/reconciliation.ts
+  - src/modules/ledger/ui/actions.ts
+  - test/application/fake-import-world.ts
+  - test/application/interpret.test.ts
+  - test/application/reparse.test.ts
+  - test/domain/classify-flow.test.ts
+  - test/domain/corrections.test.ts
+  - test/domain/pair-transfers.test.ts
+  - test/domain/profile-detection.test.ts
+  - test/property/reconciliation.test.ts
+per-step-commits:
+  - sha: 6608d6d
+    subject: "M1-P3: open work-history notes with mandated-reading record"
+  - sha: 82af1dd
+    subject: "Record escalation: main lacks the approved M1-P2 fix round; CR-209 blocked on this base"
+  - sha: b2ffc79
+    subject: "Close CR-208: a signed value in a directional column is a row error, never an inverted sign"
+  - sha: ce03e32
+    subject: "Ledger domain: declared-set classification, the four corrections, deterministic pairing, reconciliation identity"
+  - sha: 25a70de
+    subject: "Reconciliation identity as a fast-check property over generated datasets (criterion 2.4)"
+  - sha: 2e030ec
+    subject: "Add TransferLink: interpretation-layer pairing table with RLS enabled (decision D-6, D-11)"
+  - sha: 63e34ac
+    subject: "Ledger application: window interpretation, recompute, adapter, pipeline wiring after ingest"
+  - sha: 98f4451
+    subject: "Interpretation heals across imports over the period window (criterion 2.5)"
+  - sha: 6cb634a
+    subject: "Profile-fix re-parse: rebuild facts from stored rawLine without re-upload or lost declarations (criterion 2.7)"
+  - sha: ee08bdb
+    subject: "Recompute as a dev-only server action; e2e gate green with fully pinned local env"
+  - sha: 9b49cfb
+    subject: "Close CR-209: case-colliding indicator token pairs bounce at the spec boundary"
+  - sha: f274d30
+    subject: "M1-P3 work history, schema-validated, with claim-grep settlement pass"
+  - sha: 0e9bdbc
+    subject: "Close CR-305: a signed cell under an indicator representation is a row error, never absoluted"
+  - sha: 1f7e1ea
+    subject: "Close CR-301: settlement matching resolves against whole card imports, never a window slice"
+  - sha: 015b1c7
+    subject: "Close CR-303: refund history is scope-free, read from the whole ledger for window runs"
+  - sha: 6fe07de
+    subject: "Close CR-306: at most one settlement debit per card import, deterministic tie-break, losers stay honest SPEND"
+  - sha: be49a82
+    subject: "Close CR-302 and CR-304: re-parse keys from the full file with insert-ignore semantics; facts rewrite downgrades imports to INGESTED atomically"
+  - sha: c3f566a
+    subject: "Fix round 1 recorded in the work history, schema-validated"
+  - sha: 8b3059f
+    subject: "Close CR-307: directional cells parse through an unsigned entry point, guard and parser judge one normalised string"
+key-decisions:
+  - decision: >-
+      The settlement date window is SETTLEMENT_DATE_WINDOW_DAYS = 45, a
+      named constant measured between the settlement debit's booking date
+      and the card statement's period end (latest booking date in the
+      import); candidate card imports tie-break by smallest date distance
+      then lowest import id, the same shape as D-7's pairing tie-break.
+    why: >-
+      D-11 mandates "within a date window held as a named constant" and
+      leaves the value open; 45 days spans a monthly statement cycle plus
+      the direct-debit lag, and the match additionally requires the
+      code-owned pattern AND an exact amount, so width buys robustness
+      rather than false positives. One line to change plus a recompute.
+  - decision: >-
+      A card account is a POT account without an IBAN; a card import's
+      settlement total is the sum of its debit line items (settlement
+      credit rows excluded); the card-side mirror row links to the
+      settlement debit within the D-7 4-day tolerance; a settlement leg
+      whose other side is absent (debit without mirror row, mirror row
+      without debit) joins the surfaced unmatched-internal set.
+    why: >-
+      The observed card export carries no own-account identifier and CSV
+      statements carry no total field, so the addendum's "otherwise the
+      sum of its line items" arm applies; the debit and its arrival on the
+      card are one movement seen twice, so the transfer tolerance is the
+      honest window; and counting a one-sided settlement as matched would
+      make the reconciliation difference stop equaling the surfaced gaps.
+  - decision: >-
+      UNRESOLVED arises exactly for zero-amount rows: the declared-set
+      checks, the settlement step and the sign fallback classify every
+      nonzero row deterministically.
+    why: >-
+      The intake's classification order is total for nonzero amounts; a
+      zero amount has no direction for the sign fallback to read, and
+      defaulting it into a total is the charter's named failure. The
+      property test's coverage tally reddens if this classification stops
+      being reachable (mutation P3, captured in the notes).
+  - decision: >-
+      Interpretation for an import runs over the import's booking-date
+      span padded by INTERPRETATION_WINDOW_PADDING_DAYS = 49 (settlement
+      45 plus transfer 4) across all pot accounts; recompute is the same
+      function with no bounds; persistence is one transaction that deletes
+      links touching the interpreted set, writes flows set-based per flow
+      value, inserts the new links and moves touched imports INGESTED to
+      INTERPRETED. A stated residue: a pair straddling the padded edge can
+      be re-marked unmatched by a window run; recompute is the canonical
+      repair and the leg is surfaced rather than hidden. Recorded at the
+      constant's definition in src/modules/ledger/domain/constants.ts.
+    why: >-
+      The architecture mandates window interpretation distinct from
+      recompute; the padding makes every transfer partner and settlement
+      match of an in-period row part of the loaded context, and the
+      documented residue is preferred over a bespoke incremental link
+      reconciliation that the deliberately-absent list warns against.
+  - decision: >-
+      The ledger adapter reads transactions' fact columns and writes ONLY
+      interpretation state (transactions.flow, transfer_links, the
+      INGESTED to INTERPRETED status move), although the transactions
+      table is declared in the import module's schema file.
+    why: >-
+      pulse-domain's layer table assigns Transaction.flow to the
+      interpretation layer written by the engine, and the ledger module
+      owns the engine; the alternative (routing flow writes through the
+      import module's published interface) would put interpretation
+      vocabulary into the import module's contract. The boundary held is
+      the facts/interpretation LAYER, stated in the adapter header.
+  - decision: >-
+      The import pipeline gained its interpret stage: ImportDependencies
+      carries an interpret function called after every successful ingest
+      claim on both the upload and confirm paths, bound in the composition
+      root to the ledger module's published interpretForImport.
+    why: >-
+      The architecture's pipeline is parse, identify, declare, ingest,
+      interpret, and criterion 2.5's healing needs interpretation to run
+      on upload; the port keeps the fast gate database-free (the fake
+      world binds the same use case over in-memory ports).
+  - decision: >-
+      The profile-fix re-parse preserves row identity: applyReparse is one
+      database transaction that updates the profile spec, parks every
+      touched row on a collision-free temporary dedup key derived from its
+      id, then rewrites fact columns and final keys per row from the
+      re-parsed rawLine. parseStatementRow is the same function the upload
+      parser uses per line, extracted rather than duplicated.
+    why: >-
+      Two rows can exchange dedup keys under a corrected spec while the
+      per-household unique index is checked per statement, so the two
+      phases are what make in-place identity-preserving rebuild possible;
+      one shared row parser is what stops the upload path and the re-parse
+      path from drifting apart.
+  - decision: >-
+      fast-check 4.9.0 was added as a devDependency for criterion 2.4.
+    why: >-
+      The acceptance criterion names fast-check explicitly; it is
+      test-only and adds no runtime dependency, so the charter's
+      new-runtime-dependency stop-for is not touched.
+  - decision: >-
+      Mechanism lookup (mechanism-lookup clause):
+      tuition/mechanism-index.yaml was read at
+      node_modules/@tiphys/kernel/tuition/mechanism-index.yaml (the
+      project's own delivery/tuition/ is empty). Its fifteen entries are
+      kernel-process mechanisms (claim files, leases, append-only logs,
+      worktree removal, reporter parsing, generated-artifact drift); it
+      has no entry for flow classification, transfer pairing, settlement
+      matching, interpretation windows, Prisma migrations or re-parse,
+      which is a recorded answer, not a skipped lookup. Two general rules
+      were still applied: assert-by-name over append-only registries (the
+      RLS test derives tables from the DMMF and reddened on the new
+      table) and witness-for-a-class-reddens-under-two-members (the
+      mutation witnesses in the notes). gates.manifest.json's
+      destructiveCommands list was read; this phase adds no destructive
+      command, so the list is untouched.
+    why: >-
+      The clause requires stating which rules were found and how each was
+      satisfied, including the honest none-found case.
+  - decision: >-
+      Rebase resolution policy after the base repair (coordinator
+      directed): conflicts in src/modules/import took main's fix-round
+      side as base with this phase's additions re-applied on top; the
+      CR-208 sibling comment in parse-statement.ts was corrected in place
+      under R-087 because its claim that the F2 repair was absent from
+      the base was true when written and became false at 6fc43c9.
+    why: >-
+      Main at 6fc43c9 carries the reviewed 41ff037 tree (F1..F8);
+      re-deriving those fixes independently would fork reviewed code, and
+      quietly deleting the stale comment would hide that anything had
+      been wrong.
+  - decision: >-
+      Fix round 1, CR-306 stop-for judgement: the orchestrator-approved
+      exclusivity rule (at most one settlement debit per card import,
+      D-7-style tie-break by date distance to the statement's period end
+      then lowest transaction id then lowest import id, losers through
+      the existing no-match arm) was judged a deterministic tie-break
+      over an ambiguity the correction text leaves open, not a change to
+      the correction's meaning: both arms keep their written semantics.
+      Implemented rather than escalated, and the judgement is recorded
+      here per the charter's stop-for discipline.
+    why: >-
+      A statement is settled once in the world the correction models; two
+      debits pairing onto one import records one statement as paid twice
+      and can vanish real spend on an exact-cent coincidence (hazard
+      H2.6, reviewer probe P8).
+  - decision: >-
+      Fix round 1, CR-301 design: interpret-window loads card accounts
+      UNBOUNDED (every card import whole) and windows only the other pot
+      accounts, instead of adding a per-import repository read keyed by
+      the imports a window slice happens to touch.
+    why: >-
+      Settlement totals are a property of the card IMPORT (the plan's own
+      wording), and complete-by-construction loading removes the whole
+      class of partial-context reclassification, including the truncated
+      total variant (reviewer probe P1.d); card volumes at household
+      scale make the unbounded read cheap, and the alternative would
+      still need the already-linked-debit guard as a second mechanism.
+  - decision: >-
+      Fix round 1, CR-302 design: re-parse keys are re-derived by
+      simulating ingest's cross-import insert-ignore over the FULL
+      re-parse of each import's rawContent, in import creation order,
+      with stored twins ranked by their existing key (numeric-aware) and
+      a next-free-ordinal fallback for tuples a spec correction merges.
+      The allocation helpers live in dedup.ts at the mechanism's
+      definition; the key recipe itself is untouched.
+    why: >-
+      The stored subset is the wrong basis for ordinals whenever ingest
+      skipped overlap rows: only the file carries the occurrence
+      positions ingest counted, and the simulation is what makes an
+      unchanged-spec re-parse a strict no-op and a corrected-spec
+      re-parse converge with re-uploads adding zero.
+verification-first:
+  - finding: >-
+      The dispatch grounding stated the branch base main 12de8f5 contains
+      the merged M1-P2 import phase as reviewed. Checked before building:
+      git diff 10beb40 12de8f5 --stat showed only plan and review
+      documents differing, so main's code tree equaled the ROUND 0 head
+      10beb40, while git diff 41ff037 12de8f5 --stat showed 29 files and
+      918 deletions relative to the fix-round head both reviewers had
+      approved; grep found no creditValue under src/modules/import and
+      test/domain/dedup.test.ts was absent. The 12de8f5 commit message
+      described the fix round as included, which the tree it carried did
+      not support.
+    contradicts-plan: true
+    stopped-and-reported: >-
+      Recorded and pushed as commit 82af1dd (escalation section in
+      delivery/work-history/m1-p3-notes.md) the moment it was found; the
+      CR-209 thread was stopped as unimplementable on that base while all
+      unblocked phase work continued. RESOLVED mid-phase by the
+      coordinator: PR #9 had merged the pre-fix head because the
+      fix-round push had not landed on origin; the repair merged as main
+      6fc43c9 (the reviewed 41ff037 tree), this branch was rebased onto
+      it, and CR-209 was then implemented. The escalation notes are kept
+      in place with the resolution appended.
+  - finding: >-
+      Recorded evidence check before writing the settlement matcher: the
+      committed kbc-card fixtures and notes/export-format-facts.md
+      confirm the card export carries no own-account identifier, no
+      per-row sequence, a positive settlement row (DOMICILIERING VIA JE
+      BANK), and no statement-total field, so the settlement total of a
+      CSV card import must be computed from its line items, the
+      addendum's fallback arm.
+    contradicts-plan: false
+  - finding: >-
+      Criterion 2.7 names merchant rules among what re-parse must keep
+      intact, and no MerchantRule table or code path exists on this base
+      (they arrive with M1-P4), so that half of the criterion is vacuous
+      here; the test asserts the whole declaration layer (accounts,
+      profile name, profile binding) unchanged instead, and the re-parse
+      writes only fact columns plus dedup keys by construction.
+    contradicts-plan: false
+deviations:
+  - plan-clause: >-
+      M1-P3 files-to-touch (src/modules/ledger/, src/modules/import/,
+      prisma/, test/domain/classify-flow.test.ts,
+      test/domain/pair-transfers.test.ts, test/domain/corrections.test.ts,
+      test/property/reconciliation.test.ts,
+      test/application/interpret.test.ts, test/application/reparse.test.ts)
+    why: >-
+      Four groups of files outside the declared list were needed, each
+      escalated in the notes the moment it was found so the orchestrator
+      can amend the declaration on the base branch before the scope gate
+      runs. (1) src/modules/accounts/{application/ports.ts,
+      application/index.ts, adapters/account-repository.ts}: listAccounts
+      added, because the ledger engine reads the declared account list
+      through the accounts module's PUBLISHED interface rather than its
+      tables. (2) test/application/fake-import-world.ts: the M1-P2 test
+      infrastructure gained ids, a flow mirror, a links store and a
+      ledger-port fake so the real interpret use case runs in the fast
+      gate. (3) test/domain/profile-detection.test.ts: the CR-208 and
+      CR-209 red witnesses live beside the existing parser tests (the
+      backlog assignment names src/modules/import as the scope hook but
+      its witnesses need a test home). (4) package.json and
+      package-lock.json: fast-check devDependency required by criterion
+      2.4. delivery/work-history files are standing extras per the brief.
+gate-evidence:
+  - gate: npm run typecheck (tsc --noEmit, Node v26.7.0, fix-round-2 head 8b3059f)
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: npm run lint (eslint ., Node v26.7.0, fix-round-2 head 8b3059f)
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: npm test (vitest run, Node v26.7.0, no build step required, fix-round-2 head 8b3059f)
+    result: green
+    wrapper-exit-code: 0
+    discovered: 155
+    passed: 155
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: >-
+      npm run test:e2e (playwright test, chromium, dev webServer,
+      fix-round-2 head 8b3059f, after npm run db:reset re-applied all three migrations
+      from scratch and seeded; DATABASE_URL, DIRECT_URL,
+      NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY and
+      SUPABASE_SERVICE_ROLE_KEY all pinned to the local supabase stack in
+      the invoking shell, fleet warning 1)
+    result: green
+    wrapper-exit-code: 0
+    discovered: 4
+    passed: 4
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+fix-round:
+  - mechanism: >-
+      CR-208: a parser branch that derives an amount's sign from
+      representation metadata while silently reinterpreting sign
+      information present in the cell itself (the debitCredit arm negated
+      a parsed value instead of a magnitude, flipping an explicitly
+      negative debit positive).
+    derivation:
+      command: grep -n "parseAmountToCents(" src/modules/import/domain/parse-statement.ts
+      output: |
+        195:    const parsed = parseAmountToCents(
+        211:      const parsed = parseAmountToCents(debitText, spec.decimalStyle);
+        220:      const parsed = parseAmountToCents(creditText, spec.decimalStyle);
+        226:  const parsed = parseAmountToCents(
+        [reading of the four sites: 195 is the signed representation,
+        where a cell sign is the declared convention; 211 and 220 are the
+        two directional debitCredit sub-branches, both now guarded by
+        carriesExplicitSign; 226 is the indicator-branch sibling]
+    not-covered: >-
+      The indicator branch (line 226): it takes Math.abs of the cell, so
+      an explicitly signed cell there is absoluted with the sign authority
+      staying on the marker, a different observable outcome from the
+      inversion CR-208 names. Its unknown-marker fail-loud rule is the
+      M1-P2 fix round's F2, which the repaired base now carries; extending
+      fail-loud to signed cells under an indicator is recorded at the
+      mechanism definition as a candidate follow-up rather than silently
+      added, because the assigned scope names Debit-headed and
+      Credit-headed columns.
+  - mechanism: >-
+      CR-209: a boundary validator that accepts a configuration whose
+      branches are indistinguishable to the comparison the runtime
+      applies (indicator tokens compared case-insensitively downstream,
+      validated only for non-emptiness upstream, so a case-colliding pair
+      makes the credit token unreachable).
+    derivation:
+      command: grep -rn "toUpperCase()" src/modules/import/domain/
+      output: |
+        src/modules/import/domain/dedup.ts:31:  value.toUpperCase().replace(/\s+/g, " ").trim();
+        src/modules/import/domain/source-profile.ts:146:    repRecord.debitValue.toUpperCase() !== repRecord.creditValue.toUpperCase()
+        src/modules/import/domain/parse-statement.ts:238:  const indicator = cellAt(fields, representation.indicatorColumn).toUpperCase();
+        src/modules/import/domain/parse-statement.ts:240:  if (indicator === representation.debitValue.toUpperCase()) {
+        src/modules/import/domain/parse-statement.ts:243:  if (indicator === representation.creditValue.toUpperCase()) {
+        src/modules/import/domain/detect-profile.ts:460:      nonEmptyValues(table, column).map((value) => value.toUpperCase()),
+        [reading of the six sites: parse-statement 238-243 is the
+        case-insensitive comparison the collision defeats; source-profile
+        146 is the new guard; detect-profile 460 does not emit a
+        colliding pair because INDICATOR_PAIRS tokens stay distinct after
+        uppercasing; dedup 31 is key normalisation, not token comparison]
+    not-covered: >-
+      Token pairs that collide under normalisations other than
+      uppercasing (Unicode case folding, locale-dependent case rules,
+      whitespace inside tokens): the runtime comparison uses exactly
+      toUpperCase(), so the guard uses exactly the same normalisation;
+      any future change to the comparison must change the guard with it,
+      stated beside the guard.
+  - mechanism: >-
+      Fix round 1 (findings CR-301, CR-302, CR-303, CR-304; hazard verdict
+      at f274d30): deriving cross-record context from the slice the
+      current operation happened to load or store, instead of from the
+      record's own full extent. Instances of the one mechanism: a card
+      import's settlement total computed from window-loaded rows
+      (CR-301), a re-parsed row's dedup ordinal computed from the
+      import's stored subset instead of its file (CR-302), the refund
+      correction's outgoing history computed from the window (CR-303),
+      and the interpretation-currency marker not derived from the facts
+      generation at all (CR-304: corrected facts under stale flows with
+      the import still reading INTERPRETED).
+    derivation:
+      command: >-
+        grep -rn "summarizeCardImports\|buildOutgoingHistoryKeys\|assignDedupKeys\|outgoingHistoryKeys"
+        src --include=*.ts
+      output: |
+        src/modules/ledger/application/interpret-window.ts:64:  const outgoingHistoryKeys = new Set(historyRefs.map(counterpartyKey));
+        src/modules/ledger/application/interpret-window.ts:69:    outgoingHistoryKeys,
+        src/modules/ledger/domain/classify-flow.ts:37:  readonly outgoingHistoryKeys: ReadonlySet<string>;
+        src/modules/ledger/domain/classify-flow.ts:107:    const refund = correctRefund(transaction, context.outgoingHistoryKeys);
+        src/modules/ledger/domain/interpret.ts:15:  buildOutgoingHistoryKeys,
+        src/modules/ledger/domain/interpret.ts:21:  summarizeCardImports,
+        src/modules/ledger/domain/interpret.ts:61:  readonly outgoingHistoryKeys?: ReadonlySet<string>;
+        src/modules/ledger/domain/interpret.ts:67:  const cardImports = summarizeCardImports(potTransactions, sets);
+        src/modules/ledger/domain/interpret.ts:68:  const outgoingHistoryKeys =
+        src/modules/ledger/domain/interpret.ts:69:    input.outgoingHistoryKeys ?? buildOutgoingHistoryKeys(potTransactions);
+        src/modules/ledger/domain/interpret.ts:77:      outgoingHistoryKeys,
+        src/modules/ledger/domain/corrections.ts:129:  outgoingHistoryKeys: ReadonlySet<string>,
+        src/modules/ledger/domain/corrections.ts:132:  outgoingHistoryKeys.has(counterpartyKey(transaction))
+        src/modules/ledger/domain/corrections.ts:168:export const buildOutgoingHistoryKeys = (
+        src/modules/ledger/domain/ledger-transaction.ts:86:export const summarizeCardImports = (
+        src/modules/import/application/fix-profile.ts:13:// loudly per R-087): an earlier version re-ran assignDedupKeys over each
+        src/modules/import/application/fix-profile.ts:30:  assignDedupKeys,
+        src/modules/import/application/fix-profile.ts:137:    const fileKeys = assignDedupKeys(accountId, fileRows, input.spec);
+        src/modules/import/application/upload-statement.ts:9:import { assignDedupKeys, zipRowsWithDedupKeys } from "../domain/dedup";
+        src/modules/import/application/upload-statement.ts:73:  const keys = assignDedupKeys(account, parsed.value.rows, detected.value);
+        src/modules/import/application/confirm-import.ts:8:import { assignDedupKeys, zipRowsWithDedupKeys } from "../domain/dedup";
+        src/modules/import/application/confirm-import.ts:113:  const keys = assignDedupKeys(accountId, parsed.value.rows, input.spec);
+        src/modules/import/domain/dedup.ts:49:// an empty key is a BUG (a desync between assignDedupKeys and its caller)
+        src/modules/import/domain/dedup.ts:80:export const assignDedupKeys = (
+        [reading of every site, post-fix: interpret.ts:67 is fed a merged
+        set whose card accounts interpret-window loads UNBOUNDED, so
+        settlement totals are always whole-import (CR-301);
+        interpret.ts:68-69 uses the full-ledger key set interpret-window
+        passes and derives from the given set only where that set is
+        complete, recompute and the pure-domain and property tests
+        (CR-303); fix-profile.ts:137 runs over the FULL re-parsed file's
+        rows (CR-302); upload-statement.ts:73 and confirm-import.ts:113
+        always ran over the full parsed file at ingest; the remaining
+        hits are declarations, imports and comments; command run at
+        commit be49a82 in the phase worktree]
+    not-covered: >-
+      Transfer pairing candidates stay window-scoped BY DESIGN (the
+      padded window plus the declared rim residue at
+      INTERPRETATION_WINDOW_PADDING_DAYS): a pairing flip keeps flow
+      INTERNAL and is surfaced, the contrast the hazard reviewer's probe
+      P2 confirmed, so it is not a member of the silent-total class this
+      round fixed. Also outside the derivation: persisted flows at rows
+      no window has revisited since a RULE change (recompute is the
+      canonical repair, unchanged this round), and e2e coverage of the
+      re-parse path (fast-gate port-level only; no UI surface calls
+      fixSourceProfile yet).
+  - mechanism: >-
+      Fix round 2 (finding CR-307, hazard delta sweep): a guard and the
+      operation it guards judging DIFFERENT strings, because the operation
+      normalises its input after the guard has already read it. Instance:
+      carriesExplicitSign tested the raw cell's first character while
+      parseAmountToCents stripped currency noise (EUR, the euro sign)
+      before reading a sign, so "EUR -742,10" passed every directional
+      guard and parsed signed: a credit stored negative under an
+      indicator marker, and the exact CR-208 inversion in a debit column.
+      The fix moves the guard INSIDE the parser (parseUnsignedAmountToCents
+      rejects any sign remaining AFTER the shared normalisation), so the
+      two judgements are one function over one string by construction.
+    derivation:
+      command: >-
+        grep -rn "parseAmountToCents\|parseUnsignedAmountToCents\|stripCurrencyNoise\|carriesExplicitSign"
+        src --include=*.ts
+      output: |
+        src/modules/import/domain/parse-statement.ts:14:import { parseAmountToCents, parseUnsignedAmountToCents } from "./parse-amount";
+        src/modules/import/domain/parse-statement.ts:187:// guard now lives INSIDE the parser as parseUnsignedAmountToCents (see
+        src/modules/import/domain/parse-statement.ts:196:    const parsed = parseAmountToCents(
+        src/modules/import/domain/parse-statement.ts:209:      const parsed = parseUnsignedAmountToCents(debitText, spec.decimalStyle);
+        src/modules/import/domain/parse-statement.ts:215:      const parsed = parseUnsignedAmountToCents(creditText, spec.decimalStyle);
+        src/modules/import/domain/parse-statement.ts:225:  const parsed = parseUnsignedAmountToCents(
+        src/modules/import/domain/parse-amount.ts:25:const stripCurrencyNoise = (rawText: string): string =>
+        src/modules/import/domain/parse-amount.ts:28:export const parseAmountToCents = (
+        src/modules/import/domain/parse-amount.ts:32:  let text = stripCurrencyNoise(rawText);
+        src/modules/import/domain/parse-amount.ts:62:  parseAmountToCents(text, style).ok;
+        src/modules/import/domain/parse-amount.ts:75:export const parseUnsignedAmountToCents = (
+        src/modules/import/domain/parse-amount.ts:79:  const text = stripCurrencyNoise(rawText);
+        src/modules/import/domain/parse-amount.ts:83:  return parseAmountToCents(text, style);
+        [reading of every site, post-fix, command run at commit 8b3059f in
+        the phase worktree: the ONLY remaining direct parseAmountToCents
+        call sites in parse-statement are the signed representation
+        (parse-statement line 196), where a cell sign is the declared
+        convention, and the detection probe isAmountLike (parse-amount
+        line 62); all three directional branches (parse-statement lines
+        209, 215, 225) go through the unsigned entry point;
+        carriesExplicitSign no longer exists anywhere in src]
+    not-covered: >-
+      Currency noise vocabulary: stripCurrencyNoise removes exactly EUR
+      and the euro sign, the shipped normalisation since M1-P2; a future
+      widening of that vocabulary inherits the unsigned guard by
+      construction (one shared function), but any NEW normalisation added
+      elsewhere in the parse path would need the same one-string rule,
+      stated at both definitions. Detection's isAmountLike still uses the
+      signed parser deliberately: detection scores column shapes over
+      signed columns too and writes nothing.
+claims:
+  - id: M1P3-C1
+    kind: coverage
+    statement: >-
+      The declared-set precedence, the four corrections and the surfaced
+      unmatched set are guarded as classes: eight structurally different
+      mutations of the ledger domain (drawdown classified INCOME,
+      pot-before-reserve order swap, settlement matcher returning
+      undefined, pairing content sort removed, pairing window unbound,
+      refund correction defanged, cash correction defanged, unmatched set
+      emptied) each reddened the domain suites and were reverted.
+    settled-by:
+      executed-construction:
+        command: >-
+          python3 mutation harness over
+          src/modules/ledger/domain/{classify-flow,pair-transfers,
+          corrections,interpret}.ts, each mutation followed by npx vitest
+          run test/domain/classify-flow.test.ts
+          test/domain/pair-transfers.test.ts
+          test/domain/corrections.test.ts and a restore (full commands
+          and outputs in delivery/work-history/m1-p3-notes.md)
+        exit-code: 1
+        output: >-
+          M1 5 failed | 30 passed; M2 1 failed | 34 passed; M3b 5 failed |
+          30 passed; M4 3 failed | 32 passed; M5 1 failed | 34 passed; M6
+          3 failed | 32 passed; M7 2 failed | 33 passed; M8 1 failed | 34
+          passed; after restore 35 passed.
+  - id: M1P3-C2
+    kind: coverage
+    statement: >-
+      The reconciliation property test guards the identity's exclusion
+      accounting rather than one example: dropping unmatched transfer
+      legs from surfacing, treating a mirrorless settlement debit as
+      matched, and defaulting zero rows into SPEND each reddened the
+      500-case property run. Category-swap mutations that move a row
+      between counted sides do not break the identity (both sides of the
+      equation move together); those are guarded by the unit suites of
+      claim M1P3-C1, which is why both layers exist.
+    settled-by:
+      executed-construction:
+        command: >-
+          python3 mutation harness (P1, P2 over
+          src/modules/ledger/domain/interpret.ts; P3 over
+          classify-flow.ts), each followed by npx vitest run
+          test/property/reconciliation.test.ts and a restore
+        exit-code: 1
+        output: >-
+          P1 1 failed (1); P2 1 failed (1); P3 1 failed (1), P3 caught by
+          the run-wide coverage assertion that all five flow values
+          occurred; after restore 1 passed (1).
+  - id: M1P3-C3
+    kind: coverage
+    statement: >-
+      Window interpretation's two load-bearing properties (padding wide
+      enough to reach partners of in-period rows, scope spanning all pot
+      accounts) are each guarded: collapsing the window to the import's
+      own dates and restricting the account list both reddened the
+      healing suite.
+    settled-by:
+      executed-construction:
+        command: >-
+          python3 mutation harness over
+          src/modules/ledger/application/interpret-window.ts (W1 padding
+          removed, W2 accountIds sliced to one), each followed by npx
+          vitest run test/application/interpret.test.ts and a restore
+        exit-code: 1
+        output: >-
+          W1 2 failed | 1 passed (3); W2 2 failed | 1 passed (3); after
+          restore 3 passed (3).
+  - id: M1P3-C4
+    kind: coverage
+    statement: >-
+      The re-parse path is guarded against its three failure shapes:
+      stale dedup keys after rebuild, a corrected spec that is not
+      persisted (declaration lost), and unparseable rows skipped instead
+      of failing loud each reddened the reparse suite.
+    settled-by:
+      executed-construction:
+        command: >-
+          python3 mutation harness over
+          src/modules/import/application/fix-profile.ts (R1 stale keys,
+          R2 old spec passed to applyReparse, R3 continue on parse
+          failure), each followed by npx vitest run
+          test/application/reparse.test.ts and a restore
+        exit-code: 1
+        output: >-
+          R1 1 failed | 2 passed (3); R2 1 failed | 2 passed (3); R3 1
+          failed | 2 passed (3); after restore 3 passed (3).
+  - id: M1P3-C5
+    kind: coverage
+    statement: >-
+      CR-208 and CR-209 were red-witnessed against the committed code
+      before their fixes: the CR-208 witness failed with the sign
+      inversion present (a negative debit stored positive), and the
+      CR-209 witness failed with the case-colliding pair accepted, on the
+      repaired base where creditValue exists.
+    settled-by:
+      executed-construction:
+        command: >-
+          npx vitest run test/domain/profile-detection.test.ts, first
+          with the CR-208 describe block against the pre-fix parser, then
+          (after rebase onto 6fc43c9) with the CR-209 describe block
+          against the pre-fix validator; fixes applied afterwards and the
+          suite re-run
+        exit-code: 1
+        output: >-
+          CR-208 red: Tests 3 failed | 25 passed (28); after fix 28
+          passed. CR-209 red: Tests 2 failed | 34 passed (36); after fix
+          36 passed (36).
+  - id: M1P3-C6
+    kind: coverage
+    statement: >-
+      The new transfer_links table carries RLS in the committed migration
+      and in the live schema: the schema-derived RLS test reddened before
+      the enablement line existed and pg_class reports relrowsecurity
+      true for all eight application tables after a from-scratch
+      db:reset.
+    settled-by:
+      executed-construction:
+        command: >-
+          npx vitest run test/schema (red before the migration carried
+          ENABLE ROW LEVEL SECURITY, green after) and psql -Atc "select
+          relname, relrowsecurity from pg_class where
+          relnamespace='public'::regnamespace and relkind='r' order by 1"
+          against the reset local database (127.0.0.1:54322)
+        exit-code: 0
+        output: >-
+          Red first: 1 failed | 23 passed. After: 24 passed; psql:
+          _prisma_migrations|f accounts|t households|t imports|t
+          source_profiles|t transactions|t transfer_links|t users|t.
+  - id: M1P3-C10
+    kind: coverage
+    statement: >-
+      Fix round 1, each finding red-witnessed against the committed code
+      before its fix, with the reviewer's probes reproduced as tests:
+      CR-305 (signed indicator cell absoluted), CR-301 (two-upload window
+      flip of a settled debit), CR-303 (refund INCOME under a later
+      window), CR-306 (two equal debits both INTERNAL onto one import,
+      plus the id tie-break and the two-imports allocation), CR-302 (the
+      overlap no-op and convergence runs aborting on the unique key the
+      fake now enforces), CR-304 (import reading INTERPRETED over
+      corrected facts when interpret dies).
+    settled-by:
+      executed-construction:
+        command: >-
+          npx vitest run per suite, each run BEFORE the corresponding fix
+          landed, captured in delivery/work-history/m1-p3-notes.md fix
+          round section (profile-detection for CR-305; interpret for
+          CR-301 and CR-303; corrections for CR-306; reparse for CR-302
+          and CR-304)
+        exit-code: 1
+        output: >-
+          CR-305: 2 failed | 37 passed. CR-301: 1 failed | 3 passed,
+          "expected 'SPEND' to be 'INTERNAL'". CR-303: 1 failed | 4
+          passed, "expected 'INCOME' to be 'SPEND'". CR-306: 3 failed |
+          13 passed. CR-302 and CR-304 together: 3 failed | 3 passed,
+          with "Unique constraint violation on (householdId, dedupKey):
+          h:...#0" on both CR-302 witnesses and "expected 'INTERPRETED'
+          to be 'INGESTED'" on the CR-304 witness. After the fixes: 152
+          passed, exit 0.
+  - id: M1P3-C11
+    kind: coverage
+    statement: >-
+      The fake world's applyReparse now enforces the per-household unique
+      (householdId, dedupKey) index all-or-nothing, matching the header's
+      mirrored-insert-semantics claim, so the fast gate can see the
+      adapter's abort behaviour: both CR-302 witnesses reddened through
+      exactly that enforcement before the fix, and the whole existing
+      suite stayed green under the enforcement alone.
+    settled-by:
+      executed-construction:
+        command: >-
+          npx vitest run test/application (after adding the staged unique
+          check, before the fix-profile rewrite), then npx vitest run
+          test/application/reparse.test.ts
+        exit-code: 1
+        output: >-
+          Enforcement alone: 20 passed. With the overlap witnesses: 3
+          failed | 3 passed, both CR-302 reds aborting on
+          h:bf5ac2e4...#0.
+  - id: M1P3-C12
+    kind: coverage
+    statement: >-
+      Fix round 2, CR-307 red-witnessed against the committed code before
+      the fix, both reviewer shapes: the indicator cell "EUR -742,10"
+      beside marker C parsed instead of erroring, and the debitCredit
+      debit cell "EUR -742.10" parsed to the CR-208 inversion; after the
+      fix both are row errors and the unsigned control ("EUR 742,10")
+      still parses.
+    settled-by:
+      executed-construction:
+        command: >-
+          npx vitest run test/domain/profile-detection.test.ts, first
+          with the two CR-307 witnesses against the pre-fix parser, then
+          after the parseUnsignedAmountToCents fix
+        exit-code: 1
+        output: >-
+          Red: Tests 2 failed | 40 passed (42). After the fix: 42 passed
+          (42); full suite 155 passed, exit 0.
+  - id: M1P3-C7
+    kind: open-question
+    statement: >-
+      The settlement window value (45 days) and the settlement pattern
+      lists (one debit pattern, one credit pattern, code-owned) are
+      grounded in the two observed statement formats only; the first real
+      import of another bank's card format may need a wider pattern list,
+      which is a constants-file change plus recompute. Whether 45 days is
+      right for non-monthly statement cycles is unverified.
+  - id: M1P3-C8
+    kind: open-question
+    statement: >-
+      The window-interpretation rim residue stated at
+      INTERPRETATION_WINDOW_PADDING_DAYS: a pair whose one leg sits in
+      the outer padding rim of a window run while its partner lies beyond
+      it can be re-marked unmatched until a recompute runs. Not observed
+      in any test or realistic upload pattern this phase constructed; a
+      periodic or post-import recompute would close it mechanically if it
+      is ever observed.
+  - id: M1P3-C9
+    kind: open-question
+    statement: >-
+      Refund detection keys on counterparty IBAN, else counterparty name,
+      else description (minimally normalised). A refund whose incoming
+      row spells the counterparty differently from the matching outgoing
+      rows will classify INCOME until M1-P4's merchant normalisation
+      improves the key; the reverse over-match (an unrelated credit
+      matching an outgoing description) classifies SPEND with a positive
+      amount. Both are interpretation-layer outcomes, rebuildable by
+      recompute after M1-P4 lands.
+environment-warnings:
+  - warning: >-
+      The ambient shell's foreign Supabase variables reach the Playwright
+      webServer too, not only Prisma: NEXT_PUBLIC_SUPABASE_URL and
+      SUPABASE_SERVICE_ROLE_KEY from the environment override .env for
+      the next dev process, so an e2e run with only the database URLs
+      pinned signs up against the foreign project's auth and fails with
+      "Sign-up did not complete". Pin all five values (DATABASE_URL,
+      DIRECT_URL, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      SUPABASE_SERVICE_ROLE_KEY) in the shell that invokes npm run
+      test:e2e.
+    evidence: >-
+      First e2e run at ee08bdb's predecessor: 3 failed with sign-up
+      errors while only DATABASE_URL/DIRECT_URL were pinned; identical
+      run with all five pinned: 4 passed, exit 0. Ambient env listed
+      NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (foreign
+      project values).
+  - warning: >-
+      sudo dockerd revives the m1-p1-skeleton supabase containers with
+      their data volume intact (the M1-P2 warning still holds); supabase
+      start is not needed and a second stack would fight for the ports.
+      npx supabase status prints the local demo keys needed for .env.
+    evidence: >-
+      docker ps after sudo dockerd: supabase_db/kong/auth/rest
+      m1-p1-skeleton all Up within 30 seconds; psql select 1 on
+      127.0.0.1:54322 succeeded.
+  - warning: >-
+      Session kills mid-phase remain routine (one transient connection
+      kill during this phase, while the work history was being started).
+      Small pushed commits plus the continuously appended notes file made
+      resume lossless; the coordinator's resume message named the exact
+      surviving head.
+    evidence: >-
+      Coordinator resume message naming 0eec116; git log at resume showed
+      all ten commits present on origin.
+  - warning: >-
+      A squash-merge can silently land a different tree than the one
+      reviewers approved when the fix-round push never reached origin:
+      PR #9 merged the M1-P2 round-0 tree under a message describing the
+      fix-round tree. Caught here only because the base was diffed
+      against both candidate heads before building on it. Proposed as
+      kernel tuition, unexecuted here: a check that the merge result's
+      tree equals the approved review head, run at merge time, is the
+      mechanical shape of the guard this class calls for.
+    evidence: >-
+      git diff 10beb40 12de8f5 --stat (three doc files) versus git diff
+      41ff037 12de8f5 --stat (29 files, 918 deletions), recorded in the
+      escalation section of the notes; repair merged as 6fc43c9.

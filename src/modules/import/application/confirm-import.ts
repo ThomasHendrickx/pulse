@@ -126,6 +126,7 @@ export const confirmImport = async (
   if (!ingested.ok) {
     return { kind: "rejected", reason: "already-confirmed" };
   }
+  await deps.interpret(context, record.id);
   return {
     kind: "ingested",
     importId: record.id,

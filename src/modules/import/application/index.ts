@@ -9,6 +9,7 @@ import {
   findAccountByIban,
   getAccountById,
 } from "@/modules/accounts/application";
+import { interpretForImport } from "@/modules/ledger/application";
 import { delimitedFileParser } from "../adapters/delimited-file-parser";
 import * as repository from "../adapters/import-repository";
 import type { NewAccount } from "@/modules/accounts/application";
@@ -19,9 +20,16 @@ import {
   uploadStatement as uploadStatementUseCase,
   type UploadOutcome,
 } from "./upload-statement";
+import {
+  fixSourceProfile as fixSourceProfileUseCase,
+  type FixProfileError,
+  type FixProfileResult,
+} from "./fix-profile";
+import type { Result } from "@/platform/result";
 import type { ImportDependencies, ImportRecord } from "./ports";
 
 export type { ConfirmOutcome } from "./confirm-import";
+export type { FixProfileError, FixProfileResult } from "./fix-profile";
 export type { UploadOutcome } from "./upload-statement";
 export type {
   ImportFailureReason,
@@ -41,10 +49,17 @@ const liveDependencies: ImportDependencies = {
     getImport: repository.getImport,
     listProfiles: repository.listProfiles,
     createProfile: repository.createProfile,
+    getProfile: repository.getProfile,
+    listImportIdsForProfile: repository.listImportIdsForProfile,
+    listFactRowsForImport: repository.listFactRowsForImport,
+    applyReparse: repository.applyReparse,
     markImportFailed: repository.markImportFailed,
     ingestRows: repository.ingestRows,
   },
   accounts: { findAccountByIban, getAccountById, declareAccount },
+  interpret: async (context, importId) => {
+    await interpretForImport(context, importId);
+  },
 };
 
 export const uploadStatement = (
@@ -71,6 +86,15 @@ export const findProfileForSpec = (
   context: HouseholdContext,
   spec: SourceProfileSpec,
 ) => findProfileBySpec(context, liveDependencies, spec);
+
+// The profile-fix re-parse: repairs facts written under a wrong spec from
+// each row's stored rawLine, then re-runs interpretation over the
+// affected imports (hazard H1.3/H2.5, criterion 2.7).
+export const fixSourceProfile = (
+  context: HouseholdContext,
+  input: { readonly profileId: string; readonly spec: SourceProfileSpec },
+): Promise<Result<FixProfileResult, FixProfileError>> =>
+  fixSourceProfileUseCase(context, liveDependencies, input);
 
 export const getImport = (
   context: HouseholdContext,

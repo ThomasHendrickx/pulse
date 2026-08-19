@@ -95,7 +95,65 @@ export type ImportRepositoryPort = {
     context: HouseholdContext,
     importId: string,
     reason: ImportFailureReason,
-  ) => Promise<boolean>;
+) => Promise<boolean>;
+  readonly getProfile: (
+    context: HouseholdContext,
+    profileId: string,
+  ) => Promise<StoredProfile | null>;
+  // Imports whose facts were parsed with the given profile and have
+  // reached the ledger (INGESTED or INTERPRETED): the set a profile fix
+  // must re-parse.
+  readonly listImportIdsForProfile: (
+    context: HouseholdContext,
+    profileId: string,
+  ) => Promise<readonly string[]>;
+  // The stored fact rows of one import, reduced to what a re-parse needs:
+  // identity, account, the verbatim source line, and the current dedup key
+  // (finding CR-302: stored twins are ranked by their existing key when
+  // the re-parse re-derives keys from the full file). Deterministic order.
+  readonly listFactRowsForImport: (
+    context: HouseholdContext,
+    importId: string,
+  ) => Promise<
+    readonly {
+      readonly id: string;
+      readonly accountId: string;
+      readonly rawLine: string;
+      readonly dedupKey: string;
+    }[]
+  >;
+  // THE ONE SANCTIONED FACTS REBUILD (pulse-domain section 2, the explicit
+  // SourceProfile exception; hazard H1.3/H2.5): atomically replaces the
+  // profile's spec AND rewrites the fact columns of every listed row from
+  // its re-parsed rawLine, preserving row identity, importId, accountId
+  // and rawLine itself. Declarations (accounts, profile name and binding)
+  // are untouched. All-or-nothing: a failure writes no row. CORRECTED
+  // RATHER THAN QUIETLY REWRITTEN (finding CR-302, R-087): this contract
+  // used to say dedup keys are recomputed so re-uploads keep mapping onto
+  // the same rows, which was FALSE when an import stored a proper subset
+  // of its file's rows (overlap around a keyless twin renumbered onto an
+  // occupied key and the unique index aborted the repair). The keys the
+  // caller passes are now derived from the FULL re-parsed file with
+  // ingest's cross-import insert-ignore semantics (see fix-profile.ts).
+  // ALSO IN THIS TRANSACTION (finding CR-304): every affected import
+  // moves INTERPRETED -> INGESTED, because the facts rewrite invalidates
+  // the stored interpretation; the reinterpretation that follows is what
+  // restores INTERPRETED, and a death between the two leaves the same
+  // visible needs-interpretation marker the upload path has.
+  readonly applyReparse: (
+    context: HouseholdContext,
+    input: {
+      readonly profileId: string;
+      readonly spec: SourceProfileSpec;
+      readonly imports: readonly {
+        readonly importId: string;
+        readonly rows: readonly (ParsedRow & {
+          readonly transactionId: string;
+          readonly dedupKey: string;
+        })[];
+      }[];
+    },
+  ) => Promise<void>;
   // Transactional AND guarded (finding F4): the import row is claimed by
   // a conditional update from `fromStatus` FIRST, inside the same
   // database transaction as the row insert, so two racing ingests of one
@@ -138,4 +196,13 @@ export type ImportDependencies = {
   readonly parser: StatementParser;
   readonly imports: ImportRepositoryPort;
   readonly accounts: AccountsGateway;
+  // The interpret stage of the pipeline (parse -> identify -> declare ->
+  // ingest -> interpret): after a successful ingest, the ledger re-runs
+  // interpretation over the affected period window across all pot
+  // accounts, so an unmatched transfer leg heals on the next upload.
+  // Bound to the ledger module's published application interface.
+  readonly interpret: (
+    context: HouseholdContext,
+    importId: string,
+  ) => Promise<void>;
 };

@@ -16,6 +16,7 @@ export { parseAccountRole } from "../domain/account-role";
 
 const liveRepository: AccountRepositoryPort = {
   createAccount: repository.createAccount,
+  listAccounts: repository.listAccounts,
   findAccountByIban: repository.findAccountByIban,
   getAccountById: repository.getAccountById,
 };
@@ -27,6 +28,12 @@ export const declareAccount = (
   context: HouseholdContext,
   input: NewAccount,
 ): Promise<AccountRecord> => liveRepository.createAccount(context, input);
+
+// The declaration-layer read the ledger engine classifies against: every
+// account with its ring and IBAN (M1-P3).
+export const listAccounts = (
+  context: HouseholdContext,
+): Promise<readonly AccountRecord[]> => liveRepository.listAccounts(context);
 
 export const findAccountByIban = (
   context: HouseholdContext,

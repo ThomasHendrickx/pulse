@@ -39,6 +39,16 @@ export const createAccount = async (
   return toRecord(row);
 };
 
+export const listAccounts = async (
+  context: HouseholdContext,
+): Promise<readonly AccountRecord[]> => {
+  const rows = await prisma.account.findMany({
+    where: { householdId: context.householdId },
+    orderBy: { createdAt: "asc" },
+  });
+  return rows.map(toRecord);
+};
+
 export const findAccountByIban = async (
   context: HouseholdContext,
   iban: string,
