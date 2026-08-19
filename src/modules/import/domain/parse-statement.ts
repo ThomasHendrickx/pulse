@@ -52,6 +52,79 @@ export type StatementParseError =
 const cellAt = (fields: readonly string[], index: number): string =>
   (fields[index] ?? "").trim();
 
+// One data line, parsed exactly as it will be stored. Used by the full
+// statement parse below AND by the profile-fix re-parse, which rebuilds an
+// import's fact rows from each stored rawLine (pulse-domain section 2, the
+// explicit SourceProfile exception): the two paths MUST parse a line
+// identically, which is why this is one function and not two.
+export const parseStatementRow = (
+  line: string,
+  spec: SourceProfileSpec,
+): Result<ParsedRow, "date" | "amount" | "missing-column" | "indicator"> => {
+  const fields = splitDelimitedLine(line, spec.delimiter);
+
+  const bookingDateResult = parseBusinessDate(
+    cellAt(fields, spec.columns.bookingDate),
+    spec.dateFormat,
+  );
+  if (!bookingDateResult.ok) {
+    return err("date" as const);
+  }
+
+  const amountResult = amountOf(fields, spec);
+  if (!amountResult.ok) {
+    return err(amountResult.error);
+  }
+
+  const row: {
+    bookingDate: PlainDate;
+    amountCents: Cents;
+    description: string;
+    rawLine: string;
+    valueDate?: PlainDate;
+    counterpartyName?: string;
+    counterpartyIban?: string;
+    accountIban?: string;
+    reference?: string;
+    statementNumber?: string;
+    sequenceNumber?: string;
+  } = {
+    bookingDate: bookingDateResult.value,
+    amountCents: amountResult.value,
+    description: cellAt(fields, spec.columns.description),
+    rawLine: line,
+  };
+
+  if (spec.columns.valueDate !== undefined) {
+    const valueDateResult = parseBusinessDate(
+      cellAt(fields, spec.columns.valueDate),
+      spec.dateFormat,
+    );
+    if (valueDateResult.ok) {
+      row.valueDate = valueDateResult.value;
+    }
+  }
+  const optionalText = (
+    role: "counterpartyName" | "counterpartyIban" | "accountIban" | "reference" | "statementNumber" | "sequenceNumber",
+  ): void => {
+    const column = spec.columns[role];
+    if (column !== undefined) {
+      const value = cellAt(fields, column);
+      if (value !== "") {
+        row[role] = value;
+      }
+    }
+  };
+  optionalText("counterpartyName");
+  optionalText("counterpartyIban");
+  optionalText("accountIban");
+  optionalText("reference");
+  optionalText("statementNumber");
+  optionalText("sequenceNumber");
+
+  return ok(row);
+};
+
 export const parseStatement = (
   bytes: Uint8Array,
   spec: SourceProfileSpec,
@@ -71,76 +144,16 @@ export const parseStatement = (
 
   for (const { line, index } of dataLines) {
     const lineNumber = index + 1;
-    const fields = splitDelimitedLine(line, spec.delimiter);
-
-    const bookingDateResult = parseBusinessDate(
-      cellAt(fields, spec.columns.bookingDate),
-      spec.dateFormat,
-    );
-    if (!bookingDateResult.ok) {
+    const rowResult = parseStatementRow(line, spec);
+    if (!rowResult.ok) {
       return err({
         kind: "row-error" as const,
         lineNumber,
         rawLine: line,
-        problem: "date" as const,
+        problem: rowResult.error,
       });
     }
-
-    const amountResult = amountOf(fields, spec);
-    if (!amountResult.ok) {
-      return err({
-        kind: "row-error" as const,
-        lineNumber,
-        rawLine: line,
-        problem: amountResult.error,
-      });
-    }
-
-    const row: {
-      bookingDate: PlainDate;
-      amountCents: Cents;
-      description: string;
-      rawLine: string;
-      valueDate?: PlainDate;
-      counterpartyName?: string;
-      counterpartyIban?: string;
-      accountIban?: string;
-      reference?: string;
-      statementNumber?: string;
-      sequenceNumber?: string;
-    } = {
-      bookingDate: bookingDateResult.value,
-      amountCents: amountResult.value,
-      description: cellAt(fields, spec.columns.description),
-      rawLine: line,
-    };
-
-    if (spec.columns.valueDate !== undefined) {
-      const valueDateResult = parseBusinessDate(
-        cellAt(fields, spec.columns.valueDate),
-        spec.dateFormat,
-      );
-      if (valueDateResult.ok) {
-        row.valueDate = valueDateResult.value;
-      }
-    }
-    const optionalText = (
-      role: "counterpartyName" | "counterpartyIban" | "accountIban" | "reference" | "statementNumber" | "sequenceNumber",
-    ): void => {
-      const column = spec.columns[role];
-      if (column !== undefined) {
-        const value = cellAt(fields, column);
-        if (value !== "") {
-          row[role] = value;
-        }
-      }
-    };
-    optionalText("counterpartyName");
-    optionalText("counterpartyIban");
-    optionalText("accountIban");
-    optionalText("reference");
-    optionalText("statementNumber");
-    optionalText("sequenceNumber");
+    const row = rowResult.value;
 
     if (row.accountIban !== undefined && !accountIbans.includes(row.accountIban)) {
       accountIbans.push(row.accountIban);
@@ -159,12 +172,17 @@ export const parseStatement = (
 // value instead of a magnitude, so "-742.10" under a Debit header stored
 // +74210, a silent full inversion (hazard H1.1). SIBLING IMPLEMENTATION,
 // same mechanism: the indicator branch below also derives the sign from
-// representation metadata; on this base it takes Math.abs of the cell, so
-// an explicitly signed cell there is silently absoluted rather than
-// inverted. That sibling's fail-loud repair (unknown or conflicting
-// indicator markers) lives in the M1-P2 fix round commit e10b0cc, which is
-// not on this branch's base; it must not be reimplemented here (see the
-// M1-P3 work history escalation).
+// representation metadata; its own fail-loud rule (a marker equal to
+// neither declared token fails the row, finding F2) came in with the
+// M1-P2 fix round. CORRECTED RATHER THAN QUIETLY REWRITTEN: an earlier
+// version of this note said the F2 repair was absent from this branch's
+// base, which was true when written (the M1-P2 squash had missed the fix
+// round) and became false when the base was repaired at 6fc43c9; the
+// M1-P3 work history records that escalation and its resolution. The
+// indicator branch still takes Math.abs of the cell, so an explicitly
+// signed cell there is absoluted, with the sign authority staying on the
+// marker; making a signed cell fail loud there too is a candidate
+// follow-up, not silently added here.
 const carriesExplicitSign = (text: string): boolean =>
   text.startsWith("-") || text.startsWith("+");
 

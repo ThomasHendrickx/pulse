@@ -117,6 +117,72 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       profiles.push(profile);
       return profile;
     },
+    getProfile: async (context, profileId) => {
+      const profile = profiles.find(
+        (candidate) =>
+          candidate.householdId === context.householdId && candidate.id === profileId,
+      );
+      return profile ?? null;
+    },
+    listImportIdsForProfile: async (context, profileId) =>
+      [...imports.values()]
+        .filter(
+          (record) =>
+            record.householdId === context.householdId &&
+            record.sourceProfileId === profileId &&
+            (record.status === "INGESTED" || record.status === "INTERPRETED"),
+        )
+        .map((record) => record.id),
+    listFactRowsForImport: async (context, importId) =>
+      transactions
+        .filter(
+          (stored) =>
+            stored.householdId === context.householdId &&
+            stored.importId === importId,
+        )
+        .map((stored) => ({
+          id: stored.id,
+          accountId: stored.accountId,
+          rawLine: stored.rawLine,
+        })),
+    applyReparse: async (context, input) => {
+      // Mirrors the adapter's contract: the profile spec and every listed
+      // row's fact columns move together; row identity, importId,
+      // accountId and rawLine never change.
+      const profileIndex = profiles.findIndex(
+        (candidate) =>
+          candidate.householdId === context.householdId &&
+          candidate.id === input.profileId,
+      );
+      const existing = profiles[profileIndex];
+      if (profileIndex >= 0 && existing !== undefined) {
+        profiles[profileIndex] = { ...existing, spec: input.spec };
+      }
+      for (const entry of input.imports) {
+        for (const row of entry.rows) {
+          const index = transactions.findIndex(
+            (stored) =>
+              stored.householdId === context.householdId &&
+              stored.id === row.transactionId,
+          );
+          const stored = transactions[index];
+          if (index < 0 || stored === undefined) {
+            continue;
+          }
+          const { transactionId, ...parsed } = row;
+          void transactionId;
+          transactions[index] = {
+            ...parsed,
+            id: stored.id,
+            householdId: stored.householdId,
+            accountId: stored.accountId,
+            importId: stored.importId,
+            rawLine: stored.rawLine,
+            ...(stored.flow === undefined ? {} : { flow: stored.flow }),
+          };
+        }
+      }
+    },
     markImportFailed: async (context, importId, reason) => {
       // Conditional, mirroring the adapter (finding F4): FAILED is
       // claimed only from AWAITING_DECLARATION.

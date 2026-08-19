@@ -95,7 +95,51 @@ export type ImportRepositoryPort = {
     context: HouseholdContext,
     importId: string,
     reason: ImportFailureReason,
-  ) => Promise<boolean>;
+) => Promise<boolean>;
+  readonly getProfile: (
+    context: HouseholdContext,
+    profileId: string,
+  ) => Promise<StoredProfile | null>;
+  // Imports whose facts were parsed with the given profile and have
+  // reached the ledger (INGESTED or INTERPRETED): the set a profile fix
+  // must re-parse.
+  readonly listImportIdsForProfile: (
+    context: HouseholdContext,
+    profileId: string,
+  ) => Promise<readonly string[]>;
+  // The stored fact rows of one import, reduced to what a re-parse needs:
+  // identity, account and the verbatim source line. Deterministic order.
+  readonly listFactRowsForImport: (
+    context: HouseholdContext,
+    importId: string,
+  ) => Promise<
+    readonly {
+      readonly id: string;
+      readonly accountId: string;
+      readonly rawLine: string;
+    }[]
+  >;
+  // THE ONE SANCTIONED FACTS REBUILD (pulse-domain section 2, the explicit
+  // SourceProfile exception; hazard H1.3/H2.5): atomically replaces the
+  // profile's spec AND rewrites the fact columns of every listed row from
+  // its re-parsed rawLine, preserving row identity, importId, accountId
+  // and rawLine itself. Declarations (accounts, profile name and binding)
+  // are untouched; dedup keys are recomputed so re-uploads keep mapping
+  // onto the same rows. All-or-nothing: a failure writes no row.
+  readonly applyReparse: (
+    context: HouseholdContext,
+    input: {
+      readonly profileId: string;
+      readonly spec: SourceProfileSpec;
+      readonly imports: readonly {
+        readonly importId: string;
+        readonly rows: readonly (ParsedRow & {
+          readonly transactionId: string;
+          readonly dedupKey: string;
+        })[];
+      }[];
+    },
+  ) => Promise<void>;
   // Transactional AND guarded (finding F4): the import row is claimed by
   // a conditional update from `fromStatus` FIRST, inside the same
   // database transaction as the row insert, so two racing ingests of one

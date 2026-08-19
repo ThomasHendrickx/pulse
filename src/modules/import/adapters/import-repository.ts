@@ -16,6 +16,7 @@ import {
   parseSourceProfileSpec,
   type SourceProfileSpec,
 } from "../domain/source-profile";
+import type { ParsedRow } from "../domain/parse-statement";
 import type {
   ImportFailureReason,
   ImportRecord,
@@ -153,6 +154,123 @@ export const createProfile = async (
     spec: input.spec,
     ...(row.accountId === null ? {} : { accountId: row.accountId }),
   };
+};
+
+export const getProfile = async (
+  context: HouseholdContext,
+  profileId: string,
+): Promise<StoredProfile | null> => {
+  const row = await prisma.sourceProfile.findFirst({
+    where: { id: profileId, householdId: context.householdId },
+  });
+  if (row === null) {
+    return null;
+  }
+  const spec = parseSourceProfileSpec(row.spec);
+  if (!spec.ok) {
+    throw new Error(`Stored source profile ${row.id} carries an invalid spec`);
+  }
+  return {
+    id: row.id,
+    name: row.name,
+    spec: spec.value,
+    ...(row.accountId === null ? {} : { accountId: row.accountId }),
+  };
+};
+
+export const listImportIdsForProfile = async (
+  context: HouseholdContext,
+  profileId: string,
+): Promise<readonly string[]> => {
+  const rows = await prisma.import.findMany({
+    where: {
+      householdId: context.householdId,
+      sourceProfileId: profileId,
+      status: { in: ["INGESTED", "INTERPRETED"] },
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+  return rows.map((row) => row.id);
+};
+
+export const listFactRowsForImport = async (
+  context: HouseholdContext,
+  importId: string,
+): Promise<
+  readonly { readonly id: string; readonly accountId: string; readonly rawLine: string }[]
+> => {
+  const rows = await prisma.transaction.findMany({
+    where: { householdId: context.householdId, importId },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, accountId: true, rawLine: true },
+  });
+  return rows;
+};
+
+// THE ONE SANCTIONED FACTS REBUILD (see the port contract in
+// application/ports.ts): everything below runs in ONE database
+// transaction, so a failure rewrites nothing. Dedup keys move in two
+// phases inside that transaction (every touched row to a
+// collision-free temporary key derived from its id, then to its final
+// key), because the per-household unique index is checked per statement
+// and two rows may exchange keys under the corrected spec.
+export const applyReparse = async (
+  context: HouseholdContext,
+  input: {
+    readonly profileId: string;
+    readonly spec: SourceProfileSpec;
+    readonly imports: readonly {
+      readonly importId: string;
+      readonly rows: readonly (ParsedRow & {
+        readonly transactionId: string;
+        readonly dedupKey: string;
+      })[];
+    }[];
+  },
+): Promise<void> => {
+  await prisma.$transaction(async (tx) => {
+    await tx.sourceProfile.updateMany({
+      where: { id: input.profileId, householdId: context.householdId },
+      data: { spec: input.spec as unknown as Prisma.InputJsonValue },
+    });
+    const touchedIds = input.imports.flatMap((entry) =>
+      entry.rows.map((row) => row.transactionId),
+    );
+    if (touchedIds.length === 0) {
+      return;
+    }
+    // Phase 1: park every touched row on a temporary key that cannot
+    // collide with any real key (real keys start with "nat:" or "h:").
+    await tx.$executeRaw`
+      UPDATE "transactions"
+      SET "dedupKey" = 'reparse-tmp:' || "id"
+      WHERE "householdId" = ${context.householdId}::uuid
+        AND "id" = ANY(${touchedIds}::uuid[])`;
+    // Phase 2: rewrite each row's fact columns and final key from its
+    // re-parsed rawLine. Row identity, importId, accountId and rawLine
+    // itself never change.
+    for (const entry of input.imports) {
+      for (const row of entry.rows) {
+        await tx.transaction.updateMany({
+          where: { id: row.transactionId, householdId: context.householdId },
+          data: {
+            bookingDate: plainDateToDbDate(row.bookingDate),
+            valueDate:
+              row.valueDate === undefined ? null : plainDateToDbDate(row.valueDate),
+            amountCents: row.amountCents,
+            counterpartyName: row.counterpartyName ?? null,
+            counterpartyIban: row.counterpartyIban ?? null,
+            description: row.description,
+            reference: row.reference ?? null,
+            statementNumber: row.statementNumber ?? null,
+            sequenceNumber: row.sequenceNumber ?? null,
+            dedupKey: row.dedupKey,
+          },
+        });
+      }
+    }
+  });
 };
 
 // Conditional transition (finding F4): FAILED is claimed only from

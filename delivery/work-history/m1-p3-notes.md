@@ -234,3 +234,38 @@ Red witnesses (mutations, reverted after each run):
 - W1 window collapsed to the import's own rows' dates: exit 1, 2 failed | 1 passed
 - W2 window no longer spans all pot accounts: exit 1, 2 failed | 1 passed
 Full fast suite after the slice: 120 passed, exit 0.
+
+## Profile-fix re-parse (criterion 2.7, hazard H2.5, closes H1.3)
+
+parseStatementRow extracted from parseStatement (one function parses a
+line for BOTH the upload path and the re-parse path, so they can never
+drift). New import ports: getProfile, listImportIdsForProfile,
+listFactRowsForImport, applyReparse (THE one sanctioned facts rebuild,
+documented at the port and at the adapter). Adapter applyReparse is one
+database transaction: profile spec update, then a two-phase dedup key move
+(every touched row to 'reparse-tmp:'||id via one set-based UPDATE, then
+per-row fact columns plus final key), because the per-household unique
+index is checked per statement and rows can exchange keys under a
+corrected spec. Use case fix-profile.ts: parses every stored rawLine under
+the corrected spec (any failure returns row-unparseable and rewrites
+NOTHING), recomputes dedup keys with the ingest recipe, applies, then
+re-runs interpretation per affected import. Published as fixSourceProfile
+on the import module's application index.
+
+test/application/reparse.test.ts: the H1.1 story (indicator file confirmed
+as signed column, every amount positive), corrected to the detected spec:
+amounts fixed in place, row ids and rawLine preserved, dedup keys
+recomputed and distinct (incl. the identical-row pair), account and
+profile declarations intact, interpretation rebuilt (mirror INTERNAL,
+line items SPEND), re-upload of the same file adds 0 and asks nothing;
+the unparseable-correction arm rewrites nothing; unknown profile
+rejected. 3 passed. Note: the criterion's "merchant rules intact" half is
+VACUOUS on this base: no MerchantRule table exists until M1-P4; the
+declaration layer as a whole is asserted untouched instead, and the
+re-parse writes only fact columns plus dedup keys by construction.
+
+Red witnesses (mutations in src, reverted after each run):
+- R1 re-parse leaves stale dedup keys: exit 1, 1 failed | 2 passed
+- R2 corrected spec not persisted (declaration lost): exit 1, 1 failed | 2 passed
+- R3 unparseable rows skipped instead of failing loud: exit 1, 1 failed | 2 passed
+Full fast suite: 123 passed, exit 0. typecheck exit 0.
