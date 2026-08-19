@@ -152,6 +152,22 @@ export const parseStatement = (
   return ok({ rows, accountIbans });
 };
 
+// MECHANISM RULE (finding CR-208): in a DIRECTIONAL column, the column is
+// the sign authority and the cell must be a bare magnitude. A cell carrying
+// its own sign is a convention the profile did not declare, and a sign is
+// never guessed: before this rule the debitCredit branch negated the parsed
+// value instead of a magnitude, so "-742.10" under a Debit header stored
+// +74210, a silent full inversion (hazard H1.1). SIBLING IMPLEMENTATION,
+// same mechanism: the indicator branch below also derives the sign from
+// representation metadata; on this base it takes Math.abs of the cell, so
+// an explicitly signed cell there is silently absoluted rather than
+// inverted. That sibling's fail-loud repair (unknown or conflicting
+// indicator markers) lives in the M1-P2 fix round commit e10b0cc, which is
+// not on this branch's base; it must not be reimplemented here (see the
+// M1-P3 work history escalation).
+const carriesExplicitSign = (text: string): boolean =>
+  text.startsWith("-") || text.startsWith("+");
+
 const amountOf = (
   fields: readonly string[],
   spec: SourceProfileSpec,
@@ -171,12 +187,18 @@ const amountOf = (
       return err("amount" as const);
     }
     if (debitText !== "") {
+      if (carriesExplicitSign(debitText)) {
+        return err("amount" as const);
+      }
       const parsed = parseAmountToCents(debitText, spec.decimalStyle);
       return parsed.ok
         ? ok((-parsed.value) as Cents)
         : err("amount" as const);
     }
     if (creditText !== "") {
+      if (carriesExplicitSign(creditText)) {
+        return err("amount" as const);
+      }
       const parsed = parseAmountToCents(creditText, spec.decimalStyle);
       return parsed.ok ? parsed : err("amount" as const);
     }

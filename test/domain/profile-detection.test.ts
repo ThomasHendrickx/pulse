@@ -192,6 +192,60 @@ describe("generic comma-delimited fixture (debit and credit pair)", () => {
   });
 });
 
+describe("signed values in directional columns fail loud (finding CR-208)", () => {
+  // A debit or credit column is DIRECTIONAL: the column decides the sign,
+  // so a cell that carries its own sign is a convention the profile did
+  // not declare. Before this fix, the debitCredit branch negated the
+  // parsed value instead of a magnitude, so "-742.10" in a Debit column
+  // silently stored +74210: a full sign inversion (reviewer construction
+  // P7b, filed as CR-208). A sign is never guessed: the row fails, which
+  // fails the import loudly with zero rows written.
+  const pairSpec: SourceProfileSpec = {
+    delimiter: ",",
+    encoding: "utf-8",
+    headerRowIndex: 0,
+    dateFormat: "YYYY-MM-DD",
+    decimalStyle: "dot",
+    amountRepresentation: { kind: "debitCredit", debitColumn: 1, creditColumn: 2 },
+    columns: { bookingDate: 0, description: 3 },
+  };
+  const bytes = (rows: readonly string[]): Uint8Array =>
+    new TextEncoder().encode(["Date,Debit,Credit,Description", ...rows].join("\n"));
+
+  const expectRowError = (row: string): void => {
+    const parsed = parseStatement(bytes([row]), pairSpec);
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) {
+      return;
+    }
+    expect(parsed.error).toMatchObject({ kind: "row-error", problem: "amount" });
+  };
+
+  test("a negative value inside the debit column is a row error, never an inverted sign", () => {
+    expectRowError("2026-08-03,-742.10,,ACME STORE");
+  });
+
+  test("a negative value inside the credit column is a row error", () => {
+    expectRowError("2026-08-04,,-15.25,REFUND CORNER SHOP");
+  });
+
+  test("an explicit plus sign inside the debit column is a row error", () => {
+    expectRowError("2026-08-05,+88.00,,ACME STORE");
+  });
+
+  test("unsigned magnitudes keep parsing: debit negative, credit positive", () => {
+    const parsed = parseStatement(
+      bytes(["2026-08-03,742.10,,ACME STORE", "2026-08-04,,15.25,REFUND"]),
+      pairSpec,
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+    expect(parsed.value.rows.map((row) => row.amountCents)).toEqual([-74210, 1525]);
+  });
+});
+
 describe("amount parsing never leaves integer cents (both decimal styles)", () => {
   const cases: readonly (readonly ["comma" | "dot", string, number])[] = [
     ["comma", "1.234,56", 123456],

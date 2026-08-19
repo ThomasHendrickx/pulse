@@ -60,3 +60,36 @@ Escalation routed per R-034: this note plus a verification-first entry
 with contradicts-plan true in the work history plus a dedicated section
 in the final report. The orchestrator owns merges; nothing in this
 branch cherry-picks the unmerged fix round.
+
+## CR-208: signed values in directional columns fail loud
+
+Red witness FIRST, captured: added the CR-208 describe block to
+test/domain/profile-detection.test.ts and ran it against the committed
+parser: "Tests 3 failed | 25 passed (28)" (negative debit parsed ok as
++74210 instead of erroring; negative credit and plus-signed debit
+likewise). Then the fix: carriesExplicitSign guard in both sub-branches of
+the debitCredit arm of amountOf (src/modules/import/domain/
+parse-statement.ts), row error problem "amount", which the upload use case
+turns into a FAILED import with zero rows (existing "unparseable" path).
+After fix: profile-detection 28 passed; full fast suite 81 passed, exit 0.
+
+Mechanism (fix-round contract): "a directional column's cell carrying its
+own sign is silently reinterpreted by a branch that derives sign from
+representation metadata". Derivation of call sites, executed:
+  grep -n "parseAmountToCents(" src/modules/import/domain/parse-statement.ts
+  -> lines in signed branch (sign legitimate), debitCredit debit branch,
+     debitCredit credit branch (both now guarded), indicator branch
+     (Math.abs of the cell; sign discarded, not inverted).
+Not covered, stated: the indicator branch. Its fail-loud repair is F2
+(commit e10b0cc) of the unmerged M1-P2 fix round; reimplementing it here
+would duplicate reviewed-but-unmerged work (see escalation above). The
+mechanism rule and the sibling are recorded at the definition
+(carriesExplicitSign comment). No tuition mechanism-index feed exists in
+this repository to add the rule to (delivery/tuition/ is empty); flagged
+for the orchestrator.
+
+Scope note (said the moment it was found): the CR-208 witness lives in
+test/domain/profile-detection.test.ts, which is NOT on the M1-P3
+files-to-touch list (the assigned backlog item names src/modules/import as
+the scope hook). The declaration amendment on the base branch must cover
+it, as M1-P2's extras did for its fix-round test files.
