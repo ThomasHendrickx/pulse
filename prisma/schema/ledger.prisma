@@ -1,0 +1,33 @@
+// Ledger module table (decision D-6: M1-P3 owns TransferLink). PURE
+// INTERPRETATION: every row here is derived by the engine and fully
+// rebuildable from facts plus declarations; a recompute may delete and
+// rewrite this table wholesale. Facts tables are untouched by this phase's
+// migration.
+
+model TransferLink {
+  id          String   @id @default(uuid()) @db.Uuid
+  householdId String   @db.Uuid
+  // The outgoing leg (the debit). Always present; unique per leg, so one
+  // transaction can carry at most one link on each side.
+  outgoingTransactionId String @db.Uuid
+  // The incoming leg: the credit side of a pot-to-pot transfer, or the
+  // card-side settlement row (the mirror leg) of a card settlement. Null
+  // while that leg's export has not been imported: the link then names a
+  // leg that is waiting for its other side.
+  incomingTransactionId String? @db.Uuid
+  // Card settlement pairing (owner v0.2 addendum section 5, decision
+  // D-11): the imported card statement this settlement debit pays. Null
+  // for a plain pot-to-pot transfer.
+  settlementImportId String? @db.Uuid
+  createdAt          DateTime @default(now())
+
+  household           Household    @relation(fields: [householdId], references: [id])
+  outgoingTransaction Transaction  @relation("TransferLinkOutgoing", fields: [outgoingTransactionId], references: [id])
+  incomingTransaction Transaction? @relation("TransferLinkIncoming", fields: [incomingTransactionId], references: [id])
+  settlementImport    Import?      @relation(fields: [settlementImportId], references: [id])
+
+  @@unique([outgoingTransactionId])
+  @@unique([incomingTransactionId])
+  @@index([householdId])
+  @@map("transfer_links")
+}

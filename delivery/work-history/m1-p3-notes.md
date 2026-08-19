@@ -164,3 +164,27 @@ Note: category-swap mutations (for example a refund counted INCOME) do
 NOT break the identity, because both sides of the equation move together;
 those are guarded by the unit suites (M1..M8 above), which is why both
 layers exist.
+
+## TransferLink migration (D-6: M1-P3 owns TransferLink)
+
+prisma/schema/ledger.prisma: TransferLink with non-null householdId,
+outgoingTransactionId (unique), nullable incomingTransactionId (unique),
+nullable settlementImportId carrying the D-11 settlement pairing to a card
+Import. Facts tables untouched (back-relation fields on Household, Import
+and Transaction are Prisma-side only; the migration contains no ALTER of
+facts tables, verified by reading the generated SQL: CREATE TABLE
+transfer_links plus indexes and FKs only).
+
+Red witness (natural): after adding the schema, npx vitest run test/schema
+-> 1 failed | 23 passed (transfer_links missing ENABLE ROW LEVEL SECURITY
+in committed migration SQL). Generated the migration with prisma migrate
+dev --name transfer_links with DATABASE_URL/DIRECT_URL pinned to
+postgresql://postgres:***@127.0.0.1:54322/postgres (fleet warning 1; the
+ambient env carries a foreign pooler). Appended the RLS enablement to the
+migration and applied it to the live local db (migrate dev had applied the
+pre-append file); pg_class now reports relrowsecurity=t for all eight
+application tables incl. transfer_links. test/schema: 24 passed. A full
+db:reset re-applying the whole chain is run before the e2e gate below.
+
+Docker daemon was dead (fleet warning); sudo dockerd revived the
+m1-p1-skeleton supabase containers exactly as the M1-P2 warning recorded.
