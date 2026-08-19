@@ -1,13 +1,17 @@
 # Clean-room HAZARD review of phase M1-P3 (one pot).
-# HEAD UNDER REVIEW: c3f566a (fix round 1; last code commit be49a82, the
-# later commit is work-history only, verified: git diff be49a82 c3f566a
-# over src, test, prisma and package.json is empty). History: round 0
-# reviewed f274d30 and returned FIX-ROUND-NEEDED with findings
-# CR-301..CR-306; this document now speaks about the fix-round head after
-# a delta pass over f274d30..c3f566a with every round 0 probe re-executed
-# against the new tree. Reviewer clone: worktrees/m1-p3-review-hazard
-# (review branch rebased onto c3f566a); no implementation session seen in
-# either round. Framing: destructive-paths, contract: hazard.
+# HEAD UNDER REVIEW: cd788c4 (fix round 2; last code commit 8b3059f, the
+# commits above it are work-history only, verified: git diff 8b3059f
+# cd788c4 over src, test, prisma and package.json is empty). History:
+# round 0 reviewed f274d30, FIX-ROUND-NEEDED, findings CR-301..CR-306;
+# round 1 reviewed c3f566a, confirmed all six resolved by executed
+# re-probe and returned FIX-ROUND-NEEDED on one new medium finding
+# CR-307 (currency-prefix sign bypass); this revision is the round 2
+# delta pass over c3f566a..cd788c4, micro scope, CR-307 only, with the
+# round 1 witnesses re-executed against the new tree. Reviewer clone:
+# worktrees/m1-p3-review-hazard (review branch rebased onto cd788c4); no
+# implementation session seen in any round. Framing: destructive-paths,
+# contract: hazard. Round logs live in this file's git history (round 0
+# at review commit 4983134 pre-rebase, round 1 at c5610cb).
 #
 # DR-0003 DECORRELATION ESCALATION, recorded honestly per the pilot record:
 # this verdict is produced by the Claude family, as is the paired criteria
@@ -17,195 +21,128 @@
 # framing (destructive-paths vs the criteria walk) are distinct across the
 # pair. This header is the required record of that narrowing.
 #
-# FIX ROUND 1 RESOLUTION LEDGER (per round 0 finding; findings[] below
-# carries only what APPLIES to head c3f566a):
-# - CR-301 (window slice flips settled debits INTERNAL to SPEND, critical):
-#   RESOLVED at 1f7e1ea. interpret-window now loads card accounts
-#   UNBOUNDED (every card import whole) and windows only the other pot
-#   accounts (src/modules/ledger/application/interpret-window.ts:37-53),
-#   so settlement totals are always computed over complete card imports.
-#   Re-executed probe D1 through the REAL interpretForImport over an
-#   in-memory ledger port: the April run settles the debit INTERNAL, and
-#   round 0's destructive June run (window 2026-04-13 to 2026-08-18,
-#   which excludes every March card row by date) now KEEPS the debit
-#   INTERNAL with its settlement link (captured flow=INTERNAL, link to
-#   imp-card-march). The truncated-total variant P1.d is closed by the
-#   same construction (no partial card load exists any more). The false
-#   padding comment is corrected in place and names the old defect
-#   (src/modules/ledger/domain/constants.ts:33-38). A committed
-#   regression test pins it (test/application/interpret.test.ts, "a
-#   settled debit survives a later import's window").
-# - CR-302 (re-parse renumbered subset ordinals onto occupied keys, high):
-#   RESOLVED at be49a82. Keys are re-derived from the FULL re-parse of
-#   each import's rawContent, simulating ingest's cross-import
-#   insert-ignore in import creation order, stored twins ranked by their
-#   existing key numeric-aware, with a next-free-ordinal fallback for
-#   tuples a spec correction merges
-#   (src/modules/import/application/fix-profile.ts:107-219,
-#   src/modules/import/domain/dedup.ts:105-166). Re-executed round 0's
-#   exact end-to-end construction (probe R1): the unchanged-spec fix over
-#   the overlap pair now succeeds as a strict key no-op (keys identical,
-#   zero duplicates) and the overlap re-upload adds zero with three
-#   stored twin facts (round 0 captured four). The H1.1 repair variant
-#   (probe R2: both files under one wrong signed profile, fixed to the
-#   detected indicator spec) rewrites all five amounts negative,
-#   preserves ids, keeps keys unique, and both re-uploads add zero. The
-#   committed fake now enforces the per-household unique key
-#   all-or-nothing (test/application/fake-import-world.ts:148-196),
-#   verified by direct collision probe R4 (throws, nothing applied); both
-#   R-087 false comments are corrected in place and name the old defect
-#   (fix-profile.ts header, import/application/ports.ts applyReparse
-#   contract). RESIDUE, NAMED: keys can still collide with rows OUTSIDE
-#   the fixed profile (the wrong-then-right double-confirm landscape
-#   where the same file was ingested twice under two specs on one
-#   account); there the corrected keys equal the other profile's keys and
-#   the unique index aborts the repair LOUDLY with nothing rewritten,
-#   which is the right outcome over already-duplicated facts, and that
-#   landscape is the already-escalated M1-P2 territory (CR-201, open
-#   claim M1P2-C6), not this phase's defect.
-# - CR-303 (refund history window-scoped, medium): RESOLVED at 015b1c7.
-#   A tenancy-filtered unbounded read
-#   (src/modules/ledger/adapters/ledger-repository.ts:67, householdId in
-#   the where clause) feeds full-ledger outgoing history into every
-#   window run. Re-executed probe D2: the January purchase plus June
-#   refund now classifies SPEND under the June import's window, agreeing
-#   with recompute. Regression test committed.
-# - CR-304 (facts rewrite left stale flows with no marker, medium):
-#   RESOLVED at be49a82. applyReparse moves every affected import
-#   INTERPRETED to INGESTED inside the SAME database transaction as the
-#   facts rewrite (src/modules/import/adapters/import-repository.ts:278);
-#   the fake mirrors it. Re-executed probe R3 with a dying interpret
-#   dependency: the fix throws, facts are corrected, and the import is
-#   left INGESTED (the pipeline's visible needs-interpretation marker),
-#   never INTERPRETED over stale flows.
-# - CR-305 (indicator branch absoluted a signed cell, low): RESOLVED at
-#   0e9bdbc. carriesExplicitSign now guards the indicator branch and
-#   Math.abs is gone (src/modules/import/domain/parse-statement.ts:226).
-#   Re-executed probe D4.a: '-742,10' beside a C marker is a row error.
-#   The delta sweep found a shared hole in the guard itself, filed as new
-#   finding CR-307 below.
-# - CR-306 (two debits settle one import, low): RESOLVED at 6fe07de.
-#   Global exclusive allocation over debit-import candidate edges, sorted
-#   by (date distance, debit id, import id), each side used once, losers
-#   through the existing honest-SPEND no-match arm
-#   (src/modules/ledger/domain/interpret.ts:83-124). Re-executed probes
-#   D3.a-D3.d: exactly one debit settles, the loser is SPEND with no
-#   surfaced gap, the allocation is identical across 25 shuffles, the
-#   equal-distance tie breaks by import id, and two debits with two
-#   equal-total imports allocate one each with no side reused.
-#   STOP-FOR JUDGEMENT, judged here as the review's half: the implementer
-#   recorded (work history decisions, orchestrator-approved) that
-#   exclusivity is a deterministic tie-break over an ambiguity the
-#   correction text leaves open, not a change to the correction's
-#   meaning. This review AGREES: the addendum's two written arms (match
-#   gives INTERNAL paired, no match gives honest SPEND) both keep their
-#   semantics; the text speaks of THE settlement of a statement, singular,
-#   and does not decide the two-debits-one-import case at all; the loser
-#   lands on an arm the text already defines rather than a new flow; and
-#   the tie-break has the same shape as decision D-7's. A tie-break over
-#   an undecided case, recorded with the orchestrator's approval, honours
-#   the charter's stop-for discipline.
+# RESOLUTION LEDGER.
+# - CR-301 (critical), CR-302 (high), CR-303, CR-304 (medium), CR-305,
+#   CR-306 (low): resolved in fix round 1 and confirmed by executed
+#   re-probe in the round 1 revision of this document (git history,
+#   c5610cb); nothing in the round 2 delta touches those mechanisms (the
+#   diff is parse-amount.ts, parse-statement.ts, one test file and work
+#   history), and the full fast gate re-ran green at this head.
+# - CR-307 (medium, round 1: the sign guard tested the RAW cell while the
+#   parser stripped currency noise first, so 'EUR -742,10' slipped every
+#   directional guard and stored inverted): RESOLVED at 8b3059f. The
+#   normalisation is extracted once (stripCurrencyNoise,
+#   src/modules/import/domain/parse-amount.ts:25), the new unsigned entry
+#   point parseUnsignedAmountToCents rejects any sign remaining AFTER
+#   that normalisation (parse-amount.ts:75), all three directional
+#   branches call it (parse-statement.ts:209, :215, :225), and
+#   carriesExplicitSign is deleted, so guard and parser judge one
+#   normalised string. VERIFIED BY EXECUTION (probe-delta3.ts, output in
+#   the work log below): both round 1 witnesses are now row errors; five
+#   fresh variants of the class are row errors (euro symbol '€ -742,10',
+#   'EUR +742,10', trailing sign '742,10-', sign-then-whitespace
+#   '- 742,10', sign glued to the token 'EUR- 742,10'); the positive
+#   control 'EUR 742,10' still parses and is signed by the marker;
+#   end-to-end, an upload whose directional cell carries 'EUR -23,03'
+#   fails the import loudly at the first gate with zero rows and status
+#   FAILED. Verified by grep: the only parseAmountToCents call sites
+#   outside parse-amount.ts are the signed representation
+#   (parse-statement.ts:196, where the cell sign IS the declared
+#   convention) and detection's isAmountLike probe (parse-amount.ts:62);
+#   no directional branch can reach a signed parse.
+#   ONE RESIDUE FOUND by pressing the fix's structure, filed as low
+#   finding CR-308 below: the normalisation is not idempotent, and the
+#   unsigned entry checks the sign after ONE strip while its delegate
+#   strips AGAIN, so a self-reconstructing token ('EEURUR-742,10')
+#   parses signed through the unsigned entry point. Not reachable from
+#   any plausible export shape; recorded because the fix's own comment
+#   claims the two functions can never diverge again, and the executed
+#   construction falsifies the absolute form of that claim (R-087).
 #
-# METHOD, DELTA ROUND. Started from the fix commits and the load-semantics
-# changes they introduce, not from the criteria. Full read of the delta
-# diff f274d30..c3f566a; fast gates re-executed at the head (npm test exit
-# 0 with 152 tests, npm run typecheck exit 0, npm run lint exit 0);
-# every round 0 probe re-executed (probe-delta.ts, probe-delta2.ts,
-# esbuild-bundled over the committed code, plus the committed fake for the
-# end-to-end re-parse runs); new adversarial probes against the delta
-# itself: unbounded card load (tenancy read statically: both new reads
-# filter householdId at ledger-repository.ts:32 and :78), exclusive
-# allocation under shuffles and equal-distance ties, full-file re-key
-# collision hunting, the INGESTED transition under a dying interpret, and
-# application-level idempotency (window re-run a strict fixed point;
-# recompute agrees on every shared row and only adds coverage for rows no
-# window run ever touched). Database untouched; npm run test:e2e relied on
-# the work history's gate evidence at be49a82 (the code head).
+# METHOD, ROUND 2 (micro scope). Read the whole delta diff
+# c3f566a..cd788c4 (two source files, one test file, work history);
+# re-executed both round 1 witnesses and five fresh class variants plus
+# one adversarial structural probe (probe-delta3.ts, esbuild-bundled over
+# the committed code, end-to-end upload through the committed use cases
+# and fake); executed the call-site grep; re-ran the fast gate at the
+# head: npm test exit 0 (155 tests), npm run typecheck exit 0, npm run
+# lint exit 0. Database untouched; npm run test:e2e relied on the work
+# history's gate evidence at the code head 8b3059f, and the criteria
+# walk below records that reliance explicitly.
 #
-# WORK LOG (incremental). Round 0 log is in this file's git history at
-# review commit 4983134; this revision is the delta round.
-# - Rebased the review branch onto c3f566a; confirmed be49a82 is the last
+# WORK LOG, ROUND 2.
+# - Rebased the review branch onto cd788c4; confirmed 8b3059f is the last
 #   code commit.
-# - Read the full delta diff; identified the four load-semantics changes
-#   to press (unbounded card load, exclusive allocation, full-file
-#   re-key, INGESTED downgrade).
-# - Executed probe-delta.ts: D1.a/D1.b (CR-301 fixed through the real
-#   interpretForImport), D2 (CR-303 fixed), D9 (idempotency; first
-#   assertion was too strict, recompute legitimately ADDED a flow for a
-#   January import no window run had ever interpreted, re-asserted as
-#   agreement-on-shared-rows plus coverage-only additions, then green),
-#   D3.a-d (CR-306 exclusive allocation, shuffles, ties), D4.a (CR-305
-#   fixed), D4.b/D4.c (NEW: currency-prefix sign bypass witnessed, both
-#   branches).
-# - Executed probe-delta2.ts: R1 (round 0 CR-302 construction now a
-#   no-op), R2 (corrected-spec overlap repair converges; first probe
-#   build accidentally reconstructed the M1-P2 twin-account landscape by
-#   confirming file B under a second profile, rebuilt on one profile,
-#   green; the twin-account variant is recorded as residue above), R3
-#   (CR-304 marker), R4 (fake unique enforcement). Final: 0 failed
-#   checks.
-# - Assembled this delta verdict; validated schema plus Kind B checks in
-#   a private context dir exactly as in round 0 (the family-decorrelation
-#   red against the real pair is DR-0003's narrowing, recorded above).
+# - Executed probe-delta3.ts. Captured: W1 'EUR -742,10' marker C err
+#   amount; W2 same cell debit column err amount; V1 '€ -742,10' err;
+#   V2 'EUR +742,10' err; V3 '742,10-' err; V4 '- 742,10' err; V5
+#   'EUR- 742,10' err; positive control 'EUR 742,10' marker D PARSED
+#   -74210; V6 parseUnsignedAmountToCents('EEURUR-742,10') PARSED -74210
+#   while plain parseAmountToCents on the same input errs, and the debit
+#   row stores +74210 (the CR-308 witness); E2E upload with 'EUR -23,03'
+#   in a directional cell: outcome failed unparseable, rows 0, import
+#   FAILED (the parse-under-detected-spec gate catches it before confirm
+#   is ever reached).
+# - Grep verification and fast gates as recorded in the method above.
+# - Assembled this round 2 verdict; validated schema plus Kind B checks
+#   in the private context dir as in earlier rounds (the
+#   family-decorrelation red against the real pair is DR-0003's
+#   narrowing, recorded above).
 
 kind: verdict
 phase: M1-P3
-verdict: FIX-ROUND-NEEDED
+verdict: APPROVE
 produced-by: claude
 framing: destructive-paths
 review-contract: hazard
 
 findings:
-  - id: CR-307
-    severity: medium
+  - id: CR-308
+    severity: low
     evidence:
       - >-
-        Executed probe D4.b at head: under the indicator representation
-        the cell 'EUR -742,10' beside marker C parses OK and stores
-        -74210, a credit stored negative; beside marker D it stores
-        +74210, a debit stored positive. Captured output in the work log
-        above.
+        Executed probe V6 at head: parseUnsignedAmountToCents of
+        'EEURUR-742,10' returns PARSED -74210, and the same cell in a
+        debitCredit DEBIT column stores +74210 (a signed value through
+        the unsigned entry point, the CR-208 inversion shape). Plain
+        parseAmountToCents on the identical input returns a row error,
+        so the unsigned entry is strictly WEAKER than the signed one on
+        this input. Captured output in the work log above.
       - >-
-        Executed probe D4.c: the same cell inside a debitCredit DEBIT
-        column parses OK and stores +74210, the exact CR-208 inversion,
-        reachable at this head.
+        Root cause by reading: stripCurrencyNoise removes currency
+        tokens in one global regex pass
+        (src/modules/import/domain/parse-amount.ts:25), which is not
+        idempotent ('EEURUR' reconstructs 'EUR' after one removal);
+        parseUnsignedAmountToCents strips once and checks the sign on
+        that once-stripped string (parse-amount.ts:79-81), then
+        delegates to parseAmountToCents, which strips AGAIN
+        (parse-amount.ts:32) and reads a sign the unsigned check never
+        saw. The comment at parse-amount.ts:71-72 states the two can
+        never diverge again; this construction is an executed
+        divergence, so the absolute claim is false as written (R-087).
       - >-
-        Root cause by reading: the guard carriesExplicitSign
-        (src/modules/import/domain/parse-statement.ts:186) tests the RAW
-        cell's first character, while parseAmountToCents first strips
-        currency noise and THEN reads a sign
-        (src/modules/import/domain/parse-amount.ts:26-34, the EUR and
-        euro-symbol replace runs before the startsWith('-') check). So a
-        sign written after a currency prefix passes every directional
-        guard (the CR-208 pair at parse-statement.ts:208 and :217, and
-        the CR-305 guard at parse-statement.ts:230) and the parser signs
-        the value anyway; the directional branches then negate or trust
-        it, silently inverting the stored amount. The currency strip
-        exists precisely because observed exports carry EUR noise in
-        amount cells, so the combination is not a fantasy shape.
-      - >-
-        Trailing signs are safe (the amount grammars at
-        src/modules/import/domain/parse-amount.ts:19-20 admit digits and
-        separators only), so the prefix-noise path is the one hole; the
-        signed representation is unaffected (there the cell sign IS the
-        declared convention).
+        Reachability, honestly bounded: the input requires interleaved
+        currency letters that reconstruct a token after one removal
+        pass. No observed or plausible bank export writes such a cell;
+        it cannot arise from any combination of the shapes the fixtures
+        model (currency prefix, sign, whitespace, trailing sign, all of
+        which the fix refuses, probes W1-W2 and V1-V5).
     concrete-fix: >-
-      Align the guard with the parser: either normalise before guarding
-      (strip the same currency noise, then test for a sign) or, cleaner,
-      give parse-amount an unsigned entry point (parseUnsignedMagnitude
-      that REJECTS any sign it finds after normalisation) and call it
-      from the debitCredit and indicator branches, so the two functions
-      cannot drift again. One red-witness test per branch with an
-      'EUR -' cell, beside the existing CR-208 and CR-305 blocks.
+      Close the gap at the value, not the text: in
+      parseUnsignedAmountToCents, after delegation, reject a parsed
+      value below zero (a magnitude can never be negative), or
+      equivalently loop stripCurrencyNoise to a fixpoint before the sign
+      check; then soften the comment's absolute claim or make it true.
+      One red-witness test with the self-reconstructing token beside the
+      existing CR-307 block.
     analysis: >-
-      Same mechanism class as CR-208 and CR-305 (sign information in the
-      cell silently reinterpreted where the column or marker is the
-      declared sign authority), found by sweeping the delta that hardened
-      that exact guard: the guard and the parser disagree about what
-      string they are judging. Filed medium because the outcome is a
-      silent full inversion of affected rows (H1.1 class) while the
-      triggering shape (currency prefix plus sign in a directional or
-      indicator column) is not yet observed in a real export.
+      Filed low, not medium: unlike CR-307 the triggering shape is not a
+      plausible export cell, the outcome is deterministic and loud to
+      construct, and the household-scale exposure is nil; what makes it
+      worth recording is that the fix's stated invariant (guard and
+      parser judge one string) is one delegation away from being
+      structural, and the one-line value-side check would make the
+      invariant hold by construction instead of by input shape.
 
 criteria:
   - id: "2.1"
@@ -215,10 +152,9 @@ criteria:
       before pot set before sign).
     evidence:
       - >-
-        npm test executed by this review at head c3f566a: exit 0, 152
-        tests. test/domain/classify-flow.test.ts:68 covers the five
-        values; test/domain/classify-flow.test.ts:98 covers the
-        precedence, unchanged by the delta.
+        npm test executed by this review at head cd788c4: exit 0, 155
+        tests. test/domain/classify-flow.test.ts:68 and :98 as in prior
+        rounds, untouched by the round 2 delta.
     met: true
   - id: "2.2"
     quote: >-
@@ -228,11 +164,10 @@ criteria:
       id.
     evidence:
       - >-
-        test/domain/pair-transfers.test.ts:92 (every insertion order) and
-        :114/:125 (tie-break stages), unchanged by the delta and green in
-        this review's run. Delta probe D3.b extends the property to the
-        new exclusive settlement allocation: identical canonical output
-        across 25 shuffles.
+        test/domain/pair-transfers.test.ts:92, :114, :125 as in prior
+        rounds, green at the head, untouched by the round 2 delta; round
+        1's shuffle probes over the exclusive settlement allocation stand
+        (this document's git history at c5610cb).
     met: true
   - id: "2.3"
     quote: >-
@@ -251,10 +186,8 @@ criteria:
     evidence:
       - >-
         Four describe blocks at test/domain/corrections.test.ts:63, :190,
-        :229 and :282 as in round 0; the delta adds the exclusivity tests
-        ("settlement matching is exclusive per card import") to the card
-        settlement block. Round 0's caveat is CLOSED: probe D1.b shows a
-        later window run no longer reclassifies the settled debit.
+        :229 and :282 plus the round 1 exclusivity tests, green at the
+        head, untouched by the round 2 delta.
     met: true
   - id: "2.4"
     quote: >-
@@ -271,9 +204,8 @@ criteria:
     evidence:
       - >-
         test/property/reconciliation.test.ts:304 with numRuns 500,
-        unchanged by the delta except that the engine under it now
-        allocates settlements exclusively; executed green in this
-        review's npm test run at the head.
+        executed green in this review's npm test run at the head,
+        untouched by the round 2 delta.
     met: true
   - id: "2.5"
     quote: >-
@@ -284,9 +216,8 @@ criteria:
     evidence:
       - >-
         test/domain/pair-transfers.test.ts:161 and
-        test/application/interpret.test.ts:93 as in round 0, green at the
-        head; the delta adds the CR-301 and CR-303 healing regressions to
-        the same suite.
+        test/application/interpret.test.ts:93 plus the round 1 healing
+        regressions, green at the head, untouched by the round 2 delta.
     met: true
   - id: "2.6"
     quote: >-
@@ -294,13 +225,13 @@ criteria:
       test:e2e exits 0 at the phase head.
     evidence:
       - >-
-        Executed by this review at c3f566a: npm run typecheck exit 0, npm
-        run lint exit 0, npm test exit 0 (152 tests). npm run test:e2e
+        Executed by this review at cd788c4: npm run typecheck exit 0, npm
+        run lint exit 0, npm test exit 0 (155 tests). npm run test:e2e
         was NOT independently re-executed (the database stack is the
         criteria reviewer's); the work history records it green at the
-        fix-round code head be49a82 with the fully pinned local env
-        (delivery/work-history/m1-p3.yaml gate-evidence), and git diff
-        be49a82 c3f566a over src, test, prisma and package.json is empty.
+        fix-round-2 code head 8b3059f with the fully pinned local env,
+        and git diff 8b3059f cd788c4 over src, test, prisma and
+        package.json is empty.
     met: true
   - id: "2.7"
     quote: >-
@@ -311,13 +242,10 @@ criteria:
       declarations, merchant rules and dedup behaviour intact.
     evidence:
       - >-
-        test/application/reparse.test.ts:84 as in round 0, plus the
-        delta's overlap suite ("re-parse over overlapping imports sharing
-        a keyless twin", both the unchanged-spec no-op and the
-        corrected-spec convergence) and the CR-304 marker test, all green
-        at the head. Round 0's caveat is CLOSED by executed probes R1 and
-        R2: the dedup-behaviour-intact promise now holds on the overlap
-        construction that broke it.
+        test/application/reparse.test.ts:84 plus the round 1 overlap and
+        marker suites, green at the head, untouched by the round 2
+        delta; round 1's executed overlap probes stand (git history,
+        c5610cb).
     met: true
   - id: "2.8"
     quote: >-
@@ -328,12 +256,9 @@ criteria:
       merchant rides the normal resolver chain once M1-P4 lands.
     evidence:
       - >-
-        test/domain/corrections.test.ts:137 and :171 as in round 0, green
-        at the head. Both round 0 caveats are CLOSED: the wrong-firing of
-        this fallback through window truncation is gone (probe D1), and
-        the coincidental cross-match now loses the exclusive allocation
-        and takes this arm honestly (probe D3.a: the loser debit is
-        SPEND, not INTERNAL, with no surfaced gap).
+        test/domain/corrections.test.ts:137 and :171 as in prior rounds,
+        green at the head, untouched by the round 2 delta; both round 0
+        caveats remain closed per round 1's executed probes.
     met: true
 
 deviations-judged:
@@ -345,119 +270,88 @@ deviations-judged:
       test/application/interpret.test.ts, test/application/reparse.test.ts)
     serves-plan-intent: true
     reasoning: >-
-      Judged in round 0 and unchanged by the delta: the four extra groups
+      Judged in round 0 and unchanged since: the four extra groups
       (accounts listAccounts through the published interface, the
-      fake-world extension, the profile-detection test home for the
-      red witnesses, the fast-check devDependency) are each the minimal
-      enabling change for a declared step, and the fix round stayed
-      inside the same file set. The fix round's CR-306 exclusivity
-      judgement is recorded in the work history's decisions with
-      orchestrator approval and is judged sound in this verdict's
-      resolution ledger: a deterministic tie-break over a case the
-      correction text does not decide, both written arms keeping their
-      semantics.
+      fake-world extension, the profile-detection test home for the red
+      witnesses, the fast-check devDependency) are each the minimal
+      enabling change for a declared step. Both fix rounds stayed inside
+      the same file set (round 2 touches parse-amount.ts,
+      parse-statement.ts and profile-detection.test.ts only). The round 1
+      CR-306 exclusivity judgement recorded in the work history's
+      decisions with orchestrator approval remains judged sound: a
+      deterministic tie-break over a case the correction text does not
+      decide, both written arms keeping their semantics.
 
 hazard-classes-addressed:
   - class-id: H2.1
     probed: >-
-      Round 0's three double-count constructions re-executed against the
-      fix (probe D1 through the real interpretForImport over an in-memory
-      ledger port): the April run settles the debit, round 0's
-      destructive June run now keeps it INTERNAL with its link, and the
-      truncated-total variant cannot be built any more because card
-      accounts are loaded unbounded (read statically at
-      src/modules/ledger/application/interpret-window.ts:37-53, tenancy
-      filter confirmed at ledger-repository.ts:32). Idempotency re-probed
-      at the application level (D9): the window re-run is a strict fixed
-      point and recompute agrees on every shared row. The in-window
-      matcher evidence from round 0 (corrections suite, window-bound
-      probes) still holds at the head.
+      Round 0 constructed the silent double count three ways and round 1
+      re-executed all three against the CR-301 fix through the real
+      interpretForImport (settled debit survives a later import's window,
+      truncation impossible under the unbounded card load, window re-run
+      and recompute fixed points); the round 2 delta does not touch the
+      ledger module (diff read in full: parse-amount.ts,
+      parse-statement.ts, one test file, work history) and the full fast
+      gate re-ran green at this head.
     cleared-because: >-
-      CR-301 is resolved by executed re-probe of the exact round 0
-      constructions plus a committed regression test; no remaining path
-      was found in which a settled debit's classification depends on how
-      much context a window loaded. New finding CR-307 is a parser-layer
-      sign defect, a different class (H1.1 shape), recorded under its own
-      finding.
+      CR-301 resolved and re-verified by execution in round 1; the round
+      2 delta cannot reach the mechanism, verified by reading the whole
+      diff and re-running the suite that pins the regression.
   - class-id: H2.2
     probed: >-
-      Unchanged by the delta: the reserve-set check still precedes every
+      Unchanged by both fix rounds: the reserve-set check precedes every
       other rule for both signs
-      (src/modules/ledger/domain/classify-flow.ts:59) and the round 0
-      suite evidence re-ran green at the head (npm test, 152 tests). The
-      new full-ledger history read cannot pull RESERVE rows into the
-      refund correction because the reserve check returns first.
+      (src/modules/ledger/domain/classify-flow.ts:59) and the pinning
+      suites re-ran green at this head (npm test, 155 tests).
     cleared-because: >-
       No implementation path reaches INCOME for a declared reserve
-      counterparty at this head, as in round 0.
+      counterparty at this head, as established in round 0 and untouched
+      since.
   - class-id: H2.3
     probed: >-
-      Re-probed with the delta's new ordering surface included: the
-      exclusive settlement allocation is sorted purely on data (distance,
-      debit id, import id at src/modules/ledger/domain/interpret.ts:96),
-      re-executed under 25 adversarial shuffles with identical canonical
-      output (probe D3.b), the equal-distance tie breaks by import id
-      (D3.c), and two debits with two equal-total imports allocate one
-      each with neither side reused (D3.d). Transfer pairing itself is
-      untouched by the delta and its round 0 evidence re-ran green.
+      Round 0 and round 1 executed the shuffle and tie-break probes over
+      both pairing and the exclusive settlement allocation; the round 2
+      delta touches neither (whole diff read), and the order-independence
+      suites re-ran green at this head.
     cleared-because: >-
-      Order-independence and idempotency hold by executed probe on both
-      the old pairing surface and the new allocation surface; the
-      persisted rewrite is unchanged (delete then insert over the loaded
-      set in one transaction, per-leg unique indexes standing).
+      Order-independence and idempotency hold per the executed probes of
+      the prior rounds over mechanisms the round 2 delta does not touch.
   - class-id: H2.4
     probed: >-
-      The 500-case property re-executed green at the head over the new
-      allocation semantics. The round 0 algebraic bound stands (the
-      identity is blind to INCOME/SPEND/RESERVE shuffles by
-      construction), and the one exploit of that blindness this review
-      had found (CR-301's silent double count behind a closed
-      difference) is now unreachable by the re-executed construction.
+      The 500-case reconciliation property re-executed green at this
+      head. The round 0 algebraic bound stands (the identity is blind to
+      INCOME/SPEND/RESERVE shuffles by construction); its one known
+      exploit (CR-301) is fixed and its regression pinned. CR-308's
+      inversion shape would be caught nowhere by the identity (an
+      inverted amount moves both sides together), which is one more
+      reason the parser refuses signs rather than trusting downstream
+      checks; at this head every plausible signed-cell shape is refused
+      by executed probe.
     cleared-because: >-
-      The identity holds on any dataset the model admits and its gap
-      accounting is exact, as in round 0; the blindness residue is
-      recorded and its known exploit is fixed.
+      The identity holds on any dataset the model admits with exact gap
+      accounting, as in prior rounds; the blindness residue is recorded
+      and no reachable exploit of it remains.
   - class-id: H2.5
     probed: >-
-      The full re-parse family re-executed end to end at the head
-      (probes R1-R4): round 0's collision construction is now a strict
-      no-op, the corrected-spec overlap repair converges with unique keys
-      and zero-add re-uploads, a dying interpret leaves the INGESTED
-      marker with corrected facts, and the fake refuses a colliding key
-      all-or-nothing exactly like the schema. The executed write-path
-      grep from round 0 re-checked against the delta: the only new
-      Transaction-adjacent write is applyReparse's status downgrade of
-      imports (import-repository.ts:281), which touches no fact column.
-      Hunted the new algorithm's own destructive paths: key movement onto
-      another import's key inside the profile is prevented by the
-      accumulated assignedKeys simulation; movement onto a row OUTSIDE
-      the profile (the double-confirm twin-profile landscape) aborts
-      loudly on the unique index with nothing rewritten, named as residue
-      in the ledger above; a concurrent window run racing the re-parse
-      can still re-mark a downgraded import INTERPRETED from a
-      pre-rewrite read (the generic read-to-write gap every concurrent
-      interpretation has, healed by the next covering run), recorded here
-      as a known narrow race rather than a finding because it predates
-      the delta, requires simultaneous user actions in a seconds-wide
-      window, and self-heals.
+      Round 1 re-executed the full re-parse family end to end (overlap
+      no-op, corrected-spec convergence, INGESTED marker under a dying
+      interpret, fake unique enforcement); the round 2 delta touches the
+      parser's amount branch, which the re-parse exercises only through
+      parseStatement, and the reparse suites re-ran green at this head.
+      The named residues from round 1 (loud abort over pre-duplicated
+      cross-profile facts; the narrow re-parse-versus-window race) stand
+      unchanged, loud or self-healing.
     cleared-because: >-
-      CR-302 and CR-304 are resolved by executed re-probe of the exact
-      round 0 constructions plus committed regression tests; the
-      remaining residues (loud abort over pre-duplicated cross-profile
-      facts, the narrow re-parse-versus-window race) are named, loud or
-      self-healing, and none of them silently rewrites or loses a fact.
+      CR-302 and CR-304 resolved and re-verified by execution in round
+      1; the round 2 delta's only intersection (row parsing) is covered
+      by the re-run suites and by the probes of this round, which show
+      the parser strictly REFUSING more inputs, never signing more.
   - class-id: H2.6
     probed: >-
-      Round 0's coincidental cross-match construction re-executed (probe
-      D3.a): the losing settlement-pattern debit now classifies honest
-      SPEND through the existing no-match arm, never INTERNAL, with no
-      surfaced gap, so an unimported card's spend can no longer vanish
-      onto an already-settled statement; the criterion 2.8 tests re-ran
-      green and the window bound evidence from round 0 stands. The
-      stop-for judgement attached to this fix is judged sound in the
-      resolution ledger above.
+      Round 1 re-executed the coincidental cross-match against the
+      exclusive allocation (loser honest SPEND, no vanished spend); the
+      round 2 delta does not touch classification or allocation (whole
+      diff read) and the criterion 2.8 tests re-ran green at this head.
     cleared-because: >-
-      CR-306 is resolved by executed re-probe with the allocation
-      invariants (each side once, deterministic ties) verified under
-      shuffles; the honest-SPEND arm now covers both the no-match and the
-      lost-tie cases.
+      CR-306 resolved and re-verified by execution in round 1, untouched
+      by this delta.
