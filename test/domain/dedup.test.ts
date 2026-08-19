@@ -92,3 +92,35 @@ describe("tuple fields carrying the join delimiter never collide (finding F6)", 
     expect(keyLeft).not.toBe(keyRight);
   });
 });
+
+describe("a desync between rows and keys crashes, never softens (finding F7)", () => {
+  // An empty or missing dedup key would silently collapse rows onto one
+  // key under duplicate skipping: multi-row loss. A length mismatch or an
+  // empty key is a bug and throws (unexpected failures are exceptions,
+  // pulse-typescript section 5).
+  const one = row({ rawLine: "a" });
+  const two = row({ rawLine: "b" });
+
+  test("pairs rows with their keys positionally when lengths match", async () => {
+    const { zipRowsWithDedupKeys } = await import(
+      "../../src/modules/import/domain/dedup"
+    );
+    const zipped = zipRowsWithDedupKeys([one, two], ["k1", "k2"]);
+    expect(zipped.map((entry) => entry.dedupKey)).toEqual(["k1", "k2"]);
+    expect(zipped[0]?.rawLine).toBe("a");
+  });
+
+  test("throws on a length mismatch", async () => {
+    const { zipRowsWithDedupKeys } = await import(
+      "../../src/modules/import/domain/dedup"
+    );
+    expect(() => zipRowsWithDedupKeys([one, two], ["k1"])).toThrow(/desync/i);
+  });
+
+  test("throws on an empty key", async () => {
+    const { zipRowsWithDedupKeys } = await import(
+      "../../src/modules/import/domain/dedup"
+    );
+    expect(() => zipRowsWithDedupKeys([one], [""])).toThrow(/desync|empty/i);
+  });
+});

@@ -6,7 +6,7 @@
 // Import row and, on the known-source path, the ingest.
 
 import type { HouseholdContext } from "@/platform/tenancy";
-import { assignDedupKeys } from "../domain/dedup";
+import { assignDedupKeys, zipRowsWithDedupKeys } from "../domain/dedup";
 import type { ParsedStatement } from "../domain/parse-statement";
 import { specEquals, type SourceProfileSpec } from "../domain/source-profile";
 import type {
@@ -75,10 +75,9 @@ export const uploadStatement = async (
     importId: record.id,
     accountId: account,
     sourceProfileId: profile.id,
-    rows: parsed.value.rows.map((row, index) => ({
-      ...row,
-      dedupKey: keys[index] ?? "",
-    })),
+    // zipRowsWithDedupKeys THROWS on a row/key desync (finding F7): a
+    // softened empty key would be silent multi-row loss.
+    rows: zipRowsWithDedupKeys(parsed.value.rows, keys),
   });
   return { kind: "ingested", importId: record.id, added, known };
 };

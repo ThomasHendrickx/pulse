@@ -45,6 +45,30 @@ const contentTuple = (accountId: string, row: ParsedRow): string =>
     row.reference ?? "",
   ]);
 
+// Pair rows with their assigned keys positionally. A length mismatch or
+// an empty key is a BUG (a desync between assignDedupKeys and its caller)
+// and throws rather than softening (finding F7): an empty dedup key would
+// collapse every affected row onto one stored row under duplicate
+// skipping, which is silent multi-row loss, the worst failure this module
+// has. Unexpected failures are exceptions (pulse-typescript section 5).
+export const zipRowsWithDedupKeys = <R>(
+  rows: readonly R[],
+  keys: readonly string[],
+): readonly (R & { readonly dedupKey: string })[] => {
+  if (rows.length !== keys.length) {
+    throw new Error(
+      `Dedup key desync: ${rows.length} rows but ${keys.length} keys`,
+    );
+  }
+  return rows.map((row, index) => {
+    const dedupKey = keys[index];
+    if (dedupKey === undefined || dedupKey === "") {
+      throw new Error(`Dedup key desync: empty key at row ${index}`);
+    }
+    return { ...row, dedupKey };
+  });
+};
+
 // The ordinal counts occurrences among HASH-PATH identical-content rows
 // ONLY (finding F5, owner v0.2 addendum section 5). Counting natural-keyed
 // twins as well would make a keyless row's key depend on which siblings

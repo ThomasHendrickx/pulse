@@ -5,7 +5,7 @@
 // spec fix can change which column is the account column.
 
 import type { HouseholdContext } from "@/platform/tenancy";
-import { assignDedupKeys } from "../domain/dedup";
+import { assignDedupKeys, zipRowsWithDedupKeys } from "../domain/dedup";
 import type { SourceProfileSpec } from "../domain/source-profile";
 import type { NewAccount } from "@/modules/accounts/application";
 import { findProfileBySpec } from "./upload-statement";
@@ -92,10 +92,8 @@ export const confirmImport = async (
     importId: record.id,
     accountId,
     sourceProfileId: profile.id,
-    rows: parsed.value.rows.map((row, index) => ({
-      ...row,
-      dedupKey: keys[index] ?? "",
-    })),
+    // zipRowsWithDedupKeys THROWS on a row/key desync (finding F7).
+    rows: zipRowsWithDedupKeys(parsed.value.rows, keys),
   });
   return { kind: "ingested", importId: record.id, added, known };
 };
