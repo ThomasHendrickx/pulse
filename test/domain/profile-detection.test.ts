@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { detectSourceProfile } from "../../src/modules/import/domain/detect-profile";
-import { parseAmountToCents } from "../../src/modules/import/domain/parse-amount";
+import {
+  parseAmountToCents,
+  parseUnsignedAmountToCents,
+} from "../../src/modules/import/domain/parse-amount";
 import { parseStatement } from "../../src/modules/import/domain/parse-statement";
 import { parseSourceProfileSpec } from "../../src/modules/import/domain/source-profile";
 import type { SourceProfileSpec } from "../../src/modules/import/domain/source-profile";
@@ -467,6 +470,86 @@ describe("an indicator value outside the detected pair fails the row (finding F2
       debitValue: "D",
       creditValue: "C",
     });
+  });
+});
+
+describe("interleaved currency noise cannot reconstruct a sign (backlog CR-308)", () => {
+  // Sibling of CR-307, one adversary deeper: stripCurrencyNoise used to be
+  // a SINGLE regex pass, so a cell whose noise tokens interleave
+  // ("EEURUR-742,10": stripping the inner EUR leaves "EUR-742,10")
+  // reconstructed a currency-prefixed SIGNED value after one strip. The
+  // unsigned entry point's leading-sign check then saw "E", passed, and
+  // the inner parse stripped again and read the sign: the CR-208 inversion
+  // (debit column) and the CR-305 discard (indicator marker), two
+  // normalisation steps deep. The class witness reddens under two
+  // structurally different members: the debitCredit representation and the
+  // indicator representation.
+  const pairSpec: SourceProfileSpec = {
+    delimiter: ",",
+    encoding: "utf-8",
+    headerRowIndex: 0,
+    dateFormat: "YYYY-MM-DD",
+    decimalStyle: "dot",
+    amountRepresentation: { kind: "debitCredit", debitColumn: 1, creditColumn: 2 },
+    columns: { bookingDate: 0, description: 3 },
+  };
+  const pairBytes = (row: string): Uint8Array =>
+    new TextEncoder().encode(["Date,Debit,Credit,Description", row].join("\n"));
+
+  const indicatorSpec: SourceProfileSpec = {
+    delimiter: ";",
+    encoding: "utf-8",
+    headerRowIndex: 0,
+    dateFormat: "DD.MM.YY",
+    decimalStyle: "comma",
+    amountRepresentation: {
+      kind: "indicator",
+      amountColumn: 1,
+      indicatorColumn: 2,
+      debitValue: "D",
+      creditValue: "C",
+    },
+    columns: { bookingDate: 0, description: 3 },
+  };
+  const indicatorBytes = (row: string): Uint8Array =>
+    new TextEncoder().encode(["Datum;Bedrag;D/C;Omschrijving", row].join("\n"));
+
+  test("an interleaved-noise negative in a debit column is a row error, never an inverted sign", () => {
+    const parsed = parseStatement(
+      pairBytes("2026-08-03,EEURUR-742.10,,ACME STORE"),
+      pairSpec,
+    );
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error).toMatchObject({ kind: "row-error", problem: "amount" });
+    }
+  });
+
+  test("an interleaved-noise negative beside a credit marker is a row error, never a negative credit", () => {
+    const parsed = parseStatement(
+      indicatorBytes("03.08.26;EEURUR-742,10;C;ACME STORE"),
+      indicatorSpec,
+    );
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error).toMatchObject({ kind: "row-error", problem: "amount" });
+    }
+  });
+
+  test("interleaved noise WITHOUT a sign keeps parsing, signed by the column (control)", () => {
+    const parsed = parseStatement(
+      pairBytes("2026-08-03,EEURUR742.10,,ACME STORE"),
+      pairSpec,
+    );
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.value.rows[0]?.amountCents).toBe(-74210);
+    }
+  });
+
+  test("the unsigned entry point itself refuses any parse that comes back negative", () => {
+    const parsed = parseUnsignedAmountToCents("EEURUR-742,10", "comma");
+    expect(parsed.ok).toBe(false);
   });
 });
 

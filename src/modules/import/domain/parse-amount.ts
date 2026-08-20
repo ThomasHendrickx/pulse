@@ -62,16 +62,26 @@ export const isAmountLike = (text: string, style: DecimalStyle): boolean =>
   parseAmountToCents(text, style).ok;
 
 // UNSIGNED entry point for DIRECTIONAL cells (findings CR-208, CR-305,
-// CR-307): under a debit column, a credit column or an indicator marker,
-// the column or marker is the sign authority and the cell must be a bare
-// magnitude. Fix round 1 guarded the RAW cell's first character, and fix
-// round 2's finding CR-307 showed that guard and the parser judged
+// CR-307, CR-308): under a debit column, a credit column or an indicator
+// marker, the column or marker is the sign authority and the cell must be
+// a bare magnitude. Fix round 1 guarded the RAW cell's first character,
+// and fix round 2's finding CR-307 showed that guard and the parser judged
 // DIFFERENT strings: "EUR -742,10" starts with "E", passed the guard, and
 // parsed signed after the currency strip, storing the exact CR-208
-// inversion one normalisation step deeper. This entry point rejects any
-// sign remaining AFTER the same normalisation the parser applies, so the
-// two can never diverge again. A sign is never guessed and never
-// silently discarded: the row fails, the import fails loudly, zero rows.
+// inversion one normalisation step deeper.
+//
+// CORRECTED CLAIM (R-087): this comment used to end "so the two can never
+// diverge again", and that sentence was FALSE. stripCurrencyNoise is a
+// single regex pass, so INTERLEAVED noise ("EEURUR-742,10") reconstructs a
+// currency-prefixed signed value after one strip; the leading-sign check
+// here then judged "EUR-742,10" while parseAmountToCents stripped once
+// more and read the sign (backlog finding CR-308). The guarantee is now
+// carried by the OUTPUT, not by the normalisation: whatever string games
+// the input plays, a parse that comes back negative is rejected here, so
+// this entry point cannot return a negative value by construction. The
+// leading-sign check stays as the loud fast path for the common case. A
+// sign is never guessed and never silently discarded: the row fails, the
+// import fails loudly, zero rows.
 export const parseUnsignedAmountToCents = (
   rawText: string,
   style: DecimalStyle,
@@ -80,5 +90,9 @@ export const parseUnsignedAmountToCents = (
   if (text.startsWith("-") || text.startsWith("+")) {
     return err({ kind: "unparseable-amount" as const, text: rawText });
   }
-  return parseAmountToCents(text, style);
+  const parsed = parseAmountToCents(text, style);
+  if (parsed.ok && parsed.value < 0) {
+    return err({ kind: "unparseable-amount" as const, text: rawText });
+  }
+  return parsed;
 };

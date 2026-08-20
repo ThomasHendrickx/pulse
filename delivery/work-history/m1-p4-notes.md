@@ -120,3 +120,22 @@ edited.
 
 - [start] Worktree verified clean at 491d3c8. Brief, schema, skills,
   plan excerpts, fixtures, existing ledger/import modules read.
+
+- [CR-308] Red witness first: added the CR-308 describe block to
+  test/domain/profile-detection.test.ts (four tests: debitCredit member,
+  indicator member, unsigned control, direct unsigned entry). Against the
+  unfixed parser: `npx vitest run test/domain/profile-detection.test.ts`
+  exit 1, "Tests 3 failed | 43 passed (46)" (the control passed, as
+  expected). Fix: parseUnsignedAmountToCents now rejects a parse that
+  comes back negative (guarantee carried by the OUTPUT, so no future
+  normalisation change can smuggle a sign through), leading-sign check
+  kept as the loud fast path; the falsified "can never diverge again"
+  claim corrected IN PLACE and loudly (R-087) in the same comment. After
+  the fix: same suite 46 passed, exit 0; full fast gate 159 passed (15
+  files), exit 0, Node v26.7.0, vitest run, no build step required.
+  Deliberate choice AGAINST fixpoint stripping: making stripCurrencyNoise
+  iterate would have CHANGED the signed representation's behaviour too
+  ("EEURUR-742,10" in a signed column currently fails loud as
+  unparseable; a fixpoint strip would make it parse as -742,10), and the
+  backlog item's scope is the unsigned entry. The brief offered either
+  fix; the output rejection is the one that adds no new accepted inputs.
