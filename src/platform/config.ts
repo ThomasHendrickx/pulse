@@ -46,20 +46,38 @@ export const supabaseConfig = (): SupabaseConfig =>
 
 export const isProduction = (): boolean => process.env.NODE_ENV === "production";
 
-// Optional fixed "now" for deterministic environments (M1-P5). The
-// Playwright webServer sets PULSE_FIXED_NOW so the month view's notion of
-// the current month is pinned mid-September 2026 against the absolute
-// fixture months, deterministic forever (architecture section 10: the
-// clock is injected and fixed). Unset everywhere else, so production runs
-// on the system clock. Parsed HERE because env reads are confined to this
-// module (pulse-typescript section 6); consumed only by appClock in
-// platform/clock.ts. A set-but-invalid value throws at the point of use:
-// a silently ignored typo would run the suite against the real clock and
-// make every partial-month assertion time-dependent.
+// Optional fixed "now" for deterministic NON-PRODUCTION environments
+// (M1-P5). The Playwright webServer sets PULSE_FIXED_NOW so the month
+// view's notion of the current month is pinned mid-September 2026
+// against the absolute fixture months, deterministic forever
+// (architecture section 10: the clock is injected and fixed). Parsed
+// HERE because env reads are confined to this module (pulse-typescript
+// section 6); consumed only by appClock in platform/clock.ts.
+//
+// CORRECTED CLAIM (R-087, fix round 1 finding CR-503): this comment
+// used to assert the variable was "set by the Playwright webServer and
+// nothing else" and "unset everywhere else, so production runs on the
+// system clock". Nothing checked either sentence, and the review's
+// executed probe showed a production process honouring the variable
+// silently, freezing the current month, the partial flag and the
+// comparison target with no symptom. The guard below makes the second
+// sentence enforced instead of assumed: a production process with the
+// variable set REFUSES to run on a frozen clock, loudly. A
+// set-but-invalid value also throws at the point of use: a silently
+// ignored typo would run the suite against the real clock and make
+// every partial-month assertion time-dependent.
 export const fixedNowOverride = (): Date | undefined => {
   const raw = process.env.PULSE_FIXED_NOW;
   if (raw === undefined || raw === "") {
     return undefined;
+  }
+  if (isProduction()) {
+    // Message logged once per pattern in this module; here the throw is
+    // the point, so log and throw both, with the module's prefix.
+    console.error(
+      "[pulse:config] PULSE_FIXED_NOW is set in production; refusing to run on a frozen clock",
+    );
+    throw new Error("PULSE_FIXED_NOW must not be set in production");
   }
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) {
