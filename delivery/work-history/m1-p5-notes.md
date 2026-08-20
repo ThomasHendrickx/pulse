@@ -64,3 +64,72 @@ Backlog carry-ins declared in scope: CR-404 and the messages em dash
   then codebase survey (ledger domain and repository, merchants UI as the
   module-screen precedent, prototype HTML, tokens, catalogs, eslint and
   playwright configs, fixtures with their derived totals).
+- [t1] Kernel mechanism index read in full (15 entries, all kernel-process
+  mechanisms: claim files, leases, logs, worktrees, reporter parsing,
+  guards, CI-step assertions). NO entry covers month projections, raw SQL
+  aggregation, e2e fixtures, or server-component views: recorded answer,
+  not a skipped lookup. Two general rules carried anyway: assert by name
+  over append-only registries (CR-404 is exactly this rule, and the fix
+  pins the index NAME); a class witness must redden under two structurally
+  different members.
+- [t2] Codebase survey done: ledger domain (flow, classify-flow,
+  corrections incl. the cash marker and M1P4-C7 precedence note,
+  interpret, reconciliation), interpret-window (unmatched INTERNAL legs
+  are persisted as flow=INTERNAL with NO complete transfer_link row;
+  matched pairs and settlements are link rows; UNRESOLVED arises only
+  from zero-amount rows today), merchants published interface
+  (normaliseCounterparty IS published), prisma schema, prototype month
+  screen extracted from the bundled design reference (markup, copy deck,
+  layout: spend wide column, income+reserves rail, recon strip, hatch
+  badge for partial), tokens.css, import/merchants UI and e2e precedents.
+- [t3] SCOPE ESCALATIONS, declared the moment found (auditor reads the
+  declaration from the merge base; the amendment must land on the base
+  branch, orchestrator please amend). Each is driven by an explicit
+  acceptance criterion or an architecture rule, none is discretionary:
+  1. eslint.config.mjs: criterion 4.4 REQUIRES react/jsx-no-literals (or
+     equivalent) enabled for src/modules/**/ui; the lint config is the
+     only place a lint rule can be enabled and is not on the declaration.
+  2. package.json: criterion 4.5 REQUIRES an npm script wrapping the
+     token-purity grep gate; scripts live only in package.json.
+  3. playwright.config.ts: criterion 4.2 REQUIRES a fixed clock mid-month
+     for the e2e webServer; the webServer env is set there so the gate is
+     deterministic in-repo rather than depending on the invoking shell.
+  4. src/platform/config.ts and src/platform/clock.ts: the fixed clock
+     must reach the app; pulse-typescript section 6 says env is parsed
+     ONLY in the config module, so the override accessor belongs there,
+     and the Clock construction beside the existing systemClock.
+  5. src/modules/ledger/application/index.ts (one export line): the month
+     view must group cash withdrawals under their own destination with
+     precedence over merchant assignment (M1-P4 open question M1P4-C7,
+     recorded at the marker's definition in corrections.ts). The cash
+     patterns are code-owned in ledger/domain/constants.ts; consuming
+     them from overview without a published export would either reach
+     into module internals (forbidden) or duplicate the pattern list
+     (two sources). Exporting the patterns/predicate from the published
+     index is the smallest correct surface.
+  Standing extras (work history) and declared extras (CR-404 test file)
+  are already covered.
+- [t4] Design decisions before the first test line (summarised; full
+  rationale goes to m1-p5.yaml key-decisions):
+  - Fixed clock for e2e: PULSE_FIXED_NOW=2026-09-15T12:00:00Z. September
+    2026 is then the partial current month (criterion 4.2), August 2026 a
+    closed month compared to July 2026 (comparison assertions), July the
+    baseline. Fixture months are absolute, so the suite is deterministic
+    forever, per the architecture's fixed-clock rule.
+  - Month selection via /?month=YYYY-MM (English URL, validated), default
+    = the clock's current month; prev/next links; next capped at the
+    current month.
+  - Per-month reconciliation identity: difference = sum(INTERNAL in
+    month) + sum(UNRESOLVED in month) holds by construction over the
+    persisted flows; unmatched legs = INTERNAL rows with no complete
+    link row. The panel names causes: unresolved rows and unmatched legs
+    with counts and signed amounts.
+  - Golden journey totals (fixture-derived, computed by hand in the spec
+    header): August income 2.500,00; spend 1.918,97 (A: 12,50 + 86,47 +
+    950,00; B: 20,00; card items 450,00 + 250,00 + 150,00 counted once);
+    reserves 0,00; pot change 581,03; difference 0. Settlement pair
+    (-850,00 on A, +850,00 on the card) excluded from both sides; the
+    A->B transfer pair (300,00) excluded from both sides.
+- [t5] Next: environment bring-up (npm ci, docker, db reset), then the
+  golden journey spec written FIRST and shown red against the still
+  view-less month route.
