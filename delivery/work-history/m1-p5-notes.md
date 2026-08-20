@@ -209,3 +209,51 @@ Backlog carry-ins declared in scope: CR-404 and the messages em dash
   M4 (H4.3): verdict replaced by a hardcoded English string in an
   expression container (invisible to the lint rule, so the e2e is the
   witness that closes that residue), locale test exit 1 on NL.
+- [t15] Build-safe contract: the overview composition root originally
+  called appClock() at module scope, which reads env; platform/config's
+  header forbids env reads at module load (a Vercel build imports every
+  route module). Made lazy (clock resolved per call), commit 839445a;
+  npm run build exit 0 at that commit as evidence the contract holds.
+- [t16] Coverage gap found by self-review and closed before handback: no
+  e2e exercised the cash destination group (the M1P4-C7 carry-in this
+  phase resolves). mv-partial.csv gained a MAESTRO GELDOPNAME -100,00
+  row; the partial test asserts ONE "Cash" spend group at 100,00 and no
+  group containing the raw descriptor; green run 1 passed (21.4s), then
+  mutation M5 (CASH_SQL_PATTERN replaced by a never-matching literal)
+  exit 1, restored. Commit af759b3. RESIDUE, stated: precedence of the
+  cash marker over a merchant assignment on the SAME row (a user naming
+  a GELDOPNAME descriptor) is held by construction in foldGroups (isCash
+  checked first) and is not separately witnessed end to end; doing so
+  needs a naming flow inside the month-view spec and is recorded as an
+  open question instead of silently claimed.
+- [t17] RELEASE VERIFICATION (criterion 4.6, DR-0001) at head af759b3,
+  working tree clean (git status --short | wc -l = 0), all on the same
+  commit, local stack, env pinned per fleet warnings 1 and 6:
+  - npm run typecheck: exit 0
+  - npm run lint: exit 0 (react/jsx-no-literals active over module UI)
+  - npm run gate:tokens: exit 0 (raw criterion grep exits 1, no literal)
+  - npm test: exit 0, 17 files, 219 passed, 0 failed, 0 skipped, 0 todo
+    (vitest run, Node v26.7.0, no build step required)
+  - npm run test:e2e: exit 0, 10 passed, 0 failed, 0 skipped (playwright
+    chromium, dev webServer with PULSE_FIXED_NOW=2026-09-15T12:00:00Z,
+    after a from-scratch db:reset applied all five migrations + seed)
+  DR-0001's binding shape (golden journey plus fast gate, green on the
+  release commit) is therefore satisfied at af759b3 and recorded here as
+  the evidence.
+- [t18] Also checked: npm run build exit 0 (prod build; deploy config
+  untouched this phase). Em dash sweep over src, test, messages, styles,
+  configs and these notes: grep exit 1, zero occurrences.
+- [t19] Work history m1-p5.yaml written and schema-validated: npx
+  --prefix /home/user/pulse-fleet tiphys validate --type work-history
+  --context <worktree> exit 0 (first run caught claim M1P5-C10 carrying
+  the token "never" in an open-question statement; reworded, revalidated
+  0). Claim grep run exactly as the brief carries it, line-based AND
+  whitespace-flattened. Hits settled: lines 4/8/12 are the VERBATIM
+  prompt (R-052a requires the quotation; the phrases are the
+  dispatcher's, not claims of mine); line 126 ("including when the books
+  close") is settled by mutation M3's captured red beside it in claim
+  M1P5-C3; line 143 quotes correction 4's canonical phrasing with
+  mutation M5's captured red in claim M1P5-C9; the reserve-surface
+  sentence now carries its settling grep inline (one hit,
+  profile-confirmation.tsx:122); lines 418/541/549 are captured mutation
+  output. No unsettled absolute remains outside the quoted prompt.
