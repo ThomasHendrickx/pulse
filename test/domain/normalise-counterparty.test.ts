@@ -116,6 +116,57 @@ describe("whitespace collapse", () => {
   });
 });
 
+describe("the recipe's output is pinned: stored rule patterns depend on it (finding CR-402)", () => {
+  // STABILITY REGRESSION TABLE. MerchantRule patterns are stored as this
+  // pipeline's output (see the stability contract at the top of
+  // normalise-counterparty.ts), so an output change silently detaches
+  // stored manual namings: the hazard verdict's executed construction
+  // shows a stored "STARBUCKS OXFORD" rule ceasing to match once OXFORD
+  // joins the city list. This table pins the EXACT output for a
+  // representative input per pipeline stage plus the fixture-shaped
+  // composites, so any accidental recipe change reddens here. If this
+  // test reddens and the change is INTENDED: update the pins AND ship the
+  // stored-pattern re-normalisation (or the recorded versioning decision)
+  // in the same change; that obligation is the point of the pin.
+  const PINNED: readonly (readonly [string, string])[] = [
+    // Plain names: uppercase plus collapse only.
+    ["Supermarkt Noord", "SUPERMARKT NOORD"],
+    ["Acme Salaris BV", "ACME SALARIS BV"],
+    ["Caf\u00e9 Zomer", "CAF\u00c9 ZOMER"],
+    // Terminal noise, each pattern family once.
+    ["BETALING MET DEBETKAART SUPERMARKT NOORD GENT", "SUPERMARKT NOORD"],
+    ["BETALING MET KBC-DEBETKAART VIA BANCONTACT SUPERMARKT NOORD", "SUPERMARKT NOORD"],
+    ["MAESTRO XXXX 1234 SUPERMARKT NOORD", "SUPERMARKT NOORD"],
+    ["CONTACTLESS SUPERMARKT NOORD", "SUPERMARKT NOORD"],
+    ["AMAZON US SEATTLE USD 25.00 KOERS 0,9210", "AMAZON US"],
+    // Date and time fragments.
+    ["SUPERMARKT NOORD 12/08/2026", "SUPERMARKT NOORD"],
+    ["SUPERMARKT NOORD 12.08.26 14:35", "SUPERMARKT NOORD"],
+    // City fragments: postal pair, trailing token, non-trailing kept.
+    ["SUPERMARKT NOORD 9000 GENT", "SUPERMARKT NOORD"],
+    ["STARBUCKS ANTWERPEN", "STARBUCKS"],
+    ["PIZZA NAPOLI BRUSSEL", "PIZZA NAPOLI"],
+    ["BRUSSEL BROODJES BV", "BRUSSEL BROODJES BV"],
+    // A city NOT in the token list stays in the key (today's recipe;
+    // adding it later is the exact detachment case the contract names).
+    ["STARBUCKS OXFORD", "STARBUCKS OXFORD"],
+    // Whitespace collapse and the all-noise fallback.
+    ["  SUPERMARKT   NOORD \t GENT ", "SUPERMARKT NOORD"],
+    ["GENT", "GENT"],
+    ["12/08/2026", "12/08/2026"],
+  ];
+
+  test.each(PINNED)("%j stays pinned to %j", (input, pinned) => {
+    expect(normaliseCounterparty(input)).toBe(pinned);
+  });
+
+  test("the pipeline is idempotent over its own output, so re-normalising stored patterns is safe", () => {
+    for (const [, pinned] of PINNED) {
+      expect(normaliseCounterparty(pinned)).toBe(pinned);
+    }
+  });
+});
+
 describe("degenerate inputs stay non-destructive", () => {
   test("a string that is ALL noise falls back to its collapsed uppercase form instead of vanishing", () => {
     // A counterparty must never normalise to the empty string while the

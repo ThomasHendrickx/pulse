@@ -12,12 +12,34 @@
 // it in would change flow classifications, and resolution must rename and
 // regroup, never reclassify (hazard H3.2; M1-P3 open question C9 hands
 // that swap to an explicit decision).
+//
+// STABILITY CONTRACT (fix round 1, finding CR-402; the sibling contract
+// is dedup.ts's frozen hash recipe, one module over): MerchantRule
+// patterns are stored as THIS PIPELINE'S OUTPUT. assignMerchant writes
+// normaliseCounterparty(text) as the EXACT rule subject, and matching
+// compares stored patterns against freshly normalised strings, so any
+// change to this pipeline (a city token, a noise pattern, a date shape,
+// an ordering change) silently detaches whichever stored rules no longer
+// reproduce: the executed construction in the M1-P4 hazard verdict shows
+// a stored "STARBUCKS OXFORD" naming ceasing to match the moment OXFORD
+// joins CITY_TOKENS. The affected rows regress to visible unresolved
+// groups (totals do not move), which is still a user decision silently
+// ceasing to apply. Therefore ANY change to this file's output MUST ship,
+// in the same change, EITHER a one-off re-normalisation of stored
+// MerchantRule patterns (EXACT and PREFIX; the pipeline is idempotent
+// over its own output, so re-normalising stored patterns is safe) OR an
+// explicit recorded decision to version the recipe instead. The pinned
+// regression table in test/domain/normalise-counterparty.test.ts exists
+// to make an accidental change RED: if it reddens and you meant the
+// change, update the pins and bring the migration with you.
 
 // Payment terminal noise: rail vocabulary and card fragments that say HOW
 // something was paid, never WHO was paid. Grounded in the committed
 // fixtures (belfius descriptions, kbc card FX rows), which reproduce the
-// owner's two real statement formats; extend the list when a new export
-// shows a new shape, and keep every entry a word-bounded pattern so no
+// owner's two real statement formats; extending the list when a new
+// export shows a new shape is expected AND is a recipe change under the
+// stability contract above, so it travels with the stored-pattern
+// re-normalisation. Keep every entry a word-bounded pattern so no
 // merchant name can be eaten from the middle of a word.
 const TERMINAL_NOISE_PATTERNS: readonly RegExp[] = [
   // "BETALING MET DEBETKAART", "BETALING MET KBC-DEBETKAART", kredietkaart.
@@ -45,7 +67,11 @@ const DATE_FRAGMENT_PATTERNS: readonly RegExp[] = [
 //      is the name. The token list is DATA, not logic: Belgian cities
 //      observed or likely in Belgian exports plus the foreign cities the
 //      committed card fixture carries. A city missing from the list only
-//      means the rule pattern includes it: grouping stays deterministic.
+//      means the rule pattern includes it AT WRITE TIME: grouping stays
+//      deterministic, and adding the city later detaches that stored
+//      pattern, which is exactly the stability contract's case (finding
+//      CR-402). Growing this list is a recipe change: re-normalise
+//      stored rule patterns in the same change.
 const POSTAL_CITY_PATTERN = /\b[1-9]\d{3} [A-Z][A-Z'-]+\b/g;
 
 const CITY_TOKENS: ReadonlySet<string> = new Set([
