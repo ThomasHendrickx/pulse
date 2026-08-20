@@ -46,6 +46,30 @@ const MATCHED_LINK_EXISTS = Prisma.sql`EXISTS (
     )
 )`;
 
+// A MATCHED leg whose partner books OUTSIDE the viewed period: money in
+// transit across the month boundary (fix round 1, finding CR-501). Both
+// sides are matched and correct, but only one of them is inside the
+// month, so the leg's amount sits in the month's difference and must be
+// NAMED there, never left as a bare alarm. The partner is resolved
+// through the link (for a settlement debit with no imported mirror the
+// CASE yields NULL and the join drops the row: that leg is unmatched,
+// not in transit). Legs of a pair fully inside the period never match
+// this predicate, so the sum over in-transit legs equals the sum over
+// ALL matched INTERNAL legs in the period, which is what closes the
+// difference identity exactly.
+const inTransitExists = (period: Period): Prisma.Sql => Prisma.sql`EXISTS (
+  SELECT 1 FROM "transfer_links" l
+  JOIN "transactions" p ON p."id" = CASE
+    WHEN l."outgoingTransactionId" = t."id" THEN l."incomingTransactionId"
+    ELSE l."outgoingTransactionId" END
+  WHERE l."householdId" = t."householdId"
+    AND (l."outgoingTransactionId" = t."id" OR l."incomingTransactionId" = t."id")
+    AND (
+      p."bookingDate" < ${plainDateToDbDate(period.from)}
+      OR p."bookingDate" > ${plainDateToDbDate(period.to)}
+    )
+)`;
+
 const countedGroups = async (
   context: HouseholdContext,
   period: Period,
@@ -160,6 +184,9 @@ export const monthFigures = async (
       unresolvedCount: bigint;
       unmatchedCents: bigint;
       unmatchedCount: bigint;
+      inTransitCents: bigint;
+      inTransitCount: bigint;
+      uninterpretedCount: bigint;
       rowCount: bigint;
     }[]
   >`
@@ -167,20 +194,30 @@ export const monthFigures = async (
       COALESCE(SUM(t."amountCents") FILTER (WHERE t."flow" = 'INCOME'), 0)::bigint      AS "incomeSigned",
       COALESCE(SUM(t."amountCents") FILTER (WHERE t."flow" = 'SPEND'), 0)::bigint       AS "spendSigned",
       COALESCE(SUM(t."amountCents") FILTER (WHERE t."flow" = 'RESERVE'), 0)::bigint     AS "reserveSigned",
-      COALESCE(SUM(t."amountCents"), 0)::bigint                                         AS "changeInPot",
+      COALESCE(SUM(t."amountCents") FILTER (WHERE t."flow" IS NOT NULL), 0)::bigint     AS "changeInPot",
       COALESCE(SUM(t."amountCents") FILTER (WHERE t."flow" = 'UNRESOLVED'), 0)::bigint  AS "unresolvedCents",
       COUNT(*) FILTER (WHERE t."flow" = 'UNRESOLVED')::bigint                           AS "unresolvedCount",
       COALESCE(SUM(t."amountCents") FILTER (
         WHERE t."flow" = 'INTERNAL' AND NOT ${MATCHED_LINK_EXISTS}), 0)::bigint         AS "unmatchedCents",
       COUNT(*) FILTER (
         WHERE t."flow" = 'INTERNAL' AND NOT ${MATCHED_LINK_EXISTS})::bigint             AS "unmatchedCount",
-      COUNT(*)::bigint                                                                  AS "rowCount"
+      COALESCE(SUM(t."amountCents") FILTER (
+        WHERE t."flow" = 'INTERNAL' AND ${inTransitExists(period)}), 0)::bigint         AS "inTransitCents",
+      COUNT(*) FILTER (
+        WHERE t."flow" = 'INTERNAL' AND ${inTransitExists(period)})::bigint             AS "inTransitCount",
+      COUNT(*) FILTER (WHERE t."flow" IS NULL)::bigint                                  AS "uninterpretedCount",
+      COUNT(*) FILTER (WHERE t."flow" IS NOT NULL)::bigint                              AS "rowCount"
     FROM "transactions" t
     WHERE t."householdId" = ${context.householdId}::uuid
-      AND t."flow" IS NOT NULL
       AND t."bookingDate" >= ${plainDateToDbDate(period.from)}
       AND t."bookingDate" <= ${plainDateToDbDate(period.to)}
   `;
+  // The WHERE deliberately carries NO flow filter (fix round 1, finding
+  // CR-502): a row committed by ingest whose interpretation never ran
+  // (flow NULL) must be COUNTED here as uninterpreted, not vanish from
+  // every surface with a green panel. The named sums, changeInPot and
+  // rowCount each filter on flow themselves, so the figures over
+  // interpreted rows are unchanged.
   const row = rows[0];
   if (row === undefined) {
     throw new Error("Aggregate query returned no row");
@@ -194,6 +231,9 @@ export const monthFigures = async (
     unresolvedCount: Number(row.unresolvedCount),
     unmatchedInternalCents: cents(Number(row.unmatchedCents)),
     unmatchedInternalCount: Number(row.unmatchedCount),
+    inTransitCents: cents(Number(row.inTransitCents)),
+    inTransitCount: Number(row.inTransitCount),
+    uninterpretedCount: Number(row.uninterpretedCount),
     rowCount: Number(row.rowCount),
   };
 };
@@ -214,8 +254,12 @@ export const listGapRows = async (
   >`
     SELECT
       t."id"                                          AS "id",
-      CASE WHEN t."flow" = 'UNRESOLVED'
-        THEN 'unresolved' ELSE 'unmatched-internal' END AS "gap",
+      CASE
+        WHEN t."flow" IS NULL THEN 'uninterpreted'
+        WHEN t."flow" = 'UNRESOLVED' THEN 'unresolved'
+        WHEN ${MATCHED_LINK_EXISTS} THEN 'in-transit'
+        ELSE 'unmatched-internal'
+      END                                             AS "gap",
       t."bookingDate"                                 AS "bookingDate",
       COALESCE(t."counterpartyName", t."description") AS "text",
       a."label"                                       AS "accountLabel",
@@ -226,19 +270,33 @@ export const listGapRows = async (
       AND t."bookingDate" >= ${plainDateToDbDate(period.from)}
       AND t."bookingDate" <= ${plainDateToDbDate(period.to)}
       AND (
-        t."flow" = 'UNRESOLVED'::"Flow"
+        t."flow" IS NULL
+        OR t."flow" = 'UNRESOLVED'::"Flow"
         OR (t."flow" = 'INTERNAL'::"Flow" AND NOT ${MATCHED_LINK_EXISTS})
+        OR (t."flow" = 'INTERNAL'::"Flow" AND ${inTransitExists(period)})
       )
     ORDER BY t."bookingDate" ASC, t."id" ASC
   `;
   return rows.map((row) => ({
     id: row.id,
-    gap: row.gap === "unresolved" ? "unresolved" : "unmatched-internal",
+    gap: parseGapKind(row.gap),
     bookingDate: plainDateFromDbDate(row.bookingDate),
     text: row.text,
     accountLabel: row.accountLabel,
     amountCents: cents(row.amountCents),
   }));
+};
+
+const parseGapKind = (value: string): GapRow["gap"] => {
+  switch (value) {
+    case "unresolved":
+    case "unmatched-internal":
+    case "in-transit":
+    case "uninterpreted":
+      return value;
+    default:
+      throw new Error(`Unknown gap kind from SQL: ${value}`);
+  }
 };
 
 export const hasAnyTransactions = async (

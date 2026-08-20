@@ -22,6 +22,18 @@ import { join } from "node:path";
 //     zero-amount row no rule can classify (sign carries the whole
 //     classification fallback, and zero has no direction to read):
 //     UNRESOLVED, visible, in no total, named by the panel.
+//   mv-transit-a.csv (August, account A): +1.500,00 salary; -300,00
+//     transfer to B booked 30/08. mv-transit-b.csv (account B): the
+//     +300,00 other leg booked 02/09. The pair MATCHES (3 days apart),
+//     and each month sees exactly one leg: money in transit across the
+//     month boundary (fix round 1, CR-501). August: income 1.500,00,
+//     spend 0,00, pot change 1.200,00, difference -300,00 explained
+//     entirely by the in-transit leg.
+//   mv-cancel-a.csv (August, account A): +1.000,00 salary; -400,00
+//     transfer to B booked 05/08. mv-cancel-b.csv (account B): +400,00
+//     from A booked 25/08. Twenty days apart, so the legs do NOT pair:
+//     two genuine unmatched legs whose amounts cancel, difference zero
+//     over two real export gaps (fix round 1, CR-501 probe P-B1).
 
 const FIXTURES = join(__dirname, "..", "fixtures");
 
@@ -163,6 +175,11 @@ test("an unclassifiable transaction is a visible unresolved gap, in no total, na
   await expect(page.getByTestId("pot-change")).toHaveText("800,00");
 
   const recon = page.getByTestId("recon-panel");
+  // Fix round 1 (CR-501): "Books close" must never render above a
+  // listed gap, so the ok verdict is refused even though the
+  // zero-amount row leaves the difference at zero.
+  await expect(recon).toHaveAttribute("data-state", "broken");
+  await expect(recon.getByTestId("recon-difference")).toHaveCount(0);
   const cause = recon.getByTestId("recon-cause-unresolved");
   await expect(cause).toBeVisible();
   await expect(cause).toContainText("1 transaction");
@@ -178,6 +195,69 @@ test("an unclassifiable transaction is a visible unresolved gap, in no total, na
   await expect(
     page.getByTestId("income-group").filter({ hasText: "KAARTVERGOEDING" }),
   ).toHaveCount(0);
+});
+
+// Fix round 1, CR-501: a matched pair whose legs book in neighbouring
+// months is money in transit, not a bare alarm. The panel names it as
+// its own cause, the causes sum exactly to the difference, and the ok
+// verdict is refused while anything is in transit.
+test("a transfer in transit across the month boundary is a named cause, not a bare alarm", async ({
+  page,
+}) => {
+  await signUp(page, "mv-transit");
+  await uploadPotFile(page, "mv-transit-a.csv", "Daily account", "2");
+  await uploadPotFile(page, "mv-transit-b.csv", "Second account", "1");
+
+  await page.goto("/?month=2026-08");
+  await expect(page.getByTestId("income-total")).toHaveText("1.500,00");
+  await expect(page.getByTestId("spend-total")).toHaveText("0,00");
+  await expect(page.getByTestId("pot-change")).toHaveText("1.200,00");
+
+  const recon = page.getByTestId("recon-panel");
+  await expect(recon).toHaveAttribute("data-state", "broken");
+  await expect(recon.getByTestId("recon-difference")).toHaveText("-300,00");
+
+  // The one cause names the leg, and the causes sum exactly to the
+  // difference: the in-transit net of -300,00 IS the -300,00 above,
+  // with no unmatched and no unresolved contribution.
+  const cause = recon.getByTestId("recon-cause-in-transit");
+  await expect(cause).toBeVisible();
+  await expect(cause).toContainText("1 transfer leg");
+  await expect(cause).toContainText("300,00");
+  const leg = cause.getByTestId("in-transit-leg");
+  await expect(leg).toHaveCount(1);
+  await expect(leg).toContainText("Demobank Plus");
+  await expect(recon.getByTestId("recon-cause-unmatched")).toHaveCount(0);
+  await expect(recon.getByTestId("recon-cause-unresolved")).toHaveCount(0);
+
+  // The neighbouring month carries the opposite leg of the same pair.
+  await page.goto("/?month=2026-09");
+  const reconNext = page.getByTestId("recon-panel");
+  await expect(reconNext).toHaveAttribute("data-state", "broken");
+  await expect(reconNext.getByTestId("recon-difference")).toHaveText("300,00");
+  await expect(reconNext.getByTestId("recon-cause-in-transit")).toBeVisible();
+});
+
+// Fix round 1, CR-501 (probe P-B1): two genuine unmatched legs whose
+// amounts cancel leave the difference at zero; the books must still
+// refuse to close, because the verdict is about gaps, not about the
+// residual happening to cancel.
+test("cancelling gaps do not close the books", async ({ page }) => {
+  await signUp(page, "mv-cancel");
+  await uploadPotFile(page, "mv-cancel-a.csv", "Daily account", "2");
+  await uploadPotFile(page, "mv-cancel-b.csv", "Second account", "1");
+
+  await page.goto("/?month=2026-08");
+  const recon = page.getByTestId("recon-panel");
+  await expect(recon).toHaveAttribute("data-state", "broken");
+  await expect(recon).toContainText("Books do not close");
+  // The difference is zero, so no difference figure renders; the named
+  // gaps are what keep the verdict honest.
+  await expect(recon.getByTestId("recon-difference")).toHaveCount(0);
+  const cause = recon.getByTestId("recon-cause-unmatched");
+  await expect(cause).toBeVisible();
+  await expect(cause).toContainText("2 transfer legs");
+  await expect(cause.getByTestId("unmatched-leg")).toHaveCount(2);
 });
 
 // Criterion 4.4 (hazard H4.3): all three locales render the month view

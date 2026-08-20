@@ -134,8 +134,10 @@ export const attachDeltas = (
 export const sumGroups = (groups: readonly OverviewGroup[]): Cents =>
   cents(groups.reduce((total, group) => total + group.totalCents, 0));
 
-// Raw signed sums straight from SQL, over the viewed month's interpreted
-// (pot) rows only.
+// Raw signed sums straight from SQL. The named sums, changeInPot and
+// rowCount cover interpreted rows; uninterpretedCount counts committed
+// rows interpretation has not stamped yet (flow NULL), which the panel
+// must surface rather than let vanish (fix round 1, finding CR-502).
 export type RawMonthFigures = {
   readonly incomeSignedCents: Cents;
   readonly spendSignedCents: Cents;
@@ -145,6 +147,13 @@ export type RawMonthFigures = {
   readonly unresolvedCount: number;
   readonly unmatchedInternalCents: Cents;
   readonly unmatchedInternalCount: number;
+  // Matched INTERNAL legs whose partner books outside the period: money
+  // in transit across the month boundary. The count covers only such
+  // straddling legs; the cents equal the net of ALL matched INTERNAL
+  // legs in the period, because a pair fully inside contributes zero.
+  readonly inTransitCents: Cents;
+  readonly inTransitCount: number;
+  readonly uninterpretedCount: number;
   readonly rowCount: number;
 };
 
@@ -154,16 +163,32 @@ export type MonthFigures = {
   readonly spendCents: Cents;
   readonly netToReservesCents: Cents;
   readonly changeInPotCents: Cents;
-  // changeInPot - (income - spend - netToReserves). Zero when the books
-  // close. By construction of the per-month sums this equals the sum of
-  // the month's INTERNAL and UNRESOLVED amounts, which is exactly what
-  // the named causes below account for.
+  // changeInPot - (income - spend - netToReserves). By construction of
+  // the per-month sums this equals the sum of the month's INTERNAL and
+  // UNRESOLVED amounts, and the three cause sums below partition it
+  // EXACTLY: difference = unresolvedCents + unmatchedInternalCents +
+  // inTransitCents. CORRECTED CLAIM (R-087, fix round 1 finding
+  // CR-501): this comment used to end "which is exactly what the named
+  // causes below account for" while the named causes covered only
+  // unmatched and unresolved rows; matched legs of a pair straddling
+  // the month boundary sat in the sum with NO named cause, witnessed by
+  // the review's probe P-A (a settlement pair over a month end alarming
+  // with 850,00 and zero cause blocks). The in-transit cause closes the
+  // partition, and the sentence above is true again.
   readonly differenceCents: Cents;
+  // The verdict. Zero difference is NECESSARY, not sufficient: the
+  // books close only when there is also no unmatched leg, no unresolved
+  // row, no in-transit leg and no uninterpreted row, so cancelling gaps
+  // can never flip the verdict and "Books close" can never render above
+  // a listed gap (fix round 1, findings CR-501 and CR-502).
   readonly reconciles: boolean;
   readonly unresolvedCents: Cents;
   readonly unresolvedCount: number;
   readonly unmatchedInternalCents: Cents;
   readonly unmatchedInternalCount: number;
+  readonly inTransitCents: Cents;
+  readonly inTransitCount: number;
+  readonly uninterpretedCount: number;
   readonly rowCount: number;
 };
 
@@ -180,11 +205,19 @@ export const deriveMonthFigures = (raw: RawMonthFigures): MonthFigures => {
     netToReservesCents: cents(netToReserves),
     changeInPotCents: raw.changeInPotCents,
     differenceCents: cents(difference),
-    reconciles: difference === 0,
+    reconciles:
+      difference === 0 &&
+      raw.unmatchedInternalCount === 0 &&
+      raw.unresolvedCount === 0 &&
+      raw.inTransitCount === 0 &&
+      raw.uninterpretedCount === 0,
     unresolvedCents: raw.unresolvedCents,
     unresolvedCount: raw.unresolvedCount,
     unmatchedInternalCents: raw.unmatchedInternalCents,
     unmatchedInternalCount: raw.unmatchedInternalCount,
+    inTransitCents: raw.inTransitCents,
+    inTransitCount: raw.inTransitCount,
+    uninterpretedCount: raw.uninterpretedCount,
     rowCount: raw.rowCount,
   };
 };
@@ -200,12 +233,19 @@ export type ReserveMovementGroup = {
   readonly rowCount: number;
 };
 
-// A surfaced gap row: an unmatched INTERNAL leg waiting for its other
-// side's export, or an UNRESOLVED row no rule can classify. Never folded
-// into a total; the reconciliation panel names each one.
+// A surfaced gap row, one of four kinds (fix round 1 grew this from
+// two): an unmatched INTERNAL leg waiting for its other side's export,
+// an UNRESOLVED row no rule can classify, a matched leg whose partner
+// books in a neighbouring month (in transit), or a committed row whose
+// interpretation has not run (uninterpreted). Never folded into a
+// total; the reconciliation panel names each one.
 export type GapRow = {
   readonly id: string;
-  readonly gap: "unmatched-internal" | "unresolved";
+  readonly gap:
+    | "unmatched-internal"
+    | "unresolved"
+    | "in-transit"
+    | "uninterpreted";
   readonly bookingDate: PlainDate;
   readonly text: string;
   readonly accountLabel: string;

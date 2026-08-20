@@ -58,6 +58,10 @@ export type MonthOverview = {
   readonly figures: MonthFigures;
   readonly unmatchedLegs: readonly GapRow[];
   readonly unresolvedRows: readonly GapRow[];
+  // Matched legs whose partner books in a neighbouring month (CR-501).
+  readonly inTransitLegs: readonly GapRow[];
+  // Committed rows interpretation has not stamped yet (CR-502).
+  readonly uninterpretedRows: readonly GapRow[];
   // Counted rows without a merchant, for the review pill in the header.
   readonly unresolvedCounterpartyCount: number;
 };
@@ -159,6 +163,8 @@ export const getMonthOverview = async (
     figures,
     unmatchedLegs: gapRows.filter((row) => row.gap === "unmatched-internal"),
     unresolvedRows: gapRows.filter((row) => row.gap === "unresolved"),
+    inTransitLegs: gapRows.filter((row) => row.gap === "in-transit"),
+    uninterpretedRows: gapRows.filter((row) => row.gap === "uninterpreted"),
     unresolvedCounterpartyCount,
   };
 };

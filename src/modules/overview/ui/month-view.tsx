@@ -241,14 +241,20 @@ const ReservesBlock = async ({
 const GapList = ({
   rows,
   testId,
+  tone,
 }: {
   readonly rows: readonly GapRow[];
   readonly testId: string;
+  // "flag": needs attention (gaps). "plain": matched and correct rows
+  // that are merely named (in transit); flag colour would cry wolf.
+  readonly tone: "flag" | "plain";
 }) => (
   <ul className="recon-gap-list">
     {rows.map((row) => (
       <li key={row.id} className="recon-gap-row" data-testid={testId}>
-        <span className="month-group-unresolved">{row.text}</span>
+        <span className={tone === "flag" ? "month-group-unresolved" : undefined}>
+          {row.text}
+        </span>
         <span className="month-row-meta">
           {row.bookingDate}
           {" · "}
@@ -281,7 +287,7 @@ const ReconciliationPanel = async ({
     { op: "−", testId: "recon-spend", valueCents: figures.spendCents, label: t("spend"), alarm: false },
     { op: "−", testId: "recon-reserves", valueCents: figures.netToReservesCents, label: t("reserves"), alarm: false },
     { op: "=", testId: "recon-pot", valueCents: figures.changeInPotCents, label: t("potChange"), alarm: !figures.reconciles },
-    ...(figures.reconciles
+    ...(figures.differenceCents === 0
       ? []
       : [{ op: "≠", testId: "recon-difference", valueCents: figures.differenceCents, label: t("difference"), alarm: true }]),
   ];
@@ -314,12 +320,26 @@ const ReconciliationPanel = async ({
             ? overview.partial
               ? t("reconNotePartial")
               : t("reconNoteOk")
-            : t.rich("reconNoteBad", {
-                amount: formatCents(figures.differenceCents),
-                amt,
-              })}
+            : figures.differenceCents !== 0
+              ? t.rich("reconNoteBad", {
+                  amount: formatCents(figures.differenceCents),
+                  amt,
+                })
+              : t("reconNoteGaps")}
         </p>
       </div>
+      {figures.uninterpretedCount > 0 ? (
+        <div className="recon-cause" data-testid="recon-cause-uninterpreted">
+          <p className="recon-cause-text">
+            {t("uninterpretedCause", { count: figures.uninterpretedCount })}
+          </p>
+          <GapList
+            rows={overview.uninterpretedRows}
+            testId="uninterpreted-row"
+            tone="flag"
+          />
+        </div>
+      ) : null}
       {figures.unmatchedInternalCount > 0 ? (
         <div className="recon-cause" data-testid="recon-cause-unmatched">
           <p className="recon-cause-text">
@@ -329,7 +349,23 @@ const ReconciliationPanel = async ({
               amt,
             })}
           </p>
-          <GapList rows={overview.unmatchedLegs} testId="unmatched-leg" />
+          <GapList rows={overview.unmatchedLegs} testId="unmatched-leg" tone="flag" />
+        </div>
+      ) : null}
+      {figures.inTransitCount > 0 ? (
+        <div className="recon-cause" data-testid="recon-cause-in-transit">
+          <p className="recon-cause-text">
+            {t.rich("inTransitCause", {
+              count: figures.inTransitCount,
+              amount: formatCents(figures.inTransitCents),
+              amt,
+            })}
+          </p>
+          <GapList
+            rows={overview.inTransitLegs}
+            testId="in-transit-leg"
+            tone="plain"
+          />
         </div>
       ) : null}
       {figures.unresolvedCount > 0 ? (
@@ -341,7 +377,7 @@ const ReconciliationPanel = async ({
               amt,
             })}
           </p>
-          <GapList rows={overview.unresolvedRows} testId="unresolved-gap" />
+          <GapList rows={overview.unresolvedRows} testId="unresolved-gap" tone="flag" />
         </div>
       ) : null}
     </section>
