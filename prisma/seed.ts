@@ -33,13 +33,25 @@ const seedAuthUser = async (email: string, password: string): Promise<string | n
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const existing = await admin.auth.admin.listUsers();
-  if (existing.error) {
-    throw new Error(`Listing auth users failed: ${existing.error.message}`);
-  }
-  const match = existing.data.users.find((u) => u.email === email);
-  if (match) {
-    return match.id;
+  // Paginate the WHOLE auth user list (fixed in M1-P4): listUsers()
+  // returns only its first page (50 rows by default), so once e2e runs
+  // had registered more than a page of throwaway users, the seeded login
+  // stopped being found on page one and the createUser below failed with
+  // "already been registered" on every db:reset. An existence check that
+  // reads one page of a paginated list is not an existence check.
+  const PER_PAGE = 1000;
+  for (let page = 1; ; page += 1) {
+    const existing = await admin.auth.admin.listUsers({ page, perPage: PER_PAGE });
+    if (existing.error) {
+      throw new Error(`Listing auth users failed: ${existing.error.message}`);
+    }
+    const match = existing.data.users.find((u) => u.email === email);
+    if (match) {
+      return match.id;
+    }
+    if (existing.data.users.length < PER_PAGE) {
+      break;
+    }
   }
 
   const created = await admin.auth.admin.createUser({
