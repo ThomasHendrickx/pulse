@@ -325,3 +325,13 @@ Plan, recorded before code:
   merchant_tags_one_primary_per_merchant ON public.merchant_tags
   ("merchantId") WHERE "isPrimary"; prisma migrate status: 5 migrations,
   schema up to date.
+
+- [fix round 1 closed] Work history updated: fix-round[] with the three
+  mechanisms, full derivations and stated residues; claims M1P4-C12,
+  C13, C14 added with the executed red and green evidence; M1P4-C8
+  amended with the re-normalisation obligation; gate evidence moved to
+  the fix-round head aff8c92 (typecheck 0, lint 0 zero warnings, npm
+  test 219 passed 0 skipped, test:e2e 5 passed after a from-scratch
+  db:reset applying all five migrations). tiphys validate exit 0; claim
+  grep plus flattened pass re-run, all hits adjacent to executed
+  evidence.

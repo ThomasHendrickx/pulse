@@ -69,6 +69,16 @@ per-step-commits:
     subject: "Seed: paginate the whole auth user list; a one-page existence check broke db:reset past 50 users"
   - sha: 9dd3402
     subject: "Correct the stale cash-marker prediction in corrections.ts; record e2e and seed evidence in the notes"
+  - sha: 96f33a1
+    subject: "M1-P4 work history, schema-validated, with claim-grep settlement pass"
+  - sha: 98ec938
+    subject: "Fix round 1 opened: plan for CR-401, CR-402, CR-403"
+  - sha: 566aa3d
+    subject: "Close CR-403: currency tokens strip at cell boundaries only, a mid-digit token is a row error, never a fabricated amount"
+  - sha: 2a57a64
+    subject: "Close CR-402: stability contract on the normalisation recipe plus a pinned-output regression table"
+  - sha: aff8c92
+    subject: "Close CR-401: household ownership verified in-transaction, every clause filters householdId, one primary held by a partial unique index"
 key-decisions:
   - decision: >-
       Merchant resolution runs inside ledger interpretation through a
@@ -286,7 +296,7 @@ deviations:
       to the same file. delivery/work-history files are standing extras
       per the brief.
 gate-evidence:
-  - gate: npm run typecheck (tsc --noEmit, Node v26.7.0, phase head 9dd3402)
+  - gate: npm run typecheck (tsc --noEmit, Node v26.7.0, fix-round-1 head aff8c92)
     result: green
     wrapper-exit-code: 0
     discovered: 0
@@ -295,7 +305,7 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
-  - gate: npm run lint (eslint ., Node v26.7.0, zero warnings, phase head 9dd3402)
+  - gate: npm run lint (eslint ., Node v26.7.0, zero warnings, fix-round-1 head aff8c92)
     result: green
     wrapper-exit-code: 0
     discovered: 0
@@ -304,19 +314,19 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
-  - gate: npm test (vitest run, Node v26.7.0, no build step required, phase head 9dd3402)
+  - gate: npm test (vitest run, Node v26.7.0, no build step required, fix-round-1 head aff8c92)
     result: green
     wrapper-exit-code: 0
-    discovered: 191
-    passed: 191
+    discovered: 219
+    passed: 219
     failed: 0
     skipped: 0
     todo: 0
     did-not-run: 0
   - gate: >-
-      npm run test:e2e (playwright test, chromium, dev webServer, phase
-      head 9dd3402, after npm run db:reset applied all four migrations
-      from scratch and seeded; DATABASE_URL, DIRECT_URL,
+      npm run test:e2e (playwright test, chromium, dev webServer,
+      fix-round-1 head aff8c92, after npm run db:reset applied all five
+      migrations from scratch and seeded; DATABASE_URL, DIRECT_URL,
       NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY and
       SUPABASE_SERVICE_ROLE_KEY all pinned to the local supabase stack in
       the invoking shell, fleet warnings 1 and 6)
@@ -328,6 +338,119 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
+fix-round:
+  - mechanism: >-
+      CR-403: a normalisation that DELETES tokens from arbitrary positions
+      inside a value it is about to parse, concatenating whatever
+      surrounded the deleted token. CR-308 was the signed instance
+      (reconstructed sign); the class member here is the unsigned one: a
+      currency token spliced into a digit run ("7EUR42,10", "1EUR2")
+      fabricated a plausible amount at both entry points. The fix is
+      positional, closing the family: currency tokens strip only at the
+      trimmed cell's boundaries, iterated to a fixpoint at those ends, so
+      a removed token can have digits on at most one side and no strip
+      joins two digit runs, by construction. The CR-308 round's control
+      test asserting that interleaved unsigned noise parsed was itself
+      part of the defect and was REVERSED loudly at the test.
+    derivation:
+      command: grep -rn "stripCurrencyNoise" src test --include=*.ts
+      output: |
+        src/modules/import/domain/parse-amount.ts:39:const stripCurrencyNoise = (rawText: string): string => {
+        src/modules/import/domain/parse-amount.ts:60:  let text = stripCurrencyNoise(rawText);
+        src/modules/import/domain/parse-amount.ts:117:  const text = stripCurrencyNoise(rawText);
+        [reading of every site, post-fix, at commit 566aa3d: line 39 is
+        the one definition (boundary-anchored fixpoint); lines 60 and 117
+        are the two entry points, parseAmountToCents and
+        parseUnsignedAmountToCents, both consuming the same shared
+        normalisation; no other file names the function, so no third
+        parse path bypasses the positional rule]
+    not-covered: >-
+      Non-currency noise this normalisation does not know (a stray
+      letter, a thousands separator in the wrong style) still fails
+      through the format regexes rather than through the boundary rule;
+      that is the pre-existing loud path, not this class. Detection's
+      isAmountLike consumes the signed parser and therefore inherits the
+      boundary rule; a cell like "7EUR42,10" now scores as
+      not-amount-like during detection, which can only make detection
+      more conservative. Widening the currency vocabulary (new tokens)
+      inherits the positional constraint by construction, but a NEW
+      normalisation added elsewhere in the parse path would need the
+      same one-string, boundary-only discipline, stated at the
+      definition.
+  - mechanism: >-
+      CR-402: a stored declaration whose subject is the OUTPUT of a code
+      recipe, with nothing binding the recipe to the stored values: any
+      recipe change silently detaches every already-stored subject. The
+      dedup key documented this class one module over; the merchants
+      normaliser shipped without the guard while inviting extension.
+      Fixed as declaration discipline: a stability contract at the
+      recipe's definition naming the re-normalisation obligation, plus a
+      pinned-output regression table so an accidental change reddens the
+      fast gate.
+    derivation:
+      command: >-
+        python3 mutation: add "OXFORD" to CITY_TOKENS in
+        normalise-counterparty.ts, npx vitest run
+        test/domain/normalise-counterparty.test.ts, restore
+      output: |
+        Mutated: exit 1, Tests 2 failed | 35 passed (37), failing row
+        '"STARBUCKS OXFORD" stays pinned to "STARBUCKS OXFORD"' (the
+        reviewer's construction P-I reproduced in the committed suite).
+        Restored: exit 0, 37 passed (37).
+    not-covered: >-
+      The pin table cannot make a deliberate recipe change carry its
+      re-normalisation migration; it can only force the author to touch
+      the pins and read the contract stating the obligation. Nothing
+      mechanical yet re-normalises stored patterns (no recipe change has
+      shipped and the table is empty in every environment); the
+      obligation lives in the contract comment, the amended open
+      question M1P4-C8, and the pin test's failure message pathway.
+  - mechanism: >-
+      CR-401: an invariant enforced by read-modify-write under read
+      committed, stated as absolute ("one primary, always") while two
+      concurrent writers can each act on a snapshot missing the other's
+      uncommitted write; plus writes keyed by a unique selector that
+      cannot carry householdId, with ownership of the referenced rows
+      never verified. Fixed at both layers: ownership of the merchant
+      AND the tag is verified under the household inside the same
+      transaction before any write, every write clause carries
+      householdId (updateMany-then-create replaces the upsert whose
+      unique selector could not), and the invariant is held structurally
+      by a partial unique index on merchant_tags(merchantId) where
+      isPrimary, which no interleaving defeats.
+    derivation:
+      command: >-
+        probe-cr401-race.ts (real adapter, real local Postgres, tsx over
+        the repo tsconfig, env pinned): 20 rounds of two concurrent
+        promotes of different tags on one merchant, before and after the
+        fix; probe-cr401-tenancy.ts: foreign-household setMerchantTag
+        and upsertRule against the real adapter
+      output: |
+        BEFORE (committed adapter at 2a57a64): roundsWithTwoPrimaries=19
+        rejectedPromotes=0, probe exit 2 (the reviewer's static race is
+        real and near-deterministic on the local stack).
+        AFTER (ownership checks plus index at aff8c92):
+        roundsWithTwoPrimaries=0 rejectedPromotes=20 (exactly one loser
+        per round, surfacing as a loud unique violation), probe exit 0.
+        Tenancy probe: both foreign calls refused
+        ("merchant does not belong to the household"), links=0 rules=0,
+        probe exit 0. Fast-gate reds before the fix: 4 failed | 14
+        passed (three cross-household witnesses against the fake's
+        mirrored contract, one migration-SQL index assertion). Live
+        index: pg_indexes shows merchant_tags_one_primary_per_merchant
+        ON public.merchant_tags ("merchantId") WHERE "isPrimary".
+    not-covered: >-
+      The losing concurrent promote now surfaces as a thrown unique
+      violation with no retry wrapper; on a one-household UI with no tag
+      surface wired this phase, a retry belongs to the caller that slice
+      5 or later adds, stated at the adapter. The other repository
+      functions take householdId in their own where clauses and create
+      rows under the context household directly; the two probed
+      functions were the only ones referencing rows by foreign-suppliable
+      id (derivation: the adapter's function list read in full at
+      aff8c92). The fake cannot interleave transactions, so the
+      concurrency half lives in the migration SQL assertion plus the
+      executed database probe, not in the fast gate.
 claims:
   - id: M1P4-C1
     kind: coverage
@@ -494,6 +617,70 @@ claims:
           findMany; :54 findUnique; :66 create. No delete, deleteMany,
           update or updateMany call site on the merchant model exists
           anywhere under src.
+  - id: M1P4-C12
+    kind: coverage
+    statement: >-
+      Fix round 1, CR-403 red-witnessed before the fix at both entry
+      points and both directional representations: "7EUR42,10" and
+      "1EUR2" parsed as fabricated amounts, and the CR-308 control
+      asserting interleaved unsigned noise parsed was reversed loudly.
+      After the boundary-anchored strip, all splice shapes are row
+      errors and the positive controls (leading token beside a marker,
+      trailing token, plain magnitude, signed EUR prefix, euro sign)
+      stay green.
+    settled-by:
+      executed-construction:
+        command: >-
+          npx vitest run test/domain/profile-detection.test.ts, first
+          with the CR-403 witnesses against the committed global strip,
+          then after the boundary-anchored fixpoint strip
+        exit-code: 1
+        output: >-
+          Red: Tests 5 failed | 46 passed (51). After the fix: 51 passed
+          (51); full fast gate 196 passed at 566aa3d, 219 at aff8c92.
+  - id: M1P4-C13
+    kind: coverage
+    statement: >-
+      Fix round 1, CR-402: the pinned-output regression table reddens
+      under the reviewer's own construction (a city token added to the
+      recipe), executed here and restored, so an accidental recipe change
+      turns the fast gate red instead of silently detaching stored rule
+      patterns; the stability contract at the recipe's definition names
+      the re-normalisation obligation for deliberate changes.
+    settled-by:
+      executed-construction:
+        command: >-
+          python3 mutation adding "OXFORD" to CITY_TOKENS, npx vitest run
+          test/domain/normalise-counterparty.test.ts, restore and re-run
+        exit-code: 1
+        output: >-
+          Mutated: 2 failed | 35 passed (37), the "STARBUCKS OXFORD" pin
+          named. Restored: 37 passed (37), exit 0.
+  - id: M1P4-C14
+    kind: coverage
+    statement: >-
+      Fix round 1, CR-401 witnessed against the REAL adapter and local
+      Postgres before the fix and re-run after: the two-promote race
+      broke the one-primary invariant in 19 of 20 rounds with zero
+      rejections pre-fix, and post-fix 0 of 20 rounds with exactly one
+      loud unique-violation loser per round; cross-household
+      setMerchantTag and upsertRule are refused by the real adapter with
+      nothing written; the fast gate carries the mirrored refusal
+      witnesses (red 4 failed | 14 passed before the fix) and the
+      migration-SQL assertion of the partial unique index.
+    settled-by:
+      executed-construction:
+        command: >-
+          probe-cr401-race.ts and probe-cr401-tenancy.ts (tsx, repo
+          tsconfig, env pinned to the local stack) before and after
+          commit aff8c92; npx vitest run
+          test/application/resolve-merchants.test.ts red then green
+        exit-code: 2
+        output: >-
+          Pre-fix race: roundsWithTwoPrimaries=19 rejectedPromotes=0,
+          exit 2. Post-fix race: roundsWithTwoPrimaries=0
+          rejectedPromotes=20, exit 0. Tenancy: refusals=2 links=0
+          rules=0, exit 0. Fast gate at aff8c92: 219 passed, exit 0.
   - id: M1P4-C7
     kind: open-question
     statement: >-
@@ -513,7 +700,14 @@ claims:
       either the list grows or a PREFIX rule is written; the manual
       assignment flow still names them (an EXACT rule per variant).
       Whether the list should become a declaration table instead of code
-      is a product question, not taken here.
+      is a product question, not taken here. AMENDED IN FIX ROUND 1
+      (finding CR-402): growing the list is a RECIPE CHANGE, and stored
+      MerchantRule patterns are the recipe's output, so the growth must
+      ship a one-off re-normalisation of stored EXACT and PREFIX
+      patterns (safe: the pipeline is idempotent over its own output,
+      pinned by test) or a recorded versioning decision; the stability
+      contract at the top of normalise-counterparty.ts and the
+      pinned-output regression table carry the obligation.
   - id: M1P4-C9
     kind: open-question
     statement: >-
