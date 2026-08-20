@@ -269,3 +269,59 @@ Plan, recorded before code:
   hand-edited migration. Fake mirrors the ownership checks; fast-gate
   reds for cross-household calls; migration-SQL test derives the index
   presence.
+
+### Fix round 1, executed evidence
+
+- CR-403 red: 5 failed | 46 passed on profile-detection (mid-digit token
+  witnesses at both entry points, both representations, plus the
+  REVERSED CR-308 control, which used to assert that interleaved
+  unsigned noise parsed; reversal recorded loudly at the test). Fix:
+  boundary-anchored fixpoint strip (LEADING_CURRENCY / TRAILING_CURRENCY);
+  after: 51 passed, positive controls green (leading token beside a
+  marker, trailing token, plain magnitude, signed EUR prefix, euro sign).
+  The stale "is a single regex pass" present-tense sentence in the CR-308
+  comment corrected to past tense with the CR-403 pointer.
+- CR-402: pinned-output regression table (18 rows, one per pipeline
+  stage plus fixture composites) plus an idempotence-over-own-output
+  test; green at 37 passed, then the reviewer's construction executed
+  here: adding "OXFORD" to CITY_TOKENS reddened the pin (exit 1,
+  2 failed | 35 passed, the "STARBUCKS OXFORD" row named), restore
+  green 37 passed. Stability contract written at the top of
+  normalise-counterparty.ts naming the re-normalisation obligation
+  (dedup.ts precedent), the city-token comment corrected to name the
+  detachment case, and open question M1P4-C8 amended in the work
+  history.
+- CR-401 red, fast gate: 4 failed | 14 passed (three cross-household
+  refusal witnesses against the fake's mirrored contract, plus the
+  migration-SQL partial-index assertion).
+- CR-401 red, REAL adapter and database (probe-cr401-race.ts in the
+  session scratchpad, tsx over the repo tsconfig, env pinned): two
+  concurrent promotes of different tags on one merchant, 20 rounds:
+  roundsWithTwoPrimaries=19, rejectedPromotes=0, probe exit 2. The
+  reviewer's static race is REAL and near-deterministic on the local
+  stack.
+- CR-401 fix: ownership of merchant AND tag verified under householdId
+  inside the same transaction in setMerchantTag (and merchant ownership
+  in upsertRule), every write clause carries householdId
+  (updateMany-then-create replaces the upsert whose unique selector
+  could not carry it), and migration 20260820084740_one_primary_per_merchant
+  adds CREATE UNIQUE INDEX merchant_tags_one_primary_per_merchant ON
+  merchant_tags("merchantId") WHERE "isPrimary".
+- CR-401 green: race probe re-run: roundsWithTwoPrimaries=0,
+  rejectedPromotes=20 (exactly one loser per round, surfacing as a
+  loud unique violation), exit 0. Tenancy probe (probe-cr401-tenancy.ts):
+  both foreign calls refused by the REAL adapter, links=0 rules=0,
+  exit 0. Fast gate 219 passed, typecheck 0, lint 0.
+- DRIFT CLAIM CORRECTED (R-087): the M1-P4 schema comment said a
+  hand-added partial index would make the next prisma migrate dev see
+  drift. Probed empirically: npx prisma migrate diff --from-migrations
+  prisma/schema/migrations --to-schema-datamodel prisma/schema
+  --shadow-database-url (local) --script prints "-- This is an empty
+  migration." with the index applied, so Prisma's diff neither tracks
+  nor drops it. Comment corrected in place at the MerchantTag model;
+  the index's one source of truth is the migration SQL, held red-able
+  by the suite's SQL assertion.
+- Live index verified: pg_indexes shows
+  merchant_tags_one_primary_per_merchant ON public.merchant_tags
+  ("merchantId") WHERE "isPrimary"; prisma migrate status: 5 migrations,
+  schema up to date.

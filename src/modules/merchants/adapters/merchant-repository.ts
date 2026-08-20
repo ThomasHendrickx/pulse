@@ -77,21 +77,34 @@ export const upsertRule = async (
     readonly pattern: string;
   },
 ): Promise<MerchantRuleLike> => {
-  const row = await prisma.merchantRule.upsert({
-    where: {
-      householdId_kind_pattern: {
+  // Finding CR-401: the merchant the rule points at is verified to belong
+  // to THIS household inside the same transaction as the write (CLAUDE.md
+  // non-negotiable 6). A foreign merchantId indicates a bug or an attack,
+  // so it throws rather than returning a Result.
+  const row = await prisma.$transaction(async (tx) => {
+    const merchant = await tx.merchant.findFirst({
+      where: { id: input.merchantId, householdId: context.householdId },
+      select: { id: true },
+    });
+    if (merchant === null) {
+      throw new Error("upsertRule: merchant does not belong to the household");
+    }
+    return tx.merchantRule.upsert({
+      where: {
+        householdId_kind_pattern: {
+          householdId: context.householdId,
+          kind: input.kind,
+          pattern: input.pattern,
+        },
+      },
+      create: {
         householdId: context.householdId,
+        merchantId: input.merchantId,
         kind: input.kind,
         pattern: input.pattern,
       },
-    },
-    create: {
-      householdId: context.householdId,
-      merchantId: input.merchantId,
-      kind: input.kind,
-      pattern: input.pattern,
-    },
-    update: { merchantId: input.merchantId },
+      update: { merchantId: input.merchantId },
+    });
   });
   return {
     id: row.id,
@@ -131,10 +144,38 @@ export const setMerchantTag = async (
     readonly isPrimary: boolean;
   },
 ): Promise<void> => {
-  // At most one primary per merchant, enforced HERE because Prisma cannot
-  // model a partial unique index (stated at the MerchantTag model): the
-  // demotion and the promotion commit together or not at all.
+  // At most one primary per merchant. Two layers, and the DIVISION OF
+  // LABOUR matters (finding CR-401): the demote-then-promote below keeps
+  // the COMMON path clean, and the partial unique index
+  // merchant_tags_one_primary_per_merchant (migration
+  // one_primary_per_merchant: UNIQUE ON merchant_tags(merchantId) WHERE
+  // isPrimary) is what makes the invariant hold under CONCURRENT
+  // promotes, where read committed lets two transactions each demote a
+  // snapshot missing the other's uncommitted primary (witnessed against
+  // this adapter pre-fix: 19 of 20 probe rounds ended with two
+  // primaries). With the index, the losing promote surfaces as a unique
+  // violation, an exception per pulse-typescript section 5: unexpected
+  // contention on a one-household UI, and the caller's retry heals it.
+  //
+  // Tenancy (CLAUDE.md non-negotiable 6, same finding): the merchant and
+  // the tag are both verified to belong to THIS household inside the
+  // transaction before any write, and every write clause carries
+  // householdId. A foreign id indicates a bug or an attack: throw.
   await prisma.$transaction(async (tx) => {
+    const merchant = await tx.merchant.findFirst({
+      where: { id: input.merchantId, householdId: context.householdId },
+      select: { id: true },
+    });
+    if (merchant === null) {
+      throw new Error("setMerchantTag: merchant does not belong to the household");
+    }
+    const tag = await tx.tag.findFirst({
+      where: { id: input.tagId, householdId: context.householdId },
+      select: { id: true },
+    });
+    if (tag === null) {
+      throw new Error("setMerchantTag: tag does not belong to the household");
+    }
     if (input.isPrimary) {
       await tx.merchantTag.updateMany({
         where: {
@@ -145,21 +186,24 @@ export const setMerchantTag = async (
         data: { isPrimary: false },
       });
     }
-    await tx.merchantTag.upsert({
+    const updated = await tx.merchantTag.updateMany({
       where: {
-        merchantId_tagId: {
-          merchantId: input.merchantId,
-          tagId: input.tagId,
-        },
-      },
-      create: {
         householdId: context.householdId,
         merchantId: input.merchantId,
         tagId: input.tagId,
-        isPrimary: input.isPrimary,
       },
-      update: { isPrimary: input.isPrimary },
+      data: { isPrimary: input.isPrimary },
     });
+    if (updated.count === 0) {
+      await tx.merchantTag.create({
+        data: {
+          householdId: context.householdId,
+          merchantId: input.merchantId,
+          tagId: input.tagId,
+          isPrimary: input.isPrimary,
+        },
+      });
+    }
   });
 };
 

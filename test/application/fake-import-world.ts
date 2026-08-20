@@ -371,6 +371,16 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       return merchant;
     },
     upsertRule: async (context, input) => {
+      // Finding CR-401, mirrored from the adapter: the merchant the rule
+      // points at must belong to the calling household.
+      const owned = merchants.some(
+        (merchant) =>
+          merchant.householdId === context.householdId &&
+          merchant.id === input.merchantId,
+      );
+      if (!owned) {
+        throw new Error("upsertRule: merchant does not belong to the household");
+      }
       declarationWriteCount += 1;
       const existing = rules.find(
         (rule) =>
@@ -404,6 +414,27 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       return tag;
     },
     setMerchantTag: async (context, input) => {
+      // Finding CR-401, mirrored from the adapter: merchant AND tag are
+      // verified under the household before any write. (The adapter's
+      // second layer, the partial unique index on (merchantId) where
+      // isPrimary, lives in the migration SQL; this single-threaded fake
+      // cannot interleave transactions, so the index is asserted from the
+      // committed SQL by the suite and witnessed against the real
+      // database by the fix-round race probe.)
+      const ownedMerchant = merchants.some(
+        (merchant) =>
+          merchant.householdId === context.householdId &&
+          merchant.id === input.merchantId,
+      );
+      if (!ownedMerchant) {
+        throw new Error("setMerchantTag: merchant does not belong to the household");
+      }
+      const ownedTag = tags.some(
+        (tag) => tag.householdId === context.householdId && tag.id === input.tagId,
+      );
+      if (!ownedTag) {
+        throw new Error("setMerchantTag: tag does not belong to the household");
+      }
       declarationWriteCount += 1;
       if (input.isPrimary) {
         for (const link of merchantTags) {

@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, expectTypeOf, test } from "vitest";
 import {
   householdId,
@@ -418,7 +420,11 @@ describe("tags: freeform, on the merchant, many-to-many, one primary (nothing se
     ]);
 
     // Promote "weekly" on the shop: "groceries" is demoted in the same
-    // write; exactly one primary per merchant, always.
+    // write. This exercises the SEQUENTIAL half of the one-primary
+    // invariant; the concurrent half is held by the partial unique index
+    // the describe block below asserts from the migration SQL (finding
+    // CR-401), witnessed against the real database by the fix-round
+    // race probe.
     await tagMerchant(context, deps, {
       merchantId: shop.id,
       tagName: "weekly",
@@ -433,6 +439,65 @@ describe("tags: freeform, on the merchant, many-to-many, one primary (nothing se
     expect(cafeTags.filter((tag) => tag.isPrimary)).toHaveLength(1);
   });
 
+  // Finding CR-401 red witnesses (fix round 1): the one-primary invariant
+  // and the tenancy rule are only as strong as the adapter's checks, and
+  // the fake mirrors the adapter's contract. A merchant or tag belonging
+  // to ANOTHER household must be refused before any write (CLAUDE.md
+  // non-negotiable 6): a cross-household id here is a bug or an attack,
+  // so it throws rather than returning a Result.
+  test("setMerchantTag refuses a merchant the household does not own (finding CR-401)", async () => {
+    const world = makeFakeImportWorld();
+    const foreign: HouseholdContext = {
+      householdId: householdId("household-2"),
+      userId: userId("user-2"),
+    };
+    const merchant = await world.merchantsPort.createMerchant(context, "Supermarkt");
+    const tag = await world.merchantsPort.createTag(foreign, "groceries");
+    await expect(
+      world.merchantsPort.setMerchantTag(foreign, {
+        merchantId: merchant.id,
+        tagId: tag.id,
+        isPrimary: true,
+      }),
+    ).rejects.toThrow();
+    expect(world.merchantTags).toHaveLength(0);
+  });
+
+  test("setMerchantTag refuses a tag the household does not own (finding CR-401)", async () => {
+    const world = makeFakeImportWorld();
+    const foreign: HouseholdContext = {
+      householdId: householdId("household-2"),
+      userId: userId("user-2"),
+    };
+    const merchant = await world.merchantsPort.createMerchant(context, "Supermarkt");
+    const foreignTag = await world.merchantsPort.createTag(foreign, "groceries");
+    await expect(
+      world.merchantsPort.setMerchantTag(context, {
+        merchantId: merchant.id,
+        tagId: foreignTag.id,
+        isPrimary: false,
+      }),
+    ).rejects.toThrow();
+    expect(world.merchantTags).toHaveLength(0);
+  });
+
+  test("upsertRule refuses a merchant the household does not own (finding CR-401)", async () => {
+    const world = makeFakeImportWorld();
+    const foreign: HouseholdContext = {
+      householdId: householdId("household-2"),
+      userId: userId("user-2"),
+    };
+    const merchant = await world.merchantsPort.createMerchant(context, "Supermarkt");
+    await expect(
+      world.merchantsPort.upsertRule(foreign, {
+        merchantId: merchant.id,
+        kind: "EXACT",
+        pattern: "SUPERMARKT NOORD",
+      }),
+    ).rejects.toThrow();
+    expect(world.rules).toHaveLength(0);
+  });
+
   test("a blank tag name is refused as a value, not an exception", async () => {
     const world = makeFakeImportWorld();
     const shop = await world.merchantsPort.createMerchant(context, "Supermarkt");
@@ -442,5 +507,35 @@ describe("tags: freeform, on the merchant, many-to-many, one primary (nothing se
       { merchantId: shop.id, tagName: "   ", isPrimary: false },
     );
     expect(outcome).toEqual({ ok: false, error: { kind: "empty-tag-name" } });
+  });
+});
+
+describe("one primary per merchant is enforced by the database, not only by the demote (finding CR-401)", () => {
+  // Two CONCURRENT promotes under read committed can each take a demote
+  // snapshot that misses the other's uncommitted primary and commit two
+  // primaries; the application-level demote alone is weaker than the
+  // stated invariant. The structural guard is a partial unique index on
+  // (merchantId) where isPrimary, which no interleaving can defeat: the
+  // second promote surfaces as a unique violation instead of a second
+  // primary. This test derives its evidence from the committed migration
+  // SQL, the same mechanism as test/schema/rls.test.ts.
+  test("the committed migration SQL carries the partial unique index on merchant_tags", () => {
+    const migrationsDir = join(__dirname, "..", "..", "prisma", "schema", "migrations");
+    const chunks: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir)) {
+        const fullPath = join(dir, entry);
+        if (statSync(fullPath).isDirectory()) {
+          walk(fullPath);
+        } else if (entry.endsWith(".sql")) {
+          chunks.push(readFileSync(fullPath, "utf-8"));
+        }
+      }
+    };
+    walk(migrationsDir);
+    const sql = chunks.join("\n");
+    expect(sql).toMatch(
+      /CREATE\s+UNIQUE\s+INDEX\s+"?\w*"?\s+ON\s+"?merchant_tags"?\s*\("merchantId"\)\s*WHERE\s+"isPrimary"/i,
+    );
   });
 });

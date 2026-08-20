@@ -92,11 +92,21 @@ model MerchantTag {
   householdId String   @db.Uuid
   merchantId  String   @db.Uuid
   tagId       String   @db.Uuid
-  // At most one primary tag per merchant. The invariant is enforced by the
-  // application layer's setMerchantTag (demote-then-promote in one
-  // repository call): a Prisma-modelled unique cannot express a partial
-  // index, and hand-editing the migration to add one would make the next
-  // `prisma migrate dev` see drift.
+  // At most one primary tag per merchant, enforced by TWO layers: the
+  // application's setMerchantTag (demote-then-promote in one
+  // transaction, with merchant and tag ownership verified under the
+  // household) and the partial unique index
+  // merchant_tags_one_primary_per_merchant (migration
+  // one_primary_per_merchant), which is what holds under concurrent
+  // promotes (finding CR-401). CORRECTED CLAIM (R-087): this comment
+  // used to say a hand-added partial index would make the next `prisma
+  // migrate dev` see drift; that was probed in the M1-P4 fix round and
+  // is FALSE: `prisma migrate diff --from-migrations
+  // --to-schema-datamodel` returns an empty script with the index
+  // applied, so Prisma's diff does not track or drop it. Prisma still
+  // cannot MODEL the index here, so its one source of truth is the
+  // migration SQL, asserted by name and predicate in
+  // test/application/resolve-merchants.test.ts.
   isPrimary   Boolean  @default(false)
   createdAt   DateTime @default(now())
 

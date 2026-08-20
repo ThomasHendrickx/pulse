@@ -77,11 +77,13 @@ export type MerchantRepositoryPort = {
     context: HouseholdContext,
     name: string,
   ) => Promise<TagRecord>;
-  // Links tag to merchant (upsert on the merchantId+tagId unique). When
-  // isPrimary is true, every other primary on the merchant is demoted in
-  // the SAME atomic write: at most one primary per merchant is an
-  // application-enforced invariant (a Prisma-modelled partial unique index
-  // does not exist; stated at the MerchantTag model).
+  // Links tag to merchant. When isPrimary is true, every other primary on
+  // the merchant is demoted in the SAME transaction, and the partial
+  // unique index merchant_tags_one_primary_per_merchant backs the
+  // invariant under concurrent promotes (finding CR-401): a losing
+  // concurrent promote surfaces as a thrown unique violation, never as a
+  // second primary. The merchant and the tag must belong to the calling
+  // household; a foreign id throws.
   readonly setMerchantTag: (
     context: HouseholdContext,
     input: {
