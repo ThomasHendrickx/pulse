@@ -16,9 +16,8 @@ Read in order before any code:
 3. tuition/mechanism-index.yaml: the project's delivery/tuition/ contains
    only .gitkeep; no mechanism-index.yaml exists anywhere under
    /home/user/pulse-fleet (find run 2026-08-20, no hits outside
-   node_modules). The M1-P3 work history recorded the same state and read
-   the kernel copy at node_modules/@tiphys/kernel/tuition/mechanism-index.yaml;
-   Checked the fleet-level copy at
+   node_modules outside this repo's own). The M1-P3 work history recorded
+   the same state and read the kernel's copy. Checked the fleet-level copy at
    /home/user/pulse-fleet/node_modules/@tiphys/kernel/tuition/mechanism-index.yaml
    (never a sibling worktree, per clause R-031): its fifteen entries are
    kernel-process mechanisms (claim files, leases, append-only logs,
@@ -199,3 +198,34 @@ edited.
   already carries the merchants copy in all three languages. Lint warnings
   from rest-destructuring discards were removed by an explicit named fact
   snapshot; lint now exits 0 with zero warnings.
+
+- [e2e] db:reset first FAILED at the seed: prisma/seed.ts checked for the
+  seeded dev login with a single listUsers() call, which returns only the
+  first page (50 rows), and prior phases' e2e runs had registered 52 auth
+  users; dev@pulse.local existed (psql count: 1) but sat beyond page one,
+  so createUser failed with "already been registered" on every reset.
+  Fixed (prisma/ is on files-to-touch): the existence check now paginates
+  the whole list (perPage 1000, loop until a short page). Executed
+  witness: the failing db:reset run (exit 1, error captured in this log's
+  session) before the fix, exit 0 with all four migrations applied plus
+  seed after it. Mechanism rule recorded at the definition: an existence
+  check over a paginated list must walk all pages; grep -rn "listUsers"
+  src prisma --include=*.ts finds no sibling call site (the seed is the
+  only one).
+- [e2e] npm run test:e2e with ALL FIVE env values pinned to the local
+  stack (fleet warning 6): 5 passed (auth x3, import, merchants), exit 0,
+  1.6m, chromium, dev webServer, after the from-scratch db:reset.
+  merchants.spec.ts asserts the fixture-derived totals (44.500,00 income,
+  -1.174,27 spend) BEFORE and AFTER naming, digit for digit, plus the
+  regroup (merchant group appears with -86,47; the descriptor group
+  disappears; unresolved count 5 -> 4).
+- [R-087] Stale prediction in ledger/domain/corrections.ts ("the marker is
+  what the merchant resolver (M1-P4) groups by") corrected in place and
+  loudly: M1-P4's resolver deliberately does not consume the cash marker;
+  destination grouping is the month view's, with the precedence
+  requirement written at the marker's definition and carried as an open
+  question.
+- [gates at 27f6f1a] typecheck exit 0; lint exit 0 (zero warnings);
+  npm test 191 passed, 0 skipped, 0 todo, exit 0 (Node v26.7.0, vitest
+  run, no build step); test:e2e 5 passed, 0 skipped, exit 0. Fast gates
+  re-run after the comment-only R-087 edit at the final head.
