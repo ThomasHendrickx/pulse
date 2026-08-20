@@ -84,6 +84,10 @@ per-step-commits:
     subject: "Close CR-503 and CR-505: a production process refuses PULSE_FIXED_NOW loudly; the e2e webServer reuses no stale server"
   - sha: "2323645"
     subject: "Record the CR-501 sibling rule at the ledger reconcile definition: a residual-only boolean is not a verdict"
+  - sha: "0254277"
+    subject: "Fix round 1 work history: mechanisms, derivations, red-green evidence, DR-0001 re-recorded at the fix-round head"
+  - sha: 8789bf9
+    subject: "Close CR-507 and CR-508: the in-transit partner join filters householdId, pinned by name; the uninterpreted remedy copy tells the truth in all three locales"
 key-decisions:
   - decision: >-
       The e2e clock is fixed via PULSE_FIXED_NOW=2026-09-15T12:00:00Z set
@@ -414,6 +418,33 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
+  - gate: >-
+      MICRO-ROUND head 8789bf9, clean tree, all on the same commit: npm
+      run typecheck exit 0, npm run lint exit 0, npm run gate:tokens
+      exit 0, and npm test carrying the fast-gate count in this entry.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 249
+    passed: 249
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: >-
+      npm run test:e2e (playwright test, chromium, dev webServer,
+      pinned clock, reuseExistingServer false, MICRO-ROUND head 8789bf9,
+      all five env values pinned). Together with the npm test run above
+      on the SAME commit, this re-records the DR-0001
+      release-verification evidence at the final head; the declared
+      verification was not weakened.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 12
+    passed: 12
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
 fix-round:
   - mechanism: >-
       CR-501: a user-facing verdict derived from an aggregate RESIDUAL
@@ -538,6 +569,67 @@ fix-round:
       server now produces a loud port-in-use failure instead of a wrong
       suite, which is the intended failure mode, and the fleet warning
       about stray dev servers stays in force for humans debugging one.
+  - mechanism: >-
+      CR-507 (micro round): a joined row read through a relationship
+      whose write path currently guarantees tenancy, with no filter of
+      its own: the in-transit partner join fetched the linked
+      transaction by id alone. No harm was constructible today (links
+      are written only within a household), but non-negotiable 6 is the
+      letter precisely so a future refactor of the writer does not
+      silently become a cross-tenant read. The fix adds
+      p."householdId" = t."householdId" to the JOIN's ON clause.
+    derivation:
+      command: >-
+        npx vitest run test/application/month-overview.test.ts with the
+        new SQL-shape suite, before and after the one-line fix; the
+        suite pins the partner join's filter BY NAME and sweeps every
+        JOIN in the repository for a householdId predicate near its ON
+        clause
+      output: |
+        Red (pre-fix): 1 failed | 7 passed, the by-name pin
+        ("toMatch /JOIN "transactions" p\s+ON p."householdId" =
+        t."householdId"/") failing. Green (post-fix): 8 passed, exit 0.
+        HONESTY NOTE on the sweep half: the generic
+        householdId-near-the-JOIN check was green even BEFORE the fix,
+        because the 300-character window after the partner join reaches
+        the link's own l."householdId" predicate; it is a backstop for
+        FUTURE joins, and the by-name pin is the witness that actually
+        reddened on this finding.
+    not-covered: >-
+      The sweep is textual, over this one adapter file; a new adapter
+      in another module gets no coverage from it. The existing schema
+      and tenancy suites still hold the model-level half; a
+      database-executed cross-tenant probe of this specific join was
+      not run, since the reviewers already established no harmful
+      construction exists while the link writer is household-scoped.
+  - mechanism: >-
+      CR-508 (micro round): user-facing remedy copy asserting a recovery
+      path the system does not have: "upload the file again" cannot heal
+      an uninterpreted row, because a same-file re-upload dedups to zero
+      rows, importPeriod returns null and interpretForImport no-ops (the
+      reviewer traced the full path). Fixed by making the copy TRUE
+      rather than the false copy work: the three catalogs now say the
+      rows are included when interpretation next covers their period,
+      for example after the next import touching the account. The
+      healing behaviour change (interpret over the parsed span even when
+      zero rows are added) was considered and NOT taken: it edits the
+      import module's upload path, outside this phase's surface, and is
+      handed on as open question M1P5-C21.
+    derivation:
+      command: >-
+        python3 json check over messages/{en,nl,fr}.json after the
+        rewording: key count per locale, and a search for the false
+        remedy phrasing in each catalog
+      output: |
+        en 101, nl 101, fr 101 keys (parity held);
+        again-upload-remedy present: False, False, False (the false
+        instruction is gone from all three locales).
+    not-covered: >-
+      No e2e asserts this copy (no test can construct a flow-NULL row
+      through the UI); the copy's truth rests on the reviewer's traced
+      path plus the wording now promising nothing the trace refutes.
+      The actual healing path stays as traced: a later import touching
+      the account's period, or the dev-only recompute.
 claims:
   - id: M1P5-C1
     kind: coverage
@@ -926,6 +1018,57 @@ claims:
       the same awaiting-interpretation note is a small product question
       handed on rather than a silent widening of this fix round into the
       merchants module.
+  - id: M1P5-C22
+    kind: coverage
+    statement: >-
+      Micro round, CR-507: the in-transit partner join filters
+      householdId, shown red-first. The new SQL-shape suite pins the
+      filter BY NAME (assert-by-name over a surface a later phase could
+      weaken) and failed against the unfixed join (1 failed | 7
+      passed); after the one-line ON-clause fix the suite passes and
+      the full gates stay green. The generic every-JOIN sweep in the
+      same suite was green pre-fix because its window reaches the
+      link's own filter; recorded as a backstop, with the by-name pin
+      as the real witness.
+    settled-by:
+      executed-construction:
+        command: >-
+          npx vitest run test/application/month-overview.test.ts before
+          and after the join fix at 8789bf9
+        exit-code: 1
+        output: >-
+          Red: 1 failed | 7 passed (the by-name toMatch). Green: 8
+          passed; full fast gate 249 passed, exit 0.
+  - id: M1P5-C23
+    kind: coverage
+    statement: >-
+      Micro round, CR-508: the uninterpreted-cause remedy copy is now
+      true in all three locales: it promises inclusion when
+      interpretation next covers the period (for example after the next
+      import touching the account) instead of instructing a same-file
+      re-upload the dedup path makes a no-op. Key parity held at
+      101/101/101 and the false phrasing is absent from every catalog.
+    settled-by:
+      executed-construction:
+        command: >-
+          python3 catalog check after the rewording (key counts and a
+          search for the replaced remedy phrasing per locale)
+        exit-code: 0
+        output: >-
+          en 101, nl 101, fr 101; again-upload-remedy present: False in
+          en, nl and fr.
+  - id: M1P5-C21
+    kind: open-question
+    statement: >-
+      Whether re-upload should HEAL uninterpreted rows: interpreting
+      over the parsed rows' booking span even when zero rows are added
+      would give the household a self-service recovery for a crashed
+      interpretation, at the cost of an import-module behaviour change
+      (upload-statement's ingested path currently skips interpretation
+      when no period resolves for the import). Declined in the micro
+      round as outside this phase's surface; the honest copy ships
+      instead, and this hands the healing option to the orchestrator
+      for a later slice.
 environment-warnings:
   - warning: >-
       A positional Playwright filter matches the WORKTREE DIRECTORY name,

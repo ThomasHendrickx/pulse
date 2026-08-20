@@ -339,6 +339,31 @@ Backlog carry-ins declared in scope: CR-404 and the messages em dash
   reuseExistingServer now false, env pinned per fleet warnings 1 and
   6). The declared verification was not weakened.
 
+## Micro round (CR-507, CR-508)
+
+- [m1] CR-507 red-first: the new SQL-shape suite in
+  test/application/month-overview.test.ts pins the in-transit partner
+  join's householdId filter BY NAME and failed against the unfixed join
+  (1 failed | 7 passed, exit 1); the one-line ON-clause fix
+  (p."householdId" = t."householdId" ahead of the id match) turned it
+  green (8 passed). Honesty note: the generic every-JOIN sweep in the
+  same suite was green even pre-fix because its 300-character window
+  reaches the link's own l."householdId" predicate; it is a backstop
+  for future joins, the by-name pin is the CR-507 witness.
+- [m2] CR-508 resolved by making the copy TRUE, not by making the false
+  copy work: uninterpretedCause in EN/NL/FR now promises inclusion when
+  interpretation next covers the period (for example after the next
+  import touching the account); the same-file re-upload instruction is
+  gone from all three catalogs (checked by search), parity 101/101/101.
+  The healing behaviour change was declined as an import-module edit
+  outside this phase's surface and handed on as open question M1P5-C21.
+- [m3] Gates at the micro-round head 8789bf9, clean tree, same commit:
+  typecheck 0, lint 0, gate:tokens 0, npm test 249 passed 0 skipped
+  exit 0 (the two SQL-shape tests over the fix-round 247), npm run
+  test:e2e 12 passed 0 skipped exit 0. DR-0001 evidence re-recorded at
+  this head; the declared verification was not weakened. Em dash sweep
+  over messages, src and test: exit 1, none.
+
 - [t19] Work history m1-p5.yaml written and schema-validated: npx
   --prefix /home/user/pulse-fleet tiphys validate --type work-history
   --context <worktree> exit 0 (first run caught claim M1P5-C10 carrying
