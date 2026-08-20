@@ -36,14 +36,22 @@ files-touched:
   - src/platform/clock.ts
   - src/platform/config.ts
   - test/application/resolve-merchants.test.ts
+  - src/modules/ledger/domain/reconciliation.ts
+  - test/app/fixed-clock.test.ts
+  - test/application/month-overview.test.ts
+  - test/domain/month-projection.test.ts
   - test/e2e/golden-journey.spec.ts
   - test/e2e/month-view.spec.ts
   - test/fixtures/gj-card.csv
   - test/fixtures/gj-current.csv
   - test/fixtures/gj-pot-b.csv
+  - test/fixtures/mv-cancel-a.csv
+  - test/fixtures/mv-cancel-b.csv
   - test/fixtures/mv-gapped-a.csv
   - test/fixtures/mv-gapped-b.csv
   - test/fixtures/mv-partial.csv
+  - test/fixtures/mv-transit-a.csv
+  - test/fixtures/mv-transit-b.csv
   - test/fixtures/mv-unresolved.csv
 per-step-commits:
   - sha: f8aee81
@@ -66,6 +74,16 @@ per-step-commits:
     subject: "Resolve the clock per request: the build-safe env contract forbids module-load reads"
   - sha: af759b3
     subject: "Cash withdrawal is its own destination in the month view, witnessed: M1P4-C7's precedence rule exercised end to end"
+  - sha: d21ec71
+    subject: "M1-P5 work history, schema-validated, with claim-grep settlement pass"
+  - sha: 180581c
+    subject: "Fix round 1 opened: plan for CR-501 to CR-505, escalation check recorded"
+  - sha: 554c7d6
+    subject: "Close CR-501 and CR-502: the verdict requires empty causes, in-transit legs and uninterpreted rows are named causes, the cause sums partition the difference exactly"
+  - sha: 776c21d
+    subject: "Close CR-503 and CR-505: a production process refuses PULSE_FIXED_NOW loudly; the e2e webServer reuses no stale server"
+  - sha: "2323645"
+    subject: "Record the CR-501 sibling rule at the ledger reconcile definition: a residual-only boolean is not a verdict"
 key-decisions:
   - decision: >-
       The e2e clock is fixed via PULSE_FIXED_NOW=2026-09-15T12:00:00Z set
@@ -343,6 +361,183 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
+  - gate: npm run typecheck (tsc --noEmit, Node v26.7.0, FIX-ROUND-1 head 2323645, clean tree)
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: npm run lint (eslint ., FIX-ROUND-1 head 2323645)
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "npm run gate:tokens (FIX-ROUND-1 head 2323645; raw criterion grep exits 1)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: npm test (vitest run, Node v26.7.0, FIX-ROUND-1 head 2323645; 28 new tests over the baseline 219)
+    result: green
+    wrapper-exit-code: 0
+    discovered: 247
+    passed: 247
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: >-
+      npm run test:e2e (playwright test, chromium, dev webServer with the
+      pinned clock and reuseExistingServer false, FIX-ROUND-1 head
+      2323645; all five env values pinned to the local stack in the
+      invoking shell, fleet warnings 1 and 6). Together with the npm
+      test run above on the SAME commit, this re-records the DR-0001
+      release-verification evidence at the fix-round head: the golden
+      journey plus the fast gate, green on the release candidate
+      commit; the declared verification was not weakened.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 12
+    passed: 12
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+fix-round:
+  - mechanism: >-
+      CR-501: a user-facing verdict derived from an aggregate RESIDUAL
+      while its explanation enumerates only a subset of the residual's
+      contributors. Matched INTERNAL legs whose partner books outside
+      the viewed month sit in the difference with no named cause (the
+      recurring false alarm), and contributors of opposite sign cancel
+      inside the residual so the verdict can read closed over real gaps
+      (the verdict flip). The fix closes the partition (an in-transit
+      cause carrying the matched-leg net, which by construction equals
+      the sum over straddling legs because a pair fully inside the
+      month contributes zero) and re-derives the verdict from the
+      partition, not the residual: ok requires difference zero AND
+      empty unmatched, unresolved, in-transit and uninterpreted causes.
+    derivation:
+      command: grep -rn "reconciles" src --include=*.ts --include=*.tsx
+      output: |
+        src/modules/overview/ui/month-view.tsx:289 (alarm on pot part)
+        src/modules/overview/ui/month-view.tsx:298 (data-state)
+        src/modules/overview/ui/month-view.tsx:302 (verdict copy)
+        src/modules/overview/ui/month-view.tsx:319 (note selection)
+        src/modules/overview/domain/month-projection.ts:184 (type)
+        src/modules/overview/domain/month-projection.ts:208 (the fixed
+        derivation)
+        src/modules/ledger/domain/reconciliation.ts:35,42,46 (type and
+        the new sibling-rule comment)
+        src/modules/ledger/domain/reconciliation.ts:99 (the ledger
+        report's residual-only boolean, see not-covered)
+        [reading of every site at 2323645: the month view consumes
+        MonthFigures.reconciles at four places, all downstream of the
+        one fixed derivation; the only OTHER producer of a
+        reconciles-shaped boolean in the codebase is the ledger
+        window report]
+    not-covered: >-
+      The ledger report's own reconciles (reconciliation.ts:99) stays a
+      residual-only boolean: over its window the straddling case is
+      structurally absent (pairing runs inside the interpreted set, so
+      both legs of a matched pair are in the window), but cancelling
+      unmatched gaps DO leave it true beside non-empty gap lists. Its
+      only consumers today are the fast-gate suites, no UI renders it;
+      the rule that a residual-only boolean must not become a verdict
+      is recorded at its definition naming the month view's derivation
+      as the pattern, so the next consumer meets it. Also not covered:
+      no fixture exercises TWO in-transit pairs of opposite sign in one
+      month (net zero, count two); the verdict still refuses ok there
+      by the inTransitCount condition, pinned in the unit suite, not in
+      an e2e.
+  - mechanism: >-
+      CR-502: reading only rows a LATER pipeline stage has stamped, so
+      a failure between two commits makes durable rows invisible rather
+      than loud. Ingest commits facts, interpretation stamps flow in a
+      separate transaction; the figures query filtered flow IS NOT NULL
+      and so could not even count what it excluded. The fix makes the
+      exclusion COUNTED: the aggregate reads all rows, every named sum
+      filters on flow itself, and a non-zero uninterpreted count is a
+      rendered cause that blocks the ok verdict.
+    derivation:
+      command: grep -n '"flow"' src/modules/overview/adapters/overview-repository.ts
+      output: |
+        107 (counted groups, flow = INCOME|SPEND), 156 (reserves,
+        flow = RESERVE), 194-209 (the figures aggregate: every SUM and
+        COUNT carries its own flow FILTER, changeInPot and rowCount
+        filter flow IS NOT NULL, uninterpretedCount filters flow IS
+        NULL, and the statement's WHERE carries NO flow predicate),
+        258-259 and 273-276 (gap rows: flow IS NULL is the
+        uninterpreted arm). [reading at 2323645: no remaining query in
+        the overview module can drop a flow-NULL row without counting
+        it]
+    not-covered: >-
+      The merchant review screen's listCountedTransactions (merchants
+      module) reads flow IN (INCOME, SPEND) and stays blind to
+      flow-NULL rows; its totals mirror the month view's counted sums,
+      and the month view is where the household is told about the
+      pending rows, so the review screen understates consistently
+      rather than lying independently. Recorded as open question
+      M1P5-C15 instead of widening this round into the merchants
+      module. The fast gate still cannot execute the SQL itself (no
+      database in the fast gate by design): the committed unit test
+      covers the use case over a fake port, and the SQL half is held by
+      the executed probe recorded in claim M1P5-C17, and the stricter
+      reconciles refuses the ok verdict while uninterpreted rows are
+      present (pinned red-then-green by the unit suite in M1P5-C19).
+  - mechanism: >-
+      CR-503: an environment override with no environment guard: the
+      module carried the guard (isProduction) and the claim ("unset in
+      production") but nothing connected them, so a leaked variable was
+      honoured silently. The fix consults the guard at the read: a
+      production process with the override set logs with the module
+      prefix and throws.
+    derivation:
+      command: grep -rn "process.env" src --include=*.ts --include=*.tsx | grep -v "src/platform/config.ts"
+      output: |
+        src/platform/db/guard-cli.ts:10,29,30,36 (the documented
+        guard-cli exemption, standalone CLI entrypoint). [reading at
+        2323645: config.ts is otherwise the only module reading env;
+        within it, PULSE_FIXED_NOW is the only value that OVERRIDES
+        runtime behaviour, the rest are required configuration or
+        boolean diagnostics, so the production refusal covers the
+        entire override surface]
+    not-covered: >-
+      The refusal fires at the point of use (request time), not at
+      boot: a production deployment with the variable set serves loud
+      500s on the month view rather than failing the build, consistent
+      with the module's build-safe contract that forbids module-load
+      env validation. Other future overrides added to config.ts must
+      copy the guard; the corrected comment at the definition says so.
+  - mechanism: >-
+      CR-505: a test harness trusting ambient infrastructure it did not
+      configure: reuseExistingServer accepted ANY process on the port,
+      including a stale dev server from another worktree running
+      without the pinned clock, silently trading determinism for
+      startup time. The fix refuses reuse; an occupied port now fails
+      the run loudly.
+    derivation:
+      command: grep -n "reuseExistingServer" playwright.config.ts
+      output: |
+        34: reuseExistingServer: false (with the reason recorded at the
+        setting). [the only webServer declaration in the repository;
+        playwright.deploy.config.ts starts no server at all]
+    not-covered: >-
+      Nothing verifies that port 3000 is free before a run; a stale
+      server now produces a loud port-in-use failure instead of a wrong
+      suite, which is the intended failure mode, and the fleet warning
+      about stray dev servers stays in force for humans debugging one.
 claims:
   - id: M1P5-C1
     kind: coverage
@@ -581,14 +776,21 @@ claims:
   - id: M1P5-C12
     kind: open-question
     statement: >-
-      A matched INTERNAL pair whose legs straddle a month boundary
-      contributes one leg's amount to that month's difference without
-      being an unmatched leg, so the panel's named causes would not sum
-      to the difference and the note names the amount without a listed
-      row. Money genuinely in transit across a boundary is rare at
-      household scale and no fixture exercises it; if it appears in real
-      use, a "in transit across the month boundary" cause line is the
-      natural extension.
+      ORIGINAL RECORD: a matched INTERNAL pair whose legs straddle a
+      month boundary contributes one leg's amount to that month's
+      difference without being an unmatched leg, so the panel's named
+      causes would not sum to the difference; called rare, with the
+      in-transit cause line named as the natural extension. AMENDED IN
+      FIX ROUND 1 (finding CR-501): the "rare" half was refuted by the
+      review's probe P-A, because the card settlement pair straddles the
+      month end whenever the direct-debit lag crosses it, a
+      monthly-recurring shape, and the same probe family showed the
+      cancelling-gaps verdict flip this record did not name at all. The
+      extension named here IS now implemented and witnessed: the
+      in-transit cause carries the straddling legs, the causes
+      partition the difference exactly, and the verdict requires empty
+      causes (claims M1P5-C14 and M1P5-C16). What remains open moved to
+      M1P5-C15 and the two residues stated in the fix-round records.
   - id: M1P5-C13
     kind: open-question
     statement: >-
@@ -597,6 +799,133 @@ claims:
       architecture's "same four" sentence but not rendered; the prototype
       shows no reserves deltas. If a later phase wants them, the data is
       already in the read path.
+  - id: M1P5-C14
+    kind: coverage
+    statement: >-
+      Fix round 1, CR-501, red-witnessed before the fix under THREE
+      structurally different members of the class and green after. Red
+      (all against the shipped code at 180581c): the straddling-pair e2e
+      (fixtures mv-transit-a/b, a matched pair booking 30/08 and 02/09)
+      failed because recon-cause-in-transit did not exist while the
+      panel alarmed; the cancelling-gaps e2e (fixtures mv-cancel-a/b,
+      two unmatched legs of +400,00 and -400,00 twenty days apart)
+      failed because data-state read ok over two real export gaps; the
+      tightened unresolved e2e failed because data-state read ok above a
+      listed gap; and the unit suite failed 5 ways on the same
+      semantics. Green after 554c7d6: the in-transit cause names the leg
+      with its net, the causes partition the difference exactly
+      (asserted in the e2e: the single in-transit cause carries the
+      -300,00 the difference shows), the verdict requires empty causes,
+      and the R-087 false comment in month-projection.ts is corrected
+      loudly in place.
+    settled-by:
+      executed-construction:
+        command: >-
+          npx playwright test -g "in transit across the month
+          boundary|cancelling gaps|unclassifiable" against the shipped
+          code (red), then the full suites at 2323645 (npm test, npm run
+          test:e2e)
+        exit-code: 1
+        output: >-
+          Red: 3 failed, exit 1 (toBeVisible on the in-transit cause;
+          toHaveAttribute data-state broken twice); unit red: 9 failed,
+          exit 1. Green: 247 passed exit 0; 12 passed exit 0.
+  - id: M1P5-C17
+    kind: coverage
+    statement: >-
+      Fix round 1, CR-502: the committed flow-NULL row that was
+      byte-invisible pre-fix (review probe P-D3) now surfaces, witnessed
+      at BOTH layers. Fake-port layer: the new unit test red against the
+      shipped code (no uninterpretedRows partition, reconciles true),
+      green after. SQL layer, executed against the real local database
+      through the committed repository: probe-cr502.ts inserted a
+      committed 777,00 flow-NULL row into the seeded household;
+      uninterpretedCount went 0 to 1, rowCount and changeInPot stayed
+      unchanged (the interpreted figures untouched), the gap row
+      surfaced as "uninterpreted 77700 CR502 probe account", and the
+      derived verdict refused ok; rows cleaned up afterwards.
+    settled-by:
+      executed-construction:
+        command: >-
+          npx tsx --tsconfig tsconfig.json probe-cr502.ts (env pinned to
+          the local stack), plus npx vitest run
+          test/application/month-overview.test.ts red then green
+        exit-code: 0
+        output: >-
+          before.uninterpretedCount = 0; after.uninterpretedCount = 1;
+          after.rowCount = 0 (before: 0); after.changeInPotCents = 0
+          (before: 0); gap row found = uninterpreted 77700 CR502 probe
+          account; figures.reconciles = false; PROBE PASS, exit 0.
+  - id: M1P5-C18
+    kind: coverage
+    statement: >-
+      Fix round 1, CR-503: the production refusal of PULSE_FIXED_NOW is
+      red-witnessed and pinned. Red: test/app/fixed-clock.test.ts
+      against the shipped config expected a throw under
+      NODE_ENV=production with the variable set and got the honoured
+      override instead (1 failed, the review's probe as a test). Green
+      after 776c21d: fixedNowOverride logs with the [pulse:config]
+      prefix and throws in production, dev keeps the pinned clock, an
+      invalid value still throws, and the unchecked comment claim is
+      corrected loudly per R-087.
+    settled-by:
+      executed-construction:
+        command: >-
+          npx vitest run test/app/fixed-clock.test.ts against the
+          shipped config (red), then at 2323645 (green, inside npm test)
+        exit-code: 1
+        output: >-
+          Red: 1 failed | 3 passed ("expected [Function] to throw an
+          error"). Green: 4 passed; full fast gate 247 passed, exit 0.
+  - id: M1P5-C19
+    kind: coverage
+    statement: >-
+      Fix round 1, CR-504: the pure projection layer now has fast-gate
+      coverage: 28 new tests across test/domain/month-projection.test.ts
+      (fold partition and cash precedence, deltas joined by key across
+      the year boundary, the PINNED magnitude-delta decision from review
+      probe P-F11 including the sign-flip case, the figures identity and
+      every verdict-blocking cause, previousMonth and monthBounds across
+      January and leap February, brusselsDayOf at CEST and CET month
+      edges), test/application/month-overview.test.ts (fake-port use
+      case: the partial month's comparison is structurally unread, a
+      closed month joins deltas by key, future months fall back, gap
+      partitioning) and test/app/fixed-clock.test.ts. The verdict and
+      partition tests doubled as fix-round red witnesses; the
+      arithmetic-only tests pin behaviour the review's probes had
+      already executed green and are coverage, not red witnesses, stated
+      honestly.
+    settled-by:
+      executed-construction:
+        command: npm test at 2323645
+        exit-code: 0
+        output: >-
+          Test Files 20 passed (20); Tests 247 passed (247), 0 skipped;
+          baseline before the fix round was 219 across 17 files.
+  - id: M1P5-C20
+    kind: coverage
+    statement: >-
+      Fix round 1, CR-505: the e2e webServer no longer reuses a server
+      it did not start; an occupied port now fails loudly instead of
+      silently serving an unpinned clock. The full suite runs green
+      under reuseExistingServer false, which is the executed evidence
+      that nothing depended on reuse.
+    settled-by:
+      executed-construction:
+        command: npm run test:e2e at 2323645 (env pinned)
+        exit-code: 0
+        output: "12 passed (2.4m), exit 0, webServer started and stopped by the runner."
+  - id: M1P5-C15
+    kind: open-question
+    statement: >-
+      The merchant review screen reads counted rows only (flow INCOME or
+      SPEND), so committed flow-NULL rows are absent from it without a
+      note; the month view now names them (CR-502), and the review
+      screen's totals mirror the month view's counted sums, so the two
+      screens stay consistent. Whether the review screen should carry
+      the same awaiting-interpretation note is a small product question
+      handed on rather than a silent widening of this fix round into the
+      merchants module.
 environment-warnings:
   - warning: >-
       A positional Playwright filter matches the WORKTREE DIRECTORY name,
@@ -618,6 +947,15 @@ environment-warnings:
     evidence: >-
       docker ps at +25s showed auth "Restarting (1)"; at +55s healthy;
       db:reset then applied all five migrations and seeded, exit 0.
+  - warning: >-
+      A fresh dev server start per e2e run (reuseExistingServer false)
+      adds roughly 15 to 25 seconds per npm run test:e2e invocation in
+      this container; the suite total moved from about 1.9m to about
+      2.4m with the two new tests included. The cost buys the pinned
+      clock guarantee; do not switch reuse back on to save it.
+    evidence: >-
+      rv-e2e (10 passed, 1.9m, reuse on) versus rv2-e2e (12 passed,
+      2.4m, reuse off) in the session run logs.
   - warning: >-
       Next dev in a fleet worktree logs a multiple-lockfiles workspace
       warning (the fleet root has its own package-lock.json) and infers

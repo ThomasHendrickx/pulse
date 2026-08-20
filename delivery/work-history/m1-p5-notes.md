@@ -281,6 +281,64 @@ Backlog carry-ins declared in scope: CR-404 and the messages em dash
   reuseExistingServer false. (4) full gates plus BOTH e2e suites at the
   new head; DR-0001 evidence re-recorded.
 
+- [f4] RED WITNESSES executed before any fix line (all captured in the
+  session scratchpad run logs):
+  - Unit (new files against the shipped code): 9 failed across
+    test/domain/month-projection.test.ts (5: missing inTransit and
+    uninterpreted fields surfacing as undefined/NaN, reconciles true
+    under cancelling gaps and under a zero-amount unresolved row),
+    test/application/month-overview.test.ts (3: no inTransitLegs or
+    uninterpretedRows partition, reconciles true) and
+    test/app/fixed-clock.test.ts (1: production does not refuse the
+    override), exit 1.
+  - E2e (new and tightened tests against the shipped code): 3 failed,
+    exit 1: the straddling-pair test (recon-cause-in-transit never
+    renders while the panel alarms), the cancelling-gaps test
+    (data-state ok over two real export gaps) and the unresolved test
+    (data-state ok above a listed gap).
+- [f5] Implementation landed as commits 554c7d6 (CR-501+CR-502: the
+  in-transit predicate resolves the linked partner and tests its
+  booking date against the period; monthFigures drops its WHERE flow
+  filter so uninterpretedCount can count committed flow-NULL rows while
+  every named sum, changeInPot and rowCount filter on flow themselves;
+  gap rows grew in-transit and uninterpreted kinds; reconciles now
+  requires difference zero AND zero unmatched, unresolved, in-transit
+  and uninterpreted counts; two new cause blocks with EN/NL/FR keys,
+  101/101/101 parity; the difference figure renders on non-zero
+  difference, and a broken panel with a zero difference gets the
+  reconNoteGaps copy; the R-087 false sentence in month-projection.ts
+  corrected loudly in place), 776c21d (CR-503: fixedNowOverride refuses
+  the variable when isProduction(), log plus throw with the
+  [pulse:config] prefix, comment corrected loudly per R-087; CR-505:
+  reuseExistingServer false with the reason at the setting) and 2323645
+  (the CR-501 sibling rule recorded at the ledger reconcile definition:
+  a residual-only boolean is not a verdict; that report's matched pairs
+  cannot straddle its window because pairing runs inside the
+  interpreted set, stated there).
+- [f6] GREEN at the fix-round head 2323645, clean tree: npm test 247
+  passed 0 skipped exit 0 (20 files; 28 new tests over the baseline
+  219); npm run test:e2e 12 passed 0 skipped exit 0 (the 10 prior plus
+  the straddling-pair and cancelling-gaps tests); typecheck 0; lint 0;
+  gate:tokens 0; em dash sweep exit 1 (none).
+- [f7] CR-502's SQL half witnessed against the real database (the fast
+  gate has no database by design, so the committed unit test covers the
+  use case over a fake port and this EXECUTED probe covers the SQL):
+  probe-cr502.ts (tsx, repo tsconfig, env pinned) inserted a committed
+  777,00 flow-NULL row into the seeded household, then read the August
+  figures and gap rows through the committed repository:
+  uninterpretedCount 0 -> 1, rowCount and changeInPot unchanged
+  (interpreted surfaces untouched), gap row "uninterpreted 77700 CR502
+  probe account" present, derived reconciles false; PROBE PASS exit 0;
+  rows cleaned up in a finally block. This is the executed reversal of
+  the review's P-D3 (which showed byte-identical figures pre-fix).
+- [f8] DR-0001 RELEASE VERIFICATION RE-RECORDED at head 2323645, all on
+  the same commit: npm run typecheck exit 0; npm run lint exit 0; npm
+  run gate:tokens exit 0; npm test exit 0 (247 passed, 0 failed, 0
+  skipped, 0 todo); npm run test:e2e exit 0 (12 passed, 0 failed, 0
+  skipped; playwright chromium, dev webServer with the pinned clock and
+  reuseExistingServer now false, env pinned per fleet warnings 1 and
+  6). The declared verification was not weakened.
+
 - [t19] Work history m1-p5.yaml written and schema-validated: npx
   --prefix /home/user/pulse-fleet tiphys validate --type work-history
   --context <worktree> exit 0 (first run caught claim M1P5-C10 carrying
