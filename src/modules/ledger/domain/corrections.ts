@@ -135,8 +135,17 @@ export const correctRefund = (
 
 // CORRECTION 4: cash withdrawals. Money leaves the pot and its destination
 // is unknowable from the data: it gets "cash" as its own destination,
-// never split, never guessed at. The flow stays SPEND; the marker is what
-// the merchant resolver (M1-P4) groups by.
+// never split, never guessed at. The flow stays SPEND.
+//
+// CORRECTED CLAIM (R-087, corrected by M1-P4 itself): this comment used to
+// end "the marker is what the merchant resolver (M1-P4) groups by", and
+// that prediction did not come true. M1-P4's resolver deliberately does
+// NOT consume this marker: destination-cash grouping is projection work
+// and lands with the month view, so until then a cash row resolves like
+// any counted row (a rule matching its descriptor may name it). The month
+// view's grouping must give THIS marker precedence over any merchant
+// assignment on the same row, or "cash is its own destination, never
+// split" stops being true on screen; recorded as an M1-P4 open question.
 export const correctCashWithdrawal = (
   transaction: LedgerTransaction,
 ): { readonly flow: "SPEND"; readonly destination: "cash" } | undefined =>

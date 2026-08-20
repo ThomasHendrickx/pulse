@@ -7,6 +7,13 @@
 
 import { delimitedFileParser } from "../../src/modules/import/adapters/delimited-file-parser";
 import { interpretForImport } from "../../src/modules/ledger/application/interpret-window";
+import { resolveCounterparties } from "../../src/modules/merchants/application/resolve-counterparties";
+import type { MerchantRuleLike } from "../../src/modules/merchants/domain/merchant-rule";
+import type {
+  MerchantRecord,
+  MerchantRepositoryPort,
+  TagRecord,
+} from "../../src/modules/merchants/application/ports";
 import type { Flow } from "../../src/modules/ledger/domain/flow";
 import type {
   DeclaredAccount,
@@ -37,9 +44,11 @@ export type StoredTransaction = IngestRow & {
   readonly householdId: string;
   readonly accountId: string;
   readonly importId: string;
-  // Interpretation column, written only through the ledger fake's
-  // replaceInterpretation, mirroring the real schema's flow column.
+  // Interpretation columns, written only through the ledger fake's
+  // replaceInterpretation, mirroring the real schema's flow and merchantId
+  // columns.
   flow?: Flow;
+  merchantId?: string;
 };
 
 export type StoredTransferLink = InterpretationLinkWrite & {
@@ -59,14 +68,32 @@ type MutableImport = {
   failureReason?: ImportFailureReason;
 };
 
+export type StoredMerchant = MerchantRecord & { readonly householdId: string };
+export type StoredRule = MerchantRuleLike & { readonly householdId: string };
+export type StoredTag = TagRecord & { readonly householdId: string };
+export type StoredMerchantTag = {
+  readonly householdId: string;
+  readonly merchantId: string;
+  readonly tagId: string;
+  isPrimary: boolean;
+};
+
 export type FakeImportWorld = {
   readonly deps: ImportDependencies;
   readonly ledgerDeps: LedgerDependencies;
+  readonly merchantsPort: MerchantRepositoryPort;
   readonly transactions: readonly StoredTransaction[];
   readonly links: readonly StoredTransferLink[];
   readonly imports: ReadonlyMap<string, MutableImport>;
   readonly profiles: readonly (StoredProfile & { householdId: string })[];
   readonly accounts: readonly (AccountRecord & { householdId: string })[];
+  readonly merchants: readonly StoredMerchant[];
+  readonly rules: readonly StoredRule[];
+  readonly tags: readonly StoredTag[];
+  readonly merchantTags: readonly StoredMerchantTag[];
+  // Every write into the merchants module's DECLARATION stores, counted:
+  // criterion 3.2's runtime half asserts interpretation makes NONE.
+  readonly declarationWrites: () => number;
 };
 
 export const makeFakeImportWorld = (): FakeImportWorld => {
@@ -78,6 +105,11 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
   const imports = new Map<string, MutableImport>();
   const profiles: (StoredProfile & { householdId: string })[] = [];
   const accounts: (AccountRecord & { householdId: string })[] = [];
+  const merchants: StoredMerchant[] = [];
+  const rules: StoredRule[] = [];
+  const tags: StoredTag[] = [];
+  const merchantTags: StoredMerchantTag[] = [];
+  let declarationWriteCount = 0;
 
   const importsPort: ImportRepositoryPort = {
     createImport: async (context, input) => {
@@ -314,6 +346,159 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       : { counterpartyName: stored.counterpartyName }),
   });
 
+  // The merchants module's repository port over the same in-memory world.
+  // Mirrors the Prisma adapter's semantics: unique (householdId, name) for
+  // merchants and tags, upsert-by-(householdId, kind, pattern) for rules,
+  // and setMerchantTag's atomic demote-then-promote so at most one primary
+  // exists per merchant. Every DECLARATION write bumps the counter the
+  // criterion 3.2 test reads.
+  const merchantsPort: MerchantRepositoryPort = {
+    listRules: async (context) =>
+      rules.filter((rule) => rule.householdId === context.householdId),
+    listMerchants: async (context) =>
+      merchants.filter(
+        (merchant) => merchant.householdId === context.householdId,
+      ),
+    findMerchantByName: async (context, name) =>
+      merchants.find(
+        (merchant) =>
+          merchant.householdId === context.householdId && merchant.name === name,
+      ) ?? null,
+    createMerchant: async (context, name) => {
+      declarationWriteCount += 1;
+      const merchant = { id: id("merchant"), householdId: context.householdId, name };
+      merchants.push(merchant);
+      return merchant;
+    },
+    upsertRule: async (context, input) => {
+      // Finding CR-401, mirrored from the adapter: the merchant the rule
+      // points at must belong to the calling household.
+      const owned = merchants.some(
+        (merchant) =>
+          merchant.householdId === context.householdId &&
+          merchant.id === input.merchantId,
+      );
+      if (!owned) {
+        throw new Error("upsertRule: merchant does not belong to the household");
+      }
+      declarationWriteCount += 1;
+      const existing = rules.find(
+        (rule) =>
+          rule.householdId === context.householdId &&
+          rule.kind === input.kind &&
+          rule.pattern === input.pattern,
+      );
+      if (existing !== undefined) {
+        const updated = { ...existing, merchantId: input.merchantId };
+        rules[rules.indexOf(existing)] = updated;
+        return updated;
+      }
+      const rule = {
+        id: id("rule"),
+        householdId: context.householdId,
+        merchantId: input.merchantId,
+        kind: input.kind,
+        pattern: input.pattern,
+      };
+      rules.push(rule);
+      return rule;
+    },
+    findTagByName: async (context, name) =>
+      tags.find(
+        (tag) => tag.householdId === context.householdId && tag.name === name,
+      ) ?? null,
+    createTag: async (context, name) => {
+      declarationWriteCount += 1;
+      const tag = { id: id("tag"), householdId: context.householdId, name };
+      tags.push(tag);
+      return tag;
+    },
+    setMerchantTag: async (context, input) => {
+      // Finding CR-401, mirrored from the adapter: merchant AND tag are
+      // verified under the household before any write. (The adapter's
+      // second layer, the partial unique index on (merchantId) where
+      // isPrimary, lives in the migration SQL; this single-threaded fake
+      // cannot interleave transactions, so the index is asserted from the
+      // committed SQL by the suite and witnessed against the real
+      // database by the fix-round race probe.)
+      const ownedMerchant = merchants.some(
+        (merchant) =>
+          merchant.householdId === context.householdId &&
+          merchant.id === input.merchantId,
+      );
+      if (!ownedMerchant) {
+        throw new Error("setMerchantTag: merchant does not belong to the household");
+      }
+      const ownedTag = tags.some(
+        (tag) => tag.householdId === context.householdId && tag.id === input.tagId,
+      );
+      if (!ownedTag) {
+        throw new Error("setMerchantTag: tag does not belong to the household");
+      }
+      declarationWriteCount += 1;
+      if (input.isPrimary) {
+        for (const link of merchantTags) {
+          if (
+            link.householdId === context.householdId &&
+            link.merchantId === input.merchantId
+          ) {
+            link.isPrimary = false;
+          }
+        }
+      }
+      const existing = merchantTags.find(
+        (link) =>
+          link.householdId === context.householdId &&
+          link.merchantId === input.merchantId &&
+          link.tagId === input.tagId,
+      );
+      if (existing !== undefined) {
+        existing.isPrimary = input.isPrimary;
+        return;
+      }
+      merchantTags.push({
+        householdId: context.householdId,
+        merchantId: input.merchantId,
+        tagId: input.tagId,
+        isPrimary: input.isPrimary,
+      });
+    },
+    listMerchantTags: async (context, merchantId) =>
+      merchantTags
+        .filter(
+          (link) =>
+            link.householdId === context.householdId &&
+            link.merchantId === merchantId,
+        )
+        .map((link) => {
+          const tag = tags.find((candidate) => candidate.id === link.tagId);
+          return {
+            tagId: link.tagId,
+            tagName: tag?.name ?? "",
+            isPrimary: link.isPrimary,
+          };
+        }),
+    listCountedTransactions: async (context) =>
+      transactions
+        .filter(
+          (stored) =>
+            stored.householdId === context.householdId &&
+            (stored.flow === "INCOME" || stored.flow === "SPEND"),
+        )
+        .map((stored) => ({
+          id: stored.id,
+          flow: stored.flow === "INCOME" ? ("INCOME" as const) : ("SPEND" as const),
+          amountCents: stored.amountCents,
+          description: stored.description,
+          ...(stored.counterpartyName === undefined
+            ? {}
+            : { counterpartyName: stored.counterpartyName }),
+          ...(stored.merchantId === undefined
+            ? {}
+            : { merchantId: stored.merchantId }),
+        })),
+  };
+
   const ledgerDeps: LedgerDependencies = {
     accounts: {
       listAccounts: async (context): Promise<readonly DeclaredAccount[]> =>
@@ -390,6 +575,20 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
             stored.flow = entry.flow;
           }
         }
+        for (const entry of input.merchants) {
+          const stored = transactions.find(
+            (candidate) =>
+              candidate.householdId === context.householdId &&
+              candidate.id === entry.transactionId,
+          );
+          if (stored !== undefined) {
+            if (entry.merchantId === null) {
+              delete stored.merchantId;
+            } else {
+              stored.merchantId = entry.merchantId;
+            }
+          }
+        }
         for (const link of input.links) {
           links.push({ ...link, householdId: context.householdId });
         }
@@ -405,6 +604,14 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
         }
       },
     },
+    // The REAL rules-only resolver use case over the fake repository: the
+    // fast gate exercises the same resolution code production runs, and
+    // interpretation's whole merchants surface is this one read-only
+    // function (criterion 3.2).
+    merchants: {
+      resolveCounterparties: (context, texts) =>
+        resolveCounterparties(context, { merchants: merchantsPort }, texts),
+    },
   };
 
   return {
@@ -417,11 +624,17 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       },
     },
     ledgerDeps,
+    merchantsPort,
     transactions,
     links,
     imports,
     profiles,
     accounts,
+    merchants,
+    rules,
+    tags,
+    merchantTags,
+    declarationWrites: () => declarationWriteCount,
   };
 };
 

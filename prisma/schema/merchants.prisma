@@ -1,0 +1,120 @@
+// Merchants module tables. TWO LAYERS live in this file and the line
+// between them is the phase's whole point (pulse-v1-architecture.md layer
+// map, pulse-domain section 2):
+//
+//   DECLARATIONS, written by the user, never by the engine, never
+//   rebuildable: MerchantRule (a naming decision: this normalised
+//   counterparty string means that merchant, for every past and future
+//   matching transaction), Tag and MerchantTag (freeform labels the user
+//   hangs on a merchant, many-to-many, at most one primary).
+//
+//   Merchant itself is the NAME a rule points at. The architecture's layer
+//   map lists Merchant under interpretation, but every Merchant row here
+//   is created on the declaration path (manual assignment; slice 5's
+//   accepted answers later), is referenced by MerchantRule and MerchantTag
+//   declarations, and is therefore NEVER deleted or rewritten by
+//   recompute: destroying it would destroy the user decisions that point
+//   at it (the architecture's own line 35 rule). What recompute rebuilds
+//   wholesale is the transactions.merchantId ASSIGNMENT column, declared
+//   in import.prisma beside flow.
+//
+// No code path in interpretation writes to any table in this file
+// (pulse-domain section 2 rule 3); the resolver READS MerchantRule rows
+// through the merchants module and returns assignments.
+
+enum MerchantRuleKind {
+  EXACT
+  PREFIX
+  PATTERN
+}
+
+model Merchant {
+  id          String   @id @default(uuid()) @db.Uuid
+  householdId String   @db.Uuid
+  // Display name, as the user typed it. Income sources (salary,
+  // allowances, refunds, interest) are merchants too: they resolve
+  // through the same rules and differ only in the flow of the
+  // transactions that point at them (pulse-v1-plan.md:164).
+  name        String
+  createdAt   DateTime @default(now())
+
+  household    Household      @relation(fields: [householdId], references: [id])
+  rules        MerchantRule[]
+  tags         MerchantTag[]
+  transactions Transaction[]
+
+  @@unique([householdId, name])
+  @@index([householdId])
+  @@map("merchants")
+}
+
+model MerchantRule {
+  id          String           @id @default(uuid()) @db.Uuid
+  householdId String           @db.Uuid
+  merchantId  String           @db.Uuid
+  kind        MerchantRuleKind
+  // The rule's subject, ALWAYS in normalised form (normaliseCounterparty):
+  // the exact normalised string for EXACT, a normalised prefix for PREFIX,
+  // a normalised glob (with `*` wildcards) for PATTERN. Matching runs on
+  // normalised strings only, so a pattern stored raw would never match;
+  // the application layer normalises before writing.
+  pattern     String
+  createdAt   DateTime         @default(now())
+
+  household Household @relation(fields: [householdId], references: [id])
+  merchant  Merchant  @relation(fields: [merchantId], references: [id])
+
+  // One household decision per (kind, pattern): re-assigning the same
+  // string is an UPDATE of the decision, not a second contradictory row
+  // the resolver would have to tie-break by accident of insertion.
+  @@unique([householdId, kind, pattern])
+  @@index([householdId])
+  @@map("merchant_rules")
+}
+
+model Tag {
+  id          String   @id @default(uuid()) @db.Uuid
+  householdId String   @db.Uuid
+  // Freeform, user-created, NOTHING SEEDED (charter tags decision).
+  name        String
+  createdAt   DateTime @default(now())
+
+  household Household     @relation(fields: [householdId], references: [id])
+  merchants MerchantTag[]
+
+  @@unique([householdId, name])
+  @@index([householdId])
+  @@map("tags")
+}
+
+model MerchantTag {
+  id          String   @id @default(uuid()) @db.Uuid
+  householdId String   @db.Uuid
+  merchantId  String   @db.Uuid
+  tagId       String   @db.Uuid
+  // At most one primary tag per merchant, enforced by TWO layers: the
+  // application's setMerchantTag (demote-then-promote in one
+  // transaction, with merchant and tag ownership verified under the
+  // household) and the partial unique index
+  // merchant_tags_one_primary_per_merchant (migration
+  // one_primary_per_merchant), which is what holds under concurrent
+  // promotes (finding CR-401). CORRECTED CLAIM (R-087): this comment
+  // used to say a hand-added partial index would make the next `prisma
+  // migrate dev` see drift; that was probed in the M1-P4 fix round and
+  // is FALSE: `prisma migrate diff --from-migrations
+  // --to-schema-datamodel` returns an empty script with the index
+  // applied, so Prisma's diff does not track or drop it. Prisma still
+  // cannot MODEL the index here, so its one source of truth is the
+  // migration SQL, asserted by name and predicate in
+  // test/application/resolve-merchants.test.ts.
+  isPrimary   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  household Household @relation(fields: [householdId], references: [id])
+  merchant  Merchant  @relation(fields: [merchantId], references: [id])
+  tag       Tag       @relation(fields: [tagId], references: [id])
+
+  @@unique([merchantId, tagId])
+  @@index([householdId])
+  @@map("merchant_tags")
+}

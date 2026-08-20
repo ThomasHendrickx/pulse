@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { detectSourceProfile } from "../../src/modules/import/domain/detect-profile";
-import { parseAmountToCents } from "../../src/modules/import/domain/parse-amount";
+import {
+  parseAmountToCents,
+  parseUnsignedAmountToCents,
+} from "../../src/modules/import/domain/parse-amount";
 import { parseStatement } from "../../src/modules/import/domain/parse-statement";
 import { parseSourceProfileSpec } from "../../src/modules/import/domain/source-profile";
 import type { SourceProfileSpec } from "../../src/modules/import/domain/source-profile";
@@ -466,6 +469,188 @@ describe("an indicator value outside the detected pair fails the row (finding F2
       kind: "indicator",
       debitValue: "D",
       creditValue: "C",
+    });
+  });
+});
+
+describe("interleaved currency noise cannot reconstruct a sign (backlog CR-308)", () => {
+  // Sibling of CR-307, one adversary deeper: stripCurrencyNoise used to be
+  // a SINGLE regex pass, so a cell whose noise tokens interleave
+  // ("EEURUR-742,10": stripping the inner EUR leaves "EUR-742,10")
+  // reconstructed a currency-prefixed SIGNED value after one strip. The
+  // unsigned entry point's leading-sign check then saw "E", passed, and
+  // the inner parse stripped again and read the sign: the CR-208 inversion
+  // (debit column) and the CR-305 discard (indicator marker), two
+  // normalisation steps deep. The class witness reddens under two
+  // structurally different members: the debitCredit representation and the
+  // indicator representation.
+  const pairSpec: SourceProfileSpec = {
+    delimiter: ",",
+    encoding: "utf-8",
+    headerRowIndex: 0,
+    dateFormat: "YYYY-MM-DD",
+    decimalStyle: "dot",
+    amountRepresentation: { kind: "debitCredit", debitColumn: 1, creditColumn: 2 },
+    columns: { bookingDate: 0, description: 3 },
+  };
+  const pairBytes = (row: string): Uint8Array =>
+    new TextEncoder().encode(["Date,Debit,Credit,Description", row].join("\n"));
+
+  const indicatorSpec: SourceProfileSpec = {
+    delimiter: ";",
+    encoding: "utf-8",
+    headerRowIndex: 0,
+    dateFormat: "DD.MM.YY",
+    decimalStyle: "comma",
+    amountRepresentation: {
+      kind: "indicator",
+      amountColumn: 1,
+      indicatorColumn: 2,
+      debitValue: "D",
+      creditValue: "C",
+    },
+    columns: { bookingDate: 0, description: 3 },
+  };
+  const indicatorBytes = (row: string): Uint8Array =>
+    new TextEncoder().encode(["Datum;Bedrag;D/C;Omschrijving", row].join("\n"));
+
+  test("an interleaved-noise negative in a debit column is a row error, never an inverted sign", () => {
+    const parsed = parseStatement(
+      pairBytes("2026-08-03,EEURUR-742.10,,ACME STORE"),
+      pairSpec,
+    );
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error).toMatchObject({ kind: "row-error", problem: "amount" });
+    }
+  });
+
+  test("an interleaved-noise negative beside a credit marker is a row error, never a negative credit", () => {
+    const parsed = parseStatement(
+      indicatorBytes("03.08.26;EEURUR-742,10;C;ACME STORE"),
+      indicatorSpec,
+    );
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error).toMatchObject({ kind: "row-error", problem: "amount" });
+    }
+  });
+
+  // REVERSED EXPECTATION, deliberately and loudly (fix round 1, finding
+  // CR-403): the CR-308 round shipped this row as a CONTROL asserting
+  // that interleaved noise without a sign kept parsing. That expectation
+  // was the instance-not-the-class mistake: stripping a currency token
+  // out of the MIDDLE of a cell concatenates whatever surrounds it, so
+  // "7EUR42,10" parsed as 742,10 and this control's "EEURUR742.10" parsed
+  // as 742.10, both plausible amounts fabricated from a corrupt cell.
+  // Currency noise is now stripped at the cell boundaries only, so every
+  // interleaved shape is a loud row error, signed or not.
+  test("interleaved noise WITHOUT a sign is a row error too, never a fabricated amount (finding CR-403)", () => {
+    const parsed = parseStatement(
+      pairBytes("2026-08-03,EEURUR742.10,,ACME STORE"),
+      pairSpec,
+    );
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error).toMatchObject({ kind: "row-error", problem: "amount" });
+    }
+  });
+
+  test("the unsigned entry point itself refuses any parse that comes back negative", () => {
+    const parsed = parseUnsignedAmountToCents("EEURUR-742,10", "comma");
+    expect(parsed.ok).toBe(false);
+  });
+});
+
+describe("a currency token inside a digit run cannot fabricate an amount (finding CR-403)", () => {
+  // The positive-magnitude sibling of CR-308's interleaved shape: with
+  // the old global strip, "7EUR42,10" lost its EUR and the fragments
+  // concatenated into 742,10 at BOTH entry points, and dot-style "1EUR2"
+  // became 12,00. A cell whose digits were split by a stripped token is
+  // corrupt, not a number: tokens are stripped only at the trimmed
+  // cell's boundaries, so these stay unparseable and fail the row loud.
+  const pairSpec: SourceProfileSpec = {
+    delimiter: ",",
+    encoding: "utf-8",
+    headerRowIndex: 0,
+    dateFormat: "YYYY-MM-DD",
+    decimalStyle: "dot",
+    amountRepresentation: { kind: "debitCredit", debitColumn: 1, creditColumn: 2 },
+    columns: { bookingDate: 0, description: 3 },
+  };
+  const pairBytes = (row: string): Uint8Array =>
+    new TextEncoder().encode(["Date,Debit,Credit,Description", row].join("\n"));
+
+  const indicatorSpec: SourceProfileSpec = {
+    delimiter: ";",
+    encoding: "utf-8",
+    headerRowIndex: 0,
+    dateFormat: "DD.MM.YY",
+    decimalStyle: "comma",
+    amountRepresentation: {
+      kind: "indicator",
+      amountColumn: 1,
+      indicatorColumn: 2,
+      debitValue: "D",
+      creditValue: "C",
+    },
+    columns: { bookingDate: 0, description: 3 },
+  };
+  const indicatorBytes = (row: string): Uint8Array =>
+    new TextEncoder().encode(["Datum;Bedrag;D/C;Omschrijving", row].join("\n"));
+
+  test("a mid-digit token in the SIGNED entry point is unparseable, never concatenated", () => {
+    expect(parseAmountToCents("7EUR42,10", "comma").ok).toBe(false);
+    expect(parseAmountToCents("1EUR2", "dot").ok).toBe(false);
+  });
+
+  test("a mid-digit token in the UNSIGNED entry point is unparseable, never concatenated", () => {
+    expect(parseUnsignedAmountToCents("7EUR42,10", "comma").ok).toBe(false);
+    expect(parseUnsignedAmountToCents("EEURUR742,10", "comma").ok).toBe(false);
+  });
+
+  test("a mid-digit token under a debit column fails the row", () => {
+    const parsed = parseStatement(pairBytes("2026-08-03,7EUR42.10,,ACME STORE"), pairSpec);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error).toMatchObject({ kind: "row-error", problem: "amount" });
+    }
+  });
+
+  test("a mid-digit token beside an indicator marker fails the row", () => {
+    const parsed = parseStatement(
+      indicatorBytes("03.08.26;7EUR42,10;D;ACME STORE"),
+      indicatorSpec,
+    );
+    expect(parsed.ok).toBe(false);
+  });
+
+  test("boundary tokens keep parsing: the positive controls stay green", () => {
+    // Leading token beside a marker, trailing token, plain magnitude, and
+    // the signed representation's leading token with a real sign.
+    const indicator = parseStatement(
+      indicatorBytes("03.08.26;EUR 742,10;D;ACME STORE"),
+      indicatorSpec,
+    );
+    expect(indicator.ok).toBe(true);
+    if (indicator.ok) {
+      expect(indicator.value.rows[0]?.amountCents).toBe(-74210);
+    }
+    expect(parseAmountToCents("742,10", "comma")).toMatchObject({
+      ok: true,
+      value: 74210,
+    });
+    expect(parseAmountToCents("742,10 EUR", "comma")).toMatchObject({
+      ok: true,
+      value: 74210,
+    });
+    expect(parseAmountToCents("EUR -742,10", "comma")).toMatchObject({
+      ok: true,
+      value: -74210,
+    });
+    expect(parseUnsignedAmountToCents("€ 742,10", "comma")).toMatchObject({
+      ok: true,
+      value: 74210,
     });
   });
 });

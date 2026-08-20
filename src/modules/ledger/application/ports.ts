@@ -27,6 +27,34 @@ export type InterpretationLinkWrite = {
   readonly settlementImportId?: string;
 };
 
+// The MerchantResolver port (pulse-domain section 9's named port). ONE
+// member, deliberately and load-bearingly: the interpret use case may ASK
+// which merchant a counterparty string resolves to, and can do nothing
+// else to the merchants module. In particular it has no rule repository
+// dependency, so no code path in interpretation can write a MerchantRule,
+// by construction (criterion 3.2, hazard H3.1; pulse-domain section 2
+// rule 3: recompute never writes to the declarations layer, even when it
+// looks like caching). test/application/resolve-merchants.test.ts asserts
+// this port's key set stays exactly this.
+export type MerchantResolverPort = {
+  // Distinct raw counterparty texts in, merchant assignments out; the
+  // resolver normalises internally and unresolved texts are absent from
+  // the map. Bound to the merchants module's rules-only resolver until
+  // slice 5 adds the LLM step behind this same port.
+  readonly resolveCounterparties: (
+    context: HouseholdContext,
+    texts: readonly string[],
+  ) => Promise<ReadonlyMap<string, string>>;
+};
+
+export type InterpretationMerchantWrite = {
+  readonly transactionId: string;
+  // Null CLEARS a stale assignment: interpretation output is rebuilt
+  // wholesale, so an assignment that no rule supports any more stops
+  // applying instead of lingering.
+  readonly merchantId: string | null;
+};
+
 export type LedgerRepositoryPort = {
   // Fact rows over the given pot accounts, optionally bounded by booking
   // date (both bounds inclusive). No bounds means everything: recompute.
@@ -53,9 +81,10 @@ export type LedgerRepositoryPort = {
   ) => Promise<{ readonly from: PlainDate; readonly to: PlainDate } | null>;
   // Atomic interpretation rewrite for the interpreted set: every transfer
   // link touching one of the transactions is deleted, the new links are
-  // inserted, every flow is written, and the named imports move
-  // INGESTED -> INTERPRETED, in one database transaction. Interpretation
-  // is derived state: this rewrite touches NO fact column.
+  // inserted, every flow and merchant assignment is written, and the named
+  // imports move INGESTED -> INTERPRETED, in one database transaction.
+  // Interpretation is derived state: this rewrite touches NO fact column
+  // and NO declaration table.
   readonly replaceInterpretation: (
     context: HouseholdContext,
     input: {
@@ -64,6 +93,7 @@ export type LedgerRepositoryPort = {
         readonly transactionId: string;
         readonly flow: Flow;
       }[];
+      readonly merchants: readonly InterpretationMerchantWrite[];
       readonly links: readonly InterpretationLinkWrite[];
       readonly interpretedImportIds: readonly string[];
     },
@@ -73,4 +103,5 @@ export type LedgerRepositoryPort = {
 export type LedgerDependencies = {
   readonly accounts: LedgerAccountsGateway;
   readonly ledger: LedgerRepositoryPort;
+  readonly merchants: MerchantResolverPort;
 };
