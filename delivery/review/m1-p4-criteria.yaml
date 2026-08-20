@@ -5,7 +5,107 @@ produced-by: claude
 framing: criteria-contract
 review-contract: criteria
 
-# Clean-room criteria review, all by execution in this fresh clone, never
+# Clean-room criteria review, TWO ROUNDS, all by execution in this fresh
+# clone. Round 1 approved head 96f33a1; round 2 is the delta review of
+# the hazard-driven fix round 1, 96f33a1..b021f9b, and this verdict now
+# stands at head b021f9b.
+#
+# ROUND 2 (fix round 1 delta, regression-focused). DELTA SHAPE verified
+# myself: origin/claude/m1-p4-merchants fetched, b021f9b merged into this
+# review branch (merge 63f7da1; the merged tree differs from b021f9b only
+# by this review file); git diff aff8c92..b021f9b --stat lists only the
+# two delivery/work-history files (213 insertions), so the round's code
+# head is aff8c92; git diff 96f33a1..b021f9b --stat is 12 files, 756
+# insertions, 63 deletions, every file inside files-to-touch plus the
+# declared extras (prisma/, src/modules/merchants/,
+# src/modules/import/domain/parse-amount.ts, the declared test files,
+# fake-import-world, work-history), no new deviation declared and none
+# needed. The delta closes three hazard findings: CR-401 (household
+# ownership verified in-transaction in upsertRule and setMerchantTag,
+# every write clause carries householdId, upsert replaced by
+# updateMany-then-create under the household, and a NEW hand-authored
+# migration 20260820084740_one_primary_per_merchant adding the partial
+# unique index merchant_tags_one_primary_per_merchant), CR-402 (stability
+# contract comment on the normalisation recipe plus a pinned-output
+# regression table and an idempotence test), CR-403 (currency tokens
+# stripped at cell boundaries only, iterated to a fixpoint at the ends;
+# the CR-308 control's expectation REVERSED loudly and declared in place:
+# an interleaved unsigned cell is now a row error, never a fabricated
+# amount).
+#
+# ROUND 2 GATES, all executed by this reviewer at the merged head
+# (code-identical to aff8c92): npm run typecheck EXIT=0; npm run lint
+# EXIT=0; npm test EXIT=0 (17 files, 219 passed, 0 failed, 0 skipped,
+# which is round 1's 191 plus the delta's 28); the literal chain npm run
+# typecheck && npm run lint && npm test EXIT=0. Per-suite:
+# normalise-counterparty 37 passed (18 round 1 tests unchanged plus the
+# 19 pinned-output and idempotence additions), resolve-merchants 18
+# passed (all 14 round 1 tests unchanged plus 3 tenancy refusal
+# witnesses and the migration-SQL index assertion), test/schema 24
+# passed (RLS suite still derives every table from the DMMF and stays
+# green over the new migration), profile-detection 51 passed (the M1-P2
+# criterion 1.1 fixture matrix and all CR-208/305/307/308 witnesses
+# green under the boundary-anchored strip, plus the 5 CR-403 additions
+# with positive boundary controls: leading token beside a marker,
+# trailing token, plain magnitude, signed EUR prefix, euro sign all
+# still parse).
+#
+# ROUND 2 DATABASE AND E2E, from zero: CREATE DATABASE pulse_review_p4r2
+# on the local stack, npx prisma migrate deploy EXIT=0 applying ALL FIVE
+# migrations in sequence including the new
+# 20260820084740_one_primary_per_merchant, seed EXIT=0 (paginated auth
+# check, warning 7), live psql: relrowsecurity=t on all 11 application
+# tables AND the partial unique index present with the exact predicate
+# (CREATE UNIQUE INDEX merchant_tags_one_primary_per_merchant ON
+# public.merchant_tags USING btree ("merchantId") WHERE "isPrimary").
+# LIVE INDEX PROBE, executed: inserting a second isPrimary row for one
+# merchant directly in SQL fails with duplicate key value violates
+# unique constraint "merchant_tags_one_primary_per_merchant" (probe rows
+# deleted after). npm run test:e2e EXIT=0 (5 passed, 47.2s) with all
+# five env values pinned, including merchants.spec.ts (11.7s).
+#
+# ROUND 2 RED SPOT-CHECKS on the NEW code, each applied, run, captured,
+# restored, restore green:
+#   RD1 boundary-anchored strip reverted to the old global single-pass
+#       strip (the exact pre-fix shape): EXIT=1, 5 failed, exactly the
+#       CR-403 witnesses including the reversed control, while the
+#       CR-308 output-rejection witnesses stayed green (the two guards
+#       are independent, as designed); restored, 51 passed.
+#   RD2 a city token (OXFORD) added to CITY_TOKENS, CR-402's exact
+#       detachment case: EXIT=1, 2 failed, the "STARBUCKS OXFORD" pin
+#       and the idempotence test, reproducing work-history claim
+#       M1P4-C13's captured shape (2 failed | 35 passed) today;
+#       restored, 37 passed.
+#
+# ROUND 2 WORK-HISTORY DELTA judged: gate evidence at aff8c92 (219 fast,
+# 5 e2e) matches this reviewer's runs at the merged head exactly; the
+# deviation list is UNCHANGED (still the one entry judged below; every
+# delta file is inside the declared scope); new claims M1P4-C12 and
+# M1P4-C13 are consistent with my RD1 and RD2, which redden the same
+# witnesses today; M1P4-C14's pre/post race probe against the real
+# adapter (19 of 20 rounds with two primaries pre-fix, 0 of 20 post-fix)
+# is history I could not replay, but its present-tense teeth were
+# verified live here: the index exists on the from-zero database with the
+# right predicate, my direct SQL probe of a second primary was refused by
+# exactly that constraint, the migration-SQL assertion test carries it in
+# the fast gate, and the three tenancy refusal witnesses run green over
+# the fake that mirrors the adapter's thrown refusals. NOTHING WEAKENED:
+# zero deletions in any criterion test file except the CR-403 control
+# whose expectation was deliberately reversed and documented in place
+# (the old expectation asserted that a corrupt interleaved cell parsed,
+# which fix round 1 identified as the instance-not-the-class mistake);
+# every other round 1 assertion is retained verbatim and re-ran green
+# inside the 219. SEMANTICS: the only accepted-input change is that
+# corrupt mid-digit-token cells now fail the row loudly instead of
+# parsing as fabricated amounts, which is the charter's fail-loud rule
+# applied to a class CR-308 had only partially covered; legitimate
+# fixture shapes verified unregressed by the criterion 1.1 matrix and
+# the e2e import journey. HYGIENE: zero em dashes in the delta's added
+# lines (grep count 0), catalogs untouched (diff empty), no UI file
+# touched, integer cents preserved, every new query clause carries
+# householdId (read in the diff).
+
+# ROUND 1 RECORD. Clean-room criteria review, all by execution in this fresh clone, never
 # adopting the implementer's claims. Head under review: 96f33a1 on
 # claude/m1-p4-review-criteria (a cut of claude/m1-p4-merchants). VERIFIED
 # MYSELF: git diff 9dd3402..96f33a1 --stat lists only
@@ -174,7 +274,8 @@ review-contract: criteria
 # "Met" below is a statement about this phase's contract, not a
 # completeness claim about the artifact.
 #
-# VALIDATION RECORD, measured: npx --prefix /home/user/pulse-fleet tiphys
+# VALIDATION RECORD, measured at round 1 and RE-RUN at round 2 with the
+# work-history at b021f9b in the context: npx --prefix /home/user/pulse-fleet tiphys
 # validate --type verdict (Node v26.7.0) against a reviewer-built PRIVATE
 # context directory (never a shared scratch dir) carrying plan.yaml
 # (delivery/plan/pulse-v1.yaml at this head), the M1-P4 work-history.yaml
@@ -217,6 +318,7 @@ criteria:
       - "npm test EXIT=0 at this head (17 files, 191 passed, 0 failed, 0 skipped); npx vitest run test/domain/normalise-counterparty.test.ts EXIT=0, 18 passed."
       - "All four named categories have dedicated describe blocks with real fixture-shaped cases: uppercase (test/domain/normalise-counterparty.test.ts:12-23), payment terminal noise including bank-branded prefixes, rails, masked card numbers and the FX conversion tail (test/domain/normalise-counterparty.test.ts:25-52), date fragments in three separators plus time-of-day (test/domain/normalise-counterparty.test.ts:54-78), city fragments both as postal-code-plus-city anywhere and trailing bare tokens with the inside-the-name control BRUSSEL BROODJES BV (test/domain/normalise-counterparty.test.ts:80-103), whitespace collapse (test/domain/normalise-counterparty.test.ts:105-117), plus degenerate non-destructive inputs and idempotence (test/domain/normalise-counterparty.test.ts:119-137)."
       - "Red direction, executed: reviewer mutation RM1 (the pipeline in src/modules/merchants/domain/normalise-counterparty.ts returns the collapsed uppercase form before any stripping) made the suite fail at EXIT=1 with 14 failed across this file and resolve-merchants; restored, 32 passed."
+      - "Round 2 at b021f9b: all 18 round 1 tests retained verbatim and green inside the suite's 37 passed EXIT=0; the delta ADDS the CR-402 pinned-output regression table and the idempotence test. Red direction re-established on the new code: RD2 (OXFORD added to CITY_TOKENS) EXIT=1, 2 failed naming the STARBUCKS OXFORD pin; restored, 37 passed."
     met: true
   - id: "3.2"
     quote: >-
@@ -230,6 +332,7 @@ criteria:
       - "The by-construction half, probed by this reviewer in both directions: adding an upsertRule member to MerchantResolverPort in src/modules/ledger/application/ports.ts turned npm run typecheck EXIT=1 with 3 errors (the composition binding in src/modules/ledger/application/index.ts, the fake world, and the expectTypeOf pin at test/application/resolve-merchants.test.ts:247); restored, EXIT=0. The port declares exactly one read-only member (src/modules/ledger/application/ports.ts:39-48) and the composition root binds only resolveCounterparties (src/modules/ledger/application/index.ts:56-59)."
       - "Enumeration re-executed: grep over src finds prisma.merchant call sites only in src/modules/merchants/adapters/merchant-repository.ts (findMany, findUnique, create); replaceInterpretation writes tx.transferLink, tx.transaction and tx.import only (src/modules/ledger/adapters/ledger-repository.ts:137-203), so no interpretation code path can reach a declaration table."
       - "Red direction, executed: RM2 (assignment fabricates the rule in memory, never persisting) EXIT=1, 4 failed including the H3.1 witness; RM3 (recompute call removed from assignMerchant) EXIT=1, 3 failed; each restored, 14 passed."
+      - "Round 2 at b021f9b: all 14 round 1 tests retained verbatim and green inside the suite's 18 passed EXIT=0; the by-construction pin at test/application/resolve-merchants.test.ts:249 is untouched by the delta and the typecheck gate stays green over it. The delta ADDS three cross-household refusal witnesses (upsertRule and setMerchantTag throw on a foreign merchant or tag with nothing written) and the migration-SQL assertion of the partial unique index; the adapter now verifies ownership inside the same transaction as the write (src/modules/merchants/adapters/merchant-repository.ts:85-91 and :165-178), which strengthens the criterion's tenancy posture without changing any declaration semantics."
     met: true
   - id: "3.3"
     quote: >-
@@ -240,6 +343,7 @@ criteria:
       - "Executed from a from-zero database: CREATE DATABASE pulse_review_p4 on the local stack, npx prisma migrate deploy EXIT=0 (all four migrations), npx tsx prisma/seed.ts EXIT=0 (against a 60-user auth stack, past the one-page boundary), then npm run test:e2e EXIT=0, 5 passed (56.0s) with all five env values pinned local, including test/e2e/merchants.spec.ts (naming an unresolved counterparty regroups it and changes no total, 11.9s)."
       - "The spec's totals are FIXTURE-DERIVED (income 44.500,00 and spend -1.174,27 computed from belfius-account-a.csv in the header comment, test/e2e/merchants.spec.ts:10-14), asserted digit for digit before AND after the naming (test/e2e/merchants.spec.ts:51-52 and :78-81), alongside the regrouping itself (merchant group appears with -86,47, the descriptor group disappears, unresolved count 5 to 4, test/e2e/merchants.spec.ts:68-74)."
       - "Red direction, executed against the real stack: RM5 mutated interpret-window so a resolved merchant reclassifies its SPEND row to INCOME (hazard H3.2's dangerous state); npx playwright test test/e2e/merchants.spec.ts EXIT=1 failing at exactly the totals-unchanged assertion (test/e2e/merchants.spec.ts:78), income-total 44.500,00 to 44.413,53, the flipped -86,47; restored, 1 passed."
+      - "Round 2 at b021f9b: re-executed from a SECOND from-zero database (pulse_review_p4r2, CREATE DATABASE, npx prisma migrate deploy EXIT=0 applying all FIVE migrations in sequence including the new 20260820084740_one_primary_per_merchant, seed EXIT=0), npm run test:e2e EXIT=0, 5 passed (47.2s), merchants.spec.ts 11.7s, all five env values pinned; the spec file is byte-identical to the round 1 approved version (untouched by the delta)."
     met: true
   - id: "3.4"
     quote: >-
@@ -249,6 +353,7 @@ criteria:
       - "The literal chained command npm run typecheck && npm run lint && npm test EXIT=0 in this clone at the head under review (tsc clean, eslint clean with zero warnings, 17 files, 191 passed, 0 failed, 0 skipped)."
       - "The head bears on the exact code tree: git diff 9dd3402..96f33a1 --stat lists only the two delivery/work-history files, so the chain's result at 96f33a1 is the result at code head 9dd3402."
       - "Regression inside the same gate, re-run per suite by this reviewer: the six M1-P3 criterion suites 50 passed EXIT=0 (classify-flow 13, pair-transfers 9, corrections 16, reconciliation property 1 at 500 runs, interpret 5, reparse 6) and profile-detection 46 passed including the M1-P2 matrix and the CR-208/CR-305/CR-307/CR-308 witnesses."
+      - "Round 2 at b021f9b: the literal chain npm run typecheck && npm run lint && npm test EXIT=0 (17 files, 219 passed, 0 failed, 0 skipped); git diff aff8c92..b021f9b --stat shows the top commit is work-history only, so the chain's result stands at the round's code head aff8c92; profile-detection 51 passed under the boundary-anchored strip with the criterion 1.1 fixture matrix unregressed, and red spot-check RD1 (old global strip restored) reddened exactly the 5 CR-403 witnesses, restored green."
     met: true
 
 deviations-judged:
@@ -285,4 +390,9 @@ deviations-judged:
       these three as extras, so the scope gate at merge sees a
       declaration matching the tree; the amendment is deliberately not on
       this phase branch, per the M1-P3 precedent. The standing
-      work-history files complete the delta; nothing else moved.
+      work-history files complete the delta; nothing else moved. Re-judged
+      over the round 2 delta (git diff 96f33a1..b021f9b, 12 files): every
+      fix-round file falls inside files-to-touch plus the same declared
+      extras (prisma/, src/modules/merchants/, parse-amount.ts, the
+      declared test files, fake-import-world, work-history), so the
+      deviation list is unchanged and no new deviation was needed.
