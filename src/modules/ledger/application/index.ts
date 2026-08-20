@@ -28,6 +28,15 @@ export type {
   LedgerTransaction,
 } from "../domain/ledger-transaction";
 export { interpretLedger } from "../domain/interpret";
+// The cash-withdrawal marker, published for the month projection (M1-P5,
+// resolving M1-P4 open question M1P4-C7): the overview groups cash rows
+// under their own destination with precedence over merchant assignment,
+// consuming ONE pattern list rather than duplicating it. See the sibling
+// note at the patterns' definition in ../domain/constants.ts.
+export {
+  CASH_WITHDRAWAL_PATTERNS,
+  isCashWithdrawalDescription,
+} from "../domain/constants";
 export { reconcile, type ReconciliationReport } from "../domain/reconciliation";
 export {
   interpretForImport as interpretForImportWith,

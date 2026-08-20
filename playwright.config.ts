@@ -30,6 +30,16 @@ export default defineConfig({
           url: baseURL,
           reuseExistingServer: true,
           timeout: 120_000,
+          // Deterministic clock (M1-P5, criterion 4.2): the app's notion
+          // of "now" is pinned mid-September 2026 so the committed
+          // absolute-month fixtures keep their meaning forever: September
+          // 2026 is the partial current month, August 2026 a closed month
+          // compared against July 2026. Parsed by fixedNowOverride in
+          // src/platform/config.ts, consumed by appClock only.
+          env: {
+            ...process.env,
+            PULSE_FIXED_NOW: "2026-09-15T12:00:00Z",
+          },
         },
       }),
 });

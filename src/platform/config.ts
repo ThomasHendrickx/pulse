@@ -46,6 +46,28 @@ export const supabaseConfig = (): SupabaseConfig =>
 
 export const isProduction = (): boolean => process.env.NODE_ENV === "production";
 
+// Optional fixed "now" for deterministic environments (M1-P5). The
+// Playwright webServer sets PULSE_FIXED_NOW so the month view's notion of
+// the current month is pinned mid-September 2026 against the absolute
+// fixture months, deterministic forever (architecture section 10: the
+// clock is injected and fixed). Unset everywhere else, so production runs
+// on the system clock. Parsed HERE because env reads are confined to this
+// module (pulse-typescript section 6); consumed only by appClock in
+// platform/clock.ts. A set-but-invalid value throws at the point of use:
+// a silently ignored typo would run the suite against the real clock and
+// make every partial-month assertion time-dependent.
+export const fixedNowOverride = (): Date | undefined => {
+  const raw = process.env.PULSE_FIXED_NOW;
+  if (raw === undefined || raw === "") {
+    return undefined;
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error("PULSE_FIXED_NOW is set but is not a valid instant");
+  }
+  return parsed;
+};
+
 // Raw, optional reads for the connectivity triage (deploy-verify round 6).
 // Server side only; the health route derives BOOLEANS from these and never
 // echoes any part of the value. Kept here so process.env stays confined to

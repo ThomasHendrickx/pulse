@@ -133,3 +133,39 @@ Backlog carry-ins declared in scope: CR-404 and the messages em dash
 - [t5] Next: environment bring-up (npm ci, docker, db reset), then the
   golden journey spec written FIRST and shown red against the still
   view-less month route.
+- [t6] Environment up: npm ci clean; sudo dockerd revived the
+  m1-p1-skeleton supabase containers (fleet warning: auth container took
+  ~30s of restarts before healthy); npx supabase status gave the local
+  keys; pin-local-env.sh (scratchpad) pins ALL FIVE values plus seed
+  login. Baseline at 047389b's parent: typecheck 0, lint 0, npm test 219
+  passed 0 skipped 0 todo (Node v26.7.0, vitest run, no build step).
+- [t7] CR-404 executed red-first (R-037a, the lying test repaired before
+  anything else): (1) index renamed in the migration SQL by sed, OLD test
+  18 passed exit 0 (the lie witnessed: the name slot accepted any name);
+  (2) test pinned to merchant_tags_one_primary_per_merchant, rerun
+  against the renamed SQL: exit 1, 1 failed 17 passed; (3) SQL restored,
+  18 passed exit 0. Committed 047389b together with the em dash removal:
+  merchantsBody AND emptySteps[0] carried em dashes in all three locales
+  (the brief named only merchantsBody; the grep found the second key);
+  replaced with semicolon/comma per locale, meaning unchanged; grep over
+  messages/ now finds zero em dashes.
+- [t8] db:reset against the local stack: Prisma consent guard fired as
+  expected (fleet warning 3), target verified local first (docker ps:
+  supabase_db_m1-p1-skeleton on 127.0.0.1:54322), consent env quoting the
+  dispatch instruction; all five migrations applied, seed OK.
+- [t9] GOLDEN JOURNEY RED WITNESS (the spec-first red for the whole
+  view): commit 0ec6235 carries the spec plus the three fixtures
+  (gj-current.csv 8 rows Jul+Aug, gj-pot-b.csv 2 rows, gj-card.csv 4
+  rows). Run against the view-less app: the three uploads ALL pass
+  (rows-added 8, 2, 4: fixtures parse, profiles detect, settlement and
+  transfer interpretation ingest cleanly) and the spec fails at its FIRST
+  view assertion, getByTestId("month-title") on /?month=2026-08, "1
+  failed" (playwright list reporter; captured in scratchpad run log).
+  Exactly the red a not-yet-built view should produce, with the whole
+  import pipeline green underneath.
+- [t10] Building now, in order: fixed-clock plumbing (PULSE_FIXED_NOW
+  accessor in platform/config.ts, appClock in platform/clock.ts,
+  webServer env in playwright.config.ts; scope escalations 3 and 4
+  above), ledger published cash predicate (escalation 5), the overview
+  module (domain fold, raw-SQL repository, application, ui), the thin
+  page rewire, globals.css month styles, catalog keys in EN/NL/FR.

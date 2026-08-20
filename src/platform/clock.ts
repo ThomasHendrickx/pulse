@@ -2,6 +2,8 @@
 // Clock so tests can inject a fixed one (architecture section 10:
 // determinism needs an injected, fixed clock).
 
+import { fixedNowOverride } from "./config";
+
 export type Clock = {
   readonly now: () => Date;
 };
@@ -15,3 +17,11 @@ export const systemClock: Clock = {
 export const fixedClock = (at: Date): Clock => ({
   now: () => new Date(at.getTime()),
 });
+
+// The clock composition roots bind: the system clock, unless the
+// deterministic-environment override is set (PULSE_FIXED_NOW, parsed in
+// platform/config.ts, set by the Playwright webServer and nothing else).
+export const appClock = (): Clock => {
+  const fixed = fixedNowOverride();
+  return fixed === undefined ? systemClock : fixedClock(fixed);
+};
