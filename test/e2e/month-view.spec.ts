@@ -7,8 +7,11 @@ import { join } from "node:path";
 // mid-month (day 15 of 30) and August 2026 a closed month, forever.
 //
 // Fixture arithmetic, derived by hand:
-//   mv-partial.csv (September): +2.500,00 salary; -45,00 and -12,00 spend
-//     => income 2.500,00, spend 57,00, pot change 2.443,00.
+//   mv-partial.csv (September): +2.500,00 salary; -45,00 and -12,00
+//     spend; -100,00 MAESTRO GELDOPNAME cash withdrawal (its own "cash"
+//     destination, never split, M1-P4 open question M1P4-C7 resolved in
+//     this phase's projection)
+//     => income 2.500,00, spend 157,00, pot change 2.343,00.
 //   mv-gapped-a.csv (August, account A): +2.000,00 salary, -100,00 spend,
 //     -400,00 transfer to account B's IBAN.
 //   mv-gapped-b.csv (August, account B): -50,00 spend and NO incoming
@@ -58,7 +61,7 @@ test("the partial current month is in progress and never compared", async ({
   page,
 }) => {
   await signUp(page, "mv-partial");
-  await uploadPotFile(page, "mv-partial.csv", "Daily account", "3");
+  await uploadPotFile(page, "mv-partial.csv", "Daily account", "4");
 
   await page.goto("/");
   await expect(page.getByTestId("month-title")).toHaveText("September 2026");
@@ -74,8 +77,18 @@ test("the partial current month is in progress and never compared", async ({
 
   // The totals still render, marked in progress, not as a collapse.
   await expect(page.getByTestId("income-total")).toHaveText("2.500,00");
-  await expect(page.getByTestId("spend-total")).toHaveText("57,00");
-  await expect(page.getByTestId("pot-change")).toHaveText("2.443,00");
+  await expect(page.getByTestId("spend-total")).toHaveText("157,00");
+  await expect(page.getByTestId("pot-change")).toHaveText("2.343,00");
+
+  // The cash withdrawal is its own destination (correction 4, M1P4-C7):
+  // one "Cash" spend group carrying the withdrawn amount, and the raw
+  // descriptor appears in no group.
+  const cashGroup = page.getByTestId("spend-group").filter({ hasText: "Cash" });
+  await expect(cashGroup).toHaveCount(1);
+  await expect(cashGroup.getByTestId("group-total")).toHaveText("100,00");
+  await expect(
+    page.getByTestId("spend-group").filter({ hasText: "GELDOPNAME" }),
+  ).toHaveCount(0);
   const recon = page.getByTestId("recon-panel");
   await expect(recon).toHaveAttribute("data-state", "ok");
   await expect(recon).toContainText("Holds so far this month.");
