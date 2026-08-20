@@ -24,6 +24,18 @@ const eslintConfig = [
     ],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+  {
+    // Criterion 4.4 (hazard H4.3): no user-facing string is hardcoded in
+    // module UI components; every string a user sees comes from the
+    // next-intl catalogs. react/jsx-no-literals (default options) forbids
+    // bare text nodes in JSX under src/modules/**/ui. Deliberate glyphs
+    // (arrows, separators, the euro sign) are written as expression
+    // containers, which keeps them greppable as intentional exceptions.
+    files: ["src/modules/**/ui/**/*.tsx"],
+    rules: {
+      "react/jsx-no-literals": "error",
+    },
+  },
 ];
 
 export default eslintConfig;

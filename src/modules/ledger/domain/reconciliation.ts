@@ -35,6 +35,20 @@ export type ReconciliationReport = {
   readonly reconciles: boolean;
 };
 
+// SIBLING RULE (fix round 1 of M1-P5, finding CR-501, recorded at the
+// mechanism's definition per the fleet's mechanism-sibling clause): a
+// boolean derived from the RESIDUAL ALONE must never be rendered as a
+// user-facing verdict. Cancelling gaps (two unmatched legs whose
+// amounts sum to zero) leave `reconciles` true here while
+// unresolvedIds/unmatchedInternalIds are non-empty; over a full window
+// that is honest as an IDENTITY statement, but any consumer showing it
+// as "the books close" must ALSO require the gap lists to be empty,
+// exactly as the month view's MonthFigures.reconciles does
+// (src/modules/overview/domain/month-projection.ts). The month
+// projection additionally names matched legs whose partner books
+// outside the viewed month; that case cannot arise here because
+// pairing runs inside the interpreted set, so both legs of a matched
+// pair are always in this report's window.
 export const reconcile = (
   transactions: readonly LedgerTransaction[],
   interpretation: LedgerInterpretation,

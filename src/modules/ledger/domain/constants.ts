@@ -46,11 +46,27 @@ export const INTERPRETATION_WINDOW_PADDING_DAYS =
 // Cash withdrawal patterns, code-owned. Money that leaves the pot through
 // one of these has "cash" as its own destination, never split, never
 // guessed at (pulse-domain section 3).
+//
+// SIBLING CONSUMER (M1-P5, open question M1P4-C7 resolved there): the
+// month projection groups cash rows under their own "cash" destination
+// WITH PRECEDENCE over any merchant assignment on the same row, and its
+// raw SQL derives a Postgres `~*` predicate from these patterns' .source
+// (src/modules/overview/adapters/overview-repository.ts). Two rules
+// follow: every pattern here must stay valid Postgres ARE syntax with the
+// same meaning (plain words and \s+ are; lookarounds and \b are NOT the
+// same dialect), and the case-insensitivity lives in the `i` flag here
+// and in `~*` there. One pattern list, two engines, so a new pattern is
+// checked against both at the definition, which is this comment's job.
 export const CASH_WITHDRAWAL_PATTERNS: readonly RegExp[] = [
   /GELDOPNAME/i,
   /GELDAFHALING/i,
   /CASH\s+WITHDRAWAL/i,
 ];
+
+// The cash marker as a named predicate, published through the ledger's
+// application index for the month projection (correction 4's consumer).
+export const isCashWithdrawalDescription = (description: string): boolean =>
+  matchesAny(description, CASH_WITHDRAWAL_PATTERNS);
 
 export const matchesAny = (
   text: string,
