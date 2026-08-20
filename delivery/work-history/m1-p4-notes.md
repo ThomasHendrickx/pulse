@@ -242,3 +242,30 @@ edited.
   sentence inside claim M1P4-C2 (executed construction adjacent), and the
   merchant-row-lifecycle sentence settled by new claim M1P4-C11's executed
   enumeration (grep over every prisma.merchant call site).
+
+## Fix round 1 (hazard review lows CR-401, CR-402, CR-403)
+
+Resumed as the same implementer at 96f33a1; both clean-room verdicts
+APPROVE, three lows filed with concrete fixes, closed before merge.
+Plan, recorded before code:
+- CR-403 first (smallest): currency tokens stripped ONLY at the cell
+  boundaries, iterated to fixpoint at the ends; a token interleaved in a
+  digit run stays in the string and the parse fails loud. This closes
+  the splice FAMILY (no removed token can ever have digits on both
+  sides when anchored to an end). The CR-308 "interleaved noise without
+  a sign keeps parsing" control asserts the OLD behaviour and will be
+  reversed deliberately and loudly.
+- CR-402: stability contract at the top of normalise-counterparty.ts
+  (dedup.ts precedent) plus a pinned-output regression table; red
+  demonstrated by the reviewer's own construction (add a city token,
+  the pin reddens), executed here and reverted.
+- CR-401: ownership-under-household verification for merchant AND tag
+  inside the setMerchantTag transaction, same for upsertRule's
+  merchantId; partial unique index on (merchantId) where isPrimary in a
+  migration (coordinator prefers the structural fix; the table is empty
+  everywhere). Race red witness EXECUTED against the real adapter and
+  local Postgres via a probe script (two concurrent promotes) before
+  the fix, green after; prisma drift probed empirically after the
+  hand-edited migration. Fake mirrors the ownership checks; fast-gate
+  reds for cross-household calls; migration-SQL test derives the index
+  presence.
