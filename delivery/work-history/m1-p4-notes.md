@@ -139,3 +139,23 @@ edited.
   unparseable; a fixpoint strip would make it parse as -742,10), and the
   backlog item's scope is the unsigned entry. The brief offered either
   fix; the output rejection is the one that adds no new accepted inputs.
+
+- [schema] prisma/schema/merchants.prisma added (Merchant, MerchantRule,
+  Tag, MerchantTag, all non-null householdId), Transaction gained the
+  nullable merchantId interpretation column beside flow, Household the
+  back-relations. Red first: `npx vitest run test/schema` exit 1, RLS test
+  naming exactly [merchants, merchant_rules, tags, merchant_tags] as
+  missing enablement; tenancy suite stayed green (21 passed), so the new
+  models satisfy householdId-on-every-model and money-name rules by
+  construction. Docker daemon was dead; sudo dockerd revived the
+  m1-p1-skeleton supabase stack with data intact (fleet warning holds).
+  Migration 20260820073725_merchants_rules_and_tags created with
+  DATABASE_URL and DIRECT_URL pinned to 127.0.0.1:54322 in the invoking
+  shell (fleet warning 1), RLS enablement appended for all four tables
+  (same pattern as the transfer_links migration), applied clean. After:
+  test/schema 24 passed, exit 0; live check via docker exec psql:
+  relrowsecurity = t for all eleven application tables. The one-primary
+  invariant for MerchantTag is application-enforced (setMerchantTag),
+  because Prisma cannot model a partial unique index and a hand-added one
+  would make the next `prisma migrate dev` see drift; recorded at the
+  model definition.
