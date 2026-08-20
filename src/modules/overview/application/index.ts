@@ -50,7 +50,11 @@ const liveDependencies: OverviewDependencies = {
     listGapRows: repository.listGapRows,
     hasAnyTransactions: repository.hasAnyTransactions,
   },
-  clock: appClock(),
+  // Lazy on purpose: platform/config's build-safe contract forbids env
+  // reads at module load (a Vercel build imports every route module), and
+  // appClock reads the PULSE_FIXED_NOW override. Resolving per call keeps
+  // the read at request time.
+  clock: { now: () => appClock().now() },
   normaliseCounterparty,
 };
 
