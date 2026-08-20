@@ -169,3 +169,43 @@ Backlog carry-ins declared in scope: CR-404 and the messages em dash
   above), ledger published cash predicate (escalation 5), the overview
   module (domain fold, raw-SQL repository, application, ui), the thin
   page rewire, globals.css month styles, catalog keys in EN/NL/FR.
+- [t11] View built (commit 8dbc7ed): overview module with domain
+  (month.ts calendar arithmetic with Brussels-day clock reading,
+  month-projection.ts fold/deltas/figures), application (four grouped
+  queries plus the same four for the previous month ONLY when the viewed
+  month is closed; the partial month's comparison is never even read),
+  adapters (raw SQL: grouped income, grouped spend with primary tag and
+  the cash marker computed in SQL from the ledger's published pattern
+  list, reserves by counterparty account, the figures aggregate, the gap
+  rows), ui (MonthScreen server components against the prototype), thin
+  page.tsx, tokens-only styles, catalog keys 98/98/98 across EN/NL/FR.
+  Golden journey GREEN on its first run against the finished view: 1
+  passed (33.6s). Full e2e then: 10 passed (1.9m), including the four
+  new month-view tests and all six pre-existing specs.
+- [t12] Criterion 4.4 lint rule: react/jsx-no-literals (DEFAULT options:
+  bare JSX text nodes forbidden; string literals inside expression
+  containers and string props remain legal, which is where the view's
+  deliberate glyphs live) enabled for src/modules/**/ui/**/*.tsx in
+  eslint.config.mjs. Green over the whole tree; witnessed RED exit 1 by
+  a hardcoded text node "Hardcoded month" in month-view.tsx, restored.
+  Chosen rule name recorded for the work history: react/jsx-no-literals.
+- [t13] Criterion 4.5 gate: npm script gate:tokens wraps the exact
+  criterion grep negated. Raw grep over src/modules/*/ui exits 1 (no
+  literal), script exits 0. Witnessed red under TWO structurally
+  different members of the class: a hex colour in a style prop in the
+  overview ui (exit 1) and an oklch() literal in a merchants ui comment
+  (exit 1), both restored, gate 0 again.
+- [t14] Mutation red-witness round for the month-view spec (a class
+  witness reddens under structurally different members; each mutation
+  applied, one test run, restored):
+  M1 (H4.1): partial=false in month-overview.ts, "partial current month"
+  test exit 1 (in-progress badge missing).
+  M2 (H4.2 member 1): MATCHED_LINK_EXISTS mutated to TRUE in the
+  repository, "gapped export" test exit 1 (recon-cause-unmatched never
+  renders while the difference is still broken).
+  M3 (H4.2 member 2): unresolved cause rendered only when books do not
+  close, "unclassifiable" test exit 1 (the zero-amount gap hidden behind
+  a closing book is exactly the dangerous state).
+  M4 (H4.3): verdict replaced by a hardcoded English string in an
+  expression container (invisible to the lint rule, so the e2e is the
+  witness that closes that residue), locale test exit 1 on NL.
