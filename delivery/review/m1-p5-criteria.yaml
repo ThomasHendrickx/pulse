@@ -13,13 +13,85 @@ framing: criteria-contract
 review-contract: criteria
 
 # Clean-room CRITERIA review of phase M1-P5 (the two-sided month view),
-# all by execution in the fresh clone
-# /home/user/pulse-fleet/worktrees/m1-p5-review-criteria at head d21ec71.
-# The implementation session was never seen. Release-verification code
-# head is af759b3; verified myself that git diff --stat af759b3..d21ec71
-# adds only delivery/work-history/m1-p5-notes.md (+48) and
-# delivery/work-history/m1-p5.yaml (+629), no code, so every execution
-# below at d21ec71 exercises the af759b3 tree byte for byte.
+# TWO ROUNDS, all by execution in this fresh clone. Round 1 approved
+# head d21ec71 (code head af759b3); round 2 is the delta review of the
+# hazard-driven fix round 1, d21ec71..0254277, and this verdict now
+# stands at head 0254277 (code head 2323645). The implementation
+# session was never seen in either round.
+#
+# ROUND 2 DELTA SHAPE, verified myself: origin/claude/m1-p5-month-view
+# fetched; git log d21ec71..0254277 is 180581c, 554c7d6, 776c21d,
+# 2323645, 0254277; git diff --stat 2323645..0254277 is the two
+# delivery/work-history files only (404 insertions), so the round's
+# code head is 2323645; the merge of 0254277 into this review branch
+# (99524b4) differs from 0254277 only by delivery/review files. The
+# code delta (19 files, 918 insertions, 43 deletions) rewrites the
+# reconciliation verdict semantics (reconciles now requires difference
+# zero AND zero unmatched, unresolved, in-transit and uninterpreted
+# counts, src/modules/overview/domain/month-projection.ts:208-213),
+# adds the in-transit cause (matched legs whose partner books outside
+# the period, the inTransitExists predicate in
+# src/modules/overview/adapters/overview-repository.ts:59-70, resolving
+# the partner THROUGH the link so a mirror-less settlement debit stays
+# unmatched, never in transit) and the uninterpreted cause (the figures
+# WHERE drops its flow filter; every named sum, changeInPot and
+# rowCount now filter on flow themselves, so interpreted figures are
+# unchanged, which my unchanged round 1 totals below re-witness), guards
+# the fixed clock against production (fixedNowOverride throws under
+# isProduction, src/platform/config.ts:73-80, pinned by
+# test/app/fixed-clock.test.ts), sets reuseExistingServer false
+# (playwright.config.ts:37, closing this review's round 1 finding,
+# register id CR-505), adds 28 fast-gate tests and two e2e specs with
+# four fixtures, corrects two R-087 false comments loudly in place, and
+# records the CR-501 sibling rule at the ledger reconcile definition
+# (verified comment-only: the reconciliation.ts hunk is 14 comment
+# lines, no behaviour change).
+#
+# ROUND 2 INDEPENDENT ARITHMETIC on the new fixtures, from bytes:
+# mv-transit August income 1.500,00, spend 0,00, pot 1.200,00,
+# difference -300,00 carried entirely by the straddling leg (booked
+# 30/08, partner 02/09, 3 days apart, inside the ledger's 4-day pairing
+# window so the pair MATCHES); September difference +300,00. mv-cancel:
+# legs 05/08 and 25/08 are 20 days apart, outside the window, so two
+# genuine unmatched legs whose amounts cancel to a zero difference over
+# real gaps. Both agree with the spec's claimed values. The partition
+# claim (difference = unresolved + unmatched + in-transit cents) is
+# sound by construction: fully-inside matched pairs net zero, so the
+# in-transit sum equals the whole matched-INTERNAL sum.
+#
+# ROUND 2 EXECUTED CHAIN at the merged head (code-identical to
+# 2323645), from a from-zero database, five env values pinned local:
+# npm run typecheck EXIT=0; npm run lint EXIT=0; npm run gate:tokens
+# EXIT=0; npm test EXIT=0 (20 files, 247 passed, 0 failed, 0 skipped);
+# npm run db:reset EXIT=0 (5 migrations from scratch, seeded); npm run
+# test:e2e EXIT=0, 12 passed (2.5m) on a fresh webServer
+# (reuseExistingServer now false), including the two new specs and all
+# prior-phase suites. Catalogs re-measured 101/101/101 keys (the 98
+# plus reconNoteGaps, inTransitCause, uninterpretedCause) with
+# identical key sets; em-dash sweep over messages, src, test EXIT=1.
+# This matches the re-recorded DR-0001 evidence in
+# delivery/work-history/m1-p5.yaml (247 and 12 at head 2323645) figure
+# for figure.
+#
+# ROUND 2 RED SPOT-CHECK on the NEW verdict logic, executed fresh:
+# reconciles weakened back to difference === 0 alone in
+# month-projection.ts reddened BOTH layers, the cancelling-gaps e2e
+# (data-state received ok where broken expected, the exact dangerous
+# state, EXIT=1) and 3 fast-gate tests in
+# test/domain/month-projection.test.ts (EXIT=1); restored, tree clean.
+#
+# ROUND 2 CRITERIA RE-WALKED where the delta touches them: 4.1, 4.3 and
+# 4.6 carry round 2 evidence inside their entries below; 4.2, 4.4 and
+# 4.5 were re-executed inside the same round 2 chain (partial-month
+# test green under the fixed clock, three locales green with the new
+# longer copy, lint and gate:tokens EXIT=0 at the new head) with no
+# semantic change to their subject matter.
+#
+# ROUND 1 RECORD BELOW, kept as written at d21ec71. Round 1's
+# release-verification code head was af759b3; verified then that git
+# diff --stat af759b3..d21ec71 adds only
+# delivery/work-history/m1-p5-notes.md (+48) and
+# delivery/work-history/m1-p5.yaml (+629), no code.
 #
 # INDEPENDENT ARITHMETIC, from the committed fixture bytes by hand,
 # before reading any implementation. gj-current.csv, gj-pot-b.csv,
@@ -144,6 +216,19 @@ criteria:
         src/modules/overview/domain/month-projection.ts:134-135) made
         this spec fail at golden-journey.spec.ts:135 with EXIT=1;
         restored, green.
+      - >-
+        ROUND 2, delta head 2323645: the spec is byte-unchanged in the
+        delta and passed again (test 4 of the 12-pass EXIT=0 run from a
+        from-zero database). Its month contains no straddling pair
+        (transfer legs booked 10/08 and 11/08, settlement pair both
+        20/08, all inside August) and no flow-NULL row, so under the
+        TIGHTENED verdict (ok now requires zero unmatched, unresolved,
+        in-transit and uninterpreted counts) the golden journey still
+        reads data-state ok with zero cause blocks, which its own
+        assertions at test/e2e/golden-journey.spec.ts:177-185 pin. The
+        totals are untouched by the delta: every named sum already
+        filtered on flow, verified in the round 2 run by the identical
+        2.500,00 / 1.918,97 / 0,00 / 581,03 pass.
     met: true
   - id: "4.2"
     quote: >-
@@ -207,6 +292,22 @@ criteria:
         removed from src/modules/overview/ui/month-view.tsx:284-286)
         made the gapped test fail at month-view.spec.ts:112 with EXIT=1;
         restored, green.
+      - >-
+        ROUND 2, delta head 2323645: both halves re-executed green
+        under the TIGHTENED semantics (tests 8 and 9 of the 12-pass
+        EXIT=0 run; spec lines shifted to test/e2e/month-view.spec.ts:113
+        and :165). The gapped case is unchanged in meaning (non-zero
+        difference, alarm colour probe, named leg, excluded totals).
+        The unresolved case is STRONGER than round 1: the spec now also
+        asserts data-state broken with NO difference figure
+        (test/e2e/month-view.spec.ts:179-180), so "Books close" can no
+        longer render above the listed 0,00 gap; executed green, and my
+        round 2 mutation (reconciles weakened to the bare residual)
+        reddened exactly this family (cancelling-gaps e2e received ok
+        where broken expected, EXIT=1, plus 3 unit tests), then
+        restored. The two new sibling specs (in-transit named cause at
+        :204, cancelling gaps at :245) both executed green with
+        fixture arithmetic I re-derived from bytes.
     met: true
   - id: "4.4"
     quote: >-
@@ -280,33 +381,89 @@ criteria:
         The declared verification was not weakened anywhere: both e2e
         suites ran in full, no test skipped, no filter applied in the
         recorded head run.
+      - >-
+        ROUND 2, delta head 2323645: the full chain re-executed by this
+        reviewer on the merged tree (code-identical to 2323645), from a
+        from-zero db:reset (EXIT=0, 5 migrations): npm run typecheck
+        EXIT=0, npm run lint EXIT=0, npm run gate:tokens EXIT=0, npm
+        test EXIT=0 (247 passed, 0 failed, 0 skipped), npm run test:e2e
+        EXIT=0 (12 passed, 0 skipped, fresh webServer). The re-recorded
+        DR-0001 evidence in delivery/work-history/m1-p5.yaml (247 fast,
+        12 e2e, typecheck/lint/gate:tokens 0, all at head 2323645)
+        matches my executions figure for figure. The declared
+        verification was strengthened, not weakened: two e2e specs and
+        28 fast-gate tests were added, none removed, none skipped.
     met: true
 
 findings:
-  - id: CR-501
+  - id: CR-505
     severity: low
     evidence:
       - >-
-        playwright.config.ts:33 sets reuseExistingServer: true. In this
-        fleet's shared container, several worktrees can run npm run dev
-        on port 3000; a stale server started WITHOUT
+        ROUND 1 (raised in this verdict as local id CR-501, renamed here
+        to the fleet register id CR-505 after the fix-round disposition
+        assigned that number; same finding, no content change):
+        playwright.config.ts at d21ec71 set reuseExistingServer: true.
+        In this fleet's shared container, several worktrees can run npm
+        run dev on port 3000; a stale server started WITHOUT
         PULSE_FIXED_NOW=2026-09-15T12:00:00Z (or from another worktree's
         code) would be silently reused by the whole e2e gate, and every
         month assertion would then depend on the wall clock and on
-        foreign code. Verified port 3000 was free before my runs, so the
-        executions above are unaffected; the hazard is to future runs.
+        foreign code. Verified port 3000 was free before my round 1
+        runs, so those executions were unaffected.
+      - >-
+        ROUND 2 RESOLUTION, verified: playwright.config.ts:37 now sets
+        reuseExistingServer: false with the reason recorded at the
+        setting, and my round 2 e2e run booted a fresh webServer (12
+        passed, EXIT=0). RESOLVED.
     concrete-fix: >-
-      Set reuseExistingServer to false in playwright.config.ts (or gate
-      reuse on an explicit opt-in env var), so the release-verification
-      gate always boots the server whose env and code it pinned.
+      Applied in fix round 1 (commit 776c21d): reuseExistingServer
+      false, so the release-verification gate always boots the server
+      whose env and code it pinned. Nothing further needed.
     analysis: >-
-      Today a stale real-clock server fails loudly (August 2026 is the
-      real current month, so the golden journey's closed-August
-      assertions redden), but from 2026-10-01 the golden journey would
-      pass against a real-clock server while only the partial-month test
-      reddens, which is a slower, more confusing failure. Low because
-      the gate cannot silently pass end to end either way today, and no
-      criterion text is violated.
+      Round 1 analysis kept for the record: a stale real-clock server
+      failed loudly in August 2026 but would fail slowly and confusingly
+      from 2026-10-01. Low because the gate could not silently pass end
+      to end either way, and no criterion text was violated.
+  - id: CR-506
+    severity: low
+    evidence:
+      - >-
+        Fix round 1 changed four paths that are on neither the plan's
+        files-to-touch nor its declared extras as of origin/main
+        cf8d772: src/modules/ledger/domain/reconciliation.ts (14
+        comment-only lines recording the CR-501 sibling rule),
+        test/app/fixed-clock.test.ts, test/application/month-overview.test.ts
+        and test/domain/month-projection.test.ts (the 28 new fast-gate
+        tests). The work history's files-touched list at
+        delivery/work-history/m1-p5.yaml names all four honestly, but
+        its deviations array still carries exactly ONE entry (the round
+        1 six-file deviation, delivery/work-history/m1-p5.yaml:283-307,
+        whose text does not mention these paths), and no plan amendment
+        on main declares them, unlike the round 1 precedent commit
+        cf8d772. Measured: git show origin/main:delivery/plan/pulse-v1.yaml
+        lists eight extras for M1-P5, none of them these four; grep -c
+        plan-clause on the work history returns 1.
+      - >-
+        Content assessed: all four changes strengthen verification or
+        record a mandated sibling rule; nothing behavioural shipped
+        outside the declared surface. The gap is the missing
+        declaration, not the work.
+    concrete-fix: >-
+      Either amend the plan's M1-P5 extras on main with the four paths
+      (one commit, mirroring cf8d772) before the scope audit is checked
+      off for the merge, or add a second deviations[] entry to
+      delivery/work-history/m1-p5.yaml declaring them, so DR-0012
+      condition 5 (changed files on the declared list) can be satisfied
+      truthfully rather than waved through.
+    analysis: >-
+      Low, and mergeable as a tracked item under DR-0012's low-finding
+      rule: the identical situation in round 1 was handled by
+      escalate-then-amend, so the mechanism exists and costs one
+      commit. Left unfixed it makes the scope audit unpassable as
+      declared, which is a paperwork failure that the process treats as
+      real because undeclared scope is exactly what the gate exists to
+      refuse.
 
 deviations-judged:
   - deviation: >-
@@ -334,3 +491,7 @@ deviations-judged:
       plus the declared extras plus the standing work-history extras.
       The deviation widens the declaration, weakens no verification, and
       is what the plan's intent (the criteria themselves) requires.
+      ROUND 2 note: the fix round's four additional undeclared paths are
+      NOT covered by this declared deviation and no new deviation was
+      declared for them; that gap is finding CR-506 above, judged low,
+      and this entry's judgement is unchanged by it.
