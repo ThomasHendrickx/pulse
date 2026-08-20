@@ -229,3 +229,16 @@ edited.
   npm test 191 passed, 0 skipped, 0 todo, exit 0 (Node v26.7.0, vitest
   run, no build step); test:e2e 5 passed, 0 skipped, exit 0. Fast gates
   re-run after the comment-only R-087 edit at the final head.
+
+- [work history] delivery/work-history/m1-p4.yaml written and validated:
+  npx --prefix /home/user/pulse-fleet tiphys validate --type work-history
+  --context delivery/plan delivery/work-history/m1-p4.yaml exit 0 (first
+  run exit 1: two open-question statements carried quantifier tokens and
+  one token-free verification finding carried a plan-language-note, all
+  three schema-refused and repaired). Claim grep run exactly as the
+  clause carries it, plus the whitespace-flattened pass: hits are the
+  verbatim prompt block, two quotes of the corrected CR-308 sentence
+  inside claim M1P4-C3 (executed construction adjacent), the INTERNAL-rows
+  sentence inside claim M1P4-C2 (executed construction adjacent), and the
+  merchant-row-lifecycle sentence settled by new claim M1P4-C11's executed
+  enumeration (grep over every prisma.merchant call site).
