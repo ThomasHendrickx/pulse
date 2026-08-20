@@ -243,6 +243,44 @@ Backlog carry-ins declared in scope: CR-404 and the messages em dash
 - [t18] Also checked: npm run build exit 0 (prod build; deploy config
   untouched this phase). Em dash sweep over src, test, messages, styles,
   configs and these notes: grep exit 1, zero occurrences.
+## Fix round 1 (opened after the dual review at d21ec71)
+
+- [f1] Read /home/user/pulse-fleet/findings-m1-p5-round1.md and the full
+  hazard verdict at worktrees/m1-p5-review-hazard/delivery/review/
+  m1-p5-hazard.yaml (682 lines, in full, including the probe captures
+  P-A/P-B/P-D/P-F and the cleared-by-probe list). Five findings, all to
+  this implementer: CR-501 high (verdict is the identity residual alone;
+  in-transit matched legs unexplained, cancelling gaps flip the verdict,
+  ok above a listed unresolved gap; plus an R-087 false comment), CR-502
+  medium (flow-NULL rows invisible in every surface), CR-503 medium
+  (PULSE_FIXED_NOW honoured in production; unchecked comment claim),
+  CR-504 low (zero fast-gate coverage of the pure projection layer),
+  CR-505 low (reuseExistingServer can reuse a stale unpinned server).
+- [f2] Escalation check the disposition asks for (charter stop-for: any
+  change to the reconciliation identity): the CR-501 recipe adds a
+  FILTER over rows the difference ALREADY contains, renders the missing
+  cause, and tightens the verdict so ok additionally requires empty
+  causes. The identity income - spend - netToReserves = changeInPot and
+  the difference derivation are untouched; what changes is which causes
+  are named and when the ok verdict may render. Judgement: presentation,
+  not meaning; no escalation, proceeding. (If the reviewers disagree,
+  the derivation is one FILTER and one boolean and reverts cleanly.)
+- [f3] Plan, red before green: (1) extend month-view.spec.ts with the
+  straddling-pair test (new fixtures mv-transit-a/b), the
+  cancelling-gaps test (new fixtures mv-cancel-a/b), and a data-state
+  assertion in the unresolved test; run RED against the shipped code.
+  (2) new fast-gate files test/domain/month-projection.test.ts (pure
+  layer incl. year boundary, leap February, Brussels edges, the pinned
+  magnitude-delta decision) and test/application/month-overview.test.ts
+  (fake repository: in-transit cause, uninterpreted blocks ok, partial
+  never compared) and test/app/fixed-clock.test.ts (CR-503 refusal);
+  the new-semantics tests red first. (3) implement: in-transit and
+  uninterpreted figures in the SQL, gap-row kinds, reconciles requiring
+  empty causes, the two new cause blocks with EN/NL/FR keys, the
+  production refusal, both R-087 comment corrections,
+  reuseExistingServer false. (4) full gates plus BOTH e2e suites at the
+  new head; DR-0001 evidence re-recorded.
+
 - [t19] Work history m1-p5.yaml written and schema-validated: npx
   --prefix /home/user/pulse-fleet tiphys validate --type work-history
   --context <worktree> exit 0 (first run caught claim M1P5-C10 carrying
