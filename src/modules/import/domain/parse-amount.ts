@@ -22,8 +22,32 @@ const DOT_STYLE = /^(\d+)(?:\.(\d{1,2}))?$/;
 // The one normalisation both entry points share: currency noise (EUR, the
 // euro sign) is stripped BEFORE anything reads a sign, so a guard and the
 // parser can never judge different strings (finding CR-307).
-const stripCurrencyNoise = (rawText: string): string =>
-  rawText.trim().replace(/(?:EUR|€)/gi, "").trim();
+//
+// BOUNDARIES ONLY (fix round 1, finding CR-403, the family CR-308 was an
+// instance of): tokens are stripped where a real cell carries them, at
+// the start and end of the trimmed text, iterated to a fixpoint AT THOSE
+// ENDS. The old global strip deleted a token from the MIDDLE of a digit
+// run and concatenated the fragments, so "7EUR42,10" fabricated 742,10
+// and "1EUR2" fabricated 12,00; an end-anchored removal can have digits
+// on at most one side of the removed token, so no strip joins two digit
+// runs, by construction. A cell whose digits a token splits stays
+// unparseable and fails the row loud.
+const LEADING_CURRENCY = /^(?:EUR|€)\s*/i;
+const TRAILING_CURRENCY = /\s*(?:EUR|€)$/i;
+
+const stripCurrencyNoise = (rawText: string): string => {
+  let text = rawText.trim();
+  for (;;) {
+    const next = text
+      .replace(LEADING_CURRENCY, "")
+      .replace(TRAILING_CURRENCY, "")
+      .trim();
+    if (next === text) {
+      return text;
+    }
+    text = next;
+  }
+};
 
 export const parseAmountToCents = (
   rawText: string,
@@ -71,17 +95,20 @@ export const isAmountLike = (text: string, style: DecimalStyle): boolean =>
 // inversion one normalisation step deeper.
 //
 // CORRECTED CLAIM (R-087): this comment used to end "so the two can never
-// diverge again", and that sentence was FALSE. stripCurrencyNoise is a
-// single regex pass, so INTERLEAVED noise ("EEURUR-742,10") reconstructs a
-// currency-prefixed signed value after one strip; the leading-sign check
-// here then judged "EUR-742,10" while parseAmountToCents stripped once
-// more and read the sign (backlog finding CR-308). The guarantee is now
-// carried by the OUTPUT, not by the normalisation: whatever string games
-// the input plays, a parse that comes back negative is rejected here, so
-// this entry point cannot return a negative value by construction. The
-// leading-sign check stays as the loud fast path for the common case. A
-// sign is never guessed and never silently discarded: the row fails, the
-// import fails loudly, zero rows.
+// diverge again", and that sentence was FALSE. stripCurrencyNoise WAS a
+// single global regex pass then, so INTERLEAVED noise ("EEURUR-742,10")
+// reconstructed a currency-prefixed signed value after one strip; the
+// leading-sign check here then judged "EUR-742,10" while
+// parseAmountToCents stripped once more and read the sign (backlog
+// finding CR-308). Since fix round 1 (finding CR-403) the strip is
+// boundary-anchored, so interleaved shapes stay unparseable outright; the
+// guarantee here is STILL carried by the OUTPUT, not by the
+// normalisation: whatever string games the input plays, a parse that
+// comes back negative is rejected here, so this entry point cannot
+// return a negative value by construction. The leading-sign check stays
+// as the loud fast path for the common case. A sign is never guessed and
+// never silently discarded: the row fails, the import fails loudly, zero
+// rows.
 export const parseUnsignedAmountToCents = (
   rawText: string,
   style: DecimalStyle,
