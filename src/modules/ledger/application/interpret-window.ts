@@ -10,7 +10,10 @@ import type { HouseholdContext } from "@/platform/tenancy";
 import { INTERPRETATION_WINDOW_PADDING_DAYS } from "../domain/constants";
 import { counterpartyKey } from "../domain/corrections";
 import { interpretLedger } from "../domain/interpret";
-import { deriveDeclaredSets } from "../domain/ledger-transaction";
+import {
+  deriveDeclaredSets,
+  type LedgerTransaction,
+} from "../domain/ledger-transaction";
 import { addDays } from "../domain/plain-date-distance";
 import type { LedgerDependencies } from "./ports";
 
@@ -69,6 +72,38 @@ export const interpretWindow = async (
     outgoingHistoryKeys,
   });
 
+  // Merchant resolution over the SAME interpreted set (M1-P4): counted
+  // rows (INCOME and SPEND) resolve their counterparty text through the
+  // MerchantResolver port, distinct texts rather than rows. Everything
+  // else (INTERNAL, RESERVE, UNRESOLVED) carries no merchant: its
+  // counterparty is the household itself or unknown. Resolution renames
+  // and regroups ONLY: the flows above are already decided and nothing
+  // here feeds back into them (hazard H3.2). Null assignments are written
+  // too, so a rebuild clears whatever no rule supports any more.
+  const isCounted = (transactionId: string): boolean => {
+    const flow = interpretation.flows.get(transactionId);
+    return flow === "INCOME" || flow === "SPEND";
+  };
+  const merchantText = (transaction: LedgerTransaction): string =>
+    transaction.counterpartyName ?? transaction.description;
+  const countedTexts = [
+    ...new Set(
+      transactions
+        .filter((transaction) => isCounted(transaction.id))
+        .map(merchantText),
+    ),
+  ];
+  const resolvedMerchants = await deps.merchants.resolveCounterparties(
+    context,
+    countedTexts,
+  );
+  const merchants = transactions.map((transaction) => ({
+    transactionId: transaction.id,
+    merchantId: isCounted(transaction.id)
+      ? (resolvedMerchants.get(merchantText(transaction)) ?? null)
+      : null,
+  }));
+
   const links = [
     ...interpretation.transferPairs.map((pair) => ({
       outgoingTransactionId: pair.outgoingId,
@@ -94,6 +129,7 @@ export const interpretWindow = async (
       const flow = interpretation.flows.get(transactionId);
       return flow === undefined ? [] : [{ transactionId, flow }];
     }),
+    merchants,
     links,
     interpretedImportIds,
   });

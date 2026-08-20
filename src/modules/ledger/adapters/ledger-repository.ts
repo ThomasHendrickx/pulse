@@ -3,8 +3,9 @@
 // non-negotiable 6).
 //
 // LAYER CONTRACT: this repository reads FACT columns of transactions and
-// writes ONLY interpretation state: the transactions.flow column, the
-// transfer_links table, and the INGESTED -> INTERPRETED import status.
+// writes ONLY interpretation state: the transactions.flow and
+// transactions.merchantId columns, the transfer_links table, and the
+// INGESTED -> INTERPRETED import status.
 // The facts columns (raw fields, rawLine, dedup keys) are the import
 // module's and are never written here; the one sanctioned facts rebuild is
 // the import module's profile-fix re-parse, which is a different path.
@@ -19,7 +20,10 @@ import type { Cents } from "@/platform/money";
 import type { HouseholdContext } from "@/platform/tenancy";
 import type { LedgerTransaction } from "../domain/ledger-transaction";
 import type { Flow } from "../domain/flow";
-import type { InterpretationLinkWrite } from "../application/ports";
+import type {
+  InterpretationLinkWrite,
+  InterpretationMerchantWrite,
+} from "../application/ports";
 
 export const listPotTransactions = async (
   context: HouseholdContext,
@@ -123,6 +127,7 @@ export const replaceInterpretation = async (
       readonly transactionId: string;
       readonly flow: Flow;
     }[];
+    readonly merchants: readonly InterpretationMerchantWrite[];
     readonly links: readonly InterpretationLinkWrite[];
     readonly interpretedImportIds: readonly string[];
   },
@@ -153,6 +158,28 @@ export const replaceInterpretation = async (
       await tx.transaction.updateMany({
         where: { householdId: context.householdId, id: { in: flowIds } },
         data: { flow },
+      });
+    }
+    // Merchant assignments the same way: grouped per merchant id (null
+    // included, which CLEARS stale assignments on rebuild), set-based.
+    // This writes the transactions.merchantId INTERPRETATION column and
+    // nothing in the merchants module's declaration tables.
+    const byMerchant = new Map<string | null, string[]>();
+    for (const entry of input.merchants) {
+      const list = byMerchant.get(entry.merchantId);
+      if (list === undefined) {
+        byMerchant.set(entry.merchantId, [entry.transactionId]);
+      } else {
+        list.push(entry.transactionId);
+      }
+    }
+    for (const [merchantId, merchantTransactionIds] of byMerchant) {
+      await tx.transaction.updateMany({
+        where: {
+          householdId: context.householdId,
+          id: { in: merchantTransactionIds },
+        },
+        data: { merchantId },
       });
     }
     if (input.links.length > 0) {
