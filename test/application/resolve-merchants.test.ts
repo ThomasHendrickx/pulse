@@ -104,6 +104,26 @@ const assignDeps = (world: World) => ({
 const rowsFor = (world: World, iban: string) =>
   world.transactions.filter((row) => row.counterpartyIban === iban);
 
+// The FACT columns only, named explicitly: interpretation columns (flow,
+// merchantId) are excluded because they are exactly what assignment and
+// recompute are allowed to rewrite.
+const factSnapshot = (world: World): string =>
+  JSON.stringify(
+    world.transactions.map((row) => ({
+      id: row.id,
+      householdId: row.householdId,
+      accountId: row.accountId,
+      importId: row.importId,
+      bookingDate: row.bookingDate,
+      amountCents: row.amountCents,
+      description: row.description,
+      counterpartyIban: row.counterpartyIban,
+      counterpartyName: row.counterpartyName,
+      rawLine: row.rawLine,
+      dedupKey: row.dedupKey,
+    })),
+  );
+
 describe("manual assignment writes a declaration and recompute applies it retroactively (criterion 3.2)", () => {
   test("naming a counterparty writes ONE exact MerchantRule on the normalised string and every past matching transaction regroups, across imports", async () => {
     const world = makeFakeImportWorld();
@@ -117,9 +137,7 @@ describe("manual assignment writes a declaration and recompute applies it retroa
     expect(supermarktRows.every((row) => row.merchantId === undefined)).toBe(true);
 
     // Facts snapshot: the assignment must not edit a single fact column.
-    const factsBefore = JSON.stringify(
-      world.transactions.map(({ flow, merchantId, ...facts }) => facts),
-    );
+    const factsBefore = factSnapshot(world);
 
     const outcome = await assignMerchant(context, assignDeps(world), {
       counterpartyText: "BETALING MET DEBETKAART SUPERMARKT NOORD GENT",
@@ -157,11 +175,7 @@ describe("manual assignment writes a declaration and recompute applies it retroa
         (row) => row.merchantId === undefined,
       ),
     ).toBe(true);
-    expect(
-      JSON.stringify(
-        world.transactions.map(({ flow, merchantId, ...facts }) => facts),
-      ),
-    ).toBe(factsBefore);
+    expect(factSnapshot(world)).toBe(factsBefore);
   });
 
   test("re-assigning the same counterparty UPDATES the one decision instead of stacking a second rule", async () => {

@@ -184,3 +184,18 @@ edited.
   exactly one key (typecheck gate reds on any addition) and the runtime
   half counts zero declaration writes across upload, interpret and
   recompute.
+
+- [ui] Manual-assignment UI: MerchantReviewScreen (server component,
+  module ui/), assignMerchantAction (one use case, recompute bound to the
+  ledger's published interface AT THE ACTION, no module cycle), published
+  ui/index.ts, thin route src/app/(app)/merchants/page.tsx. SCOPE NOTE,
+  adding to the escalation above: src/app/globals.css also had to change
+  (merchant-* classes plus a visually-hidden a11y helper), because module
+  screens are styled there by the repo's established pattern and CLAUDE.md
+  forbids literal values in components; tokens only, all existing (the
+  draft used two nonexistent tokens, --layout-content and --layout-measure,
+  replaced with --layout-max and the import screen's line-height pattern
+  before commit). No new message keys needed: the design-prototype seed
+  already carries the merchants copy in all three languages. Lint warnings
+  from rest-destructuring discards were removed by an explicit named fact
+  snapshot; lint now exits 0 with zero warnings.
