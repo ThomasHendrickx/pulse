@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { fixedClock } from "@/platform/clock";
 import { cents } from "@/platform/money";
@@ -189,5 +191,45 @@ describe("gap partitioning feeds the panel (CR-501, CR-502)", () => {
     expect(overview.inTransitLegs).toHaveLength(0);
     expect(overview.uninterpretedRows).toHaveLength(0);
     expect(overview.figures.reconciles).toBe(false);
+  });
+});
+
+describe("repository SQL shape: every query filters on householdId (non-negotiable 6, fix round finding CR-507)", () => {
+  const source = readFileSync(
+    join(
+      __dirname,
+      "..",
+      "..",
+      "src",
+      "modules",
+      "overview",
+      "adapters",
+      "overview-repository.ts",
+    ),
+    "utf-8",
+  );
+
+  test("the in-transit partner join carries the household filter by name", () => {
+    // The reviewer's finding: the partner row was read through the link
+    // with no householdId predicate of its own. Links are written only
+    // within a household today, which is why no harm was constructible,
+    // but non-negotiable 6 is the letter: EVERY query filters on
+    // householdId, so the next refactor of the link writer does not
+    // silently turn this into a cross-tenant read.
+    expect(source).toMatch(
+      /JOIN "transactions" p\s+ON p\."householdId" = t\."householdId"/,
+    );
+  });
+
+  test("every JOIN in the repository carries a householdId predicate near its ON clause", () => {
+    const joins = [...source.matchAll(/JOIN "[a-z_]+" \w+/g)];
+    expect(joins.length).toBeGreaterThanOrEqual(6);
+    const offenders = joins
+      .filter((match) => {
+        const window = source.slice(match.index, (match.index ?? 0) + 300);
+        return !window.includes("householdId");
+      })
+      .map((match) => match[0]);
+    expect(offenders).toEqual([]);
   });
 });

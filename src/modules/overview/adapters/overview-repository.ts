@@ -59,7 +59,9 @@ const MATCHED_LINK_EXISTS = Prisma.sql`EXISTS (
 // difference identity exactly.
 const inTransitExists = (period: Period): Prisma.Sql => Prisma.sql`EXISTS (
   SELECT 1 FROM "transfer_links" l
-  JOIN "transactions" p ON p."id" = CASE
+  JOIN "transactions" p
+    ON p."householdId" = t."householdId"
+   AND p."id" = CASE
     WHEN l."outgoingTransactionId" = t."id" THEN l."incomingTransactionId"
     ELSE l."outgoingTransactionId" END
   WHERE l."householdId" = t."householdId"
