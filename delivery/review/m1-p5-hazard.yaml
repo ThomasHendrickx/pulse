@@ -1,0 +1,682 @@
+# Clean-room HAZARD review of phase M1-P5 (the two-sided month view).
+# HEAD UNDER REVIEW: d21ec71 (work-history commit; last code commit
+# af759b3, verified by this review: git diff af759b3 d21ec71 over src,
+# test, prisma, package.json, messages, eslint.config.mjs and
+# playwright.config.ts is empty). Reviewer clone:
+# worktrees/m1-p5-review-hazard, branch claude/m1-p5-review-hazard.
+# No implementation session seen. Framing: destructive-paths,
+# contract: hazard. Database off-limits to this reviewer (the criteria
+# reviewer owns the local stack): method is static analysis, executed
+# greps, the fast gates re-run at the head in this clone, and
+# esbuild-bundled node probes executed over the committed pure code
+# (probe-m1p5.ts, probe-clock.ts in the session scratchpad; captured
+# output in the work log below). Database-only facts (test:e2e, 10
+# passed at af759b3 after a from-scratch db:reset) are relied on from
+# the work history's gate-evidence and each reliance is named where it
+# is used. The SQL semantics of the four queries were mirrored in JS
+# from the committed WHERE, GROUP BY and FILTER clauses of
+# src/modules/overview/adapters/overview-repository.ts for the probe
+# constructions; every mirror names the clause it mirrors.
+#
+# DR-0003 DECORRELATION ESCALATION, recorded honestly per the pilot
+# record: this verdict is produced by the Claude family, as is the
+# paired criteria verdict of the same phase. DR-0012 condition one
+# (two model families) is NOT met by family; it is discharged for the
+# pilot under DR-0003 (same family, varied lenses): review-contract
+# (hazard vs criteria) and framing (destructive-paths vs the criteria
+# walk) are distinct across the pair. This header is the required
+# record of that narrowing.
+#
+# ESCALATION NOTE FOR THE ORCHESTRATOR (stop-for territory): finding
+# CR-501 below is about the reconciliation identity and its verdict
+# line, which the charter and this review's brief treat as the last
+# line of defense. The intake spec does NOT permit a lying panel
+# (delivery/intake/pulse-v1-architecture.md:209 promises that a
+# non-zero difference names the cause); the shipped DEFINITION of
+# "reconciles" (difference === 0, month-projection.ts:183) is an
+# implementation choice that breaks that promise in both directions
+# under executed constructions. The implementer's own open question
+# M1P5-C12 (delivery/work-history/m1-p5.yaml:581-591) names the
+# benign half of the class and calls it rare; the settlement-pair
+# shape makes it recurring, and the verdict-flip half is not named
+# there at all. Judged high, not critical: no committed cent is ever
+# misstated in income, spend, reserves or pot change, and the gap
+# rows themselves stay listed; what lies is the verdict line and the
+# difference's explanation.
+#
+# WORK LOG (appended as the review ran; this comment block was the
+# beacon).
+# - Read the brief in full including fleet warnings; read
+#   finding.schema.json, assurance-modes.yaml, verdict.schema.json.
+# - Verified head d21ec71 on branch claude/m1-p5-review-hazard;
+#   verified af759b3..d21ec71 code-empty.
+# - Read the whole phase surface: overview-repository.ts,
+#   month-projection.ts, month.ts, month-overview.ts, ports.ts,
+#   month-view.tsx, application/index.ts, platform/clock.ts,
+#   platform/config.ts, platform/ui/amount.tsx, platform/money.ts,
+#   ledger constants.ts, classify-flow.ts, corrections.ts,
+#   interpret.ts, ledger-repository.ts replaceInterpretation,
+#   import-repository.ts ingest transaction, confirm-import.ts,
+#   upload-statement.ts, page.tsx, playwright.config.ts, both e2e
+#   specs, all seven fixtures, the messages diff, the eslint and
+#   package.json diffs, the full work history and notes.
+# - Schema facts pinned: transactions.flow is NULLABLE
+#   (prisma/schema/import.prisma:115); transfer_links has outgoing
+#   NOT NULL and incoming nullable with uniques on both
+#   (prisma/schema/ledger.prisma:12-30), so the asymmetric
+#   MATCHED_LINK_EXISTS predicate (overview-repository.ts:40-47) is
+#   sound on the nullability axis: a row matched as incoming always
+#   has its outgoing side present.
+# - Classifier facts pinned: UNRESOLVED has exactly one producer,
+#   amountCents === 0 (classify-flow.ts:115; probe P-C1 battery
+#   confirms by execution over 12 adversarial shapes), so
+#   unresolvedCents is always zero and UNRESOLVED can never move the
+#   difference. RESERVE always carries a counterparty iban
+#   (classify-flow.ts:59-66, corrections.ts:112-120), so the
+#   iban-NOT-NULL filter in listReserveMovements cannot diverge the
+#   reserves block from the panel's netToReserves.
+# - Fast gates executed at head in this clone after npm ci: npm run
+#   typecheck exit 0, npm run lint exit 0, npm test exit 0 (219
+#   passed, 17 files). npm run test:e2e NOT run here (database ban);
+#   relied on gate-evidence at af759b3 (10 passed, exit 0).
+# - Hazard-class greps executed: token grep of criterion 4.5 over
+#   src/modules/*/ui and src/modules/**/ui exits 1 (clean); Intl
+#   usage outside the sanctioned money helper is dates only
+#   (month-view.tsx:33,40 month titles; month.ts:27 Brussels day); no
+#   toFixed, no /100 or *100 or Math.round between storage and
+#   render anywhere in modules or app (the one hit is the parser's
+#   integer cent construction, parse-amount.ts:76, pre-existing); the
+#   only prisma.transaction call in the overview module is a
+#   findFirst read (overview-repository.ts:247); the phase's ledger
+#   delta is a 9-line re-export plus 16 comment/constant lines with
+#   no write path, and prisma/ is untouched, so facts immutability
+#   holds with no new Transaction write surface.
+# - Probe suite executed (esbuild-bundled committed code, node, exit
+#   0, ALL PROBES PASS): P-A straddling matched pair, P-B verdict
+#   flips, P-C classifier battery, P-D grouping-completeness
+#   partition and the flow-NULL row, P-E fold partition and cash
+#   precedence, P-F month arithmetic and Brussels clock edges, P-G
+#   formatCents battery. Key captured lines:
+#     P-A1 difference=85000 with zero named causes; P-A3
+#     state=broken, no cause block; P-A4 September difference=-85000.
+#     P-B1 difference=0, unmatchedCount=2, verdict Books close;
+#     P-B2 difference=0 over 1 real gap; P-B3 Books close above a
+#     listed unresolved gap.
+#     P-C1 UNRESOLVED hits = zero-amount shapes only.
+#     P-D2 only the flow-NULL row is in zero surfaces; P-D3 figures
+#     byte-identical with and without a committed 777,00 flow-NULL
+#     row (rowCount blind, panel unchanged).
+#     P-F1 previousMonth 2026-01 -> 2025-12; P-F5/P-F6 Brussels day
+#     rolls the month at 22:30 UTC (CEST) and 23:30 UTC (CET); P-F10
+#     deltas join by key across the year boundary.
+#     P-G3 formatCents(-123456789) = -1.234.567,89; non-integer and
+#     NaN refused loudly.
+# - Clock probe executed: with NODE_ENV=production and
+#   PULSE_FIXED_NOW=2020-01-01T00:00:00Z, appClock().now() returned
+#   2020-01-01T00:00:00.000Z; isProduction() reported true in the
+#   same process. The fixed clock is honoured in production with no
+#   refusal and no log line.
+#
+# - VALIDATION RECORD (Node v26.7.0 via nvm, tiphys validate --type
+#   verdict, private context dir under this session's scratchpad,
+#   never shared scratch; context carried plan.yaml,
+#   work-history.yaml, charter.yaml, assurance-modes.yaml and this
+#   verdict under delivery/review). Schema checks, the
+#   APPROVE-beside-high escalation rule, and all three Kind B
+#   completeness checks (verdict-criteria-complete,
+#   verdict-deviations-judged, verdict-hazard-classes-addressed) pass
+#   with no diagnostic. The dual-review-decorrelation check reds
+#   honestly: with only this verdict present it demands the second
+#   review of the head, and probed against a synthetic stand-in pair
+#   (private context only, deleted after the probe) the single
+#   remaining red is produced-by occurring in 2 of 2 verdicts, which
+#   is DR-0003's recorded narrowing showing up rather than a value
+#   faked to green; produced-by stays honest. The check clears only
+#   at the orchestrator's level once the real criteria verdict is
+#   committed and the pilot record is applied.
+#
+# WHAT WAS LOOKED FOR AND NOT FOUND, so the next reviewer can spend
+# the budget elsewhere.
+# - Tenancy: every one of the four read-model queries, the gap query,
+#   the EXISTS subquery and every JOIN carries householdId
+#   (overview-repository.ts:41,74-82,129-131,179,224-225,247-250);
+#   the previous-month four are the same functions with a different
+#   period, so no tenancy asymmetry is reachable between the compared
+#   months. Nothing found.
+# - Sign conventions: reserves display negates the pot-side sum once
+#   (overview-repository.ts:144) and the panel negates the same raw
+#   sum once (month-projection.ts:175), so the block and the panel
+#   cannot disagree; a reserve drawdown renders as a signed negative,
+#   a parking as an explicit plus (month-view.tsx:62-67). A net-refund
+#   spend group renders through 0 - total (month-view.tsx:131), so
+#   positive stored refunds display as negative spend, honest in
+#   direction. Nothing found beyond the magnitude-delta note in
+#   CR-504's analysis.
+# - Grouping completeness: probe P-D partitions every flow-non-null
+#   row into exactly one surface (income groups, spend groups,
+#   reserve groups, gap rows, matched-internal-in-changeInPot); no
+#   row lands twice; the one zero-surface shape is the flow-NULL row,
+#   which is finding CR-502. The merchant_tags join can not fan out
+#   (the one-primary partial unique index from M1-P4); the section
+#   totals and the panel figures derive from the same underlying row
+#   sets, so no CR-301-style panel-vs-section divergence is
+#   constructible from the committed queries.
+# - Integer-cents discipline: SUM(...)::bigint end to end, JS side
+#   converts bigint to number once and brands it through cents()
+#   which refuses non-integers; the formatter splits euros and
+#   fraction with integer arithmetic only (amount.tsx:13-22); no
+#   float touches a monetary value between storage and render.
+#   Nothing found.
+# - Previous-month comparison: previousMonth, nextMonth, monthBounds,
+#   attachDeltas and the partial flag all executed across the year
+#   boundary and leap February (probes P-F1 to P-F10), all correct;
+#   the comparison month for January is December of the prior year
+#   and deltas join by group key, not by array position. Nothing
+#   found (but see CR-504: none of this has fast-gate coverage).
+# - Partial-month masquerade: partial is month === currentMonth with
+#   currentMonth derived from the Brussels calendar day of the
+#   injected clock (month.ts:26-34, month-overview.ts:70-79); a
+#   future-month request falls back to the current month; the
+#   comparison read is structurally skipped for the partial month
+#   (month-overview.ts:106) rather than hidden in the view, so a
+#   partial month cannot be compared and a closed month cannot show
+#   the in-progress badge under a correct clock. The one path to a
+#   wrong currentMonth is a wrong clock, which is finding CR-503.
+# - Hardcoded strings and literal styles (H4.3, H4.4): executed the
+#   criterion 4.5 grep myself (exit 1, clean); read every user-facing
+#   string in month-view.tsx as a t() call or a glyph expression;
+#   catalogs carry the new keys in all three locales in the diff.
+#   One non-localized surface: GapList renders the raw ISO
+#   bookingDate (month-view.tsx:253), a display-polish point, not a
+#   catalog bypass (no English leaks), left as a note.
+# - Em dashes: grep over the phase diff and this file, none.
+
+kind: verdict
+phase: M1-P5
+verdict: FIX-ROUND-NEEDED
+produced-by: claude
+framing: destructive-paths
+review-contract: hazard
+
+findings:
+  - id: CR-501
+    severity: high
+    evidence:
+      - >-
+        The verdict line is difference === 0 and nothing else:
+        src/modules/overview/domain/month-projection.ts:183 sets
+        reconciles from the derived difference alone, and
+        src/modules/overview/ui/month-view.tsx:292-296 renders
+        data-state ok and the "Books close" verdict from that flag.
+        The difference includes every INTERNAL row booked in the
+        month, matched or not (the changeInPot sum at
+        src/modules/overview/adapters/overview-repository.ts:170 has
+        no matched-leg exclusion), while the named causes cover only
+        unmatched INTERNAL and UNRESOLVED rows
+        (overview-repository.ts:171-176, month-view.tsx:323-346).
+      - >-
+        Executed construction 1 (probe P-A, captured): a matched
+        settlement pair with the card-side mirror booked 2026-08-31
+        and the settlement debit booked 2026-09-02 gives August
+        difference=85000 with unmatchedCount=0 and unresolvedCount=0;
+        the panel renders BROKEN with the alarm difference and NOT
+        ONE cause block (both cause conditions false), and September
+        renders the same alarm with the opposite sign. The committed
+        matcher links a mirror within 4 days of the debit
+        (src/modules/ledger/domain/interpret.ts:156-157), and the
+        direct-debit lag is the documented reason the two legs book
+        days apart (src/modules/ledger/domain/constants.ts:13-15), so
+        this fires every time a card settlement's lag crosses a month
+        end: a recurring false alarm on correct books, with the
+        promised cause line (delivery/intake/pulse-v1-architecture.md:209)
+        naming nothing. The implementer's open question M1P5-C12
+        (delivery/work-history/m1-p5.yaml:581-591) names this half
+        but calls the class rare, reading it as pot-to-pot transfers
+        only; the settlement shape is monthly-recurring.
+      - >-
+        Executed construction 2 (probe P-B1, captured): two genuine
+        unmatched INTERNAL legs of +40000 and -40000 (two different
+        missing exports) give difference=0, so the panel renders
+        data-state ok and the verdict "Books close" while two real
+        export gaps exist; the unmatched cause block below it then
+        reads "2 transfer legs ... totalling 0,00". Probe P-B2
+        reaches the same ok verdict over ONE real gap by cancelling
+        it against a matched straddling leg. Probe P-B3: a
+        zero-amount UNRESOLVED row (the only UNRESOLVED-reachable
+        shape, classify-flow.ts:115, probe P-C1) always leaves the
+        verdict at "Books close" above a listed unresolved gap, a
+        state the phase's own mv-unresolved fixture ships and whose
+        data-state the spec deliberately does not assert
+        (test/e2e/month-view.spec.ts:153-181 asserts cause visibility
+        only).
+      - >-
+        R-087, a false present-tense comment: the derivation comment
+        at src/modules/overview/domain/month-projection.ts:157-160
+        states the difference "equals the sum of the month's INTERNAL
+        and UNRESOLVED amounts, which is exactly what the named
+        causes below account for". The first half is true; the second
+        half is false, since matched INTERNAL legs whose partner
+        books outside the month are in the sum and in no named cause,
+        which is exactly probe P-A.
+    concrete-fix: >-
+      Close the identity so the causes sum to the difference by
+      construction, then make the verdict require empty causes. (1)
+      Add one FILTER to monthFigures: matchedInternalCents = SUM
+      FILTER (WHERE flow = 'INTERNAL' AND the existing
+      MATCHED_LINK_EXISTS predicate), carried through RawMonthFigures
+      and MonthFigures; by the derivation already in the file,
+      difference = unresolvedCents + unmatchedInternalCents +
+      matchedInternalCents identically. (2) Render a third cause
+      block, the "in transit across the month boundary" line the
+      implementer's M1P5-C12 already names as the natural extension,
+      shown when matchedInternalCents is non-zero, in the normal (not
+      alarm) treatment since both legs are matched and correct. (3)
+      Define reconciles as difference === 0 AND unmatchedInternalCount
+      === 0 AND unresolvedCount === 0, so "Books close" can never
+      render above a listed gap and cancelling gaps can never flip
+      the verdict. (4) Correct the month-projection.ts:157-160
+      comment to the new true sentence. (5) Extend
+      test/e2e/month-view.spec.ts with a straddling-pair fixture
+      asserting the in-transit line, and assert data-state=ok is
+      REFUSED in the unresolved test (the current fixture already
+      constructs the dangerous state).
+    analysis: >-
+      One root cause, three symptoms: the reconciliation verdict is a
+      projection-identity residual, not a statement about gaps. The
+      false-alarm half erodes the trust this screen exists to earn
+      (a monthly alarm naming nothing teaches the household to ignore
+      the alarm); the verdict-flip half is the M1-P3 CR-301 class at
+      the presentation layer, books LOOKING closed over a real gap,
+      which the review brief's escalation discipline puts at high.
+      High, not critical, because every committed cent in income,
+      spend, reserves and pot change stays correct and the gap rows
+      themselves remain listed below the lying verdict line.
+  - id: CR-502
+    severity: medium
+    evidence:
+      - >-
+        transactions.flow is nullable
+        (prisma/schema/import.prisma:115) and rows are committed with
+        flow NULL by the ingest transaction
+        (src/modules/import/adapters/import-repository.ts:347-366);
+        interpretation runs afterwards as a SEPARATE database
+        transaction (src/modules/import/application/confirm-import.ts:114-129,
+        upload-statement.ts:74-92 await deps.interpret AFTER
+        ingestRows commits; the write is
+        src/modules/ledger/adapters/ledger-repository.ts:136). A
+        crash or error between the two commits leaves durable
+        flow-NULL facts.
+      - >-
+        The month read model is blind to such rows in every surface:
+        monthFigures filters flow IS NOT NULL
+        (src/modules/overview/adapters/overview-repository.ts:180),
+        so they are absent even from rowCount and changeInPotCents,
+        and the grouped queries filter named flows
+        (overview-repository.ts:83,132,228-231). Executed probe P-D3:
+        figures with and without a committed 777,00 flow-NULL row are
+        byte-identical, rowCount blind, panel green. Probe P-D2: the
+        flow-NULL row is the only shape in ZERO surfaces of the
+        partition.
+      - >-
+        The only needs-interpretation marker is the import status
+        staying INGESTED, and no persistent screen shows it: the
+        import status line renders from a transient ?status= redirect
+        parameter (src/modules/import/ui/import-status-line.tsx:4-5),
+        and the month view queries nothing about imports. The
+        household sees a clean month view with a green panel and
+        silently missing money, the exact H4.2 shape (hidden unknowns
+        making totals lie, here dropped rather than folded in) and
+        the charter's never-invisible rule (charter.yaml:72-74).
+    concrete-fix: >-
+      Make the read model count what it excludes: drop the flow IS
+      NOT NULL where-clause from monthFigures, keep changeInPot and
+      the named sums filtered by flow as they are, and add
+      uninterpretedCount = COUNT(*) FILTER (WHERE flow IS NULL) to
+      RawMonthFigures; when it is non-zero, render a visible
+      awaiting-interpretation warning in the reconciliation panel (a
+      third gap kind naming the count and the affected accounts) so a
+      failed interpretation is loud on the screen the household
+      trusts instead of invisible. A vitest fake-repository test
+      plus one e2e assertion pin it.
+    analysis: >-
+      Arming requires a mid-pipeline failure (crash between the two
+      transactions, or interpret throwing after a committed ingest),
+      so this does not fire on the happy path; but once armed it is
+      durable (nothing re-runs interpretation on its own, by the
+      project's own no-queue no-cron scope discipline) and the month
+      view then lies silently with a green panel until an unrelated
+      re-import happens to re-cover the window. Medium: real
+      reachability, silent durable harm on the trusted screen, but
+      needs a failure event to arm.
+  - id: CR-503
+    severity: medium
+    evidence:
+      - >-
+        Executed probe (probe-clock.cjs, captured): with
+        NODE_ENV=production and PULSE_FIXED_NOW=2020-01-01T00:00:00Z,
+        appClock().now() returned 2020-01-01T00:00:00.000Z while
+        isProduction() returned true in the same process. The
+        override (src/platform/config.ts:59-69, consumed at
+        src/platform/clock.ts:24-27) has no environment guard: a
+        deployed environment where the variable leaks (a copied env
+        set, a preview env promoted) silently freezes the month
+        view's notion of the current month forever, which freezes the
+        partial-month flag, the comparison target and the
+        never-compared rule, with no log line and no visible symptom
+        beyond the wrong month rendering as in progress.
+      - >-
+        R-087, an unchecked present-tense claim: the comment at
+        src/platform/config.ts:54-58 states "set by the Playwright
+        webServer and nothing else" and "Unset everywhere else, so
+        production runs on the system clock". Nothing checks either
+        sentence; the probe above shows production honouring the
+        variable when it IS set. The unused guard sits one screen up:
+        isProduction() at src/platform/config.ts:47.
+    concrete-fix: >-
+      Refuse the override in production at the point of use: in
+      fixedNowOverride, when isProduction() is true and the variable
+      is set, throw the same loud config error the module already
+      uses (or log-and-ignore with the [pulse:config] prefix; the
+      throw is truer to the module's stated contract). This cannot
+      affect the committed e2e flow, whose webServer runs npm run dev
+      (playwright.config.ts:29) under NODE_ENV=development. One
+      vitest case pins the refusal.
+    analysis: >-
+      The brief's press point 7 verbatim: a deployed fixed clock
+      would freeze the month view silently, and the probe shows the
+      production build honours it. Medium because arming requires an
+      operator-side env mistake, but the failure is silent, durable
+      and lands on the exact mechanism (the partial-month rule) the
+      phase exists to get right, and the refusal is a three-line
+      change beside an already-imported guard.
+  - id: CR-504
+    severity: low
+    evidence:
+      - >-
+        The phase ships its entire pure projection layer with zero
+        fast-gate coverage: npm test at head af759b3 discovers 219
+        tests, the same count as the M1-P4 head, and the phase's test
+        delta is e2e-only plus an 8-line edit to
+        test/application/resolve-merchants.test.ts (git diff
+        b54783b..af759b3 over test/). No unit or property test
+        exercises foldGroups, attachDeltas, sumGroups,
+        deriveMonthFigures (src/modules/overview/domain/month-projection.ts)
+        or previousMonth, nextMonth, monthBounds, daysInMonth,
+        brusselsDayOf, parseMonth (src/modules/overview/domain/month.ts).
+      - >-
+        Consequently the year-boundary comparison path (January
+        compared to the previous year's December) and the leap-year
+        bounds have NO executed coverage anywhere in the repository's
+        gates: both committed e2e specs pin August/July 2026 only
+        (test/e2e/golden-journey.spec.ts:128-171,
+        test/e2e/month-view.spec.ts:5-7). This review's probes P-F1
+        to P-F10 executed those paths green, so this is a coverage
+        gap, not a defect; the gate registry's
+        unit-tests-for-changed-service-methods row is the standing
+        expectation it falls short of.
+    concrete-fix: >-
+      Add one fast-gate spec (test/domain/month-projection.test.ts or
+      similar) covering the fold partition (group totals sum to row
+      totals; cash precedence over a named merchant), attachDeltas
+      joining by key across the year boundary, deriveMonthFigures'
+      identity, previousMonth and monthBounds across January and leap
+      February, and brusselsDayOf at a UTC month edge. The
+      constructions in this review's probe suite are a ready-made
+      basis, and CR-501's fix lands new derivation logic that needs
+      exactly this file to be pinned red-first.
+    analysis: >-
+      Low: everything probed came back correct, and the e2e suite
+      covers the composed happy paths. Filed because the projection's
+      pure half is precisely where the next regression would be
+      silent (a sign flip or an off-by-one month survives typecheck
+      and lint, and the e2e fixtures see two months of one year), and
+      the magnitude-delta semantics under a sign-flipping net-refund
+      group (probe P-F11, delta -10,00 when the true spend swing is
+      70,00 less) deserves a pinned decision rather than an accident.
+
+criteria:
+  - id: "4.1"
+    quote: >-
+      npm run test:e2e exits 0 with test/e2e/golden-journey.spec.ts
+      passing end to end as a three-file journey: sign in, upload the
+      current-account fixture (profile 1), declare and confirm,
+      upload the second pot account fixture containing the other
+      transfer leg, upload a card fixture (profile 2: no
+      counterparty-account column, no sequence numbers, line items
+      plus the settlement mirror row), open the month view, assert
+      card line items are counted as spend exactly once, assert the
+      settlement pair is excluded from both sides, and assert income,
+      spend, reserves and pot-change totals against the fixtures'
+      known values with the reconciliation line reading zero
+      difference.
+    evidence:
+      - >-
+        Spec read in full: test/e2e/golden-journey.spec.ts:79-186
+        performs exactly the mandated journey with hand-derived
+        totals in its header (lines 20-50); this review re-derived
+        the arithmetic independently from the committed fixtures
+        (test/fixtures/gj-current.csv, gj-pot-b.csv, gj-card.csv) and
+        it is correct: income 2.500,00, spend 1.918,97, pot change
+        581,03, difference zero; the card line items assert as single
+        groups and the settlement pair is asserted absent from the
+        whole main region. Execution NOT re-run by this reviewer
+        (database ban); relied on: the work history's gate-evidence
+        at af759b3 (npm run test:e2e 10 passed, exit 0, env pinned,
+        from-scratch db:reset) and the red witness record M1P5-C1
+        (spec failed at its first view assertion against the
+        view-less app at 0ec6235).
+    met: true
+  - id: "4.2"
+    quote: >-
+      The partial current month renders the in-progress state and no
+      comparison, asserted in test/e2e/month-view.spec.ts with a
+      fixed clock mid-month.
+    evidence:
+      - >-
+        test/e2e/month-view.spec.ts:60-95 asserts the badge, the
+        15 / 30 meta, the not-compared column head and ZERO delta
+        nodes under PULSE_FIXED_NOW=2026-09-15T12:00:00Z
+        (playwright.config.ts:39-42). Structural half verified by
+        this review: the previous-month read is skipped entirely for
+        the partial month (src/modules/overview/application/month-overview.ts:106),
+        so no comparison value even exists to leak. Relied on: the
+        executed mutation M1 (partial forced false reddened the
+        badge assertion, work history M1P5-C2) and the 10-passed e2e
+        run. The clock's Brussels-day derivation executed green in
+        this review's probes P-F5 to P-F7.
+    met: true
+  - id: "4.3"
+    quote: >-
+      With a deliberately gapped fixture, the view shows the
+      unexplained difference in the alarm treatment and names
+      unmatched legs, asserted in test/e2e/month-view.spec.ts; and
+      with a fixture containing a transaction no rule can classify,
+      the view renders it as a visible UNRESOLVED gap, its amount
+      appears in no income, spend or reserves total, and the
+      reconciliation difference names it, asserted in the same file.
+    evidence:
+      - >-
+        First half: test/e2e/month-view.spec.ts:101-148 asserts
+        data-state broken, difference -400,00, the computed
+        --color-alarm on the verdict, and the named leg with amount,
+        counterparty and account; totals exclude the leg digit for
+        digit. Relied on for execution (10 passed; mutation M2
+        witnessed red, work history M1P5-C3).
+      - >-
+        Second half, met with a caveat that feeds finding CR-501:
+        the UNRESOLVED row is visible, named with count and amount by
+        the cause line, and in no total
+        (test/e2e/month-view.spec.ts:153-181). But the
+        "reconciliation difference names it" clause is satisfied by
+        the CAUSE LINE, not by the difference: the only
+        UNRESOLVED-reachable shape is a zero amount
+        (classify-flow.ts:115, probe P-C1), so the difference is
+        always 0,00 when UNRESOLVED rows exist and the verdict line
+        above the named gap reads "Books close" (probe P-B3); the
+        spec deliberately asserts cause visibility without
+        data-state. The letter of the criterion's naming requirement
+        is met on screen; the verdict-line contradiction is CR-501's
+        third construction.
+    met: true
+  - id: "4.4"
+    quote: >-
+      All three locales render the month view without truncation or
+      layout overflow, asserted per locale in
+      test/e2e/month-view.spec.ts; message catalogs for en, nl, fr
+      load via next-intl; and the ESLint rule react/jsx-no-literals
+      (or an equivalent named lint rule, the chosen name recorded in
+      the phase work history) is enabled for src/modules/**/ui with
+      npm run lint exiting 0.
+    evidence:
+      - >-
+        test/e2e/month-view.spec.ts:188-245 walks EN, NL, FR with
+        translated title and verdict assertions plus computed
+        overflow and clip checks; eslint.config.mjs:27-38 enables
+        react/jsx-no-literals over src/modules/**/ui/**/*.tsx (the
+        chosen name recorded in work history M1P5-C4); npm run lint
+        executed by this review at head: exit 0. The catalogs carry
+        the phase's new keys in all three locales (messages diff read
+        in full); every user-facing string in month-view.tsx is a
+        t() call or a glyph expression container. Locale rendering
+        itself relied on (10 passed; mutation M4 reddened the NL
+        verdict).
+    met: true
+  - id: "4.5"
+    quote: >-
+      grep -rE "oklch\(|#[0-9a-fA-F]{3,8}|font-size:\s*[0-9.]+px"
+      over src/modules/**/ui exits 1 (tokens only), and the npm
+      script that wraps it as a gate exits 0.
+    evidence:
+      - >-
+        Executed by this review at head: the criterion grep over both
+        src/modules/*/ui and src/modules/**/ui exits 1 (no literal
+        colours or px font sizes); package.json carries gate:tokens
+        wrapping the negated grep (package.json diff at b54783b..af759b3).
+        The work history records both gate runs and two red
+        mutations (M1P5-C5).
+    met: true
+  - id: "4.6"
+    quote: >-
+      npm run typecheck && npm run lint && npm test exit 0 at the
+      phase head, and the release-verification candidate (npm test
+      plus npm run test:e2e) is green on the same commit, recorded as
+      evidence for DR-0001.
+    evidence:
+      - >-
+        Executed by this review in this clone at the phase head
+        (af759b3 code, d21ec71 tree): npm run typecheck exit 0, npm
+        run lint exit 0, npm test exit 0 with 219 passed across 17
+        files, matching the work history's counts. The e2e half of
+        DR-0001 relied on: gate-evidence records npm run test:e2e 10
+        passed exit 0 at af759b3 on the same commit as the fast gate
+        (delivery/work-history/m1-p5.yaml:327-345), and no weakening
+        of the declared verification appears anywhere in the diff.
+    met: true
+
+deviations-judged:
+  - deviation: >-
+      M1-P5 files-to-touch (src/modules/overview/, src/app/,
+      test/e2e/golden-journey.spec.ts, test/e2e/month-view.spec.ts,
+      test/fixtures/, messages/en.json, messages/nl.json,
+      messages/fr.json; extras test/application/resolve-merchants.test.ts)
+    serves-plan-intent: true
+    reasoning: >-
+      The six files beyond the declared list (eslint.config.mjs,
+      package.json, playwright.config.ts, src/platform/config.ts,
+      src/platform/clock.ts, and the ledger pair
+      src/modules/ledger/application/index.ts plus
+      domain/constants.ts) are each the minimal enabling change for a
+      declared criterion: 4.4's lint rule lives only in the eslint
+      config, 4.5's gate only in package.json scripts, 4.2's
+      deterministic clock only in the webServer env plus the
+      env-confined config module, and the cash pattern list is
+      code-owned in the ledger so consuming it through the published
+      index (rather than duplicating the list) is the single-source
+      choice the domain skill demands. All six also appear in the
+      plan phase's own extras list, so the deviation is a
+      declaration-hygiene matter rather than scope creep, and it was
+      escalated in the notes before the files were touched.
+
+hazard-classes-addressed:
+  - class-id: H4.1
+    probed: >-
+      The partial current month compared against a full month. Probed
+      three ways: (1) structurally, the comparison read does not
+      execute for the partial month
+      (src/modules/overview/application/month-overview.ts:106-128
+      fetches the previous-month four only when partial is false), so
+      there is no computed comparison to leak into the view; (2) by
+      executed probes P-F5 to P-F7 on the committed Brussels-day and
+      month arithmetic, including the month rolling at 22:30 UTC in
+      summer and 23:30 UTC in winter and the January-to-December
+      comparison join; (3) by reading the e2e partial-month
+      assertions (zero delta nodes, not-compared head) and the work
+      history's executed mutation M1 that forced partial false and
+      reddened the test. The one reachable inversion path found is a
+      wrong clock, filed as CR-503 (a leaked PULSE_FIXED_NOW freezes
+      the current month in production, silently making a partial
+      month render as closed or a closed month as current).
+    finding: CR-503
+  - class-id: H4.2
+    probed: >-
+      Hidden unknowns making totals lie: UNRESOLVED rows or unmatched
+      legs silently folded in or dropped. Probed by construction over
+      the committed code: the partition probe P-D shows every
+      flow-non-null row in exactly one surface and unmatched or
+      unresolved amounts in no income, spend or reserves total (never
+      folded in); the classifier battery P-C pins UNRESOLVED to zero
+      amounts only; the fold probe P-E shows group totals summing to
+      row totals with cash precedence intact. The class then produced
+      findings on its two remaining edges: rows DROPPED from every
+      surface (the flow-NULL shape, probe P-D3, finding CR-502,
+      medium), and unknowns visible in the list but contradicted by
+      the verdict line above them, including the verdict flipping to
+      "Books close" over real gaps under cancellation and the
+      recurring straddling-pair false alarm naming no cause (probes
+      P-A and P-B, finding CR-501, high). The class's fixture-level
+      guard (criterion 4.3) holds for what it asserts; the findings
+      are the constructions it does not reach.
+    finding: CR-501
+  - class-id: H4.3
+    probed: >-
+      Hardcoded user-facing strings bypassing the catalogs. Probed by
+      reading every JSX text node in
+      src/modules/overview/ui/month-view.tsx (all user-facing copy
+      goes through t() or t.rich(); the remaining literals are glyph
+      expression containers: the euro sign, arrows, separators, the
+      nav chevrons), by reading the full messages diff for en, nl, fr
+      (the phase's new keys present in all three, no em dashes), by
+      executing npm run lint at head (react/jsx-no-literals active
+      over module UI, exit 0), and by relying on the work history's
+      executed red witnesses (a literal text node reddened lint;
+      mutation M4's hardcoded English verdict inside an expression
+      container reddened the NL e2e assertion). One residue noted,
+      not filed: GapList renders the raw ISO bookingDate
+      (month-view.tsx:253), which is unlocalized DATA rather than a
+      catalog bypass; a display-polish point for a later phase.
+    cleared-because: >-
+      Every user-facing string in the phase's UI resolves through the
+      next-intl catalogs in all three locales, enforced by an active
+      named lint rule witnessed red, and the executed locale e2e
+      walks all three languages against the longest copy the view
+      renders; no construction reached a hardcoded string a user
+      would see.
+  - class-id: H4.4
+    probed: >-
+      Literal colours or sizes drifting from the token system. Probed
+      by executing the criterion 4.5 grep myself at the review head
+      over src/modules/*/ui and src/modules/**/ui (exit 1, no
+      literal oklch, hex or px font-size), by checking the phase's
+      globals.css delta stays in the tokens-and-classes layer, and by
+      relying on the work history's two structurally different red
+      mutations (a hex in a style prop, an oklch in a comment, each
+      exit 1, each restored). The alarm colour is asserted in the
+      e2e as the COMPUTED resolved value of --color-alarm rather than
+      a class name (test/e2e/month-view.spec.ts:117-131), which is
+      the strongest form of the token discipline this phase could
+      show.
+    cleared-because: >-
+      The executed token grep is clean at head, the gate wrapping it
+      is green, and the one alarm treatment the design system allows
+      is proven to resolve from the token itself in the running view;
+      no literal colour or size reached the module UI.
