@@ -1,0 +1,444 @@
+# Clean-room HAZARD review of phase M1-P4 (merchants and sources).
+# HEAD UNDER REVIEW: 96f33a1 (last code commit 9dd3402; verified by this
+# review: git diff 9dd3402 96f33a1 -- src test prisma package.json is
+# empty, the two commits above 9dd3402 are work-history only). Reviewer
+# clone: worktrees/m1-p4-review-hazard, branch claude/m1-p4-review-hazard.
+# No implementation session seen. Framing: destructive-paths, contract:
+# hazard. Database off-limits to this reviewer (the criteria reviewer owns
+# the local stack): method is static analysis, executed greps, the fast
+# gates re-run at the head, and esbuild-bundled node probes over the
+# committed code (probe-hazard-m1p4.ts, output captured in the work log).
+#
+# DR-0003 DECORRELATION ESCALATION, recorded honestly per the pilot
+# record: this verdict is produced by the Claude family, as is the paired
+# criteria verdict of the same head. DR-0012 condition one (two model
+# families) is NOT met by family; it is discharged for the pilot under
+# DR-0003 (same family, varied lenses) because review-contract (hazard vs
+# criteria) and framing (destructive-paths vs the criteria walk) are
+# distinct across the pair. This header is the required record of that
+# narrowing.
+#
+# METHOD. Started from the two declared hazard classes and the
+# destructive-path families around them, never from the criteria (read
+# last): (1) H3.1's whole class: any path storing a correction as a row
+# edit, and the mirror, any path by which recompute or re-resolution
+# destroys a manual assignment (shadowing, ordering, determinism, crash
+# between declaration and recompute); (2) H3.2's whole class: any path by
+# which resolution changes a monetary total or a flow, including
+# double-count and drop under regrouping; (3) the frozen-recipe class
+# against the M1-P2 dedup key; (4) tenancy on every new read and write;
+# (5) the one-primary invariant under races and crashes; (6) facts
+# immutability (executed grep over every Transaction write site); (7) the
+# CR-308 closure, its corrected comment, and fresh variants of the
+# sign/noise class; (8) the seed pagination fix at the page boundary.
+# Fast gates executed at the head in this clone: npm test exit 0 (191
+# tests, 17 files), npm run typecheck exit 0, npm run lint exit 0. npm
+# run test:e2e was NOT independently re-executed (database off-limits);
+# the criteria walk records that reliance explicitly.
+#
+# WORK LOG (appended as the review ran; incremental-output clause).
+# - Verified head shape (diff empty over src, test, prisma, package.json
+#   between 9dd3402 and 96f33a1). Skeleton committed as beacon.
+# - Read in full: merchants domain (normalise-counterparty.ts,
+#   merchant-rule.ts, merchant-review.ts), merchants application (ports,
+#   assign-merchant, resolve-counterparties, tag-merchant,
+#   merchant-review, index), merchants Prisma adapter, ui/actions.ts,
+#   merchants page and screen; the whole ledger diff (ports,
+#   interpret-window, index, corrections, ledger-repository); the
+#   merchants migration SQL; import dedup.ts; parse-amount.ts; the
+#   criterion 3.2 suite, the normalisation suite, the e2e spec, the fake
+#   world diff; the work history and notes.
+# - Executed: git diff 343dbfc 9dd3402 -- src/modules/import/domain/dedup.ts
+#   is EMPTY, and dedup.ts carries its own frozen local
+#   normalizeCounterpartyForKey (dedup.ts:30) plus a stability contract
+#   naming the M1-P4 normaliser as forbidden here (dedup.ts:18-22):
+#   the dedup recipe is untouched, stored keys keep matching re-derived
+#   ones. Grep: no file under src/modules/import imports the merchants
+#   module.
+# - Executed grep over every Transaction write site under src: exactly
+#   four. ledger-repository.ts:158 (flow) and :177 (merchantId, the new
+#   interpretation column) inside replaceInterpretation;
+#   import-repository.ts:347 (fact ingest createMany) and :260 (the
+#   sanctioned M1-P3 re-parse fact rebuild, untouched by this phase per
+#   git log). No new fact-column writer; rawLine and amountCents are
+#   written by ingest and re-parse only.
+# - Executed grep: merchantId appears NOWHERE under
+#   src/modules/ledger/domain, test/property or test/domain; the
+#   reconciliation identity and the classifier cannot see the column.
+#   interpretLedger (interpret.ts:53) takes transactions, accounts and
+#   outgoingHistoryKeys only; resolution runs strictly after it in
+#   interpret-window.ts:83-105 and produces only the merchants[] write.
+# - Executed probe run (esbuild bundle over committed sources, exit 0,
+#   all probes pass; harness in the reviewer scratchpad):
+#   P-A universal PATTERN rule '*' then recompute: flows, facts and
+#     totals byte-identical (income 250000, spend -9897 before and
+#     after); INTERNAL row keeps flow INTERNAL and merchantId undefined;
+#     all 3 counted rows assigned.
+#   P-B manual EXACT rule vs same-string PREFIX and universal PATTERN in
+#     all 6 permutations: winner m-manual every time (EXACT tier is
+#     checked first at merchant-rule.ts:67, so no later broader rule can
+#     shadow a manual naming).
+#   P-C same-length PATTERN tie order-independent (lex smaller pattern
+#     wins); identical-pattern tie falls to lower id; both stable under
+#     order reversal.
+#   P-D recompute dependency throwing mid-assignment: the error
+#     propagates loudly, the MerchantRule declaration SURVIVES, and the
+#     next plain recompute applies it to the matching row (a crash
+#     between declaration and recompute loses nothing).
+#   P-E recompute twice after an assignment: flow plus merchantId
+#     snapshot is a fixed point.
+#   P-F buildMerchantReview partition under a crafted merchantId equal to
+#     a normalised text key: group totals sum exactly to the direction
+#     totals (-400 vs -400), row counts partition with no drop and no
+#     double count, colliding keys merge into one group and never
+#     duplicate a row; unreachable in production anyway since normalised
+#     keys are uppercase and Prisma uuids are lowercase hex.
+#   P-G CR-308 witness 'EEURUR-742,10' refused at BOTH entry points;
+#     fresh splice variants: signed '7EUR42,10' parses 74210, unsigned
+#     '7EUR42,10' parses 74210, unsigned 'EEURUR742,10' parses 74210,
+#     signed dot-style '1EUR2' parses 1200 (finding CR-403); no variant
+#     can produce a negative through the unsigned entry, so the corrected
+#     comment's narrowed claim holds.
+#   P-H the frozen dedup normaliser and the merchants normaliser produce
+#     different outputs for the same descriptor by design; a hash-path
+#     dedup key derives cleanly from the committed recipe.
+#   P-I CONSTRUCTION for finding CR-402: a stored EXACT rule written
+#     under today's recipe ('STARBUCKS OXFORD') stops matching the
+#     moment a future recipe extension strips OXFORD as a trailing city
+#     token (re-normalised subject 'STARBUCKS', match undefined).
+#   P-J the committed normaliser is idempotent over fixture-shaped
+#     inputs, including the all-noise fallback.
+# - Executed grep: tagMerchant and setMerchantTag have NO call site
+#   outside src/modules/merchants (no UI action, no route); the tag
+#   surface is application-level only at this head. Findings CR-401
+#   filed on the adapter's internals regardless, severity bounded by
+#   that unreachability.
+# - Seed pagination read closely at prisma/seed.ts:40-54: at exactly the
+#   page boundary (total a multiple of PER_PAGE) the short-page test
+#   fetches one extra empty page and terminates correctly; a match on
+#   any page returns early; an error on any page throws. The termination
+#   condition assumes the server honours perPage 1000; GoTrue documents
+#   no lower cap, and the work history carries the executed red and
+#   green db:reset witnesses, so cleared with that reliance named.
+# - PROCESS INCIDENT, recorded honestly: while assembling the validation
+#   context this review's first cp followed STALE SYMLINKS left in the
+#   shared scratchpad by an earlier session and overwrote two files in
+#   the UNRELATED worktree worktrees/m1-p1-review-criteria
+#   (delivery/plan/pulse-v1.yaml and delivery/work-history/m1-p1.yaml,
+#   both uncommitted working-tree damage only; charter.yaml content was
+#   identical so it shows no modification). Write access to that
+#   worktree is permission-blocked for this session, so the restore
+#   could not be executed here; the one-command fix is recorded in the
+#   final report for the orchestrator (git checkout of those two paths
+#   in that worktree). Nothing in THIS clone is affected; git status
+#   here shows only this verdict file.
+# - Validation: npx --prefix /home/user/pulse-fleet tiphys validate
+#   --type verdict against a fresh private context dir (plan.yaml,
+#   work-history.yaml, charter.yaml, assurance-modes.yaml,
+#   gate-registry.yaml, delivery/review with both M1-P4 verdicts). The
+#   ONLY diagnostic is the dual-review-decorrelation check reporting
+#   produced-by claude in 2 of 2 verdicts for this phase, which is the
+#   REAL state of the pair and is exactly DR-0003's recorded narrowing
+#   (distinct review-contract and framing, same family), per the
+#   escalation header above; produced-by is stated honestly and is not
+#   faked to green the check. Schema and every other check pass (no
+#   other diagnostic emitted).
+#
+# WHAT WAS LOOKED FOR AND NOT FOUND, so the next reviewer can spend the
+# budget elsewhere: a row-edit path for corrections (none: the interpret
+# use case's merchants surface is one read-only function, pinned by
+# expectTypeOf in the suite and by the port type at ports.ts:37-52); a
+# resolution path into flow, amount or pairing (none: domain takes no
+# merchant input, resolution consumes flows read-only, the merchants[]
+# write touches one column); a dedup-recipe change (none: file diff
+# empty, recipe locally frozen); a cross-household read or write on the
+# committed call graph (none reachable: every repository function
+# filters householdId; the two internal weaknesses that do not filter or
+# verify are unreachable at this head and filed as CR-401); a
+# determinism hole in the rule chain (none found under permutation
+# probes); loss of a user decision under crash or recompute (none: P-D,
+# P-E, and the suite's H3.1 witness).
+
+kind: verdict
+phase: M1-P4
+verdict: APPROVE
+produced-by: claude
+framing: destructive-paths
+review-contract: hazard
+
+findings:
+  - id: CR-401
+    severity: low
+    evidence:
+      - >-
+        src/modules/merchants/adapters/merchant-repository.ts:137-163:
+        setMerchantTag runs demote-then-promote inside prisma.$transaction
+        with no isolation level, so Postgres read committed applies. Two
+        CONCURRENT promotes of different tags on one merchant can each
+        take a demote snapshot that does not contain the other's
+        not-yet-committed primary, demote nothing that matters, and
+        commit two primaries: the comment at
+        src/modules/merchants/application/ports.ts:82 ("at most one
+        primary per merchant is an application-enforced invariant") and
+        the test sentence at
+        test/application/resolve-merchants.test.ts:421 ("exactly one
+        primary per merchant, always") both state more than read
+        committed guarantees. Static analysis; not executed against a
+        database (off-limits to this reviewer).
+      - >-
+        Same function, second weakness: the upsert where clause at
+        src/modules/merchants/adapters/merchant-repository.ts:148-154
+        selects on the (merchantId, tagId) unique alone, with no
+        householdId, and neither setMerchantTag nor upsertRule
+        (merchant-repository.ts:72-102) verifies that input.merchantId
+        belongs to context.householdId, against CLAUDE.md non-negotiable
+        6. Executed grep bounds the exposure: tagMerchant and
+        setMerchantTag have no call site outside src/modules/merchants
+        (no UI action exists this phase), and the only upsertRule caller
+        is assignMerchant, which derives merchantId in-household, so no
+        cross-household write is REACHABLE at this head; the adapter
+        alone does not enforce it.
+    concrete-fix: >-
+      Pass an explicit isolation level to the setMerchantTag transaction
+      (Serializable, with a retry on serialization failure) or lock the
+      merchant row first; and start the function by resolving the
+      merchant under householdId (findFirst on id plus householdId,
+      throw on miss), which closes both the tenancy gap and the
+      foreign-merchant upsert in one check. One regression test naming
+      the invariant's concurrency edge, even if it can only document the
+      chosen isolation.
+    analysis: >-
+      Filed low, not medium: the race needs two concurrent promotes on
+      one merchant in a single household, no UI path can issue one at
+      all at this head, the bad state is a display anomaly (two primary
+      badges) with zero monetary effect, and the next promote heals it.
+      What earns the finding is the gap between the stated invariant
+      ("always", "atomic") and what the committed code guarantees, which
+      is exactly the class R-087 names.
+  - id: CR-402
+    severity: low
+    evidence:
+      - >-
+        Executed construction P-I1: normaliseCounterparty("STARBUCKS
+        OXFORD") is "STARBUCKS OXFORD" under the committed recipe, so a
+        manual naming stores that EXACT pattern
+        (src/modules/merchants/application/assign-merchant.ts:57-66);
+        re-normalising the same raw text under a recipe with OXFORD
+        added to CITY_TOKENS yields "STARBUCKS", and matchRules of that
+        string against the stored rule returns undefined. Captured
+        probe output in the work log above.
+      - >-
+        The recipe file INVITES exactly that extension with no warning:
+        src/modules/merchants/domain/normalise-counterparty.ts:19-20
+        ("extend the list when a new export shows a new shape") and the
+        city-token comment say a missing city only means the pattern
+        includes it, which is true at write time and silently false for
+        every ALREADY-STORED rule the moment the list grows. Contrast
+        src/modules/import/domain/dedup.ts:18-22, where the sibling
+        recipe carries an explicit STABILITY CONTRACT for precisely this
+        reason. Open question M1P4-C8 in the work history discusses the
+        list as data but never names the stored-pattern invalidation.
+    concrete-fix: >-
+      Write the missing stability note at the top of
+      normalise-counterparty.ts: rule patterns are stored in normalised
+      form, so ANY recipe change (city token, noise pattern, date shape)
+      must ship with a one-off re-normalisation of stored MerchantRule
+      patterns (EXACT and PREFIX) in the same change, or must instead
+      normalise the stored pattern at match time (the recipe is
+      idempotent over its own output, executed probe P-J1, so
+      re-normalising patterns is safe for EXACT). Add it to M1P4-C8 so
+      the list-as-data product question carries the migration
+      obligation.
+    analysis: >-
+      Filed low: nothing at THIS head triggers it, totals never move
+      (the affected rows regress to visible unresolved groups, the
+      H3.1-adjacent outcome of a user decision silently ceasing to
+      apply, not a misassignment), and the one-click naming repairs each
+      regressed group. It is the same frozen-recipe class the dedup key
+      already documents, one module over, with the guard missing.
+  - id: CR-403
+    severity: low
+    evidence:
+      - >-
+        Executed probes (captured in the work log, P-G3): with the comma
+        style, parseAmountToCents("7EUR42,10") returns 74210 and
+        parseUnsignedAmountToCents("7EUR42,10") returns 74210;
+        parseUnsignedAmountToCents("EEURUR742,10") returns 74210; with
+        the dot style parseAmountToCents("1EUR2") returns 1200. In each
+        case stripCurrencyNoise
+        (src/modules/import/domain/parse-amount.ts:25-26) deletes a
+        currency token BETWEEN digit fragments and the fragments
+        concatenate into a plausible parsed amount instead of a loud row
+        error, the positive-magnitude sibling of CR-308's interleaved
+        shape.
+      - >-
+        The CR-308 closure itself holds as narrowed: the corrected
+        comment now claims only that the unsigned entry cannot return a
+        negative value (parse-amount.ts:81), and the executed witnesses
+        confirm it ("EEURUR-742,10" is a row error at both entry points,
+        probes P-G1 and P-G2; no splice variant produces a negative at
+        the unsigned entry, P-G4). No false claim stands in the
+        committed text.
+    concrete-fix: >-
+      Constrain the strip to the token positions a real cell can carry:
+      strip currency tokens only at the start and end of the trimmed
+      cell (or reject when a removed token had digits adjacent on both
+      sides), and add the '7EUR42,10' witness beside the CR-308 block in
+      test/domain/profile-detection.test.ts, red first.
+    analysis: >-
+      Filed low for the same honestly-bounded reachability as CR-308: no
+      observed or plausible bank export writes a currency token inside a
+      digit run, the shape cannot arise from the committed fixtures'
+      grammar, and household-scale exposure is nil. Recorded because the
+      class now has a second executed member on the books and the
+      one-line positional constraint would close the family rather than
+      the instance.
+
+criteria:
+  - id: "3.1"
+    quote: >-
+      npm test exits 0 with test/domain/normalise-counterparty.test.ts
+      covering uppercase, terminal noise, city and date fragments,
+      whitespace collapse.
+    evidence:
+      - >-
+        npm test executed by this review at the head: exit 0, 191 tests,
+        17 files. test/domain/normalise-counterparty.test.ts:12, :25,
+        :54, :80 and :105 are one describe block per named category,
+        plus degenerate-input and idempotence blocks at :119; probe P-J1
+        independently confirmed idempotence and the all-noise fallback
+        on the committed function.
+    met: true
+  - id: "3.2"
+    quote: >-
+      test/application/resolve-merchants.test.ts asserts a manual
+      assignment writes a MerchantRule, and that recompute applies it to
+      all past matching transactions; no code path in interpretation
+      writes a MerchantRule, asserted by construction (the interpret use
+      case has no rule repository dependency).
+    evidence:
+      - >-
+        Suite read in full and executed green inside the npm test run at
+        the head. The assignment test asserts one EXACT rule on the
+        normalised string, retroactive regrouping across two imports,
+        and a byte-identical fact snapshot
+        (test/application/resolve-merchants.test.ts:128); the
+        by-construction half is expectTypeOf pinning
+        LedgerDependencies["merchants"] to the single key
+        resolveCounterparties (resolve-merchants.test.ts:253) with a
+        runtime zero-declaration-writes counter, and the port type
+        itself has one member (src/modules/ledger/application/ports.ts:37-52).
+        This review's probes P-A, P-B, P-D and P-E extended the same
+        mechanism to adversarial rules, shadowing, crash and idempotency
+        without finding a hole.
+    met: true
+  - id: "3.3"
+    quote: >-
+      npm run test:e2e exits 0 with test/e2e/merchants.spec.ts passing:
+      it names an unresolved counterparty and asserts the month data
+      regroups it without totals changing.
+    evidence:
+      - >-
+        NOT independently re-executed by this review (the database stack
+        is the criteria reviewer's). Relied on: the work history's gate
+        evidence at the code head 9dd3402 (5 passed, exit 0, all five
+        env values pinned, after a from-scratch db:reset), the spec read
+        in full (test/e2e/merchants.spec.ts:18 asserts fixture-derived
+        totals digit for digit before AND after the naming, not
+        read-back values), and this review's fast-gate mirror of the
+        same hazard (probes P-A and P-F: totals invariant under
+        resolution and grouping, executed).
+    met: true
+  - id: "3.4"
+    quote: >-
+      npm run typecheck && npm run lint && npm test exit 0 at the phase
+      head.
+    evidence:
+      - >-
+        Executed by this review in this clone at the head: npm run
+        typecheck exit 0, npm run lint exit 0, npm test exit 0 (191
+        passed, 0 skipped). Matches the work history's recorded counts.
+    met: true
+
+deviations-judged:
+  - deviation: >-
+      M1-P4 files-to-touch (src/modules/merchants/, src/modules/ledger/,
+      prisma/, test/domain/normalise-counterparty.test.ts,
+      test/application/resolve-merchants.test.ts,
+      test/e2e/merchants.spec.ts; extras
+      src/modules/import/domain/parse-amount.ts,
+      test/domain/profile-detection.test.ts)
+    serves-plan-intent: true
+    reasoning: >-
+      Three files beyond the declaration, each escalated in the notes at
+      discovery: src/app/(app)/merchants/page.tsx is the thin route the
+      manual-assignment step requires and holds no logic (read: context
+      resolution plus one screen import); src/app/globals.css carries
+      the screen's classes because the repo styles module screens there
+      and components may hold no literal values (tokens only, verified
+      no new token added); test/application/fake-import-world.ts is the
+      same fast-gate world extension M1-P3 made for the same reason, and
+      it is where the declaration-writes counter that criterion 3.2's
+      runtime half needs must live. Each is the minimal enabling change
+      for a declared step; none touches facts, money or flow semantics.
+
+hazard-classes-addressed:
+  - class-id: H3.1
+    probed: >-
+      Constructed the destructive paths rather than asking the tests:
+      (1) the row-edit-undone witness runs in the executed suite (a
+      direct merchantId row edit is erased by the next recompute while
+      the declaration survives); (2) executed P-B, a manual EXACT rule
+      against a same-string PREFIX and a universal PATTERN in all six
+      permutations, winner the manual rule every time, so no later or
+      broader rule can shadow a naming (EXACT tier first,
+      src/modules/merchants/domain/merchant-rule.ts:67); (3) executed
+      P-C, tie-break determinism under order reversal at every chain
+      step; (4) executed P-D, a crash between the rule write and
+      recompute loses nothing, the next recompute applies the surviving
+      declaration; (5) executed P-E, recompute is a fixed point; (6) by
+      construction plus executed grep, the interpret use case's whole
+      merchants surface is one read-only resolver function and no code
+      path under src/modules/ledger writes any declaration table; (7)
+      re-assignment updates the one decision through the (householdId,
+      kind, pattern) unique instead of stacking a contradictory rule.
+      Adjacent but outside the class as declared: CR-402 records how a
+      FUTURE normalisation-recipe change would silently detach stored
+      rules from their subjects (rows regress to visible unresolved, no
+      misassignment), and CR-401 records the tag invariant's race,
+      neither reachable at this head.
+    cleared-because: >-
+      No path at this head stores a correction as a row edit or lets a
+      recompute destroy a user decision: every probe construction came
+      back with the declaration intact and re-applied, and the port
+      shape makes the forbidden write unrepresentable in interpretation.
+  - class-id: H3.2
+    probed: >-
+      (1) Executed P-A: a universal PATTERN rule matching every string,
+      then a full recompute; flows, fact columns and both direction
+      totals byte-identical, INTERNAL legs untouched and merchantless.
+      (2) Executed P-F: group totals sum exactly to direction totals and
+      row counts partition (no drop, no double count) even under a
+      crafted key collision between a merchantId and a normalised text.
+      (3) Executed grep: merchantId appears nowhere in the ledger
+      domain, the reconciliation property test or any domain test, and
+      interpretLedger takes no merchant input, so resolution cannot
+      reach flow, pairing or the identity even in principle; resolution
+      runs after classification and produces only the merchants[] write
+      (src/modules/ledger/application/interpret-window.ts:83-105), and
+      replaceInterpretation's merchant branch updates the one
+      interpretation column under householdId
+      (src/modules/ledger/adapters/ledger-repository.ts:177-184). (4)
+      The refund correction's counterpartyKey deliberately does not
+      adopt the new normaliser (named at
+      src/modules/merchants/domain/normalise-counterparty.ts:9-15), so
+      no classification key changed. (5) The e2e asserts the on-screen
+      totals digit for digit against fixture-derived values before and
+      after a naming; relied on per criterion 3.3, with the fast-gate
+      mirror executed here.
+    cleared-because: >-
+      Resolution renames and regroups only: no monetary total, flow
+      value, pairing or reconciliation input is reachable from the
+      merchant machinery at this head, established by executed probes
+      over the committed code and by the absence of the column from
+      every counting path.
