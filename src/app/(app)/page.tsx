@@ -1,16 +1,22 @@
-import { getTranslations } from "next-intl/server";
+import { requireHouseholdContext } from "@/platform/auth/context";
+import { MonthScreen } from "@/modules/overview/ui";
 
-// The month view route. Before the first import there is no month to show,
-// so the skeleton renders the empty state; the real view lands with slice 4.
+// The month view, the default route. Thin by rule (pulse-frontend section
+// 2): resolve the household context once at the boundary, read the month
+// search parameter, hand off to the overview module's UI. The empty state
+// before the first import is the overview module's to render.
 
-export default async function MonthPage() {
-  const t = await getTranslations();
-
+export default async function MonthPage({
+  searchParams,
+}: {
+  readonly searchParams: Promise<{ readonly month?: string }>;
+}) {
+  const context = await requireHouseholdContext();
+  const { month } = await searchParams;
   return (
-    <section className="empty-state" data-testid="empty-state">
-      <h1>{t("noData")}</h1>
-      <p>{t("emptyTitle")}</p>
-      <p>{t("emptyBody")}</p>
-    </section>
+    <MonthScreen
+      context={context}
+      {...(month === undefined ? {} : { requestedMonth: month })}
+    />
   );
 }
