@@ -159,3 +159,28 @@ edited.
   because Prisma cannot model a partial unique index and a hand-added one
   would make the next `prisma migrate dev` see drift; recorded at the
   model definition.
+
+- [domain+application] normalise-counterparty red first (collection error,
+  exit 1, "Tests no tests" with the module absent), then 18 passed.
+  Resolver, assignment, tags, review grouping implemented; ledger gained
+  the one-member MerchantResolverPort, merchant writes in
+  replaceInterpretation (set-based, null clears), resolver binding in the
+  composition root; fake world grew the merchants store, the REAL resolver
+  over it, and a declarationWrites counter. Full fast gate 177 passed at
+  9b329b3.
+- [criterion 3.2 suite] test/application/resolve-merchants.test.ts: 14
+  tests green at first run against the committed implementation, so the
+  suite's teeth were then PROVEN BY MUTATION, five structurally different
+  members of the phase's hazard classes, each applied, run, restored:
+    M1 interpretation drops merchant assignments: exit 1, 4 failed | 10 passed
+    M2 assignMerchant writes the rule but skips recompute (declaration
+       never applied): exit 1, 3 failed | 11 passed
+    M4 resolver ignores PREFIX rules: exit 1, 3 failed | 11 passed
+    M6 rebuild preserves stale row edits instead of clearing (hazard
+       H3.1's dangerous state): exit 1, 1 failed | 13 passed
+    M5 INTERNAL rows resolve merchants too: exit 1, 1 failed | 13 passed
+  After restore: 14 passed, exit 0. Criterion 3.2's by-construction half
+  is double-guarded: expectTypeOf pins LedgerDependencies["merchants"] to
+  exactly one key (typecheck gate reds on any addition) and the runtime
+  half counts zero declaration writes across upload, interpret and
+  recompute.
