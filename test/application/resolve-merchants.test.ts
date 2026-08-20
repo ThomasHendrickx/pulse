@@ -534,8 +534,14 @@ describe("one primary per merchant is enforced by the database, not only by the 
     };
     walk(migrationsDir);
     const sql = chunks.join("\n");
+    // Pinned BY NAME as well as by predicate (backlog CR-404): the
+    // migration comment claims "asserted by name and predicate", and the
+    // earlier `"?\w*"?` name slot accepted ANY index name, witnessed by a
+    // rename probe that left this test green. The name is load-bearing:
+    // the M1-P4 race probe and the live-database check both identify the
+    // index as merchant_tags_one_primary_per_merchant.
     expect(sql).toMatch(
-      /CREATE\s+UNIQUE\s+INDEX\s+"?\w*"?\s+ON\s+"?merchant_tags"?\s*\("merchantId"\)\s*WHERE\s+"isPrimary"/i,
+      /CREATE\s+UNIQUE\s+INDEX\s+"merchant_tags_one_primary_per_merchant"\s+ON\s+"?merchant_tags"?\s*\("merchantId"\)\s*WHERE\s+"isPrimary"/i,
     );
   });
 });
