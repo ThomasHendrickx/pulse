@@ -1,0 +1,288 @@
+kind: verdict
+phase: M1-P4
+verdict: APPROVE
+produced-by: claude
+framing: criteria-contract
+review-contract: criteria
+
+# Clean-room criteria review, all by execution in this fresh clone, never
+# adopting the implementer's claims. Head under review: 96f33a1 on
+# claude/m1-p4-review-criteria (a cut of claude/m1-p4-merchants). VERIFIED
+# MYSELF: git diff 9dd3402..96f33a1 --stat lists only
+# delivery/work-history/m1-p4-notes.md and m1-p4.yaml (579 insertions,
+# zero code), so the code head is 9dd3402 and every gate below bears on
+# the exact code tree at the head under review. Base is main 491d3c8 (the
+# merged M1-P3).
+#
+# ENVIRONMENT, per fleet warnings 1, 6 and 7: docker daemon alive, the
+# local supabase stack (m1-p1-skeleton containers) Up; every database
+# command pinned to 127.0.0.1:54322 / 127.0.0.1:54321 in the invoking
+# shell; the ambient foreign (Hemma) credentials were verified present and
+# never used; the e2e gate ran with ALL FIVE values pinned (DATABASE_URL,
+# DIRECT_URL, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
+# SUPABASE_SERVICE_ROLE_KEY); the seed's auth existence check paginates
+# the whole list and was executed against a 60-user local auth stack.
+#
+# GATE RECORD, all executed by this reviewer at this head: npm ci EXIT=0;
+# npm run typecheck EXIT=0; npm run lint EXIT=0; npm test EXIT=0 (17
+# files, 191 passed, 0 failed, 0 skipped); the literal chain npm run
+# typecheck && npm run lint && npm test EXIT=0. npm run db:reset is
+# blocked for an AI agent by the Prisma 6.19 consent guard, so the
+# fresh-database route of the prior reviews was taken: CREATE DATABASE
+# pulse_review_p4 on the local stack from zero, npx prisma migrate deploy
+# EXIT=0 applying ALL FOUR migrations from scratch including
+# 20260820073725_merchants_rules_and_tags, npx tsx prisma/seed.ts EXIT=0,
+# then npm run test:e2e EXIT=0 (5 passed, 56.0s) including
+# test/e2e/merchants.spec.ts.
+#
+# MIGRATION AND RLS, live: psql on the from-zero pulse_review_p4 reports
+# relrowsecurity=t for all ELEVEN application tables including merchants,
+# merchant_rules, tags and merchant_tags, and is_nullable=NO for
+# householdId on all four new tables. The migration SQL carries the four
+# CREATE TABLE statements each with householdId UUID NOT NULL and the four
+# ENABLE ROW LEVEL SECURITY statements. The RLS suite's teeth were probed
+# rather than trusted: sed-removing the merchant_rules ENABLE statement
+# from the committed migration SQL turned npx vitest run
+# test/schema/rls.test.ts red (EXIT=1, expected [ 'merchant_rules' ] to
+# deeply equal []); restored, 3 passed.
+#
+# CRITERION 3.2 BY-CONSTRUCTION, probed in both directions myself: added
+# an upsertRule member to MerchantResolverPort in
+# src/modules/ledger/application/ports.ts and npm run typecheck went red
+# at EXIT=1 with 3 errors, naming the ledger composition root (the
+# binding in src/modules/ledger/application/index.ts), the fake world, and
+# the expectTypeOf pin at test/application/resolve-merchants.test.ts:247;
+# git checkout restore, typecheck EXIT=0. The port has exactly one
+# read-only member (src/modules/ledger/application/ports.ts:39-48), the
+# composition root binds it to the merchants module's published rules-only
+# resolver (src/modules/ledger/application/index.ts:56-59), and the only
+# Prisma call sites on the merchant model anywhere under src are
+# findMany, findUnique and create in the merchants repository
+# (src/modules/merchants/adapters/merchant-repository.ts:43,54,66);
+# replaceInterpretation touches tx.transferLink, tx.transaction and
+# tx.import only (src/modules/ledger/adapters/ledger-repository.ts:137-203).
+#
+# RED SPOT-CHECKS, five reviewer mutations plus the RLS probe above, each
+# applied to committed code, run, captured, restored, restore re-run
+# green:
+#   RM1 normalisation pipeline defanged (early return of the collapsed
+#       uppercase form, no stripping): EXIT=1, 14 failed across
+#       normalise-counterparty and resolve-merchants; restored, 32 passed.
+#   RM2 manual assignment never persists the rule (fabricated in memory):
+#       EXIT=1, 4 failed including the hazard H3.1 witness; restored, 14
+#       passed.
+#   RM3 recompute call removed from assignMerchant (declaration written
+#       but never applied retroactively): EXIT=1, 3 failed (retroactivity
+#       across imports, re-assignment, income source); restored, 14
+#       passed.
+#   RM4 CR-308 negative-magnitude rejection removed from
+#       parseUnsignedAmountToCents: EXIT=1, exactly the 3 CR-308
+#       witnesses failed (debitCredit column member, indicator marker
+#       member, direct unsigned entry; the unsigned control still
+#       passing), which is the backlog fix landing with teeth; restored,
+#       46 passed.
+#   RM5 hazard H3.2's dangerous state by execution: interpret-window
+#       mutated so a resolved merchant reclassifies its SPEND row to
+#       INCOME; npx playwright test test/e2e/merchants.spec.ts EXIT=1,
+#       failing at test/e2e/merchants.spec.ts:78 (the totals-unchanged
+#       assertion), income-total moved 44.500,00 to 44.413,53, exactly
+#       the flipped -86,47 group; restored, 1 passed (25.5s).
+#
+# REGRESSION AND HYGIENE, re-executed: the six M1-P3 criterion suites
+# green in one run (classify-flow 13, pair-transfers 9, corrections 16,
+# reconciliation property 1 at 500 runs, interpret 5, reparse 6: 50
+# passed, EXIT=0) inside the same 191 fast gate that carries the M1-P2
+# import suites; message catalogs untouched by the delta (git diff
+# 491d3c8..9dd3402 -- messages is empty) and at key parity, 93 identical
+# leaf keys per language and 88 top-level entries per language, which is
+# the count the work history's "88/88/88" states, so that claim is
+# reproducible rather than false; ZERO em dashes in the delta's added
+# lines (grep count 0 over git diff 491d3c8..9dd3402); the one em dash in
+# messages merchantsBody exists at base 491d3c8 (grep count 2 in en.json
+# at base), is untouched by this phase, and is a tracked backlog item on
+# main owed to M1-P5, so it is not this phase's finding; no literal
+# colour, rgb, hsl or px font size in added src lines: every added
+# font-size uses var(--text-*), and the only px literals are
+# width/height 1px and margin -1px inside the .visually-hidden
+# screen-reader helper in src/app/globals.css, a functional clipping
+# idiom rather than a design spacing value, in the stylesheet rather than
+# a component, examined and cleared; integer cents preserved (the review
+# grouping sums amountCents as integers,
+# src/modules/merchants/domain/merchant-review.ts:122-126, and no float
+# parsing entered the delta); every query in the new adapters filters
+# householdId.
+#
+# WORK-HISTORY CLAIMS judged against my own executions: C1 (3.1 suite
+# red-first) could not be re-executed as history, but the suite's teeth
+# were re-established today by RM1; C2's five implementer mutations are
+# consistent with my RM1..RM3 and the by-construction probe, which redden
+# the same suite today; C3 (CR-308 red-witnessed under two structurally
+# different members) reproduced by RM4, which reddens exactly those
+# witnesses; C4 (RLS red-first and live relrowsecurity) reproduced live
+# on my from-zero database plus the sed probe; C5 (seed pagination)
+# verified in code (prisma/seed.ts:42-55 walks pages at perPage 1000) and
+# by executing the seed at 60 auth users, EXIT=0, past the one-page
+# boundary that broke it; C6 (fixture-derived e2e totals) verified by my
+# own e2e run and by RM5 moving exactly the fixture arithmetic; C11 (no
+# delete or update call site on the merchant model) re-executed by grep
+# with the same result. The four open questions (C7 cash-marker
+# precedence, C8 city-token list as data, C9 no prefix or pattern
+# authoring UI, C10 nameable cash rows) are honest scope statements
+# consistent with the code as read; none contradicts an acceptance
+# criterion, and the plan's slice text ("exact and prefix on normalised
+# strings plus remembered manual assignment") does not require an
+# authoring UI for broader rules this phase.
+#
+# SCOPE: the delta 491d3c8..9dd3402 is 32 files; every one falls inside
+# files-to-touch (src/modules/merchants/, src/modules/ledger/, prisma/,
+# the three named test files) plus the two original extras
+# (src/modules/import/domain/parse-amount.ts,
+# test/domain/profile-detection.test.ts) plus the three amended extras
+# plus the standing work-history files. The amendment commit 0d87fa6
+# ("plan: declare M1-P4 deviation extras before the scope gate") lives on
+# main and is NOT an ancestor of this review head, verified with git
+# merge-base --is-ancestor; the plan copy in this clone therefore still
+# lists two extras while main's lists five. That is the M1-P3 precedent
+# (the orchestrator amends the declaration on the base branch so the
+# scope gate sees a declaration matching the tree at merge), recorded
+# here so nobody reads the two copies as drift.
+#
+# DECORRELATION RECORD PER DR-0003, stated rather than faked: this
+# verdict truthfully records produced-by claude. Both M1-P4 clean-room
+# reviews are dispatched on the Claude model family, so the model-family
+# dimension of the dual-review decorrelation check CANNOT pass
+# truthfully; that failure is ESCALATED to the orchestrator here, per
+# DR-0003's pilot rule, which discharges condition one through distinct
+# review-contract and framing values instead (criteria-contract/criteria
+# here; the hazard brief's framing and contract in the sibling worktree).
+# Recording any other family would be a false claim.
+#
+# WHAT THIS CONTRACT DID NOT REACH, stated rather than summarised as
+# completeness: no deployed-environment behaviour (deploy-verify is a
+# later stage); the real PC-banking CSV layouts remain unverified (the
+# normalisation noise patterns and the city-token list are grounded in
+# the two committed fixture formats only, work-history C8 honestly open);
+# red-first history for the 3.1 suite and the schema test was not
+# re-executed as history and is instead re-established by present-tense
+# mutations; deep concurrency and crash probing (a recompute racing an
+# assignment, a death mid replaceInterpretation against the real adapter)
+# is the hazard contract's lane; the one-primary tag invariant is
+# application-enforced and fake-mirrored, not a database constraint, as
+# the work history discloses, and no live-database probe of a concurrent
+# double-promote was attempted here; the merchants review screen's visual
+# correctness beyond the e2e's asserted text content was not evaluated.
+# "Met" below is a statement about this phase's contract, not a
+# completeness claim about the artifact.
+#
+# VALIDATION RECORD, measured: npx --prefix /home/user/pulse-fleet tiphys
+# validate --type verdict (Node v26.7.0) against a reviewer-built PRIVATE
+# context directory (never a shared scratch dir) carrying plan.yaml
+# (delivery/plan/pulse-v1.yaml at this head), the M1-P4 work-history.yaml
+# at 96f33a1, charter.yaml and assurance-modes.yaml, with this file under
+# delivery/review. The run reddens on EXACTLY ONE check,
+# dual-review-decorrelation ("only 1 verdict document(s) exist under
+# delivery/review for phase M1-P4"), because the hazard verdict is
+# produced in a parallel worktree and is not visible from this clone. To
+# prove that residue masks nothing, a second measurement was captured:
+# with a clearly-labelled synthetic PROBE partner verdict (distinct
+# produced-by, framing and review-contract; an instrument, never a real
+# review, never committed) beside this file in the scratch context, this
+# document validates at EXIT=0 and the checker reports the pair distinct
+# on produced-by, framing and review-contract. So the schema,
+# verdict-criteria-complete and verdict-deviations-judged all pass on
+# this document as committed.
+
+# NO-FINDINGS STATEMENT (the verdict schema carries no field for it, so
+# it lives here): every acceptance criterion of M1-P4 was walked by
+# execution in this clone (gates, suites, a from-zero database, the e2e),
+# the 3.2 by-construction claim was probed red and green through the type
+# system, five reviewer mutations plus an RLS-statement removal all
+# reddened the committed witnesses and all restored green, the CR-308
+# backlog fix reddened under its own witness removal, the migration was
+# verified in SQL and live, regression suites from M1-P2 and M1-P3 re-ran
+# green, and the delta's hygiene (em dashes, literal values, integer
+# cents, householdId filtering, catalog parity) was measured clean.
+# Nothing found at any severity; the honest residues are listed above
+# under what this contract did not reach.
+
+findings: []
+
+criteria:
+  - id: "3.1"
+    quote: >-
+      npm test exits 0 with test/domain/normalise-counterparty.test.ts
+      covering uppercase, terminal noise, city and date fragments,
+      whitespace collapse.
+    evidence:
+      - "npm test EXIT=0 at this head (17 files, 191 passed, 0 failed, 0 skipped); npx vitest run test/domain/normalise-counterparty.test.ts EXIT=0, 18 passed."
+      - "All four named categories have dedicated describe blocks with real fixture-shaped cases: uppercase (test/domain/normalise-counterparty.test.ts:12-23), payment terminal noise including bank-branded prefixes, rails, masked card numbers and the FX conversion tail (test/domain/normalise-counterparty.test.ts:25-52), date fragments in three separators plus time-of-day (test/domain/normalise-counterparty.test.ts:54-78), city fragments both as postal-code-plus-city anywhere and trailing bare tokens with the inside-the-name control BRUSSEL BROODJES BV (test/domain/normalise-counterparty.test.ts:80-103), whitespace collapse (test/domain/normalise-counterparty.test.ts:105-117), plus degenerate non-destructive inputs and idempotence (test/domain/normalise-counterparty.test.ts:119-137)."
+      - "Red direction, executed: reviewer mutation RM1 (the pipeline in src/modules/merchants/domain/normalise-counterparty.ts returns the collapsed uppercase form before any stripping) made the suite fail at EXIT=1 with 14 failed across this file and resolve-merchants; restored, 32 passed."
+    met: true
+  - id: "3.2"
+    quote: >-
+      test/application/resolve-merchants.test.ts asserts a manual
+      assignment writes a MerchantRule, and that recompute applies it to
+      all past matching transactions; no code path in interpretation
+      writes a MerchantRule, asserted by construction (the interpret use
+      case has no rule repository dependency).
+    evidence:
+      - "npx vitest run test/application/resolve-merchants.test.ts EXIT=0, 14 passed. The assignment half: one EXACT rule on the normalised string with no fact column edited, asserted against a named fact snapshot (test/application/resolve-merchants.test.ts:128-179); retroactivity applies across TWO imports whose raw texts differ by city (test/application/resolve-merchants.test.ts:166-170); the hazard H3.1 witness asserts a row edit is undone by the next recompute while the declaration survives (test/application/resolve-merchants.test.ts:265-298)."
+      - "The by-construction half, probed by this reviewer in both directions: adding an upsertRule member to MerchantResolverPort in src/modules/ledger/application/ports.ts turned npm run typecheck EXIT=1 with 3 errors (the composition binding in src/modules/ledger/application/index.ts, the fake world, and the expectTypeOf pin at test/application/resolve-merchants.test.ts:247); restored, EXIT=0. The port declares exactly one read-only member (src/modules/ledger/application/ports.ts:39-48) and the composition root binds only resolveCounterparties (src/modules/ledger/application/index.ts:56-59)."
+      - "Enumeration re-executed: grep over src finds prisma.merchant call sites only in src/modules/merchants/adapters/merchant-repository.ts (findMany, findUnique, create); replaceInterpretation writes tx.transferLink, tx.transaction and tx.import only (src/modules/ledger/adapters/ledger-repository.ts:137-203), so no interpretation code path can reach a declaration table."
+      - "Red direction, executed: RM2 (assignment fabricates the rule in memory, never persisting) EXIT=1, 4 failed including the H3.1 witness; RM3 (recompute call removed from assignMerchant) EXIT=1, 3 failed; each restored, 14 passed."
+    met: true
+  - id: "3.3"
+    quote: >-
+      npm run test:e2e exits 0 with test/e2e/merchants.spec.ts passing:
+      it names an unresolved counterparty and asserts the month data
+      regroups it without totals changing.
+    evidence:
+      - "Executed from a from-zero database: CREATE DATABASE pulse_review_p4 on the local stack, npx prisma migrate deploy EXIT=0 (all four migrations), npx tsx prisma/seed.ts EXIT=0 (against a 60-user auth stack, past the one-page boundary), then npm run test:e2e EXIT=0, 5 passed (56.0s) with all five env values pinned local, including test/e2e/merchants.spec.ts (naming an unresolved counterparty regroups it and changes no total, 11.9s)."
+      - "The spec's totals are FIXTURE-DERIVED (income 44.500,00 and spend -1.174,27 computed from belfius-account-a.csv in the header comment, test/e2e/merchants.spec.ts:10-14), asserted digit for digit before AND after the naming (test/e2e/merchants.spec.ts:51-52 and :78-81), alongside the regrouping itself (merchant group appears with -86,47, the descriptor group disappears, unresolved count 5 to 4, test/e2e/merchants.spec.ts:68-74)."
+      - "Red direction, executed against the real stack: RM5 mutated interpret-window so a resolved merchant reclassifies its SPEND row to INCOME (hazard H3.2's dangerous state); npx playwright test test/e2e/merchants.spec.ts EXIT=1 failing at exactly the totals-unchanged assertion (test/e2e/merchants.spec.ts:78), income-total 44.500,00 to 44.413,53, the flipped -86,47; restored, 1 passed."
+    met: true
+  - id: "3.4"
+    quote: >-
+      npm run typecheck && npm run lint && npm test exit 0 at the phase
+      head.
+    evidence:
+      - "The literal chained command npm run typecheck && npm run lint && npm test EXIT=0 in this clone at the head under review (tsc clean, eslint clean with zero warnings, 17 files, 191 passed, 0 failed, 0 skipped)."
+      - "The head bears on the exact code tree: git diff 9dd3402..96f33a1 --stat lists only the two delivery/work-history files, so the chain's result at 96f33a1 is the result at code head 9dd3402."
+      - "Regression inside the same gate, re-run per suite by this reviewer: the six M1-P3 criterion suites 50 passed EXIT=0 (classify-flow 13, pair-transfers 9, corrections 16, reconciliation property 1 at 500 runs, interpret 5, reparse 6) and profile-detection 46 passed including the M1-P2 matrix and the CR-208/CR-305/CR-307/CR-308 witnesses."
+    met: true
+
+deviations-judged:
+  - deviation: >-
+      M1-P4 files-to-touch (src/modules/merchants/, src/modules/ledger/,
+      prisma/, test/domain/normalise-counterparty.test.ts,
+      test/application/resolve-merchants.test.ts, test/e2e/merchants.spec.ts;
+      extras src/modules/import/domain/parse-amount.ts,
+      test/domain/profile-detection.test.ts)
+    serves-plan-intent: true
+    reasoning: >-
+      Judged file by file against the diff (git diff 491d3c8..9dd3402, 32
+      files), not adopted from the declaration. The three files beyond the
+      declared list are each necessary and minimal. (1)
+      src/app/(app)/merchants/page.tsx is a ten-line thin route that
+      resolves the household context and hands off to the merchants
+      module's screen; the manual-assignment UI the plan's step 3 mandates
+      needs a URL, app routes are thin by the repo's rule, and no
+      substance lives there. (2) src/app/globals.css carries the
+      merchant-* classes and a visually-hidden accessibility helper
+      because module screens are styled there by the repo's established
+      pattern and components may hold no literal values; every added
+      colour and font-size declaration uses existing tokens (verified
+      over the diff), and the helper's 1px clip values are a functional
+      screen-reader idiom, not design spacing. (3)
+      test/application/fake-import-world.ts grew a merchants store
+      mirroring the real adapter's unique-key and demote-then-promote
+      semantics, the REAL resolver bound over it, and a
+      declaration-writes counter, the same sanctioned port-fake seam
+      M1-P3 extended in the same file; criterion 3.2's zero-writes and
+      retroactivity assertions need exactly this. All three were
+      escalated in the notes the moment found, and the orchestrator's
+      amendment on the base branch (main commit 0d87fa6) declares exactly
+      these three as extras, so the scope gate at merge sees a
+      declaration matching the tree; the amendment is deliberately not on
+      this phase branch, per the M1-P3 precedent. The standing
+      work-history files complete the delta; nothing else moved.
