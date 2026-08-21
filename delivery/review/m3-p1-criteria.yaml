@@ -12,12 +12,90 @@ produced-by: claude
 framing: criteria-contract
 review-contract: criteria
 
-# Clean-room CRITERIA review of phase M3-P1 (navigation), TWO ROUNDS,
-# all by execution in this fresh clone. Round 0 (record kept below)
-# approved head 5c23aa4 (code head c2aceec); round 1 covers the
-# hazard-driven micro fix round 5c23aa4..2c30eae, and this verdict now
-# stands at head 2c30eae (fix code head 1a0e0d8). The implementation
-# session was never seen in either round.
+# Clean-room CRITERIA review of phase M3-P1 (navigation), THREE
+# ROUNDS, all by execution in this clone. Round 0 (record kept below)
+# approved head 5c23aa4 (code head c2aceec); round 1 covered the
+# hazard-driven micro fix round 5c23aa4..2c30eae (code head 1a0e0d8),
+# merged to main in PR #14 (main merge 7796fc9); round 2 is the
+# DEFECT ROUND for owner-reported mobile breakage, on the branch
+# REBUILT from main 0a49ef7, and this verdict now stands at head
+# bba9132 (defect-round code head a5d37c0). The implementation session
+# was never seen in any round.
+#
+# ROUND 2 (DEFECT ROUND) SHAPE, verified myself: the plan gained
+# criterion 1.5 on main at 0a49ef7 (phone viewport 390x844 on every
+# authenticated route: nav links, account identity and sign-out
+# visible and clickable, documentElement.scrollWidth <= viewport
+# width, asserted with an explicit viewport, desktop assertion kept);
+# git log 0a49ef7..bba9132 is 3476e15 (witnesses), a5d37c0 (fix),
+# bba9132 (docs); git diff --stat a5d37c0..bba9132 is the two
+# work-history files only (+117), so the round's code head is
+# a5d37c0. The code delta is 2 files: src/app/globals.css (the header
+# and nav rows gain flex-wrap with two-axis gaps, the sign-out form
+# gains flex-shrink 0, .app-household becomes the one item that gives
+# way, min-width 0 with ellipsis painting and textContent intact, and
+# the import field's unconditional min-width: var(--layout-rail)
+# becomes min(var(--layout-rail), 100%) with max-width 100%; no media
+# query, tokens only) and test/e2e/navigation.spec.ts (two new
+# describe blocks with explicit viewports, 390x844 and 1280x720, each
+# walking all three authenticated routes asserting nav, identity and
+# sign-out visible plus the scrollWidth bound, and the phone test
+# clicking sign-out through to the sign-in screen).
+#
+# ROUND 2 EXECUTED CHAIN at head bba9132 (code-identical to a5d37c0),
+# five env values pinned local: npm run typecheck EXIT=0; npm run lint
+# EXIT=0; npm run gate:tokens EXIT=0; npm test EXIT=0 (21 files, 252
+# passed, 0 failed, 0 skipped); npm run test:e2e EXIT=0, 17 passed
+# (2.6m), 0 skipped, fresh webServer: the 390x844 test and the
+# 1280x720 test both green on all three routes (tests 16 and 17), and
+# every earlier test green untouched, golden-journey still
+# byte-unmodified vs c518181 (0 diff lines). Matches the defect-round
+# gate evidence in delivery/work-history/m3-p1.yaml (252 fast, 17 e2e
+# at a5d37c0) figure for figure.
+#
+# ROUND 2 RED MUTATIONS, three fresh, each restored, tree verified
+# clean:
+#   H (the second overflower): the import field's clamp reverted to
+#     the unconditional min-width: var(--layout-rail); the phone test
+#     failed EXIT=1 with "no horizontal scroll on /import: Expected <=
+#     390, Received 396", the desktop test stayed green, which is
+#     digit-for-digit the work history's recorded red 2.
+#   I (the header half reverted whole: both flex-wraps, the form
+#     flex-shrink and the household ellipsis removed): the phone test
+#     failed EXIT=1 with "no horizontal scroll on /: Expected <= 390,
+#     Received 476", desktop green, digit-for-digit the recorded red 1
+#     (the owner's reported breakage reconstructed at the head).
+#   G, REPORTED HONESTLY AS A NON-RED: reverting the .app-header
+#     flex-wrap ALONE left both viewport tests green (2 passed,
+#     EXIT=0). Investigated rather than shrugged off: the remaining
+#     layers absorb the width at 390 with the EN labels (.app-nav
+#     wraps internally and the household identity gives way by
+#     design), so every control still fits and the criterion is still
+#     satisfied in that mutant; the wrap on .app-header is redundant
+#     protection for wider content (NL labels, more links), not the
+#     load-bearing line. The witness's teeth against the actual
+#     defect classes are established by H and I. No finding: a
+#     criterion met through a deliberate give-way mechanism is met,
+#     and the work history claims the ensemble, not that each layer is
+#     individually necessary.
+#
+# ROUND 2 ESCAPED-DEFECT RECORD JUDGED (the honesty the coordinator
+# asked for): the work history's mechanism entry states the defect
+# escaped because NO criterion named a viewport, every gate ran at
+# Playwright's desktop default, and both clean-room reviews "verified
+# a blind contract faithfully"; its proof greps RE-EXECUTED by me at
+# 0a49ef7: git grep -n "viewport" 0a49ef7 -- playwright.config.ts
+# test/e2e/ EXITS 1 with no output (zero explicit viewports anywhere
+# before this round), and git grep -n "min-width" 0a49ef7 --
+# src/app/globals.css styles/ returns exactly the five recorded hits
+# including the culprit var(--layout-rail) floor at globals.css:261.
+# Both proofs hold, the record is accurate, and it honestly includes
+# what the round does NOT cover (the /import/[id] confirm step and a
+# seeded month view at 390, non-EN locales at 390, heights). My own
+# round 0 record already carried the matching sentence: this
+# contract's walk is one input and never a terminal green; criterion
+# 1.5 is exactly the contract growing to contain a defect it could
+# not previously see, per the amendment's own commit message.
 #
 # ROUND 1 DELTA SHAPE, verified myself: git log 5c23aa4..2c30eae is
 # bb6ea80 (witnesses), 1a0e0d8 (fix), 2c30eae (docs); git diff --stat
@@ -220,6 +298,13 @@ criteria:
         reverted to bare equality) reddened the sub-route test at
         test/e2e/navigation.spec.ts:110 with EXIT=1; restored, 1
         passed EXIT=0.
+      - >-
+        ROUND 2, defect head bba9132 on the rebuilt branch: the four
+        testid grep pins re-held (each still resolves to exactly
+        src/app/(app)/layout.tsx; one <nav element in src/), the
+        defect round touched no component file (globals.css and the
+        spec only), and all three earlier navigation tests passed
+        unchanged inside the 17-pass EXIT=0 run.
     met: true
   - id: "1.2"
     quote: >-
@@ -269,6 +354,12 @@ criteria:
         Restored, 3 passed, messages/ diff empty. The catalogs carry
         three array-valued keys (prevMonth[2], steps[3],
         emptySteps[3]), so the new depth is not vacuous.
+      - >-
+        ROUND 2, defect head bba9132: the defect round touches no
+        catalog and no parity code; teeth re-verified anyway
+        (navMerchants deleted from messages/nl.json, vitest EXIT=1
+        naming it; restored, 3 passed, tree clean), and the parity
+        test ran green inside the 252-pass fast gate at the head.
     met: true
   - id: "1.3"
     quote: >-
@@ -303,6 +394,13 @@ criteria:
         over all of src/ EXIT=1 (the delta adds no style rule at all:
         the CR-601 fix styles nothing new, it feeds the same
         aria-current attribute the existing selector reads).
+      - >-
+        ROUND 2, defect head bba9132: npm run typecheck EXIT=0, npm
+        run lint EXIT=0, npm test EXIT=0 (252 passed, 0 failed, 0
+        skipped), npm run gate:tokens EXIT=0, colour grep over all of
+        src/ EXIT=1; the fix's new declarations are token-only (the
+        two-axis gaps, min(var(--layout-rail), 100%)) with no media
+        query and no breakpoint literal anywhere in the delta.
     met: true
   - id: "1.4"
     quote: >-
@@ -329,6 +427,62 @@ criteria:
         golden journey passed again (test 4 of the 15-pass EXIT=0
         run); git diff --name-status c518181..2c30eae still contains
         zero D entries.
+      - >-
+        ROUND 2, defect head bba9132 on the rebuilt branch: git diff
+        c518181..bba9132 -- test/e2e/golden-journey.spec.ts is still 0
+        lines and the golden journey passed again (test 4 of the
+        17-pass EXIT=0 run); zero D entries against both c518181 and
+        the rebuild base 0a49ef7.
+    met: true
+  - id: "1.5"
+    quote: >-
+      Owner-feedback amendment (2026-08-21, orchestrator): at a phone
+      viewport (390x844) on every authenticated route, the navigation
+      links, the account identity and the sign-out control are all
+      visible and clickable without horizontal scrolling
+      (document.documentElement.scrollWidth less than or equal to the
+      viewport width), asserted in test/e2e/navigation.spec.ts with an
+      explicit viewport; the same spec keeps a desktop-viewport
+      assertion so neither presentation regresses the other.
+    evidence:
+      - >-
+        EXECUTED: npm run test:e2e EXIT=0, 17 passed (2.6m) at head
+        bba9132, five env values pinned local, including both new
+        viewport tests. The phone block sets the explicit viewport the
+        criterion demands (test.use viewport 390x844 at
+        test/e2e/navigation.spec.ts:178) and walks ALL THREE
+        authenticated routes (AUTH_ROUTES at
+        test/e2e/navigation.spec.ts:154, looped at :160-173) asserting
+        the three nav links, the household identity and the sign-out
+        button visible, and documentElement.scrollWidth <= 390 per
+        route; clickable is asserted for real, not inferred: the phone
+        test clicks sign-out and lands on the sign-in heading
+        (test/e2e/navigation.spec.ts:187-188). The kept desktop block
+        runs the same walk at an explicit 1280x720
+        (test/e2e/navigation.spec.ts:193), so neither presentation can
+        regress the other unnoticed.
+      - >-
+        Teeth verified fresh against BOTH fixed overflowers: mutation H
+        (the import field clamp reverted to the unconditional
+        rail-width floor) reddened the phone test EXIT=1 with Received
+        396 on /import while desktop stayed green; mutation I (the
+        header half of the fix reverted whole) reddened it EXIT=1 with
+        Received 476 on /, reconstructing the owner's exact breakage.
+        Both match the work history's recorded reds digit for digit;
+        both restored, 2 passed EXIT=0, tree clean. Honest non-red
+        also recorded: reverting the .app-header flex-wrap ALONE stays
+        green because the nav's own wrap and the identity's designed
+        give-way still fit everything at 390 with EN labels; see the
+        round 2 header note.
+      - >-
+        The fix itself is inside the declared surface and the token
+        rules: src/app/globals.css only (a declared extra since
+        fe9bafd), no media query, no breakpoint literal, colour grep
+        over all of src/ still EXIT=1, gate:tokens EXIT=0; the
+        identity ellipsizes in PAINT only, textContent intact, which
+        the pre-existing signUp assertion (household-context
+        toHaveText(unique) at test/e2e/navigation.spec.ts:36) would
+        redden if it ever truncated.
     met: true
 
 # NO-FINDINGS STATEMENT (the verdict schema permits no dedicated
@@ -362,9 +516,75 @@ criteria:
 # captured red exit codes. CR-601 and CR-602 are the HAZARD sibling's
 # findings, resolved by this round and verified resolved here by
 # execution; they are not re-raised as findings of this verdict, and
-# this round found nothing new. The findings array below is therefore
-# still empty and the verdict stands at APPROVE at head 2c30eae.
-findings: []
+# round 1 found nothing new.
+#
+# ROUND 2 supersedes the empty findings array: the defect round's
+# criteria all verify by execution, but its work-history derivation
+# block fails to reproduce, which is finding CR-701 below (low). The
+# verdict stays APPROVE: the schema escalates only high and critical,
+# and DR-0012 condition 2 permits merging with a low finding recorded
+# as a tracked item, which this entry is.
+findings:
+  - id: CR-701
+    severity: low
+    evidence:
+      - >-
+        The defect-round mechanism entry in
+        delivery/work-history/m3-p1.yaml presents a derivation with a
+        command and an output block of eight grep hits, and six of the
+        eight line numbers resolve at NO committed state of the round.
+        Claimed: test/e2e/navigation.spec.ts:181 and :196 for the two
+        test.use viewport lines; measured by me at 3476e15, a5d37c0
+        and bba9132: 178 and 193 at every one of the three commits.
+        Claimed: src/app/globals.css:126, :161, :163, :164, :299 for
+        the nav flex-wrap, the household min-width 0, ellipsis,
+        nowrap, and the import-field min(); measured at a5d37c0 and
+        bba9132: 124, 162, 164, 165, 289 (only the :104 header
+        flex-wrap hit matches).
+      - >-
+        The same entry's closing parenthetical states the output block
+        "carries their combined hits in full for the files this round
+        touched"; measured at the head, the stated grep pattern
+        (min-width, white-space, flex-wrap) over src/app/globals.css
+        alone returns 20 hits, of which the block lists 6, so "in
+        full" is false under the stated command even restricted to the
+        touched files.
+      - >-
+        The substance underneath is NOT in question, verified
+        independently before this finding was raised: every claimed
+        property exists at the head (my own grep listing above), both
+        recorded reds reproduce digit for digit under my fresh
+        mutations H (396 on /import) and I (476 on /), the zero
+        pre-round viewport grep proof and the five pre-round min-width
+        hits re-executed exactly, and all 17 e2e pass. The defect is
+        confined to the provenance of the "captured" output block:
+        real captured output cannot carry line numbers the repository
+        never had, so this block was transcribed or captured against
+        an unclean intermediate working state and then presented as
+        the round's derivation, which is the reconstructed-evidence
+        shape the dispatch contract's red-witness language forbids
+        precisely because it is indistinguishable from fabrication
+        after the fact.
+    concrete-fix: >-
+      One line of work in delivery/work-history/m3-p1.yaml: re-run the
+      two greps at bba9132, paste the true output (test.use at 178 and
+      193; globals.css 104, 124, 162, 164, 165, 289), either include
+      all 20 globals.css hits or replace "in full" with an explicit
+      statement that only the delta-relevant hits are listed, and note
+      the correction loudly in place per the R-087 precedent
+      (M1-P5). No code change; no gate is affected.
+    analysis: >-
+      Low, not higher, because every behavioural claim the block
+      supports was re-established by my own executions and the false
+      statements are resolvable citations in a prose derivation, not a
+      gate result, an exit code, or a red witness; the two recorded
+      reds carry their own captured assertions (claim M3P1-C8) and
+      those DO match my reproductions exactly. Raised as a finding
+      rather than a note because R-087 says a false claim in a
+      document is a finding, and because unresolvable citations in a
+      work history are exactly what the citation gate exists to
+      refuse; a reader who checked these numbers before I did would
+      have had reason to doubt reds that are, in fact, real.
 
 deviations-judged:
   - deviation: >-
@@ -411,16 +631,19 @@ deviations-judged:
       purpose; leaving it untouched and declaring the fact, as the work
       history does, is the honest reading of the conditional clause.
 
-# VALIDATION RECORD (re-run at round 1 with the updated file and the
-# fix-round work history in the context; identical outcome), measured:
-# npx --prefix /home/user/pulse-fleet
+# VALIDATION RECORD (re-run at round 1 with the fix-round work
+# history, and again at round 2 with the 0a49ef7-amended plan carrying
+# criterion 1.5 and the defect-round work history; identical outcome
+# each time), measured: npx --prefix /home/user/pulse-fleet
 # tiphys validate --type verdict (Node v26.7.0 via nvm) with a PRIVATE
-# context dir carrying plan.yaml (this clone's
-# delivery/plan/pulse-v02.yaml WITH the fe9bafd extras amendment
-# cherry-applied from main, since the amendment lives on main and the
-# scope comparison is against the amended declaration), the M3-P1
-# work-history.yaml, charter.yaml and assurance-modes.yaml, this file
-# present under the context's delivery/review. Result: reddens on
+# context dir carrying plan.yaml (rounds 0 and 1: this clone's
+# delivery/plan/pulse-v02.yaml with the fe9bafd extras amendment
+# applied from main, since the amendment lived only on main then;
+# round 2: the plan at 0a49ef7, which the rebuilt branch itself
+# carries, with both the extras and criterion 1.5), the M3-P1
+# work-history.yaml at the head under review, charter.yaml and
+# assurance-modes.yaml, this file present under the context's
+# delivery/review. Result: reddens on
 # EXACTLY ONE check, dual-review-decorrelation ("only 1 verdict
 # document(s) exist under delivery/review for phase M3-P1, and a
 # delegated grant requires two independent clean-room reviews of the
