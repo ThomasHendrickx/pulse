@@ -9,6 +9,8 @@ const FAILURE_KEYS: Record<ImportFailureReason, string> = {
   "mixed-accounts": "failedMixedAccounts",
   undetectable: "failedUndetectable",
   unparseable: "failedUnparseable",
+  "layout-unsupported": "failedLayoutUnsupported",
+  "balance-mismatch": "failedBalanceMismatch",
 };
 
 export const ImportResult = async ({

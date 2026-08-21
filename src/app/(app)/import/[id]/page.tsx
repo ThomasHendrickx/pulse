@@ -2,11 +2,11 @@ import { notFound } from "next/navigation";
 import { requireHouseholdContext } from "@/platform/auth/context";
 import { findAccountByIban, getAccountById } from "@/modules/accounts/application";
 import {
-  detectSourceProfile,
+  detectStatement,
   findProfileForSpec,
   getImport,
   parseSourceProfileSpec,
-  parseStatement,
+  parseStatementBytes,
   type SourceProfileSpec,
 } from "@/modules/import/application";
 import { ImportResult, ProfileConfirmation } from "@/modules/import/ui";
@@ -59,7 +59,7 @@ export default async function ImportDetailPage({
     return <ImportResult record={record} accountLabel={account?.label} />;
   }
 
-  const detected = detectSourceProfile(record.rawContent);
+  const detected = await detectStatement(record.rawContent);
   const spec = specFromQuery(querySpec) ?? (detected.ok ? detected.value : undefined);
   if (spec === undefined) {
     // Undetectable content in an awaiting import should not happen (the
@@ -72,7 +72,7 @@ export default async function ImportDetailPage({
     );
   }
 
-  const parsed = parseStatement(record.rawContent, spec);
+  const parsed = await parseStatementBytes(record.rawContent, spec);
   const previewRows = parsed.ok ? parsed.value.rows.slice(0, 5) : [];
 
   // The landing account, resolved by the SAME rule the confirm use case
@@ -93,6 +93,7 @@ export default async function ImportDetailPage({
   return (
     <ProfileConfirmation
       importId={record.id}
+      specKind={spec.kind}
       specJson={JSON.stringify(spec, null, 2)}
       previewRows={previewRows}
       landingLabel={landingAccount?.label}

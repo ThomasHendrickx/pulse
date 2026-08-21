@@ -8,7 +8,7 @@ import type { HouseholdContext } from "@/platform/tenancy";
 import { assignDedupKeys, zipRowsWithDedupKeys } from "../domain/dedup";
 import type { SourceProfileSpec } from "../domain/source-profile";
 import type { NewAccount } from "@/modules/accounts/application";
-import { findProfileBySpec } from "./upload-statement";
+import { failureReasonForParseError, findProfileBySpec } from "./upload-statement";
 import type { ImportDependencies, ImportFailureReason } from "./ports";
 
 export type ConfirmOutcome =
@@ -41,23 +41,25 @@ export const confirmImport = async (
     return { kind: "rejected", reason: "not-awaiting-declaration" };
   }
 
-  const parsed = deps.parser.parse(record.rawContent, input.spec);
+  const parsed = await deps.parser.parse(record.rawContent, input.spec);
   if (!parsed.ok) {
     // A file that does not parse under the confirmed spec (an unknown
     // indicator marker included, finding F2) fails the import loudly with
     // nothing written, the same discipline as the mixed-account check. A
     // bricked import is re-uploadable; a silently mis-signed one is not
-    // repairable at all.
+    // repairable at all. The reason mapping is shared with the upload
+    // path, so a non-reconciling PDF reports balance-mismatch here too.
+    const reason = failureReasonForParseError(parsed.error);
     const marked = await deps.imports.markImportFailed(
       context,
       record.id,
-      "unparseable",
+      reason,
     );
     if (!marked) {
       // A racer ingested it between the read and this write (finding F4).
       return { kind: "rejected", reason: "already-confirmed" };
     }
-    return { kind: "failed", importId: record.id, reason: "unparseable" };
+    return { kind: "failed", importId: record.id, reason };
   }
   if (parsed.value.accountIbans.length > 1) {
     // Confirmed or not, a mixed-account file writes NOTHING (hazard H1.2):

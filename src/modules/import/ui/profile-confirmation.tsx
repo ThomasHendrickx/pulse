@@ -4,6 +4,27 @@ import type { ParsedRow } from "../domain/parse-statement";
 import { confirmImportAction, previewImportAction } from "./actions";
 import { ImportStatusLine } from "./import-status-line";
 
+// The stored profile name for a code-owned layout: the template id, a
+// stable machine identifier rather than translated copy, because profile
+// names must stay constant across languages for the (householdId, name)
+// uniqueness to mean one profile per source.
+const profileNameFromSpec = (specJson: string): string => {
+  try {
+    const parsed: unknown = JSON.parse(specJson);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "templateId" in parsed &&
+      typeof (parsed as { templateId: unknown }).templateId === "string"
+    ) {
+      return (parsed as { templateId: string }).templateId;
+    }
+  } catch {
+    // fall through to the constant below
+  }
+  return "pdf-layout";
+};
+
 // Detect, propose, confirm: the detected format rendered over a five-row
 // preview EXACTLY as the rows will be stored, with the account declared at
 // first sight when the file's account is unknown (asked once, never
@@ -12,6 +33,7 @@ import { ImportStatusLine } from "./import-status-line";
 
 export const ProfileConfirmation = async ({
   importId,
+  specKind,
   specJson,
   previewRows,
   landingLabel,
@@ -19,6 +41,12 @@ export const ProfileConfirmation = async ({
   status,
 }: {
   readonly importId: string;
+  // "pdf-layout" means the format is CODE-OWNED (a recognised layout
+  // template): the ask-once account declaration stays exactly as is and
+  // ONLY the format question disappears (pulse-v0.2-pdf-addendum.md:27),
+  // so no format-name field and no spec editor render; the spec and a
+  // template-derived profile name travel as hidden fields instead.
+  readonly specKind: "delimited" | "pdf-layout";
   readonly specJson: string;
   readonly previewRows: readonly ParsedRow[];
   // The label of the account this file's rows will land in, resolved by
@@ -31,10 +59,11 @@ export const ProfileConfirmation = async ({
 }) => {
   const t = await getTranslations();
   const needsDeclaration = landingLabel === undefined;
+  const isPdfLayout = specKind === "pdf-layout";
   return (
     <section className="import-screen">
       <h1>{t("confirmFormat")}</h1>
-      <p className="import-lead">{t("confirmBody")}</p>
+      <p className="import-lead">{isPdfLayout ? t("confirmBodyPdf") : t("confirmBody")}</p>
       <ImportStatusLine status={status} />
       {landingLabel === undefined ? (
         <p className="import-note" data-testid="landing-new">
@@ -83,24 +112,36 @@ export const ProfileConfirmation = async ({
       <form action={confirmImportAction} className="import-form">
         <input type="hidden" name="importId" value={importId} />
 
-        <label className="import-field">
-          <span>{t("profileNameLabel")}</span>
-          <input type="text" name="profileName" required />
-        </label>
+        {isPdfLayout ? (
+          <>
+            {/* The format question disappears for recognised layouts:
+                the code-owned template id names the stored profile and
+                the spec is not user-editable. */}
+            <input type="hidden" name="profileName" value={profileNameFromSpec(specJson)} />
+            <input type="hidden" name="spec" value={specJson} />
+          </>
+        ) : (
+          <>
+            <label className="import-field">
+              <span>{t("profileNameLabel")}</span>
+              <input type="text" name="profileName" required />
+            </label>
 
-        <details className="spec-editor">
-          <summary>{t("profileSpecLabel")}</summary>
-          <p className="import-note">{t("profileSpecHelp")}</p>
-          <textarea
-            name="spec"
-            rows={12}
-            defaultValue={specJson}
-            spellCheck={false}
-          />
-          <button type="submit" formAction={previewImportAction}>
-            {t("previewAgain")}
-          </button>
-        </details>
+            <details className="spec-editor">
+              <summary>{t("profileSpecLabel")}</summary>
+              <p className="import-note">{t("profileSpecHelp")}</p>
+              <textarea
+                name="spec"
+                rows={12}
+                defaultValue={specJson}
+                spellCheck={false}
+              />
+              <button type="submit" formAction={previewImportAction}>
+                {t("previewAgain")}
+              </button>
+            </details>
+          </>
+        )}
 
         {needsDeclaration ? (
           <fieldset className="account-declaration" data-testid="account-declaration">

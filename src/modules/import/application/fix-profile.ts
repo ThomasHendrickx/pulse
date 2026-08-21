@@ -52,7 +52,14 @@ export type FixProfileError =
         | "amount"
         | "missing-column"
         | "indicator"
-        | "empty-file";
+        | "empty-file"
+        // The PDF-path failures: a corrected spec whose re-parse breaks
+        // the balance identity, a structural mismatch against the layout
+        // template, or a spec naming a template this build lacks. All
+        // rewrite NOTHING, like every other member of this union.
+        | "balance-mismatch"
+        | "pdf-structure"
+        | "unknown-template";
     };
 
 export type FixProfileResult = {
@@ -115,22 +122,29 @@ export const fixSourceProfile = async (
     if (record === null) {
       throw new Error(`Import ${importId} vanished during re-parse`);
     }
-    const parsedFile = deps.parser.parse(record.rawContent, input.spec);
+    const parsedFile = await deps.parser.parse(record.rawContent, input.spec);
     if (!parsedFile.ok) {
-      if (parsedFile.error.kind === "empty-file") {
+      const parseError = parsedFile.error;
+      if (parseError.kind === "row-error") {
+        const failingLine = parseError.rawLine;
+        const storedMatch = factRows.find((row) => row.rawLine === failingLine);
         return err({
           kind: "row-unparseable" as const,
           importId,
-          problem: "empty-file" as const,
+          ...(storedMatch === undefined ? {} : { transactionId: storedMatch.id }),
+          problem: parseError.problem,
         });
       }
-      const failingLine = parsedFile.error.rawLine;
-      const storedMatch = factRows.find((row) => row.rawLine === failingLine);
+      // File-level failures (empty file, PDF structure, an unknown
+      // template, a broken balance identity) have no single failing line
+      // to name; the repair is refused whole, nothing rewritten.
       return err({
         kind: "row-unparseable" as const,
         importId,
-        ...(storedMatch === undefined ? {} : { transactionId: storedMatch.id }),
-        problem: parsedFile.error.problem,
+        problem:
+          parseError.kind === "pdf-structure"
+            ? ("pdf-structure" as const)
+            : parseError.kind,
       });
     }
     const fileRows = parsedFile.value.rows;

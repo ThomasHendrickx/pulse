@@ -3,7 +3,8 @@ import { householdId, userId, type HouseholdContext } from "../../src/platform/t
 import { confirmImport } from "../../src/modules/import/application/confirm-import";
 import { fixSourceProfile } from "../../src/modules/import/application/fix-profile";
 import { uploadStatement } from "../../src/modules/import/application/upload-statement";
-import type { SourceProfileSpec } from "../../src/modules/import/domain/source-profile";
+import { detectSourceProfile } from "../../src/modules/import/domain/detect-profile";
+import type { DelimitedSourceProfileSpec, SourceProfileSpec } from "../../src/modules/import/domain/source-profile";
 import { makeFakeImportWorld } from "./fake-import-world";
 
 // Criterion 2.7, hazard H2.5 (H1.3 continued): a wrong confirmed profile
@@ -34,11 +35,11 @@ const setupWrongProfile = async (): Promise<{
   world: ReturnType<typeof makeFakeImportWorld>;
   importId: string;
   profileId: string;
-  detectedSpec: SourceProfileSpec;
+  detectedSpec: DelimitedSourceProfileSpec;
   wrongSpec: SourceProfileSpec;
 }> => {
   const world = makeFakeImportWorld();
-  const detected = world.deps.parser.detect(bytes);
+  const detected = detectSourceProfile(bytes);
   expect(detected.ok).toBe(true);
   if (!detected.ok) {
     throw new Error("unreachable");
@@ -103,16 +104,16 @@ const overlapFileB = [
 ].join("\n");
 
 const setupOverlapWorld = async (
-  confirmSpec: (detected: SourceProfileSpec) => SourceProfileSpec,
+  confirmSpec: (detected: DelimitedSourceProfileSpec) => SourceProfileSpec,
 ): Promise<{
   world: ReturnType<typeof makeFakeImportWorld>;
   profileId: string;
-  detectedSpec: SourceProfileSpec;
+  detectedSpec: DelimitedSourceProfileSpec;
 }> => {
   const world = makeFakeImportWorld();
   const bytesA = new TextEncoder().encode(overlapFileA);
   const bytesB = new TextEncoder().encode(overlapFileB);
-  const detected = world.deps.parser.detect(bytesA);
+  const detected = detectSourceProfile(bytesA);
   expect(detected.ok).toBe(true);
   if (!detected.ok) {
     throw new Error("unreachable");

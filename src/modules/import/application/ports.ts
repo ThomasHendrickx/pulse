@@ -1,8 +1,11 @@
 // Ports of the import module. The use cases depend on these interfaces
-// only. The StatementParser port is implemented by the one generic
-// delimited-file parser (no per-bank parsers, pulse-domain section 5); the
-// repository port is implemented over Prisma in adapters/, and tests run
-// the use cases against in-memory fakes.
+// only. The StatementParser port is implemented by the ONE statement
+// parser adapter, which routes delimited bytes through the generic
+// spec-driven parser (no per-bank CSV parsers, pulse-domain section 5)
+// and PDF bytes through code-owned layout templates selected by
+// fingerprint (v0.2 addendum section 1, decision D-2); the repository
+// port is implemented over Prisma in adapters/, and tests run the use
+// cases against in-memory fakes.
 
 import type { HouseholdContext } from "@/platform/tenancy";
 import type { Result } from "@/platform/result";
@@ -12,17 +15,33 @@ import type {
   ParsedStatement,
   StatementParseError,
 } from "../domain/parse-statement";
+import type { PdfStatementParseError } from "../domain/parse-pdf-statement";
 import type { SourceProfileSpec } from "../domain/source-profile";
 import type { ParsedRow } from "../domain/parse-statement";
 
+// A PDF whose bytes match no registered layout template: failed loudly
+// upstream as layout-unsupported, never asked of the user
+// (pulse-v0.2-pdf-addendum.md:27, decision D-5).
+export type LayoutUnsupportedError = { readonly kind: "layout-unsupported" };
+
+export type StatementDetectError = DetectionError | LayoutUnsupportedError;
+
+export type StatementParseFailure = StatementParseError | PdfStatementParseError;
+
+// Both methods return Promises: DR-0020's extraction library (pdfjs-dist)
+// is Promise-based end to end with no synchronous entry point, so the
+// port's RETURN TYPES are asynchronous while its shape (detect bytes to
+// spec, parse bytes plus spec to statement, one port, no parallel PDF
+// port) stands as D-2 fixed it. The delimited path stays a pure
+// synchronous computation wrapped in a resolved Promise.
 export type StatementParser = {
   readonly detect: (
     bytes: Uint8Array,
-  ) => Result<SourceProfileSpec, DetectionError>;
+  ) => Promise<Result<SourceProfileSpec, StatementDetectError>>;
   readonly parse: (
     bytes: Uint8Array,
     spec: SourceProfileSpec,
-  ) => Result<ParsedStatement, StatementParseError>;
+  ) => Promise<Result<ParsedStatement, StatementParseFailure>>;
 };
 
 export type ImportStatus =
@@ -33,11 +52,17 @@ export type ImportStatus =
   | "FAILED";
 
 // Machine-readable failure tags; the UI translates them (never English
-// sentences in error values, pulse-typescript section 5).
+// sentences in error values, pulse-typescript section 5). D-5: the two
+// PDF-era reasons are "layout-unsupported" (a PDF matching no registered
+// template) and "balance-mismatch" (a recognised statement whose opening
+// plus transaction sum does not equal its closing, the addendum's hard
+// gate); both fail the import with zero rows written.
 export type ImportFailureReason =
   | "mixed-accounts"
   | "undetectable"
-  | "unparseable";
+  | "unparseable"
+  | "layout-unsupported"
+  | "balance-mismatch";
 
 export type ImportRecord = {
   readonly id: string;

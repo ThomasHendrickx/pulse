@@ -12,8 +12,23 @@ import { specEquals, type SourceProfileSpec } from "../domain/source-profile";
 import type {
   ImportDependencies,
   ImportFailureReason,
+  StatementDetectError,
+  StatementParseFailure,
   StoredProfile,
 } from "./ports";
+
+// Machine reasons for the FAILED import row, mapped from the parser's
+// error unions in ONE place so the upload and confirm paths cannot
+// disagree about what a failure is called (D-5).
+export const failureReasonForDetectError = (
+  error: StatementDetectError,
+): ImportFailureReason =>
+  error.kind === "layout-unsupported" ? "layout-unsupported" : "undetectable";
+
+export const failureReasonForParseError = (
+  error: StatementParseFailure,
+): ImportFailureReason =>
+  error.kind === "balance-mismatch" ? "balance-mismatch" : "unparseable";
 
 export type UploadOutcome =
   | { readonly kind: "ingested"; readonly importId: string; readonly added: number; readonly known: number }
@@ -35,13 +50,16 @@ export const uploadStatement = async (
     return { kind: "failed", importId: record.id, reason };
   };
 
-  const detected = deps.parser.detect(input.bytes);
+  const detected = await deps.parser.detect(input.bytes);
   if (!detected.ok) {
-    return failed("undetectable");
+    return failed(failureReasonForDetectError(detected.error));
   }
-  const parsed = deps.parser.parse(input.bytes, detected.value);
+  const parsed = await deps.parser.parse(input.bytes, detected.value);
   if (!parsed.ok) {
-    return failed("unparseable");
+    // The balance contract is enforced inside the parse (D-6): a
+    // recognised statement that does not reconcile lands HERE, before
+    // any declaration question, with zero rows written (criterion 2.2).
+    return failed(failureReasonForParseError(parsed.error));
   }
 
   // One file is one account. More than one own-account identifier fails

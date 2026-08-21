@@ -13,7 +13,7 @@ import {
 } from "./delimited-text";
 import { parseAmountToCents, parseUnsignedAmountToCents } from "./parse-amount";
 import { parseBusinessDate } from "./parse-date";
-import type { SourceProfileSpec } from "./source-profile";
+import type { DelimitedSourceProfileSpec } from "./source-profile";
 
 // One parsed row, exactly as it will be stored (facts layer). rawLine is
 // the verbatim source line; it is what a later profile fix re-parses from.
@@ -59,7 +59,7 @@ const cellAt = (fields: readonly string[], index: number): string =>
 // identically, which is why this is one function and not two.
 export const parseStatementRow = (
   line: string,
-  spec: SourceProfileSpec,
+  spec: DelimitedSourceProfileSpec,
 ): Result<ParsedRow, "date" | "amount" | "missing-column" | "indicator"> => {
   const fields = splitDelimitedLine(line, spec.delimiter);
 
@@ -127,7 +127,7 @@ export const parseStatementRow = (
 
 export const parseStatement = (
   bytes: Uint8Array,
-  spec: SourceProfileSpec,
+  spec: DelimitedSourceProfileSpec,
 ): Result<ParsedStatement, StatementParseError> => {
   const lines = splitLines(decodeStatementBytes(bytes, spec.encoding));
   const dataLines = lines
@@ -189,7 +189,7 @@ export const parseStatement = (
 // does; every directional branch below calls that entry point.
 const amountOf = (
   fields: readonly string[],
-  spec: SourceProfileSpec,
+  spec: DelimitedSourceProfileSpec,
 ): Result<Cents, "amount" | "missing-column" | "indicator"> => {
   const representation = spec.amountRepresentation;
   if (representation.kind === "signed") {
