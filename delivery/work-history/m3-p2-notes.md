@@ -199,3 +199,46 @@ a seam (clock, random, env) the extraction path deliberately does not
 have. The no-op test plus the determinism test (parse twice, deep-equal)
 are the standing witnesses; recorded as an open question in the work
 history claims.
+
+## E2e, the H2.5 local twin, and the criterion 2.6 privacy gates
+
+Criterion 2.5's journey reddened on its first run against the dev
+server: every PDF upload landed FAILED layout-unsupported while the same
+bytes parsed in the fast gate. Root cause: Next bundled pdfjs-dist's
+legacy build with browser conditions and extraction threw at runtime.
+Fix: serverExternalPackages: ["pdfjs-dist"] in next.config.ts, so the
+adapter's dynamic import stays a plain Node module load. This is hazard
+H2.5's local twin and is recorded for the criterion 2.8 deploy check.
+After the fix: the PDF journey passed, then the FULL e2e suite passed
+(16 tests, 0 skipped, exit 0, chromium, config-owned dev webServer with
+PULSE_FIXED_NOW pinned, all five env values pinned local in the
+invoking shell per fleet warning 6).
+
+Privacy (criterion 2.6 plus the dispatch's independent scrub), executed
+with a probe list built IN MEMORY from both real PDFs in the container
+uploads (scratchpad script, never committed):
+- half (a), whole worktree at HEAD: 45 probes (spaced and compact IBANs,
+  full and masked card groups, holder and counterparty name forms,
+  statement-number-in-context forms, Belfius merchant strings, KBC
+  merchant strings as extra diligence): 0 hits, every grep exit 1.
+- half (b), what this phase WROTE (added files whole, modified files
+  added-lines only, so the plan-recorded baseline collisions in M1-era
+  fixture lines this phase touched only mechanically cannot
+  false-alarm): 116 probes across ALL FIVE categories (identifiers,
+  names, merchants, thousands-form amounts, dates in every form the
+  statements carry): 0 hits.
+- SECOND LOUD CORRECTION (R-087, H2.1) the scrub itself caught: the
+  first pass found the KBC upload's FULL FILE NAME (which embeds a real
+  document reference) still quoted in this notes file, surviving the
+  first scrub that removed the Belfius file name. Fixed by redacting the
+  token and REWRITING the branch history a second time
+  (git filter-branch over the notes file, verified by grepping every
+  rewritten commit: zero hits), force-pushed while the branch still has
+  no consumers. Rule reinforced: refer to uploads by 8-hex prefix ONLY.
+- Recorded residues: the bare token "SUPABASE" (a KBC merchant) equals
+  this project's database stack name, present at base since M1-P1, so it
+  cannot serve as a leak probe and is excluded with this note. The
+  M1-era baseline collisions stand as the plan work-log recorded them
+  (two thousands-form amounts in test/domain/profile-detection.test.ts
+  and a date string in test/application/interpret.test.ts, all on lines
+  this phase did not write).
