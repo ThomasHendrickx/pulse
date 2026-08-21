@@ -1,0 +1,1334 @@
+# pulse v0.2 delivery plan, written by the M0-P2 scout (plan-writer).
+# Input report: delivery/intake/pulse-v0.2-pdf-addendum.md, plus the owner's
+# two first-use feedback items (fleet backlog, DR-0002 feedback log,
+# 2026-08-21): navigation missing (phase-blocking) and PDF import essential
+# (testing halted until it exists). Owner-directed sequencing: this work
+# comes before the DR-0002 one-real-month test.
+# Baseline: e4ea3ba (M1 walking skeleton complete, M1-P1..M1-P5 merged).
+#
+# work-log (incremental, newest last):
+# - created this beacon file before verification; about to read the M1 tree
+#   at e4ea3ba and extract text from the two real statement PDFs in the
+#   container uploads (structure only, nothing copied out)
+# - PDF structural pass done (pdfplumber, scratchpad only): both PDFs carry a
+#   full text layer, no OCR needed. Belfius: 5 pages, fingerprint markers
+#   present, 39 tx rows across pages 1-4, page 5 is the BIJLAGE annex,
+#   opening + sum(39) == closing exact in cents, sequence numbers continuous,
+#   IBAN band-between-dashes lines present, sign spacing varies as claimed.
+#   KBC: fingerprint present; word spacing is extraction-tolerance-sensitive
+#   (naive layout extraction glues words); 22 rows; DOMICILIERING credit is a
+#   row and equals the negated previous balance; identical duplicate pair
+#   confirmed (1 pair); prev balance + sum(rows) == the Afrekening line
+#   amount, which uses a SPACE thousands separator; the Totaal bedrag line
+#   itself carries no amount. Next: repo verification at e4ea3ba.
+# - repo verification pass done at e4ea3ba: StatementParser port and the one
+#   delimited adapter located (ports.ts:18, delimited-file-parser.ts:10);
+#   SourceProfileSpec is a flat delimited-only record (source-profile.ts:49),
+#   so the addendum's "second adapter, nothing upstream changes" claim fails
+#   in the strict reading and owns a verification-first step; both section 5
+#   amendments are ALREADY IMPLEMENTED (dedup.ts:80-105, classify-flow.ts:77,
+#   constants.ts:16-27, corrections.ts:38); import status machine with FAILED
+#   and machine-readable failureReason confirmed (import.prisma:8, ports.ts:38);
+#   rawContent and rawLine confirmed (import.prisma:64, import.prisma:106);
+#   re-parse path confirmed (fix-profile.ts); reconciliation panel confirmed
+#   (month-view.tsx:289-319). Navigation feedback confirmed: header carries
+#   brand, household, sign-out and no nav (layout.tsx:18-26); the empty state
+#   names the import action with no link (month-view.tsx:387-396,
+#   messages/en.json:28-29); upload accepts CSV only (upload-form.tsx:22); no
+#   PWA manifest anywhere; desktop-first line at pulse-frontend SKILL.md:113.
+#   Counterparty IBANs inside Belfius descriptions confirmed (STORTING VAN /
+#   NAAR + IBAN shapes). Belfius natural key in the addendum (account + year
+#   + sequence) DIFFERS from the implemented key shape (account + statement +
+#   sequence, dedup.ts:95): recorded as a failed claim.
+# - new anonymized structural facts recorded in the fleet home note
+#   notes/export-format-facts.md (text layers, extraction tolerance, KBC
+#   Afrekening semantics, space thousands separator, DOMICILIERING equals
+#   negated previous balance, duplicate pair count).
+# - wrote the phases below (M3-P1 navigation first per owner feedback, then
+#   PDF foundation + Belfius, KBC template, mobile-first flow, share-sheet
+#   target gated on DR-0021; DR-0020 raised for the PDF text-extraction
+#   dependency, a charter stop-for). Validating with tiphys next.
+# - validated: npx tiphys validate --type plan --context . exits 0 (reports
+#   dispatchable: false, by construction: M3-P2 and M3-P5 carry unfilled
+#   fill-ins gated on DR-0020 and DR-0021; valid for review).
+# - privacy scrub run in-container with a probe list built from the real
+#   statements (IBANs compact and spaced, thousands-form amounts, holder
+#   name variants, customer and statement references): zero hits for any
+#   identifier. Two thousands-form AMOUNTS collide with invented amounts in
+#   M1-era synthetic fixtures that already exist at baseline e4ea3ba
+#   (coincidental low-entropy overlap, pre-existing, not from this phase);
+#   recorded so a reviewer's scrub does not false-alarm on them.
+# - self-checks: no em dashes, no "works correctly", git diff e4ea3ba --
+#   delivery/intake/ empty, DR-0020 and DR-0021 each referenced by their
+#   owning phase.
+# - fix round 1 (R-061): read the adversarial review
+#   delivery/review/pulse-v02-plan-adversarial.yaml (verdict revise,
+#   findings PR2-001..PR2-008); applied all eight, disputed none.
+#   PR2-001: criterion 2.4 gains the specEquals recognition round-trip
+#   against the detect-emitted spec. PR2-002 (reviewer-contributed
+#   structural fact: the bare BIJLAGE token occurs inside a real
+#   transaction description): fixture reproduces the in-description marker
+#   and 2.1 asserts that row parses while the annex page stays empty.
+#   PR2-003: second overlapping Belfius fixture; 2.3 fails a
+#   statement-scoped key. PR2-004: month-straddling KBC row; 3.1 asserts
+#   bookingDate is the transaction date. PR2-005: D-10 decides the
+#   no-preservation contract for unauthenticated shares, new criterion
+#   5.4 witnesses it, H5.2 re-pointed at 5.4. PR2-006: 1.1 pins the nav
+#   testid to exactly one file, the shell layout. PR2-007: format-naming
+#   catalog copy updated in M3-P2 step 8, witnessed in 2.5. PR2-008: 2.6
+#   and 3.5 rebuilt as two-half gates (whole-tree identifier grep plus
+#   all-five-category grep over phase-touched files) with the
+#   not-witnessed honesty clause.
+#   Owner decisions applied: DR-0020 decided (pdfjs-dist, server side,
+#   behind the adapter) and DR-0021 decided (Android, share target
+#   built), both 2026-08-21 in the fleet decisions directory; M3-P2 and
+#   M3-P5 groundings updated and fill-ins filled, open-questions now
+#   carries only DR-0002. Re-validated to exit 0, dispatchable including
+#   M3-P2 and M3-P5.
+kind: plan
+status: draft
+baseline-commit: e4ea3ba
+binding-rule: >-
+  If it is not written here, it is not being made. Unanswered questions go to
+  the orchestrator.
+process-summary: >-
+  Orchestrated delivery on @tiphys/kernel 0.1.0 under the full mode: verified
+  plan, adversarial plan review, one phase per branch, fast gate (npm run
+  typecheck, npm run lint, npm test) every iteration, Playwright golden
+  journey before a phase closes, dual clean-room review before merge under
+  DR-0012's delegated-merge conditions and DR-0003's same-family override.
+  This plan is the v0.2 iteration: one milestone, M3, dispatched BEFORE the
+  DR-0002 one-real-month checkpoint by owner direction (fleet backlog,
+  DR-0002 feedback log, 2026-08-21). M2 (intake slices 5 and 6) stays
+  reserved and gated on DR-0002 exactly as the v1 plan left it.
+standing-context: |
+  What previous runs bought: the whole M1 walking skeleton, merged and
+  deployed, release verification per DR-0001 green at the release head.
+  Verified present at e4ea3ba and load-bearing for this plan: the
+  StatementParser port with detect and parse (ports.ts:18 in
+  src/modules/import/application/, implemented by the one delimited adapter,
+  src/modules/import/adapters/delimited-file-parser.ts:10); deterministic
+  profile detection (src/modules/import/domain/detect-profile.ts:1); the
+  upload pipeline identify, declare, ingest, interpret
+  (src/modules/import/application/upload-statement.ts:38 through :92) with
+  the ask-once declaration branch (upload-statement.ts:57) and spec-equality
+  profile recognition (upload-statement.ts:101,
+  src/modules/import/domain/source-profile.ts:217); the import status
+  machine with FAILED and machine-readable failureReason
+  (prisma/schema/import.prisma:8, src/modules/import/application/ports.ts:38);
+  immutable facts with rawContent and rawLine kept verbatim
+  (prisma/schema/import.prisma:64, prisma/schema/import.prisma:106); the
+  dedup recipe with the occurrence ordinal, which IS the addendum's section
+  5 first amendment, already implemented and tested
+  (src/modules/import/domain/dedup.ts:80, dedup.ts:95,
+  prisma/schema/import.prisma:112); the card settlement matching step, which
+  IS the addendum's section 5 second amendment, already implemented between
+  the declared-set checks and the sign fallback
+  (src/modules/ledger/domain/classify-flow.ts:77,
+  src/modules/ledger/domain/constants.ts:16,
+  src/modules/ledger/domain/corrections.ts:38) with the settlement total
+  DERIVED from the card import's stored rows, never persisted
+  (src/modules/ledger/domain/interpret.ts:67); the profile-fix re-parse path
+  (src/modules/import/application/fix-profile.ts:1); and the reconciliation
+  panel in the month view (src/modules/overview/ui/month-view.tsx:289).
+
+  Deploy state: the M1 product is live on Vercel against the dedicated
+  Supabase project; release verification is DR-0001 (fast gate plus golden
+  journey at the release head).
+
+  The input evidence: the owner's v0.2 addendum
+  (delivery/intake/pulse-v0.2-pdf-addendum.md) and two REAL statement PDFs
+  in this container's uploads directory, read by the scout for structure
+  only. Every structural claim the addendum makes was checked against them
+  and against the tree; the outcomes are in report-code-disagreement below.
+  New anonymized structural facts are recorded in the fleet home note
+  notes/export-format-facts.md (2026-08-21 section), the most consequential
+  being: both real PDFs carry full text layers (no OCR anywhere in v0.2);
+  KBC text extraction is word-gap tolerance-sensitive, so the extractor must
+  reconstruct lines from positioned text items deliberately; and the KBC
+  closing figure sits on the Afrekening line with a space thousands
+  separator. The real PDFs are NEVER committed; committed fixtures are
+  synthetic derivatives with invented identifiers, and every phase that
+  touches fixtures carries that as a hazard class.
+
+  Decision records touching this plan: DR-0002 stays OPEN and its clock
+  starts only when the owner can feed Pulse from their phone (owner,
+  2026-08-21). The two decision records this plan raised are now DECIDED by
+  the owner (2026-08-21, fleet decisions/DR-0020.yaml and DR-0021.yaml):
+  DR-0020, the PDF text-extraction runtime dependency, a charter stop-for
+  ("any new runtime dependency beyond the declared stack", charter.yaml:92),
+  is decided as pdfjs-dist, server side only, behind the parser adapter;
+  DR-0021, the mobile share-sheet mechanism, is decided as Android, the
+  share target IS built. M3-P2's and M3-P5's fill-ins are filled
+  accordingly and both phases are dispatchable. M3-P1 (navigation) depends
+  on neither and ships first.
+
+  Revision note, fix round 1 under R-061: the adversarial plan review
+  (delivery/review/pulse-v02-plan-adversarial.yaml on branch
+  claude/m0-p2-plan-review, verdict revise, findings PR2-001 to PR2-008) is
+  applied in full in this revision, no finding disputed. The one new
+  structural fact it contributed: the bare BIJLAGE token also occurs INSIDE
+  a transaction description block on a real Belfius transaction page, so
+  annex skipping must be body-starts-with, never marker-anywhere, and the
+  fixture now encodes that trap (PR2-002). The other findings tightened
+  criteria from provable-in-prose to failable-by-test: recognition
+  round-trip for pre-widening stored profiles (PR2-001), a cross-file
+  overlap witness for the year-scoped dedup key (PR2-003), a
+  month-straddling booking-date witness (PR2-004), an explicit and
+  witnessed unauthenticated-share contract (PR2-005, decision D-10), a
+  grep pin of the nav to the shell (PR2-006), format-naming copy updated
+  with the capability it announces (PR2-007), and privacy gates covering
+  all five promised categories on phase-touched files with a not-witnessed
+  honesty clause (PR2-008).
+report-code-disagreement:
+  - phase: M3-P1
+    claim: >-
+      Owner feedback item 1 (fleet backlog, DR-0002 feedback log): the app
+      has no general navigation; the month empty state names the import
+      action with no link; once data exists there is no way to reach /import
+      or /merchants from the header. Checked: the authenticated shell header
+      renders brand, household name and sign-out only, no nav links
+      (src/app/(app)/layout.tsx:18 through :26); the empty state renders
+      title and body naming the import action with no Link element
+      (src/modules/overview/ui/month-view.tsx:387 through :396,
+      messages/en.json:28); the routes exist at src/app/(app)/import/page.tsx
+      and src/app/(app)/merchants/page.tsx, reachable today only by typed
+      URL.
+    verified: true
+  - phase: M3-P2
+    claim: >-
+      Addendum section 1 (pulse-v0.2-pdf-addendum.md:18): "PDF is a second
+      adapter behind the existing StatementParser port. Nothing upstream
+      changes." The port exists and its shape holds
+      (src/modules/import/application/ports.ts:18: detect bytes to spec,
+      parse bytes plus spec to statement), and the use-case pipeline is
+      untouched in the addendum's sense. But the claim FAILS in the strict
+      reading: both port methods are typed to SourceProfileSpec, which is a
+      flat delimited-only record (src/modules/import/domain/
+      source-profile.ts:49: delimiter, encoding, headerRowIndex, dateFormat,
+      decimalStyle, amountRepresentation, columns), parseStatementRow
+      assumes delimited lines (src/modules/import/domain/
+      parse-statement.ts:60), and hasNaturalKey and specEquals read
+      delimited fields (source-profile.ts:62, source-profile.ts:217). A PDF
+      adapter cannot slot in until SourceProfileSpec becomes a discriminated
+      union, and the failure-reason union must grow
+      (src/modules/import/application/ports.ts:38 carries exactly
+      mixed-accounts, undetectable, unparseable). Owned by M3-P2's
+      verification-first step; the widening is decision D-2.
+    verified: false
+  - phase: M3-P2
+    claim: >-
+      Addendum section 1 (pulse-v0.2-pdf-addendum.md:19): identify, declare,
+      ingest, interpret are untouched, and the ask-once account-declaration
+      step stays exactly as is with only the format question disappearing
+      for recognised layouts. Checked: the pipeline lives in
+      src/modules/import/application/upload-statement.ts:38 through :92
+      (detect, parse, mixed-account guard, declaration branch at :57, ingest
+      at :74, interpret at :92); profile recognition is spec equality
+      (upload-statement.ts:101), which a code-owned template spec satisfies
+      by template id; account identity rides the file's own-account IBAN or
+      the profile binding (upload-statement.ts:113,
+      prisma/schema/import.prisma:43). The flow accommodates PDF without
+      structural change once the spec type is widened.
+    verified: true
+  - phase: M3-P2
+    claim: >-
+      Addendum section 2 (pulse-v0.2-pdf-addendum.md:35): both statement
+      types carry an opening balance, the transactions, and a closing
+      balance or settlement total, and opening plus the sum of parsed
+      transactions equals closing in integer cents. Checked arithmetically
+      against both real PDFs in-container: Belfius opening SALDO OP plus the
+      sum of all 39 transaction amounts equals the closing SALDO OP exactly;
+      KBC previous balance plus the sum of all 22 rows including the
+      settlement credit equals the Afrekening amount exactly. The identity
+      is real and usable as a hard gate.
+    verified: true
+  - phase: M3-P2
+    claim: >-
+      Addendum section 3 structural claims for the Belfius layout
+      (pulse-v0.2-pdf-addendum.md:50 through :62): fingerprint text plus
+      SALDO OP lines, IBAN in a band line between dashes, a repeated
+      per-page header block, annex pages starting with the BIJLAGE marker
+      that contain amount-like non-transactions, opening and closing as
+      first and last SALDO OP lines, and the transaction start pattern
+      (4-digit sequence, DD-MM-YYYY booking date, VAL. value date, sign and
+      amount at line end). Checked against the real statement's text layer:
+      all present; fingerprint text on all 5 pages; 4 band lines; 39
+      transaction starts on pages 1 through 4; page 5 is the annex and
+      contributes zero transaction starts; exactly 2 SALDO OP lines and the
+      balance identity closes. Counterparty IBANs inside descriptions
+      confirmed (STORTING VAN and NAAR followed by IBAN shapes).
+    verified: true
+  - phase: M3-P2
+    claim: >-
+      Addendum section 3 amount traps (pulse-v0.2-pdf-addendum.md:63):
+      decimal comma, thousands dot only from 1.000,00 up, and the space
+      between sign and amount disappears on large amounts. Checked: decimal
+      comma everywhere and thousands dot only on large amounts hold; the
+      sign-space correlation is DIRECTIONAL, not strict (spaced signs were
+      observed only without a thousands dot, but tight signs occur both with
+      and without one). The parser requirement the addendum draws, accept
+      both forms, is the right one and is what M3-P2 builds; a parser
+      encoding the strict correlation would reject real lines.
+    verified: true
+  - phase: M3-P2
+    claim: >-
+      Addendum section 3 dedup key (pulse-v0.2-pdf-addendum.md:68): natural
+      key is account plus year of booking date plus sequence number, the
+      sequence being per account and continuous across statements within a
+      year. Two failures of verification: (a) the implemented natural key at
+      e4ea3ba is a DIFFERENT shape, account plus statementNumber plus
+      sequenceNumber (src/modules/import/domain/dedup.ts:95), so the
+      addendum's key is new wiring, not existing behaviour; (b) continuity
+      of the sequence ACROSS statements cannot be verified from the single
+      real statement available (continuity within it holds, 39 consecutive).
+      Owned by M3-P2's verification-first step; the key choice is decision
+      D-4.
+    verified: false
+  - phase: M3-P2
+    claim: >-
+      Addendum section 5 first amendment (pulse-v0.2-pdf-addendum.md:91):
+      "the current hash key collides and would silently drop one" of two
+      identical rows, so the key must gain an occurrence index. STALE
+      relative to e4ea3ba: the occurrence ordinal is implemented exactly as
+      the addendum specifies, including the cross-import
+      highest-occurrence-wins semantics
+      (src/modules/import/domain/dedup.ts:80 through :105,
+      prisma/schema/import.prisma:112), with the identical-pair fixture and
+      tests from M1-P2 (test/domain/dedup.test.ts). The v1 plan absorbed
+      this amendment in its fix rounds. No new build is owed; M3-P3 only
+      re-witnesses it through the PDF path.
+    verified: true
+  - phase: M3-P2
+    claim: >-
+      Addendum section 6 (pulse-v0.2-pdf-addendum.md:111): fixtures may be
+      synthetic PDFs "or their extracted text, if the parser consumes a text
+      layer". Checked: BOTH real statements carry full machine-readable text
+      layers (extraction in-container produced complete text for all pages),
+      so the v0.2 parser consumes the text layer and no OCR path exists in
+      this plan. Fixture format is decision D-3.
+    verified: true
+  - phase: M3-P3
+    claim: >-
+      Addendum section 4 structural claims for the KBC layout
+      (pulse-v0.2-pdf-addendum.md:73 through :88): fingerprint text, masked
+      card number, statement number and period line, row shape (transaction
+      date, settlement date, description, amount), FX continuation lines
+      belonging to the preceding row, the previous-balance and total lines
+      being balances not transactions, and the settlement credit line being
+      a real transaction. Checked against the real statement's text layer:
+      all present (22 rows; 4 FX transactions each with two continuation
+      lines). Three nuances the addendum does not state, recorded in
+      notes/export-format-facts.md: the closing figure sits on the
+      Afrekening line, not the Totaal bedrag line, and uses a SPACE
+      thousands separator; text extraction is word-gap tolerance-sensitive
+      (default assembly glues words), so the extractor reconstructs lines
+      from positioned items and template matching must not depend on
+      interior label spacing; and the DOMICILIERING credit equals the
+      negated previous balance exactly.
+    verified: true
+  - phase: M3-P3
+    claim: >-
+      Addendum section 4 (pulse-v0.2-pdf-addendum.md:86): no sequence
+      numbers exist in the card format, so the hash dedup key applies with
+      the occurrence amendment, and a real identical duplicate row pair
+      exists. Checked: the real statement carries no per-row sequence
+      column, and exactly one identical pair (same transaction date,
+      description, amount) occurs; the implemented hash path with occurrence
+      ordinal (src/modules/import/domain/dedup.ts:80) covers it.
+    verified: true
+  - phase: M3-P3
+    claim: >-
+      Addendum section 5 second amendment (pulse-v0.2-pdf-addendum.md:100):
+      the settlement debit carries no IBAN, so classification gains a step
+      between the declared-set checks and the sign fallback, matching by
+      amount against an imported card statement's settlement total within a
+      date window, with the unimported-card SPEND fallback. STALE relative
+      to e4ea3ba: implemented as decision D-11 of the v1 plan
+      (src/modules/ledger/domain/classify-flow.ts:77,
+      src/modules/ledger/domain/corrections.ts:38,
+      src/modules/ledger/domain/constants.ts:16), and the credit-side
+      pattern already matches the DOMICILIERING line
+      (src/modules/ledger/domain/constants.ts:26). The settlement total is
+      derived from stored rows (src/modules/ledger/domain/interpret.ts:67),
+      so KBC PDF imports feed it with no schema change. No new build is
+      owed; M3-P3 witnesses the pairing end to end through two PDF imports.
+    verified: true
+  - phase: M3-P4
+    claim: >-
+      Addendum section 7 (pulse-v0.2-pdf-addendum.md:123): the v1 desktop
+      stance was downstream of CSV, PDF exports come from the phone, the
+      natural v0.2 import path is the phone share sheet, and the frontend
+      skill's desktop-first line gets revisited in the v0.2 plan. Checked:
+      the line exists verbatim (.claude/skills/pulse-frontend/SKILL.md:113,
+      "Desktop first. The import is a desk activity."); the upload input
+      accepts CSV only (src/modules/import/ui/upload-form.tsx:22,
+      accept=".csv,text/csv"); no PWA manifest and no share-target handler
+      exist anywhere in the tree (no public/ directory, no manifest file
+      under src/app). The share-sheet MECHANISM is platform-dependent and
+      unverifiable from the repository: Web Share Target requires an
+      installed PWA and exists on Android/Chromium only, with no iOS Safari
+      support. That platform question is DR-0021; the mobile-first upload
+      flow itself (M3-P4) is platform-neutral and not gated on it.
+    verified: true
+phases:
+  - id: M3-P1
+    branch: claude/m3-p1-navigation
+    intent: >-
+      General navigation, the owner's phase-blocking feedback item. Header
+      navigation in the authenticated shell (overview, import, merchants)
+      with a visible current-route state, and an empty state that links to
+      the import screen instead of only naming it. Small and shippable
+      first, before any PDF work.
+    grounding: >-
+      Fleet backlog, DR-0002 feedback log item 1 (owner, 2026-08-21,
+      phase-blocking): "no general navigation so later imports past empty
+      screen also won't work". Verified at e4ea3ba: the shell header carries
+      no nav (src/app/(app)/layout.tsx:18 through :26); the empty state
+      names the import action with no link
+      (src/modules/overview/ui/month-view.tsx:387,
+      messages/en.json:28); the target routes exist
+      (src/app/(app)/import/page.tsx, src/app/(app)/merchants/page.tsx).
+    severity: high
+    verified-root-cause: >-
+      Not a defect in any module's logic: M1 phases each built their screen
+      and no phase owned the shell's navigation, so none exists. The fix is
+      additive UI in the authenticated shell and the empty state.
+    steps:
+      - text: >-
+          Add a nav element to the authenticated shell header
+          (src/app/(app)/layout.tsx:18): three links, overview at /, import
+          at /import, merchants at /merchants, each with a stable
+          data-testid and an aria-current or data-active marker on the
+          current route. Labels come from the message catalogs (new keys in
+          messages/en.json, messages/nl.json, messages/fr.json, EN as
+          source), never hardcoded copy. Styling with existing design
+          tokens only; a missing token is added to styles/tokens.css first
+          (CLAUDE.md non-negotiable 4).
+      - text: >-
+          Give the month view's empty state
+          (src/modules/overview/ui/month-view.tsx:387) a Link to /import,
+          with its label from the catalogs, so the named action is
+          reachable where it is named.
+      - text: >-
+          Add a fast-gate catalog parity test (new file under test/) that
+          reads messages/en.json, messages/nl.json and messages/fr.json and
+          asserts the three key sets are identical, so this and every later
+          phase cannot ship an untranslated key. No such test exists at
+          e4ea3ba (checked under test/).
+      - text: >-
+          Add test/e2e/navigation.spec.ts: on an empty household the empty
+          state's link navigates to /import; seeded with data, the header
+          links navigate between /, /import and /merchants and the active
+          marker follows the route; the nav is present on all three routes.
+    files-to-touch:
+      - src/app/(app)/layout.tsx
+      - src/modules/overview/ui/month-view.tsx
+      - messages/en.json
+      - messages/nl.json
+      - messages/fr.json
+      - styles/tokens.css
+      - test/e2e/navigation.spec.ts
+      - test/app/ (the catalog parity test)
+    extras: []
+    acceptance:
+      - id: "1.1"
+        criterion: >-
+          npm run test:e2e exits 0 with test/e2e/navigation.spec.ts passing:
+          it asserts the three header nav links are present (by testid) on
+          /, /import and /merchants, that clicking each navigates to its
+          route, that the active marker matches the current route, and that
+          the empty state for a household with no imports contains a link
+          whose click lands on /import. And the nav is rendered by the
+          shell, not by pages: grep -rl for the nav's data-testid over src/
+          matches exactly one component file, src/app/(app)/layout.tsx
+          (finding PR2-006: per-page copies on the three current routes
+          would pass the route assertions and ship the next route bare).
+      - id: "1.2"
+        criterion: >-
+          npm test exits 0 including the new catalog parity test, which
+          fails red when any key exists in one of messages/en.json,
+          messages/nl.json, messages/fr.json and not the others (witnessed
+          red once in the work history by removing a key locally, then
+          green).
+      - id: "1.3"
+        criterion: >-
+          npm run typecheck && npm run lint && npm test exit 0 at the phase
+          head, and grep -rE "oklch\(|#[0-9a-fA-F]{3,8}" over src/ excluding
+          the token and theme files exits 1.
+      - id: "1.4"
+        criterion: >-
+          The pre-existing test/e2e/golden-journey.spec.ts passes unmodified
+          except for selectors the new header markup forces; git diff
+          --name-only against the phase base shows no deleted test files.
+    hazard-classes:
+      - id: H1.1
+        statement: >-
+          Navigation bolted onto individual pages instead of the shell, so a
+          route added later ships without it and the owner's exact complaint
+          recurs.
+        addressed-by: criterion 1.1
+      - id: H1.2
+        statement: >-
+          Hardcoded nav copy bypassing the catalogs, breaking the EN, NL, FR
+          contract for the most visible chrome in the product.
+        addressed-by: criterion 1.2
+      - id: H1.3
+        statement: >-
+          Literal colours or spacing creeping in with the new chrome instead
+          of tokens.
+        addressed-by: criterion 1.3
+    migrations: none, UI only.
+    conflicts-with: []
+    parallelizable: false
+    citations:
+      - src/app/(app)/layout.tsx:18
+      - src/modules/overview/ui/month-view.tsx:387
+      - messages/en.json:28
+    fill-in:
+      filled: true
+      root-cause: >-
+        No M1 phase owned shell navigation, so none exists; verified against
+        src/app/(app)/layout.tsx:18 through :26 at e4ea3ba.
+      fix-shape: >-
+        Header nav in the authenticated shell, empty-state link, catalog
+        keys in three languages, catalog parity test, navigation e2e spec.
+      files:
+        - src/app/(app)/layout.tsx
+        - src/modules/overview/ui/month-view.tsx
+        - test/e2e/navigation.spec.ts
+  - id: M3-P2
+    branch: claude/m3-p2-pdf-belfius
+    intent: >-
+      The PDF import path, foundation plus the first layout: a PDF
+      text-extraction adapter behind the existing StatementParser port, the
+      SourceProfileSpec widened to a discriminated union, code-owned layout
+      templates selected by fingerprint, the balance contract as a hard
+      per-file gate shared by every template, the Belfius current-account
+      template end to end (upload through interpreted month), loud FAILED
+      imports for unrecognised layouts and non-reconciling files, and
+      synthetic fixtures.
+    grounding: >-
+      pulse-v0.2-pdf-addendum.md:18 (second adapter behind the port),
+      :23 (code-owned layout templates selected by fingerprint, never by
+      asking the user), :27 (unrecognised layout fails loudly), :35 (the
+      balance contract), :50 through :69 (template A), :111 (fixture
+      requirements). Owner feedback item 2 makes this the essential path.
+      The one new runtime dependency this phase needs was a charter
+      stop-for (charter.yaml:92), raised as DR-0020 and now DECIDED by the
+      owner (2026-08-21, fleet decisions/DR-0020.yaml): pdfjs-dist,
+      server side only, behind the parser adapter, exactly the scout's
+      recorded recommendation (positioned text items support the
+      deliberate line reconstruction the real KBC statement requires, no
+      wrapper dependency). The dispatch gate is satisfied and the fill-in
+      below is filled; the criteria were and are library-independent.
+    severity: critical
+    verified-root-cause: >-
+      Not a defect phase. The verification-first step exists because two
+      addendum claims failed verification: "second adapter, nothing
+      upstream changes" fails against the delimited-only SourceProfileSpec
+      (source-profile.ts:49) that types both port methods (ports.ts:18);
+      and the addendum's Belfius natural key (account plus year plus
+      sequence, pulse-v0.2-pdf-addendum.md:68) differs from the implemented
+      key shape (dedup.ts:95) and its cross-statement continuity premise is
+      unverifiable from the single real statement available.
+    steps:
+      - kind: verification-first
+        text: >-
+          Before building, confirm and write into the work history: (a) the
+          spec seam, that SourceProfileSpec (source-profile.ts:49) types
+          detect, parse, specEquals, hasNaturalKey, parseSourceProfileSpec
+          and the fix-profile re-parse, and that the chosen widening (D-2, a
+          kind discriminant with the existing delimited shape unchanged)
+          leaves every stored profile Json readable, proven by a test that
+          parses a spec captured in the e4ea3ba shape; (b) the natural-key
+          wiring (D-4): the addendum's year-scoped key against the
+          implemented statement-scoped mechanism (dedup.ts:95), recording
+          how the Belfius template emits key components so re-importing an
+          adjacent or re-exported statement cannot duplicate rows, and
+          noting that cross-statement sequence continuity remains an
+          assumption until a second real statement is observed.
+      - text: >-
+          Widen SourceProfileSpec to a discriminated union: kind
+          "delimited" with the existing fields byte-for-byte, and kind
+          "pdf-layout" carrying templateId and templateVersion.
+          parseSourceProfileSpec, specEquals and hasNaturalKey branch on
+          kind; every existing delimited test stays green unmodified.
+          Recognised template profiles keep the ask-once account
+          declaration exactly as is (upload-statement.ts:57); only the
+          format question disappears (pulse-v0.2-pdf-addendum.md:27).
+      - text: >-
+          PDF text extraction behind a new adapter-internal port using the
+          DR-0020 dependency, server side only: PDF magic-bytes sniffing in
+          detect, then deliberate line reconstruction from positioned text
+          items (group by y within tolerance, sort by x, explicit word-gap
+          threshold), because the real KBC statement showed default library
+          text assembly glues words (notes/export-format-facts.md). Same
+          bytes always yield the same lines; no randomness, no environment
+          dependence.
+      - text: >-
+          Template registry keyed by fingerprint: the Belfius template
+          matches its header text plus a SALDO OP line
+          (pulse-v0.2-pdf-addendum.md:50). A PDF matching no template fails
+          the import loudly: FAILED import row, new machine reason
+          "layout-unsupported" added to the ImportFailureReason union
+          (ports.ts:38) and translated in all three catalogs, zero rows
+          written. Non-PDF bytes flow down the delimited path untouched.
+      - text: >-
+          The Belfius template per addendum section 3 and the verified
+          structure: skip the repeated per-page header block, skip annex
+          pages whose body starts with the BIJLAGE marker, take opening and
+          closing from the first and last SALDO OP lines, start a
+          transaction at the 4-digit sequence plus DD-MM-YYYY plus VAL.
+          pattern, join following indented lines into the description and
+          keep the whole block verbatim as rawLine, accept every sign
+          spacing and thousands-dot combination (the strict correlation the
+          addendum implies does not hold on the real file), extract a
+          counterparty IBAN from the description where present, and emit
+          the account identity from the band-line IBAN. Emit natural-key
+          components per the verification-first outcome (D-4).
+      - text: >-
+          The balance contract in the shared PDF parse path, not in the
+          template: opening plus the sum of parsed transactions must equal
+          closing in integer cents, or the import is FAILED with new reason
+          "balance-mismatch" and nothing is written
+          (pulse-v0.2-pdf-addendum.md:35). Every future template inherits
+          the gate by construction.
+      - text: >-
+          Synthetic fixtures (D-3): a committed deterministic generator
+          script produces a Belfius-style fixture PDF with invented IBAN,
+          names and amounts reproducing variable sign spacing with and
+          without thousands dot, multi-line descriptions, an annex page, a
+          page break mid-transaction-list, one transaction on a
+          TRANSACTION page whose description block contains the annex
+          marker phrase as a description line (finding PR2-002: the real
+          statement carries the bare marker token inside a description, so
+          body-starts-with skipping must be distinguishable from
+          marker-anywhere skipping), and reconciling balances; plus a
+          second Belfius-style statement file with a different statement
+          identity whose rows re-carry some of the first fixture's
+          year-and-sequence pairs alongside genuinely new rows (a
+          re-exported overlap, finding PR2-003); plus a deliberately
+          non-reconciling variant; plus a valid PDF matching no template.
+          Fixture bytes are stable across runs (fixed timestamps and
+          metadata). No string from the real statements appears anywhere.
+      - text: >-
+          Wire the upload UI: the file input accepts PDF next to CSV
+          (upload-form.tsx:22), the two new failure reasons render
+          translated, and every catalog string that names accepted formats
+          (the empty-state body, messages/en.json:29, and the import
+          screen's field and hint copy) names PDF alongside CSV in all
+          three languages (finding PR2-007). Extend the re-parse test:
+          fix-profile over an ingested PDF import re-parses from
+          rawContent with an unchanged spec as a strict no-op (zero key
+          changes, zero row changes).
+    files-to-touch:
+      - package.json
+      - package-lock.json
+      - src/modules/import/domain/source-profile.ts
+      - src/modules/import/domain/parse-statement.ts
+      - src/modules/import/domain/dedup.ts
+      - src/modules/import/domain/ (new pdf extraction, template registry and belfius template files)
+      - src/modules/import/adapters/
+      - src/modules/import/application/ports.ts
+      - src/modules/import/ui/upload-form.tsx
+      - src/modules/import/ui/status-keys.ts
+      - messages/en.json
+      - messages/nl.json
+      - messages/fr.json
+      - test/fixtures/ (generator script and generated synthetic PDFs)
+      - test/domain/
+      - test/application/
+      - test/e2e/import.spec.ts
+    extras: []
+    acceptance:
+      - id: "2.1"
+        criterion: >-
+          npm test exits 0 including new tests that, against the synthetic
+          Belfius fixture PDF, assert: the expected row count is parsed;
+          the sum of parsed amountCents equals the fixture's known total;
+          the annex page contributes zero rows WHILE the transaction whose
+          description block contains the annex marker phrase parses as a
+          row with the phrase verbatim in its rawLine (finding PR2-002:
+          marker-anywhere page skipping fails this pair of assertions,
+          body-starts-with passes); a multi-line description is joined and
+          its rawLine holds the block verbatim; and each sign-spacing and
+          thousands-dot combination parses to its expected integer cents.
+      - id: "2.2"
+        criterion: >-
+          npm test exits 0 including a test that uploads the
+          non-reconciling fixture through uploadStatement and asserts
+          exactly one FAILED import with failureReason "balance-mismatch"
+          and zero transaction rows written, and another that uploads the
+          no-template PDF and asserts FAILED with "layout-unsupported" and
+          zero rows.
+      - id: "2.3"
+        criterion: >-
+          npm test exits 0 including an idempotency test: uploading the
+          same Belfius fixture twice reports all rows added on the first
+          import and zero added, all known on the second; AND a
+          cross-file witness of the year-scoped natural key (finding
+          PR2-003, decision D-4): importing the second overlapping
+          Belfius-style fixture (different statement identity, shared
+          year-and-sequence pairs) after the first reports the shared
+          rows as known and adds only the genuinely new rows, so a
+          template emitting statement-scoped key components fails this
+          test; and a re-parse test extending
+          test/application/reparse.test.ts asserting an unchanged-spec
+          re-parse of the ingested PDF import changes zero dedup keys and
+          zero rows.
+      - id: "2.4"
+        criterion: >-
+          npm test exits 0 including a spec-compatibility test that feeds
+          parseSourceProfileSpec a JSON object in the exact e4ea3ba
+          delimited shape (no kind discriminant, or the chosen migration
+          form documented in the test) and asserts it parses to the
+          delimited variant, AND the same test round-trips recognition:
+          that parsed spec compares specEquals-true against the spec the
+          delimited parser's detect emits for a matching CSV file, so a
+          profile stored before the widening is recognised by
+          findProfileBySpec (upload-statement.ts:101) on the next upload
+          without re-asking the declaration (finding PR2-001: a
+          parse-only assertion lets canonical-JSON specEquals compare
+          differing key sets unequal while every parse test passes); and
+          git diff --name-only against the phase base lists no deleted
+          files under test/.
+      - id: "2.5"
+        criterion: >-
+          npm run test:e2e exits 0 with test/e2e/import.spec.ts extended: a
+          journey uploads the synthetic Belfius fixture PDF through the
+          import screen, confirms the ask-once account declaration if the
+          account is unseen, reaches an import detail state reporting rows
+          added, and the month view for the fixture's month renders its
+          reconciliation panel with data-state "ok"; and the rendered copy
+          of the import screen and of the empty state names PDF, asserted
+          in the journey (finding PR2-007: the e4ea3ba copy tells the
+          owner the product reads CSV exports).
+      - id: "2.6"
+        criterion: >-
+          Privacy gate, both halves executed with a probe list read from
+          the real PDFs in the container uploads at review time and never
+          committed (finding PR2-008): (a) git grep across the whole
+          worktree for the real Belfius statement's IBAN, account-holder
+          name, statement number and each merchant string from it exits 1;
+          (b) over the files this phase adds or modifies (git diff
+          --name-only against the phase base), the same grep extended to
+          ALL FIVE promised categories (identifiers, names, merchant
+          strings, thousands-form amounts and dates from the real
+          statement) exits 1, which is D-3's whole promise made testable
+          without false-alarming on the pre-existing M1 amount collisions
+          the work-log records. If the real PDFs are absent from the
+          executing container, this criterion is recorded as
+          not-witnessed in the work history and the review escalates for
+          a container that has them, never marked green by vacuity.
+      - id: "2.7"
+        criterion: >-
+          npm run typecheck && npm run lint && npm test exit 0 and npm run
+          test:e2e exits 0 at the phase head.
+      - id: "2.8"
+        criterion: >-
+          After merge, the DR-0001 release verification extended by one
+          production check passes: the deployed import screen accepts the
+          synthetic Belfius fixture PDF and reaches the same
+          rows-added state as criterion 2.5, observed against the deployed
+          URL, proving the DR-0020 dependency runs in the Vercel Node
+          runtime.
+    hazard-classes:
+      - id: H2.1
+        statement: >-
+          Real statement content leaking into the repository through
+          fixtures, tests, comments or the fixture generator.
+        addressed-by: criterion 2.6
+      - id: H2.2
+        statement: >-
+          A dropped or duplicated line passing silently into the facts
+          layer, the exact failure the balance contract exists to stop.
+        addressed-by: criterion 2.2
+      - id: H2.3
+        statement: >-
+          Extraction nondeterminism or word-gap variance producing
+          different rows for the same bytes across runs or environments,
+          which would corrupt dedup keys and break the re-parse no-op
+          contract.
+        addressed-by: criterion 2.3
+      - id: H2.4
+        statement: >-
+          The spec widening silently invalidating stored delimited
+          profiles, turning every existing source unrecognised on the next
+          upload.
+        addressed-by: criterion 2.4
+      - id: H2.5
+        statement: >-
+          The extraction dependency working locally and failing in the
+          deployed serverless runtime (native bindings, workers, or
+          filesystem expectations).
+        addressed-by: criterion 2.8
+    migrations: >-
+      none. The widened spec lives in the existing SourceProfile.spec Json
+      column (prisma/schema/import.prisma:39); balances are verified at
+      parse time and not persisted (decision D-6); no new columns or tables.
+    conflicts-with: []
+    parallelizable: false
+    citations:
+      - delivery/intake/pulse-v0.2-pdf-addendum.md:18
+      - delivery/intake/pulse-v0.2-pdf-addendum.md:35
+      - delivery/intake/pulse-v0.2-pdf-addendum.md:68
+      - src/modules/import/application/ports.ts:18
+      - src/modules/import/domain/source-profile.ts:49
+      - src/modules/import/domain/dedup.ts:95
+      - charter.yaml:92
+    fill-in:
+      filled: true
+      root-cause: >-
+        Not a defect; the essential PDF import path on a verified seam.
+        The dispatch gate was DR-0020 (charter stop-for on a new runtime
+        dependency), decided by the owner 2026-08-21 (fleet
+        decisions/DR-0020.yaml): pdfjs-dist, server side only, behind the
+        parser adapter.
+      fix-shape: >-
+        Spec union widening, pdfjs-dist extraction adapter with deliberate
+        line reconstruction, fingerprint template registry, the balance
+        contract gate, the Belfius template end to end, two new translated
+        failure reasons, synthetic fixture generator with the
+        in-description annex marker and overlap fixtures.
+      files:
+        - package.json
+        - src/modules/import/domain/
+        - src/modules/import/adapters/
+        - test/fixtures/
+  - id: M3-P3
+    branch: claude/m3-p3-pdf-kbc
+    intent: >-
+      The KBC Mastercard uitgavenstaat template on the M3-P2 foundation:
+      fingerprint, the two-date row shape, FX continuation lines folded
+      into their rows, the previous-balance and Afrekening lines as the
+      balance identity, the settlement credit as a real transaction, hash
+      dedup with the occurrence ordinal witnessed through PDF, and the
+      account-side settlement pairing witnessed end to end across two PDF
+      imports.
+    grounding: >-
+      pulse-v0.2-pdf-addendum.md:73 through :88 (template B), :91 and :100
+      (the section 5 amendments this phase re-witnesses through PDF; both
+      verified already implemented at e4ea3ba, see report-code-disagreement).
+      Verified nuances from the real statement (notes/export-format-facts.md,
+      2026-08-21 section): the closing figure sits on the Afrekening line
+      with a space thousands separator, the Totaal bedrag line carries no
+      amount, extraction word spacing is tolerance-sensitive, and the
+      DOMICILIERING credit equals the negated previous balance.
+    severity: high
+    verified-root-cause: >-
+      Not a defect phase. No verification-first step: every claim this
+      phase builds on verified true against the real statement and the tree
+      (the two false claims of this plan are owned by M3-P2). The balance
+      gate, spec union, extraction and registry arrive from M3-P2.
+    steps:
+      - text: >-
+          The KBC template per addendum section 4 and the verified
+          structure: fingerprint on the KBC-Mastercard plus Uitgavenstaat
+          header text, tolerant of interior label spacing; account identity
+          from the masked card number through the profile's account binding
+          (card files carry no IBAN, upload-statement.ts:113); booking date
+          is the transaction date, settlement date kept in the raw
+          description block; FX continuation lines (original amount and
+          exchange rate) folded into the preceding row's rawLine, never
+          rows; the DOMICILIERING credit parsed as a transaction; the
+          previous-balance and Totaal bedrag and Afrekening lines parsed as
+          balances, with the closing figure read from the Afrekening line
+          including its space thousands separator.
+      - text: >-
+          Balance identity for this template: previous balance plus the sum
+          of all rows including the settlement credit must equal the
+          Afrekening amount in integer cents, else FAILED
+          "balance-mismatch" with zero rows, through the shared M3-P2 gate.
+      - text: >-
+          Synthetic KBC fixture via the D-3 generator: invented card
+          number, merchants and amounts reproducing FX continuation lines,
+          the settlement credit equal to the negated previous balance, the
+          identical duplicate row pair, at least one row whose transaction
+          date and settlement date fall in DIFFERENT months (finding
+          PR2-004), and reconciling balances; plus a companion
+          Belfius-side fixture carrying the settlement debit whose amount
+          equals this card fixture's Afrekening total, so the pairing is
+          witnessable.
+      - text: >-
+          End-to-end witness of the already-implemented interpretation
+          machinery through PDF: with the card account declared, the
+          duplicate pair both survive import and re-import (addendum
+          section 5's named test, through the PDF path), the DOMICILIERING
+          credit classifies INTERNAL as the mirror leg
+          (classify-flow.ts:90), and the account-side settlement debit
+          pairs INTERNAL to the card import
+          (classify-flow.ts:87) with the SPEND fallback intact when no
+          card import matches.
+    files-to-touch:
+      - src/modules/import/domain/ (kbc template file, registry entry)
+      - test/fixtures/ (generator additions and generated synthetic PDFs)
+      - test/domain/
+      - test/application/
+      - test/e2e/import.spec.ts
+    extras: []
+    acceptance:
+      - id: "3.1"
+        criterion: >-
+          npm test exits 0 including new tests asserting, against the
+          synthetic KBC fixture: the expected row count with FX
+          continuation lines contributing zero rows and appearing verbatim
+          in their row's rawLine; the DOMICILIERING credit present as a row
+          with positive cents; the space-thousands Afrekening amount parsed
+          to its expected integer cents; the month-straddling row's stored
+          bookingDate equal to its TRANSACTION date, not its settlement
+          date, so spend lands in the month it happened
+          (pulse-v0.2-pdf-addendum.md:76, finding PR2-004); and the
+          balance identity gate passing this fixture and failing a
+          non-reconciling KBC variant with "balance-mismatch" and zero
+          rows written.
+      - id: "3.2"
+        criterion: >-
+          npm test exits 0 including the duplicate-pair test through the
+          PDF path: both identical rows survive the first import, and
+          re-importing the same fixture adds zero and reports all known,
+          with both rows still present.
+      - id: "3.3"
+        criterion: >-
+          npm test exits 0 including an application-level test importing
+          the KBC fixture and the companion Belfius fixture into one
+          household with declared accounts, asserting the account-side
+          settlement debit is INTERNAL and linked to the KBC import, the
+          DOMICILIERING credit is INTERNAL, and removing the KBC import
+          from the scenario leaves the settlement debit SPEND against the
+          card issuer.
+      - id: "3.4"
+        criterion: >-
+          npm run test:e2e exits 0 with the import journey extended:
+          uploading both fixture PDFs, the month view for the fixture month
+          renders the reconciliation panel with data-state "ok".
+      - id: "3.5"
+        criterion: >-
+          Privacy gate, both halves executed with a probe list read from
+          the real PDFs in the container uploads at review time and never
+          committed (finding PR2-008): (a) git grep across the whole
+          worktree for the real KBC statement's card number fragments,
+          customer reference, statement number and each merchant string
+          from it exits 1; (b) over the files this phase adds or modifies
+          (git diff --name-only against the phase base), the same grep
+          extended to all five promised categories (identifiers, names,
+          merchant strings, thousands-form amounts and dates from the
+          real statement) exits 1. If the real PDFs are absent from the
+          executing container, this criterion is recorded as
+          not-witnessed in the work history and the review escalates for
+          a container that has them, never marked green by vacuity.
+      - id: "3.6"
+        criterion: >-
+          npm run typecheck && npm run lint && npm test exit 0 and npm run
+          test:e2e exits 0 at the phase head.
+    hazard-classes:
+      - id: H3.1
+        statement: >-
+          Real statement content leaking into the repository through the
+          KBC fixtures or tests.
+        addressed-by: criterion 3.5
+      - id: H3.2
+        statement: >-
+          FX continuation lines parsed as transactions, double-counting
+          foreign spend; or the settlement credit skipped as a balance
+          line, breaking both the balance identity and the settlement
+          pairing.
+        addressed-by: criterion 3.1
+      - id: H3.3
+        statement: >-
+          The dedup key collapsing the legitimate identical pair, silently
+          dropping a real payment while the books still close per file.
+        addressed-by: criterion 3.2
+      - id: H3.4
+        statement: >-
+          The settlement debit counted as SPEND while its card rows are
+          also imported, double-counting an entire card statement in the
+          month view.
+        addressed-by: criterion 3.3
+    migrations: none, template and fixtures only.
+    conflicts-with: []
+    parallelizable: false
+    citations:
+      - delivery/intake/pulse-v0.2-pdf-addendum.md:73
+      - delivery/intake/pulse-v0.2-pdf-addendum.md:83
+      - delivery/intake/pulse-v0.2-pdf-addendum.md:91
+      - src/modules/ledger/domain/classify-flow.ts:77
+      - src/modules/ledger/domain/constants.ts:26
+      - src/modules/import/application/upload-statement.ts:113
+    fill-in:
+      filled: true
+      root-cause: >-
+        Not a defect; second layout template on the M3-P2 foundation, every
+        structural claim verified against the real statement in-container.
+      fix-shape: >-
+        KBC template file plus registry entry, synthetic KBC and companion
+        Belfius fixtures, duplicate-pair and settlement-pairing witnesses.
+      files:
+        - src/modules/import/domain/
+        - test/fixtures/
+        - test/application/
+  - id: M3-P4
+    branch: claude/m3-p4-mobile-import
+    intent: >-
+      The phone-first import flow: the import and confirmation screens
+      redesigned mobile-first per addendum section 7, the whole journey
+      exercised at a phone viewport, and the frontend skill's desktop-first
+      line revised as the owner's addendum directs. Platform-neutral: this
+      works in any phone browser via the file picker regardless of how
+      DR-0021 resolves.
+    grounding: >-
+      pulse-v0.2-pdf-addendum.md:123 through :127 (PDF exports come from
+      the phone, the upload flow gets designed mobile-first, the frontend
+      skill's desktop-first line gets revisited in the v0.2 plan). Verified:
+      the line is .claude/skills/pulse-frontend/SKILL.md:113; the owner's
+      halted-testing feedback makes the phone the primary import surface.
+      DR-0002's clock starts only when the owner can feed Pulse from their
+      phone (fleet backlog, 2026-08-21).
+    severity: high
+    verified-root-cause: >-
+      Not a defect phase. The v1 desktop-first stance was a deliberate
+      intake decision now superseded by owner-authored intake for v0.2; no
+      verification-first step because every claim this phase builds on
+      verified true.
+    steps:
+      - text: >-
+          Revise the desktop-first line
+          (.claude/skills/pulse-frontend/SKILL.md:113) to the v0.2 stance:
+          import is mobile-first, the month view remains desktop-competent,
+          per addendum section 7. This edit is owner-directed intake
+          application, not a scope decision.
+      - text: >-
+          Mobile-first import flow: the upload, declaration and result
+          screens laid out for a phone viewport with token-only styling
+          (viewport meta verified present or added in the root layout,
+          touch-target sizing via tokens, no horizontal overflow), keeping
+          every existing testid and the desktop layout acceptable through
+          responsive CSS rather than a second tree.
+      - text: >-
+          A Playwright mobile project or device-emulated spec running the
+          full PDF import journey at a phone viewport (390px class) with
+          the synthetic fixtures: upload, declare if unseen, result, month
+          view.
+    files-to-touch:
+      - .claude/skills/pulse-frontend/SKILL.md
+      - src/modules/import/ui/
+      - src/app/layout.tsx
+      - styles/tokens.css
+      - messages/en.json
+      - messages/nl.json
+      - messages/fr.json
+      - playwright.config.ts
+      - test/e2e/ (mobile import spec)
+    extras: []
+    acceptance:
+      - id: "4.1"
+        criterion: >-
+          npm run test:e2e exits 0 including a mobile-viewport spec that
+          completes the synthetic-PDF import journey at a 390px-class
+          viewport and asserts document.documentElement.scrollWidth does
+          not exceed the viewport width on the import, declaration, result
+          and month screens.
+      - id: "4.2"
+        criterion: >-
+          grep -n "desk activity" .claude/skills/pulse-frontend/SKILL.md
+          exits 1 and the file contains a mobile-first import stance line
+          citing the v0.2 addendum.
+      - id: "4.3"
+        criterion: >-
+          npm run typecheck && npm run lint && npm test exit 0, npm run
+          test:e2e exits 0 including the unmodified desktop golden journey,
+          and grep -rE "oklch\(|#[0-9a-fA-F]{3,8}" over src/ excluding the
+          token and theme files exits 1.
+    hazard-classes:
+      - id: H4.1
+        statement: >-
+          The mobile redesign regressing the desktop month view or import
+          flow, trading one blocked surface for another.
+        addressed-by: criterion 4.3
+      - id: H4.2
+        statement: >-
+          Literal breakpoint, spacing or size values landing in components
+          instead of tokens during layout work, the highest-pressure moment
+          for that violation.
+        addressed-by: criterion 4.3
+      - id: H4.3
+        statement: >-
+          Real statement content leaking through screenshots, fixtures or
+          test data added for the mobile journey; the mobile spec uses only
+          the committed synthetic fixtures.
+        addressed-by: criterion 4.1
+    migrations: none, UI and test surface only.
+    conflicts-with: []
+    parallelizable: false
+    citations:
+      - delivery/intake/pulse-v0.2-pdf-addendum.md:123
+      - .claude/skills/pulse-frontend/SKILL.md:113
+      - src/modules/import/ui/upload-form.tsx:22
+    fill-in:
+      filled: true
+      root-cause: >-
+        The v1 desktop-first stance is superseded by owner-authored v0.2
+        intake; the import screens were built desk-first and unverified at
+        phone widths.
+      fix-shape: >-
+        Skill line revision, mobile-first responsive import screens,
+        mobile-viewport Playwright coverage of the PDF journey.
+      files:
+        - .claude/skills/pulse-frontend/SKILL.md
+        - src/modules/import/ui/
+        - test/e2e/
+  - id: M3-P5
+    branch: claude/m3-p5-share-target
+    intent: >-
+      The share-sheet entry: the phone's share sheet hands an exported PDF
+      straight to Pulse. DR-0021 is decided (Android, owner 2026-08-21),
+      so this phase ships a web app manifest with a share_target and a
+      receiving route that feeds the existing upload pipeline unchanged,
+      with an explicit no-preservation contract for unauthenticated
+      shares (decision D-10).
+    grounding: >-
+      pulse-v0.2-pdf-addendum.md:125 (the natural v0.2 import path is the
+      phone share sheet). Web Share Target requires an installed PWA and
+      exists on Android/Chromium; iOS Safari has no share-target
+      mechanism, so the owner's platform decided whether this phase is
+      built at all. That question was raised as DR-0021 and is now
+      DECIDED by the owner (2026-08-21, fleet decisions/DR-0021.yaml):
+      Android, the share target IS built. The dispatch gate is satisfied
+      and the fill-in below is filled. Verified at e4ea3ba: no manifest,
+      no public/ directory, no share-target surface anywhere.
+    severity: medium
+    verified-root-cause: >-
+      Not a defect phase; dispatchable since DR-0021 was decided (Android,
+      build). No verification-first step: the absence of any manifest or
+      share-target surface at e4ea3ba is verified, and the platform
+      question was a decision record, not a code check.
+    steps:
+      - text: >-
+          Web app manifest with share_target (method POST, enctype
+          multipart/form-data, a files member accepting application/pdf),
+          served from the app with name, icons and start_url; installable
+          on the owner's device. NO service worker unless installability on
+          the owner's platform measurably requires one, and if one is
+          required it registers with no fetch handler and touches no cache
+          API, because the deliberately-absent list bans caching
+          (charter.yaml:80).
+      - text: >-
+          The receiving route accepts the share POST, requires the
+          authenticated household context exactly like the upload action,
+          hands the file to uploadStatement unchanged, and redirects into
+          the import flow at the declaration, result or failure state the
+          upload produced. An unauthenticated share redirects to sign-in
+          and the shared file is NOT preserved: no Import row, no stored
+          bytes, no server-side handoff; after signing in the user shares
+          again, the share sheet being one tap away (decision D-10,
+          finding PR2-005).
+      - text: >-
+          An integration or e2e test posting multipart form data with the
+          synthetic fixture PDF to the share route and following the
+          redirect to the same states criterion 2.5 walks.
+    files-to-touch:
+      - src/app/ (manifest and share receiving route)
+      - src/modules/import/ui/
+      - messages/en.json
+      - messages/nl.json
+      - messages/fr.json
+      - test/e2e/ (share-target spec)
+    extras: []
+    acceptance:
+      - id: "5.1"
+        criterion: >-
+          curl -s against the deployed or dev manifest URL returns JSON
+          whose share_target declares method POST, multipart/form-data and
+          a files entry accepting application/pdf, and npm run test:e2e
+          exits 0 including a spec that POSTs the synthetic fixture PDF as
+          multipart form data to the share route and asserts the redirect
+          chain ends on an import state with the fixture's rows added.
+      - id: "5.2"
+        criterion: >-
+          grep -rE "caches\.|CacheStorage|workbox" src/ exits 1, and if a
+          service worker file exists it contains no fetch event listener,
+          asserted by grep for "fetch" over that file exiting 1.
+      - id: "5.3"
+        criterion: >-
+          npm run typecheck && npm run lint && npm test exit 0 and npm run
+          test:e2e exits 0 at the phase head, including the unmodified
+          M3-P4 mobile journey.
+      - id: "5.4"
+        criterion: >-
+          A test POSTs the fixture PDF as multipart form data to the share
+          route with NO session and asserts: the response redirects to
+          sign-in, no Import row is created, and no uploaded bytes are
+          persisted anywhere (decision D-10's no-preservation contract;
+          finding PR2-005).
+    hazard-classes:
+      - id: H5.1
+        statement: >-
+          A service worker creeping toward caching to satisfy an
+          installability checklist, entering the deliberately-absent list
+          through the side door.
+        addressed-by: criterion 5.2
+      - id: H5.2
+        statement: >-
+          The share route accepting files outside the authenticated
+          household context, turning the share endpoint into an
+          unauthenticated write path.
+        addressed-by: criterion 5.4
+      - id: H5.3
+        statement: >-
+          Building the share target for a platform the owner does not
+          carry, an unusable phase.
+        addressed-by: "state-not-entered: DR-0021 is decided (Android, owner 2026-08-21, fleet decisions/DR-0021.yaml), so the wrong-platform state cannot arise"
+    migrations: none.
+    conflicts-with: []
+    parallelizable: false
+    citations:
+      - delivery/intake/pulse-v0.2-pdf-addendum.md:125
+      - charter.yaml:80
+      - src/modules/import/application/upload-statement.ts:23
+    fill-in:
+      filled: true
+      root-cause: >-
+        Not a defect; the share-sheet entry point. The dispatch gate was
+        DR-0021 (owner platform), decided by the owner 2026-08-21 (fleet
+        decisions/DR-0021.yaml): Android, the share target is built.
+      fix-shape: >-
+        Web app manifest with share_target, receiving route feeding
+        uploadStatement, D-10 no-preservation contract for
+        unauthenticated shares, no-caching discipline witnessed by grep.
+      files:
+        - src/app/
+        - src/modules/import/ui/
+        - test/e2e/
+decisions:
+  - id: D-1
+    statement: >-
+      The v0.2 work is milestone M3 (phases M3-P1 through M3-P5). M2 stays
+      reserved for intake slices 5 and 6 exactly as the v1 plan left them,
+      gated on DR-0002; the owner directed v0.2 ahead of the DR-0002 month
+      (fleet backlog, 2026-08-21), and reusing M2 for different content
+      would silently rewrite a merged plan's meaning.
+  - id: D-2
+    statement: >-
+      SourceProfileSpec becomes a discriminated union on a kind field:
+      "delimited" carrying the existing shape unchanged
+      (source-profile.ts:49) and "pdf-layout" carrying templateId and
+      templateVersion. The StatementParser port shape (ports.ts:18) and the
+      spec-equality recognition path (upload-statement.ts:101) stand
+      unchanged; layout templates are code-owned and selected by
+      fingerprint, never by asking the user
+      (pulse-v0.2-pdf-addendum.md:23). Chosen over a parallel PDF-only port
+      because the upload pipeline, profile recognition, account binding and
+      re-parse machinery all key on the one spec type, and a second port
+      would duplicate every one of those seams.
+  - id: D-3
+    statement: >-
+      Committed fixtures are synthetic PDFs produced by a committed
+      deterministic generator script (stable bytes, fixed metadata), plus
+      extracted-text unit fixtures where a template test wants them. Both
+      real statements carry full text layers, so the parser consumes the
+      text layer and no OCR path exists in v0.2; generating real PDF bytes
+      keeps the extraction adapter inside the tested path instead of only
+      the template logic. No identifier, name, amount, date or merchant
+      string from the real statements appears in any fixture.
+  - id: D-4
+    statement: >-
+      The Belfius PDF dedup key follows the addendum (account plus year of
+      booking date plus sequence number, pulse-v0.2-pdf-addendum.md:68),
+      emitted through the existing natural-key mechanism (dedup.ts:95) with
+      the year as the statement-scope component; the exact wiring is
+      settled by M3-P2's verification-first step because the implemented
+      key shape is statement-scoped and the addendum's cross-statement
+      continuity premise rests on the owner's format knowledge plus one
+      observed statement. The year-scoped key is strictly safer against
+      re-exported or overlapping statements. Unifying dedup keys across the
+      CSV and PDF paths for the same account is parked, not decided.
+  - id: D-5
+    statement: >-
+      The import failure vocabulary grows exactly two machine reasons,
+      "layout-unsupported" and "balance-mismatch", extending the existing
+      union (ports.ts:38) and translated in the three catalogs like the
+      existing reasons, so an unrecognised layout is a loud translated
+      failure and never a user-facing parser question
+      (pulse-v0.2-pdf-addendum.md:27).
+  - id: D-6
+    statement: >-
+      Opening and closing balances are verified at parse time and NOT
+      persisted: no schema change anywhere in v0.2. The settlement matching
+      machinery derives card totals from stored rows
+      (src/modules/ledger/domain/interpret.ts:67) and needs no stored
+      balance; persisting balances for audit is parked until something
+      reads them.
+  - id: D-7
+    statement: >-
+      Navigation is server-rendered links in the authenticated shell
+      (layout.tsx) with the active route derived from the request path: no
+      client state library (the deliberately-absent list,
+      charter.yaml:80), no route registry abstraction for three links.
+  - id: D-8
+    statement: >-
+      The KBC balance identity is: previous balance plus the sum of all
+      transaction rows including the DOMICILIERING settlement credit equals
+      the Afrekening amount, the closing figure sitting on the Afrekening
+      line (space thousands separator), because that is the identity that
+      closes exactly in integer cents on the real statement; the addendum's
+      looser "closing balance or settlement total" wording is pinned to
+      this verified form.
+  - id: D-9
+    statement: >-
+      LLM-assisted extraction for unknown layouts stays out of v0.2
+      entirely. The addendum permits it in principle for v0.3+ behind the
+      balance gate (pulse-v0.2-pdf-addendum.md:45); nothing in this plan
+      builds toward it beyond the gate itself, which M3-P2 ships for its
+      own reasons.
+  - id: D-10
+    statement: >-
+      An unauthenticated share is NOT preserved through sign-in: the share
+      route redirects to sign-in, stores no Import row, no bytes and no
+      server-side handoff, and the user shares again after signing in,
+      the share sheet being one tap away (finding PR2-005). Chosen over a
+      bounded server-side handoff because the handoff stores
+      unauthenticated bytes before any household context exists, which is
+      hazard H5.2's exact shape, and its whole benefit is saving one tap
+      on a rare cold-session path; criterion 5.4 witnesses the
+      no-preservation contract.
+open-questions:
+  - DR-0002
+parked:
+  - item: >-
+      Cross-format dedup unification (the same period imported once as CSV
+      and once as PDF stores every row twice, because the hash tuple and
+      the natural-key components differ across formats).
+    reason: >-
+      The owner's stated input is PDF from the phone going forward, CSV
+      requiring PC banking; the balance gate keeps each file internally
+      consistent; and unifying keys would rewrite stored keys, which the
+      dedup stability contract (dedup.ts:18) marks as the costly direction.
+      Revisit only if a mixed-format household actually appears; recorded
+      here so the risk is visible rather than discovered.
+  - item: Persisting opening and closing balances on the Import row.
+    reason: >-
+      Decision D-6: nothing reads them yet; the gate verifies in memory and
+      the settlement machinery derives totals from rows. Add columns when a
+      feature reads them, additively.
+  - item: Additional bank layout templates beyond Belfius and KBC.
+    reason: >-
+      The addendum's own routing (pulse-v0.2-pdf-addendum.md:27): an
+      unrecognised layout fails loudly and becomes a backlog item, not a
+      user problem; templates land one phase each as real statements
+      appear.
+  - item: OCR for image-only statement PDFs.
+    reason: >-
+      Both real statements carry full text layers; an image-only export
+      fails as layout-unsupported until one is actually observed.
+  - item: LLM-assisted extraction for unknown layouts behind the balance gate.
+    reason: >-
+      Decision D-9: v0.3+ in principle per the addendum, out of v0.2, and
+      Claude API use is bound to slice 5 onward by the charter
+      (charter.yaml:41).
+  - item: >-
+      Queue, cron, event bus, caching layer, state management library,
+      component library.
+    reason: >-
+      The deliberately-absent list is binding (charter.yaml:80); nothing in
+      the PDF path needs any of them, and the share-target phase carries an
+      explicit no-caching criterion so PWA work cannot smuggle one in.

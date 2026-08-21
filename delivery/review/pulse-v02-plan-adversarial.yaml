@@ -1,0 +1,465 @@
+# Adversarial plan review of delivery/plan/pulse-v02.yaml (dispatch M0-P2,
+# reviewer worktree m0-p2-plan-review, branch claude/m0-p2-plan-review,
+# plan-writer head 2ddacf7, baseline e4ea3ba).
+#
+# work-log (incremental, newest last):
+# - created this file as beacon before deep reading
+# - read: brief (plan-review-brief-m0-p2.md with fleet warnings), the plan
+#   under review, the intake addendum, the v1 adversarial review (precedent),
+#   plan.schema.json, finding.schema.json
+# - verified the plan-writer head: git diff --stat e4ea3ba 2ddacf7 shows
+#   exactly one file added (delivery/plan/pulse-v02.yaml, 1192 lines);
+#   git diff e4ea3ba -- delivery/intake/ empty (exit 0)
+# - repo verification pass done, every cited file:line read in the worktree:
+#   ports.ts StatementParser detect/parse both typed to SourceProfileSpec
+#   (:18), ImportFailureReason exactly three values (:38); SourceProfileSpec
+#   flat delimited record (source-profile.ts:49), hasNaturalKey reads
+#   statementNumber/sequenceNumber (:62), specEquals canonical-JSON (:217);
+#   parseStatementRow splits by delimiter (parse-statement.ts:60); dedup
+#   natural key nat:accountId:statementNumber:sequenceNumber (dedup.ts:95),
+#   hash path with occurrence ordinal (dedup.ts:80-102), stability contract
+#   comment (dedup.ts:18); classify-flow settlement step between declared-set
+#   checks and sign fallback (classify-flow.ts:77-95), SETTLEMENT_DEBIT and
+#   CREDIT patterns incl DOMICILIERING (constants.ts:16-29),
+#   correctCardSettlement (corrections.ts:38), summarizeCardImports derived
+#   at interpret.ts:67; import.prisma ImportStatus FAILED (:8), spec Json
+#   (:39), profile accountId binding (:43), rawContent (:64), rawLine (:106),
+#   dedupKey occurrence comment (:112); upload-statement.ts pipeline 38-92,
+#   declaration branch :57, findProfileBySpec/specEquals :101, resolveAccount
+#   card binding :113, uploadStatement export :23; fix-profile.ts re-parses
+#   keys from the FULL rawContent re-parse (header comment, CR-302), so the
+#   PDF re-parse seam the plan claims is real; layout.tsx:18-26 header has
+#   no nav; month-view.tsx recon panel :289 with data-state ok/broken,
+#   EmptyState :389-396 has no Link; en.json:28-29 emptyTitle/emptyBody;
+#   upload-form.tsx:22 accept=".csv,text/csv"; SKILL.md:113 "Desktop first.
+#   The import is a desk activity."; charter.yaml:80 deliberately-absent
+#   list, :92 new runtime dependency stop-for, :41 Claude API slice 5
+#   onward; no public/ directory, no manifest, no share_target, no
+#   serviceWorker reference under src/; playwright.config.ts has a single
+#   Desktop Chrome project; test/e2e/{import,golden-journey}.spec.ts and
+#   test/application/reparse.test.ts exist. All match the plan's claims.
+# - PDF structural pass done in-container (pdfplumber, scratchpad scripts,
+#   aggregate output only, no content copied out). Belfius: 5 pages, all
+#   with text layer and fingerprint; exactly 2 SALDO OP lines with amounts;
+#   39 transaction starts on pages 1-4 (8/11/10/10), page 5 contributes
+#   zero; sequence numbers continuous (39); opening + sum(39) == closing
+#   exact in cents: True; STORTING VAN and NAAR + IBAN shapes present;
+#   signed-amount shapes across the whole document: spaced-sign without
+#   thousands dot 38, tight-sign with dot 3, tight-sign without dot 5 (the
+#   5 on the annex page), confirming the plan's directional-not-strict
+#   reading. NEW STRUCTURAL FACT the plan does not record: the bare token
+#   BIJLAGE also occurs INSIDE a transaction description block on a
+#   transaction page (page index 2, line 35, between transaction starts at
+#   lines 34 and 36, without the full BIJLAGE BIJ VERRICHTING phrase),
+#   while the annex page's full-phrase marker sits at line index 7 after
+#   the repeated header block; finding PR2-002. Band-line count measured 5
+#   (one per page) against the work-log's 4; regex-sensitive, immaterial,
+#   noted for honesty. KBC: 2 pages, text layer, both fingerprint strings
+#   present; default extraction shows 25 lower-upper glue joins (the
+#   tolerance sensitivity the plan records); reconstructed lines yield
+#   exactly 22 rows (two dates + trailing amount), 21 negative 1 positive;
+#   exactly 1 identical (dates, description, amount) tuple appearing twice;
+#   Vorig saldo + sum(22 rows) == Afrekening amount: True, and False
+#   without the DOMICILIERING row; DOMICILIERING == negated previous
+#   balance: True; Afrekening amount uses a space thousands separator:
+#   True; Totaal bedrag line carries no amount: True; 4 Bedrag and 4 Koers
+#   continuation lines. Every report-code-disagreement entry's PDF claim
+#   therefore re-verified true.
+# - ran the plan's own gates myself: npx tiphys validate --type plan
+#   --context . delivery/plan/pulse-v02.yaml exits 0, reporting
+#   "dispatchable: false ... unfilled fill-in: M3-P2, M3-P5" (the gated
+#   phases are valid-for-review and undispatchable exactly as claimed);
+#   grep "works correctly" hits only the plan's own self-check comment,
+#   no criterion; grep -c em-dash over the plan: 0; the oklch/hex grep
+#   over src/ exits 1 today (criterion 1.3 is green-at-baseline and can
+#   only fail on new violations).
+# - privacy scrub re-run independently with a probe list built in-container
+#   from both real PDFs (IBANs compact and spaced, the filename-borne
+#   account and reference, all digit runs >= 6, capitalised name/merchant
+#   candidates, thousands-form amounts): every digit-run, IBAN and
+#   reference probe has ZERO hits in the worktree; the plan file itself has
+#   zero hits of any probe; four word-shaped probes hit only files
+#   pre-existing at e4ea3ba (the owner-authored design prototype, the
+#   city-token list in normalise-counterparty.ts, an M1 fixture, a comment
+#   word in config.ts), all common-vocabulary shaped, none identifying; the
+#   thousands-form amount probes hit only five M1-era test files, all
+#   pre-existing at e4ea3ba, matching the plan's recorded two coincidental
+#   collisions. The plan's low-entropy-overlap reasoning is judged sound:
+#   the colliding files predate the plan and an amount alone, with invented
+#   counterparty, date and account, identifies nothing.
+# - adversarial pass per criterion: for each acceptance criterion tried to
+#   construct an implementation that satisfies it as written and is still
+#   wrong; the constructions that succeeded are the findings below.
+#   Constructions attempted and REFUSED by the plan as written, recorded
+#   because a failed construction is information: routing balance-gate
+#   failures through the blanket "unparseable" reason fails criterion 2.2's
+#   named-reason assertion; skipping the balance gate on one template fails
+#   3.1's non-reconciling variant; dropping the occurrence ordinal through
+#   the PDF path fails 3.2; counting the settlement debit as SPEND with the
+#   card import present fails 3.3; a caching service worker fails 5.2's
+#   named greps; hardcoded nav copy fails 1.2's parity test witnessed red;
+#   deciding DR-0020/DR-0021 inside a phase is blocked by the unfilled
+#   fill-ins the validator reports.
+# - validated this file: npx tiphys validate --type finding --context .
+#   exits 0.
+#
+# DELTA VERDICT at head b179b76 (fix round 1, merged into this branch):
+# the plan-writer applied all eight findings and disputed none; each was
+# re-verified against the revised text itself, not the fix-round's claims:
+# - PR2-001 CLOSED: criterion 2.4 now demands the recognition round-trip,
+#   "that parsed spec compares specEquals-true against the spec the
+#   delimited parser's detect emits for a matching CSV file", which is
+#   exactly the assertion the kindless-preserving construction cannot
+#   pass; the optional-discriminant implementation now fails 2.4.
+# - PR2-002 CLOSED, and judged FAITHFUL-STRONGER: the fixture puts the
+#   full annex marker phrase inside a description line on a transaction
+#   page, and 2.1 asserts that row parses (phrase verbatim in rawLine)
+#   WHILE the annex page contributes zero rows. The real file carries the
+#   bare token in a description; a fixture carrying the full phrase
+#   defeats both the bare-token-anywhere and full-phrase-anywhere page
+#   skippers, a strict superset of the measured trap.
+# - PR2-003 CLOSED: the second overlapping fixture has a DIFFERENT
+#   statement identity re-carrying first-fixture year-and-sequence pairs,
+#   and 2.3 requires those rows reported known with only new rows added;
+#   a template emitting the PDF's own statement number as the key
+#   component stores the shared rows twice and fails the assertion.
+# - PR2-004 CLOSED: the KBC fixture gains a row whose two dates fall in
+#   different months and 3.1 asserts its stored bookingDate equals the
+#   TRANSACTION date; the settlement-date construction now fails 3.1.
+# - PR2-005 CLOSED: decision D-10 decides no-preservation explicitly
+#   (redirect to sign-in, no Import row, no bytes, no server-side
+#   handoff, re-share after sign-in), step 2 rewritten to match, new
+#   criterion 5.4 witnesses the unauthenticated POST, H5.2 re-pointed at
+#   5.4. Product call judged coherent: the handoff's only benefit is one
+#   saved tap on a rare cold-session path, against storing bytes with no
+#   household context; D-10's own analysis says exactly this.
+# - PR2-006 CLOSED: 1.1 pins the nav data-testid to exactly one component
+#   file under src/, src/app/(app)/layout.tsx, by grep -rl count.
+# - PR2-007 CLOSED: step 8 updates every format-naming catalog string in
+#   all three languages and 2.5 asserts the rendered import screen and
+#   empty state name PDF.
+# - PR2-008 CLOSED: 2.6 and 3.5 are two-half gates (whole-tree identifier
+#   grep; all-five-category grep scoped to phase-touched files via git
+#   diff --name-only) and both carry the not-witnessed honesty clause
+#   ("never marked green by vacuity").
+# Fill-ins verified against the actual decision records, not the plan's
+# word: /home/user/pulse-fleet/decisions/DR-0020.yaml (status decided,
+# owner 2026-08-21, pdfjs-dist server-side only behind the parser
+# adapter) and DR-0021.yaml (status decided, owner 2026-08-21, Android,
+# share target built); the plan's groundings and fill-ins quote them
+# faithfully and decide nothing beyond them. open-questions now carries
+# only DR-0002, still referenced by phase slots (M3-P1 and M3-P4
+# groundings, plan lines 384 and 985).
+# Regression checks re-executed at b179b76: npx tiphys validate --type
+# plan --context . exits 0 reporting dispatchable: true; grep -c em-dash
+# over the plan: 0; no criterion contains "works correctly"; git diff
+# e4ea3ba -- delivery/intake/ empty; H5.2 addressed-by resolves to the
+# new criterion 5.4; M3-P5 step 1's no-service-worker, no-cache
+# discipline and criterion 5.2's named greps are unchanged; nothing from
+# the deliberately-absent list entered with the revisions; fill-in files
+# lists are subsets of their phases' files-to-touch. The findings below
+# are the round-1 findings at head 2ddacf7, retained as the record this
+# delta closes; their plan line citations refer to that head.
+kind: finding
+verdict: approve
+produced-by: claude (Fable 5, claude-fable-5)
+findings:
+  - id: PR2-001
+    severity: high
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:615-623 (criterion 2.4): the
+        spec-compatibility test only "feeds parseSourceProfileSpec a JSON
+        object in the exact e4ea3ba delimited shape ... and asserts it
+        parses to the delimited variant".
+      - >-
+        delivery/plan/pulse-v02.yaml:669-674 (hazard H2.4): "the spec
+        widening silently invalidating stored delimited profiles, turning
+        every existing source unrecognised on the next upload", addressed-by
+        criterion 2.4.
+      - >-
+        src/modules/import/application/upload-statement.ts:101-107:
+        recognition is findProfileBySpec, which compares the STORED parsed
+        spec against the freshly DETECTED spec with specEquals.
+      - >-
+        src/modules/import/domain/source-profile.ts:217: specEquals is
+        canonical-JSON string equality, so one side carrying kind
+        "delimited" and the other side not carrying the property compare
+        unequal.
+      - >-
+        prisma/schema/import.prisma:30-39: stored specs are Json in the
+        e4ea3ba shape (no kind discriminant) and are parsed at the
+        repository boundary; the production database is live with M1 usage,
+        so kindless stored specs exist.
+    concrete-edit: >-
+      Extend criterion 2.4 with a recognition assertion, not only a parse
+      assertion: "and the same test round-trips recognition: a spec JSON in
+      the exact e4ea3ba stored shape, run through parseSourceProfileSpec,
+      compares specEquals-true against the spec the delimited parser's
+      detect emits for a matching CSV file, so a profile stored before the
+      widening is recognised by findProfileBySpec on the next upload without
+      re-asking the declaration."
+    analysis: >-
+      The construction that passes 2.4 as written and still realises H2.4
+      exactly: define the delimited variant with an optional discriminant,
+      have parseSourceProfileSpec preserve the stored kindless shape (the
+      parse test passes, the result is the delimited variant), and have
+      detect emit kind "delimited". specEquals then canonicalises different
+      key sets, every profile stored before the migration goes unrecognised,
+      the ask-once declaration refires for every existing source and
+      duplicate profiles accumulate. Every existing delimited test stays
+      green because tests create profiles through the new detect path, where
+      both sides carry the same shape; only pre-migration database rows take
+      the broken path, which is exactly the population the hazard names and
+      the test suite cannot see unless a test feeds the old stored shape
+      into one side of specEquals, which is the demanded edit.
+  - id: PR2-002
+    severity: medium
+    evidence:
+      - >-
+        Executed in-container against the real Belfius statement (structure
+        only): page index 2 carries the bare token BIJLAGE at line 35,
+        between the transaction starts at lines 34 and 36, i.e. inside a
+        transaction description block on a transaction page, and that line
+        does not carry the full BIJLAGE BIJ VERRICHTING phrase; the annex
+        page's full-phrase marker sits at line index 7, after the repeated
+        7-line header block. Probe scripts in the reviewer scratchpad;
+        counts reproduced in this file's work-log.
+      - >-
+        delivery/plan/pulse-v02.yaml:536-546 (Belfius template step): "skip
+        annex pages whose body starts with the BIJLAGE marker"; the
+        fixture step at :554-563 requires "an annex page" but no annex
+        reference inside a transaction description.
+      - >-
+        delivery/plan/pulse-v02.yaml:590-598 (criterion 2.1): asserts only
+        "the annex page contributes zero rows"; a parser that skips any
+        page CONTAINING the marker passes it against the synthetic fixture.
+      - >-
+        delivery/intake/pulse-v0.2-pdf-addendum.md:52-54: the addendum
+        states the body-starts-with semantics but does not record that the
+        marker word also occurs inside a real transaction description.
+    concrete-edit: >-
+      Extend the M3-P2 fixture step and criterion 2.1: the synthetic
+      Belfius fixture's transaction pages include one transaction whose
+      description block contains the annex marker text (the BIJLAGE
+      phrase) as a description line, and criterion 2.1 additionally asserts
+      that transaction parses as a row with the phrase verbatim in its
+      rawLine while the annex page still contributes zero rows, so
+      marker-anywhere page skipping is distinguishable from
+      body-starts-with skipping.
+    analysis: >-
+      The construction: implement annex skipping as "skip any page whose
+      text contains the marker phrase", a natural sloppy reading of the
+      addendum. Every criterion passes, because the synthetic fixture's
+      only marker sits on the annex page. On the owner's real statement the
+      transaction page carrying the in-description reference is skipped,
+      its rows vanish, and the balance gate FAILS the import. The failure
+      is loud, not silent, so no facts corrupt; but the phase merges green
+      and the first real statement, the exact file this plan was verified
+      against and the owner's essential path, is rejected. The fixture
+      exists to encode the real file's traps; this one was observed and not
+      encoded.
+  - id: PR2-003
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:607-614 (criterion 2.3): idempotency
+        is witnessed only by "uploading the same Belfius fixture twice".
+      - >-
+        delivery/plan/pulse-v02.yaml:1101-1112 (decision D-4): "the year as
+        the statement-scope component ... The year-scoped key is strictly
+        safer against re-exported or overlapping statements", with the
+        wiring delegated to M3-P2's verification-first step (:493-:507).
+      - >-
+        src/modules/import/domain/dedup.ts:95: the natural key is
+        nat:accountId:statementNumber:sequenceNumber, so a template that
+        emits the PDF's own statement number instead of the year satisfies
+        every stated test while producing statement-scoped keys.
+      - >-
+        delivery/intake/pulse-v0.2-pdf-addendum.md:68-69: the addendum
+        mandates account plus year plus sequence.
+    concrete-edit: >-
+      Extend criterion 2.3 with a cross-file witness of the year-scoped
+      key: "the fixture generator also emits a second Belfius-style
+      statement file with a different statement identity whose rows
+      re-carry some of the first fixture's year-and-sequence pairs (a
+      re-exported overlap); importing it after the first reports those rows
+      as known and adds only the genuinely new rows", so a template
+      emitting statement-scoped key components fails the test.
+    analysis: >-
+      The construction: the Belfius template emits the statement's own
+      number as the statementNumber key component. Uploading the same file
+      twice still deduplicates perfectly, criterion 2.3 passes, every other
+      criterion passes. The first re-exported or overlapping real statement
+      then stores every shared row twice under a second statement number,
+      and the books still close per file, so nothing downstream alarms.
+      That is precisely the failure D-4 says the year-scoped key exists to
+      prevent, and the plan currently proves the decision only in prose.
+      The verification-first step records the wiring but no criterion can
+      fail on it.
+  - id: PR2-004
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:726-738 (KBC template step): "booking
+        date is the transaction date, settlement date kept in the raw
+        description block".
+      - >-
+        delivery/plan/pulse-v02.yaml:770-779 (criterion 3.1): asserts row
+        count, FX folding, the DOMICILIERING sign, the space-thousands
+        parse and the balance gate; no criterion in M3-P3 asserts which of
+        the two dates becomes bookingDate.
+      - >-
+        delivery/intake/pulse-v0.2-pdf-addendum.md:76-78: "Booking date is
+        the transaction date (spend lands in the month it happened)".
+      - >-
+        Executed in-container: all 22 real KBC rows carry two DD-MM-YYYY
+        dates per line, so both choices parse cleanly and the balance
+        identity holds under either.
+    concrete-edit: >-
+      Extend the KBC fixture spec and criterion 3.1: the synthetic KBC
+      fixture includes at least one row whose transaction date and
+      settlement date fall in different months, and criterion 3.1
+      additionally asserts that row's stored bookingDate equals the
+      transaction date (equivalently, the month view books it in the
+      transaction month, not the settlement month).
+    analysis: >-
+      The construction: parse the settlement date as bookingDate. Row
+      count, amounts, duplicate pair, balance identity and the settlement
+      pairing all still pass, because none of them reads the date choice,
+      and a fixture whose two dates always share a month cannot tell the
+      difference. On real statements, purchases near month end then land in
+      the wrong month, the exact defect the addendum's parenthesis exists
+      to rule out, and it ships witnessed by nothing.
+  - id: PR2-005
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:1001-1008 (M3-P5 step 2): "An
+        unauthenticated share lands on sign-in and continues to the import
+        flow after it."
+      - >-
+        delivery/plan/pulse-v02.yaml:1046-1051 (hazard H5.2): "the share
+        route accepting files outside the authenticated household context,
+        turning the share endpoint into an unauthenticated write path",
+        addressed-by criterion 5.1.
+      - >-
+        delivery/plan/pulse-v02.yaml:1021-1028 (criterion 5.1): tests only
+        the authenticated happy path (POST, redirect chain, rows added); no
+        criterion exercises an unauthenticated share.
+    concrete-edit: >-
+      Rewrite step 2's last sentence to decide the mechanism explicitly and
+      make it witnessable: either "an unauthenticated share redirects to
+      sign-in and the file is NOT preserved; after signing in the user
+      shares again (the share sheet is one tap away)", or name a bounded
+      server-side handoff with an explicit lifetime and binding if the
+      owner wants continuity. Then add criterion 5.4: "a test POSTs the
+      fixture PDF to the share route with no session and asserts no Import
+      row is created and no uploaded bytes are persisted (or, if the
+      handoff variant is chosen, only the specified short-lived handoff
+      record exists and is unreadable by any other session), with the
+      redirect landing on sign-in", and re-point H5.2's addressed-by at it.
+    analysis: >-
+      As written the step promises continuity through sign-in, and the
+      natural implementation of that promise stores the uploaded bytes
+      before any household context exists, which is H5.2's exact failure
+      built to spec. Criterion 5.1 cannot see it because it only walks the
+      authenticated path, so the hazard's addressed-by is decorative for
+      the unauthenticated half. The phase is DR-0021-gated with an unfilled
+      fill-in, so the edit costs nothing now and prevents the contradiction
+      from reaching an implementer's lap where it will be resolved silently
+      in whichever direction is easiest.
+  - id: PR2-006
+    severity: low
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:421-426 (hazard H1.1): "navigation
+        bolted onto individual pages instead of the shell, so a route added
+        later ships without it", addressed-by criterion 1.1.
+      - >-
+        delivery/plan/pulse-v02.yaml:395-402 (criterion 1.1): asserts the
+        nav links are present on /, /import and /merchants; per-page nav on
+        exactly those three routes passes it identically.
+    concrete-edit: >-
+      Extend criterion 1.1 (or add 1.5): "and the nav element is rendered
+      by the authenticated shell: the nav's data-testid occurs in exactly
+      one component file under src/, src/app/(app)/layout.tsx, asserted by
+      a grep counting matches, so a page cannot carry its own copy."
+    analysis: >-
+      The construction: paste the nav into each of the three page
+      components and never touch the shell. Criterion 1.1 passes on all
+      three routes, the diff even touches layout.tsx trivially to look
+      conforming, and the next route added ships without navigation, which
+      is the owner's original complaint recurring. Cheap grep-shaped pin,
+      same falsifiability style the plan already uses in 1.3 and 4.2.
+  - id: PR2-007
+    severity: low
+    evidence:
+      - >-
+        messages/en.json:29 at e4ea3ba: "Pulse reads CSV exports from
+        Belgian banks. Drop one file per account ..."; messages/en.json:30:
+        the drop hint names ".csv / .xlsx".
+      - >-
+        delivery/plan/pulse-v02.yaml:564-569 (M3-P2 step 8) rewires the
+        file input and adds the two new failure reasons, and M3-P1 step 2
+        reuses the existing empty-state copy keys; no step in any phase
+        updates the copy that names the accepted formats.
+      - >-
+        delivery/plan/pulse-v02.yaml:856-878: M3-P4 makes the phone the
+        primary import surface while the empty state still tells the owner
+        the product reads CSV.
+    concrete-edit: >-
+      Add to M3-P2 step 8 (files-to-touch already carry the three
+      catalogs): "update every catalog string that names accepted formats
+      (the empty-state body and the import screen's field and hint copy) to
+      name PDF alongside CSV in all three languages", and extend criterion
+      2.5 with "the import screen and the empty state name PDF, asserted in
+      the e2e journey via the rendered copy of the two screens".
+    analysis: >-
+      Nothing fails today: every criterion is green while the most visible
+      copy in the product contradicts the release's headline capability,
+      telling a phone-first owner to go export CSV. It is only copy, but
+      the owner's feedback loop is exactly these two screens, and the plan
+      already owns the catalog files in the same phase, so the fix is two
+      keys per language plus one assertion.
+  - id: PR2-008
+    severity: low
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:1091-1100 (decision D-3): "No
+        identifier, name, amount, date or merchant string from the real
+        statements appears in any fixture."
+      - >-
+        delivery/plan/pulse-v02.yaml:632-638 and :800-805 (criteria 2.6 and
+        3.5): the executable gates probe identifiers, names, references and
+        merchant strings only; amounts and dates are untested because a
+        whole-tree amount grep false-alarms on the two coincidental
+        collisions the plan's work-log records (re-confirmed by this
+        review: the colliding amount probes hit only five files, all
+        pre-existing at e4ea3ba).
+      - >-
+        delivery/plan/pulse-v02.yaml:634-637: the probe list "is read from
+        the container uploads at review time", an artifact outside the
+        repository that a future phase's clean-room container is not
+        guaranteed to carry.
+    concrete-edit: >-
+      Two-part edit to criteria 2.6 and 3.5: (a) scope a full-strength
+      probe (identifiers, names, merchants, AND thousands-form amounts and
+      dates from the real statements) to the files the phase itself adds or
+      modifies, "git diff --name-only against the phase base", so D-3's
+      whole promise becomes testable without false-alarming on the
+      pre-existing M1 collisions, keeping the identifier-only grep for the
+      whole tree; (b) add to each criterion the honesty clause: "if the
+      real PDFs are absent from the executing container, the gate is
+      recorded as not-witnessed in the work history and the review
+      escalates for a container that has them, never marked green by
+      vacuity."
+    analysis: >-
+      Two quiet gaps in an otherwise strong privacy posture. First, the
+      decision promises five categories and the gates test three, and the
+      untested two are exactly the ones a fixture author copies by
+      accident; scoping to phase-touched files removes the false-positive
+      reason the plan dropped them. Second, both gates presume the real
+      PDFs are readable at review time; in a container without the uploads
+      the grep of an empty probe list exits 1 and the criterion goes green
+      having probed nothing, the vacuous-gate shape PR-008 flagged in v1.
