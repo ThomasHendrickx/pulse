@@ -360,3 +360,24 @@ production journey and health probe fully green with
 node_modules/pdfjs-dist RENAMED AWAY. Post-build diff-before-push check
 run per the CR-921 rule: exactly the four intended files, no tool
 rewrites this round.
+
+## Micro round 3: the ReferenceError names itself as DOMMatrix
+
+Decisive local loop per the dispatch: the production build under Node
+18.20.8 reproduced the deployed probe shape exactly (errorName
+ReferenceError at moduleLoad) and the server log named the identifier:
+DOMMatrix, thrown by module-scope engine code whose own polyfill chain
+(optional native @napi-rs/canvas via process.getBuiltinModule, a Node
+20.16+ API) had two measured ways to break; the deployed bundle carries
+zero napi files, so the deployed variant breaks on any Node. Fix: a
+guarded, correct 2D-affine DOMMatrix shim installed by the adapter
+before the engine chunks evaluate. Witnessed: fixed build all-ok under
+Node 18 AND under Node 26 with the native package renamed away
+(journey to the recognition screen; template suites byte-exact with the
+polyfill source absent). Standing caveat recorded: the engines pin does
+not visibly control Vercel's runtime; owner can set Node 22.x in
+project settings; the shim removes the dependence either way. Also
+observed, recorded, not patched (out of the named scope): Node 18
+breaks the upload action on `File` (global since Node 20), so the app's
+real floor is Node 20+ regardless of pdfjs. Post-build diff check per
+CR-921: exactly the two intended files.
