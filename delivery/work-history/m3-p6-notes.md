@@ -290,3 +290,87 @@ cannot make the gate vacuous: every changed file read as bytes and searched
 in memory, plus this branch's full commit messages and patch text via
 `git log -p 68fc7ee..HEAD`. Changed-file in-memory hits: 2, both from
 base-matching generic probes. Commit-and-patch hits: 0.
+
+## Per-criterion walk at the head
+
+- 6.1 GREEN. `npm test` exit 0. Five rows of one fixture merchant, differing
+  in date and amount across two months AND carrying the card tail in both
+  observed shapes, produce ONE key and ONE review group holding all five
+  (`groups[0].count === 5`). The same five pinned against the PRE-change
+  recipe produce five keys; both numbers are recorded above (5 before, 1
+  after; over the whole fixture 12 distinct keys before, 8 after). The
+  structured-reference row's 15-digit reference survives in its key and is
+  asserted to be inside the 13-to-19 window rather than dodging it. The
+  non-card control row's key is asserted equal to its captured pre-change
+  literal.
+- 6.2 GREEN. Two merchants sharing a chain prefix and a city are two keys and
+  two review groups, one containing NOORD and one ZUID.
+- 6.3 GREEN. The same separator-insensitive test is used by both halves and
+  is written once per file as `cardNumberRuns`. (a) No key and no rendered
+  label from the card fixture contains the invented card number. (b) Exactly
+  ONE key carries a 13-to-19-digit run and the assertion names it as the
+  permitted exception; no rendered label on either surface carries one. The
+  display helper masks every printed shape (space, dash and dot grouped, and
+  contiguous) and holds at both window boundaries. `npm run test:e2e` exit 0
+  with the same two sweeps over the rendered labels of both screens.
+  DECLARED READING: the helper masks the exception row's reference in the
+  LABEL too, so the label side of 6.3(b)'s permission goes unused. Open
+  question M3P6-C7.
+- 6.4 GREEN. The submitted subject is the unmasked normalised text, the
+  stored rule is EXACT with pattern equal to that text, and after recompute
+  all five rows carry the merchant, including the two September rows that
+  were not the row named.
+- 6.5 GREEN. `git diff --name-only 68fc7ee..HEAD | grep -E 'dedup\.ts|corrections\.ts'`
+  exits 1; `git diff --stat 68fc7ee..HEAD -- test/domain/dedup.test.ts` is
+  empty; re-importing the fixture reports added 0 and known 13; every stored
+  rawLine is one of the file's own lines verbatim and every card row's
+  rawLine still carries the unmasked card number and no mask marker; the
+  stored rawContent equals the uploaded bytes.
+- 6.6 GREEN. The deployed MerchantRule count, the command and the branch it
+  selects are recorded above and in the work history. The pinned table was
+  updated in commit 48cd54d, the same commit as the recipe change. The count
+  was ZERO, so the migration test 6.6 conditions on is NOT REQUIRED and none
+  was written. RE-MEASURED AT THE HEAD with the same query: still zero.
+- 6.7 GREEN. The phone spec sets its own viewport with test.use in
+  test/e2e/merchants.spec.ts, so playwright.config.ts is untouched. Both
+  screens render their group labels masked and both report
+  document.documentElement.scrollWidth of at most 390. Getting there needed
+  two fixes in src/app/globals.css, which is the declared excess.
+- 6.8 GREEN, witnessed rather than vacuous: both real uploads are present.
+  Tight run 66 probes, 0 hits in both halves, exit 0; broad run's 8 hits all
+  pre-existing at the phase base; independent in-memory scrub over changed
+  files and over the branch's commits and patch.
+- 6.9 GREEN. typecheck 0, lint 0, gate:tokens 0, `npm test` 0 with
+  322 passed / 322 discovered / 0 failed / 0 skipped / 0 todo over 28 files,
+  `npm run test:e2e` 0 with 21 passed including the unmodified golden journey
+  and the production-mode smoke.
+- 6.10 GREEN, all three halves executed at the head. Recorded above.
+
+## claim-grep, run exactly as the clause carries it, and settled
+
+    grep -nEi 'cannot be|impossible|needs a|is covered|catches|would catch|recovers|anyway|always|never|no way to' delivery/work-history/m3-p6.yaml
+
+12 hits, plus the same pattern over the whitespace-flattened text (which
+found nothing extra: 2 "cannot be", 2 "needs a", 10 "never", all already on
+the line-based list). Settlement, one by one:
+
+- Lines 11, 28, 40, 48 and 212 are inside the VERBATIM prompt block or inside
+  a quoted plan clause. R-052a records the prompt verbatim, so these are not
+  claims of mine to settle.
+- Line 199, "are not recomputed by calling the new normaliser": settled in
+  place by naming the constant and the command that shows it is a literal
+  array (`grep -n 'PRE_CHANGE_KEYS_OF_THE_ONE_MERCHANT' -A 3
+  test/domain/merchant-review.test.ts`), executed, output above.
+- Line 377, "never touches the value the review form submits": the adjacent
+  executed construction in claim M3P6-C3 is the test run that asserts it.
+- Line 404, "never committed": restated to name the evidence, a clean
+  `git status` at the head and a 13-path scope diff that does not list the
+  script.
+- Lines 475 and 476, the two "cannot" sentences: restated as "I found no way
+  to satisfy criterion 6.7 from a file on the list", with the measured
+  overflow figures and the specific CSS rules named, inside an open question
+  that carries still-open-because.
+- Line 235, "needs a files-to-touch amendment": that is the open question
+  M3P6-C9, handed back rather than asserted as settled.
+- Line 494, "never widen the pattern": a quotation of the kernel mechanism
+  index's own rule, attributed in place.
