@@ -160,3 +160,47 @@ criterion demands.
 NONE OF THE PRE-M3-P6 PINS MOVED. The card patterns are additive over the
 earlier corpus. Recorded as an observation about this corpus, not as a
 property of future recipe changes.
+
+## Step 5, display-layer masking, with its red witness
+
+RED WITNESS, against the DANGEROUS STATE rather than an absent feature.
+With the strip already landed and the masking helper written but NOT wired
+into either label surface, the new e2e spec was run against the local dev
+server:
+
+    PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 npx playwright test \
+      --project=chromium -g "no rendered label carries a card number"
+
+    1 failed
+    Error: expect(received).toEqual(expected)
+    - Array []
+    + Array [ "415123456789012" ]
+    at sweepGroupLabels (test/e2e/merchants.spec.ts:113)
+
+That is a real thirteen-to-nineteen-digit run rendered on the merchant
+review screen. After wiring maskCardNumbers into both label surfaces the
+same command exits 0.
+
+## TWO PRE-EXISTING PHONE-VIEWPORT DEFECTS, FOUND BY CRITERION 6.7
+
+Both were surfaced by the 390x844 assertions and BOTH are outside this
+phase's files-to-touch. Declared here the moment they were found; the file
+is src/app/globals.css. See the deviations section of the work history:
+this phase needs a files-to-touch amendment on the base branch, or an
+explicit acceptance of the excess.
+
+1. MERCHANT REVIEW, measured scrollWidth 462 at a 390 viewport. The
+   overflowing element, measured element by element in the page, is
+   .merchant-name-form (width 262) in a non-wrapping .merchant-row. Nothing
+   in M3-P6 widened that row: the naming form has carried its intrinsic
+   width since M1-P4, and the merchant review screen had no phone-viewport
+   assertion before this phase added one. Fixed by letting the row wrap.
+2. MONTH VIEW, measured scrollWidth 424 at a 390 viewport as soon as the
+   month holds data. Cause: .month-grid was a two-track grid whose second
+   track was the fixed --layout-rail width and could not shrink. The
+   phone-viewport spec M3-P1 added could not see this, because it visits
+   the routes on a household with NO import, where the month view renders
+   its empty state and this grid is not in the document at all. Fixed by
+   replacing the fixed track with wrapping flex, which keeps the desk
+   layout identical (rail at --layout-rail, spend taking the remainder)
+   and needs no breakpoint literal.

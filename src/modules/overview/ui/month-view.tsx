@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
 import { Amount, formatCents } from "@/platform/ui/amount";
+import { maskCardNumbers } from "@/platform/ui/mask-card-number";
 import type { HouseholdContext } from "@/platform/tenancy";
 import { getMonthOverview, nextMonth as nextMonthOf } from "../application";
 import type {
@@ -66,6 +67,12 @@ const SignedAmount = ({ cents }: { readonly cents: number }) => (
   </span>
 );
 
+// The group label for an UNRESOLVED counterparty IS the normalised
+// descriptor (month-projection.ts sets it to the same string it uses as the
+// key), so a card descriptor put the card number on screen. Masking happens
+// HERE, in the rendering, and reaches nothing else: the key, the fact and
+// the value the review form submits all stay verbatim (M3-P6, decision
+// D-12, see src/platform/ui/mask-card-number.ts).
 const GroupLabel = async ({ group }: { readonly group: OverviewGroup }) => {
   const t = await getTranslations();
   return (
@@ -77,7 +84,7 @@ const GroupLabel = async ({ group }: { readonly group: OverviewGroup }) => {
       }
       data-testid="group-label"
     >
-      {group.kind === "cash" ? t("cash") : group.label}
+      {group.kind === "cash" ? t("cash") : maskCardNumbers(group.label)}
     </span>
   );
 };
