@@ -247,8 +247,18 @@ uploads (scratchpad script, never committed):
 
 Read both verdicts in full. Findings addressed: HZ-001, HZ-002, HZ-003,
 HZ-005, HZ-006, CR-902, CR-903, plus CR-901's work-history remainder
-(detect-profile.ts is now named in the files-to-touch deviation; the
-plan-side amendment is d324182 on main). HZ-004 is parked by the plan
+(detect-profile.ts named in a deviation clause; the plan-side amendment
+is d324182 on main). CORRECTED LOUDLY, NOT SILENTLY (R-087, fix-round
+finding CR-912): this sentence originally claimed detect-profile.ts
+"is now named in the files-to-touch deviation", and that was FALSE when
+written: the round-1 edit meant to extend the deviation clause was a
+python str.replace whose target text did not match, so it applied
+nothing, and only the files-touched list carried the file. The claim is
+true only since the delta round's dedicated deviation clause (CR-911),
+which names detect-profile.ts, playwright.config.ts and
+src/app/globals.css together. Mechanism note for the next reader:
+str.replace edits fail SILENTLY on a non-matching target; assert the
+target is present (or diff the file) before trusting the edit. HZ-004 is parked by the plan
 and carried by the orchestrator; no code this round. Merged origin/main
 into the branch first (clean, no overlapping files): it carries the
 M3-P1 mobile defect round whose 390x844 rule CR-902 extends, and the
