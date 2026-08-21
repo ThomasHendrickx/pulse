@@ -644,3 +644,84 @@ rows are in the deployed database now. The CR-402 branch is unchanged: it
 keys on the RULE count, which is still zero, so nothing can detach and the
 recipe applies to those rows on the next recompute. The next recipe change
 may not be so lucky.
+
+# FINAL MICRO ROUND
+
+Both verdicts APPROVE at 23196fe. Five lows closed; no new behaviour, no
+widening. Three of the five are one mechanism: an executable thing and a
+written thing slightly apart, with nothing measuring the gap.
+
+## CR-M3P6-12 and HZ-M3P6-13, one defect
+
+The lookbehind read (?<!\d ) while the sentence above it said a four-digit
+GROUP, so a house number before a genuine postal code suppressed the strip.
+Applied the tighter form the criteria reviewer had already tested, and
+re-measured everything it could have moved:
+
+    rows not closing on the owner's real file : 0 of 39   (unchanged)
+    closure corpus not closed                 : 0 of 19   (unchanged;
+                                                3 of 19 at the phase base
+                                                and at the round-0 head)
+    distinct keys on the real file            : 25        (unchanged)
+    card rows                                 : 15 -> 6 keys (unchanged)
+    masker on raw descriptors                 : 23 of 39, all 23
+                                                card-labelled, 0 non-card
+                                                rows touched (unchanged)
+    the house-number case                     : "SUPERMARKT NOORD 12 9000
+                                                GENT" -> "SUPERMARKT NOORD
+                                                12", as at the phase base
+
+Both shapes are pinned side by side in the regression table, so the guard
+and the sentence cannot drift apart again without something going red.
+
+## HZ-M3P6-12
+
+The three-language alternation accepted the BARE label word in every
+language. The bare form is now Dutch-only, which is the only language any
+real statement prints it in: 8 of 23 real card rows use it. French and
+English must carry the number word.
+
+DECLARED DIFFERENCE FROM THE CONCRETE EDIT, with the measurement behind it.
+The finding asked for a FIELD-boundary anchor. Measured, the token before
+the label on the real card rows is a three-letter currency code on 15 of 23
+and a separator dash on 8, in the RAW descriptor; in the normaliser the
+amount and currency are already stripped by then, so those same 15 are
+preceded by the two-letter country code, an ordinary capitalised token. A
+field anchor that admits short uppercase tokens therefore still admits the
+French idiom the finding is about, whose own preceding token is two letters.
+The vocabulary narrowing kills both probe shapes and touches no observed
+row. Recorded as open question M3P6-C20 with the residue stated at the
+definition: the Dutch bare form stays reachable by an ordinary Dutch noun,
+and narrowing it would drop a shape 8 real rows use.
+
+One consequence found while doing it: the amount strip's lookahead ended in
+a word boundary, and the French number word ends in a non-word character, so
+that boundary never matched and the amount stayed in a French card key. The
+lookahead now ends in a negative letter check, which refuses "KAARTEN" the
+way the boundary did and accepts the French form the way it did not. Both
+directions are pinned.
+
+## CR-M3P6-10
+
+The comment said NINE and the walk returned TEN, and the assertion was a
+FLOOR, so the recorded number could drift from the measured one with nothing
+going red. That is the mechanism the test was written to eliminate, one
+level up. Assertion is now toBe(10); the comment is corrected in place and
+says why it was wrong: the import route renders TWO declared account labels,
+not one.
+
+## CR-M3P6-11
+
+The round-2 report called the gap-row sweep a guard. It is not: this fixture
+produces zero gap rows, so the sweep never executes. The zero is now
+ASSERTED rather than described, so the sentence cannot go stale, and the
+comment says what covers the site (the derivation test, which reddens when
+the masking call is removed) and what nothing covers (the rendered string of
+a gap row). The e2e passing at this head is my own verification of the
+reviewer's measurement on the month the spec visits.
+
+## Gates at the final head
+
+typecheck 0, lint 0, gate:tokens 0, npm test 0 with 377 discovered / 377
+passed / 0 failed / 0 skipped / 0 todo over 28 files, npm run test:e2e 0
+with 21 passed across both Playwright projects.
