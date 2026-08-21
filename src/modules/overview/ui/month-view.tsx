@@ -386,11 +386,23 @@ const ReconciliationPanel = async ({
 
 const EmptyState = async () => {
   const t = await getTranslations();
+  // The named action is reachable where it is named (M3-P1 step 2, owner
+  // feedback DR-0002 item 1): a real link to the import screen, not copy
+  // that only describes it.
   return (
     <section className="empty-state" data-testid="empty-state">
       <h1>{t("noData")}</h1>
       <p>{t("emptyTitle")}</p>
       <p>{t("emptyBody")}</p>
+      <p>
+        <Link
+          href="/import"
+          className="empty-state-cta"
+          data-testid="empty-state-import-link"
+        >
+          {t("emptyImportCta")}
+        </Link>
+      </p>
     </section>
   );
 };
