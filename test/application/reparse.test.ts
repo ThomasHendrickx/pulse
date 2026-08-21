@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { householdId, userId, type HouseholdContext } from "../../src/platform/tenancy";
 import { confirmImport } from "../../src/modules/import/application/confirm-import";
@@ -379,6 +381,72 @@ describe("the profile-fix re-parse rebuilds facts from stored rawLine", () => {
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) {
       expect(outcome.error.kind).toBe("profile-not-found");
+    }
+  });
+});
+
+// Criterion 2.3, third leg (hazard H2.3): an unchanged-spec re-parse of
+// an ingested PDF import is a STRICT NO-OP. The re-parse rebuilds rows
+// from rawContent through extraction and line reconstruction, so any
+// nondeterminism in that path would surface here as changed dedup keys
+// or changed rows.
+describe("unchanged-spec re-parse of an ingested PDF import (criterion 2.3)", () => {
+  const pdfFixture = (name: string): Uint8Array =>
+    new Uint8Array(readFileSync(join(__dirname, "..", "fixtures", name)));
+
+  test("zero dedup key changes and zero row changes", async () => {
+    const world = makeFakeImportWorld();
+    const bytesA = pdfFixture("belfius-statement-a.pdf");
+    const uploaded = await uploadStatement(context, world.deps, {
+      fileName: "statement-a.pdf",
+      bytes: bytesA,
+    });
+    expect(uploaded.kind).toBe("awaiting-declaration");
+    if (uploaded.kind !== "awaiting-declaration") {
+      throw new Error("unreachable");
+    }
+    const detected = await world.deps.parser.detect(bytesA);
+    expect(detected.ok).toBe(true);
+    if (!detected.ok) {
+      throw new Error("unreachable");
+    }
+    expect(detected.value.kind).toBe("pdf-layout");
+    const confirmed = await confirmImport(context, world.deps, {
+      importId: uploaded.importId,
+      profileName: "belfius-current-account-nl",
+      spec: detected.value,
+      declaration: { label: "Daily account", bank: "Belfius", role: "POT" },
+    });
+    expect(confirmed.kind).toBe("ingested");
+    const profileId = world.profiles[0]?.id;
+    if (profileId === undefined) {
+      throw new Error("no profile stored");
+    }
+
+    const before = JSON.parse(JSON.stringify(world.transactions)) as unknown;
+    const keysBefore = world.transactions.map((t) => [t.id, t.dedupKey]);
+
+    const outcome = await fixSourceProfile(context, world.deps, {
+      profileId,
+      spec: detected.value,
+    });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.value.importsReparsed).toBe(1);
+      expect(outcome.value.rowsReparsed).toBe(9);
+    }
+
+    expect(world.transactions.map((t) => [t.id, t.dedupKey])).toEqual(keysBefore);
+    expect(JSON.parse(JSON.stringify(world.transactions))).toEqual(before);
+
+    // And a re-upload after the no-op re-parse still adds nothing.
+    const reupload = await uploadStatement(context, world.deps, {
+      fileName: "statement-a.pdf",
+      bytes: bytesA,
+    });
+    expect(reupload.kind).toBe("ingested");
+    if (reupload.kind === "ingested") {
+      expect(reupload.added).toBe(0);
     }
   });
 });

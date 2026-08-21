@@ -148,3 +148,53 @@ introduced by this phase; the criterion 2.6(a) whole-tree probes are the
 statement's FULL identifier strings (full IBAN forms, full holder-name
 forms, merchant strings, the statement-number-in-context forms), which
 have zero hits at base and must have zero at head.
+
+## Fixtures, criterion 2.1-2.3 tests, and captured red witnesses
+
+Fixture generator: test/fixtures/generate-pdf-fixtures.ts, a
+dependency-free deterministic PDF writer (fixed layout, no metadata, no
+clock, ASCII only); commits belfius-statement-a.pdf (9 rows, page break
+mid-list after row 3, annex page whose body starts with the marker, the
+PR2-002 in-description full annex phrase on row 0104, all four
+sign-spacing x thousands-dot combinations in both directions),
+belfius-statement-b-overlap.pdf (different statement identity, re-carries
+0108 and 0109, adds 0110-0112), belfius-nonreconciling.pdf (closing
+rendered exactly +1,00 EUR off the computed identity), and
+unknown-layout.pdf. The generator computes reconciling closings from
+opening + sum (never hand-written) and refuses an amountText/amountCents
+mismatch, so the committed fixtures satisfy the balance identity
+arithmetically the same way the real statement does.
+test/domain/pdf-fixtures.test.ts pins committed bytes == generator
+output.
+
+Red witnesses, each a DANGEROUS-STATE mutation applied, run, captured,
+reverted (backups compared; git diff src/ clean afterwards):
+1. PR2-002 (criterion 2.1): body-starts-with replaced by marker-anywhere
+   page skipping. npx vitest run test/domain/belfius-pdf-template.test.ts
+   -> "Tests 6 failed | 1 passed (7)"; the annex-pair test failed AND the
+   balance gate rejected the file (page 2 dropped), demonstrating both
+   halves of the criterion's pair.
+2. Balance gate (criterion 2.2): the mismatch branch in
+   parse-pdf-statement.ts disabled (if (false)). The balance-mismatch
+   test failed ("Tests 1 failed | 3 skipped"): the non-reconciling
+   fixture sailed through to awaiting-declaration instead of FAILED.
+3. D-4 year-scoped key (criterion 2.3): the template's statementNumber
+   emission mutated to a per-file value (String(pages.length), a
+   statement-scoped component). The overlap test failed with "expected 5
+   to be 3": every shared row was re-added, the exact duplication the
+   year-scoped key exists to prevent.
+4. Fingerprint (criterion 2.2): matches() mutated to always-true. The
+   unknown-layout test failed with "expected 'unparseable' to be
+   'layout-unsupported'".
+The criterion 2.4 red was captured earlier against the unwidened parser
+(spec-compat test: expected 'delimited', got undefined; 1 failed |
+1 passed). Full green after all reverts: npm test 24 files, 274 tests,
+0 skipped, exit 0 (captured below in gate evidence).
+
+Residue, stated rather than hidden: no dangerous-state red was found for
+H2.3 nondeterminism itself (the re-parse no-op test); injecting
+nondeterminism between ingest and re-parse inside one process would need
+a seam (clock, random, env) the extraction path deliberately does not
+have. The no-op test plus the determinism test (parse twice, deep-equal)
+are the standing witnesses; recorded as an open question in the work
+history claims.
