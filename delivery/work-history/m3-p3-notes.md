@@ -307,3 +307,34 @@ criterion is witnessed, not vacuous):
   R-007: not this phase's to edit). Baseline residues recorded, none
   introduced or touched by this phase. The bare token SUPABASE remains
   excluded as a probe per the M3-P2 record (it equals the stack name).
+
+## Final gates at head, work history, and the coordinator checkpoint
+
+Coordinator checkpoint acknowledged mid-round: the session was alive
+(the silence was the e2e and scrub work); no salvage was needed. Checked
+origin/main after the checkpoint's note about the parallel production
+defect round: main is still a577e51, nothing to merge at handback time.
+If the engines-pin defect round lands before this branch's review
+completes, the orchestrator merge-and-regate instruction in the
+checkpoint applies.
+
+Gates at 63682d7 (src and test byte-identical to the final head, which
+adds only delivery/work-history files no gate reads): npm run typecheck
+exit 0; npm run lint exit 0; npm run gate:tokens exit 0; npm test exit
+0 (28 files, 296 tests, 0 skipped); npm run test:e2e exit 0 (20
+passed, 0 skipped, 3.0m, chromium, config-owned dev webServer,
+PULSE_FIXED_NOW pinned, all five env values pinned local). Em dash
+sweep over every phase-written file: exit 1 (none). Scope: git diff
+--name-only a577e51..HEAD lists exactly the declared surfaces
+(src/modules/import/domain/, test/fixtures/, test/domain/,
+test/application/, test/e2e/import.spec.ts) plus the standing-extra
+work history; no excess to declare.
+
+Work history m3-p3.yaml written and schema-validated: npx --prefix
+/home/user/pulse-fleet tiphys validate --type work-history --context
+<worktree> exit 0 (first validation caught claim M3P3-Q3 carrying a
+refused universal token in an open-question statement; reworded,
+revalidated 0). Claim grep run exactly as the brief carries it, line
+and flattened forms: remaining hits are the verbatim prompt quotation
+(R-052a) and one token inside a captured executed-construction command
+whose output settles it.

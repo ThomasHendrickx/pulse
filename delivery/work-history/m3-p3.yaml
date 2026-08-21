@@ -1,0 +1,388 @@
+kind: work-history
+phase: M3-P3
+prompt: |
+  You are the implementer for phase M3-P3 (pdf-kbc) of the Pulse v0.2
+  delivery. Your brief is /home/user/pulse-fleet/implementer-brief-m3-p3.md:
+  read it fully first, including the appended fleet warnings (warning 9 is
+  absolute: real upload file names never appear anywhere, 8-hex prefixes
+  only: 0f79fa3d is the KBC Mastercard statement, 39bada64 is the Belfius
+  one; warning 10: check df before e2e work, delete closed-phase
+  node_modules freely). Your working tree is the fresh clone
+  /home/user/pulse-fleet/worktrees/m3-p3-pdf-kbc on branch
+  claude/m3-p3-pdf-kbc (based on main a577e51, which contains the whole
+  merged M3-P2 PDF foundation: pdfjs adapter, template registry, positional
+  line classification, fail-closed versioning, balance gate, distinct
+  failure reasons). The plan is delivery/plan/pulse-v02.yaml, phase M3-P3;
+  the intake is delivery/intake/pulse-v0.2-pdf-addendum.md sections on the
+  KBC card format; read pulse-domain (card settlement, dedup hash path with
+  occurrence ordinals) and pulse-typescript first.
+
+  Build the KBC Mastercard template on the M3-P2 foundation, walking the
+  phase's steps and criteria exactly as written. The plan's criteria carry
+  review-hardened traps you must honor: FX continuation folding (the
+  sub-lines carrying original amount and exchange rate fold into their
+  parent row, per the fixture family the M1-P2 fixtures already mirror in
+  CSV form), the Afrekening balance identity as this format's hard gate
+  (previous-balance line, DOMICILIERING semantics, the settlement total on
+  the Afrekening line: the M0-P2 scout verified the identity holds exactly
+  on the real statement: previous plus rows equals Afrekening in cents with
+  space-thousands separators), the month-straddling row asserting
+  bookingDate equals the TRANSACTION date not the settlement date
+  (PR2-004), legitimate identical duplicate rows via the hash-path
+  occurrence ordinal (the real statement carries one identical pair), and
+  the settlement-pairing witness through two PDF imports (the account-side
+  debit pairing to the card import per D-11 semantics already in the
+  ledger). The card format has no counterparty account column and no
+  sequence numbers: the dedup path is the HASH path with ordinals, never a
+  natural key; the M3-P2 continuity gate is Belfius-specific and must not
+  fire on card statements.
+
+  FORMAT REFERENCE: the real KBC statement (0f79fa3d prefix) at
+  /root/.claude/uploads/e8dfc624-eaf2-5480-bcf2-af6a168fb888/. Read it to
+  build and verify the template; content never leaves the container;
+  committed fixtures are synthetic via the existing generator, extended for
+  the KBC family; run the criterion privacy gates (both halves) plus an
+  independent in-memory scrub before every push, and NEVER write the real
+  file names anywhere.
+
+  Standing rules: before EVERY push, diff your branch against
+  files-to-touch plus extras on main and declare any excess in the same
+  commit (the M3-P2 lesson); red witness before green; phone viewport holds
+  on any touched UI surface (390x844, no horizontal scroll); all five env
+  values pinned local for db and e2e; Node 26 via nvm for tiphys; npm only;
+  integer cents; no em dashes; small commits pushed incrementally; if
+  killed and resumed, reread your commits and continue.
+
+  Before reporting: npm run typecheck, npm run lint, npm run gate:tokens,
+  npm test, npm run test:e2e all exit 0 at the final head;
+  delivery/work-history/m3-p3.yaml schema-valid plus notes; push confirmed
+  with git ls-remote output. Report: per-criterion status with executed
+  evidence, the real-statement parse result stated abstractly (row count,
+  identity held, no content), privacy scrub result, deviations, open
+  questions, head sha.
+files-touched:
+  - src/modules/import/domain/kbc-mastercard-template.ts
+  - src/modules/import/domain/pdf-template.ts
+  - test/fixtures/generate-pdf-fixtures.ts
+  - test/fixtures/kbc-statement-a.pdf
+  - test/fixtures/kbc-nonreconciling.pdf
+  - test/fixtures/belfius-settlement-companion.pdf
+  - test/domain/kbc-pdf-template.test.ts
+  - test/application/kbc-settlement.test.ts
+  - test/e2e/import.spec.ts
+  - delivery/work-history/m3-p3-notes.md
+  - delivery/work-history/m3-p3.yaml
+per-step-commits:
+  - sha: cb4f834
+    subject: "docs: M3-P3 work notes: mandated reading, mechanism lookups, real-statement structural verification, template and fixture design"
+  - sha: 3d1b49d
+    subject: "feat: KBC Mastercard uitgavenstaat layout template with synthetic fixture family (criterion 3.1)"
+  - sha: 89ac57e
+    subject: "test: duplicate-pair dedup and settlement pairing through the PDF path (criteria 3.2, 3.3)"
+  - sha: 9c7e8fc
+    subject: "test: e2e KBC card plus companion account PDF journey to a reconciling June (criterion 3.4)"
+  - sha: fcdfd5e
+    subject: "fix: replace a real-statement amount quoted as a shape example in the KBC template comment with a synthetic one (H3.1)"
+  - sha: 63682d7
+    subject: "docs: e2e and privacy-gate evidence, with the two loud corrections (comment leak fixed at head; scrub tool option-injection fixed)"
+key-decisions:
+  - decision: >-
+      Line classification in the KBC template is shape-first with two
+      loud guards (a two-date-prefixed line that fails the full row
+      parse is a structure error; an FX continuation line with no open
+      row is a structure error), instead of the Belfius template's
+      positional margin/indent rule.
+    why: >-
+      On this layout the counterparty-controlled text is a substring of
+      the bank-composed row line, not free-standing lines, so a crafted
+      merchant string cannot mint a line and the HZ-001 fabricated-row
+      construction has no analogue; the guards keep the zero-sum drop
+      shapes loud, which is what the positional rule bought Belfius.
+      Reasoning recorded at the template header per mechanism-sibling.
+  - decision: >-
+      Space-thousands amounts are handled template-locally (spaces
+      stripped from the matched text, then the frozen
+      parseAmountToCents comma style), leaving parse-amount.ts
+      untouched.
+    why: >-
+      parse-amount.ts's accepted shapes also feed delimited detection
+      and the dedup-adjacent delimited parser; widening a shared frozen
+      recipe for one layout risks changing detection behaviour, while a
+      template-local strip is pure, tested, and scoped to the one
+      format that uses spaces.
+  - decision: >-
+      The settlement date (datum verrekening) maps to
+      ParsedRow.valueDate and stays verbatim in rawLine; bookingDate is
+      the transaction date.
+    why: >-
+      The addendum requires the settlement date kept in the raw block
+      (done, rawLine) and the booking date to be the transaction date
+      (PR2-004); valueDate is the existing slot with exactly value-date
+      semantics, the same slot the Belfius template fills from VAL.,
+      and no interpretation code reads valueDate, so this adds honest
+      data without behaviour change.
+  - decision: >-
+      In the synthetic KBC fixture the previous balance magnitude
+      equals the statement's own Afrekening magnitude (the debit rows
+      sum to it), and the companion's settlement debit is booked two
+      days after the DOMICILIERING credit.
+    why: >-
+      This makes the one companion debit satisfy BOTH pairing windows
+      at once (amount equality with the card import's settlement total
+      for the D-11 link, and amount plus 4-day date match with the
+      DOMICILIERING credit for the mirror leg), so the criterion 3.4
+      month view closes with zero unmatched legs while criterion 3.3's
+      link and mirror assertions are both witnessable in one scenario.
+  - decision: >-
+      Fixture dates are drawn from 2026-05-16 through 2026-06-14 plus
+      2026-06-22, and every identifier, merchant, amount and rate is
+      invented.
+    why: >-
+      The date set was chosen against the distinct date strings
+      extracted in-memory from BOTH real statements so no fixture date
+      string can collide with either statement in any form; the M3-P2
+      Belfius fixtures already occupy May and the companion continues
+      that family's account and sequence range (0130-0133).
+verification-first:
+  - finding: >-
+      Real KBC statement structure verified in-container through the
+      repository's own extraction settings and line-reconstruction
+      algorithm before any code: fingerprint lines KBC-Mastercard and
+      Uitgavenstaat present as separate lines; rows are single lines of
+      transaction date, settlement date, description, tight-signed
+      comma-decimal amount; Vorig saldo and the Afrekening line are
+      indented balance lines, the Totaal bedrag line carries no amount,
+      the Afrekening amount uses a space thousands separator; 22 rows,
+      4 FX rows each followed by two continuation lines (original
+      amount, rate) at a deeper indent; exactly one identical duplicate
+      row pair; the DOMICILIERING credit equals the negated previous
+      balance; the balance identity holds exactly in integer cents; no
+      IBAN and no sequence numbers exist anywhere in the document. All
+      as the plan's grounding and notes/export-format-facts.md record.
+    contradicts-plan: false
+  - finding: >-
+      The dispatch's upload mapping (0f79fa3d = KBC card, 39bada64 =
+      Belfius) verified correct by fingerprint text of both files, per
+      fleet warning 9's corrected mapping; the M3-P2 dispatch had had
+      the two crossed and this one does not.
+    contradicts-plan: false
+  - finding: >-
+      Fixture-date safety derived before fixture design: the distinct
+      DD-MM-YYYY strings of both real statements were extracted
+      in-memory and the synthetic period, row dates and Afrekening date
+      were chosen outside that set (both statements occupy mid-June
+      through mid-July 2026 plus one early-August date; the fixtures
+      use mid-May through 14 June plus 22 June).
+    contradicts-plan: false
+deviations: []
+gate-evidence:
+  - gate: "typecheck (npm run typecheck, tsc --noEmit, node v26.7.0, at head 63682d7)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "lint (npm run lint, eslint ., at head 63682d7)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "token gate (npm run gate:tokens, inverted grep over src/modules/*/ui, at head 63682d7)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fast suite (npm test, vitest run, node v26.7.0, at head 63682d7; 28 files, 296 tests, 0 skipped)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 296
+    passed: 296
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "slow suite (npm run test:e2e, playwright test, chromium, config-owned dev webServer with PULSE_FIXED_NOW=2026-09-15T12:00:00Z, all five env values pinned local in the invoking shell per fleet warning 6; 20 tests, 0 skipped, 20 passed in 3.0m, at the src and test state of head 63682d7; the criterion 3.4 journey also passed standalone via -g on its first run)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 20
+    passed: 20
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "privacy half (a): git grep -IF -e <probe> over the whole worktree for the real KBC statement's card number (full, fragments, compact), customer reference, statement number (bare and in context), bottom reference-line tokens, and every row merchant string (38 probes built in memory from the real PDF; the probe list exists only in the session scratchpad script and this same sweep shows each probe absent from the committed tree)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 38
+    passed: 38
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "privacy half (b): the same grep over the 10 files this phase changed (git diff --name-only a577e51..HEAD), extended to all five categories plus diligence (identifiers, holder name and address, merchant strings, all KBC row amounts, thousands-form amounts from both statements, every date of both statements in DD-MM-YYYY and ISO form, FX values, Belfius IBAN forms, every digit-carrying whole line of both statements, upload file names and stems; 341 probes)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 341
+    passed: 341
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "independent scrub: plain grep -rIF -e <probe> over the working tree (git, node_modules, .next excluded), same 379-probe set; 8 hits remained, every one in a file verified byte-identical to the phase base a577e51 (M1-era generic amounts and dates in tests, fixtures and seed, plus the owner-authored intake document quoting one real FX line as a format example): baseline residues recorded, none introduced by this phase"
+    result: amber
+    no-wrapper-exit-code: >-
+      The scrub is a probe-set sweep, not a single wrapped command: each
+      probe is one grep whose exit code was read individually (371 of
+      379 exited 1; the 8 hits exited 0 and were each traced to a
+      base-identical file with git diff --quiet a577e51..HEAD -- FILE
+      exiting 0). Amber, not green, because hits exist in the tree;
+      not red because every hit predates the phase and criterion 3.5's
+      own two halves are the green gates above.
+    discovered: 379
+    passed: 371
+    failed: 8
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+claims:
+  - id: M3P3-C1
+    kind: coverage
+    statement: >-
+      Criterion 3.1's tests are real witnesses for the whole template:
+      run before the template existed, the file reddened wholesale, and
+      four dangerous-state mutations each reddened the specific
+      assertion that guards them.
+    settled-by:
+      executed-construction:
+        command: "npx vitest run test/domain/kbc-pdf-template.test.ts BEFORE registering the template; then mutations W1 (bookingDate := settlementDate), W2 (FX fold dropped), W2b (FX folded into description), W3 (space strip removed), W4 (balance gate disabled), each run and reverted with backup compare"
+        exit-code: 1
+        output: >-
+          Pre-template: "Tests 9 failed | 1 passed (10)". W1: "Tests 1
+          failed | 11 passed", exactly the PR2-004 straddler test. W2:
+          "Tests 1 failed | 11 passed", the rawLine-verbatim test. W2b:
+          "Tests 2 failed | 10 passed" (description and rawLine). W3:
+          "Tests 8 failed | 4 passed". W4: "Tests 1 failed | 11
+          passed", the non-reconciling variant sailed through. Restored:
+          full fast gate 296 passed, 0 skipped, git diff src/ clean.
+  - id: M3P3-C2
+    kind: coverage
+    statement: >-
+      Criterion 3.2's duplicate-pair test guards the occurrence
+      ordinal: with the ordinal removed from the hash key, the pair
+      collapses and the loss propagates into the settlement match.
+    settled-by:
+      executed-construction:
+        command: "mutate assignDedupKeys ordinal to constant 0; npx vitest run test/application/kbc-settlement.test.ts; restore from backup"
+        exit-code: 1
+        output: >-
+          Mutated: "Tests 2 failed | 2 passed (4)": the duplicate-pair
+          test reddened (one identical row silently dropped) AND the
+          settlement-pairing test reddened, because the collapsed pair
+          changes the card import's settlement total so the debit no
+          longer matches. Restored: 4 passed.
+  - id: M3P3-C3
+    kind: coverage
+    statement: >-
+      Criterion 3.3's assertions guard both settlement legs under two
+      structurally different corruptions: the whole settlement step
+      suppressed, and only the credit pattern broken.
+    settled-by:
+      executed-construction:
+        command: "mutation W6: classify-flow settlement step forced undefined; mutation W6b: SETTLEMENT_CREDIT_PATTERNS entry replaced with a never-matching pattern; npx vitest run test/application/kbc-settlement.test.ts after each; restore"
+        exit-code: 1
+        output: >-
+          W6: "Tests 1 failed | 3 passed": the debit fell to sign-rule
+          SPEND while its card rows were imported (the H3.4 double
+          count) and the link vanished. W6b: "Tests 1 failed | 3
+          passed": the mirror leg misclassified and the link lost its
+          incoming side. Restored: 4 passed; the SPEND-fallback arm
+          (companion-only world) stayed green throughout, as it should.
+  - id: M3P3-C4
+    kind: coverage
+    statement: >-
+      The template generalises from the synthetic fixture to the real
+      statement: the full shipped detect-and-parse path was executed
+      against the real KBC upload in-container with abstract-only
+      output.
+    settled-by:
+      executed-construction:
+        command: "scratchpad script driving statementParser.detect/parse plus assignDedupKeys over the 0f79fa3d upload (the script prints counts and booleans only, as the output beside this shows)"
+        exit-code: 0
+        output: >-
+          detect selected kbc-mastercard-uitgavenstaat v1; parse.ok
+          true through the shared balance gate; 22 rows; accountIbans
+          empty; exactly 1 positive credit row equal to the negated
+          opening; 4 rows with folded continuation lines, 8 folded
+          lines total; zero natural-key components; 22 distinct
+          hash-path dedup keys with exactly one ordinal-#1 key (the
+          real identical pair). The real Belfius upload still detects
+          belfius-current-account-nl v1 and parses 39 rows.
+  - id: M3P3-Q1
+    kind: open-question
+    statement: >-
+      The real-statement Afrekening amount survives in the file
+      versions of three earlier branch commits (the template header
+      comment quoted it as a shape example before the half (b) gate
+      caught it). Head is clean; phase merges are squashed (a577e51
+      has a single parent) so main would not carry it; a
+      filter-branch history rewrite per the M3-P2 precedent was
+      denied twice by this session's permission classifier, so the
+      purge of the remote branch history is handed to the
+      orchestrator (rewrite before merge, or accept squash plus
+      branch deletion).
+  - id: M3P3-Q2
+    kind: open-question
+    statement: >-
+      Only a single-card uitgavenstaat has been observed. The template
+      ignores per-card sub-heading lines, so a hypothetical multi-card
+      statement would parse all cards' rows into the one
+      profile-bound account rather than failing the mixed-account
+      rule; whether KBC emits multi-card statements, and what identity
+      they carry, is unknowable from the available document and is
+      left for the first real example.
+  - id: M3P3-Q3
+    kind: open-question
+    statement: >-
+      A corrupted row line whose two-date prefix is itself damaged
+      looks like boilerplate to this template and would drop silently
+      when its amount is zero; a nonzero amount in that corner reddens
+      the balance gate, and this format offers no sequence numbers to
+      anchor a continuity gate on. Stated at the template header; same
+      residue class M3-P2 recorded for the Belfius first-transaction
+      corner.
+environment-warnings:
+  - warning: >-
+      The permission classifier of this session denies git
+      filter-branch (history rewrite) even on an unshared feature
+      branch, and once triggered it can transiently deny adjacent git
+      plumbing reads (git cat-file was denied immediately after; git
+      rev-list worked). Plan privacy scrubs to run BEFORE the first
+      push: after a push, a leak lives in remote history whose rewrite
+      this session was refused (witnessed twice here), leaving only a
+      head fix plus escalation.
+    evidence: >-
+      Two denials of the same filter-branch command at the criterion
+      3.5 correction, then a denial of a read-only git cat-file; the
+      head fix landed as a normal commit instead.
+  - warning: >-
+      A grep probe that starts with a dash is parsed as an option when
+      passed positionally, errors grep, and a naive
+      exit-code-is-nonzero check counts that as "no hit": a silent
+      false pass, and the grep usage error echoes the probe (real
+      statement content) into the terminal. Pass every probe behind -e
+      and terminate options with -- in any scrub tooling.
+    evidence: >-
+      The first independent-scrub run misparsed the real statement's
+      band lines (leading dashes) as options; fixed with -e and
+      re-run, results confirmed 0-hit for those probes.
