@@ -83,9 +83,23 @@ describe("city fragments", () => {
     expect(normaliseCounterparty("PIZZA NAPOLI BRUSSEL")).toBe("PIZZA NAPOLI");
   });
 
-  test("a postal code plus city tail is stripped wherever it sits", () => {
+  // CORRECTED RATHER THAN QUIETLY RENAMED (clause R-087, fix round 2,
+  // finding HZ-M3P6-11). This test used to be named "a postal code plus city
+  // tail is stripped wherever it sits", which stopped being true when fix
+  // round 1 split the rule in two: the postal CODE is removed wherever it
+  // sits, and the CITY it introduces is left to the trailing-city rule,
+  // which by definition only reaches the end of the string. The body only
+  // ever exercised the trailing case, so the suite could not catch the name
+  // going false. The mid-string case is now asserted too.
+  test("a postal CODE is removed wherever it sits, and the city it introduces is left to the trailing-city rule", () => {
     expect(normaliseCounterparty("SUPERMARKT NOORD 9000 GENT")).toBe(
       "SUPERMARKT NOORD",
+    );
+    // Mid-string: the code goes, the city SURVIVES because it is not
+    // trailing. At the phase base both went, taking a distinguishing word
+    // with them.
+    expect(normaliseCounterparty("SUPERMARKT 9000 GENT NOORD")).toBe(
+      "SUPERMARKT GENT NOORD",
     );
   });
 
@@ -128,6 +142,16 @@ describe("the recipe's output is pinned: stored rule patterns depend on it (find
   // test reddens and the change is INTENDED: update the pins AND ship the
   // stored-pattern re-normalisation (or the recorded versioning decision)
   // in the same change; that obligation is the point of the pin.
+  //
+  // M3-P6 DID EXACTLY THAT. The card-descriptor pins below were added in
+  // the same commit as the recipe change that produced them, and the
+  // contract's other half was discharged by measuring the deployed
+  // database first: it held ZERO MerchantRule rows, so no stored pattern
+  // could detach and no re-normalisation migration was owed. The
+  // measurement and the command are in delivery/work-history/m3-p6.yaml.
+  // NOTE FOR THE NEXT CHANGE: none of the pre-M3-P6 pins moved, which is
+  // evidence that the card patterns are additive over the earlier corpus,
+  // NOT evidence that the next recipe change will be.
   const PINNED: readonly (readonly [string, string])[] = [
     // Plain names: uppercase plus collapse only.
     ["Supermarkt Noord", "SUPERMARKT NOORD"],
@@ -154,6 +178,165 @@ describe("the recipe's output is pinned: stored rule patterns depend on it (find
     ["  SUPERMARKT   NOORD \t GENT ", "SUPERMARKT NOORD"],
     ["GENT", "GENT"],
     ["12/08/2026", "12/08/2026"],
+    // M3-P6, the card-descriptor grammar. Every input below is SYNTHETIC,
+    // invented values in the real grammar, and each one pins a different
+    // pattern family: the two printed card-tail shapes, the separator
+    // variants of the number, the second payment rail with its
+    // angle-bracket country marker, and the two rows the strip must NOT
+    // touch. These pins are what makes an accidental widening of the card
+    // patterns red.
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 04/08 KOFFIEHUIS DE MOLEN GENT BE 4,20 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+      "KOFFIEHUIS DE MOLEN GENT BE",
+    ],
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 18/08 KOFFIEHUIS DE MOLEN GENT BE 4,20 EUR KAART 4000 12XX XXXX 9010 - JANSSENS PIETER",
+      "KOFFIEHUIS DE MOLEN GENT BE",
+    ],
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 15/08 TANKSTATION DE BRUG GENT BE 62,00 EUR KAART NR 4000-1234-5678-9010 - JANSSENS PIETER",
+      "TANKSTATION DE BRUG GENT BE",
+    ],
+    // FIX ROUND 1. The two payment rails now agree: the same merchant in the
+    // same city produces the SAME key whether it was paid on the contactless
+    // rail or the wallet rail (finding HZ-M3P6-06). Before the round these
+    // two pinned to different strings, which split two real merchants in the
+    // owner's statement into two groups each.
+    [
+      "BANCONTACT-AANKOOP - BAKKERIJ ZONNEBLOEM <B> - 9000 GENT BE - 12/08/26 14:35 - CONTACTLOOS - KAART 4000 12XX XXXX 9010 - JANSSENS PIETER",
+      "BAKKERIJ ZONNEBLOEM GENT BE",
+    ],
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 25/08 BAKKERIJ ZONNEBLOEM GENT BE 3,60 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+      "BAKKERIJ ZONNEBLOEM GENT BE",
+    ],
+    // FIX ROUND 1, finding HZ-M3P6-03: the rail prefix is a PINNED
+    // alternation, so an ordinary capitalised word hyphenated to a Dutch
+    // noun keeps its place in the key and two such descriptors stay two.
+    ["GROEPS-AANKOOP SAMENTUIN VZW LIDGELD", "GROEPS-AANKOOP SAMENTUIN VZW LIDGELD"],
+    ["SAMENTUIN VZW LIDGELD", "SAMENTUIN VZW LIDGELD"],
+    // FIX ROUND 1, finding HZ-M3P6-08, PINNED AS THE BEHAVIOUR IT IS rather
+    // than as the behaviour the finding asked for. A card descriptor whose
+    // CITY is the final token, with no country marker after it, reaches the
+    // trailing-city loop once the card tail is gone, so two branches of one
+    // chain in two cities merge. That is M1-P4's deliberate rule (the same
+    // shop seen from two branches normalises identically) reaching card rows
+    // for the first time. Skipping the loop for card descriptors was
+    // implemented and rejected: it breaks the idempotency the CR-402
+    // contract rests on and produces a stored rule that matches nothing. See
+    // the comment at the loop in normalise-counterparty.ts.
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 26/08 FIETSPUNT DE KETTING GENT 24,00 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+      "FIETSPUNT DE KETTING",
+    ],
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 27/08 FIETSPUNT DE KETTING ANTWERPEN 26,00 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+      "FIETSPUNT DE KETTING",
+    ],
+    // FIX ROUND 1, finding HZ-M3P6-02: a card descriptor with no merchant
+    // span strips to nothing and reaches the non-destructive floor. The
+    // floor carries the card-number LABEL and never the number.
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 28/08 KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+      "KAART NR",
+    ],
+    // FIX ROUND 1, finding HZ-M3P6-04: the amount strip is scoped to the
+    // card grammar and reads BOTH thousands forms. The space-grouped form
+    // used to leave a truncated number behind.
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 29/08 MEUBELHUIS DE EIK GENT BE 1 250,00 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+      "MEUBELHUIS DE EIK GENT BE",
+    ],
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 30/08 MEUBELHUIS DE EIK GENT BE 1.250,00 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+      "MEUBELHUIS DE EIK GENT BE",
+    ],
+    // ... and an amount on a NON-card row is NOT the transaction's own
+    // amount and is left alone.
+    ["ABONNEMENT 1.234,56 EUR SPORTCLUB NOORD", "ABONNEMENT 1.234,56 EUR SPORTCLUB NOORD"],
+    // FIX ROUND 2, finding CR-M3P6-06: a run of four-digit groups before a
+    // capitalised word is NOT a postal code plus a city, and the whole run
+    // survives. Two groups and three, because the defect removed one per
+    // application, so a one-group case cannot see it.
+    [
+      "OVERSCHRIJVING NAAR 5390 7541 7034 ENERGIE NOORD BV",
+      "OVERSCHRIJVING NAAR 5390 7541 7034 ENERGIE NOORD BV",
+    ],
+    [
+      "DOMICILIERING MEDEDELING 5390 7541 ENERGIE NOORD",
+      "DOMICILIERING MEDEDELING 5390 7541 ENERGIE NOORD",
+    ],
+    // ... while a single four-digit group before a capitalised word still
+    // reads as a postal code, which is the behaviour the lookbehind keeps.
+    ["BAKKERIJ ZONNEBLOEM 9000 GENT BE", "BAKKERIJ ZONNEBLOEM GENT BE"],
+    // FIX ROUND 2, finding HZ-M3P6-11: the postal CODE goes wherever it
+    // sits and the CITY it introduces survives unless it is trailing.
+    ["SUPERMARKT 9000 GENT NOORD", "SUPERMARKT GENT NOORD"],
+    // FIX ROUND 2, finding HZ-M3P6-10: the card-number label is recognised
+    // in the three languages a Belgian export can print it in, so a French
+    // or English statement's card number leaves the key exactly as a Dutch
+    // one does. Before this round both were left whole in the key and
+    // therefore in the stored rule pattern.
+    [
+      "CARTE-PAIEMENT 04/08 BOULANGERIE DU PARC GENT BE 4,20 EUR CARTE N\u00b0 4000 1234 5678 9010 - JANSSENS PIETER",
+      "CARTE-PAIEMENT BOULANGERIE DU PARC GENT BE",
+    ],
+    [
+      "COFFEE HOUSE THE ANCHOR GENT BE 4,20 EUR CARD NO 4000 1234 5678 9010 - JANSSENS PIETER",
+      "COFFEE HOUSE THE ANCHOR GENT BE",
+    ],
+    // FINAL MICRO ROUND, findings CR-M3P6-12 and HZ-M3P6-13: the lookbehind
+    // that keeps this pipeline closed refuses a four-digit GROUP before the
+    // candidate, not any digit, so a house number before a genuine postal
+    // code no longer suppresses the strip. These two rows measure the
+    // difference between the guard and the sentence above it.
+    ["SUPERMARKT NOORD 12 9000 GENT", "SUPERMARKT NOORD 12"],
+    ["SUPERMARKT NOORD 9000 GENT", "SUPERMARKT NOORD"],
+    // FINAL MICRO ROUND, finding HZ-M3P6-12: NEGATIVE pins. A label word
+    // standing alone as an ordinary noun before four four-character groups
+    // must NOT be read as a card-number label, so the merchant name survives
+    // whole. Only the DUTCH label may appear bare, which is the only bare
+    // form any real statement prints.
+    [
+      "RESTAURANT BISTRO A LA CARTE 1234 5678 9012 3456",
+      "RESTAURANT BISTRO A LA CARTE 1234 5678 9012 3456",
+    ],
+    [
+      "DIENST CARTE N 1234 5678 9012 3456",
+      "DIENST CARTE N 1234 5678 9012 3456",
+    ],
+    // FIX ROUND 2, finding HZ-M3P6-09: the separator drop on a card
+    // descriptor takes WHOLE dash TOKENS and never a character inside a
+    // word, so an intra-word hyphen in a merchant name survives and two
+    // spans differing only by one stay two keys. These rows fix that scope:
+    // widening the drop from tokens to characters reddens both.
+    [
+      "BANCONTACT-AANKOOP - FIETSPUNT DE-KETTING - 9000 GENT BE - 12/08/26 14:35 - CONTACTLOOS - KAART 4000 12XX XXXX 9010 - JANSSENS PIETER",
+      "FIETSPUNT DE-KETTING GENT BE",
+    ],
+    [
+      "BANCONTACT-AANKOOP - FIETSPUNT DEKETTING - 9000 GENT BE - 12/08/26 14:35 - CONTACTLOOS - KAART 4000 12XX XXXX 9010 - JANSSENS PIETER",
+      "FIETSPUNT DEKETTING GENT BE",
+    ],
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 06/08 SUPERMARKT DE LINDE NOORD GENT BE 21,40 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+      "SUPERMARKT DE LINDE NOORD GENT BE",
+    ],
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 07/08 SUPERMARKT DE LINDE ZUID GENT BE 18,75 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+      "SUPERMARKT DE LINDE ZUID GENT BE",
+    ],
+    // The two rows the card patterns must leave alone: a legitimate
+    // 13-to-19-digit structured reference, and an X-masked token followed
+    // by holder-like text with NO card-number label.
+    [
+      "OVERSCHRIJVING NAAR ENERGIE NOORD BV MEDEDELING 415123456789012",
+      "OVERSCHRIJVING NAAR ENERGIE NOORD BV MEDEDELING 415123456789012",
+    ],
+    [
+      "ONLINE AANKOOP WEBSHOP DE VLIEGER 4000 12XX XXXX 9010 - JANSSENS PIETER",
+      "ONLINE AANKOOP WEBSHOP DE VLIEGER 4000 12XX - JANSSENS PIETER",
+    ],
   ];
 
   test.each(PINNED)("%j stays pinned to %j", (input, pinned) => {
@@ -163,6 +346,75 @@ describe("the recipe's output is pinned: stored rule patterns depend on it (find
   test("the pipeline is idempotent over its own output, so re-normalising stored patterns is safe", () => {
     for (const [, pinned] of PINNED) {
       expect(normaliseCounterparty(pinned)).toBe(pinned);
+    }
+  });
+});
+
+// FIX ROUND 2, finding CR-M3P6-06. THE KEY SPACE MUST BE CLOSED UNDER THE
+// PIPELINE, and the corpus that checks it is written from the token
+// SIGNATURES the owner's real statement actually produces, not from the
+// fixture. Every string below is synthetic, invented values in a real
+// shape; what is copied from the real file is the SHAPE, expressed as a
+// sequence of token kinds and reproduced here with invented content.
+//
+// WHY THIS PROPERTY IS LOAD-BEARING RATHER THAN TIDY. The merchant review
+// submits the already-normalised key, assign-merchant.ts normalises the
+// submitted subject AGAIN before storing it as the EXACT rule pattern, and
+// merchant-rule.ts compares that stored pattern to a freshly normalised
+// row. A key that is not a fixed point therefore becomes a rule that
+// matches NOTHING, while assignMerchant returns ok and every total stays
+// right. That is hazard H6.4, and it is silent.
+const CLOSURE_CORPUS: readonly string[] = [
+  // An IBAN inside a transfer descriptor, followed by the counterparty
+  // name. The last IBAN group reads exactly like a postal code followed by
+  // a city, which is the shape that eroded one group per pass.
+  "OVERSCHRIJVING NAAR BE68 5390 7541 7034 ENERGIE NOORD BV",
+  "STORTING VAN BE68 5390 7541 7034 JAN PEETERS",
+  // The same shape with two and with three consecutive four-digit groups.
+  "MEDEDELING 5390 7541 ENERGIE",
+  "MEDEDELING 5390 7541 7034 ENERGIE",
+  "MEDEDELING 5390 7541 7034 9210 ENERGIE NOORD",
+  // A genuine postal code and city, trailing and mid-string.
+  "SUPERMARKT NOORD 9000 GENT",
+  "SUPERMARKT 9000 GENT NOORD",
+  "BAKKERIJ ZONNEBLOEM 9000 GENT BE",
+  // Card descriptors on both rails, both printed tail shapes.
+  "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 04/08 KOFFIEHUIS DE MOLEN GENT BE 4,20 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+  "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 18/08 KOFFIEHUIS DE MOLEN GENT BE 4,20 EUR KAART 4000 12XX XXXX 9010 - JANSSENS PIETER",
+  "BANCONTACT-AANKOOP - BAKKERIJ ZONNEBLOEM <B> - 9000 GENT BE - 12/08/26 14:35 - CONTACTLOOS - KAART 4000 12XX XXXX 9010 - JANSSENS PIETER",
+  // A card descriptor with no merchant span, which reaches the floor.
+  "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 28/08 KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+  // Non-card rows the strip must leave alone.
+  "ONLINE AANKOOP WEBSHOP DE VLIEGER 4000 12XX XXXX 9010 - JANSSENS PIETER",
+  "OVERSCHRIJVING NAAR ENERGIE NOORD BV MEDEDELING 415123456789012",
+  "GROEPS-AANKOOP SAMENTUIN VZW LIDGELD",
+  "DOMICILIERING MANDAAT 4152036987-001 ENERGIE NOORD",
+  // Degenerate and separator-heavy shapes.
+  "GENT",
+  "12/08/2026",
+  "BAKKERIJ - ZONNEBLOEM - GENT",
+];
+
+describe("the key space is CLOSED under the pipeline (finding CR-M3P6-06, hazard H6.4)", () => {
+  test.each(CLOSURE_CORPUS)(
+    "%j normalises to a fixed point",
+    (input) => {
+      const once = normaliseCounterparty(input);
+      expect(normaliseCounterparty(once)).toBe(once);
+    },
+  );
+
+  test("and the fixed point is reached in ONE application, never eroded by a second", () => {
+    // The failure this catches is not "different", it is "shrinking": the
+    // old pattern removed one four-digit group per pass, so a third pass
+    // removed another. Comparing token COUNTS makes that visible even if a
+    // future defect happened to keep the string equal by accident.
+    for (const input of CLOSURE_CORPUS) {
+      const once = normaliseCounterparty(input);
+      const twice = normaliseCounterparty(once);
+      const thrice = normaliseCounterparty(twice);
+      expect(twice.split(" ").length, input).toBe(once.split(" ").length);
+      expect(thrice, input).toBe(once);
     }
   });
 });
@@ -183,6 +435,185 @@ describe("degenerate inputs stay non-destructive", () => {
 
   test("normalisation is idempotent", () => {
     const once = normaliseCounterparty("BETALING MET DEBETKAART Café Zomer GENT 04/08/2026");
+    expect(normaliseCounterparty(once)).toBe(once);
+  });
+});
+
+// M3-P6. The card-descriptor grammar. Every string below is SYNTHETIC,
+// invented values in the real grammar, and every one of them also appears
+// in the committed fixture test/fixtures/card-descriptors.csv, so the unit
+// assertions and the fixture the grouping and import tests run on cannot
+// drift apart. Nothing from any real statement is reproduced here.
+//
+// The invented card number is 4000 1234 5678 9010 and the invented holder
+// is JANSSENS PIETER.
+
+const CARD_AUG_FULL =
+  "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 04/08 KOFFIEHUIS DE MOLEN GENT BE 4,20 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER";
+const CARD_AUG_FULL_OTHER_DAY =
+  "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 11/08 KOFFIEHUIS DE MOLEN GENT BE 3,80 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER";
+const CARD_SEP_FULL =
+  "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 02/09 KOFFIEHUIS DE MOLEN GENT BE 5,10 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER";
+const CARD_AUG_MASKED =
+  "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 18/08 KOFFIEHUIS DE MOLEN GENT BE 4,20 EUR KAART 4000 12XX XXXX 9010 - JANSSENS PIETER";
+const CARD_SEP_MASKED =
+  "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 09/09 KOFFIEHUIS DE MOLEN GENT BE 6,00 EUR KAART 4000 12XX XXXX 9010 - JANSSENS PIETER";
+const CARD_DASHED_NUMBER =
+  "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 15/08 TANKSTATION DE BRUG GENT BE 62,00 EUR KAART NR 4000-1234-5678-9010 - JANSSENS PIETER";
+const CARD_SECOND_RAIL =
+  "BANCONTACT-AANKOOP - BAKKERIJ ZONNEBLOEM <B> - 9000 GENT BE - 12/08/26 14:35 - CONTACTLOOS - KAART 4000 12XX XXXX 9010 - JANSSENS PIETER";
+const CARD_SECOND_RAIL_OTHER_DAY =
+  "BANCONTACT-AANKOOP - BAKKERIJ ZONNEBLOEM <B> - 9000 GENT BE - 03/09/26 08:12 - CONTACTLOOS - KAART 4000 12XX XXXX 9010 - JANSSENS PIETER";
+const CHAIN_NOORD =
+  "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 06/08 SUPERMARKT DE LINDE NOORD GENT BE 21,40 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER";
+const CHAIN_ZUID =
+  "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 07/08 SUPERMARKT DE LINDE ZUID GENT BE 18,75 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER";
+const LONG_STRUCTURED_REFERENCE =
+  "OVERSCHRIJVING NAAR ENERGIE NOORD BV MEDEDELING 415123456789012";
+// The control: an X-masked token followed by holder-like text and NO
+// card-number label. Measured on the real statement, 8 of the 11 X-token
+// descriptors have exactly this shape, so a masked-tail pattern anchored on
+// the X token or on the holder text alone fires here and is wrong.
+const NON_CARD_X_TOKEN_CONTROL =
+  "ONLINE AANKOOP WEBSHOP DE VLIEGER 4000 12XX XXXX 9010 - JANSSENS PIETER";
+// The value this control normalised to BEFORE the M3-P6 recipe change,
+// captured by running the base recipe at 68fc7ee. The strip must leave it
+// exactly here.
+const NON_CARD_X_TOKEN_CONTROL_PRE_CHANGE_KEY =
+  "ONLINE AANKOOP WEBSHOP DE VLIEGER 4000 12XX - JANSSENS PIETER";
+
+// A card-number run is 13 to 19 digits once spaces, dots and dashes are
+// removed. It is NOT a contiguous 16-digit regex: the real statement prints
+// the number grouped four by four and the extractor's gap rule inserts the
+// spaces, so a contiguous-digits test matches nothing and can never fail
+// (finding PR3-001; measured on the real statement, contiguous 16-digit
+// runs in the parsed descriptors: 0, separator-insensitive runs: every card
+// row).
+const cardNumberRuns = (text: string): readonly string[] =>
+  text.replace(/[ .\-]/g, "").match(/(?<!\d)\d{13,19}(?!\d)/g) ?? [];
+
+describe("card descriptor grammar: the per-transaction values come out, the merchant stays (M3-P6)", () => {
+  test("two card rows of one merchant differing only in date and amount normalise identically", () => {
+    expect(normaliseCounterparty(CARD_AUG_FULL)).toBe(
+      normaliseCounterparty(CARD_AUG_FULL_OTHER_DAY),
+    );
+  });
+
+  test("rows of one merchant in two DIFFERENT MONTHS normalise identically", () => {
+    expect(normaliseCounterparty(CARD_AUG_FULL)).toBe(
+      normaliseCounterparty(CARD_SEP_FULL),
+    );
+  });
+
+  test("the full grouped tail and the partially masked tail of one merchant normalise identically", () => {
+    expect(normaliseCounterparty(CARD_AUG_FULL)).toBe(
+      normaliseCounterparty(CARD_AUG_MASKED),
+    );
+    expect(normaliseCounterparty(CARD_SEP_MASKED)).toBe(
+      normaliseCounterparty(CARD_AUG_FULL),
+    );
+  });
+
+  test("the merchant survives the strip", () => {
+    expect(normaliseCounterparty(CARD_AUG_FULL)).toContain(
+      "KOFFIEHUIS DE MOLEN",
+    );
+  });
+
+  test("a dash-separated card number is stripped like a space-separated one", () => {
+    expect(cardNumberRuns(normaliseCounterparty(CARD_DASHED_NUMBER))).toEqual(
+      [],
+    );
+    expect(normaliseCounterparty(CARD_DASHED_NUMBER)).toContain(
+      "TANKSTATION DE BRUG",
+    );
+  });
+
+  test("the second payment rail's prefix and its angle-bracket country marker are stripped", () => {
+    const key = normaliseCounterparty(CARD_SECOND_RAIL);
+    expect(key).toContain("BAKKERIJ ZONNEBLOEM");
+    expect(key).not.toContain("BANCONTACT");
+    expect(key).not.toContain("AANKOOP");
+    expect(key).not.toContain("<B>");
+    expect(cardNumberRuns(key)).toEqual([]);
+  });
+
+  test("two rows of one merchant on the second rail normalise identically", () => {
+    expect(normaliseCounterparty(CARD_SECOND_RAIL)).toBe(
+      normaliseCounterparty(CARD_SECOND_RAIL_OTHER_DAY),
+    );
+  });
+
+  test("no card key retains the invented card number, in any of its printed shapes", () => {
+    for (const descriptor of [
+      CARD_AUG_FULL,
+      CARD_AUG_MASKED,
+      CARD_SEP_FULL,
+      CARD_SEP_MASKED,
+      CARD_DASHED_NUMBER,
+      CARD_SECOND_RAIL,
+      CHAIN_NOORD,
+      CHAIN_ZUID,
+    ]) {
+      const key = normaliseCounterparty(descriptor);
+      expect(key.replace(/[ .\-]/g, "")).not.toContain("4000123456789010");
+      expect(cardNumberRuns(key)).toEqual([]);
+      expect(key).not.toContain("JANSSENS");
+      expect(key).not.toContain("KAART");
+    }
+  });
+});
+
+describe("the strip is anchored to the card-tail grammar, not to digits, X tokens or holder text (M3-P6)", () => {
+  test("a legitimate 13-to-19-digit structured reference on a NON-card row survives in the key", () => {
+    const key = normaliseCounterparty(LONG_STRUCTURED_REFERENCE);
+    expect(key).toContain("415123456789012");
+    expect(cardNumberRuns(key)).toEqual(["415123456789012"]);
+  });
+
+  test("a non-card row carrying an X-masked token followed by holder-like text is UNCHANGED by the strip", () => {
+    expect(normaliseCounterparty(NON_CARD_X_TOKEN_CONTROL)).toBe(
+      NON_CARD_X_TOKEN_CONTROL_PRE_CHANGE_KEY,
+    );
+  });
+
+  test("two merchants sharing a chain prefix AND a city stay two distinct keys", () => {
+    const noord = normaliseCounterparty(CHAIN_NOORD);
+    const zuid = normaliseCounterparty(CHAIN_ZUID);
+    expect(noord).not.toBe(zuid);
+    expect(noord).toContain("NOORD");
+    expect(zuid).toContain("ZUID");
+  });
+
+  test("bracketing in general is NOT a country marker: a parenthesised value-date token survives", () => {
+    // The Belfius template depends on the parenthesised value-date token on
+    // every transaction start line (finding PR3-003), so the marker pattern
+    // is anchored to the ANGLE-bracket shape only.
+    expect(normaliseCounterparty("PIZZA NAPOLI (VAL. 12-08-2026) BON")).toContain(
+      "(VAL.",
+    );
+  });
+
+  test("the rail prefix is anchored at the START: a hyphenated word inside a name survives", () => {
+    expect(normaliseCounterparty("TRAITEUR MEUBEL-BETALING SERVICE")).toBe(
+      "TRAITEUR MEUBEL-BETALING SERVICE",
+    );
+  });
+
+  test("the holder tail is consumed only at the END: a dashed suffix without a card tail survives", () => {
+    expect(normaliseCounterparty("BROODJESZAAK DE HOEK - FILIAAL NOORD")).toBe(
+      "BROODJESZAAK DE HOEK - FILIAAL NOORD",
+    );
+  });
+
+  test("the bare day-and-month strip cannot eat a slice of a longer number", () => {
+    expect(normaliseCounterparty("REFERENTIE 1234-5678")).toBe(
+      "REFERENTIE 1234-5678",
+    );
+  });
+
+  test("normalisation of a card descriptor stays idempotent", () => {
+    const once = normaliseCounterparty(CARD_AUG_FULL);
     expect(normaliseCounterparty(once)).toBe(once);
   });
 });
