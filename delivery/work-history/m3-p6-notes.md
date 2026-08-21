@@ -634,3 +634,13 @@ assertion, the pin-never-widen quotation), or restated with their evidence
 this round (the two scratch-script sentences now name the clean git status
 and the 15-path scope diff). The one "no way to" is the honest form the
 clause endorses, inside an open question that carries still-open-because.
+
+## Criterion 6.6 re-measured at the fix-round-2 head
+
+    merchant_rules 0 | merchants 0 | transactions 39
+
+The owner completed the deployed import between the two fix rounds, so their
+rows are in the deployed database now. The CR-402 branch is unchanged: it
+keys on the RULE count, which is still zero, so nothing can detach and the
+recipe applies to those rows on the next recompute. The next recipe change
+may not be so lucky.
