@@ -72,6 +72,8 @@ files-touched:
   - src/modules/ledger/application/interpret-window.ts
   - src/modules/overview/ui/month-view.tsx
   - src/platform/ui/mask-card-number.ts
+  - src/modules/import/ui/profile-confirmation.tsx
+  - src/modules/overview/adapters/overview-repository.ts
   - test/domain/normalise-counterparty.test.ts
   - test/domain/merchant-review.test.ts
   - test/fixtures/card-descriptors.csv
@@ -92,6 +94,105 @@ per-step-commits:
     subject: "M3-P6 step 5 part 2: mask the card number on both label surfaces, and fix the two phone-viewport overflows that criterion 6.7 surfaced"
   - sha: 2096fd1
     subject: "M3-P6: name the SQL-side sibling of the merchant-source rule at the helper's definition"
+  - sha: 7f54b62
+    subject: "M3-P6: work history and working notes"
+  - sha: e0704a5
+    subject: "M3-P6: declare the single-spec placement of criterion 6.3's e2e half as a deviation"
+  - sha: 646b05c
+    subject: "M3-P6 fix round 1: the masking helper is grammar-anchored, and every descriptor rendering surface is derived rather than remembered"
+  - sha: ba2e822
+    subject: "M3-P6 fix round 1: the four mediums, and the escalation's missing guards"
+fix-round:
+  - mechanism: >-
+      IDENTIFYING A VALUE BY THE SHAPE IT HAPPENS TO HAVE INSTEAD OF BY THE
+      GRAMMAR THAT DEFINES IT. The finding was that maskCardNumbers masked
+      zero card numbers and six non-card identifiers on the owner's two real
+      statements. The mechanism is that it decided "this is a card number"
+      from a digit-run length, while the merchants normaliser one module over
+      already refuses exactly that and says so in its own rules. Anywhere the
+      two disagree about what a card number IS, one of them is wrong about a
+      real row. The fix is not "narrow the run pattern": it is that both
+      sites now use the SAME grammar, the card-number LABEL followed by four
+      groups, and the price of that anchoring is written down at both.
+    derivation:
+      command: >-
+        grep -rnE '13,19|\{13,19\}|\[0-9X\]\{4\}|KAART' --include='*.ts'
+        --include='*.tsx' src/ test/ | grep -vE '^\S+:\s*//|// ' | sort
+      output: |
+        In PRODUCTION code the enumeration is exactly two sites, and after
+        this round they carry the same grammar:
+          src/modules/merchants/domain/normalise-counterparty.ts:168
+            /(\bKAART(?:\s+NR\.?)?)\s+(?:[0-9X]{4}[\s.-]*){3}[0-9X]{4}(?:\s*-\s*[A-Z][A-Z'-]+(?:\s+[A-Z][A-Z'-]+)*\s*$)?/g
+          src/platform/ui/mask-card-number.ts:84
+            /(\bKAART(?:\s+NR\.?)?\s+)((?:[0-9X]{4}[\s.-]*){3}[0-9X]{4})\b/g
+        Two further production lines matched the grep and are NOT card-number
+        identification: normalise-counterparty.ts:196, the amount pattern,
+        which uses the label only as a LOOKAHEAD anchor, and :211, the
+        terminal-noise pattern for a Dutch card-payment phrase.
+        Every other hit is in test/ or test/fixtures: 3 sites define the
+        13-to-19 sweep used by the criterion 6.3 assertions
+        (test/domain/merchant-review.test.ts:91,
+        test/domain/normalise-counterparty.test.ts:346,
+        test/e2e/merchants.spec.ts:105), and the remainder are fixture
+        strings and expectations, including the four PDF-fixture card
+        descriptors in test/fixtures/generate-pdf-fixtures.ts that carry the
+        Dutch contactless token finding HZ-M3P6-06 is about.
+    not-covered: >-
+      The search is over .ts and .tsx under src/ and test/ ONLY. It does
+      not reach: the SQL in the overview repository, which selects
+      counterparty text but never inspects it for a card number; the
+      message catalogs under messages/, which carry no descriptor
+      interpolation (checked separately, zero hits); anything that would
+      identify a card number by a token OTHER than the four I grepped, for
+      instance a Luhn check or a bank-name heuristic, of which the tree
+      contains none today but which the grep would not have found; and any
+      code outside this repository, notably the KBC template on the
+      unmerged M3-P3 branch, whose descriptors were probed to carry NO
+      card-number label at all.
+  - mechanism: >-
+      A RENDERING SURFACE THAT DISPLAYS DESCRIPTOR TEXT WITHOUT PASSING IT
+      THROUGH THE DISPLAY HELPER. The finding named one surface, the import
+      confirm preview. The mechanism is that round 0 enumerated the two
+      surfaces the plan happened to name and never derived the set, so any
+      surface the plan did not think of renders raw. The fix is the
+      derivation below, kept in the helper's own comment so the next reader
+      re-runs it rather than trusting a list.
+    derivation:
+      command: >-
+        grep -rnE
+        '\{[^}]*\b(description|counterpartyText|counterpartyName|rawLine|\.label|\.text)\b[^}]*\}'
+        --include='*.tsx' src/ | sort
+      output: |
+        src/modules/import/ui/profile-confirmation.tsx:100:  <td>{row.counterpartyName ?? row.counterpartyIban ?? ""}</td>
+        src/modules/import/ui/profile-confirmation.tsx:101:  <td className="preview-descriptor">{row.description}</td>
+        src/modules/merchants/ui/merchant-review.tsx:36:        {maskCardNumbers(group.label)}
+        src/modules/merchants/ui/merchant-review.tsx:49:            value={group.counterpartyText}
+        src/modules/overview/ui/month-view.tsx:226:  <span className="month-group-label">{group.label}</span>
+        src/modules/overview/ui/month-view.tsx:263:          {row.text}
+        src/modules/overview/ui/month-view.tsx:321:  <span className="pulse-eyebrow recon-part-label">{part.label}</span>
+        src/modules/overview/ui/month-view.tsx:87:  {group.kind === "cash" ? t("cash") : maskCardNumbers(group.label)}
+        EIGHT sites, THREE files. Round 0 masked two of them. This round masks
+        three more: profile-confirmation.tsx:100 and :101 (finding
+        CR-M3P6-01) and month-view.tsx:263, the reconciliation gap row, which
+        renders the UNNORMALISED counterparty text (finding CR-M3P6-03).
+        THE THREE THAT ARE DELIBERATELY NOT MASKED, each with its reason
+        rather than by omission: merchant-review.tsx:49 is the hidden field
+        that becomes the EXACT rule subject and MUST stay unmasked (decision
+        D-12); month-view.tsx:226 is the reserves group label, which is the
+        user's own declared account label or a counterparty IBAN and is not a
+        descriptor; month-view.tsx:321 is translated copy.
+    not-covered: >-
+      The pattern is a JSX EXPRESSION over .tsx files, so it does not reach:
+      a descriptor rendered through a variable named something else, since
+      the pattern keys on five field names; a descriptor placed in an
+      ATTRIBUTE rather than in element text, which was swept separately
+      (grep for title= and aria-label= carrying a descriptor: zero hits); a
+      descriptor written to a log, swept separately (zero hits); a
+      descriptor interpolated through a translation message, swept
+      separately over messages/ (zero hits); and any surface added after
+      this head, which is the reason the command lives in the helper's
+      comment instead of the result.
+
 key-decisions:
   - decision: >-
       The shared merchant-source helper lives in
@@ -110,19 +211,50 @@ key-decisions:
       cross-module import on the published application interface as pulse-domain
       section 9 requires.
   - decision: >-
-      The display helper masks ANY 13-to-19-digit run once separators are
-      removed, including the legitimate structured reference criterion 6.3(b)
-      names as its permitted exception.
+      REVERSED IN FIX ROUND 1. The display helper no longer masks any
+      13-to-19-digit run; it masks where the card-number LABEL identifies a
+      card number, the same grammar the merchants normaliser strips.
     why: >-
-      Criterion 6.3 defines a card-number run as exactly that, and the sentence
-      that follows says the display helper renders SUCH a run masked. The
-      exception in 6.3(b) is a permission, not an obligation: a sweep saying "no
-      label carries a run except possibly this one" is satisfied a fortiori by a
-      label that carries none. The trade differs from the normaliser's on
-      purpose and is written down at both definitions: the strip must NOT key on
-      length, because a stripped reference is gone from the grouping key and
-      from the stored rule subject, while a masked reference costs a reader four
-      digits and still sits verbatim in the fact.
+      Round 0 read criterion 6.3's sentence "the display helper renders such a
+      run masked" as licensing a length test, and reasoned that a permission is
+      satisfied a fortiori by masking more. The review measured what that cost
+      on real data: ZERO card numbers masked and SIX non-card identifiers
+      damaged, because the normaliser had already removed every card number
+      from the keys, so on observed data the length test only ever fired on
+      something else. The round-0 reasoning was sound about the criterion and
+      wrong about the world, which is the difference a probe makes. The
+      criterion is still satisfied, and its named exception is now REAL rather
+      than vacuous: the structured reference is not a card number, so nothing
+      masks it and the owner can still read it.
+  - decision: >-
+      The trailing-city loop keeps running on card descriptors, which is NOT
+      the edit finding HZ-M3P6-08 proposed.
+    why: >-
+      The proposed edit was implemented first and then rejected on evidence.
+      Skipping the loop for card descriptors makes the key space not closed
+      under the pipeline: a card key ending in a city re-normalises without the
+      city, because the second pass sees no card tail. assign-merchant.ts
+      normalises the submitted subject again, so the stored EXACT rule would
+      have been the city-less string while every matching row keys with the
+      city, and the owner's naming would have matched NOTHING while every total
+      stayed right. That is hazard H6.4, which outranks a latent merge of two
+      branches of one chain, and the pinned idempotency assertion caught it. The
+      merge the finding names is M1-P4's deliberate rule reaching card rows, it
+      is now pinned as what it is, and a new closure invariant asserts over
+      EVERY group that a submitted subject re-normalises to itself.
+  - decision: >-
+      The two payment rails are unified by keeping the CITY on both, not by
+      dropping it from either.
+    why: >-
+      The rails disagreed because one prints "postcode CITY" and the other
+      prints the city as bare text, and the postal pattern removed the pair
+      wholesale. Dropping the city from the other rail would have collided
+      head-on with HZ-M3P6-08. Keeping it, by removing only the postal CODE and
+      dropping the separator dashes a card descriptor prints between its
+      fields, makes both rails produce the same key without touching the city
+      rule at all. Measured on the owner's own statement: the two merchants the
+      review found split across rails are now one group each, and all four
+      merged groups are still one merchant.
   - decision: >-
       The fixture's five rows of one merchant use one payment rail with both
       printed card-tail shapes, rather than one merchant spread across both
@@ -238,9 +370,11 @@ deviations:
       are pre-existing: nothing in this phase widened either, and the
       phone-viewport spec M3-P1 added visits an empty-state household where the
       month grid is not in the document at all. Both fixes are wrapping-only and
-      use existing tokens. This needs a files-to-touch amendment on the base
-      branch, or an explicit acceptance of the excess; it is declared in the
-      commit that makes it and in the report.
+      use existing tokens. RESOLVED RATHER THAN LEFT STANDING: this record
+      asked for a base-branch amendment, and the orchestrator landed one at
+      29c4745, so src/app/globals.css sits on the plan's extras from the merge
+      base 77da0c6 onward and is no longer an excess. The deviation is kept
+      here because the file was edited before the amendment existed.
   - plan-clause: >-
       files-to-touch, which lists no test/application path, while criterion 6.5
       asks for "an import test re-importing the card fixture".
@@ -261,6 +395,19 @@ deviations:
       is not in files-to-touch, so a second spec file there would have been an
       excess on top of the stylesheet one. The sweep helper is defined once and
       applied to both surfaces, which is what "the same two sweeps" asks for.
+  - plan-clause: >-
+      files-to-touch plus the plan's extras at 77da0c6, which do not list
+      src/modules/overview/adapters/overview-repository.ts.
+    why: >-
+      Findings HZ-M3P6-05 and CR-M3P6-02, which both reviewers reached
+      independently, are that the merchant-source rule has a third
+      implementation written twice in raw SQL in that file, that criterion
+      6.10's pin is structurally blind to it, and that it is the copy the month
+      view's grouping actually reads. Neither reviewer's remedy can be applied
+      from a declared file: hoisting the two occurrences into one fragment is an
+      edit to that file. The change is contained, the two SQL reads are
+      unchanged in meaning, and a new test reads the file and pins the SQL form.
+      Declared in the commit that makes it; the phase wants the amendment.
 gate-evidence:
   - gate: typecheck
     result: green
@@ -292,8 +439,8 @@ gate-evidence:
   - gate: suite
     result: green
     wrapper-exit-code: 0
-    discovered: 322
-    passed: 322
+    discovered: 338
+    passed: 338
     failed: 0
     skipped: 0
     todo: 0
@@ -320,18 +467,20 @@ claims:
   - id: M3P6-C1
     kind: coverage
     statement: >-
-      Criterion 6.10 holds at the head in all three of its halves: the literal
+      Criterion 6.10 holds at the fix-round head in all three of its original
+      halves AND in the SQL half the fix round added: the literal
       operand-bearing pattern matches exactly three files, the two frozen
-      sibling recipes import no path of the shared helper's module, and the
-      shared helper's import specifier appears in exactly the two former call
-      sites.
+      sibling recipes import no path of the shared helper's module, the shared
+      helper's import specifier appears in exactly the two former call sites,
+      and the SQL form of the same rule now appears exactly once.
     settled-by:
       executed-construction:
         command: >-
           grep -rlE 'counterpartyName \?\? [A-Za-z_]*\.?description' src/ ;
           grep -nE 'normalise-counterparty|merchants/application|merchants/domain'
           src/modules/import/domain/dedup.ts src/modules/ledger/domain/corrections.ts ;
-          grep -rlE '^\s*(import \{[^}]*\bcounterpartyText\b|  counterpartyText,)' src/
+          grep -rlE '^\s*(import \{[^}]*\bcounterpartyText\b|  counterpartyText,)' src/ ;
+          grep -rnE 'COALESCE\(\s*t\."counterpartyName",\s*t\."description"\s*\)' src/
         exit-code: 0
         output: |
           src/modules/import/domain/dedup.ts
@@ -344,13 +493,13 @@ claims:
           src/modules/ledger/application/interpret-window.ts
           src/modules/merchants/domain/merchant-review.ts
 
-          (the bare-literal pattern, for reference) 5 files, down from 6
+          src/modules/overview/adapters/overview-repository.ts:58:const COUNTERPARTY_TEXT_SQL = Prisma.sql`COALESCE(t."counterpartyName", t."description")`
   - id: M3P6-C2
     kind: remedy
     statement: >-
-      The card-tail strip is anchored to the card-number label grammar, and each
-      of the two guards that witness the anchor reddens under the specific wrong
-      implementation it exists to refuse.
+      The card-tail strip is anchored to the card-number label grammar, and
+      each of the guards that witness the anchor reddens under the specific
+      wrong implementation it exists to refuse.
     settled-by:
       executed-construction:
         command: >-
@@ -366,19 +515,17 @@ claims:
             x ... a non-card row carrying an X-masked token followed by
               holder-like text is UNCHANGED by the strip
             x criterion 6.1: ... the non-card control row ... is UNCHANGED
-            x the pinned row "ONLINE AANKOOP WEBSHOP DE VLIEGER ..."
           MUTATION B: Tests 5 failed | 71 passed (76)
             x a legitimate 13-to-19-digit structured reference on a NON-card
               row survives in the key
-            x criterion 6.1: ... keeps it in its key
             x criterion 6.3 (b) exactly ONE key carries a 13-to-19-digit run
             x the pipeline is idempotent over its own output
           Both restored afterwards; git status clean.
   - id: M3P6-C3
     kind: remedy
     statement: >-
-      Masking reaches the two label surfaces and nothing else: not rawLine, not
-      rawContent, not the normalised key, and not the value the review form
+      Masking reaches five rendering surfaces and nothing else: not rawLine,
+      not rawContent, not the normalised key, and not the value the review form
       submits as the EXACT rule subject.
     settled-by:
       executed-construction:
@@ -387,14 +534,12 @@ claims:
         exit-code: 0
         output: |
           Test Files  1 passed (1)
-          Tests  15 passed (15)
+          Tests  22 passed (22)
           (among them: "the stored rawLine is the source line verbatim and
           still carries the UNMASKED card number", "the stored rawContent is
           the uploaded bytes, byte for byte", "the display helper is a pure
           string function and never touches the value the review form
-          submits", and criterion 6.4's round trip in which the submitted
-          subject equals the stored EXACT rule pattern and resolves all five
-          rows including the two from the other month)
+          submits", and criterion 6.4's round trip)
   - id: M3P6-C4
     kind: coverage
     statement: >-
@@ -403,8 +548,8 @@ claims:
     settled-by:
       executed-construction:
         command: >-
-          git diff --name-only 68fc7ee..HEAD | grep -E 'dedup\.ts|corrections\.ts' ;
-          git diff --stat 68fc7ee..HEAD -- test/domain/dedup.test.ts
+          git diff --name-only 77da0c6..HEAD | grep -E 'dedup\.ts|corrections\.ts' ;
+          git diff --stat 77da0c6..HEAD -- test/domain/dedup.test.ts
         exit-code: 1
         output: |
           (no output from the grep: exit 1, which is what the criterion demands)
@@ -412,24 +557,19 @@ claims:
   - id: M3P6-C5
     kind: coverage
     statement: >-
-      The privacy gate ran with a probe list derived from both real uploads at
-      run time, in both halves, plus an independent in-memory scrub over the
-      changed files and over this branch's commits and patch text.
+      The privacy gate ran at the fix-round head with a probe list derived from
+      both real uploads at run time, in both halves, plus an independent
+      in-memory scrub over the changed files and over this branch's commits and
+      patch text.
     settled-by:
       executed-construction:
         command: >-
           A scratch script kept outside the repository in the session
-          scratchpad (git status is clean at the head and the scope diff below
-          lists 13 paths, none of them the script), which extracts both uploads
-          through
-          the shipped extractor and template, derives high-value probes from
-          POSITIONS in the real grammar (IBANs both forms, long structured
-          references, the identifier fragments in the two file names, the card
-          number in every grouping shape plus each group, the holder tail after
-          a card number plus its tokens, and the merchant span on every card
-          row), then runs git grep -F over the whole worktree and over the
-          changed files, and finally searches the same probes in memory over
-          every changed file and over git log -p 68fc7ee..HEAD
+          scratchpad, which extracts both uploads through the shipped extractor
+          and template, derives high-value probes from POSITIONS in the real
+          grammar, runs git grep -F over the whole worktree and over the changed
+          files, and searches the same probes in memory over every changed file
+          and over git log -p 77da0c6..HEAD
         exit-code: 0
         output: |
           tight probe categories: iban=18 ref=17 filename=5 card=12 holder=3
@@ -438,74 +578,136 @@ claims:
           HALF (b) changed-file hits: 0
           TIGHT_EXIT=0
 
-          A deliberately over-inclusive BROAD run (132 probes: every token of
-          five or more letters on a card row, every thousands-form amount,
-          every date) reported 6 whole-worktree and 2 changed-file hits, and
-          every one of those 8 is a probe that ALSO matches at the phase base
-          68fc7ee, so this phase introduced none of them. In-memory scrub over
-          changed files: 2 hits, both from those same base-matching generic
-          probes. In-memory scrub over commits and patch: 0.
+          BROAD run, 132 deliberately over-inclusive probes, 15 changed files:
+          6 whole-worktree hits and 2 changed-file hits, every one of them a
+          probe that ALSO matches at the phase base, so this phase introduced
+          none. In-memory scrub over commits and patch: 0.
   - id: M3P6-C6
-    kind: open-question
+    kind: remedy
     statement: >-
-      The merchant-source rule has a third implementation, in SQL, at
-      src/modules/overview/adapters/overview-repository.ts:95 and :266, as
-      COALESCE of the counterparty name and the description. Criterion 6.10's
-      literal pattern is TypeScript and does not see it. This phase named it at
-      the helper's definition rather than rewriting the aggregation.
-    still-open-because: >-
-      The query is raw SQL by design (pulse-domain section 9 keeps the overview
-      aggregations set-based), so it cannot call the shared helper, and
-      src/modules/overview/adapters is outside this phase's files-to-touch.
-      Whether that third site should be derived from one place, and how, is a
-      decision for the orchestrator.
+      The merchant-source rule now has ONE definition per language and BOTH are
+      pinned: the TypeScript helper by criterion 6.10's grep, and the SQL copy
+      by a test that reads the repository file.
+    settled-by:
+      executed-construction:
+        command: >-
+          npx vitest run test/domain/merchant-review.test.ts -t "written ONCE per language"
+        exit-code: 0
+        output: |
+          Three assertions green: the SQL form appears exactly once as the
+          shared fragment; both SQL reads interpolate that fragment rather than
+          carrying their own copy; and the SQL rule and the TypeScript rule
+          agree on every value Prisma can produce (fall through on null and on
+          undefined, keep an empty counterparty name).
   - id: M3P6-C7
-    kind: open-question
+    kind: remedy
     statement: >-
-      Criterion 6.3(b) permits the structured-reference row's 13-to-19-digit run
-      in both its key and its rendered label. This implementation keeps it in
-      the key and masks it in the label, so the label side of that permission
-      goes unused.
-    still-open-because: >-
-      The criterion states the exception as a permission rather than an
-      obligation, and finding PR5-002's reasoning (that the key and the label
-      are the same string for an unresolved group) is satisfied either way. A
-      reviewer who reads the exception as an obligation would want the display
-      helper anchored to the card grammar instead of to the digit window, which
-      is a different trade and would leave an unlabelled card number visible.
+      Criterion 6.3(b)'s named exception is exercised rather than vacuous on
+      both sides. The KEY of the structured-reference row carries its run, and
+      so does its RENDERED LABEL, because the narrowed display helper leaves a
+      payment reference alone.
+    settled-by:
+      executed-construction:
+        command: >-
+          npx vitest run test/domain/merchant-review.test.ts -t "except the ONE named exception"
+          and the merchants phone spec, which asserts the reference is still
+          legible on both screens
+        exit-code: 0
+        output: |
+          Both label sweeps now collect the runs they find and assert the
+          collected list equals exactly the one permitted exception, on the
+          merchant review surface and on the month view surface. The e2e
+          asserts the reference row's rendered label CONTAINS the reference on
+          both screens. Before this round the helper masked it, so the
+          exception was permitted and never used.
   - id: M3P6-C8
-    kind: open-question
+    kind: remedy
     statement: >-
-      Descriptors on the second payment rail keep rail vocabulary and separator
-      dashes in their key, so a group label there reads less cleanly than one on
-      the first rail.
-    still-open-because: >-
-      Step 3 lists exactly five things to strip and the contactless marker is
-      not among them. Rows of one merchant on that rail still collapse to one
-      key, so grouping is correct; only the label's readability suffers.
-      Widening the strip is a recipe change the plan did not authorise, and
-      under the stability contract it would travel with a stored-pattern
-      migration.
+      The same merchant paid on the two payment rails is ONE key and ONE group,
+      measured on the owner's own statement as well as on the fixture.
+    settled-by:
+      executed-construction:
+        command: >-
+          A scratch measurement, never committed, running the shipped extractor,
+          template and normaliser over the real Belfius upload (8-hex prefix
+          39bada64) and grouping the parsed rows by key
+        exit-code: 0
+        output: |
+          rows: 39 | full-label card rows: 15 | any-label rows: 23
+          distinct keys over the 15 full-label card rows: 6
+          distinct keys over the 23 any-label rows: 9   (was 11 before this round)
+          distinct keys over all rows: 25               (was 27 before this round)
+          merged groups: 4  sizes: [8,4,4,2]
+          groups where every row is a card row with the SAME merchant span: 4 of 4
+          merged groups spanning BOTH payment rails: 2
+          The two cross-rail groups are exactly the two merchants the review
+          measured as split. No cross-merchant collapse exists in the corpus.
   - id: M3P6-C9
-    kind: open-question
+    kind: remedy
     statement: >-
-      Two phone-viewport overflows were fixed in src/app/globals.css, which is
-      outside files-to-touch.
-    still-open-because: >-
-      I found no way to satisfy criterion 6.7 from a file on the list: the
-      overflow was measured at 462 on the merchant review and 424 on the month
-      view, and in both cases the overflowing rule is in that stylesheet
-      (.merchant-row's non-wrapping flex and .month-grid's fixed
-      --layout-rail track). The brief states that a file outside the
-      declaration is amended on the base branch rather than on this one, which
-      is why this is handed back rather than fixed by editing the declaration
-      here. The phase wants a base-branch amendment adding src/app/globals.css,
-      or an explicit acceptance of the excess.
+      On the owner's real statement the masking helper now fires on card rows
+      and on nothing else, which is the reverse of what the review measured.
+    settled-by:
+      executed-construction:
+        command: >-
+          The same scratch measurement, applying maskCardNumbers to the 39
+          normalised keys and to the 39 raw descriptors
+        exit-code: 0
+        output: |
+          head KEYS changed by the masker: 0 of 39
+            (the normaliser has already removed every card number from a key,
+             so on real data the masker is defence in depth there, not the
+             load-bearing guard: the STRIP is)
+          raw DESCRIPTORS changed by the masker: 23 of 39
+            of those, full-label card rows: 15
+            of those, NON card-label rows: 0
+          card descriptors still carrying a window run AFTER masking: 0 of 15
+          NON-card descriptors whose window runs the masker touched: 0
+          Before this round the same measurement gave 5 keys changed, 0 of them
+          card rows, and six damaged non-card identifiers across the two
+          statements.
   - id: M3P6-C10
     kind: coverage
     statement: >-
-      Every mechanism this phase touches was looked up in the kernel's mechanism
-      index before the code that uses it was written.
+      No committed fixture outside the one this phase added changed its keys
+      between the phase base and the fix-round head, the KBC card fixtures
+      included.
+    settled-by:
+      executed-construction:
+        command: >-
+          A scratch script comparing normaliseCounterparty at the phase base
+          77da0c6 against the head, over every committed CSV fixture through
+          the real detector and parser
+        exit-code: 0
+        output: |
+          belfius-account-a.csv: 6 rows, 0 keys changed
+          belfius-account-a2.csv: 6 rows, 0 keys changed
+          card-descriptors.csv: 19 rows, 14 keys changed
+          generic-debit-credit.csv: 4 rows, 0 keys changed
+          generic-debits-only.csv: 3 rows, 0 keys changed
+          gj-card.csv: 4 rows, 0 keys changed
+          gj-current.csv: 8 rows, 0 keys changed
+          gj-pot-b.csv: 2 rows, 0 keys changed
+          kbc-card-b.csv: 3 rows, 0 keys changed
+          kbc-card-blank-indicator.csv: no-parse (a deliberate failure fixture)
+          kbc-card-storno.csv: 2 rows, 0 keys changed
+          kbc-card.csv: 6 rows, 0 keys changed
+          mixed-accounts.csv: 6 rows, 0 keys changed
+          mv-cancel-a.csv: 2 rows, 0 keys changed
+          mv-cancel-b.csv: 1 rows, 0 keys changed
+          mv-gapped-a.csv: 3 rows, 0 keys changed
+          mv-gapped-b.csv: 1 rows, 0 keys changed
+          mv-partial.csv: 4 rows, 0 keys changed
+          mv-transit-a.csv: 2 rows, 0 keys changed
+          mv-transit-b.csv: 1 rows, 0 keys changed
+          mv-unresolved.csv: 3 rows, 0 keys changed
+          TOTAL: 86 rows, 14 keys changed, all of them in the fixture this
+          phase added, which is the change the phase exists to make.
+  - id: M3P6-C11
+    kind: coverage
+    statement: >-
+      Every mechanism this phase touches was looked up in the kernel's
+      mechanism index before the code that uses it was written.
     settled-by:
       executed-construction:
         command: >-
@@ -517,23 +719,77 @@ claims:
           RELEVANT: "Deciding what another program will do by pattern-matching
           the text of a file it consumes". Its rule, one tier down, is what
           this phase's strip patterns obey: PIN the accepted shapes and fail
-          closed on anything else, never widen the pattern. Each card pattern
-          matches an observed printed shape and is grounded in a committed
-          fixture; the header comment states that adding a shape is a recipe
-          change under the stability contract rather than a widening.
+          closed on anything else, never widen the pattern. FIX ROUND 1 IS
+          THAT RULE BEING ENFORCED AGAINST THIS PHASE'S OWN CODE: the rail
+          prefix carried an unpinned wildcard (HZ-M3P6-03) and the masker
+          identified a card number by shape rather than by grammar
+          (HZ-M3P6-01). Both are now pinned.
           NO ENTRY EXISTS for the mechanism this phase's own hazard turns on,
           a normalisation recipe whose OUTPUT is stored as a user declaration.
           Recorded as absent rather than skipped. Its rule is stated at the
-          definition (normalise-counterparty.ts) and its siblings are named
-          there: the frozen dedup hash, the ledger refund key, and the SQL
-          COALESCE in the overview repository.
-          The remaining index entries (claim files, leases, worktree removal,
-          append-only logs, reporter parsing, path-type establishment,
-          supervision, remote access, generated-artifact checking, error
-          classification, guard failure paths, atomic replacement, shared
-          worktrees, CI-step wiring) cover kernel mechanisms this phase does
-          not use.
+          definition and its siblings are named there: the frozen dedup hash,
+          the ledger refund key, and the SQL fragment in the overview
+          repository.
+  - id: M3P6-C12
+    kind: open-question
+    statement: >-
+      src/modules/overview/adapters/overview-repository.ts is edited by this
+      branch and is not on files-to-touch or on the plan's extras at 77da0c6.
+    still-open-because: >-
+      Findings HZ-M3P6-05 and CR-M3P6-02, raised independently by both
+      reviewers, name a remedy that is an edit to THAT file: hoisting its two
+      SQL occurrences into one fragment. I found no way to do that from a file
+      on the declaration. The orchestrator offered the amendment in the
+      fix-round dispatch; it has not landed yet.
+  - id: M3P6-C13
+    kind: open-question
+    statement: >-
+      A card number printed with NO card-number label is not masked by the
+      display helper, and not stripped by the normaliser either.
+    still-open-because: >-
+      That is the price of anchoring both to the grammar rather than to the
+      shape, which is what finding HZ-M3P6-01 asked for and what keeps an IBAN,
+      a mandate reference and a phone number legible. No such shape occurs in
+      either real statement or in any committed fixture, measured. If a future
+      export prints one, the answer is a new pinned label shape in both
+      definitions, not a length test in either.
+  - id: M3P6-C14
+    kind: open-question
+    statement: >-
+      Finding HZ-M3P6-08's proposed edit was implemented and then rejected, so
+      the behaviour it names is still present: two branches of one chain in two
+      cities, printed with the city as the final token and no country marker,
+      produce one key.
+    still-open-because: >-
+      Skipping the trailing-city loop for card descriptors breaks the key-space
+      closure the CR-402 contract rests on, and the consequence is a stored
+      EXACT rule that matches nothing, which is hazard H6.4 and outranks the
+      finding. The behaviour is M1-P4's deliberate rule reaching card rows; it
+      is pinned as what it is and no real card row reaches it. Whether that
+      rule should hold for card rows at all is a product decision above this
+      phase.
+
 environment-warnings:
+  - warning: >-
+      The tenancy gate holds every repository file to "no export that does not
+      take a household context", and it fails CLOSED, so adding an exported
+      SQL fragment to a repository file reddens test/schema/tenancy.test.ts
+      with no hint that the export is a constant rather than a query. Keep such
+      a fragment module-local; a test that pins its TEXT does not need the
+      symbol.
+    evidence: >-
+      npm test after exporting COUNTERPARTY_TEXT_SQL: 1 failed | 337 passed,
+      "repositories-take-household-context ... the real src/modules tree has no
+      tenancy violations", expected [ { ... } ] to deeply equal []. Making the
+      constant module-local: 338 passed.
+  - warning: >-
+      pkill -f "next dev" and pkill -f "next-server" match the agent's own
+      shell command line and kill the shell running them (observed exit 144
+      twice). Check the port with curl instead, or match a pattern that cannot
+      appear in the killing command itself.
+    evidence: >-
+      Two Bash calls returned exit code 144 with no output; the dev server was
+      down afterwards, and a curl probe was the only thing that reported it.
   - warning: >-
       npm ci under npm 10 (Node 22) FAILS on this repository's committed
       lockfile with "Missing: @swc/helpers@0.5.23 from lock file", while npm

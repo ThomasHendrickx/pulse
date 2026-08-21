@@ -374,3 +374,118 @@ the line-based list). Settlement, one by one:
   M3P6-C9, handed back rather than asserted as settled.
 - Line 494, "never widen the pattern": a quotation of the kernel mechanism
   index's own rule, attributed in place.
+
+# FIX ROUND 1
+
+Both verdicts FIX-ROUND-NEEDED at e0704a5. Merged origin/main first, so the
+merge base is 77da0c6 and both plan amendments (src/app/globals.css at
+29c4745, src/modules/import/ui/profile-confirmation.tsx at 77da0c6) are
+visible from it. Fixed in the order the coordinator set: HZ-01 before CR-01,
+then the mediums, then the lows.
+
+## HZ-M3P6-01 (high) THE MASKER DID THE WRONG JOB. Fixed first.
+
+The mechanism, not the instance: identifying a value by the SHAPE it happens
+to have instead of by the GRAMMAR that defines it. The helper keyed on a
+13-to-19-digit run; the merchants normaliser one module over already refuses
+exactly that and says so in its own rules.
+
+RED WITNESS, the reviewer's own probe shapes with invented values, run
+against the SHIPPED helper:
+
+    npx vitest run test/domain/merchant-review.test.ts
+    Tests  2 failed | 14 passed (16)
+    -> expected 'OVERSCHRIJVING NAAR BE**** 7034 ENERGIE NOORD'
+       to be 'OVERSCHRIJVING NAAR BE68 5390 0754 7034 ENERGIE NOORD'
+    -> expected 'KAART 4000 12XX XXXX 9010' to be 'KAART **** 9010'
+
+The first is a spaced IBAN mangled into something that looks like a masked
+card number; the second is a real printed card tail the shape test did not
+even reach. Both green after the helper was anchored to the card-number
+label.
+
+The false sentence at mask-card-number.ts:41 is CORRECTED IN PLACE AND
+LOUDLY (R-087) rather than deleted: the file now quotes the old claim, says
+it was false, says what falsified it, and states the trade the new anchor
+buys, including the cost that a card number printed with NO label is not
+masked.
+
+MEASURED ON THE OWNER'S OWN FILE, before and after, counts only:
+  before: 5 of 27 keys changed by the masker, 0 of them card rows
+  after:  0 of 39 keys changed by the masker
+          23 of 39 RAW descriptors changed, ALL of them card-label rows,
+          0 non-card rows touched
+          0 of 15 card descriptors retain a window run after masking
+          0 non-card descriptors had a window run touched
+
+## CR-M3P6-01 (high) THE CONFIRM PREVIEW. Fixed second, on the corrected helper.
+
+RED WITNESS against the shipped preview, at 390x844 through the real import:
+
+    PLAYWRIGHT_BASE_URL=... npx playwright test --project=chromium -g "..."
+    Expected substring: not "4000123456789010"
+    Received string: "20260804  DEBITMASTERCARDBETALINGVIAGOOGLEPAY04/08...
+                      KAARTNR4000123456789010JANSSENSPIETER  4,20"
+
+Green after both preview cells render through the helper. The e2e now sweeps
+the five preview rows with the same separator-insensitive test the group
+labels use, and asserts at least four of them carry the mask marker, so the
+sweep cannot pass by the rows happening to carry no card number.
+
+THE SET OF SURFACES IS DERIVED, NOT REMEMBERED. The grep is in the fix-round
+section of the work history and in the helper's own comment: eight JSX sites
+in three files, five masked, three excluded with their reason. CR-M3P6-03
+(the reconciliation gap row) came out of that derivation and is fixed in the
+same commit.
+
+## The mediums
+
+- HZ-M3P6-03: the rail prefix is now the pinned alternation of the two rails
+  observed. Fixture pair plus two pinned rows; the reviewer's collapse no
+  longer happens.
+- HZ-M3P6-04: the amount strip is anchored by a lookahead at the card-number
+  label, reads BOTH thousands forms and starts at a field boundary. Three
+  pinned rows including a non-card amount that must survive. The comment
+  calling it "the transaction's own amount" is now true.
+- HZ-M3P6-06: the Dutch contactless token is added, and the two rails are
+  unified by keeping the CITY on both (the postal CODE is dropped, the city
+  token stays, and a card descriptor's separator dashes are dropped as whole
+  tokens). The false grounding comment is corrected in place. Measured on the
+  owner's file: any-label keys 11 -> 9, all-row keys 27 -> 25, and the two
+  merged groups that appear are exactly the two merchants the review found
+  split across rails.
+- HZ-M3P6-02: the floor returns the input with the card-number tail replaced
+  by its LABEL, put back through the pipeline so the floor is a fixed point.
+  Fixture row, pinned row, and a key-sweep assertion.
+- HZ-M3P6-05 / CR-M3P6-02: the SQL copy is hoisted into one module-local
+  fragment and pinned by a test that reads the file. The comment at the
+  helper's definition is updated in place.
+
+## HZ-M3P6-08, answered with evidence rather than with the edit proposed
+
+The proposed edit (skip the trailing-city loop on card descriptors) was
+IMPLEMENTED and then REJECTED. It makes the key space not closed under the
+pipeline, and the pinned idempotency assertion caught it:
+
+    -> expected 'FIETSPUNT DE KETTING' to be 'FIETSPUNT DE KETTING GENT'
+
+assign-merchant.ts normalises the submitted subject again, so the stored
+EXACT rule would have been the city-less string while every matching row keys
+with the city: the owner's naming would have matched NOTHING while every
+total stayed right. That is hazard H6.4 and it outranks a latent merge of two
+branches of one chain. The behaviour is pinned as what it is, and a NEW
+closure invariant asserts over every group the fixture produces that a
+submitted subject re-normalises to itself.
+
+## The 6.2 escalation
+
+Both collapse paths now have their own fixture pair and their own pinned
+rows: the rail token (GROEPS-AANKOOP versus the bare name) and the trailing
+city (FIETSPUNT in two cities). A third pair witnesses the cross-rail merge
+that HZ-M3P6-06 asked for. Fixture rows 13 -> 19.
+
+## Regression measurement, phase base versus fix-round head
+
+Every committed CSV fixture except the one this phase added has ZERO key
+changes, the three KBC card fixtures included: 86 rows, 14 changed, all 14 in
+card-descriptors.csv.
