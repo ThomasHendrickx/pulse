@@ -23,12 +23,22 @@ import type {
 export const failureReasonForDetectError = (
   error: StatementDetectError,
 ): ImportFailureReason =>
-  error.kind === "layout-unsupported" ? "layout-unsupported" : "undetectable";
+  error.kind === "layout-unsupported"
+    ? "layout-unsupported"
+    : error.kind === "pdf-extraction-failed"
+      ? "extraction-failed"
+      : "undetectable";
 
 export const failureReasonForParseError = (
   error: StatementParseFailure,
 ): ImportFailureReason =>
-  error.kind === "balance-mismatch" ? "balance-mismatch" : "unparseable";
+  error.kind === "balance-mismatch"
+    ? "balance-mismatch"
+    : error.kind === "pdf-extraction-failed"
+      ? "extraction-failed"
+      : error.kind === "template-version-mismatch"
+        ? "layout-version-mismatch"
+        : "unparseable";
 
 export type UploadOutcome =
   | { readonly kind: "ingested"; readonly importId: string; readonly added: number; readonly known: number }
@@ -69,7 +79,28 @@ export const uploadStatement = async (
     return failed("mixed-accounts");
   }
 
-  const profile = await findProfileBySpec(context, deps, detected.value);
+  const profiles = await deps.imports.listProfiles(context);
+  const profile = profiles.find((candidate) =>
+    specEquals(candidate.spec, detected.value),
+  );
+  // Fix round 1 (HZ-002): a stored pdf-layout profile for the SAME
+  // template at a DIFFERENT version means this build's template code is
+  // not the code the stored declaration recorded. Re-asking the ask-once
+  // declaration here would silently create a twin profile and re-parse
+  // history under new rules; instead the upload fails closed and loud
+  // until a deliberate migration lands (procedure at pdf-template.ts).
+  if (profile === undefined && detected.value.kind === "pdf-layout") {
+    const detectedSpec = detected.value;
+    const staleVersionTwin = profiles.find(
+      (candidate) =>
+        candidate.spec.kind === "pdf-layout" &&
+        candidate.spec.templateId === detectedSpec.templateId &&
+        candidate.spec.templateVersion !== detectedSpec.templateVersion,
+    );
+    if (staleVersionTwin !== undefined) {
+      return failed("layout-version-mismatch");
+    }
+  }
   const account = await resolveAccount(context, deps, parsed.value, profile);
 
   if (profile === undefined || account === undefined) {

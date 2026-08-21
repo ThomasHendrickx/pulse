@@ -11,6 +11,16 @@
 // H2.3). SIBLING IMPLEMENTATION: none; the extraction adapter
 // (adapters/pdf-text-extractor.ts) feeds this function and must never
 // grow its own line assembly.
+//
+// EACH LINE CARRIES ITS LEFT EDGE (fix round 1, finding HZ-001): layout
+// templates need the line's horizontal position to tell MARGIN-LEVEL
+// structure (transaction starts, balance lines, band lines) from INDENTED
+// description text, because description lines are counterparty-controlled
+// free text and may carry any shape, including the exact transaction-start
+// or balance shape. Classifying lines by text shape alone let a crafted
+// description fabricate a row and a balance-shaped description line
+// truncate a block (the review's executed constructions); the line's
+// position is the layout fact that separates structure from data.
 
 // One positioned text run, in PDF text space (origin bottom-left, y grows
 // upward). x and y are the run's transform origin; width is the run's
@@ -24,6 +34,13 @@ export type PdfTextItem = {
 
 export type PdfPageItems = {
   readonly items: readonly PdfTextItem[];
+};
+
+// One reconstructed visual line: its text and its left edge (the x of its
+// leftmost run), which templates use for indentation classification.
+export type PdfLine = {
+  readonly text: string;
+  readonly x: number;
 };
 
 // Runs whose baselines differ by no more than this many text-space units
@@ -41,7 +58,7 @@ const WORD_GAP_THRESHOLD = 1.0;
 // and are dropped; runs of consecutive spaces collapse to one.
 export const reconstructPdfLines = (
   page: PdfPageItems,
-): readonly string[] => {
+): readonly PdfLine[] => {
   const runs = page.items.filter((item) => item.text.trim() !== "");
   // Stable sort: top to bottom, then left to right. Array.prototype.sort
   // is specified stable, so equal keys keep extraction order and the
@@ -58,21 +75,22 @@ export const reconstructPdfLines = (
     }
   }
 
-  const lines: string[] = [];
+  const lines: PdfLine[] = [];
   for (const group of groups) {
     const items = [...group.items].sort((a, b) => a.x - b.x);
-    let line = "";
+    let text = "";
     let previousEnd: number | undefined;
     for (const item of items) {
       if (previousEnd !== undefined && item.x - previousEnd > WORD_GAP_THRESHOLD) {
-        line += " ";
+        text += " ";
       }
-      line += item.text;
+      text += item.text;
       previousEnd = item.x + item.width;
     }
-    const trimmed = line.replace(/\s+/g, " ").trim();
-    if (trimmed !== "") {
-      lines.push(trimmed);
+    const trimmed = text.replace(/\s+/g, " ").trim();
+    const leftmost = items[0];
+    if (trimmed !== "" && leftmost !== undefined) {
+      lines.push({ text: trimmed, x: leftmost.x });
     }
   }
   return lines;

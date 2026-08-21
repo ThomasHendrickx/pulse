@@ -30,18 +30,34 @@ export const isPdfBytes = (bytes: Uint8Array): boolean =>
 export const extractPdfPageItems = async (
   bytes: Uint8Array,
 ): Promise<Result<readonly PdfPageItems[], PdfExtractionError>> => {
+  // The legacy build is the Node-compatible entry point; the modern
+  // build assumes browser globals. Dynamic import keeps the dependency
+  // out of every client bundle and off the delimited path entirely.
+  //
+  // DELIBERATELY OUTSIDE the try below (fix round 1, finding HZ-003): a
+  // failure to LOAD the module is infrastructure breakage (a bundling or
+  // packaging regression, the serverExternalPackages incident's class),
+  // not a property of the uploaded bytes, so it THROWS and surfaces as a
+  // server error with a stack instead of mislabelling every upload as an
+  // unsupported bank layout. The Result path below is reserved for what
+  // the BYTES did.
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   try {
-    // The legacy build is the Node-compatible entry point; the modern
-    // build assumes browser globals. Dynamic import keeps the dependency
-    // out of every client bundle and off the delimited path entirely.
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     // pdfjs transfers the buffer it is given (it may be detached by the
     // worker shim), so it gets its own copy, never the caller's bytes.
     // Deterministic extraction: fixed bytes, lockfile-pinned library, no
-    // network fetches (text content needs no font files).
+    // network fetches, and NO SYSTEM FONTS (fix round 1, finding
+    // HZ-005): useSystemFonts false pins extraction to embedded fonts
+    // plus the library's built-in standard metrics, removing the one
+    // environment surface the previous setting opened. CORRECTED RATHER
+    // THAN QUIETLY REWRITTEN (R-087): this call used to pass
+    // useSystemFonts true while the surrounding comments claimed no
+    // environment dependence; both real statements and the fixtures
+    // extract identically under false (re-verified in the fix round), so
+    // the claim and the setting now agree.
     const task = pdfjs.getDocument({
       data: new Uint8Array(bytes),
-      useSystemFonts: true,
+      useSystemFonts: false,
     });
     const document = await task.promise;
     try {

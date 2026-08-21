@@ -31,6 +31,8 @@ const FAILURE_REASONS: readonly ImportFailureReason[] = [
   "unparseable",
   "layout-unsupported",
   "balance-mismatch",
+  "extraction-failed",
+  "layout-version-mismatch",
 ];
 
 const toImportRecord = (row: {

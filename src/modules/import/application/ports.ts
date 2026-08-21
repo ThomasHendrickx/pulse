@@ -16,6 +16,7 @@ import type {
   StatementParseError,
 } from "../domain/parse-statement";
 import type { PdfStatementParseError } from "../domain/parse-pdf-statement";
+import type { PdfExtractionError } from "../adapters/pdf-text-extractor";
 import type { SourceProfileSpec } from "../domain/source-profile";
 import type { ParsedRow } from "../domain/parse-statement";
 
@@ -24,9 +25,19 @@ import type { ParsedRow } from "../domain/parse-statement";
 // (pulse-v0.2-pdf-addendum.md:27, decision D-5).
 export type LayoutUnsupportedError = { readonly kind: "layout-unsupported" };
 
-export type StatementDetectError = DetectionError | LayoutUnsupportedError;
+// Fix round 1 (HZ-003): an unreadable PDF (corrupt or truncated bytes)
+// is a distinct failure from an unrecognised layout, on detect and on
+// parse alike, so a build or packaging regression class diagnoses
+// itself instead of reading as bank drift.
+export type StatementDetectError =
+  | DetectionError
+  | LayoutUnsupportedError
+  | PdfExtractionError;
 
-export type StatementParseFailure = StatementParseError | PdfStatementParseError;
+export type StatementParseFailure =
+  | StatementParseError
+  | PdfStatementParseError
+  | PdfExtractionError;
 
 // Both methods return Promises: DR-0020's extraction library (pdfjs-dist)
 // is Promise-based end to end with no synchronous entry point, so the
@@ -62,7 +73,12 @@ export type ImportFailureReason =
   | "undetectable"
   | "unparseable"
   | "layout-unsupported"
-  | "balance-mismatch";
+  | "balance-mismatch"
+  // Fix round 1: corrupt or truncated PDF bytes (HZ-003), and a stored
+  // pdf-layout profile whose template version this build does not carry
+  // (HZ-002, fail closed until a migration).
+  | "extraction-failed"
+  | "layout-version-mismatch";
 
 export type ImportRecord = {
   readonly id: string;

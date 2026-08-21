@@ -55,11 +55,15 @@ export type FixProfileError =
         | "empty-file"
         // The PDF-path failures: a corrected spec whose re-parse breaks
         // the balance identity, a structural mismatch against the layout
-        // template, or a spec naming a template this build lacks. All
-        // rewrite NOTHING, like every other member of this union.
+        // template, a spec naming a template or template version this
+        // build lacks (HZ-002: a version bump fails stored re-parses
+        // closed), or bytes the extractor no longer reads. All rewrite
+        // NOTHING, like every other member of this union.
         | "balance-mismatch"
         | "pdf-structure"
-        | "unknown-template";
+        | "unknown-template"
+        | "template-version-mismatch"
+        | "extraction-failed";
     };
 
 export type FixProfileResult = {
@@ -144,7 +148,9 @@ export const fixSourceProfile = async (
         problem:
           parseError.kind === "pdf-structure"
             ? ("pdf-structure" as const)
-            : parseError.kind,
+            : parseError.kind === "pdf-extraction-failed"
+              ? ("extraction-failed" as const)
+              : parseError.kind,
       });
     }
     const fileRows = parsedFile.value.rows;

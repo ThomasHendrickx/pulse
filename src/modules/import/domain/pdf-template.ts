@@ -18,22 +18,30 @@
 import type { Cents } from "@/platform/money";
 import type { Result } from "@/platform/result";
 import type { ParsedRow } from "./parse-statement";
+import type { PdfLine } from "./pdf-lines";
 import { belfiusCurrentAccountTemplate } from "./belfius-current-account-template";
 
-// The reconstructed text lines of one page, in reading order.
-export type PdfPageLines = readonly string[];
+// The reconstructed lines of one page, in reading order, each carrying
+// its left edge so templates can classify margin-level structure versus
+// indented description text (finding HZ-001).
+export type PdfPageLines = readonly PdfLine[];
 
 export type PdfTemplateError = {
   readonly kind: "pdf-structure";
   // Which structural expectation of the layout failed. Machine-readable
   // and closed, like every error union here (pulse-typescript section 5).
   readonly problem:
-    | "extraction"
     | "page-marker"
     | "no-account-iban"
     | "no-balance-lines"
     | "transaction-amount"
-    | "transaction-date";
+    | "transaction-date"
+    // Fix round 1 (HZ-001): a margin-level line inside an open
+    // transaction block that matches no known structure, and a break in
+    // the statement's continuous sequence numbering. Both are the
+    // zero-sum corruption shapes the balance gate alone is blind to.
+    | "unrecognized-line"
+    | "sequence-order";
 };
 
 export type PdfTemplateOutcome = {
@@ -59,6 +67,20 @@ export type PdfLayoutTemplate = {
   ) => Result<PdfTemplateOutcome, PdfTemplateError>;
 };
 
+// TEMPLATE VERSION BUMP PROCEDURE (fix round 1, HZ-002): the version on
+// a template is CONSULTED, not decorative. parsePdfStatement refuses a
+// stored spec whose templateVersion differs from the registered
+// template's version (template-version-mismatch, fail closed), and the
+// upload path refuses to silently re-ask a declaration when a stored
+// profile carries a stale version. So bumping a template's version is a
+// MIGRATION, not an edit: (1) bump the version here only together with a
+// deliberate migration of stored pdf-layout profile specs and, if row or
+// key emission changed, a re-parse plan for stored imports; (2) never
+// reuse a version number; (3) expect every stored profile and re-parse
+// on the old version to fail loudly until the migration lands. A bump
+// without a migration bricks PDF re-uploads LOUDLY, by design; before
+// HZ-002 it silently re-parsed stored imports under new code instead.
+//
 // Registration order is match order and is part of the deterministic
 // contract: fingerprints must be institution-distinctive, and the first
 // match wins.

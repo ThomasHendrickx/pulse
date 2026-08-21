@@ -46,11 +46,13 @@ const detect = async (
     return detectSourceProfile(bytes);
   }
   const pages = await extractPages(bytes);
-  // Unreadable PDF bytes and a readable PDF matching no template land on
-  // the same loud failure: this is a PDF Pulse has no layout for yet, a
-  // backlog item and never a user question (addendum:27, D-5).
+  // Fix round 1 (HZ-003): unreadable PDF bytes and a readable PDF
+  // matching no template are DIFFERENT failures with different remedies
+  // (a corrupt or truncated file versus a bank layout Pulse has no
+  // template for yet, addendum:27, D-5), so each carries its own machine
+  // reason and its own translated copy.
   if (pages === undefined) {
-    return err({ kind: "layout-unsupported" as const });
+    return err({ kind: "pdf-extraction-failed" as const });
   }
   const template = findTemplateByFingerprint(pages);
   if (template === undefined) {
@@ -70,14 +72,15 @@ const parse = async (
   if (spec.kind === "pdf-layout") {
     const pages = await extractPages(bytes);
     if (pages === undefined) {
-      // A pdf-layout spec over bytes the extractor cannot read: surfaced
-      // as a structural parse failure so the import fails loudly with
-      // zero rows, the same discipline as every other parse failure.
-      return err({ kind: "pdf-structure" as const, problem: "extraction" as const });
+      // A pdf-layout spec over bytes the extractor cannot read: the same
+      // distinct extraction-failure reason as on detect (HZ-003), loud,
+      // zero rows.
+      return err({ kind: "pdf-extraction-failed" as const });
     }
-    // The shared path applies THE BALANCE CONTRACT for every template
-    // (parse-pdf-statement.ts); templates never enforce it themselves.
-    return parsePdfStatement(pages, spec.templateId);
+    // The shared path applies THE BALANCE CONTRACT and the
+    // template-version gate for every template (parse-pdf-statement.ts);
+    // templates never enforce either themselves.
+    return parsePdfStatement(pages, spec.templateId, spec.templateVersion);
   }
   return parseStatement(bytes, spec);
 };

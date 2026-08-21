@@ -11,6 +11,8 @@ const FAILURE_KEYS: Record<ImportFailureReason, string> = {
   unparseable: "failedUnparseable",
   "layout-unsupported": "failedLayoutUnsupported",
   "balance-mismatch": "failedBalanceMismatch",
+  "extraction-failed": "failedExtractionFailed",
+  "layout-version-mismatch": "failedLayoutVersionMismatch",
 };
 
 export const ImportResult = async ({
