@@ -1,327 +1,234 @@
 # Clean-room review, HAZARD contract, phase M3-P2 (pdf-belfius, severity
-# critical). Head reviewed: 9b40b14 on claude/m3-p2-pdf-belfius (this clone:
-# claude/m3-p2-review-hazard). Phase base: 7796fc9.
+# critical). DELTA VERDICT, fix round 1.
+#
+# Head now reviewed: 22f717b on claude/m3-p2-pdf-belfius (merged into this
+# clone at c41feeb). Prior verdict: FIX-ROUND-NEEDED at 9b40b14 (round 0,
+# preserved in this file's git history at commit 91e895a). Phase base: 7796fc9.
+# The fix head also merged origin/main cleanly (M3-P1 mobile defect round
+# 155509e and plan amendments 436eda5, d324182); those are outside this
+# phase's hazard surface and were not re-reviewed here.
 #
 # HEADER DISCLOSURES.
-# DR-0003: this verdict is Claude-family, produced under the same-family
-# varied-lenses allowance; contract hazard, framing destructive-paths, so the
-# pair with the criteria review satisfies DR-0003's distinct-contract and
-# distinct-framing conditions.
-# ESCALATION (recorded per the dispatch's escalation discipline): the plan's
-# own spec knowingly permits silent cross-format duplication of stored facts.
-# delivery/plan/pulse-v02.yaml line 1300 parks cross-format dedup unification
-# and itself states that the same period imported once as CSV and once as PDF
-# stores every row twice. That is a spec-permitted silent wrong number (a
-# double-counted month), decided as parked with a written rationale and a
-# revisit trigger at delivery/plan/pulse-v02.yaml line 1246. Probe-confirmed
-# divergent keys (finding HZ-004). Escalated here for the orchestrator to
-# carry to the owner as a standing risk acknowledgement, not as a fix-round
-# demand against this phase.
+# DR-0003: this verdict is Claude-family, contract hazard, framing
+# destructive-paths, produced under the same-family varied-lenses allowance;
+# it pairs with the criteria review to satisfy DR-0003's distinct-contract
+# and distinct-framing conditions.
+# ESCALATION CARRIED FORWARD (unchanged this round): the plan's own spec
+# permits silent cross-format duplication of stored facts. Same period
+# imported once as CSV and once as PDF stores every row twice
+# (delivery/plan/pulse-v02.yaml:1300, parked at line 1246 with a revisit
+# trigger). Probe-confirmed divergent keys (finding HZ-004). This is a
+# spec-permitted silent wrong month total for a mixed-format household,
+# decided-as-parked; it is a standing owner risk acknowledgement, not a
+# fix-round demand against this phase.
 #
-# HAZARDS PROBED AND NOT REACHED, so the next reviewer spends elsewhere.
-# All probes were executed (esbuild-bundled, node v26.7.0), not read-only.
-# 1. Wrong nonzero stored cents: the full sign-spacing and thousands-dot
-#    matrix (11 shapes including plus and minus zero and a 9-digit amount)
-#    parses to the exact expected integer cents through the template and the
-#    shared gate; seven adversarial malformed constructions (glued sign,
-#    glued sequence-date, split thousands dot, double sign, double space in
-#    the sign gap, single decimal digit, trailing text) every one failed
-#    loudly as balance-mismatch, none parsed to a wrong value. No path was
-#    found where a nonzero wrong cent reaches a stored fact.
-# 2. The real 39bada64 upload (Belfius current account): detect fingerprints
-#    the template at version 1, parse succeeds, 39 rows, exactly one account
-#    IBAN, the balance gate reconciles, and two extractions of the same bytes
-#    in one environment are byte-identical (content-free run, nothing from
-#    the file left the container). The real 0f79fa3d upload (KBC card) is
-#    refused loudly as layout-unsupported, as intended for M3-P2.
-# 3. Fingerprint drift: a renamed institution header matches no template and
-#    fails loudly at detect. A constructed false positive (the fingerprint
-#    string inside a foreign document that also carries a balance line) is
-#    caught by page structure and fails loudly with zero rows (reason
-#    labelling nit in HZ-003).
-# 4. Async port widening: every call site of the now-async parser awaits
-#    (upload-statement.ts, confirm-import.ts, fix-profile.ts, ui/actions.ts,
-#    src/app/(app)/import/[id]/page.tsx); no .then chains, no floating
-#    promises, no catch-and-continue in the module; the one catch-all is the
-#    extraction adapter boundary (HZ-003). The upload server action awaits
-#    the use case before redirecting.
-# 5. Re-parse over PDF rawContent: rawContent is a Bytes column
-#    (prisma/schema/import.prisma line 64) round-tripped as Uint8Array, so
-#    PDF binary survives storage; the unchanged-spec no-op is witnessed by
-#    the extended test in test/application/reparse.test.ts over the real
-#    extraction path, and determinism was independently confirmed (item 2).
-#    Version-change corruption is a real gap, filed as HZ-002.
-# 6. Facts immutability: the phase diff touches no Transaction write path;
-#    the only transaction update remains the pre-existing sanctioned
-#    applyReparse rebuild (src/modules/import/adapters/import-repository.ts
-#    line 262, unchanged this phase; the phase's whole diff to that file is
-#    two failure-reason strings). No new update or delete path.
-# 7. Privacy scrub, independent, both halves, with an in-memory probe list
-#    built from BOTH real uploads (39bada64 and 0f79fa3d) at review time:
-#    18 IBAN forms, 32 digit runs, 5 thousands-form amounts, 37 dates, 4
-#    file-name forms, 106 words absent from the base tree, 179 verbatim
-#    lines; scanned over all 9 phase commits: every blob, the full log with
-#    patches (commit messages included), every tree path, and 410
-#    unreachable objects in the clone. ZERO hits for IBANs, digit runs and
-#    the upload file names (the scrubbed leak did not survive the rewrite
-#    anywhere, unreachable objects included). The two amount hits and one
-#    date hit pre-exist at base 7796fc9 in M1-era test files, which is the
-#    recorded pre-existing collision the work log names. Word and line hits
-#    were triaged content-free by statement region: all are digit-free
-#    format vocabulary and boilerplate (transaction-type labels, scheme
-#    words, annex and footer boilerplate, fingerprint tokens), none in the
-#    name or merchant shape (HZ-006 records the honesty nit).
-# 8. Negative zero: a minus-zero amount parses to JS negative zero, but
-#    String and JSON both render it as 0, the dedup tuple uses String, and
-#    the integer column stores 0; no key or storage divergence is reachable.
+# DELTA VERDICT: APPROVE.
+# Rationale: both round-0 medium findings are fixed at the mechanism and
+# re-probed green at 22f717b; the three round-0 low fixes (HZ-003, HZ-005,
+# HZ-006) are verified; no finding at high or medium remains open. What
+# remains is low and tracked: the implementer's own declared HZ-001 residue
+# (finding HZ-001-R), a cosmetic HZ-003 labelling remainder (HZ-003-N), and
+# the parked cross-format duplication (HZ-004). Under DR-0012 condition 2 a
+# low may be merged with when recorded as a tracked item with a reason,
+# which each below is.
+#
+# GATES RE-RUN AT THE FIX HEAD (this clone, node v26.7.0):
+#   fast gate: node_modules/.bin/vitest run -> 26 files, 280 passed (280),
+#     exit 0, matching the expected count.
+#   typecheck: tsc --noEmit -> exit 0.
+#
+# ROUND-0 FINDINGS, DISPOSITIONS (each re-probed, esbuild bundle over 22f717b).
+#
+# HZ-001 (was medium) FIXED AT THE MECHANISM, residue tracked as HZ-001-R.
+#   The line reconstructor now carries each line's left edge (pdf-lines.ts:41)
+#   and the template classifies POSITIONALLY
+#   (belfius-current-account-template.ts:141 to 214): an indented line is
+#   data whatever its shape, a margin line inside an open block matching no
+#   known structure is a loud unrecognized-line error, and a within-file
+#   sequence-continuity gate (lines 219 to 233) fails any gap or duplicate.
+#   Re-probed, all four round-0 constructions plus fresh positional variants:
+#     C1 fabricated-row (tx-start shape as an indented line): ok=true, one
+#       real row, the shaped line kept VERBATIM in the description, no
+#       phantom row and no phantom key. Round-0's key-poisoning chain is
+#       closed at the source: no fabricated natural key can be emitted.
+#     C4 saldo-shape as an indented line: ok=true, kept verbatim, description
+#       NOT truncated, no spurious balance recorded.
+#     C2 corrupted margin start mid-list: ok=false, pdf-structure
+#       unrecognized-line (loud, zero rows).
+#     C3 compensating margin drops: ok=false, unrecognized-line.
+#     SEQ gap 0001->0003 and SEQ duplicate 0001 0001: ok=false,
+#       pdf-structure sequence-order.
+#     FV1 indented line that LOOKS like a margin tx start: treated as data,
+#       one real row. FV2 margin plain-text in an open block: loud
+#       unrecognized-line. FV2b same text OUTSIDE any block: ignored as
+#       furniture, statement still reconciles. FV3 (whitespace-only margin
+#       line) is unreachable from real extraction because reconstructPdfLines
+#       drops empty lines (pdf-lines.ts:92), so it is a non-hazard.
+#   Real 39bada64 upload still detects, parses 39 rows, one IBAN, reconciles
+#   under the positional classifier (no regression from the rewrite).
+#   The overbroad round-0 comment is corrected (R-087) at
+#   parse-pdf-statement.ts:11 to 23, naming the zero-sum residue explicitly.
+#   INDENT-RULE SUBSTITUTION, JUDGED: my round-0 concrete-edit for
+#   construction 4 (treat a balance line while a block is open as a structure
+#   error) was WRONG, and the implementer is right to reject it: on the real
+#   layout the CLOSING SALDO OP sits at the margin and follows the last block
+#   while that block is still open, so that literal rule would fail every
+#   real statement. The positional substitution (indented balance-shape is
+#   data, margin balance-shape legitimately closes the block) closes
+#   construction 4 without the false positive and is strictly better than the
+#   edit I proposed; C4 re-probed confirms it.
+#
+# HZ-002 (was medium) FIXED, both paths, re-probed.
+#   Parse path: parsePdfStatement now takes and enforces declaredVersion
+#   (parse-pdf-statement.ts:65 to 81); re-probed, parsing the real Belfius
+#   pages under declared version 999 returns template-version-mismatch and
+#   maps to the layout-version-mismatch reason, while version 1 parses.
+#   Upload path: a stored pdf-layout profile at a different version than the
+#   build's template fails closed as layout-version-mismatch rather than
+#   silently re-asking the declaration and creating a twin
+#   (upload-statement.ts:82 to 103). The version field is now consulted, and
+#   a bump procedure is documented at the registry (pdf-template.ts:70 to 82).
+#
+# HZ-003 (was low) FIXED substantively, cosmetic remainder tracked as
+# HZ-003-N. The dynamic module load is deliberately OUTSIDE the try
+#   (pdf-text-extractor.ts:44), so a bundling or packaging regression throws
+#   with a stack instead of mislabelling every upload; corrupt bytes behind a
+#   PDF header return a distinct pdf-extraction-failed
+#   (pdf-text-extractor.ts:96 to 101). Re-probed: corrupt magic-header bytes
+#   detect as extraction-failed, not layout-unsupported. Two new machine
+#   reasons (extraction-failed, layout-version-mismatch) are mapped
+#   (import-result.tsx:14 to 15) and translated in all three catalogs
+#   (failedExtractionFailed and failedLayoutVersionMismatch present in
+#   messages/en.json, messages/nl.json, messages/fr.json).
+#
+# HZ-005 (was low) FIXED, re-probed. useSystemFonts is false
+#   (pdf-text-extractor.ts:60) with verbosity errors-only, so the one
+#   environment surface is removed and the comment now matches the setting;
+#   the real 39bada64 upload still yields 39 rows and byte-identical output
+#   across two extractions under the new setting, so the change did not
+#   degrade extraction. Cross-environment (deploy) identity remains
+#   criterion 2.8's job; nothing at this head contradicts it.
+#
+# HZ-006 (was low) FIXED. The generator caveat is reworded to the actual
+#   five-category contract (identifiers, names, merchant strings, amounts,
+#   dates) and lists the sanctioned digit-free layout vocabulary explicitly
+#   rather than claiming only plan-and-addendum words could coincide
+#   (test/fixtures/generate-pdf-fixtures.ts:11 to 34, R-087 acknowledged in
+#   place). The listed tokens are transaction-type and payment-rail labels
+#   and footer/annex headers: digit-free, non-identifying, identical across
+#   every statement of this layout, so warning-9 (file names carrying an
+#   IBAN, a date and a document reference) is not implicated.
+#
+# INDEPENDENT PRIVACY RE-SCAN OF THE FIX ROUND (warning-9 discipline).
+#   In-memory probe list rebuilt from BOTH real uploads (39bada64, 0f79fa3d)
+#   at review time, sensitive categories only (18 IBAN forms, 21 digit runs,
+#   5 thousands-form amounts, 37 dates, 4 upload file-name forms), scanned
+#   over the fix-round commits 9b40b14..22f717b: 35 blobs and the full
+#   log with patches. ZERO hits. The new belfius-inline-shapes fixture and
+#   the generator changes introduced no identifier, digit run, amount, date
+#   or upload file name from the real statements.
 kind: finding
-verdict: FIX-ROUND-NEEDED
+verdict: APPROVE
 produced-by: claude (Claude Code CLI, model claude-fable-5)
 findings:
-  - id: HZ-001
-    severity: medium
-    evidence:
-      - >-
-        Probe-executed (esbuild bundle over the phase head, node v26.7.0).
-        Construction 1, fabricated row: a transaction whose description
-        block contains a line in the exact transaction-start shape with a
-        zero amount parses OK with gate green: rows=2, the fabricated row
-        stores amountCents 0 and sequenceNumber 0099, and the true row's
-        description is truncated at the injected line. Construction 2,
-        dropped row: a genuine zero-amount transaction whose start line is
-        corrupted (glued sequence and date) vanishes silently, parse OK,
-        rows=1. Construction 3: two corrupted rows of plus 5,00 and minus
-        5,00 both vanish silently (compensating pair), parse OK.
-        Construction 4: a description line in the exact SALDO OP balance
-        shape closes the open block, silently truncating the stored
-        description and rawLine while the gate stays green.
-      - >-
-        Mechanism: src/modules/import/domain/belfius-current-account-template.ts:56
-        matches any full line in the transaction-start shape, line 54
-        matches any full line in the balance shape, and lines 117 to 163
-        run these matchers over description lines inside an open block;
-        lines 158 to 162 silently ignore lines outside any block. The gate
-        at src/modules/import/domain/parse-pdf-statement.ts:56 compares
-        sums only, so any construction that changes the sum by zero passes.
-      - >-
-        Key poisoning consequence, probe-executed: the fabricated row's
-        dedup key equals the natural key of a genuine future transaction
-        with the same booking year and sequence (the nat key built at
-        src/modules/import/domain/dedup.ts:95), so ingest's insert-ignore
-        would report that genuine row as known and never store it: a
-        silently missing real amount in a later month, which the later
-        file's own balance gate cannot catch because the drop happens at
-        dedup, not at parse.
-      - >-
-        False claim, R-087: the comment at
-        src/modules/import/domain/parse-pdf-statement.ts:8 states a
-        template that drops or duplicates a line fails loudly instead of
-        feeding a silently wrong fact into the ledger. The three
-        constructions above are drops and a fabrication that pass
-        silently; the claim holds only for sum-changing errors.
-      - >-
-        Reachability caveat, stated honestly: the constructions were
-        demonstrated at reconstructed-line level. Whether a real Belfius
-        rendering can place a free-form payment communication on its own
-        visual line in the exact start-line shape (including the VAL.
-        parenthesis and a trailing signed zero amount) was not witnessed
-        on the single real statement; payment communications are
-        counterparty-controlled text, so the vector is adversarial rather
-        than accidental.
-    concrete-edit: >-
-      Add a second structural gate to the Belfius template (or the shared
-      path): within one file, require the parsed sequence numbers to be
-      strictly increasing, and fail the parse loudly on any violation; the
-      fleet's own format facts record consecutive sequences on the real
-      statement (notes/export-format-facts.md:69 in the fleet home). This
-      closes constructions 1 to 3: a fabricated mid-block sequence breaks
-      monotonicity and a dropped row leaves a gap. Close construction 4 by
-      treating a balance line while a block is open as a structure error
-      (the real layout carries balances only outside blocks). Correct the
-      overbroad comment at src/modules/import/domain/parse-pdf-statement.ts:8
-      to name the zero-sum residue explicitly.
-    analysis: >-
-      The balance contract is the phase's central safety claim (hazard
-      H2.2) and it is genuinely strong against everything that changes the
-      sum; these probes are the honest boundary of what it holds. The
-      worst chain is fabrication plus natural-key poisoning, because it
-      converts a crafted description in one statement into a silently
-      missing real transaction in a later one.
-  - id: HZ-002
-    severity: medium
-    evidence:
-      - >-
-        Probe-executed: parsing the committed Belfius fixture under a
-        declared spec with templateVersion 999 succeeds and produces
-        byte-identical output to templateVersion 1, though no such
-        template version exists. The registry lookup matches id only
-        (src/modules/import/domain/pdf-template.ts:76), the shared path
-        receives only the id (src/modules/import/domain/parse-pdf-statement.ts:40,
-        called from src/modules/import/adapters/statement-parser.ts:80
-        which discards spec.templateVersion), so the stored version is
-        validated at the Json boundary
-        (src/modules/import/domain/source-profile.ts:125) and then never
-        consulted again.
-      - >-
-        Probe-executed: specEquals between the version 1 and version 999
-        specs is false (canonical JSON,
-        src/modules/import/domain/source-profile.ts:270), so when a future
-        template bumps its version, detect emits the new version,
-        findProfileBySpec at
-        src/modules/import/application/upload-statement.ts:125 stops
-        recognising the stored profile, the owner is re-asked the ask-once
-        declaration, and a twin profile row is created.
-      - >-
-        Corruption path when a version bump changes row emission: the
-        fix-profile re-parse
-        (src/modules/import/application/fix-profile.ts:125) parses stored
-        rawContent through the CURRENT template code regardless of the
-        stored version. A rawLine-shape change throws loudly there, but a
-        key-emission change (for example a different statementNumber rule)
-        rewrites every stored dedup key through the sanctioned applyReparse
-        with an unchanged spec, breaking the unchanged-spec no-op contract
-        with no signal, because the field that exists to witness code
-        identity is inert.
-    concrete-edit: >-
-      In parsePdfStatement (or the adapter branch at
-      src/modules/import/adapters/statement-parser.ts:70), compare
-      spec.templateVersion against the registry template's version and
-      refuse a mismatch loudly with the existing unknown-template error
-      shape extended with the version, so a future version bump makes
-      stored pdf-layout profiles fail closed until a deliberate migration
-      is written; document the bump procedure next to the registry.
-    analysis: >-
-      Today only version 1 exists, so nothing is wrong at this head; the
-      finding is that the versioning mechanism the spec design names is
-      shipped inert, and the first future bump silently changes what
-      stored imports re-parse to. Fail-closed is cheap now and impossible
-      to retrofit silently later.
-  - id: HZ-003
+  - id: HZ-001-R
     severity: low
     evidence:
       - >-
-        The extraction adapter catches every throwable including the
-        dynamic module load
-        (src/modules/import/adapters/pdf-text-extractor.ts:37 inside the
-        try opened at line 33, catch at line 72), and detect maps any
-        extraction failure to layout-unsupported
-        (src/modules/import/adapters/statement-parser.ts:53). The phase's
-        own record shows the consequence live: while pdfjs-dist was
-        bundled, every PDF upload failed layout-unsupported in the dev
-        server (the rationale comment at next.config.ts:7). A future
-        serverExternalPackages regression therefore fails loudly per
-        import but under a reason that tells the owner the bank layout is
-        unsupported, which reads as bank drift, not build breakage.
-        Reproduced during this review: a probe harness whose module
-        resolution broke reported both real uploads layout-unsupported.
+        Probe-executed at 22f717b (esbuild bundle, node v26.7.0). Residue
+        construction, exactly as the implementer declared: a corrupted
+        margin-level line in the exact transaction-start shape positioned as
+        the VERY FIRST transaction (before any block opens) with a zero
+        amount drops silently. Result: ok=true, rows=1, only the second
+        (genuine) transaction is stored; the first transaction and its
+        indented description lines vanish, and the balance gate stays green
+        because the dropped amount is zero.
       - >-
-        Probe-executed labelling nit: a constructed non-Belfius document
-        carrying the fingerprint string and a balance line matches the
-        fingerprint (matches-anywhere includes,
-        src/modules/import/domain/belfius-current-account-template.ts:236)
-        and then fails page structure; the upload maps that pdf-structure
-        error to unparseable
-        (src/modules/import/application/upload-statement.ts:31), while a
-        cleanly unrecognised PDF reports layout-unsupported. Zero rows are
-        written in both cases.
+        Mechanism: belfius-current-account-template.ts:206 to 214 treats a
+        margin line that matches no structure as an unrecognized-line error
+        only when a block is OPEN; before the first block it falls through to
+        the furniture branch (the holder block legitimately sits at the
+        margin above the band line) and is ignored. The sequence-continuity
+        gate (lines 219 to 233) checks only that PARSED sequences are
+        internally consecutive, so it has no anchor for a missing FIRST
+        sequence: a dropped 0001 leaves 0002, 0003, ... internally
+        consecutive and passes. The residue is bounded to the conjunction
+        first-transaction position AND margin-level extraction corruption
+        matching no structure AND exactly-zero amount.
+      - >-
+        Reachability, judged honestly: this is not adversarially reachable.
+        Counterparty-controlled description text is INDENTED and therefore
+        classified as data (probe FV1), so statement content cannot trigger
+        it; it requires a genuine PDF extraction corruption that mangles
+        specifically the first transaction's start line while leaving it at
+        the margin and preserving the surrounding structure, and only bites
+        when that transaction carries a zero amount. On a well-formed bank
+        PDF extraction is deterministic and complete (the real 39bada64
+        statement parses all 39 rows and reconciles), so the residue never
+        fires in normal operation.
+      - >-
+        The limitation is DOCUMENTED, not hidden
+        (belfius-current-account-template.ts:43 to 47 and
+        parse-pdf-statement.ts:21 to 23), which is the honest disposition;
+        note that the runtime still drops silently in this corner, so
+        "documented" describes the comment, not a loud runtime.
     concrete-edit: >-
-      Separate infrastructure failure from format failure: let the
-      extraction adapter rethrow (or return a distinct error kind for)
-      module-load failures so they surface as a server error with a stack
-      rather than as layout-unsupported, keeping the Result path for
-      corrupt bytes only; optionally map a fingerprint-matched
-      pdf-structure failure at upload to layout-unsupported rather than
-      unparseable so the two user-facing reasons track their translated
-      meanings.
+      Accept as a tracked low with the bound above (DR-0012 condition 2), OR,
+      if closing it is wanted, anchor the sequence-continuity gate to the
+      statement's expected first sequence rather than only to internal
+      consecutiveness: the opening context of a Belfius statement carries the
+      prior closing state, so the first parsed sequence can be checked
+      against an expected start, which also catches a dropped first row of
+      any amount. The tradeoff to weigh first is that the holder block
+      legitimately sits at the margin before the band line, so a
+      pre-first-block margin line matching no structure cannot simply be made
+      an error without a way to tell holder furniture from a corrupted first
+      row.
     analysis: >-
-      No facts corruption is reachable (zero rows on every path), so this
-      is diagnosability, not integrity: the criterion 2.8 deploy check
-      catches a regression shipped today, but only because a human runs
-      it; the failure reason itself points away from the cause.
+      This is the one remaining silent facts-drop path and it is genuinely
+      narrow: not adversarially reachable, no key poisoning (a drop
+      fabricates no key), and invisible only in the first-position
+      zero-amount corner that a well-formed statement never reaches. It is a
+      low, and the fix round declared it openly rather than leaving it for
+      the review to find, which is the behaviour the claim-grep discipline
+      wants.
+  - id: HZ-003-N
+    severity: low
+    evidence:
+      - >-
+        Probe-executed at 22f717b: a constructed non-Belfius document that
+        carries the fingerprint string and a balance line matches the
+        fingerprint (includes-anywhere,
+        belfius-current-account-template.ts:303 to 309) and then fails page
+        structure; the upload maps that pdf-structure error to the
+        "unparseable" reason (upload-statement.ts:failureReasonForParseError),
+        while a cleanly unrecognised PDF reports "layout-unsupported". Zero
+        rows are written on both paths, so this is a user-facing labelling
+        mismatch, not an integrity gap. The substantive HZ-003 split
+        (module-load throw versus corrupt-byte extraction-failed) is fixed
+        and verified above; only the fingerprint-matched-structure-failure
+        labelling remains as I flagged it in round 0.
+    concrete-edit: >-
+      Optional, low: map a fingerprint-matched pdf-structure failure at
+      upload to "layout-unsupported" rather than "unparseable" so the two
+      translated reasons track their meanings, or accept as a tracked low
+      since zero rows are written either way.
   - id: HZ-004
     severity: low
     evidence:
       - >-
-        Probe-executed: for the same logical transaction, the PDF template
-        path emits the natural key with the booking year as statement
-        component (src/modules/import/domain/belfius-current-account-template.ts:215)
-        while a delimited Belfius profile with statement and sequence
-        columns emits the CSV statement-number value in that component,
-        and a delimited profile without those columns emits a hash-family
-        key; all three keys are pairwise distinct in the probe, so
-        importing the same account period once as CSV and once as PDF
-        stores every row twice, silently, with both files individually
-        reconciling.
-      - >-
-        The plan decides this as parked and says so honestly:
-        delivery/plan/pulse-v02.yaml:1246 (unification parked, not
-        decided) and delivery/plan/pulse-v02.yaml:1300 (the parked item
-        naming the double store), with a revisit trigger. The addendum's
-        cross-format question is therefore decided-as-deferred, not
-        silently broken; the escalation in this verdict's header carries
-        it to the owner because the parked state permits a silent wrong
-        month total for a mixed-format household.
+        Unchanged this round (no code demanded it). Re-confirmed by the
+        round-0 probe: for the same logical transaction the PDF natural key
+        (belfius-current-account-template.ts:283, booking year as statement
+        component) and a delimited profile's key are distinct, so importing
+        one account period once as CSV and once as PDF stores every row
+        twice, each file individually reconciling. The plan decides this as
+        parked and says so (delivery/plan/pulse-v02.yaml:1246 and :1300) with
+        a revisit trigger, so it is decided-as-deferred, not silently broken.
     concrete-edit: >-
-      No code change demanded this round. Plan edit: add the tripwire the
-      parked rationale implies, a backlog item (or a one-line warning in
-      the import result UI) for the moment a household holds both a
-      delimited and a pdf-layout profile bound to the same account, so the
-      parked risk announces itself instead of waiting to be noticed in a
-      wrong month view.
-  - id: HZ-005
-    severity: low
-    evidence:
-      - >-
-        src/modules/import/adapters/pdf-text-extractor.ts:44 passes
-        useSystemFonts true while the surrounding comments (lines 10 to 12
-        and 40 to 41) claim no environment dependence and that text
-        content needs no font files. Both cannot be fully true: system
-        font availability is exactly an environment surface, and line
-        reconstruction consumes item width
-        (src/modules/import/domain/pdf-lines.ts:67), which for a PDF with
-        non-embedded fonts can depend on substituted metrics. The
-        determinism witnessed in this review (double extraction of the
-        39bada64 upload byte-identical) is single-environment;
-        cross-environment identity, which hazard H2.3 names, is
-        unwitnessed at this head, and criterion 2.8 as written checks
-        rows-added, not key identity.
-    concrete-edit: >-
-      Set useSystemFonts to false (per the adapter's own claim that text
-      extraction needs no font files) or, if extraction of the real
-      statements then degrades, record that fact and add a
-      cross-environment key-identity check to the criterion 2.8 deploy
-      verification (same fixture, same dedup keys as the fast gate).
-  - id: HZ-006
-    severity: low
-    evidence:
-      - >-
-        R-087 precision finding from the independent scrub (probe detail
-        in this file's header, content-free): verbatim digit-free
-        boilerplate lines of the real Belfius statement (lengths 34, 48,
-        17 and 33; transaction-type phrasing, footer and annex
-        boilerplate) appear as string literals in
-        test/fixtures/generate-pdf-fixtures.ts and therefore in the
-        committed fixture bytes, and two structural fingerprint lines of
-        the real 0f79fa3d statement are quoted in
-        delivery/work-history/m3-p2-notes.md. The generator's own caveat
-        (test/fixtures/generate-pdf-fixtures.ts:12) permits only format
-        vocabulary shared with the plan and the intake addendum, but
-        several reproduced words and all four boilerplate lines appear in
-        neither plan nor addendum, so the caveat as written is narrower
-        than what the file does, and the plan step-7 absolute (no string
-        from the real statements appears anywhere) is not literally true
-        either. The five sensitive categories of criterion 2.6
-        (identifiers, names, merchant strings, thousands-form amounts,
-        dates) are clean everywhere including commit messages, tree paths
-        and 410 unreachable objects; nothing personally identifying
-        survived. The generator comment's paraphrase of the real
-        statements' month range (test/fixtures/generate-pdf-fixtures.ts:15)
-        is the only real-statement metadata carried in prose.
-    concrete-edit: >-
-      Reword the generator caveat (and the plan step-7 sentence when the
-      plan is next edited) to the five-category form that is actually
-      enforced and enforceable, and either reword the reproduced
-      boilerplate lines slightly or list them explicitly as sanctioned
-      layout vocabulary; drop the real statement months from the comment
-      by stating only that fixture dates are chosen outside the real
-      statements' range.
+      No code change this phase. Plan or backlog edit: add the tripwire the
+      parked rationale implies, a warning (or backlog item) for the moment a
+      household holds both a delimited and a pdf-layout profile bound to the
+      same account, so the parked risk announces itself instead of surfacing
+      as a wrong month total. Carried in this verdict's header as the
+      standing escalation.
