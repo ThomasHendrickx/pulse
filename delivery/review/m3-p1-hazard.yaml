@@ -1,0 +1,298 @@
+# Clean-room HAZARD review of phase M3-P1 (navigation).
+# HEAD UNDER REVIEW: 5c23aa4 (code head c2aceec; verified by this
+# review: git diff 5c23aa4 c2aceec touches only
+# delivery/work-history/m3-p1.yaml and m3-p1-notes.md, so the top
+# commit is work-history and notes only). Phase base: c518181 (the
+# v0.2 plan commit). Diff reviewed: c518181..5c23aa4, 11 files, 740
+# insertions, 5 deletions. Reviewer clone:
+# worktrees/m3-p1-review-hazard, branch claude/m3-p1-review-hazard.
+# No implementation session seen. Framing: destructive-paths,
+# contract: hazard. DATABASE OFF-LIMITS throughout (the criteria
+# reviewer owns the stack): this review executed static analysis,
+# grep, tsc, eslint, vitest and node reconstruction probes only; the
+# e2e result (14 passed at c2aceec) is relied on from the work
+# history's gate-evidence and is named where used.
+#
+# DR-0003 DECORRELATION ESCALATION: this verdict is produced by the
+# Claude family, as is the paired criteria verdict. DR-0012 condition
+# one is NOT met by family; it is discharged for the pilot under
+# DR-0003 (same family, varied lenses): review-contract and framing
+# are distinct across the pair.
+#
+# HAZARD-FIRST ORDER, per the contract: the probe plan below was
+# written from the declared hazard classes and the destructive-paths
+# framing BEFORE the acceptance criteria were read (beacon 1 in this
+# file's git history, commit before any probe ran); the criteria were
+# walked last, as one more input.
+#
+# EXECUTED PROBES, all captured in this file's incremental history.
+# P1 client boundary: grep -rl '"use client"' src/ prints exactly one
+#   file, src/platform/ui/nav-link.tsx; its imports are next/link and
+#   next/navigation only (nav-link.tsx:3-4); its props are three
+#   static strings (href, testId) plus a catalog-translated label. No
+#   env value, secret, database type, session token or household
+#   value crosses the boundary: the layout passes only t() output and
+#   literals. The impossibility claim M3P1-C5 (the layout itself
+#   cannot be the client component) was verified structurally: the
+#   layout reaches next/headers via requireHouseholdContext,
+#   src/platform/auth/supabase-server.ts:2.
+# P2 authenticated shell: the nav lives in src/app/(app)/layout.tsx
+#   below requireHouseholdContext (layout.tsx:20), which redirects to
+#   /sign-in before render for any unauthenticated request
+#   (src/platform/auth/context.ts:16-18). git diff c518181..5c23aa4
+#   over src/app/(auth), src/platform/auth and src/middleware.ts is
+#   EMPTY: the sign-in flow is untouched. The four nav testids
+#   (main-nav, nav-overview, nav-import, nav-merchants) each resolve
+#   by grep -rl over src/ to exactly src/app/(app)/layout.tsx.
+# P3 tenancy and money surfaces: the diff's file list contains no
+#   prisma file, no repository, no query, no interpretation code and
+#   no money path; the only src/modules change is additive markup in
+#   month-view.tsx's EmptyState. No package.json, lockfile, .env,
+#   next.config or middleware change (grep over the diff's name list,
+#   exit 1).
+# P4 empty-state link: the month-view diff adds one <p><Link
+#   href="/import"> block inside EmptyState around the existing
+#   noData/emptyTitle/emptyBody copy; the file's import list is
+#   unchanged (Link pre-existed at month-view.tsx:1); no data-path
+#   change.
+# P5 catalogs: five new keys (navLabel, navOverview, navImport,
+#   navMerchants, emptyImportCta) in each of en, nl, fr; translations
+#   are real (Tegenpartijen, Contreparties), not copied English. Zero
+#   em dashes in the entire diff (byte grep for U+2014, count 0). The
+#   format-naming copy is untouched: emptyBody's "Pulse reads CSV
+#   exports from Belgian banks" line is byte-identical at base and
+#   head in all three catalogs (M3-P2's task, not half-changed here).
+#   npm test re-executed by this review: 21 files, 252 tests, 0
+#   failed, including the new parity test. Parity red reconstructed
+#   IN MEMORY (the tree never edited): the committed test's logic
+#   reds on a deleted top-level key, matching the work history's
+#   witness; and stays green on a dropped ARRAY ENTRY, which is
+#   finding CR-602 below.
+# P6 hygiene: no new dependency, no lockfile change, no service
+#   worker (grep serviceWorker|workbox over src and test, exit 1),
+#   nothing from the deliberately-absent list (no queue, cron, event
+#   bus, cache, state library, component library). Token discipline:
+#   the criterion 1.3 grep re-executed over all of src/ exits 1; the
+#   added CSS carries no literal px/rem/em/% value (grep over the
+#   diff's + lines, exit 1); every var(--*) used in globals.css
+#   resolves against styles/tokens.css (comm of the two sorted sets
+#   is empty), and tokens.css is untouched, so "no missing token" is
+#   verified rather than asserted.
+# GATES RE-EXECUTED at 5c23aa4 in this clone: npm run typecheck exit
+#   0, npm run lint exit 0, npx vitest run 252/252 exit 0.
+# R-087 CLAIM AUDIT of the work history: claims M3P1-C1 (four testid
+#   greps) and M3P1-C2 (colour grep exit 1) re-executed by this
+#   review with identical results; criterion 1.4's halves re-executed
+#   (golden-journey diff 0 lines; --diff-filter=D over the phase diff
+#   prints nothing); M3P1-Q1's honesty note about the swallowed red
+#   exit code is the R-087 discipline correctly self-applied. No
+#   false claim found in the work history or notes.
+# LOOKED FOR AND NOT FOUND, recorded so the next reviewer does not
+#   respend the budget: a server-only value in the client island's
+#   props (none; strings only); nav leakage into the (auth) segment
+#   or root layout (none; testids pin to the (app) layout, whose
+#   guard redirects first); a second client component (none; census
+#   is exactly one file); a catalog key half-renamed or the
+#   format-naming line touched (byte-identical); a deleted or
+#   weakened test (none deleted, golden-journey untouched); an em
+#   dash anywhere in the diff (zero).
+# SCHEMA VALIDATION, executed: tiphys validate --type verdict (Node
+#   26 via nvm) against a private context directory carrying plan.yaml
+#   (a copy of delivery/plan/pulse-v02.yaml) and work-history.yaml (a
+#   copy of delivery/work-history/m3-p1.yaml): exit 0. The
+#   dual-review-decorrelation regime report is expected there (the
+#   private context carries no charter deliberately); the real
+#   dual-verdict gate runs over the fleet's own directory once both
+#   verdicts of this head are committed.
+# NOTE ON A SHARED SCRATCH HAZARD, recorded because a later reviewer
+#   will hit it: the session scratchpad is REUSED across fleet
+#   sessions and old context dirs there hold SYMLINKS into other
+#   review worktrees; a cp onto such a plan.yaml writes THROUGH the
+#   link onto another worktree's committed plan file. This review
+#   tripped it twice, restored both targets from git immediately
+#   (verified clean status), and rebuilt its context from cat into a
+#   freshly created uniquely named directory. Build private contexts
+#   with fresh directories only.
+
+kind: verdict
+phase: M3-P1
+verdict: APPROVE
+produced-by: claude
+framing: destructive-paths
+review-contract: hazard
+
+findings:
+  - id: CR-601
+    severity: low
+    evidence:
+      - "src/platform/ui/nav-link.tsx:30 computes the marker as pathname === href, exact match only"
+      - "src/app/(app)/import/[id]/page.tsx exists: the import confirm and result step is a real sub-route in the core journey (its own comment: thin route for one import, dispatch on the status machine)"
+      - "test/e2e/navigation.spec.ts:63-73 (expectNavOn) is asserted only on /, /import and /merchants; no assertion visits /import/[id], so the gap is invisible to the phase's e2e"
+    concrete-fix: >-
+      In src/platform/ui/nav-link.tsx, widen the active test to const
+      active = pathname === href || (href !== "/" &&
+      pathname.startsWith(href + "/")), and extend expectNavOn coverage
+      to the confirm step (after the upload in the seeded journey,
+      assert nav-import carries aria-current on the /import/[id] page).
+    analysis: >-
+      On /import/[id], the page a user lands on in the middle of the
+      import journey, no nav link carries aria-current: the visible
+      current-route state the owner asked for goes dark exactly where
+      orientation matters most. Nothing is wrongly marked and every
+      route stays reachable, so this is low, not a recurrence of the
+      owner's complaint. It passes criterion 1.1 as written because
+      the criterion names only the three top routes, which is the
+      hazard-contract shape: green criteria, and the shipped behaviour
+      at risk is the marker's promise on a route the criteria never
+      visit.
+  - id: CR-602
+    severity: low
+    evidence:
+      - "test/app/catalog-parity.test.ts:26 compares new Set(Object.keys(parsed)) per locale: top-level key NAMES only"
+      - "messages/en.json carries three array-valued top-level keys (prevMonth, steps, emptySteps; counted by node: 103 string values, 3 arrays)"
+      - "reconstruction executed by this review, tree never edited: the committed test's logic against an in-memory nl copy with the last steps entry dropped stays GREEN (captured output: witness parity STAYS GREEN on dropped array entry: true), while a deleted top-level key reds as the work history witnessed"
+      - "the test's own header comment (test/app/catalog-parity.test.ts:5) claims every user-facing string lives in all three catalogs, which is wider than what the check reaches"
+    concrete-fix: >-
+      In test/app/catalog-parity.test.ts, flatten each catalog to deep
+      key paths before comparing (array values contribute
+      key.<index>), or add a second assertion that array-valued
+      entries have equal lengths across locales; and narrow the header
+      comment to what the test checks until then.
+    analysis: >-
+      This is H1.2's guard, and its blind spot is the class's exact
+      recurrence path: a later phase shipping steps or emptySteps with
+      one entry fewer in nl or fr ships untranslated or missing copy
+      with the fast gate green. Criterion 1.2 says key, and array
+      entries are strictly values, so the criterion is met as written;
+      the finding is that the guard's reach is narrower than both its
+      own comment and the intent of the step that ordered it (so this
+      and every later phase cannot ship an untranslated key). Current
+      catalogs are aligned (2/2/2, 3/3/3, 3/3/3 entries), so nothing
+      is broken today.
+
+criteria:
+  - id: "1.1"
+    quote: >-
+      npm run test:e2e exits 0 with test/e2e/navigation.spec.ts
+      passing: it asserts the three header nav links are present (by
+      testid) on /, /import and /merchants, that clicking each
+      navigates to its route, that the active marker matches the
+      current route, and that the empty state for a household with no
+      imports contains a link whose click lands on /import. And the
+      nav is rendered by the shell, not by pages: grep -rl for the
+      nav's data-testid over src/ matches exactly one component file,
+      src/app/(app)/layout.tsx (finding PR2-006: per-page copies on
+      the three current routes would pass the route assertions and
+      ship the next route bare).
+    evidence:
+      - "e2e half RELIED ON, not re-executed (database off-limits to this review): work history gate-evidence, npm run test:e2e 14 passed 0 skipped exit 0 at c2aceec, plus this review's static read of test/e2e/navigation.spec.ts confirming it asserts presence by testid on all three routes (expectNavOn at :63, called at :83, :89, :101, :107, :112, :118), click navigation (:86, :104, :110, :116), marker-follows-route (:69-71), and the empty-state click landing on /import (:85-86)"
+      - "grep half RE-EXECUTED: grep -rl over src/ for each of nav-overview, nav-import, nav-merchants and main-nav prints exactly src/app/(app)/layout.tsx, four greps, no other line"
+    met: true
+  - id: "1.2"
+    quote: >-
+      npm test exits 0 including the new catalog parity test, which
+      fails red when any key exists in one of messages/en.json,
+      messages/nl.json, messages/fr.json and not the others (witnessed
+      red once in the work history by removing a key locally, then
+      green).
+    evidence:
+      - "RE-EXECUTED: npx vitest run at 5c23aa4 in this clone, 21 files, 252 tests, 0 failed, exit 0, test/app/catalog-parity.test.ts among them"
+      - "red witness recorded in the work history (claim M3P1-C3, two structurally different reds) and INDEPENDENTLY RECONSTRUCTED in memory by this review: the committed logic reds on a deleted top-level key (captured: witness RED on missing top-level key: true); the array-entry blind spot is finding CR-602, which does not unmeet the criterion as written (array entries are values, not keys)"
+    met: true
+  - id: "1.3"
+    quote: >-
+      npm run typecheck && npm run lint && npm test exit 0 at the
+      phase head, and grep -rE "oklch\(|#[0-9a-fA-F]{3,8}" over src/
+      excluding the token and theme files exits 1.
+    evidence:
+      - "RE-EXECUTED at 5c23aa4: npm run typecheck exit 0; npm run lint exit 0; npx vitest run 252/252 exit 0"
+      - "RE-EXECUTED: the criterion's grep over ALL of src/ (no exclusion needed; token and theme files live under styles/) exits 1; additionally no literal px/rem/em/% in the diff's added CSS lines (exit 1) and every var(--*) in src/app/globals.css resolves in styles/tokens.css (comm empty)"
+    met: true
+  - id: "1.4"
+    quote: >-
+      The pre-existing test/e2e/golden-journey.spec.ts passes
+      unmodified except for selectors the new header markup forces;
+      git diff --name-only against the phase base shows no deleted
+      test files.
+    evidence:
+      - "RE-EXECUTED: git diff c518181..5c23aa4 -- test/e2e/golden-journey.spec.ts is 0 lines (unmodified entirely; no selector change was even needed)"
+      - "RE-EXECUTED: git diff --name-only --diff-filter=D c518181..5c23aa4 prints nothing; its pass at the head is relied on from the gate-evidence (14 passed includes it)"
+    met: true
+
+deviations-judged:
+  - deviation: >-
+      files-to-touch (phase M3-P1): the list does not name
+      src/platform/ui/nav-link.tsx or src/app/globals.css, both of
+      which the phase in fact requires.
+    serves-plan-intent: true
+    reasoning: >-
+      The client island is forced by the platform: the layout resolves
+      the household through next/headers (verified by this review at
+      src/platform/auth/supabase-server.ts:2) so it cannot carry "use
+      client", and a server-computed marker goes stale across App
+      Router navigations; the implementer settled this by an executed
+      build probe (M3P1-C5, exit 1 with the next/headers error), not
+      by assertion. The island keeps every testid literal and every
+      label in the layout, preserving criterion 1.1's grep pin, and
+      passes pulse-frontend's platform/ui test (knows an href, not a
+      transaction). globals.css is where every existing app-shell
+      class lives; putting component rules in styles/tokens.css would
+      have been the actual violation. Declared the moment found, per
+      the phase-scope clause.
+  - deviation: >-
+      files-to-touch (phase M3-P1): styles/tokens.css is listed but
+      was not modified.
+    serves-plan-intent: true
+    reasoning: >-
+      The plan's own step 1 makes the file conditional (a missing
+      token is added there first), and no token was missing: this
+      review verified independently that every var(--*) referenced in
+      src/app/globals.css is defined in styles/tokens.css (comm over
+      the two sorted sets is empty). Not touching it is the
+      non-negotiable followed, not skipped.
+
+hazard-classes-addressed:
+  - class-id: H1.1
+    probed: >-
+      Executed the per-page-copy construction the class names: grep
+      -rl over src/ for each of the four nav testids (main-nav,
+      nav-overview, nav-import, nav-merchants), each printing exactly
+      src/app/(app)/layout.tsx; grep -rl '"use client"' over src/
+      printing exactly src/platform/ui/nav-link.tsx (no page grew its
+      own nav island); and the diff over src/app/(auth),
+      src/platform/auth and src/middleware.ts verified EMPTY, so the
+      nav exists only inside the guarded shell whose
+      requireHouseholdContext redirects unauthenticated requests
+      before render (src/platform/auth/context.ts:16-18). A route
+      added later under (app) inherits the nav from the layout.
+    cleared-because: >-
+      The nav is rendered by the shell layout and nowhere else; no
+      per-page copy exists, no second client component exists, and
+      the unauthenticated surface is unchanged, so the owner's
+      complaint cannot recur for a future (app) route by this
+      phase's construction.
+  - class-id: H1.2
+    probed: >-
+      Grepped the new markup for hardcoded copy (all five labels are
+      t() calls; the only literal in the layout header is the
+      pre-existing Pulse eyebrow, present at base c518181:19);
+      verified the five new keys exist in all three catalogs with
+      real translations and zero em dashes in the diff; re-ran the
+      fast gate (parity test green among 252); then attacked the
+      parity GUARD itself by reconstruction in memory: deleted
+      top-level key reds, dropped array entry stays green.
+    finding: CR-602
+  - class-id: H1.3
+    probed: >-
+      Re-executed criterion 1.3's grep over all of src/ (exit 1); ran
+      a stricter sweep for literal px/rem/em/% values over the diff's
+      added CSS lines (exit 1); and cross-checked every var(--*) used
+      in src/app/globals.css against the definitions in
+      styles/tokens.css (comm of the sorted sets empty), so no rule
+      references a token that does not exist and no literal crept in
+      with the new chrome.
+    cleared-because: >-
+      The new chrome is tokens-only, transparent/currentColor
+      keywords aside, every referenced token resolves, and
+      styles/tokens.css needed no addition; the class's harm has no
+      instance in this diff.
