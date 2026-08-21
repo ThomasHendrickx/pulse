@@ -51,7 +51,11 @@ const CASH_SQL_PATTERN = CASH_WITHDRAWAL_PATTERNS.map(
 // copy, and a second pin in test/domain/merchant-review.test.ts that reads
 // this file and asserts the SQL form is still here and still written once.
 // If decision D-11 ever changes, this fragment changes with it.
-export const COUNTERPARTY_TEXT_SQL = Prisma.sql`COALESCE(t."counterpartyName", t."description")`;
+// MODULE-LOCAL, not exported: this file is held by the tenancy gate, which
+// fails closed on any repository export that does not take a household
+// context (test/schema/tenancy.test.ts). The SQL pin reads this file's TEXT
+// rather than importing the symbol, so nothing needs to be exported.
+const COUNTERPARTY_TEXT_SQL = Prisma.sql`COALESCE(t."counterpartyName", t."description")`;
 
 const MATCHED_LINK_EXISTS = Prisma.sql`EXISTS (
   SELECT 1 FROM "transfer_links" l

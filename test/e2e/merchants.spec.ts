@@ -104,13 +104,22 @@ const INVENTED_CARD_NUMBER = "4000123456789010";
 const cardNumberRuns = (text: string): readonly string[] =>
   text.replace(/[ .\-]/g, "").match(/(?<!\d)\d{13,19}(?!\d)/g) ?? [];
 
-const sweepGroupLabels = async (
-  labels: readonly string[],
+// The fixture's ONE legitimate structured reference, which criterion 6.3(b)
+// names as its single permitted exception. Since fix round 1 narrowed the
+// display helper to the card-tail grammar (finding HZ-M3P6-01), the
+// exception is REAL on the label side too: a payment reference is not a
+// card number, so nothing masks it and the owner can still read it.
+const PERMITTED_EXCEPTION = "415123456789012";
+
+const sweepRenderedTexts = async (
+  texts: readonly string[],
 ): Promise<void> => {
-  expect(labels.length).toBeGreaterThan(0);
-  for (const label of labels) {
-    expect(label.replace(/[ .\-]/g, "")).not.toContain(INVENTED_CARD_NUMBER);
-    expect(cardNumberRuns(label)).toEqual([]);
+  expect(texts.length).toBeGreaterThan(0);
+  for (const text of texts) {
+    expect(text.replace(/[ .\-]/g, "")).not.toContain(INVENTED_CARD_NUMBER);
+    for (const run of cardNumberRuns(text)) {
+      expect(run, text).toBe(PERMITTED_EXCEPTION);
+    }
   }
 };
 
@@ -140,9 +149,26 @@ test.describe("card group labels on a phone", () => {
     await page.getByLabel("Label").fill("Daily account");
     await page.getByLabel("Bank").fill("Demobank");
     await page.getByLabel("Ring").selectOption("POT");
+    // THE CONFIRM-FORMAT PREVIEW, the screen the owner photographed
+    // (finding CR-M3P6-01). It renders the RAW parsed descriptor, which is
+    // where a card number sits whole, and no criterion named it before this
+    // fix round. The sweep runs on the same separator-insensitive test the
+    // group labels use.
+    const previewTexts = await page.getByTestId("preview-row").allInnerTexts();
+    expect(previewTexts).toHaveLength(5);
+    await sweepRenderedTexts(previewTexts);
+    // NOT VACUOUS: the preview's card rows really do render a masked tail,
+    // so the sweep is passing because of the mask rather than because the
+    // rows carry no card number.
+    expect(previewTexts.filter((text) => text.includes("**** 9010")).length)
+      .toBeGreaterThanOrEqual(4);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(390);
+
     await page.getByTestId("confirm-import").click();
     await expect(page.getByTestId("import-result")).toBeVisible();
-    await expect(page.getByTestId("rows-added")).toHaveText("13");
+    await expect(page.getByTestId("rows-added")).toHaveText("19");
 
     // THE MERCHANT REVIEW SCREEN.
     await page.goto("/merchants");
@@ -164,17 +190,24 @@ test.describe("card group labels on a phone", () => {
       page.getByTestId("unresolved-group").filter({ hasText: "SUPERMARKT DE LINDE" }),
     ).toHaveCount(2);
 
-    await sweepGroupLabels(
+    await sweepRenderedTexts(
       await page.getByTestId("group-label").allInnerTexts(),
     );
 
-    // The display masking is NOT vacuous here: the row carrying a
-    // legitimate structured reference renders it masked to its last four
-    // digits, which is the only place a long digit run reaches a label at
-    // all after the strip.
+    // The one permitted exception, exercised rather than vacuous: the row
+    // carrying a legitimate structured reference still shows it, because it
+    // is not a card number and the narrowed helper leaves it alone.
     await expect(
       page.getByTestId("unresolved-group").filter({ hasText: "ENERGIE NOORD" }),
-    ).toContainText("**** 9012");
+    ).toContainText(PERMITTED_EXCEPTION);
+
+    // The same merchant paid on BOTH payment rails is ONE group
+    // (finding HZ-M3P6-06).
+    const bothRails = page
+      .getByTestId("unresolved-group")
+      .filter({ hasText: "BAKKERIJ ZONNEBLOEM" });
+    await expect(bothRails).toHaveCount(1);
+    await expect(bothRails).toContainText("3 rows");
 
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
@@ -182,12 +215,12 @@ test.describe("card group labels on a phone", () => {
 
     // THE MONTH VIEW, over the closed month that holds the reference row.
     await page.goto("/?month=2026-08");
-    await sweepGroupLabels(
+    await sweepRenderedTexts(
       await page.getByTestId("group-label").allInnerTexts(),
     );
     await expect(
       page.getByTestId("group-label").filter({ hasText: "ENERGIE NOORD" }),
-    ).toContainText("**** 9012");
+    ).toContainText(PERMITTED_EXCEPTION);
     await expect(
       page.getByTestId("group-label").filter({ hasText: "KOFFIEHUIS DE MOLEN" }),
     ).toHaveCount(1);

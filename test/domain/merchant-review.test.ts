@@ -438,7 +438,7 @@ describe("criterion 6.10, the SQL half: the merchant-source rule is written ONCE
       ) ?? [];
     expect(occurrences).toHaveLength(1);
     expect(repositorySource).toContain(
-      'export const COUNTERPARTY_TEXT_SQL = Prisma.sql`COALESCE(t."counterpartyName", t."description")`',
+      'const COUNTERPARTY_TEXT_SQL = Prisma.sql`COALESCE(t."counterpartyName", t."description")`',
     );
   });
 
