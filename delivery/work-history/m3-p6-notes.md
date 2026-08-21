@@ -489,3 +489,40 @@ that HZ-M3P6-06 asked for. Fixture rows 13 -> 19.
 Every committed CSV fixture except the one this phase added has ZERO key
 changes, the three KBC card fixtures included: 86 rows, 14 changed, all 14 in
 card-descriptors.csv.
+
+## Privacy gate at the fix-round head, including one hit that was resolved
+
+TIGHT RUN, 66 high-value probes derived at run time from both real uploads:
+0 whole-worktree hits, 0 changed-file hits, exit 0.
+
+BROAD RUN, deliberately over-inclusive: the first execution at this head
+reported ONE hit INTRODUCED by this phase, in
+delivery/work-history/m3-p6-notes.md, category "merchant". It was resolved
+rather than waved past. The matched string was located by index in my own
+file and is the payment-rail word for "card" with a leading apostrophe glued
+to it: my probe tokenizer treated an apostrophe as a word character, so a
+quoted occurrence in an extracted line became a six-character "merchant"
+probe. It is rail vocabulary, not an identifier, a name, a merchant string,
+an amount or a date, and the line it matched is a test expectation of my own
+containing an INVENTED card number. The tokenizer now splits on the
+apostrophe as well, and the broad run reports 130 probes, 6 whole-worktree
+hits and 2 changed-file hits, every one of them a probe that ALSO matches at
+the phase base 77da0c6, so this phase introduces none. In-memory scrub over
+the changed files: 2 hits, both from those same base-matching generic
+probes. In-memory scrub over the branch's commit messages and full patch: 0.
+
+## Gates at the fix-round head
+
+typecheck 0, lint 0, gate:tokens 0, npm test 0 with 338 discovered / 338
+passed / 0 failed / 0 skipped / 0 todo over 28 files, npm run test:e2e 0 with
+21 passed across both Playwright projects, the golden journey and the
+production-mode smoke included.
+
+## Scope diff after the final build
+
+15 paths. files-to-touch plus the plan's two extras at 77da0c6
+(src/app/globals.css, src/modules/import/ui/profile-confirmation.tsx) plus
+the two standing work-history extras account for 14. The one excess is
+src/modules/overview/adapters/overview-repository.ts, required by
+HZ-M3P6-05 and CR-M3P6-02, declared in the commit that makes it and in the
+work history's deviations.
