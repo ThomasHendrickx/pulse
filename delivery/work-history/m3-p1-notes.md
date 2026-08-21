@@ -46,3 +46,37 @@ Both catalogs restored from backups; `git diff --stat` empty afterwards; rerun g
 ## Local stack
 - Docker daemon started; pre-existing local supabase stack (project_id m1-p1-skeleton, the id committed in supabase/config.toml) came up with docker: kong on 54321, postgres on 54322. `npx supabase status` gives the local ANON_KEY and SERVICE_ROLE_KEY demo JWTs.
 - Pinned five-value env for every db/e2e invocation (fleet warnings 1 and 6): DATABASE_URL and DIRECT_URL postgresql://postgres:postgres@127.0.0.1:54322/postgres, NEXT_PUBLIC_SUPABASE_URL http://127.0.0.1:54321, NEXT_PUBLIC_SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY from supabase status, plus SEED_USER_EMAIL/SEED_USER_PASSWORD from .env.example for the seed.
+- db:reset attempt (pinned local) exited 1: the repo's own db guard printed an ALLOW for the local target, then Prisma 6.19's AI-agent consent guard refused migrate reset. Instead of quoting consent per the M1-P1 precedent, checked whether a reset was needed at all: `npx prisma migrate status` (pinned local) printed "5 migrations found ... Database schema is up to date!", exit 0. The local db already carries the full schema from the M1 runs and every e2e spec signs up its own fresh household, so NO reset was run and nothing destructive happened. Recorded as the cheaper and safer path, not a workaround of the guard.
+
+## Implementation (commits c2aceec)
+- messages: five new keys in en, nl, fr (navLabel, navOverview, navImport, navMerchants, emptyImportCta); parity re-verified by the fast gate (now 106 keys per catalog, key sets identical).
+- src/platform/ui/nav-link.tsx (NEW, scope addition declared above): the one client island. "use client" reason recorded in the file: the shell layout stays mounted across client-side navigations, so a server-computed active marker would go stale; usePathname is the supported way to follow the route. No literal testid, no copy: both arrive as props from the layout.
+- src/app/(app)/layout.tsx: nav element (aria-label from catalog) with the three NavLinks; ALL literal nav testids (main-nav, nav-overview, nav-import, nav-merchants) live in this file only, per criterion 1.1's grep pin. Household span got class app-household (margin-left auto moves from the sign-out form so the pair sits right of the nav).
+- src/app/globals.css: .app-nav, .app-nav-link (inactive ink-muted, hover ink, focus ring via --focus-ring, active [aria-current="page"] ink + weight-medium + hairline underline via currentColor), .app-household, .empty-state-cta. Tokens only; NO new token was needed, so styles/tokens.css is deliberately untouched (it is on files-to-touch conditionally: "a missing token is added ... first"; none was missing).
+- src/modules/overview/ui/month-view.tsx: EmptyState gains the Link to /import labelled t("emptyImportCta"), testid empty-state-import-link. jsx-no-literals holds (label is an expression container; attribute strings are not flagged by the rule's default options, and the phase changes nothing about that contract).
+
+## Gate evidence at c2aceec (src state identical to final head)
+- `npm run typecheck` exit 0. `npm run lint` exit 0. `npm test` exit 0: `Test Files 21 passed (21), Tests 252 passed (252)`, 0 skipped, invocation `vitest run` via npm, node v26.7.0. `npm run gate:tokens` exit 0.
+- Criterion 1.3 grep, exact form: `grep -rE "oklch\(|#[0-9a-fA-F]{3,8}" src/` printed nothing, exit 1 (token and theme files live under styles/, outside src/, so no exclusion was even needed).
+- Criterion 1.1 grep pin: `grep -rl "nav-overview" src/`, `grep -rl "nav-import" src/`, `grep -rl "nav-merchants" src/`, `grep -rl "main-nav" src/` each print exactly one file: src/app/(app)/layout.tsx.
+
+## Navigation e2e red witness (R-037a), captured 2026-08-21
+With the working tree's src/ restored to the witness commit 0cc70ad (`git restore --source=0cc70ad -- src/`, tree fully committed beforehand so nothing uncommitted was at risk), ran the two nav tests against the pre-nav code, pinned env, `npx playwright test -g "the nav is in the shell|active marker follows"` (-g per fleet warning 8). Output tail:
+```
+2 failed
+  [chromium] › test/e2e/navigation.spec.ts:76:5 › empty household: the nav is in the shell and the empty state links to import
+  [chromium] › test/e2e/navigation.spec.ts:92:5 › seeded household: header links navigate and the active marker follows the route
+```
+failing at `expect(page.getByTestId("main-nav")).toBeVisible()` (navigation.spec.ts:63). HONESTY NOTE: the runner's numeric exit code was swallowed by the `| tail` pipeline in that capture (the echoed 0 is tail's, not playwright's); the reported-red evidence is the runner's own "2 failed" listing above. Both tests fail on the first nav assertion, and the two members are structurally different journeys (empty household via the empty state, seeded household via click-through), so the witness reddens under two members of the class.
+Then `git restore --source=HEAD -- src/` (tree clean afterwards, `git status --short` empty).
+
+## Client-boundary probe (settles the "layout could not be the client component" claim)
+- `sed -i '1i "use client";' 'src/app/(app)/layout.tsx' && npm run typecheck` exited 0: tsc alone does NOT witness the boundary, so a typecheck probe is insufficient evidence here.
+- Same probe through `npm run build`: exit 1, `Error: x You're importing a component that needs "next/headers". That only works in a Server Component ... Build failed because of webpack errors`. Layout restored with git restore; src tree clean afterwards. Recorded as claim M3P1-C5 in the work history.
+
+## Work history
+- delivery/work-history/m3-p1.yaml written and validated: `npx --prefix /home/user/pulse-fleet tiphys validate --type work-history --context . delivery/work-history/m3-p1.yaml` exit 0 (Node 26 via nvm). First attempt was INVALID at #/claims/5 (an open question quoting dispatch words that carry guarded tokens); fixed by dropping the verbatim quotes and adding still-open-because, revalidated to exit 0.
+- Claim grep from the brief run over the yaml, exact form, plus the whitespace-flattened variant: hits at prompt lines (dispatcher's verbatim words, claim M3P1-Q2), and at three prose sites each carrying an adjacent reference to executed construction M3P1-C5. No unsettled hit.
+
+## Full e2e green at c2aceec
+`npm run test:e2e` with the five values pinned in the invoking shell: exit 0, `14 passed (2.1m)`, 0 skipped, 0 did-not-run, invocation `playwright test` via npm against the config's own dev webServer (PULSE_FIXED_NOW=2026-09-15T12:00:00Z), node v26.7.0, chromium project. Includes both navigation tests green and test/e2e/golden-journey.spec.ts green UNMODIFIED: `git diff c518181..HEAD -- test/e2e/golden-journey.spec.ts | wc -l` prints 0, no selector change was forced (criterion 1.4 first half). `git diff --name-status c518181..HEAD` shows only A/M entries, no D: no test file deleted (criterion 1.4 second half).

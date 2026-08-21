@@ -1,0 +1,348 @@
+kind: work-history
+phase: M3-P1
+prompt: |
+  You are the implementer for phase M3-P1 (navigation) of the Pulse v0.2
+  delivery. Your brief is /home/user/pulse-fleet/implementer-brief-m3-p1.md:
+  read it fully first, including the appended fleet warnings; it is your
+  contract. Your working tree is the fresh clone
+  /home/user/pulse-fleet/worktrees/m3-p1-navigation on branch
+  claude/m3-p1-navigation (based on main c518181). Do all work there, never
+  in /home/user/pulse. The plan is delivery/plan/pulse-v02.yaml in your
+  clone, phase M3-P1; the owner is currently BLOCKED on this exact gap (no
+  way to reach the import screen from the UI), so this phase is deliberately
+  small: ship it clean and fast.
+
+  Read the pulse-frontend skill before any component work (server
+  components, design tokens only, next-intl EN/NL/FR for every user-facing
+  string, no literal colours or spacing) and pulse-typescript for any TS.
+  Scope per the plan: header navigation in the authenticated shell
+  (src/app/(app)/layout.tsx, the plan pins the nav's data-testid to exactly
+  ONE component file under src/, the shell layout, by grep count in
+  criterion 1.1: put it there and nowhere else), links for the month view,
+  import, and merchants; the month view's empty state links to /import;
+  catalog additions in all three languages with parity; the navigation e2e
+  per the plan's criteria (walk every acceptance criterion of M3-P1 exactly
+  as written, including the lint gate and any copy assertions). The
+  jsx-no-literals rule covers src/modules/**/ui: keep every string in
+  catalogs regardless of where the nav component lives.
+
+  Environment (also in the brief's warnings): never use ambient
+  DATABASE_URL/DIRECT_URL/SUPABASE_* (foreign project; they override .env
+  for Prisma AND the Playwright webServer, pin ALL FIVE values local for db
+  and e2e); docker daemon may be dead, sudo dockerd then wait ~30s for
+  auth; Node 26 for tiphys via export NVM_DIR=/opt/nvm && .
+  /opt/nvm/nvm.sh; npm only; no em dashes; use -g for Playwright test
+  filters.
+
+  Work in small commits pushed incrementally (git push -u origin
+  claude/m3-p1-navigation on first push). Red witness before green (the
+  e2e asserting nav presence, written first, is the natural red). Before
+  reporting: npm run typecheck, npm run lint, npm run gate:tokens, npm
+  test, npm run test:e2e all exit 0; delivery/work-history/m3-p1.yaml
+  schema-valid (npx --prefix /home/user/pulse-fleet tiphys validate --type
+  work-history with a context containing delivery/plan/pulse-v02.yaml)
+  plus m3-p1-notes.md; confirm the final push with git ls-remote origin
+  claude/m3-p1-navigation output in your report. Report: per-criterion
+  status with executed evidence, deviations declared the moment found,
+  head sha.
+files-touched:
+  - src/app/(app)/layout.tsx
+  - src/app/globals.css
+  - src/modules/overview/ui/month-view.tsx
+  - src/platform/ui/nav-link.tsx
+  - messages/en.json
+  - messages/nl.json
+  - messages/fr.json
+  - test/e2e/navigation.spec.ts
+  - test/app/catalog-parity.test.ts
+  - delivery/work-history/m3-p1-notes.md
+  - delivery/work-history/m3-p1.yaml
+per-step-commits:
+  - sha: 0cc70ad
+    subject: "test: navigation e2e and catalog parity red witnesses, written before the nav exists"
+  - sha: c2aceec
+    subject: "feat: shell header navigation, active-route marker, empty-state import link"
+key-decisions:
+  - decision: >-
+      The active-route marker is computed by a small client island,
+      src/platform/ui/nav-link.tsx (usePathname), while the literal
+      data-testid values and the catalog labels stay in the server layout
+      and reach the island as props.
+    why: >-
+      The App Router keeps the shell layout mounted across client-side
+      navigations, so a server-computed marker goes stale after the first
+      click; and criterion 1.1's grep pins the nav testids to
+      src/app/(app)/layout.tsx as the only matching component file, which
+      props satisfy and a second literal would break. The island passes
+      pulse-frontend's platform/ui test: it knows an href and a label, not
+      what a transaction is.
+  - decision: >-
+      aria-current="page" is both the e2e marker and the styled state
+      (.app-nav-link[aria-current="page"] in globals.css); no separate
+      data-active attribute.
+    why: >-
+      One attribute serving the accessible state, the visible state and the
+      test assertion cannot drift into three disagreeing signals. The plan
+      offers aria-current or data-active; aria-current is the one with
+      accessibility semantics.
+  - decision: >-
+      No database reset was run. The pre-existing local supabase stack
+      (project_id m1-p1-skeleton, the id committed in supabase/config.toml)
+      was reused after dockerd restart, verified current with prisma
+      migrate status.
+    why: >-
+      npm run db:reset (pinned local) was refused by Prisma 6.19's AI-agent
+      consent guard after the repo's own guard allowed the local target;
+      instead of quoting consent per the M1-P1 precedent, migrate status
+      (pinned) printed "Database schema is up to date!" with 5 migrations,
+      and the e2e specs each sign up a fresh household, so a reset would
+      have destroyed state for no benefit.
+  - decision: >-
+      Mechanism lookup (mechanism-lookup clause): read the kernel
+      tuition/mechanism-index.yaml (15 keys, listed in the notes file). No
+      entry exists for the mechanisms this phase uses (React server
+      components, next-intl catalogs, Vitest, Playwright). The one rule
+      applied by analogy is from asserting-a-ci-step-is-wired: a witness
+      for a class must redden under at least two structurally different
+      members, honoured in both witnesses below.
+    why: >-
+      The clause requires the lookup to be recorded even when the index has
+      no entry; the two-member rule shaped the parity red witness (a
+      missing key AND an extra key) and the nav red witness (empty-state
+      journey AND seeded click-through journey).
+  - decision: >-
+      Nav labels are new catalog keys navLabel, navOverview, navImport,
+      navMerchants, emptyImportCta in EN, NL, FR; NL uses Tegenpartijen and
+      FR Contreparties for the merchants link.
+    why: >-
+      Consistent with the existing NL and FR catalog vocabulary
+      (Tegenpartijen nakijken, Revision des contreparties): the ubiquitous
+      language for that screen is counterparties, and the nav should name
+      the screen the way the screen names itself.
+verification-first:
+  - finding: >-
+      At base c518181 the shell header renders brand eyebrow, the
+      household-context span and the sign-out form only, no nav
+      (src/app/(app)/layout.tsx lines 17 to 27); the empty state renders
+      noData, emptyTitle and emptyBody with no Link element
+      (src/modules/overview/ui/month-view.tsx lines 387 to 396); grep -rln
+      over src/ for nav-overview, nav-import, nav-merchants and app-nav
+      prints nothing. This matches the grounding's citations.
+    contradicts-plan: false
+  - finding: >-
+      The three catalogs are at parity at base (101 keys each, key-set
+      differences empty in both directions per locale), so the parity test
+      is born green and its red has to be forced locally, which is exactly
+      what criterion 1.2 instructs (witnessed red once by removing a key
+      locally, then green). No parity test exists under test/ at base
+      (grep -rn parity test/ prints nothing).
+    contradicts-plan: false
+  - finding: >-
+      A server layout cannot read the current pathname, and the layout
+      stays mounted across client-side navigations, so the current-route
+      marker required by step 1 needs a client hook (settled by the
+      executed construction in claim M3P1-C5: the alternative of marking
+      the layout itself "use client" fails the build with exit 1); the
+      mechanism is not specified in the phase text, which names only the
+      marker itself (aria-current or data-active). Resolved as a small
+      mechanical choice with the NavLink island, keeping the testid
+      literals in the layout as criterion 1.1 pins them.
+    contradicts-plan: false
+deviations:
+  - plan-clause: >-
+      files-to-touch (phase M3-P1): the list does not name
+      src/platform/ui/nav-link.tsx or src/app/globals.css, both of which
+      the phase in fact requires.
+    why: >-
+      nav-link.tsx: the active marker needs a client island (see
+      verification-first), and "use client" is impossible on the layout
+      file itself because the layout is a server component resolving the
+      household context through next/headers; both halves settled by the
+      executed construction in claim M3P1-C5 rather than asserted. globals.css: the file where all
+      existing app-shell classes live; the nav chrome classes belong
+      beside .app-header, and styles/tokens.css holds tokens, not
+      component rules. Declared in the notes file the moment found, per
+      the phase-scope clause, so the orchestrator can amend the
+      declaration on the base branch before the scope audit.
+  - plan-clause: >-
+      files-to-touch (phase M3-P1): styles/tokens.css is listed but was
+      not modified.
+    why: >-
+      The listing is conditional (step 1: a missing token is added there
+      first); no token was missing. Every new rule uses existing tokens
+      (space, text, weight, ink colours, border-hairline, focus-ring,
+      radius), verified by the gate:tokens grep and the criterion 1.3
+      grep, both exit codes captured below.
+gate-evidence:
+  - gate: "typecheck (npm run typecheck, tsc --noEmit, node v26.7.0, src state of c2aceec)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "lint (npm run lint, eslint ., src state of c2aceec)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "token gate (npm run gate:tokens, inverted grep over src/modules/*/ui)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fast suite (npm test, vitest run, node v26.7.0, src state of c2aceec; 21 files, 252 tests, 0 skipped)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 252
+    passed: 252
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "slow suite (npm run test:e2e, playwright test, chromium, config-owned dev webServer with PULSE_FIXED_NOW=2026-09-15T12:00:00Z, all five env values pinned local in the invoking shell, src state of c2aceec; 14 tests, 0 skipped, 14 passed in 2.1m)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 14
+    passed: 14
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+claims:
+  - id: M3P1-C1
+    kind: coverage
+    statement: >-
+      The nav's testids are rendered by the shell and pinned to exactly one
+      component file (criterion 1.1 second half): each of the four grep -rl
+      runs over src/ prints exactly src/app/(app)/layout.tsx and nothing
+      else.
+    settled-by:
+      executed-construction:
+        command: grep -rl "nav-overview" src/; grep -rl "nav-import" src/; grep -rl "nav-merchants" src/; grep -rl "main-nav" src/
+        exit-code: 0
+        output: "src/app/(app)/layout.tsx (once per grep, four greps, no other line)"
+  - id: M3P1-C2
+    kind: coverage
+    statement: >-
+      No literal colour under src/ (criterion 1.3 second half), in the
+      criterion's exact form; the token and theme files live under styles/,
+      outside src/, so the un-excluded grep is the stricter run.
+    settled-by:
+      executed-construction:
+        command: grep -rE "oklch\(|#[0-9a-fA-F]{3,8}" src/
+        exit-code: 1
+        output: "(no matches; exit 1 is the no-match code the criterion requires)"
+  - id: M3P1-C3
+    kind: coverage
+    statement: >-
+      The catalog parity test reddens under two structurally different
+      members of its class (criterion 1.2): a key deleted from a target
+      catalog, and an extra key added to a target catalog; green with the
+      committed catalogs before and after.
+    settled-by:
+      executed-construction:
+        command: "delete signout from messages/nl.json; npx vitest run test/app/catalog-parity.test.ts; restore; add onlyInFrProbe to messages/fr.json; rerun; restore; rerun"
+        exit-code: 1
+        output: >-
+          Run 1: "x nl carries exactly the en key set: keys in en but not
+          in nl: expected [ 'signout' ] to deeply equal []" (1 failed).
+          Run 2: "x fr carries exactly the en key set: keys in fr but not
+          in en: expected [ 'onlyInFrProbe' ] to deeply equal []" (1
+          failed). Final run after restores: 3 passed (3), and git diff
+          --stat over messages/ empty before the implementation commit
+          added the five new keys.
+  - id: M3P1-C4
+    kind: coverage
+    statement: >-
+      The navigation e2e is a real witness (criterion 1.1 first half): both
+      tests fail against the pre-nav code and pass against the
+      implementation, reddening under two structurally different journeys
+      (empty household via the empty state, seeded household via header
+      click-through).
+    settled-by:
+      executed-construction:
+        command: "git restore --source=0cc70ad -- src/; pinned env npx playwright test -g \"the nav is in the shell|active marker follows\"; git restore --source=HEAD -- src/; pinned env npm run test:e2e"
+        exit-code: 0
+        output: >-
+          Red run: "2 failed" naming navigation.spec.ts:76 and :92, both at
+          expect(page.getByTestId("main-nav")).toBeVisible()
+          (navigation.spec.ts:63). Green run: "14 passed (2.1m)", exit 0,
+          including both navigation tests and the unmodified
+          golden-journey spec.
+  - id: M3P1-C5
+    kind: impossibility
+    statement: >-
+      The shell layout file cannot be made the client component that
+      computes the active marker: with "use client" prepended to
+      src/app/(app)/layout.tsx, the production build fails (tsc alone does
+      not catch it; the earlier typecheck probe exited 0, which is why the
+      build probe was run).
+    settled-by:
+      executed-construction:
+        command: sed -i '1i "use client";' 'src/app/(app)/layout.tsx' && npm run build; git restore 'src/app/(app)/layout.tsx'
+        exit-code: 1
+        output: >-
+          Error: x You're importing a component that needs "next/headers".
+          That only works in a Server Component ... Build failed because of
+          webpack errors. Layout restored afterwards; git status clean of
+          src changes.
+  - id: M3P1-Q1
+    kind: open-question
+    statement: >-
+      I did not capture the red navigation run's numeric process exit code:
+      the capture piped the runner through tail, so the recorded number is
+      tail's. The runner's own "2 failed" listing with the failing
+      assertion site is the captured red evidence, and the green side's
+      exit 0 was captured directly.
+  - id: M3P1-Q2
+    kind: open-question
+    statement: >-
+      The claim-grep hits inside this document's prompt block are the
+      dispatcher's own words recorded verbatim per R-052a (the environment
+      prohibitions and the description of the owner's blocked state); I
+      did not treat quoted dispatch language as claims of mine to settle.
+    still-open-because: >-
+      The prompt is required verbatim, so its wording is not mine to
+      restate; which of its sentences need settling is a judgement the
+      reviewer can re-run with the same grep over the prompt block.
+environment-warnings:
+  - warning: >-
+      Prisma 6.19's AI-agent consent guard fires on migrate reset for the
+      LOCAL target too, after the repo's own db guard has printed its
+      allow; before reaching for the consent-quoting precedent, check
+      whether a reset is needed at all: prisma migrate status (pinned) is
+      cheap and made the reset unnecessary here.
+    evidence: >-
+      npm run db:reset (pinned local) exit 1 with the consent prompt after
+      "db guard:" allow; npx prisma migrate status (pinned) exit 0, "5
+      migrations found... Database schema is up to date!".
+  - warning: >-
+      After sudo dockerd, the local supabase stack's CORE containers (db
+      54322, kong 54321, auth, rest) restart by themselves, but ten
+      services stay stopped (storage, inbucket, realtime, studio, pooler
+      and friends); the e2e suite needs only the core four, so the stopped
+      list is noise, not a failure.
+    evidence: >-
+      npx supabase status listed the ten stopped services while printing
+      the working DB_URL, API_URL and both keys; the full e2e suite then
+      passed 14 of 14 against that stack.
+  - warning: >-
+      playwright.config.ts spreads process.env into the webServer env, so
+      pinning the five values in the invoking shell does reach the dev
+      server; fleet warning 6 stays true and this is the confirming
+      mechanism, not a new fact.
+    evidence: >-
+      test:e2e passed against the local stack with the ambient foreign
+      values still present in the wider shell but overridden by the pinned
+      invocation.
