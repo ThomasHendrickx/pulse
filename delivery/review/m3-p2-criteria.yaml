@@ -1,0 +1,748 @@
+kind: verdict
+phase: M3-P2
+verdict: APPROVE
+# DR-0003 family escalation, stated in the header as the pilot record
+# requires: this review and its hazard-contract sibling are BOTH
+# Claude-family. DR-0012 condition 1 (two model families) is discharged
+# for this pilot under DR-0003's "same family, varied lenses" decision:
+# the pair must differ in review-contract (this one is criteria) and in
+# framing (this one is criteria-contract). Any merge decision must
+# check the sibling verdict differs on both fields.
+produced-by: claude
+framing: criteria-contract
+review-contract: criteria
+
+# Clean-room CRITERIA review of phase M3-P2 (pdf-belfius), all by
+# execution in the isolated clone
+# /home/user/pulse-fleet/worktrees/m3-p2-review-criteria at head
+# 9b40b14 (base 7796fc9, 9 implementer commits). The implementation
+# session was never seen. The diff under review is 44 files, +3501
+# -109, exactly one deletion (src/modules/import/adapters/
+# delimited-file-parser.ts, superseded by the composite adapter),
+# zero deletions under test/.
+#
+# EXECUTED CHAIN, ambient foreign credentials overridden by pinning
+# ALL FIVE env values to the local stack (fleet warnings 1 and 6;
+# DATABASE_URL and DIRECT_URL 127.0.0.1:54322, NEXT_PUBLIC_SUPABASE_URL
+# 127.0.0.1:54321, the publishable and secret keys from supabase
+# status): npm ci EXIT=0; npx prisma generate EXIT=0; npm run
+# typecheck EXIT=0; npm run lint EXIT=0; npm run gate:tokens EXIT=0;
+# npm test EXIT=0 (25 files, 268 passed, 0 failed, 0 skipped),
+# matching the work history figure for figure; npx prisma migrate
+# status pinned local EXIT=0 ("5 migrations found... Database schema
+# is up to date!").
+#
+# E2E, four full runs, stated plainly: EVERY run was 15 passed and 1
+# failed with EXIT=1, and the single failure was ALWAYS "Error:
+# page.goto: Page crashed" (a chromium renderer death, never an
+# assertion) at the same navigation (/?month=2026-08), on a DIFFERENT
+# pre-existing month-view test each time (month-view.spec.ts:204
+# twice, :165 once, :113 once; none of these files is touched by this
+# phase). Every crashed test passed in isolation (-g run of the
+# transit test: 1 passed EXIT=0, 16.1s) and the whole month-view spec
+# alone passed 6/6 EXIT=0 (1.2m). The new PDF journey
+# (test/e2e/import.spec.ts:95) passed in ALL FOUR full runs (about
+# 8s each), as did every other import, auth, merchants and
+# golden-journey test. Union over the four runs: all 16 tests green.
+# Judged an environment-level chromium instability of this review
+# container, not an artifact defect; recorded as finding CR-903
+# rather than smoothed over, because a single-run EXIT=0 was NOT
+# witnessed here and this contract does not count unwitnessed halves.
+#
+# REAL-STATEMENT PARSE, the ultimate template check no fixture can
+# give, executed via a scratchpad-only script through the COMMITTED
+# adapter (script deleted after, never committed; content never left
+# the container; upload referred to by its 8-hex prefix only):
+# the 39bada64 upload detects as pdf-layout
+# belfius-current-account-nl version 1; parse.ok true; rowCount 39;
+# an INDEPENDENT count of transaction-start lines over the
+# reconstructed non-annex page bodies is also 39 (match); 5 pages of
+# which 1 annex; 2 balance lines; the identity opening + sum(rows)
+# == closing HOLDS in integer cents, recomputed independently of the
+# shared gate; a second parse is deep-equal (determinism on real
+# bytes); every row carries a 4-digit year statementNumber and a
+# 4-digit sequenceNumber; all 39 year+sequence keys distinct; exactly
+# one account IBAN.
+#
+# INDEPENDENT PRIVACY SCRUB (criterion 2.6 both halves plus the
+# dispatch's whole-history verification), probe list built IN MEMORY
+# from BOTH real PDFs, probes fed to git grep via stdin, never
+# written to disk, scripts deleted after:
+#  Tier 1, 160 identifier probes (IBANs spaced and compact, card
+#  groups, digit runs of 7 plus, thousands-form amounts, dates in
+#  three shapes, the upload FILE NAMES and their identifier parts):
+#  worktree hits ONLY in 14 pre-existing files (M1-era tests, CSV
+#  fixtures, seed, design prototype); the same grep at base 7796fc9
+#  hits the IDENTICAL 14-file set and ZERO files hit only at head,
+#  so this phase introduced NO tier-1 hit. Every commit tree in
+#  7796fc9..HEAD greped: same pre-existing locations only; commit
+#  messages: 0 hits. The implementer's two history rewrites HELD: no
+#  upload file name or identifier part survives in any rev.
+#  Tier 2, 203 statement words (length 5 plus) against phase-ADDED
+#  lines with base-presence filtering: 20 suspects, 16 of them
+#  ALL-CAPS payment-rail or annex format tokens (the sanctioned
+#  shared format vocabulary), 4 mixed-case words resolved one by
+#  one: Kenmerk (rail phrase), overzicht (page furniture), Brussel
+#  (the bank's own address city), Sparen (generic banking Dutch).
+#  None identifying. Decisive inverse check: NONE of the fixture's
+#  invented merchant, name and street words (Koffiehuis, Anker,
+#  Jansen, Pieter, Bakkerij, Zonnig, Slagerij, Duif, Sparen Demo,
+#  Demo Werkgever, Voorbeeldstraat, DEMO MOBILE) appears in EITHER
+#  real statement. The pre-existing collisions match the plan's own
+#  recorded M1 baseline (amounts and a date on lines this phase did
+#  not write).
+#
+# RED MUTATIONS, six, each applied, run, captured and restored with
+# git status over src/ and test/ verified clean afterwards:
+#  A (balance gate, re-executing claim M3P2-C2): the mismatch branch
+#    in src/modules/import/domain/parse-pdf-statement.ts:56 disabled
+#    (if false); npx vitest run test/application/pdf-upload.test.ts
+#    -t balance-mismatch EXIT=1, "Tests 1 failed | 3 skipped (4)",
+#    matching the work history record; restored EXIT=0.
+#  B (fingerprint, re-executing M3P2-C4): matches() in
+#    src/modules/import/domain/belfius-current-account-template.ts:235
+#    mutated to always-true; the layout-unsupported test EXIT=1 with
+#    "expected 'unparseable' to be 'layout-unsupported'", the exact
+#    recorded message; restored EXIT=0.
+#  C (annex skipping, re-executing M3P2-C1 / PR2-002): the
+#    body-starts-with check at
+#    src/modules/import/domain/belfius-current-account-template.ts:102
+#    mutated to marker-anywhere; test/domain/belfius-pdf-template.test.ts
+#    EXIT=1 with 6 failed | 1 passed of 7, the exact recorded figures;
+#    restored EXIT=0.
+#  D (statement-scoped key, re-executing M3P2-C3 / PR2-003): the
+#    statementNumber emission at
+#    src/modules/import/domain/belfius-current-account-template.ts:215
+#    mutated to a per-file value; the overlap test EXIT=1 with
+#    "expected 5 to be 3", the exact recorded duplication; restored
+#    EXIT=0.
+#  E (criterion 2.4 red history, re-executing M3P2-C5): the two
+#    domain files checked out at the pre-widening commit 42a3af4 and
+#    the COMMITTED spec-compat test run against them: EXIT=1, 1
+#    failed | 1 passed, "expected undefined to be 'delimited'",
+#    matching the recorded red; restored to 9b40b14, EXIT=0.
+#  F (PR2-001 round-trip teeth at HEAD, my own fresh construction):
+#    the kind emission removed from detection
+#    (src/modules/import/domain/detect-profile.ts:408); the PARSE
+#    half of spec-compat stayed GREEN while the specEquals round-trip
+#    half went RED (1 failed | 1 passed), proving the second
+#    assertion catches exactly the differing-key-sets failure a
+#    parse-only test would miss; restored EXIT=0.
+#
+# PHONE VIEWPORT (standing fleet rule from the M3-P1 defect round;
+# executed at 390x844 against a dev server on this tree with the
+# committed Belfius fixture): the ask-once declaration renders, the
+# format question is absent, rows-added reads 9 and the month view
+# recon panel reads data-state ok at phone width. Overflow measured:
+# every page shows scrollWidth 470 driven by the app-header, and the
+# import screen shows the 396px field floor; BOTH are the exact
+# defects the M3-P1 defect round fixed on main in commit 155509e,
+# which landed AFTER this branch's base 7796fc9, so they are base
+# properties of this branch, resolved by the merge, and not this
+# phase's regressions. The one phase-attributable residue: with the
+# PDF fixture's preview rows the preview table measures 393px
+# against the 390px viewport (the CSV confirm step on the same tree
+# measures 342px), and current main carries no overflow container or
+# width clamp for it (src/app/globals.css:310 and :316 on main), so
+# the merged tree keeps a marginal horizontal scroll on the PDF
+# confirm step at 390. Finding CR-902, low.
+#
+# SCOPE MEASUREMENT against the AMENDED plan (436eda5 on main adds
+# exactly two extras: next.config.ts and the import detail route):
+# 7 changed files sit outside files-to-touch plus those extras:
+# src/modules/import/application/upload-statement.ts,
+# confirm-import.ts, fix-profile.ts, index.ts,
+# src/modules/import/ui/profile-confirmation.tsx, import-result.tsx,
+# and src/modules/import/domain/detect-profile.ts. Six are named in
+# the work history's second deviation; detect-profile.ts appears in
+# files-touched but in NO deviation clause (its edit is small and
+# forced: the kind emission and a type narrowing). Finding CR-901,
+# medium, because assurance-modes condition 5 measures changed files
+# against files-to-touch plus extras and cannot pass as declared.
+#
+# HYGIENE, executed: em and en dash count over every added diff line
+# is 0 and over every commit message in 7796fc9..HEAD is 0; catalog
+# parity re-measured myself, 114 keys in each of en, nl and fr with
+# zero set difference in any direction; the two new failure reasons
+# and confirmBodyPdf present in all three catalogs; PDF named in
+# emptyBody, steps and uploadPrompt in all three languages; the four
+# pre-existing test files this phase edited carry ZERO assertion
+# changes (the full diff of their changed lines is kind fields, type
+# annotations, awaits and one type-narrowing guard); the fixture
+# generator computes closings from opening plus sum
+# (test/fixtures/generate-pdf-fixtures.ts:526 and :551) and the
+# byte-pin test holds.
+#
+# WHAT THIS CONTRACT DID NOT REACH, per its own clause: "all
+# acceptance criteria met" is one input and never a terminal green.
+# Not reached here: the hazard-contract probes (the sibling's job);
+# criterion 2.8's deployed-runtime proof (post-merge by its own
+# wording; only its local twin is verified); a single-run full-suite
+# e2e EXIT=0 in this container (CR-903, environmental, witnessed 15
+# of 16 four times with a moving browser crash); NL and FR rendering
+# of the new copy in a browser (catalogs verified at parity, EN
+# journey executed); cross-statement sequence continuity for the
+# Belfius natural key (open question M3P2-Q2, honestly recorded as
+# unverifiable from one real statement, and the year-scoped key's
+# dedup correctness does not depend on it); and the deployed
+# environment entirely.
+#
+# VALIDATION RECORD: see the bottom-of-file comment.
+
+criteria:
+  - id: "2.1"
+    quote: >-
+      npm test exits 0 including new tests that, against the synthetic
+      Belfius fixture PDF, assert: the expected row count is parsed;
+      the sum of parsed amountCents equals the fixture's known total;
+      the annex page contributes zero rows WHILE the transaction whose
+      description block contains the annex marker phrase parses as a
+      row with the phrase verbatim in its rawLine (finding PR2-002:
+      marker-anywhere page skipping fails this pair of assertions,
+      body-starts-with passes); a multi-line description is joined and
+      its rawLine holds the block verbatim; and each sign-spacing and
+      thousands-dot combination parses to its expected integer cents.
+    evidence:
+      - >-
+        EXECUTED: npm test EXIT=0, 268 passed, 0 failed, 0 skipped,
+        including test/domain/belfius-pdf-template.test.ts (7 tests)
+        which goes THROUGH the real pdfjs extraction adapter, not a
+        stub. Row count and sum: test/domain/belfius-pdf-template.test.ts:51-57
+        asserts rows.length equals the declared transaction list and
+        the amountCents sum equals FIXTURE_A_TOTAL_CENTS. The annex
+        pair: test/domain/belfius-pdf-template.test.ts:59-83 asserts
+        the parsed sequence list equals exactly the declared
+        transactions (so the annex page's amount-like lines
+        contributed nothing), that no description carries the annex
+        page's BEWIJSSTUK vocabulary, AND that row 0104 parses with
+        the full annex marker phrase verbatim inside its newline-joined
+        rawLine. Multi-line join: test/domain/belfius-pdf-template.test.ts:85-99
+        asserts the joined description and the three-line rawLine
+        block verbatim. Sign matrix: test/domain/belfius-pdf-template.test.ts:101-120
+        asserts per-transaction expected integer cents AND that the
+        four spacing-and-thousands shapes each actually occur among
+        the fixture's amount texts, so the matrix cannot silently
+        become vacuous.
+      - >-
+        Teeth verified fresh (mutation C): body-starts-with at
+        src/modules/import/domain/belfius-current-account-template.ts:102
+        flipped to marker-anywhere made the suite red EXIT=1 with 6
+        failed | 1 passed of 7, both halves of the criterion's pair
+        included, matching claim M3P2-C1 figure for figure; restored,
+        EXIT=0.
+      - >-
+        The same template parses the REAL Belfius statement (prefix
+        39bada64): 39 rows matching an independent line count, 1
+        annex page contributing zero rows, balance identity held in
+        integer cents, deterministic across two parses. Executed in
+        this container through the committed adapter; no content left
+        the container.
+    met: true
+  - id: "2.2"
+    quote: >-
+      npm test exits 0 including a test that uploads the
+      non-reconciling fixture through uploadStatement and asserts
+      exactly one FAILED import with failureReason "balance-mismatch"
+      and zero transaction rows written, and another that uploads the
+      no-template PDF and asserts FAILED with "layout-unsupported" and
+      zero rows.
+    evidence:
+      - >-
+        EXECUTED inside the EXIT=0 fast gate:
+        test/application/pdf-upload.test.ts:68-83 uploads
+        belfius-nonreconciling.pdf through uploadStatement and asserts
+        exactly one import, status FAILED, failureReason
+        balance-mismatch, and world.transactions length 0;
+        test/application/pdf-upload.test.ts:85-100 uploads
+        unknown-layout.pdf and asserts FAILED, layout-unsupported,
+        zero rows. The gate itself lives in the SHARED path
+        (src/modules/import/domain/parse-pdf-statement.ts:56, integer
+        cents, zero tolerance), outside every template, and the two
+        reasons are mapped in one place
+        (src/modules/import/application/upload-statement.ts:22-33).
+      - >-
+        Both directions verified fresh: mutation A (the gate condition
+        disabled at src/modules/import/domain/parse-pdf-statement.ts:56)
+        reddened the balance test EXIT=1 with 1 failed | 3 skipped;
+        mutation B (the fingerprint at
+        src/modules/import/domain/belfius-current-account-template.ts:235
+        made always-true) reddened the layout test EXIT=1 with
+        "expected 'unparseable' to be 'layout-unsupported'", proving
+        layout-unsupported is fingerprint-driven rather than vacuous.
+        Both restored, both re-run green EXIT=0.
+    met: true
+  - id: "2.3"
+    quote: >-
+      npm test exits 0 including an idempotency test: uploading the
+      same Belfius fixture twice reports all rows added on the first
+      import and zero added, all known on the second; AND a cross-file
+      witness of the year-scoped natural key (finding PR2-003,
+      decision D-4): importing the second overlapping Belfius-style
+      fixture (different statement identity, shared year-and-sequence
+      pairs) after the first reports the shared rows as known and adds
+      only the genuinely new rows, so a template emitting
+      statement-scoped key components fails this test; and a re-parse
+      test extending test/application/reparse.test.ts asserting an
+      unchanged-spec re-parse of the ingested PDF import changes zero
+      dedup keys and zero rows.
+    evidence:
+      - >-
+        EXECUTED inside the EXIT=0 fast gate: idempotency at
+        test/application/pdf-upload.test.ts:104-120 (9 added 0 known,
+        then 0 added 9 known, 9 stored rows); the overlap witness at
+        test/application/pdf-upload.test.ts:122-140 (fixture B
+        re-carries 0108 and 0109, adds 0110 through 0112; asserts
+        added 3, known 2, and one stored row per dedup key); the PDF
+        re-parse strict no-op at test/application/reparse.test.ts:393-448
+        (fixSourceProfile with the unchanged spec, importsReparsed 1,
+        rowsReparsed 9, dedup keys and full row JSON deep-equal
+        before and after, and a re-upload after the no-op still adds
+        0).
+      - >-
+        The falsifier verified fresh (mutation D): the template's
+        statementNumber emission at
+        src/modules/import/domain/belfius-current-account-template.ts:215
+        mutated to a per-file value made the overlap test EXIT=1 with
+        "expected 5 to be 3", every shared row duplicated, exactly
+        the statement-scoped failure the criterion names; restored
+        EXIT=0. The mechanism rides dedup.ts UNCHANGED (the key
+        recipe at src/modules/import/domain/dedup.ts:95 is not in the
+        diff), with the booking year emitted as statementNumber at
+        src/modules/import/domain/belfius-current-account-template.ts:215.
+      - >-
+        H2.3 corroboration on real bytes: parsing the real statement
+        twice through the committed adapter is deep-equal, and all 39
+        real year+sequence keys are distinct (executed in this
+        container, abstract counts only).
+    met: true
+  - id: "2.4"
+    quote: >-
+      npm test exits 0 including a spec-compatibility test that feeds
+      parseSourceProfileSpec a JSON object in the exact e4ea3ba
+      delimited shape (no kind discriminant, or the chosen migration
+      form documented in the test) and asserts it parses to the
+      delimited variant, AND the same test round-trips recognition:
+      that parsed spec compares specEquals-true against the spec the
+      delimited parser's detect emits for a matching CSV file, so a
+      profile stored before the widening is recognised by
+      findProfileBySpec (upload-statement.ts:101) on the next upload
+      without re-asking the declaration (finding PR2-001: a parse-only
+      assertion lets canonical-JSON specEquals compare differing key
+      sets unequal while every parse test passes); and git diff
+      --name-only against the phase base lists no deleted files under
+      test/.
+    evidence:
+      - >-
+        EXECUTED inside the EXIT=0 fast gate:
+        test/domain/spec-compat.test.ts:32-49 carries the kind-less
+        e4ea3ba shape as a written-out literal (documented as the
+        migration contract), test/domain/spec-compat.test.ts:52-59
+        asserts it parses to the delimited variant (the normalisation
+        branch at src/modules/import/domain/source-profile.ts:139-141
+        accepts an ABSENT kind), and
+        test/domain/spec-compat.test.ts:61-73 round-trips specEquals
+        against detectSourceProfile over the committed
+        belfius-account-a.csv, the same comparison findProfileBySpec
+        runs.
+      - >-
+        RED HISTORY re-executed myself (mutation E): with
+        src/modules/import/domain/source-profile.ts and
+        src/modules/import/domain/detect-profile.ts checked out at
+        the pre-widening commit 42a3af4, the COMMITTED test fails
+        EXIT=1 with "expected undefined to be 'delimited'", 1 failed
+        | 1 passed, matching claim M3P2-C5's captured record;
+        restored to head, 2 passed EXIT=0.
+      - >-
+        PR2-001's specific trap verified fresh at HEAD (mutation F,
+        my own construction): removing the kind emission from
+        detection at src/modules/import/domain/detect-profile.ts:408
+        leaves the parse half GREEN and reddens ONLY the round-trip
+        half EXIT=1, so the second assertion has independent teeth
+        against exactly the differing-key-sets failure; restored,
+        EXIT=0.
+      - >-
+        Deletion half EXECUTED: git diff --name-status 7796fc9..9b40b14
+        carries exactly one D entry, src/modules/import/adapters/
+        delimited-file-parser.ts (under src, not test); a per-file
+        existence walk over every changed path under test/ found zero
+        deletions.
+    met: true
+  - id: "2.5"
+    quote: >-
+      npm run test:e2e exits 0 with test/e2e/import.spec.ts extended: a
+      journey uploads the synthetic Belfius fixture PDF through the
+      import screen, confirms the ask-once account declaration if the
+      account is unseen, reaches an import detail state reporting rows
+      added, and the month view for the fixture's month renders its
+      reconciliation panel with data-state "ok"; and the rendered copy
+      of the import screen and of the empty state names PDF, asserted
+      in the journey (finding PR2-007: the e4ea3ba copy tells the
+      owner the product reads CSV exports).
+    evidence:
+      - >-
+        The journey EXECUTED GREEN in all four of my full e2e runs
+        (about 8s each) and asserts everything the criterion names:
+        empty state contains PDF (test/e2e/import.spec.ts:109-110),
+        import screen lead contains PDF (test/e2e/import.spec.ts:115),
+        upload of the committed fixture PDF
+        (test/e2e/import.spec.ts:117), the ask-once declaration with
+        the format question GONE (Format name count 0 at
+        test/e2e/import.spec.ts:129, spec editor count 0 at :130,
+        declaration visible at :131, five preview rows at :127),
+        rows-added 9 and rows-known 0 on the import detail
+        (test/e2e/import.spec.ts:141-142), and the fixture month's
+        recon panel with data-state ok (test/e2e/import.spec.ts:147-151).
+        The catalogs name PDF in all three languages at parity (114
+        keys each, re-measured myself; emptyBody, steps and
+        uploadPrompt name PDF in en, nl and fr; the two new failure
+        reasons and confirmBodyPdf translated in all three).
+      - >-
+        The suite-level EXIT=0 is carried by criterion 2.7's walk and
+        finding CR-903: four full runs each ended 15 passed, 1 failed
+        EXIT=1 on a MOVING pre-existing month-view test with a
+        chromium "Page crashed" error, never this journey and never
+        an assertion; union of runs all 16 green; isolation re-runs
+        EXIT=0. The journey itself, which is what THIS criterion
+        adds, passed every time.
+      - >-
+        Independently re-driven at phone width (390x844, dev server on
+        this tree): declaration visible, format question absent,
+        rows-added 9, recon data-state ok. The marginal preview-table
+        overflow found there is CR-902.
+    met: true
+  - id: "2.6"
+    quote: >-
+      Privacy gate, both halves executed with a probe list read from
+      the real PDFs in the container uploads at review time and never
+      committed (finding PR2-008): (a) git grep across the whole
+      worktree for the real Belfius statement's IBAN, account-holder
+      name, statement number and each merchant string from it exits 1;
+      (b) over the files this phase adds or modifies (git diff
+      --name-only against the phase base), the same grep extended to
+      ALL FIVE promised categories (identifiers, names, merchant
+      strings, thousands-form amounts and dates from the real
+      statement) exits 1, which is D-3's whole promise made testable
+      without false-alarming on the pre-existing M1 amount collisions
+      the work-log records. If the real PDFs are absent from the
+      executing container, this criterion is recorded as not-witnessed
+      in the work history and the review escalates for a container
+      that has them, never marked green by vacuity.
+    evidence:
+      - >-
+        EXECUTED, NOT VACUOUS: both real PDFs are present in this
+        container's uploads (prefixes 39bada64 and 0f79fa3d) and the
+        probe list was built in memory from BOTH at review time, fed
+        to git grep via stdin, never written to disk, and the scratch
+        scripts deleted after. Half (a): the Belfius statement's
+        IBANs in both forms, its digit-run identifiers including the
+        statement number, and its name and merchant words (134
+        distinct probes) hit NOTHING this phase wrote; every hit
+        location sits in one of 14 pre-existing files, and the
+        identical grep at base 7796fc9 hits the IDENTICAL 14-file
+        set, zero files hit only at head.
+      - >-
+        Half (b), all five categories over phase-added lines (3550
+        added lines from git diff 7796fc9..HEAD): identifiers, card
+        groups, amounts and dates in three shapes scored ZERO hits;
+        of 203 statement words, the 20 that appear in added lines
+        resolve entirely to sanctioned format vocabulary (16 ALL-CAPS
+        rail and annex tokens, plus Kenmerk, overzicht, Brussel,
+        Sparen), and NONE of the fixture's invented content words
+        (merchants, holder name, street) appears in either real
+        statement, checked in the inverse direction as well. The M1
+        baseline collisions the criterion carves out are exactly
+        where the work-log records them, on lines this phase did not
+        write.
+      - >-
+        EXTENDED to the whole branch history, verifying the recorded
+        scrub rewrites: every commit tree in 7796fc9..HEAD greped
+        with the full 332-probe set including both upload FILE NAMES
+        and their identifier-bearing parts: only the same
+        pre-existing locations hit at every rev; commit messages 0
+        hits. The leak the work history discloses (both file names in
+        the notes file) is GONE from every surviving rev, so the two
+        filter-branch rewrites held.
+    met: true
+  - id: "2.7"
+    quote: >-
+      npm run typecheck && npm run lint && npm test exit 0 and npm run
+      test:e2e exits 0 at the phase head.
+    evidence:
+      - >-
+        Fast chain EXECUTED at the head on this tree: npm run
+        typecheck EXIT=0, npm run lint EXIT=0, npm test EXIT=0 (25
+        files, 268 passed, 0 failed, 0 skipped), and npm run
+        gate:tokens EXIT=0 besides; matches the work history's
+        recorded figures exactly.
+      - >-
+        E2E stated plainly rather than smoothed: FOUR full runs in
+        this container, each EXIT=1 with 15 passed and ONE chromium
+        renderer crash ("page.goto: Page crashed" navigating to the
+        August month view), each time on a DIFFERENT pre-existing
+        month-view test (test/e2e/month-view.spec.ts:204 twice, :165,
+        :113), none of them touched by this phase. Each crashed test
+        passes in isolation (transit test via -g: 1 passed EXIT=0;
+        whole month-view spec alone: 6 passed EXIT=0), and the union
+        of the four runs covers all 16 tests green, the new PDF
+        journey green in every run. Judged an environmental container
+        instability, not an artifact failure: the crash moves between
+        tests, is never an assertion, and reproduces nowhere at lower
+        load. met: true rests on that judgement PLUS the work
+        history's captured 16-of-16 EXIT=0 run in the implementer's
+        container; the unwitnessed literal single-run EXIT=0 in THIS
+        container is raised as finding CR-903 so the merge gate
+        (DR-0012 condition 4, CI green on the exact head) obtains the
+        witness rather than inheriting my judgement silently.
+    met: true
+  - id: "2.8"
+    quote: >-
+      After merge, the DR-0001 release verification extended by one
+      production check passes: the deployed import screen accepts the
+      synthetic Belfius fixture PDF and reaches the same rows-added
+      state as criterion 2.5, observed against the deployed URL,
+      proving the DR-0020 dependency runs in the Vercel Node runtime.
+    evidence:
+      - >-
+        NOT EVALUABLE at review time by the criterion's own first two
+        words ("After merge"): this clean-room review precedes the
+        merge, so no deployed head exists to observe. Reported as
+        such rather than counted met; nothing here is a defect
+        finding. What IS verifiable pre-merge was verified: the H2.5
+        local twin is real and settled (pdfjs-dist externalized in
+        next.config.ts:12; the work history records every PDF upload
+        failing layout-unsupported in the dev server until the
+        externalization, and my four e2e runs plus two phone-width
+        journeys all reached rows-added 9 through the dev server's
+        Node runtime with the same bytes). The deployed check remains
+        owned by the orchestrator's release verification, as open
+        question M3P2-Q3 records, and the failure shape to expect if
+        the externalization is ever dropped is documented in the work
+        history's first environment warning.
+    met: false
+
+deviations-judged:
+  - deviation: >-
+      Step 2, "every existing delimited test stays green unmodified".
+    serves-plan-intent: true
+    reasoning: >-
+      The step's intent is that the widening must not change what any
+      existing test PROVES, and that holds: I diffed all four edited
+      pre-existing test files (interpret, resolve-merchants, dedup,
+      profile-detection) and the changed lines are exactly kind
+      fields on literals, type annotations narrowed to
+      DelimitedSourceProfileSpec, awaits on the now-async port, and
+      one type-narrowing guard; a grep for assertion-shaped lines in
+      the diff of those files returns ZERO changed assertions, and
+      reparse.test.ts was pointed at the sync domain detect rather
+      than weakened. The edits are forced by the deviation the plan
+      did not foresee (pdfjs-dist has no synchronous entry point, so
+      the port methods return Promises while the D-2 one-port shape
+      stands, declared in verification-first finding 3). All 268
+      tests pass, and zero test files were deleted.
+  - deviation: >-
+      files-to-touch (phase M3-P2): the list omits files the phase in
+      fact required: the application use cases beyond ports.ts
+      (upload-statement.ts, confirm-import.ts, fix-profile.ts, index.ts,
+      all awaiting the async port and mapping the two new failure
+      reasons), the confirmation and result UI components
+      (profile-confirmation.tsx, import-result.tsx: format question
+      removed for recognised layouts, new failure reasons rendered),
+      the import detail route (src/app/(app)/import/[id]/page.tsx, which
+      re-runs detection and parsing and had to go through the composite
+      parser), and next.config.ts (serverExternalPackages for
+      pdfjs-dist).
+    serves-plan-intent: true
+    reasoning: >-
+      Each named file is a forced consequence of steps the plan does
+      order, verified in the diff: the use cases gain awaits and the
+      one-place failure-reason mapping
+      (src/modules/import/application/upload-statement.ts:22-33); the
+      confirmation component is where the format question disappears
+      for a recognised layout while the ask-once declaration stays
+      (src/modules/import/ui/profile-confirmation.tsx:115-122 hidden
+      fields versus the delimited branch); import-result maps the two
+      new reasons to catalog keys
+      (src/modules/import/ui/import-result.tsx:12-13); the detail
+      route re-runs detection through the composite parser
+      (src/app/(app)/import/[id]/page.tsx:62 and :75); and
+      next.config.ts:12 is the H2.5 local fix, re-witnessed by my
+      four green PDF journeys. The deviation was declared the moment
+      found and the amendment 436eda5 landed on main BEFORE the scope
+      gate, matching the fe9bafd precedent, BUT the amendment names
+      only two of these paths (next.config.ts and the import detail
+      route) and the changed application and UI files plus
+      detect-profile.ts remain outside files-to-touch plus extras;
+      that gap is finding CR-901 (the deviation itself serves the
+      plan's intent; the amendment is incomplete).
+  - deviation: >-
+      files-to-touch lists src/modules/import/domain/dedup.ts and
+      src/modules/import/ui/status-keys.ts, neither of which was
+      modified.
+    serves-plan-intent: true
+    reasoning: >-
+      Verified in both directions. dedup.ts: the D-4 outcome routes
+      the booking year through the EXISTING key mechanism (the recipe
+      at src/modules/import/domain/dedup.ts:95 is byte-unchanged in
+      the diff), which is the stronger reading of the plan's
+      stability warning; my mutation D proved the overlap test guards
+      the emission side where the behaviour now lives. status-keys.ts:
+      the two new failure reasons render through the import result's
+      failureReason mapping (src/modules/import/ui/import-result.tsx:12-13),
+      not through a ?status= selector, so touching the whitelist
+      would have been change without purpose. Leaving both untouched
+      and declaring the fact is the honest reading of a conditional
+      listing.
+  - deviation: >-
+      The dispatch prompt's file mapping (0f79fa3d as the Belfius
+      statement).
+    serves-plan-intent: true
+    reasoning: >-
+      Re-verified myself, independently, in this container: the
+      39bada64 upload parses through the committed Belfius template as
+      a 5-page current-account statement with 39 rows, one annex
+      page, two balance lines and a holding balance identity, and the
+      implementer's correction (39bada64 is Belfius, 0f79fa3d is the
+      KBC card) matches my own review dispatch's mapping. The
+      implementer proceeded on evidence rather than on the dispatch
+      prose, recorded the swap as verification-first finding 4 and an
+      environment warning for M3-P3, and no plan content is affected.
+
+findings:
+  - id: CR-901
+    severity: medium
+    evidence:
+      - >-
+        EXECUTED: git diff --name-only 7796fc9..9b40b14 filtered
+        against the phase's files-to-touch (delivery/plan/pulse-v02.yaml
+        phase M3-P2) PLUS the 436eda5 amended extras (next.config.ts
+        and src/app/(app)/import/[id]/page.tsx) leaves SEVEN changed
+        files outside the envelope:
+        src/modules/import/application/upload-statement.ts,
+        src/modules/import/application/confirm-import.ts,
+        src/modules/import/application/fix-profile.ts,
+        src/modules/import/application/index.ts,
+        src/modules/import/ui/profile-confirmation.tsx,
+        src/modules/import/ui/import-result.tsx and
+        src/modules/import/domain/detect-profile.ts.
+      - >-
+        The work history's second deviation names six of the seven;
+        src/modules/import/domain/detect-profile.ts appears in the
+        work history's files-touched list but in NO deviation clause
+        (its edit is real: the kind emission at
+        src/modules/import/domain/detect-profile.ts:408 and a return
+        type narrowed at :81, both forced by the widening).
+      - >-
+        Assurance-modes condition 5 (assurance-modes.yaml, full mode
+        conditions) requires changed files to be on files-to-touch
+        plus the pre-authorized extras for the scope audit to pass;
+        the M3-P1 precedent (fe9bafd) amended the plan with EVERY
+        extra path before the scope gate, and 436eda5 amended only
+        two of the eight extra paths this phase actually touched
+        (the route plus next.config.ts, leaving these seven).
+    concrete-fix: >-
+      Amend delivery/plan/pulse-v02.yaml phase M3-P2 extras on main,
+      exactly as 436eda5 did for the first two paths, adding the seven
+      files listed in the evidence (or, if the fleet's scope audit
+      resolves the directory entry src/modules/import/domain/ as a
+      prefix, the six non-domain files at minimum), before the scope
+      audit runs; and record detect-profile.ts in the work history's
+      second deviation so every off-list file is declared somewhere.
+      No code change is demanded: every one of the seven edits was
+      verified to serve ordered plan steps.
+  - id: CR-902
+    severity: low
+    evidence:
+      - >-
+        EXECUTED at 390x844 against a dev server on this tree with
+        the committed fixture: on the PDF confirm step the preview
+        table measures scrollWidth 393 against the 390 viewport
+        (elements at src/modules/import/ui/profile-confirmation.tsx
+        rendering testid preview-table), while the SAME journey with
+        the M1 CSV fixture measures the same table at 342; so the
+        overflow at the table is attributable to the PDF preview's
+        longer unbreakable tokens (a compact 16-character IBAN in a
+        description cell), not to the base.
+      - >-
+        The page-level overflows I measured (app-header 470, import
+        field floor 396) are the base's known defects, fixed on main
+        by 155509e AFTER this branch's base 7796fc9, so the merge
+        resolves them; but current main's stylesheet has no overflow
+        container or width clamp for the preview table
+        (src/app/globals.css:310 and :316 on main), so the merged
+        tree keeps a marginal horizontal scroll on the PDF confirm
+        step at phone width, against the standing 390x844 rule the
+        M3-P1 defect round recorded (its criterion 1.5: no horizontal
+        scroll, all controls visible).
+      - >-
+        All controls remain visible and functional at 390 (executed:
+        declaration filled, import confirmed, rows-added 9, recon
+        data-state ok), which is why this is low rather than a
+        repeat of the M3-P1 defect.
+    concrete-fix: >-
+      Give the preview block its own horizontal scroll container
+      (overflow-x auto on the preview-block rule in
+      src/app/globals.css) or allow description cells to break long
+      tokens (overflow-wrap anywhere on the description cell), tokens
+      only, so the PDF preview holds 390x844 with no page-level
+      horizontal scroll; add the 390 measurement of the PDF confirm
+      step to the phone-viewport checks the M3-P1 defect round
+      instituted.
+  - id: CR-903
+    severity: low
+    evidence:
+      - >-
+        EXECUTED four times: npm run test:e2e with all five env
+        values pinned local ended EXIT=1 in every run, each time 15
+        passed and ONE failed with "Error: page.goto: Page crashed"
+        navigating to the August month view, on a DIFFERENT
+        pre-existing test each run (test/e2e/month-view.spec.ts:204
+        in runs 1 and 2, :165 in run 3, :113 in run 4). No run failed
+        on an assertion, and no failing test is in a file this phase
+        touched.
+      - >-
+        EXECUTED counter-evidence that the artifact is not the cause:
+        the transit test alone via -g passed EXIT=0 (16.1s); the
+        whole month-view spec alone passed 6 of 6 EXIT=0 (1.2m); the
+        union of the four full runs covers all 16 tests green,
+        including the new PDF journey green in all four; container
+        memory was ample (16G, most free) and /dev/shm is 16G. The
+        work history records a full 16-of-16 EXIT=0 run in the
+        implementer's container.
+      - >-
+        Consequence: the literal criterion 2.7 e2e witness (one full
+        run, EXIT=0, at the head) does not exist from THIS container;
+        criterion 2.7's met verdict above therefore rests partly on
+        judgement plus the implementer's captured run, and this
+        contract requires that gap to be visible, not absorbed.
+    concrete-fix: >-
+      Before merge, obtain one full npm run test:e2e EXIT=0 on the
+      exact head 9b40b14 in a fresh container (DR-0012 condition 4
+      demands CI green on the exact merged head anyway), and if the
+      moving chromium page-crash reproduces there, stop treating it
+      as environmental and open a defect investigation into the
+      month-view page's renderer load; record the outcome either way
+      in the merge commit or the review file.
+
+# VALIDATION RECORD, measured: npx --prefix /home/user/pulse-fleet
+# tiphys validate --type verdict (Node v26.7.0 via nvm) with a
+# PRIVATE uniquely-named context dir (never a shared scratch dir)
+# carrying plan.yaml (this clone's delivery/plan/pulse-v02.yaml WITH
+# the 436eda5 extras amendment applied from main, since the amendment
+# lives on main and scope comparison is against the amended
+# declaration), the M3-P2 work-history.yaml, charter.yaml,
+# assurance-modes.yaml, and this file under the context's
+# delivery/review. Result: reddens on EXACTLY ONE check,
+# dual-review-decorrelation ("only 1 verdict document(s) exist under
+# delivery/review for phase M3-P2, and a delegated grant requires two
+# independent clean-room reviews of the exact head"): the hazard
+# verdict is produced in a parallel worktree and is not visible from
+# this clone, and once both exist the produced-by dimension still
+# cannot pass truthfully because both M3-P2 clean-room reviews are
+# Claude-family (DR-0003). Exactly the m1-p2 through m3-p1 precedent:
+# this verdict records produced-by claude honestly and ESCALATES the
+# family-decorrelation failure to the orchestrator, which discharges
+# it under DR-0003 by checking review-contract and framing differ
+# across the pair. Schema, verdict-criteria-complete and
+# verdict-deviations-judged all pass; no other violation is reported;
+# exit 1 is carried entirely by the one-of-two check. An em and en
+# dash grep over this file counts 0.
