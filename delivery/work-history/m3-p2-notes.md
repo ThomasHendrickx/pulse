@@ -242,3 +242,62 @@ uploads (scratchpad script, never committed):
   (two thousands-form amounts in test/domain/profile-detection.test.ts
   and a date string in test/application/interpret.test.ts, all on lines
   this phase did not write).
+
+## Fix round 1 (verdicts: criteria APPROVE, hazard FIX-ROUND-NEEDED)
+
+Read both verdicts in full. Findings addressed: HZ-001, HZ-002, HZ-003,
+HZ-005, HZ-006, CR-902, CR-903, plus CR-901's work-history remainder
+(detect-profile.ts is now named in the files-to-touch deviation; the
+plan-side amendment is d324182 on main). HZ-004 is parked by the plan
+and carried by the orchestrator; no code this round. Merged origin/main
+into the branch first (clean, no overlapping files): it carries the
+M3-P1 mobile defect round whose 390x844 rule CR-902 extends, and the
+CR-901 plan amendments.
+
+Pre-fix red captures (verbatim probe results against the pre-fix head,
+mirroring the review's constructions):
+- C1 fabricated row: rows 2, seqs [0101, 0099], first description
+  truncated to "MEDEDELING VAN DE TEGENPARTIJ".
+- C2 corrupted zero row: parse OK, rows 2 (row vanished).
+- C3 corrupted compensating pair: parse OK, rows 2 (both vanished).
+- C4 balance-shaped description line: description and rawLine truncated
+  at the injected line, gate green.
+- HZ-002: parsePdfStatement's signature took the id only; version 999
+  produced byte-identical output to version 1.
+- HZ-003: corrupt bytes behind %PDF- reported layout-unsupported.
+- CR-902: at 390x844 the pre-fix stylesheet failed the new confirm-step
+  assertion ("no horizontal scroll on the PDF confirm step",
+  toBeLessThanOrEqual failed; reviewer measured scrollWidth 393).
+
+Fixes: positional line classification (PdfLine carries its left edge;
+indented lines are data whatever their shape; unrecognized margin lines
+inside an open block are structure errors) plus the within-file
+sequence-continuity gate; templateVersion consulted fail-closed at parse
+and upload with the bump-is-a-migration procedure documented at the
+registry; extraction-failed and layout-version-mismatch as distinct
+translated reasons with module-load failures rethrown; useSystemFonts
+false with verbosity pinned (fallback metrics are the environment-free
+path; re-verified 39 rows deterministic on the real statement);
+generator caveat reworded to the five-category contract (HZ-006); the
+preview block scrolls inside its own container and description cells
+break long tokens (CR-902), asserted at 390 in a new e2e journey
+through to rows-added.
+
+CR-903 classification, measured here rather than guessed: the moving
+"Page crashed" failures reproduced in THIS container once the suite grew
+to 19 tests, and the root cause was the container's root filesystem at
+100% (54MB free) with chrome-headless-shell Compositor processes
+trapping in dmesg. After reclaiming ~3GB of regenerable caches the full
+suite passed 19/19 EXIT=0 with zero new traps. The playwright.config
+comment names the measured cause and keeps the two chromium hardening
+flags explicitly not credited with the fix. The review container's disk
+was not observable from here; if crashes recur there with ample disk,
+reopen the classification.
+
+Sequence-continuity residue, stated: a zero-amount FIRST transaction
+whose start line is corrupted still drops silently (continuity has no
+lower anchor; the balance gate covers every nonzero variant); and the
+strict prev+1 rule would fail loudly on a hypothetical statement whose
+sequence numbering resets mid-file (a year rollover inside one
+statement), which no observed statement does; loud is the intended
+failure direction for an unobserved shape.
