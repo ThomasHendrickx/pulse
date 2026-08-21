@@ -188,8 +188,9 @@ reverted (backups compared; git diff src/ clean afterwards):
    'layout-unsupported'".
 The criterion 2.4 red was captured earlier against the unwidened parser
 (spec-compat test: expected 'delimited', got undefined; 1 failed |
-1 passed). Full green after all reverts: npm test 24 files, 274 tests,
-0 skipped, exit 0 (captured below in gate evidence).
+1 passed). Full green after all reverts: npm test 25 files, 268 tests, 0 skipped,
+exit 0. (This sentence first said 274 tests, a hand-typed number;
+corrected to the captured count per R-087.)
 
 Residue, stated rather than hidden: no dangerous-state red was found for
 H2.3 nondeterminism itself (the re-parse no-op test); injecting
