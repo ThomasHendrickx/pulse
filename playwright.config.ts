@@ -5,6 +5,23 @@ import { defineConfig, devices } from "@playwright/test";
 // (used by the deploy-verify stage); in that case no local server is started.
 const externalBaseUrl = process.env.PLAYWRIGHT_BASE_URL;
 const baseURL = externalBaseUrl ?? "http://127.0.0.1:3000";
+// The production-mode server (deploy-verify defect round): the owner's
+// production 500 lived in behaviour next dev never exercises (runtime
+// module resolution of the built server), so the gate now drives ONE
+// smoke journey against next start as well. Scoping, recorded: a single
+// prod-mode smoke spec (health probe, sign-in, PDF upload through the
+// declaration, month view) rather than the whole suite, to keep the
+// gate's duration bounded; the full behavioural matrix stays on the dev
+// server where iteration is cheap.
+const prodBaseURL = externalBaseUrl ?? "http://127.0.0.1:3100";
+// The prod server refuses a frozen clock by design (the app's own
+// production guard), so its env drops PULSE_FIXED_NOW; the smoke spec
+// only asserts clock-independent states (a fully past month).
+const prodEnv = Object.fromEntries(
+  Object.entries(process.env).filter(
+    ([key, value]) => key !== "PULSE_FIXED_NOW" && value !== undefined,
+  ),
+) as Record<string, string>;
 
 export default defineConfig({
   testDir: "test/e2e",
@@ -37,12 +54,32 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      testIgnore: /prod-smoke/,
+    },
+    {
+      name: "chromium-prod",
+      use: { ...devices["Desktop Chrome"], baseURL: prodBaseURL },
+      testMatch: /prod-smoke/,
     },
   ],
   ...(externalBaseUrl
     ? {}
     : {
-        webServer: {
+        webServer: [
+          {
+            // The production-mode server: its own dist directory so the
+            // build cannot race the dev server's .next (PULSE_DIST_DIR,
+            // see next.config.ts), its own port, no frozen clock.
+            command: "npm run build && npx next start -p 3100",
+            url: prodBaseURL,
+            reuseExistingServer: false,
+            // Building inside the webServer is what makes the gate
+            // exercise the real production bundle; the timeout covers
+            // prisma generate plus next build.
+            timeout: 300_000,
+            env: { ...prodEnv, PULSE_DIST_DIR: ".next-prod" },
+          },
+          {
           command: "npm run dev",
           url: baseURL,
           // NEVER reuse a server this config did not start (fix round 1,
@@ -63,6 +100,7 @@ export default defineConfig({
             ...process.env,
             PULSE_FIXED_NOW: "2026-09-15T12:00:00Z",
           },
-        },
+          },
+        ],
       }),
 });
