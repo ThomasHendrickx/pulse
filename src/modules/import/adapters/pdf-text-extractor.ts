@@ -58,6 +58,14 @@ export const extractPdfPageItems = async (
     const task = pdfjs.getDocument({
       data: new Uint8Array(bytes),
       useSystemFonts: false,
+      // Errors only: with system fonts off, pdfjs warns once per font
+      // that no standardFontDataUrl is provided and falls back to its
+      // BUILT-IN metrics, which is exactly the environment-free
+      // behaviour wanted here; the warning would otherwise repeat on
+      // every upload in the server logs. Extraction of both real
+      // statements and every fixture is unchanged under the fallback
+      // (re-verified in the fix round).
+      verbosity: 0,
     });
     const document = await task.promise;
     try {

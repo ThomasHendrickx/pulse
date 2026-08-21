@@ -137,3 +137,43 @@ describe("Belfius current-account template over the synthetic fixture (criterion
     expect(second.statement).toEqual(first.statement);
   });
 });
+
+describe("in-description structure shapes through the real extraction path (fix round 1, HZ-001)", () => {
+  test("the inline transaction-start and balance shapes stay verbatim description data", async () => {
+    const bytes = fixture("belfius-inline-shapes.pdf");
+    const detected = await statementParser.detect(bytes);
+    expect(detected.ok).toBe(true);
+    if (!detected.ok) {
+      throw new Error("unreachable");
+    }
+    const parsed = await statementParser.parse(bytes, detected.value);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+    expect(parsed.value.rows).toHaveLength(2);
+    expect(parsed.value.rows.map((row) => row.sequenceNumber)).toEqual([
+      "0120",
+      "0121",
+    ]);
+    // The fabricated-row shape: kept inside the description, no phantom
+    // row, no phantom 2026:0198 natural key.
+    expect(parsed.value.rows[0]?.description).toBe(
+      "MEDEDELING VAN DE TEGENPARTIJ 0198 17-05-2026 (VAL. 17-05-2026) - 0,00 REST VAN DE VRIJE MEDEDELING",
+    );
+    // The balance shape: no truncation of description or rawLine.
+    expect(parsed.value.rows[1]?.description).toBe(
+      "TERUGBETALING MET VRIJE TEKST SALDO OP 17-05-2026 EUR + 480,00 EINDE VAN DE MEDEDELING",
+    );
+    expect(parsed.value.rows[1]?.rawLine).toBe(
+      [
+        "0121 18-05-2026 (VAL. 18-05-2026) + 35,00",
+        "TERUGBETALING MET VRIJE TEKST",
+        "SALDO OP 17-05-2026 EUR + 480,00",
+        "EINDE VAN DE MEDEDELING",
+      ].join("\n"),
+    );
+    const sum = parsed.value.rows.reduce((total, row) => total + row.amountCents, 0);
+    expect(sum).toBe(1500);
+  });
+});

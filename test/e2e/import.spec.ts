@@ -150,3 +150,47 @@ test("PDF upload: ask-once declaration, rows added, month reconciles, copy names
     "ok",
   );
 });
+
+// Fix round 1, finding CR-902, extending the phone-viewport rule the
+// M3-P1 defect round instituted (its criterion 1.5: no horizontal
+// scroll at 390x844) to the PDF confirm step, where the preview table's
+// long unbreakable tokens overflowed the viewport by 3px before the
+// preview block got its own scroll container.
+test.describe("phone viewport (CR-902)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("at 390x844 the PDF confirm step shows the declaration with no page-level horizontal scroll", async ({
+    page,
+  }) => {
+    const unique = `pdfm-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+    await page.goto("/sign-up");
+    await page.getByLabel("Email").fill(`${unique}@pulse-e2e.test`);
+    await page.getByLabel("Password").fill(`pw-${unique}`);
+    await page.getByRole("button", { name: "Create household" }).click();
+    await expect(page.getByTestId("household-context")).toHaveText(unique);
+
+    await page.goto("/import");
+    await page.getByLabel("Bank export file").setInputFiles(PDF_FIXTURE);
+    await page.getByRole("button", { name: "Upload" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: "Confirm the detected format" }),
+    ).toBeVisible();
+    await expect(page.getByTestId("preview-row")).toHaveCount(5);
+    await expect(page.getByTestId("account-declaration")).toBeVisible();
+
+    // The page itself never scrolls horizontally; wide content scrolls
+    // inside its own container.
+    const scrollWidth = await page.evaluate(
+      () => document.documentElement.scrollWidth,
+    );
+    expect(scrollWidth, "no horizontal scroll on the PDF confirm step").toBeLessThanOrEqual(390);
+
+    // And the declaration is usable at this width, end to end.
+    await page.getByLabel("Label").fill("Daily account");
+    await page.getByLabel("Bank").fill("Belfius");
+    await page.getByLabel("Ring").selectOption("POT");
+    await page.getByTestId("confirm-import").click();
+    await expect(page.getByTestId("rows-added")).toHaveText("9");
+  });
+});

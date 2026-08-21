@@ -100,6 +100,48 @@ describe("loud FAILED imports on the PDF path (criterion 2.2)", () => {
   });
 });
 
+describe("distinct PDF failure reasons (fix round 1, HZ-002 and HZ-003)", () => {
+  test("corrupt bytes behind a PDF magic header fail as extraction-failed, not layout-unsupported", async () => {
+    const world = makeFakeImportWorld();
+    const outcome = await uploadStatement(context, world.deps, {
+      fileName: "corrupt.pdf",
+      bytes: new TextEncoder().encode("%PDF-1.4 not really a pdf at all"),
+    });
+    expect(outcome.kind).toBe("failed");
+    if (outcome.kind === "failed") {
+      expect(outcome.reason).toBe("extraction-failed");
+    }
+    const imports = [...world.imports.values()];
+    expect(imports[0]?.failureReason).toBe("extraction-failed");
+    expect(world.transactions).toHaveLength(0);
+  });
+
+  test("a stored profile at a stale template version fails the upload loudly instead of silently twinning (HZ-002)", async () => {
+    const world = makeFakeImportWorld();
+    // A profile stored under a template version this build does not
+    // carry (the state after a future version bump without migration).
+    await world.deps.imports.createProfile(context, {
+      name: "belfius-current-account-nl",
+      spec: {
+        kind: "pdf-layout",
+        templateId: "belfius-current-account-nl",
+        templateVersion: 999,
+      },
+    });
+    const outcome = await uploadStatement(context, world.deps, {
+      fileName: "statement-a.pdf",
+      bytes: fixture("belfius-statement-a.pdf"),
+    });
+    expect(outcome.kind).toBe("failed");
+    if (outcome.kind === "failed") {
+      expect(outcome.reason).toBe("layout-version-mismatch");
+    }
+    // Zero rows, and no twin profile was created.
+    expect(world.transactions).toHaveLength(0);
+    expect(world.profiles).toHaveLength(1);
+  });
+});
+
 describe("PDF dedup under the D-4 year-scoped natural key (criterion 2.3)", () => {
   test("the same fixture twice: all rows added first, zero added and all known second, nothing asked", async () => {
     const { world, added, known } = await setupIngestedFixtureA();

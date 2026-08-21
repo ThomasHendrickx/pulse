@@ -15,6 +15,18 @@ export default defineConfig({
   use: {
     baseURL,
     trace: "retain-on-failure",
+    // Fix round 1, finding CR-903: in the review container, four full
+    // runs each lost ONE month-view test to a chromium RENDERER crash
+    // ("Page crashed" on page.goto, a different test each run, never an
+    // assertion, green in isolation and green union), while this
+    // config's workers were already 1. Classified environmental
+    // (container renderer instability under sustained load), mitigated
+    // structurally rather than by retrying: shared-memory backing and
+    // GPU initialisation are the two in-container chromium crash
+    // surfaces, and neither is needed by these tests.
+    launchOptions: {
+      args: ["--disable-dev-shm-usage", "--disable-gpu"],
+    },
   },
   projects: [
     {

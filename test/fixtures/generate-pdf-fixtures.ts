@@ -8,12 +8,25 @@
 // files (test/domain/pdf-fixtures.test.ts), so the committed bytes are
 // reproducible on demand and cannot drift from this source.
 //
-// EVERY IDENTIFIER, NAME, AMOUNT, DATE AND MERCHANT STRING BELOW IS
-// INVENTED (hazard H2.1). Only format vocabulary shared with the plan
-// and the intake addendum (SALDO OP, BIJLAGE BIJ VERRICHTING, the
-// institution fingerprint, payment-rail phrasing) may coincide with any
-// real statement. Fixture dates live in February to May 2026 so no date
-// string from the real statements (June and July 2026) can collide.
+// THE FIVE-CATEGORY PRIVACY CONTRACT (hazard H2.1, criterion 2.6):
+// every IDENTIFIER (IBAN, card number, reference), NAME, MERCHANT
+// STRING, AMOUNT and DATE below is invented, and the criterion 2.6
+// scrub greps exactly those five categories against the real
+// statements. What MAY coincide with a real statement, sanctioned as
+// layout vocabulary, is digit-free format boilerplate: the institution
+// fingerprint, balance and annex markers (SALDO OP, BIJLAGE BIJ
+// VERRICHTING), transaction-type and payment-rail phrasing
+// (DEBITMASTERCARD-BETALING VIA, BANCONTACT-AANKOOP, STORTING VAN,
+// OVERSCHRIJVING, UW EUROPESE DOMICILIERING, INTERESTEN), and footer
+// and annex boilerplate (the GARANTIEFONDS line, BEWIJSSTUK IN EUR,
+// DEBET CREDIT RESULTAAT), because a Belfius-layout fixture that
+// carried none of the layout's own vocabulary would not exercise the
+// template. CORRECTED RATHER THAN QUIETLY REWRITTEN (R-087, fix round
+// 1, finding HZ-006): this comment used to claim only plan-and-addendum
+// vocabulary could coincide, which was narrower than what the file
+// does; the five-category form above is what is promised, enforced and
+// enforceable. Fixture dates are chosen OUTSIDE the real statements'
+// date range so no date string can collide.
 //
 // Determinism: no clock, no randomness, no metadata (no /Info, no /ID),
 // uncompressed content streams, ASCII text only. Same source, same bytes.
@@ -496,6 +509,45 @@ const fixtureCTransactions: readonly FixtureTransaction[] = [
 export const FIXTURE_C_BROKEN_BY_CENTS = 100;
 
 // ---------------------------------------------------------------------
+// Fixture E (fix round 1, finding HZ-001): in-description STRUCTURE
+// SHAPES. One row's description block carries a full line in the exact
+// transaction-start shape with a zero amount (the review's fabricated-row
+// construction) and another's carries a full line in the exact balance
+// shape (the truncation construction). Both lines are INDENTED
+// description data on the real layout, so the template must keep them
+// verbatim: two rows, intact descriptions, reconciling balances.
+// ---------------------------------------------------------------------
+
+export const FIXTURE_E_OPENING_CENTS = 50000;
+
+export const FIXTURE_E_TRANSACTIONS: readonly FixtureTransaction[] = [
+  {
+    sequence: "0120",
+    bookingDate: "17-05-2026",
+    valueDate: "17-05-2026",
+    amountText: "- 20,00",
+    amountCents: -2000,
+    description: [
+      "MEDEDELING VAN DE TEGENPARTIJ",
+      "0198 17-05-2026 (VAL. 17-05-2026) - 0,00",
+      "REST VAN DE VRIJE MEDEDELING",
+    ],
+  },
+  {
+    sequence: "0121",
+    bookingDate: "18-05-2026",
+    valueDate: "18-05-2026",
+    amountText: "+ 35,00",
+    amountCents: 3500,
+    description: [
+      "TERUGBETALING MET VRIJE TEKST",
+      "SALDO OP 17-05-2026 EUR + 480,00",
+      "EINDE VAN DE MEDEDELING",
+    ],
+  },
+];
+
+// ---------------------------------------------------------------------
 // Fixture D: a perfectly valid PDF that matches NO registered template.
 // ---------------------------------------------------------------------
 
@@ -582,11 +634,30 @@ export const buildPdfFixtures = (): ReadonlyMap<string, Uint8Array> => {
 
   const fixtureD = buildPdf(unknownLayoutPages());
 
+  const sumE = FIXTURE_E_TRANSACTIONS.reduce(
+    (sum, transaction) => sum + checkedCents(transaction),
+    0,
+  );
+  const closingE = FIXTURE_E_OPENING_CENTS + sumE;
+  const fixtureE = buildPdf(
+    belfiusStatement({
+      pageMarkerFirst: "BLZ. : 6/1",
+      pageMarkerRest: "18-05-2026 6/2",
+      holderDateLine: "VOORBEELDSTRAAT 7 DATUM : 18-05-2026",
+      openingLine: "SALDO OP 16-05-2026 EUR + 500,00",
+      closingLine: `SALDO OP 18-05-2026 12:00 EUR ${formatClosingCents(closingE)}`,
+      pageOneCount: 1,
+      transactions: FIXTURE_E_TRANSACTIONS,
+      annexPage: false,
+    }),
+  );
+
   return new Map([
     ["belfius-statement-a.pdf", fixtureA],
     ["belfius-statement-b-overlap.pdf", fixtureB],
     ["belfius-nonreconciling.pdf", fixtureC],
     ["unknown-layout.pdf", fixtureD],
+    ["belfius-inline-shapes.pdf", fixtureE],
   ]);
 };
 
