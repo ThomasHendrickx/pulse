@@ -68,6 +68,10 @@ per-step-commits:
     subject: "test: fix-round witnesses for CR-601 and CR-602, red before the fixes"
   - sha: 1a0e0d8
     subject: "fix: NavLink marks a section current on its sub-routes (CR-601)"
+  - sha: "3476e15"
+    subject: "test: criterion 1.5 phone and desktop viewport witnesses, red before the fix (defect round, on the rebuilt branch from 0a49ef7)"
+  - sha: a5d37c0
+    subject: "fix: header wraps and the import field yields at phone widths (criterion 1.5)"
 key-decisions:
   - decision: >-
       The active-route marker is computed by a small client island,
@@ -252,6 +256,33 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
+  - gate: "defect round: typecheck, lint, gate:tokens (each rerun at a5d37c0, exit 0 apiece)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 3
+    passed: 3
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "defect round: fast suite (npm test at a5d37c0; 21 files, 252 tests, 0 skipped)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 252
+    passed: 252
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "defect round: slow suite (npm run test:e2e at a5d37c0, pinned env, chromium; 17 tests including the 390x844 and 1280x720 criterion 1.5 pair, 0 skipped, 17 passed in 2.5m; every earlier nav test green untouched)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 17
+    passed: 17
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
 fix-round:
   - mechanism: >-
       Exact string equality used as a route-membership test over a
@@ -324,6 +355,98 @@ fix-round:
       Placeholder parity is a different check with real legitimate
       asymmetries (plural arms differ per language) and is not smuggled
       into this one; recorded as the standing residue.
+  - mechanism: >-
+      DEFECT ROUND (owner-reported from the deployed app, criterion 1.5
+      added on main at 0a49ef7). The escaped-defect mechanism is a contract
+      whose every gate executes at one implicit configuration: no
+      acceptance criterion named a viewport, Playwright's Desktop Chrome
+      default (1280x720) served every run, and both clean-room reviews
+      verified that blind contract faithfully, so an entire presentation
+      axis (viewport width) shipped unverified and the header overflowed
+      on the owner's phone with sign-out beyond the viewport. Recorded
+      honestly: the reviews did not miss an assertion, the assertion did
+      not exist. The product-level mechanism fixed is the unconditional
+      horizontal minimum: a header row that could not wrap, and an input
+      with an unconditional rail-width floor; both now yield
+      (flex-wrap plus an ellipsizing identity; min(var(--layout-rail),
+      100%)) so no control leaves the viewport at any width, without a
+      media query, which also keeps the fix free of a breakpoint literal
+      (a media-query condition offers no var() substitution per the CSS
+      spec, a fact taken by reading and not probed here, because the wrap
+      approach removed the need for any media query at all).
+    derivation:
+      command: grep -rn "viewport" playwright.config.ts test/e2e/; grep -n "min-width\|white-space\|flex-wrap" src/app/globals.css
+      output: |
+        CORRECTION (CR-701, R-087): the block that stood here until commit
+        bba9132 was RECONSTRUCTED from memory, not pasted. Six of its
+        eight line numbers resolved at no committed state of the round
+        (:181/:196 for the spec, :126/:161/:163/:164/:299 for
+        globals.css), it listed a text-overflow line the stated grep
+        pattern could never have returned, and it presented 6 of the
+        second grep's 20 hits under a "combined hits in full" label. That
+        is reconstructed evidence in the audit trail, the exact shape the
+        red-witness rule forbids; the substance was verified true by the
+        reviewer's independent execution. What follows is the TRUE output
+        of the stated command, re-run at bba9132 and pasted verbatim,
+        both greps complete (the second grep prints bare line numbers,
+        one file argument):
+        test/e2e/navigation.spec.ts:148:// viewport, because no criterion named a phone viewport. Both presentations
+        test/e2e/navigation.spec.ts:152:// scrolling (documentElement.scrollWidth within the viewport width).
+        test/e2e/navigation.spec.ts:158:  viewportWidth: number,
+        test/e2e/navigation.spec.ts:172:      viewportWidth,
+        test/e2e/navigation.spec.ts:177:test.describe("phone viewport (criterion 1.5)", () => {
+        test/e2e/navigation.spec.ts:178:  test.use({ viewport: { width: 390, height: 844 } });
+        test/e2e/navigation.spec.ts:186:    // Clickable, not merely visible: sign out works at this viewport.
+        test/e2e/navigation.spec.ts:192:test.describe("desktop viewport (criterion 1.5, kept assertion)", () => {
+        test/e2e/navigation.spec.ts:193:  test.use({ viewport: { width: 1280, height: 720 } });
+        104:  flex-wrap: wrap;
+        124:  flex-wrap: wrap;
+        162:  min-width: 0;
+        165:  white-space: nowrap;
+        289:  min-width: min(var(--layout-rail), 100%);
+        483:  min-width: 0;
+        490:  white-space: nowrap;
+        533:  white-space: nowrap;
+        559:  flex-wrap: wrap;
+        567:  flex-wrap: wrap;
+        608:  white-space: nowrap;
+        622:  flex-wrap: wrap;
+        721:  min-width: var(--space-14);
+        726:  min-width: var(--space-14);
+        752:  min-width: 0;
+        753:  flex-wrap: wrap;
+        773:  white-space: nowrap;
+        820:  flex-wrap: wrap;
+        834:  flex-wrap: wrap;
+        896:  flex-wrap: wrap;
+    not-covered: >-
+      (Derivation captured AFTER the fix. Its pre-round state, measured at
+      0a49ef7: git grep -n "viewport" 0a49ef7 -- playwright.config.ts
+      test/e2e/ exits 1 with no output, no explicit viewport anywhere,
+      which IS the escaped-defect mechanism in one line; git grep -n
+      "min-width" 0a49ef7 -- src/app/globals.css styles/ returns exactly
+      five hits: the import field's unconditional var(--layout-rail) at
+      globals.css:261 (the culprit), two var(--space-14) amount-column
+      floors at :692 and :697, and two min-width: 0 resets at :454 and
+      :723.) What this round
+      did not cover, stated rather than implied: the 390x844 assertions
+      walk the three top-level routes with an EMPTY household plus the
+      sign-out click, so the /import/[id] confirm step and a month view
+      SEEDED with data are not asserted at the phone width (the month
+      view's dense tables are desktop-first per the skill and the amended
+      criterion names the navigation controls, not the table layout);
+      locales other than EN are not asserted at 390 (the NL nav labels
+      are wider and wrap onto a second nav row by the same mechanism, but
+      no test pins that); and heights other than 844 were not probed,
+      since every assertion here is about width. (CORRECTION, CR-701: a
+      parenthetical here claimed the output block carried the greps'
+      "combined hits in full" while the block listed 6 of the second
+      grep's 20 hits; that sentence was false and the block is now the
+      complete verbatim output. Of the 20 globals.css hits, the five this
+      round touched are 104, 124, 162, 165 and 289; the remainder predate
+      the round, among them the var(--space-14) amount-column floors at
+      721 and 726, which sit inside tables the phone assertions do not
+      reach because the empty-household routes render none of them.)
 claims:
   - id: M3P1-C1
     kind: coverage
@@ -441,6 +564,28 @@ claims:
           fr: expected [ 'prevMonth[0]', 'prevMonth[1]' ] to deeply equal
           []", 1 failed. Restored: 3 passed (3), exit 0, git diff over
           messages/ empty.
+  - id: M3P1-C8
+    kind: coverage
+    statement: >-
+      The criterion 1.5 witness is real and reddened twice before going
+      green, each red naming a different overflowing element: against the
+      merged header at 0a49ef7 the phone test failed on / with
+      documentElement.scrollWidth 476 against 390 (the header row, the
+      owner's report); after the header wrap fix alone it failed on
+      /import with 396 against 390 (the import field's unconditional
+      rail-width floor); after min(var(--layout-rail), 100%) both
+      viewport tests pass and the full suite is green with every earlier
+      navigation test untouched.
+    settled-by:
+      executed-construction:
+        command: "pinned env npx playwright test -g \"usable on every route\" at 0a49ef7+witness (exit 1, 476>390 on /), again after the header-only fix (exit 1, 396>390 on /import), again after the import-field fix (exit 0); then pinned env npm run test:e2e at a5d37c0"
+        exit-code: 0
+        output: >-
+          Red 1: "Error: no horizontal scroll on /", Expected <= 390,
+          Received 476, 1 failed 1 passed, exit 1. Red 2: "Error: no
+          horizontal scroll on /import", Expected <= 390, Received 396,
+          1 failed 1 passed, exit 1. Green: 2 passed exit 0, then the
+          full suite 17 passed (2.5m) exit 0.
   - id: M3P1-Q1
     kind: open-question
     statement: >-

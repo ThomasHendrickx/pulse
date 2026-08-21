@@ -142,3 +142,60 @@ test("seeded household: header links navigate and the active marker follows the 
   await expect(page.getByTestId("month-title")).toBeVisible();
   await expectNavOn(page, "/");
 });
+
+// Criterion 1.5 (owner-feedback amendment, 2026-08-21): the shipped header
+// broke on the owner's phone while every gate ran at the desktop default
+// viewport, because no criterion named a phone viewport. Both presentations
+// are asserted here explicitly so neither regresses the other: at 390x844
+// and at the desktop size, every authenticated route must show the nav
+// links, the account identity and the sign-out control, with no horizontal
+// scrolling (documentElement.scrollWidth within the viewport width).
+
+const AUTH_ROUTES = ["/", "/import", "/merchants"] as const;
+
+const expectFullHeaderWithoutHorizontalScroll = async (
+  page: Page,
+  viewportWidth: number,
+): Promise<void> => {
+  for (const path of AUTH_ROUTES) {
+    await page.goto(path);
+    await expect(page.getByTestId("main-nav")).toBeVisible();
+    for (const link of NAV_LINKS) {
+      await expect(page.getByTestId(link.testId)).toBeVisible();
+    }
+    await expect(page.getByTestId("household-context")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    const scrollWidth = await page.evaluate(
+      () => document.documentElement.scrollWidth,
+    );
+    expect(scrollWidth, `no horizontal scroll on ${path}`).toBeLessThanOrEqual(
+      viewportWidth,
+    );
+  }
+};
+
+test.describe("phone viewport (criterion 1.5)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("at 390x844 the nav, identity and sign out are usable on every route", async ({
+    page,
+  }) => {
+    await signUp(page, "nav-mobile");
+    await expectFullHeaderWithoutHorizontalScroll(page, 390);
+
+    // Clickable, not merely visible: sign out works at this viewport.
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+  });
+});
+
+test.describe("desktop viewport (criterion 1.5, kept assertion)", () => {
+  test.use({ viewport: { width: 1280, height: 720 } });
+
+  test("at 1280x720 the nav, identity and sign out are usable on every route", async ({
+    page,
+  }) => {
+    await signUp(page, "nav-desktop");
+    await expectFullHeaderWithoutHorizontalScroll(page, 1280);
+  });
+});
