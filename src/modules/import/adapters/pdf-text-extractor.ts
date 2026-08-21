@@ -55,27 +55,56 @@ export const isPdfBytes = (bytes: Uint8Array): boolean =>
 // state without needing log access.
 let moduleFailureLogged = false;
 
-const loadPdfjs = async (): Promise<
-  typeof import("pdfjs-dist/legacy/build/pdf.mjs") | undefined
-> => {
+// MICRO ROUND 2 (deployed probe: moduleLoad failed while the identical
+// local production build passed): the extraction library is now BUNDLED
+// into the server chunks instead of resolved from node_modules at
+// runtime. Both imports below are LITERAL specifiers, so webpack emits
+// them as lazy async chunks inside .next; nothing about pdfjs is
+// resolved on the deployed filesystem any more, which retires the whole
+// ERR_MODULE_NOT_FOUND class that Vercel packaging kept reintroducing
+// (witnessed locally: the production journey passes with
+// node_modules/pdfjs-dist renamed away entirely).
+//
+// THE WORKER GLOBAL IS THE PIECE THAT MAKES BUNDLING POSSIBLE, recorded
+// as the mechanism: pdf.mjs's fake-worker setup ends in
+// `await import("${url}")`, a COMPUTED specifier no bundler can carry,
+// which is exactly why round 1 found the bundled build broken and
+// reached for serverExternalPackages. But that setup first consults
+// globalThis.pdfjsWorker?.WorkerMessageHandler, so importing the worker
+// module ourselves (literal, bundled) and assigning the global
+// short-circuits the computed import entirely. Any future pdfjs upgrade
+// must keep this pair in step: if the global stops being consulted, the
+// prod-mode smoke and the renamed-module witness both redden.
+type LoadedPdfjs = {
+  readonly module: typeof import("pdfjs-dist/legacy/build/pdf.mjs");
+};
+type FailedLoad = { readonly cause: unknown };
+
+const loadPdfjs = async (): Promise<LoadedPdfjs | FailedLoad> => {
   try {
-    return await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const [module, worker] = await Promise.all([
+      import("pdfjs-dist/legacy/build/pdf.mjs"),
+      import("pdfjs-dist/legacy/build/pdf.worker.mjs"),
+    ]);
+    (globalThis as { pdfjsWorker?: unknown }).pdfjsWorker = worker;
+    return { module };
   } catch (cause) {
     if (!moduleFailureLogged) {
       moduleFailureLogged = true;
       console.error("[pulse:pdf] pdfjs-dist failed to load in this runtime", cause);
     }
-    return undefined;
+    return { cause };
   }
 };
 
 export const extractPdfPageItems = async (
   bytes: Uint8Array,
 ): Promise<Result<readonly PdfPageItems[], PdfExtractionError>> => {
-  const pdfjs = await loadPdfjs();
-  if (pdfjs === undefined) {
+  const loaded = await loadPdfjs();
+  if (!("module" in loaded)) {
     return err({ kind: "pdf-module-unavailable" as const });
   }
+  const pdfjs = loaded.module;
   try {
     // pdfjs transfers the buffer it is given (it may be detached by the
     // worker shim), so it gets its own copy, never the caller's bytes.
@@ -160,10 +189,21 @@ const stringCodeOf = (cause: unknown): string | undefined => {
 };
 
 export const probePdfExtraction = async (): Promise<PdfExtractionProbe> => {
-  const pdfjs = await loadPdfjs();
-  if (pdfjs === undefined) {
-    return { moduleLoad: "failed", extraction: "failed" };
+  const loaded = await loadPdfjs();
+  if (!("module" in loaded)) {
+    // Micro round 2: the deployed failure must NAME itself at every
+    // stage, the module load included; name and string code only, never
+    // a message, an env value or a path.
+    const name = loaded.cause instanceof Error ? loaded.cause.name : "non-error";
+    const code = stringCodeOf(loaded.cause);
+    return {
+      moduleLoad: "failed",
+      extraction: "failed",
+      errorName: name,
+      ...(code !== undefined ? { errorCode: code } : {}),
+    };
   }
+  const pdfjs = loaded.module;
   try {
     const data = Uint8Array.from(atob(PROBE_PDF_BASE64), (c) => c.charCodeAt(0));
     const task = pdfjs.getDocument({ data, useSystemFonts: false, verbosity: 0 });

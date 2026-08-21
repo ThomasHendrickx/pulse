@@ -4,34 +4,23 @@ import createNextIntlPlugin from "next-intl/plugin";
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 const nextConfig: NextConfig = {
-  // DR-0020: pdfjs-dist runs SERVER SIDE ONLY, and it must run as a real
-  // Node package, never through the bundler: bundling its legacy build
-  // resolves browser conditions and extraction then throws at runtime,
-  // which surfaced as every PDF failing layout-unsupported in the dev
-  // server while the same bytes parsed in the fast gate (M3-P2 work
-  // notes). Externalizing keeps the dynamic import in
-  // adapters/pdf-text-extractor.ts a plain Node module load.
-  serverExternalPackages: ["pdfjs-dist"],
-  // Deploy-verify defect round (owner-reported production 500): the
-  // production symptom's class is the extraction module being
-  // unavailable in the DEPLOYED function, and the build's own trace was
-  // measured incomplete: the /import page's .nft.json listed
-  // legacy/build/pdf.mjs but NOT the package's package.json and NOT
-  // legacy/build/pdf.worker.mjs, and the fake-worker setup imports the
-  // worker file at first extraction (measured: extraction fails with
-  // "Setting up fake worker failed" on a filesystem holding only the
-  // traced files). These explicit includes make every function bundle
-  // carry the three files the runtime actually loads. The engines field
-  // in package.json pins the function runtime to Node 22.x, satisfying
-  // pdfjs-dist 6.x's engine floor (>=22.13) instead of inheriting a
-  // project-default runtime the dependency does not support.
-  outputFileTracingIncludes: {
-    "/**": [
-      "./node_modules/pdfjs-dist/package.json",
-      "./node_modules/pdfjs-dist/legacy/build/pdf.mjs",
-      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
-    ],
-  },
+  // MICRO ROUND 2 OF THE DEPLOY-VERIFY LOOP, CORRECTED RATHER THAN
+  // QUIETLY REWRITTEN (R-087): two earlier rounds tried to keep
+  // pdfjs-dist EXTERNAL (serverExternalPackages, then explicit
+  // outputFileTracingIncludes for the three runtime-loaded files), and
+  // the deployed probe still reported moduleLoad failed while the
+  // identical local production build passed: external resolution depends
+  // on Vercel's function packaging, which this fleet cannot observe. The
+  // dependency is now BUNDLED instead: the adapter imports pdf.mjs and
+  // pdf.worker.mjs with literal specifiers and wires the worker through
+  // the pdfjsWorker global (see pdf-text-extractor.ts for why the global
+  // is what makes the bundle possible), so the server chunks carry the
+  // library and no runtime resolution exists to go wrong. Round 1's
+  // "bundling breaks extraction" finding was real but had a mechanism:
+  // the fake worker's COMPUTED dynamic import, now short-circuited.
+  // Size cost, recorded: the package ships 35M (16M legacy builds, the
+  // rest modern builds, cmaps, fonts, wasm); the two bundled chunks add
+  // about 6M of JS to the server build and nothing else is carried.
   // The production-mode e2e project builds and serves from its own dist
   // directory so it cannot race the dev server's .next in the same
   // worktree; unset, the default ".next" stands.

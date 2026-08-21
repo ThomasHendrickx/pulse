@@ -23,6 +23,9 @@ import { makeFakeImportWorld } from "./fake-import-world";
 vi.mock("pdfjs-dist/legacy/build/pdf.mjs", () => {
   throw new Error("Cannot find package 'pdfjs-dist' (simulated deployed bundle)");
 });
+vi.mock("pdfjs-dist/legacy/build/pdf.worker.mjs", () => {
+  throw new Error("Cannot find package 'pdfjs-dist' (simulated deployed bundle)");
+});
 
 const context: HouseholdContext = {
   householdId: householdId("household-1"),
@@ -62,12 +65,15 @@ describe("PDF module unavailable in the runtime (deploy-verify defect round)", (
     expect(outcome.kind).toBe("awaiting-declaration");
   });
 
-  test("the health probe reports the module load failed, in booleans", async () => {
+  test("the health probe reports the module load failed AND names the error (micro round 2)", async () => {
     const { probePdfExtraction } = await import(
       "../../src/modules/import/adapters/pdf-text-extractor"
     );
     const report = await probePdfExtraction();
     expect(report.moduleLoad).toBe("failed");
     expect(report.extraction).toBe("failed");
+    // The deployed failure must name itself at the module-load stage:
+    // the probe was blind exactly here in the first deployed round.
+    expect(report.errorName).toBeDefined();
   });
 });
