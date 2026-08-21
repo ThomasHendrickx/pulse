@@ -14,7 +14,15 @@
 import { err, ok, type Result } from "@/platform/result";
 import type { PdfPageItems } from "../domain/pdf-lines";
 
-export type PdfExtractionError = { readonly kind: "pdf-extraction-failed" };
+// Two failure kinds, deliberately distinct: what the BYTES did
+// (pdf-extraction-failed: corrupt or truncated file) versus what the
+// RUNTIME did (pdf-module-unavailable: the extraction library cannot
+// load where this code is running). Both surface as a loud FAILED
+// import; the runtime kind additionally logs the real stack server-side
+// once and is what the /api/health/pdf probe reports.
+export type PdfExtractionError =
+  | { readonly kind: "pdf-extraction-failed" }
+  | { readonly kind: "pdf-module-unavailable" };
 
 // The PDF magic bytes: %PDF- at offset zero. Non-PDF bytes flow down the
 // delimited path untouched, so this sniff is the ONLY branch point
@@ -27,21 +35,47 @@ export const isPdfBytes = (bytes: Uint8Array): boolean =>
   bytes[3] === 0x46 && // F
   bytes[4] === 0x2d; // -
 
+// The legacy build is the Node-compatible entry point; the modern build
+// assumes browser globals. Dynamic import keeps the dependency out of
+// every client bundle and off the delimited path entirely.
+//
+// CORRECTED RATHER THAN QUIETLY REWRITTEN (R-087, deploy-verify defect
+// round): the fix-round-1 design let a module-load failure THROW out of
+// this adapter on the argument that infrastructure breakage should
+// surface as a server error with a stack. IN PRODUCTION THAT THROW WAS
+// REACHED FROM THE UPLOAD SERVER ACTION and rendered the owner a
+// page-wide "Application error" digest with zero import rows (reproduced
+// in production mode with the package absent: ERR_MODULE_NOT_FOUND,
+// "Cannot find package 'pdfjs-dist'"). A throw here is a USER-FLOW
+// 500 by construction, so the load failure is now a Result member
+// (pdf-module-unavailable) that lands a loud FAILED import instead; the
+// diagnosability the throw was meant to buy lives in the ONE
+// console.error below (the real stack, server logs) and in the
+// /api/health/pdf probe, which reports the deployed runtime's module
+// state without needing log access.
+let moduleFailureLogged = false;
+
+const loadPdfjs = async (): Promise<
+  typeof import("pdfjs-dist/legacy/build/pdf.mjs") | undefined
+> => {
+  try {
+    return await import("pdfjs-dist/legacy/build/pdf.mjs");
+  } catch (cause) {
+    if (!moduleFailureLogged) {
+      moduleFailureLogged = true;
+      console.error("[pulse:pdf] pdfjs-dist failed to load in this runtime", cause);
+    }
+    return undefined;
+  }
+};
+
 export const extractPdfPageItems = async (
   bytes: Uint8Array,
 ): Promise<Result<readonly PdfPageItems[], PdfExtractionError>> => {
-  // The legacy build is the Node-compatible entry point; the modern
-  // build assumes browser globals. Dynamic import keeps the dependency
-  // out of every client bundle and off the delimited path entirely.
-  //
-  // DELIBERATELY OUTSIDE the try below (fix round 1, finding HZ-003): a
-  // failure to LOAD the module is infrastructure breakage (a bundling or
-  // packaging regression, the serverExternalPackages incident's class),
-  // not a property of the uploaded bytes, so it THROWS and surfaces as a
-  // server error with a stack instead of mislabelling every upload as an
-  // unsupported bank layout. The Result path below is reserved for what
-  // the BYTES did.
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const pdfjs = await loadPdfjs();
+  if (pdfjs === undefined) {
+    return err({ kind: "pdf-module-unavailable" as const });
+  }
   try {
     // pdfjs transfers the buffer it is given (it may be detached by the
     // worker shim), so it gets its own copy, never the caller's bytes.
@@ -98,5 +132,59 @@ export const extractPdfPageItems = async (
     // failure of external input, so a Result, never a throw
     // (pulse-typescript section 5).
     return err({ kind: "pdf-extraction-failed" as const });
+  }
+};
+
+// The deploy-verify self-check behind /api/health/pdf: staged booleans
+// (module load, then a real extraction over the inline probe document),
+// plus at most an error NAME and string CODE; never a message, an env
+// value or a path. The probe document is EMBEDDED so the check does not
+// depend on any file the deployment bundle might omit, which is exactly
+// the failure class it exists to detect.
+const PROBE_PDF_BASE64 =
+  "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA1OTUgODQyXSAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSA1IDAgUiA+PiA+PiAvQ29udGVudHMgNCAwIFIgPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA2NSA+PgpzdHJlYW0KQlQgL0YxIDkgVGYgMSAwIDAgMSA4Ny44IDcwMC4wIFRtIChQVUxTRSBQREYgSEVBTFRIIFBST0JFKSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhIC9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nID4+CmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAyNDEgMDAwMDAgbiAKMDAwMDAwMDM1NSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDYgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjQ1MgolJUVPRgo=";
+
+export type PdfExtractionProbe = {
+  readonly moduleLoad: "ok" | "failed";
+  readonly extraction: "ok" | "failed";
+  readonly errorName?: string;
+  readonly errorCode?: string;
+};
+
+const stringCodeOf = (cause: unknown): string | undefined => {
+  if (typeof cause === "object" && cause !== null && "code" in cause) {
+    const code = (cause as { code?: unknown }).code;
+    return typeof code === "string" ? code : undefined;
+  }
+  return undefined;
+};
+
+export const probePdfExtraction = async (): Promise<PdfExtractionProbe> => {
+  const pdfjs = await loadPdfjs();
+  if (pdfjs === undefined) {
+    return { moduleLoad: "failed", extraction: "failed" };
+  }
+  try {
+    const data = Uint8Array.from(atob(PROBE_PDF_BASE64), (c) => c.charCodeAt(0));
+    const task = pdfjs.getDocument({ data, useSystemFonts: false, verbosity: 0 });
+    try {
+      const document = await task.promise;
+      const page = await document.getPage(1);
+      const content = await page.getTextContent();
+      return content.items.length > 0
+        ? { moduleLoad: "ok", extraction: "ok" }
+        : { moduleLoad: "ok", extraction: "failed" };
+    } finally {
+      await task.destroy();
+    }
+  } catch (cause) {
+    const name = cause instanceof Error ? cause.name : "non-error";
+    const code = stringCodeOf(cause);
+    return {
+      moduleLoad: "ok",
+      extraction: "failed",
+      errorName: name,
+      ...(code !== undefined ? { errorCode: code } : {}),
+    };
   }
 };

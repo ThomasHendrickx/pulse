@@ -111,6 +111,12 @@ files-touched:
   - test/fixtures/belfius-inline-shapes.pdf
   - playwright.config.ts
   - src/app/globals.css
+  - src/app/api/health/pdf/route.ts
+  - test/e2e/prod-smoke.spec.ts
+  - test/application/pdf-module-unavailable.test.ts
+  - .gitignore
+  - eslint.config.mjs
+  - tsconfig.json (tool-rewritten by the Next build, CR-921)
   - delivery/work-history/m3-p2-notes.md
   - delivery/work-history/m3-p2.yaml
 per-step-commits:
@@ -352,6 +358,34 @@ deviations:
       branch against the declaration (files-to-touch plus extras on
       main) and declare any excess in the same commit, never after.
   - plan-clause: >-
+      Deploy-verify defect round files beyond the standing declaration:
+      src/app/api/health/pdf/route.ts, test/e2e/prod-smoke.spec.ts,
+      test/application/pdf-module-unavailable.test.ts, .gitignore,
+      eslint.config.mjs (ignoring the prod-mode dist directory the new
+      e2e project builds, found when lint scanned it at the final-head
+      gate run), tsconfig.json (finding CR-921: NOT hand-edited but
+      TOOL-REWRITTEN by the Next build during the gate's prod-mode run,
+      which reformatted the lib array and appended the
+      .next-prod/types include for the new dist directory; the rewrite
+      was swept into a docs commit by git add -A without being declared,
+      the CR-901/CR-911 declaration class a third time, this time via a
+      file no one edited), and a second round of edits to
+      playwright.config.ts, package.json and next.config.ts. Rule
+      sharpened accordingly, third iteration: run the
+      diff-against-declaration check AFTER the final gate build and
+      immediately before the push, because gate runs themselves rewrite
+      files (Next rewrites tsconfig.json, prisma generate can touch
+      artifacts), so a check done before the build misses exactly the
+      tool-rewritten class; and never stage with add -A without reading
+      the resulting name list against the declaration.
+    why: >-
+      Each is a fix the defect-round dispatch orders by name: the health
+      probe sibling, the production-mode e2e project and smoke spec, the
+      module-unavailable red witness, the prod dist directory ignore,
+      the engines pin and the tracing includes. Declared in the fixing
+      commit itself per the fix-round rule; amendment requested from the
+      orchestrator for the paths not yet in the plan's extras.
+  - plan-clause: >-
       The dispatch prompt's file mapping (0f79fa3d as the Belfius
       statement).
     why: >-
@@ -436,6 +470,33 @@ gate-evidence:
     wrapper-exit-code: 0
     discovered: 19
     passed: 19
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "defect round: typecheck, lint, gate:tokens (each exit 0)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 3
+    passed: 3
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "defect round: fast suite (npm test; 27 files, 283 tests, 0 skipped)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 283
+    passed: 283
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "defect round: full e2e including the NEW production-mode project (npm run test:e2e, pinned env; chromium 19 tests over next dev plus chromium-prod 1 smoke over a real production build via next start; 20 passed, 0 skipped, 3.3m)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 20
+    passed: 20
     failed: 0
     skipped: 0
     todo: 0
@@ -662,6 +723,45 @@ claims:
           rows 39, accounts 1, parse ok (gate held), deep-equal across
           two extractions; fast suite 26 files 280 tests 0 skipped exit
           0.
+  - id: M3P2-D1
+    kind: coverage
+    statement: >-
+      The production symptom class is reproduced red and closed green in
+      real production mode: with the extraction module absent, the
+      pre-fix build renders the application-error digest page with zero
+      import rows, and the fixed build renders a loud FAILED import
+      (extraction-failed) with exactly one import row, pages intact, and
+      the health probe reporting the runtime state; the fast gate guards
+      the same class via a mocked missing module (upload FAILED, zero
+      transactions, delimited path untouched), shown red against the
+      pre-fix code first (2 failed: the action threw and the probe did
+      not exist).
+    settled-by:
+      executed-construction:
+        command: "prod-mode drive with module renamed, pre-fix and post-fix (full outputs in the defect-round derivation); npx vitest run test/application/pdf-module-unavailable.test.ts pre-fix then post-fix"
+        exit-code: 1
+        output: >-
+          Pre-fix vitest: "3 tests | 2 failed", the upload test rejecting
+          with the simulated Cannot-find-package error. Post-fix: 3
+          passed; prod-mode outputs as recorded in the derivation.
+  - id: M3P2-D2
+    kind: coverage
+    statement: >-
+      The gate now witnesses production-runtime behaviour: the
+      chromium-prod project builds the real bundle into its own dist
+      directory, serves it with next start (no frozen clock, honouring
+      the app's production guard), and the smoke spec asserts the health
+      probe plus the exact journey that broke plus a clock-independent
+      month verdict; scoped deliberately to one smoke spec to bound the
+      gate's duration, recorded per the dispatch's scoping clause.
+    settled-by:
+      executed-construction:
+        command: "pinned-env npm run test:e2e at the defect-round head"
+        exit-code: 0
+        output: >-
+          "20 passed (3.3m)": 19 chromium tests over next dev and 1
+          chromium-prod prod-smoke test over the production build, exit
+          0, 0 skipped.
   - id: M3P2-Q1
     kind: open-question
     statement: >-
@@ -812,6 +912,59 @@ fix-round:
       The chromium launch flags added alongside
       (--disable-dev-shm-usage, --disable-gpu) are hardening, explicitly
       NOT credited with the fix in the config comment.
+  - mechanism: >-
+      THE ESCAPED-DEFECT MECHANISM (deploy-verify defect round,
+      owner-reported production 500): the e2e gate exercised `next dev`
+      only, and dev and the built production server RESOLVE AND LOAD
+      MODULES DIFFERENTLY, so a failure that exists only in the deployed
+      bundle's runtime module resolution had no witness anywhere in the
+      gate. The instance: the deployed function could not load
+      pdfjs-dist, the fix-round-1 rethrow design turned that into an
+      unhandled server-action throw, and the owner saw "Application
+      error: a server-side exception" with zero import rows. Fixed at
+      the mechanism on both ends: any pdf-chain failure is now a Result
+      that lands a loud FAILED import (no user-flow throw remains in the
+      chain), and the gate now drives a production build (`next start`,
+      chromium-prod project, single smoke spec) so dev-only coverage of
+      runtime behaviour is structurally over.
+    derivation:
+      command: "mv node_modules/pdfjs-dist node_modules/pdfjs-dist.off; npx next start -p 3200 (production build, pinned env); scripted sign-up plus PDF upload; psql count of import rows; then the same drive against the FIXED build"
+      output: |
+        Pre-fix (module absent): page body after upload = "Application
+        error: a server-side exception has occurred while loading
+        127.0.0.1 ... Digest: 2876883342"; server log = "Error: Cannot
+        find package 'pdfjs-dist' imported from
+        .next/server/app/(app)/import/page.js { code:
+        'ERR_MODULE_NOT_FOUND', digest: '2876883342' }"; import rows for
+        the probe household: 0. This is the owner's symptom class
+        end to end (their digest differs per build, same class).
+        Post-fix (module still absent): GET /import renders; upload
+        redirects to the import detail showing "Import failed / This PDF
+        could not be read ... Nothing was imported."; import rows: 1
+        (status FAILED, extraction-failed); GET /api/health/pdf =
+        {"status":"error","pdfExtraction":"failed","moduleLoad":
+        "failed","extraction":"failed"}; server log carries exactly one
+        [pulse:pdf] stack with ERR_MODULE_NOT_FOUND.
+        Bundle-gap measurements: the pre-fix /import nft.json listed
+        pdfjs-dist/legacy/build/pdf.mjs ONLY; on a filesystem holding
+        only traced files, extraction failed with "Setting up fake
+        worker failed: Cannot find module ... pdf.worker.mjs" (probed on
+        Node 20, 22.12 and 26); post-fix nft.json for /import AND the
+        health route lists package.json, pdf.mjs and pdf.worker.mjs.
+    not-covered: >-
+      The exact expression that threw ON VERCEL is not directly observed:
+      the Vercel MCP connector is scoped to three pre-pulse projects
+      (probe: get_runtime_errors on the pulse project id returned 403,
+      matching the fleet's deployed-infrastructure note), so the deployed
+      stack behind digest 2180347594 was never read. The local
+      reproduction proves the CLASS (module unavailable at runtime ->
+      rethrow -> action 500 -> zero rows) and the health probe makes the
+      deployed state directly observable after the next deploy; if
+      /api/health/pdf reports ok on the deployed URL and the owner's
+      symptom persists, the classification must be reopened. Node-version
+      theories were probed and narrowed: pdfjs-dist 6.2.108 loads and
+      extracts on Node 20.20 and 22.12 despite its engines floor, so the
+      engines pin is runtime hygiene, not the proven trigger.
 environment-warnings:
   - warning: >-
       pdfjs-dist must be listed in next.config.ts serverExternalPackages:

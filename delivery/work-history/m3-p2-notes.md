@@ -311,3 +311,37 @@ strict prev+1 rule would fail loudly on a hypothetical statement whose
 sequence numbering resets mid-file (a year rollover inside one
 statement), which no observed statement does; loud is the intended
 failure direction for an unobserved shape.
+
+## Deploy-verify defect round (owner-reported production 500)
+
+Branch rebuilt from origin/main (a577e51, PR 16 merged) per the
+dispatch; this round's commits sit on top; remote ref force-pushed once
+to replace the merged tip.
+
+Evidence trail, in the order gathered: pdfjs-dist 6.2.108 loads AND
+extracts on Node 20.20 and 22.12 (engines floor notwithstanding), so
+the bare Node-version theory did not reproduce. The Vercel MCP
+connector cannot see the pulse project (403 on get_runtime_errors,
+matching the deployed-infrastructure note), so the deployed stack was
+never readable. The build's own trace was measured incomplete
+(package.json and pdf.worker.mjs absent from the /import nft.json;
+extraction on a trace-only filesystem fails at fake-worker setup). The
+decisive reproduction: production build, module renamed away, scripted
+sign-up plus upload: "Application error ... Digest: 2876883342",
+server-side ERR_MODULE_NOT_FOUND from the upload action, ZERO import
+rows: the owner's symptom class end to end. Post-fix, same broken
+runtime: loud FAILED import (extraction-failed), one row, pages render,
+health probe reports moduleLoad failed, exactly one logged stack.
+
+Fixes and witnesses are recorded in the work history (fix-round entry 4,
+claims M3P2-D1 and D2, defect-round gate evidence): Result-ized module
+load (R-087 correction on the HZ-003 rethrow design, which this round
+proved to be a user-flow 500 by construction), tracing includes for the
+three runtime-loaded files (nft re-measured green), engines node 22.x
+(runtime hygiene: pins the function runtime to the dependency's
+supported floor; recorded as hygiene, not the proven trigger),
+/api/health/pdf staged-boolean probe over an EMBEDDED document, and the
+chromium-prod production-mode smoke project (scoped to one spec; suite
+20 tests, 3.3m). PULSE_FIXED_NOW discovery recorded: the app's own
+guard refuses a frozen clock in production mode, so the prod-mode
+project drops it and the smoke asserts only clock-independent states.

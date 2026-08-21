@@ -25,7 +25,8 @@ export const failureReasonForDetectError = (
 ): ImportFailureReason =>
   error.kind === "layout-unsupported"
     ? "layout-unsupported"
-    : error.kind === "pdf-extraction-failed"
+    : error.kind === "pdf-extraction-failed" ||
+        error.kind === "pdf-module-unavailable"
       ? "extraction-failed"
       : "undetectable";
 
@@ -34,7 +35,8 @@ export const failureReasonForParseError = (
 ): ImportFailureReason =>
   error.kind === "balance-mismatch"
     ? "balance-mismatch"
-    : error.kind === "pdf-extraction-failed"
+    : error.kind === "pdf-extraction-failed" ||
+        error.kind === "pdf-module-unavailable"
       ? "extraction-failed"
       : error.kind === "template-version-mismatch"
         ? "layout-version-mismatch"

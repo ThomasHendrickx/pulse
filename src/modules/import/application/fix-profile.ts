@@ -148,7 +148,8 @@ export const fixSourceProfile = async (
         problem:
           parseError.kind === "pdf-structure"
             ? ("pdf-structure" as const)
-            : parseError.kind === "pdf-extraction-failed"
+            : parseError.kind === "pdf-extraction-failed" ||
+                parseError.kind === "pdf-module-unavailable"
               ? ("extraction-failed" as const)
               : parseError.kind,
       });
