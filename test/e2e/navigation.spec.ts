@@ -89,6 +89,31 @@ test("empty household: the nav is in the shell and the empty state links to impo
   await expectNavOn(page, "/import");
 });
 
+test("import sub-route: the import link stays current on the confirm step (CR-601)", async ({
+  page,
+}) => {
+  await signUp(page, "nav-subroute");
+
+  // Upload a file and stop at the confirm step, which lives on the real
+  // sub-route /import/<id> (the redirect in the upload action), the exact
+  // journey the owner runs. Section membership, not string equality: the
+  // import link must be marked current here too.
+  await page.goto("/import");
+  await page.getByLabel("Bank export file").setInputFiles(join(FIXTURES, "mv-partial.csv"));
+  await page.getByRole("button", { name: "Upload" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Confirm the detected format" }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/import\/[^/?]+/);
+
+  await expect(page.getByTestId("main-nav")).toBeVisible();
+  await expect(page.getByTestId("nav-import")).toHaveAttribute("aria-current", "page");
+  // And only the import link: the month link at "/" stays exact-match,
+  // so a prefix rule must not make it active everywhere.
+  await expect(page.getByTestId("nav-overview")).not.toHaveAttribute("aria-current", "page");
+  await expect(page.getByTestId("nav-merchants")).not.toHaveAttribute("aria-current", "page");
+});
+
 test("seeded household: header links navigate and the active marker follows the route", async ({
   page,
 }) => {
