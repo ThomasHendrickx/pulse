@@ -118,6 +118,7 @@ files-touched:
   - eslint.config.mjs
   - tsconfig.json (tool-rewritten by the Next build, CR-921)
   - src/modules/import/adapters/pdfjs-worker.d.ts
+  - src/modules/import/adapters/pdf-runtime-shims.ts
   - delivery/work-history/m3-p2-notes.md
   - delivery/work-history/m3-p2.yaml
 per-step-commits:
@@ -521,6 +522,33 @@ gate-evidence:
     todo: 0
     did-not-run: 0
   - gate: "micro round 2: full e2e including the prod-mode smoke (20 passed, 0 skipped, 3.3m, pinned env)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 20
+    passed: 20
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "micro round 3: typecheck, lint, gate:tokens (each exit 0)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 3
+    passed: 3
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "micro round 3: fast suite (npm test; 27 files, 283 tests, 0 skipped)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 283
+    passed: 283
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "micro round 3: full e2e including the prod-mode smoke (20 passed, 0 skipped, 3.3m, pinned env)"
     result: green
     wrapper-exit-code: 0
     discovered: 20
@@ -1050,6 +1078,68 @@ fix-round:
       future pdfjs upgrade that stops consulting the pdfjsWorker global
       reddens the prod smoke and the renamed-module witness rather than
       failing silently.
+  - mechanism: >-
+      MICRO ROUND 3 (deployed probe named ReferenceError at moduleLoad):
+      an engine whose module evaluation DEPENDS ON ITS OWN OPTIONAL
+      POLYFILL CHAIN. pdf.mjs's Node prelude polyfills DOMMatrix from
+      the optional native package @napi-rs/canvas, obtained via
+      process.getBuiltinModule("module").createRequire, and later
+      module-scope code runs `new DOMMatrix()` unconditionally. Two
+      independent breaks were measured: Node below 20.16 has no
+      process.getBuiltinModule (the prelude cannot obtain require at
+      all), and the deployed function bundle carries ZERO files of the
+      optional native package (no @napi-rs path in the build's nft
+      trace), so on ANY deployed Node version the prelude has nothing to
+      polyfill from. Fixed at the mechanism: a guarded, minimal, CORRECT
+      2D-affine DOMMatrix shim installs before the engine chunks
+      evaluate (defined only when missing, so any real implementation
+      wins), removing the dependence on both the runtime version and the
+      optional native package.
+    derivation:
+      command: >-
+        production build; next start under Node 18.20.8 (unfixed) and
+        probe; grep of the failing chunk offset; grep of the prelude in
+        pdf.mjs; nft.json scan for napi paths; then the FIXED build
+        under Node 18.20.8, and under Node 26 with
+        node_modules/@napi-rs/canvas and its platform binary RENAMED
+        AWAY; vitest template suites with the native package still
+        renamed away
+      output: |
+        Unfixed under Node 18: probe {"errorName":"ReferenceError"}
+        (byte-identical shape to the deployed report) and the log names
+        the identifier: "ReferenceError: DOMMatrix is not defined at
+        75555 (.next/server/chunks/555.js...)"; the chunk offset shows
+        the throwing statement "let bU=new DOMMatrix". pdf.mjs
+        prelude: require via process.getBuiltinModule (Node 20.16+;
+        typeof on 18.20.8 = undefined, on 20.20.2 = function), canvas
+        polyfill optional, then module-scope "const SCALE_MATRIX = new
+        DOMMatrix()". nft trace: napi files traced: 0. Fixed build,
+        Node 18: probe all ok. Fixed build, Node 26 with the native
+        canvas renamed away: probe all ok, upload journey reaches the
+        recognition screen, exactly one prelude warn in the log, and
+        the template suites pass byte-exact (10 tests: same rows, same
+        cents) with the polyfill source absent, so the shim does not
+        change extraction output.
+    not-covered: >-
+      Which of the two variants the deployed function actually is (Node
+      version below 20.16 versus missing native package on a newer
+      runtime) is not decided from here; the shim closes both, and the
+      probe now names errors at every stage if a third variant exists.
+      The engines 22.x pin not taking effect on Vercel is a STANDING
+      CAVEAT for the record: the owner can set Node 22.x in the Vercel
+      project settings; the shim removes the dependence either way.
+      Separately OBSERVED and deliberately not fixed this round: under
+      Node 18 the app has version floors beyond the PDF engine (the
+      upload action's `instanceof File` throws ReferenceError, File
+      being global since Node 20), so Node 18 is not a supportable
+      runtime for this app regardless of pdfjs; recorded rather than
+      patched because the round's scope is what the reproduction named
+      for the PDF loop, and an EOL runtime floor is the engines pin's
+      territory. The prod smoke is NOT wired to run under alternate
+      Node versions in playwright (the webServer uses the ambient
+      toolchain); the equivalent journeys were driven manually under
+      Node 18 and under Node 26 with the package renamed, recorded
+      here per the dispatch's "record if not" clause.
 environment-warnings:
   - warning: >-
       pdfjs-dist must be listed in next.config.ts serverExternalPackages:

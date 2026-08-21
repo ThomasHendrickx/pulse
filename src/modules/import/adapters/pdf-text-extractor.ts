@@ -13,6 +13,7 @@
 
 import { err, ok, type Result } from "@/platform/result";
 import type { PdfPageItems } from "../domain/pdf-lines";
+import { installPdfRuntimeShims } from "./pdf-runtime-shims";
 
 // Two failure kinds, deliberately distinct: what the BYTES did
 // (pdf-extraction-failed: corrupt or truncated file) versus what the
@@ -82,6 +83,11 @@ type FailedLoad = { readonly cause: unknown };
 
 const loadPdfjs = async (): Promise<LoadedPdfjs | FailedLoad> => {
   try {
+    // Micro round 3: guarded runtime shims go in BEFORE the engine
+    // chunks evaluate; see pdf-runtime-shims.ts for the measured
+    // mechanism (the engine's own polyfill chain has two observed ways
+    // to break away from a full local node_modules).
+    installPdfRuntimeShims();
     const [module, worker] = await Promise.all([
       import("pdfjs-dist/legacy/build/pdf.mjs"),
       import("pdfjs-dist/legacy/build/pdf.worker.mjs"),
