@@ -19,7 +19,12 @@ export const UploadForm = async ({
       <form action={uploadStatementAction} className="import-form">
         <label className="import-field">
           <span>{t("fileLabel")}</span>
-          <input type="file" name="file" accept=".csv,text/csv" required />
+          <input
+            type="file"
+            name="file"
+            accept=".pdf,application/pdf,.csv,text/csv"
+            required
+          />
         </label>
         <button type="submit" className="import-primary">
           {t("uploadButton")}

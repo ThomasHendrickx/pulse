@@ -10,7 +10,7 @@ import {
   getAccountById,
 } from "@/modules/accounts/application";
 import { interpretForImport } from "@/modules/ledger/application";
-import { delimitedFileParser } from "../adapters/delimited-file-parser";
+import { statementParser } from "../adapters/statement-parser";
 import * as repository from "../adapters/import-repository";
 import type { NewAccount } from "@/modules/accounts/application";
 import type { SourceProfileSpec } from "../domain/source-profile";
@@ -43,7 +43,7 @@ export { detectSourceProfile } from "../domain/detect-profile";
 export { parseStatement, type ParsedRow } from "../domain/parse-statement";
 
 const liveDependencies: ImportDependencies = {
-  parser: delimitedFileParser,
+  parser: statementParser,
   imports: {
     createImport: repository.createImport,
     getImport: repository.getImport,
@@ -78,6 +78,17 @@ export const confirmImport = (
   },
 ): Promise<ConfirmOutcome> =>
   confirmImportUseCase(context, liveDependencies, input);
+
+// The statement parser through the live binding, for the import detail
+// route: the AWAITING_DECLARATION branch re-runs deterministic detection
+// and parsing over the stored bytes, and must do so through the SAME
+// adapter the upload path used, so a stored PDF renders its preview
+// through its layout template instead of the delimited parser.
+export const detectStatement = (bytes: Uint8Array) =>
+  liveDependencies.parser.detect(bytes);
+
+export const parseStatementBytes = (bytes: Uint8Array, spec: SourceProfileSpec) =>
+  liveDependencies.parser.parse(bytes, spec);
 
 // Which stored profile a detected spec resolves to, so the confirmation
 // screen can name the landing account the ingest will actually use

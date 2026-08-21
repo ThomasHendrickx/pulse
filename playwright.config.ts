@@ -15,6 +15,23 @@ export default defineConfig({
   use: {
     baseURL,
     trace: "retain-on-failure",
+    // Fix round 1, finding CR-903: full runs lost single tests to
+    // MOVING chromium renderer crashes ("Page crashed" on page.goto, a
+    // different pre-existing test each run, never an assertion, green in
+    // isolation), in the review container and then reproduced once in
+    // the implementer container. MEASURED ROOT CAUSE THERE: the
+    // container's root filesystem was 100% full (54MB free) and the
+    // kernel log showed chrome-headless-shell Compositor processes
+    // trapping (dmesg "traps: Compositor ... trap int3"); after
+    // reclaiming ~3GB of caches the full suite passed with zero
+    // renderer traps. So the first diagnostic for this failure shape is
+    // DISK, not the suite: check df -h and dmesg before touching tests.
+    // The flags below stay as harmless in-container hardening (both
+    // remove chromium crash surfaces no test here needs), but they are
+    // NOT what fixed the witnessed crashes; the disk reclaim was.
+    launchOptions: {
+      args: ["--disable-dev-shm-usage", "--disable-gpu"],
+    },
   },
   projects: [
     {

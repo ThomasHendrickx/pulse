@@ -8,7 +8,7 @@ import {
 } from "../../src/modules/import/domain/parse-amount";
 import { parseStatement } from "../../src/modules/import/domain/parse-statement";
 import { parseSourceProfileSpec } from "../../src/modules/import/domain/source-profile";
-import type { SourceProfileSpec } from "../../src/modules/import/domain/source-profile";
+import type { DelimitedSourceProfileSpec } from "../../src/modules/import/domain/source-profile";
 
 // Criterion 1.1: deterministic profile detection and parsing against the
 // committed synthetic fixtures. The fixtures reproduce the structural
@@ -30,7 +30,7 @@ import type { SourceProfileSpec } from "../../src/modules/import/domain/source-p
 const fixture = (name: string): Uint8Array =>
   new Uint8Array(readFileSync(join(__dirname, "..", "fixtures", name)));
 
-const detectOrThrow = (name: string): SourceProfileSpec => {
+const detectOrThrow = (name: string): DelimitedSourceProfileSpec => {
   const detected = detectSourceProfile(fixture(name));
   if (!detected.ok) {
     throw new Error(`detection failed for ${name}: ${detected.error.reason}`);
@@ -202,7 +202,8 @@ describe("a signed cell under an indicator representation fails loud (finding CR
   // magnitude. Before this fix the branch took Math.abs of the cell, so
   // "-742,10" beside marker C silently parsed +74210: sign information
   // present in the cell was discarded instead of refused.
-  const indicatorSpec: SourceProfileSpec = {
+  const indicatorSpec: DelimitedSourceProfileSpec = {
+    kind: "delimited",
     delimiter: ";",
     encoding: "utf-8",
     headerRowIndex: 0,
@@ -304,7 +305,11 @@ describe("case-colliding indicator tokens are rejected at the boundary (finding 
   test("distinct tokens keep validating", () => {
     const parsed = parseSourceProfileSpec(indicatorSpec("D", "C"));
     expect(parsed.ok).toBe(true);
-    if (parsed.ok && parsed.value.amountRepresentation.kind === "indicator") {
+    if (
+      parsed.ok &&
+      parsed.value.kind === "delimited" &&
+      parsed.value.amountRepresentation.kind === "indicator"
+    ) {
       expect(parsed.value.amountRepresentation.debitValue).toBe("D");
       expect(parsed.value.amountRepresentation.creditValue).toBe("C");
     }
@@ -319,7 +324,8 @@ describe("signed values in directional columns fail loud (finding CR-208)", () =
   // silently stored +74210: a full sign inversion (reviewer construction
   // P7b, filed as CR-208). A sign is never guessed: the row fails, which
   // fails the import loudly with zero rows written.
-  const pairSpec: SourceProfileSpec = {
+  const pairSpec: DelimitedSourceProfileSpec = {
+    kind: "delimited",
     delimiter: ",",
     encoding: "utf-8",
     headerRowIndex: 0,
@@ -484,7 +490,8 @@ describe("interleaved currency noise cannot reconstruct a sign (backlog CR-308)"
   // normalisation steps deep. The class witness reddens under two
   // structurally different members: the debitCredit representation and the
   // indicator representation.
-  const pairSpec: SourceProfileSpec = {
+  const pairSpec: DelimitedSourceProfileSpec = {
+    kind: "delimited",
     delimiter: ",",
     encoding: "utf-8",
     headerRowIndex: 0,
@@ -496,7 +503,8 @@ describe("interleaved currency noise cannot reconstruct a sign (backlog CR-308)"
   const pairBytes = (row: string): Uint8Array =>
     new TextEncoder().encode(["Date,Debit,Credit,Description", row].join("\n"));
 
-  const indicatorSpec: SourceProfileSpec = {
+  const indicatorSpec: DelimitedSourceProfileSpec = {
+    kind: "delimited",
     delimiter: ";",
     encoding: "utf-8",
     headerRowIndex: 0,
@@ -569,7 +577,8 @@ describe("a currency token inside a digit run cannot fabricate an amount (findin
   // became 12,00. A cell whose digits were split by a stripped token is
   // corrupt, not a number: tokens are stripped only at the trimmed
   // cell's boundaries, so these stay unparseable and fail the row loud.
-  const pairSpec: SourceProfileSpec = {
+  const pairSpec: DelimitedSourceProfileSpec = {
+    kind: "delimited",
     delimiter: ",",
     encoding: "utf-8",
     headerRowIndex: 0,
@@ -581,7 +590,8 @@ describe("a currency token inside a digit run cannot fabricate an amount (findin
   const pairBytes = (row: string): Uint8Array =>
     new TextEncoder().encode(["Date,Debit,Credit,Description", row].join("\n"));
 
-  const indicatorSpec: SourceProfileSpec = {
+  const indicatorSpec: DelimitedSourceProfileSpec = {
+    kind: "delimited",
     delimiter: ";",
     encoding: "utf-8",
     headerRowIndex: 0,

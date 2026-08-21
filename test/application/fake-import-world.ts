@@ -5,7 +5,7 @@
 // reported from the one insert pass. The parser is the real domain parser,
 // never a mock of code we own.
 
-import { delimitedFileParser } from "../../src/modules/import/adapters/delimited-file-parser";
+import { statementParser } from "../../src/modules/import/adapters/statement-parser";
 import { interpretForImport } from "../../src/modules/ledger/application/interpret-window";
 import { resolveCounterparties } from "../../src/modules/merchants/application/resolve-counterparties";
 import type { MerchantRuleLike } from "../../src/modules/merchants/domain/merchant-rule";
@@ -616,7 +616,7 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
 
   return {
     deps: {
-      parser: delimitedFileParser,
+      parser: statementParser,
       imports: importsPort,
       accounts: accountsPort,
       interpret: async (context, importId) => {

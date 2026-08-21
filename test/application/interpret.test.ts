@@ -57,7 +57,7 @@ const uploadAndDeclare = async (
   if (outcome.kind !== "awaiting-declaration") {
     throw new Error("unreachable");
   }
-  const detected = world.deps.parser.detect(bytes(content));
+  const detected = await world.deps.parser.detect(bytes(content));
   expect(detected.ok).toBe(true);
   if (!detected.ok) {
     throw new Error("unreachable");

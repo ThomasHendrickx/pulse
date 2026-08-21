@@ -19,9 +19,9 @@ import type {
   ColumnRoles,
   DateFormat,
   DecimalStyle,
+  DelimitedSourceProfileSpec,
   Delimiter,
   FileEncoding,
-  SourceProfileSpec,
 } from "./source-profile";
 
 export type DetectionError = {
@@ -71,9 +71,14 @@ const nonEmptyValues = (table: Table, column: number): string[] =>
 const columnCount = (table: Table): number =>
   Math.max(table.header.length, ...table.dataRows.map((row) => row.length));
 
+// Detection is delimited-only by construction: PDF bytes are routed to
+// the template registry by the statement-parser adapter before this
+// function is ever reached, and the emitted spec carries the "delimited"
+// kind so it compares specEquals-equal to stored (and pre-widening
+// normalised) profile specs (criterion 2.4).
 export const detectSourceProfile = (
   bytes: Uint8Array,
-): Result<SourceProfileSpec, DetectionError> => {
+): Result<DelimitedSourceProfileSpec, DetectionError> => {
   const encoding: FileEncoding = isValidUtf8(bytes) ? "utf-8" : "windows-1252";
   const lines = splitLines(decodeStatementBytes(bytes, encoding)).filter(
     // Keep indexes: map first, filter later where index matters.
@@ -400,6 +405,7 @@ export const detectSourceProfile = (
   columns.description = descriptionColumn;
 
   return ok({
+    kind: "delimited" as const,
     delimiter,
     encoding,
     headerRowIndex,
