@@ -204,3 +204,89 @@ explicit acceptance of the excess.
    replacing the fixed track with wrapping flex, which keeps the desk
    layout identical (rail at --layout-rail, spend taking the remainder)
    and needs no breakpoint literal.
+
+## The anchor guards, reddened under TWO structurally different wrong implementations
+
+R-037a asks a class witness to redden under at least two structurally
+different members. Both were executed against the real tree, one at a time,
+with the good file copied out first and restored after (`git status` clean
+afterwards).
+
+MUTATION A, the masked tail anchored on the four-group run plus the holder
+text, with the card-number label removed from the pattern (the shape finding
+PR4-002 and PR5-003 name):
+
+    npx vitest run test/domain/normalise-counterparty.test.ts \
+      test/domain/merchant-review.test.ts
+    Tests  15 failed | 61 passed (76)
+
+among them "a non-card row carrying an X-masked token followed by
+holder-like text is UNCHANGED by the strip" and its criterion-6.1 twin, plus
+the pinned row for the control.
+
+MUTATION B, an ADDITIONAL strip keyed on digit-run length alone, which is
+exactly what step 3 forbids:
+
+    npx vitest run test/domain/normalise-counterparty.test.ts \
+      test/domain/merchant-review.test.ts
+    Tests  5 failed | 71 passed (76)
+
+among them "a legitimate 13-to-19-digit structured reference on a NON-card
+row survives in the key", its criterion-6.1 twin, the pinned reference row,
+the idempotency check, and criterion 6.3(b)'s named-exception sweep.
+
+So the two guards are not merely green: each reddens under the specific
+wrong implementation it exists to refuse, and neither reddens under the
+other's.
+
+## A THIRD implementation of the merchant-source rule, in SQL
+
+Found while checking criterion 6.10's "no fourth definition in an equivalent
+form the literal pattern cannot see". The literal pattern is TypeScript and
+cannot see SQL: src/modules/overview/adapters/overview-repository.ts:95 and
+:266 both compute COALESCE(t."counterpartyName", t."description") as the
+counterparty text, which is the same rule. It is raw SQL by design
+(pulse-domain section 9), so it cannot call the shared helper. This phase
+did not rewrite the aggregation; the sibling is now NAMED at the helper's
+definition so the next reader of that rule meets it (clause
+mechanism-sibling). Recorded as an open question.
+
+## Privacy gate, criterion 6.8
+
+Both real uploads are present in this container, so the criterion is
+witnessed rather than recorded as not-witnessed. Probes are derived from the
+uploads AT RUN TIME, held in memory, and never printed or written: only
+counts, categories and repository paths appear anywhere.
+
+TIGHT RUN, high-value probes only, each derived from a POSITION in the real
+grammar rather than from a generic token filter: IBANs in both forms,
+long structured references, the identifier fragments embedded in the two
+FILE NAMES themselves (fleet warning 9), the card number in every grouping
+shape plus each of its four-digit groups, the holder tail that follows the
+card number on a card row plus each of its tokens, and the merchant span
+between the rail prefix and the country code on every card row. Descriptors
+are assembled through the shipped template first, because a per-line probe
+cannot see a descriptor that spans several indented lines.
+
+    tight probe categories: iban=18 ref=17 filename=5 card=12 holder=3
+                            merchant=11 total: 66
+    HALF (a) whole-worktree hits: 0
+    HALF (b) changed-file hits: 0
+    TIGHT_EXIT=0
+
+BROAD RUN, deliberately over-inclusive (every token of five or more letters
+on a card row, every thousands-form amount, every date in the file): 132
+probes, 6 whole-worktree hits and 2 changed-file hits. EVERY ONE of those 8
+hits is a probe that ALSO matches at the PHASE BASE 68fc7ee, so this phase
+introduced none of them; they are collisions between generic vocabulary (a
+public city name, a round amount, a calendar date) and content committed
+long before this phase. No identifier, card, holder or filename probe hit
+anything, in either run, anywhere. The two files this phase ADDS
+(test/fixtures/card-descriptors.csv, src/platform/ui/mask-card-number.ts)
+and the new test file carry zero hits under either probe set.
+
+INDEPENDENT IN-MEMORY SCRUB, run so a git-grep flag or pathspec mistake
+cannot make the gate vacuous: every changed file read as bytes and searched
+in memory, plus this branch's full commit messages and patch text via
+`git log -p 68fc7ee..HEAD`. Changed-file in-memory hits: 2, both from
+base-matching generic probes. Commit-and-patch hits: 0.

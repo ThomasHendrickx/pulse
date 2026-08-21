@@ -21,6 +21,18 @@
 // shared decision; unifying them would couple a display-grouping change to
 // stored dedup keys and to flow.
 //
+// A THIRD SIBLING EXISTS AND IS NAMED HERE RATHER THAN LEFT TO BE FOUND,
+// because it is written in a language a search for the TypeScript
+// expression cannot see: the overview module's grouped read implements the
+// SAME fallback in SQL, as COALESCE(t."counterpartyName", t."description"),
+// at src/modules/overview/adapters/overview-repository.ts:95 and :266. That
+// query is deliberately raw SQL (pulse-domain section 9: the overview
+// aggregations are set-based work Prisma is weak at), so it cannot call the
+// helper below. IF THIS RULE EVER CHANGES, that COALESCE changes with it,
+// and a grep for the TypeScript expression will not find it. M3-P6 left it
+// where it is: it agrees with the helper today, and rewriting an
+// aggregation query was not this phase's change.
+//
 // SCOPE OF THIS KEY, stated so the next reader does not widen it by
 // accident: this key exists for merchant GROUPING only. The ledger's
 // refund correction keys on its own counterpartyKey (ledger module,
