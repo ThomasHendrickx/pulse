@@ -183,231 +183,537 @@ review-contract: criteria
 # (CR-M3P6-03). I make no completeness claim. What I checked is written
 # above, criterion by criterion, with the command and the exit code.
 
+
+# ============================================================
+# DELTA VERDICT, ROUND 1. Everything above stands as the round 0
+# record at head e0704a5; everything below is the fix-round-1
+# verification at head 2f8b62d. The implementation session was not
+# seen in this round either.
+# ============================================================
+##
+# ============================================================
+# DELTA VERDICT AT 2f8b62d: FIX-ROUND-NEEDED.
+#
+# WHAT ROUND 1 FIXED, each re-verified by my own execution and not by
+# reading the fix: CR-M3P6-01 (closed, and the guard reddens under
+# mutation), CR-M3P6-02 (closed as to the copy count and the pin),
+# CR-M3P6-03 and CR-M3P6-04 (closed). CR-M3P6-05 is held by the
+# orchestrator by instruction. Those five carry their round-0 severities
+# in findings[] for the record; every one of them opens its evidence with
+# its resolved state.
+#
+# WHAT IS OPEN, and why the verdict is not APPROVE:
+#   CR-M3P6-06, HIGH. Key-space closure is broken on the owner's real file
+#     for 10 of 39 rows, up from 8 at both the base and the round-0 head,
+#     and the pipeline erodes a four-digit group per application. I drove
+#     it end to end through the real use cases: the owner names a merchant,
+#     assignMerchant returns ok, every total stays right, and ZERO rows
+#     resolve. That is hazard H6.4, and it is a regression of this round.
+#   CR-M3P6-07, medium. A test named for cross-language agreement evaluates
+#     no SQL; I diverged the two rules with the suite green.
+#   CR-M3P6-08 and CR-M3P6-09, low.
+#
+# ALL TEN CRITERIA ARE MET, again, and that is again not a terminal green.
+# 6.4 asks for a round trip over the fixture and the fixture round-trips;
+# the property 6.4 exists to protect fails on the owner's data. Nothing in
+# this contract asks whether the key space is closed, which is why the
+# round's own new invariant, not a criterion, is what CR-M3P6-06
+# contradicts. I make no completeness claim.
+#
+# ON THE ONE JUDGEMENT CALL I WAS ASKED TO REVIEW RATHER THAN VERIFY.
+# The implementer disputed the sibling's HZ-08 edit, implemented it, found
+# it broke closure, reverted, and pinned the behaviour plus a closure
+# invariant. I judge the REASONING CORRECT and I verified its two load-
+# bearing steps myself: assign-merchant.ts:54 re-normalises the submitted
+# subject and merchant-rule.ts:68 matches on equality, so a subject that is
+# not a fixpoint yields a rule that matches nothing; and the merge the
+# finding objects to is M1-P4's pinned rule reaching card rows, which no
+# real card row hits (card keys ending in a city on the real file: 0).
+# The trade is the right way round: a silent H6.4 outranks a latent merge
+# of two branches of one chain. The proposed edit is not repairable either,
+# and I checked that rather than assumed it: if the loop is skipped for
+# card descriptors then the fixpoint of such a key IS the city-less string,
+# so taking the fixpoint would simply re-introduce the merge. Disputing the
+# edit was right.
+# THE INVARIANT IS THE RIGHT INVARIANT AND IT IS UNDER-TESTED. It asserts
+# the fixpoint property over every group the FIXTURE produces, and the
+# fixture contains no run of four-digit groups before a word, so it is
+# green at 338 while the property is false on 10 real rows. An invariant
+# that reads only the fixture measures the fixture. That is CR-M3P6-06's
+# second half and its concrete fix says exactly what to add.
+# ============================================================
+#
+# d0 SETUP. 2f8b62d fetched and merged into this review branch; the
+#   merge was clean (no conflicts, 12 files). Executable head proved
+#   identical: git diff 2f8b62d..HEAD --stat lists exactly ONE path,
+#   delivery/review/m3-p6-criteria.yaml, so every command below ran on a
+#   tree byte-identical to 2f8b62d.
+#   The branch merged origin/main at a3ef5ed, so its base is 77da0c6 and
+#   the first two plan amendments are visible in the tree. The THIRD,
+#   cae60ff ("plan: declare the overview repository in M3-P6 extras"), is
+#   on main but NOT in this branch, so the tree's own plan copy still
+#   lists two extras while the phase touches three. Judged below.
+#   Phase diff 77da0c6..2f8b62d: 15 files, +2894 -34.
+#   df at start of round: 15G free on /, healthy.
+#
+# d1 FAST GATES at 2f8b62d, five env values pinned local:
+#   npx prisma generate 0; npm run typecheck 0; npm run lint 0;
+#   npm run gate:tokens 0; npm test 0 with Test Files 28 passed (28),
+#   Tests 338 passed (338), zero skipped. The expected 338.
+#   test/fixtures/card-descriptors.csv is 21 lines, 2 header plus 19 data
+#   rows, up from 13.
+#
+# d2 THE OWNER'S REAL FILE, re-measured by me through the shipped pipeline
+#   at 2f8b62d (upload 39bada64, counts only):
+#     39 rows, 15 card rows under the strict predicate, 23 under the
+#     card-number-LABEL grammar the masker anchors on.
+#     Distinct keys over all 39 rows: 27 at e0704a5, 25 at 2f8b62d.
+#     CONFIRMED, the reported 27 to 25.
+#     Exactly TWO merged clusters, each folding 2 old keys into 1, holding
+#     4 and 8 rows; every row in both is card-labelled. CONFIRMED as two
+#     merged groups of card rows.
+#     Masking: 23 of 23 card-labelled descriptors are changed by the new
+#     masker and 0 of 23 still carry a separator-insensitive 13-to-19-digit
+#     run afterwards; 0 of the 16 unlabelled rows are touched at all.
+#     CONFIRMED and STRONGER than reported: the claim was 15 of 15 with no
+#     non-card run touched, and the label grammar covers 23 of 23.
+#     The round-0 masker, re-measured for the sibling's HZ-01: over the
+#     rendered label surface it touched 0 card keys and 5 non-card keys on
+#     this file. The sibling's finding is confirmed by my own measurement.
+#
+# d3 THE FINDING OF THIS ROUND, which no criterion asks for and which the
+#   round's own new invariant asserts cannot happen. KEY-SPACE CLOSURE IS
+#   BROKEN ON THE OWNER'S FILE AND IT IS A REGRESSION OF THIS ROUND.
+#     normaliseCounterparty(key) != key for 10 of 39 real rows at 2f8b62d,
+#     against 8 of 39 at BOTH the phase base 68fc7ee and the round-0 head
+#     e0704a5. All 10 are NON-card rows.
+#     Token-type signature, content-free: the raw text carries a RUN of
+#     consecutive four-digit groups before a capitalised word,
+#     [... P4 P4 W ...]. Each pass removes ONE group and the next pass
+#     removes the next, so the pipeline ERODES a four-digit group per
+#     application: one real shape goes P4 P4 P4 W, then P4 P4 W, then P4 W.
+#     Cause, isolated: POSTAL_CODE_BEFORE_CITY, which this round narrowed
+#     from the base pattern that consumed the code AND the following word
+#     to a lookahead that consumes the code alone.
+#     PURE REGRESSION, proved on synthetic shapes: "W W P4 P4 W" and
+#     "W W P4 P4 P4 W" both CLOSE at 68fc7ee and at e0704a5 and DO NOT
+#     close at 2f8b62d (token counts 5->4->3).
+#   END-TO-END CONSEQUENCE, executed through the real use cases with a
+#   synthetic descriptor of that signature and the in-memory port fakes:
+#     submitted subject != stored rule pattern;
+#     rowsResolvedByTheRule = 0;
+#     namedGroupsAfter = 0;
+#     assignMerchant returned ok and every total stayed right.
+#   That is hazard H6.4 realised silently, and it is the SAME hazard the
+#   implementer invoked to reject the sibling's HZ-08 edit.
+#
+# d4 CR-M3P6-01 RE-VERIFIED BY MY OWN MEASUREMENT, not by reading the fix.
+#   Surface set RE-DERIVED. The recorded command returns SEVEN sites for me,
+#   not the eight the comment claims, and the two line numbers it cites are
+#   now a date cell and a comment. A MULTILINE derivation of the same
+#   intent returns EIGHT expression sites in three files, 5 masked and 3
+#   excluded, which is the recorded split. I judged all three exclusions
+#   against the code rather than the comment and all three are right:
+#   the hidden rule subject must stay unmasked (D-12, and my round-0 round
+#   trip depends on it); the reserves label is a."label" ?? counterpartyIban
+#   under a query that requires counterpartyIban IS NOT NULL, so it is an
+#   account label or an IBAN and never a descriptor; the recon part label is
+#   t("income"), t("spend"), t("reserves"), t("potChange"), t("difference").
+#   MY OWN 390x844 RUN through a real import of the synthetic fixture:
+#     confirm preview: 5 rows, 0 showing the invented number, 0 carrying a
+#       non-exception 13-to-19 run, 4 of 5 carrying the mask marker,
+#       scrollWidth 390.
+#     merchant review: 12 labels, 0 and 0, scrollWidth 390.
+#     month view: 12 labels, 0 and 0, scrollWidth 390.
+#     rows added 19.
+#   RED WITNESS: reverting the preview descriptor cell to an UNMASKED
+#   MULTI-LINE expression reddens the committed spec at
+#   test/e2e/merchants.spec.ts:159 with the full invented number in the
+#   received string, while the recorded derivation grep drops to six sites
+#   and finds nothing at all in that file, and npm test stays green at 338.
+#   So the surface has a real guard, and the guard is the e2e, not the
+#   derivation.
+#
+# d5 CR-M3P6-02 RE-VERIFIED. One fragment at
+#   src/modules/overview/adapters/overview-repository.ts, used twice.
+#   FALSIFIABLE: re-inlining ONE use reddens both pin tests
+#   (Tests 2 failed | 20 passed).
+#   BUT THE DIVERGENCE GAP IS NOT CLOSED, demonstrated: changing the SQL
+#   fragment to the OPPOSITE precedence and updating the two pin literals
+#   the way a pin update looks leaves the whole file green, 22 passed,
+#   INCLUDING the test named "the SQL rule and the TypeScript rule agree on
+#   every value Prisma can produce", whose body calls only the TypeScript
+#   helper and evaluates no SQL. Raised as CR-M3P6-07.
+#
+# d6 CR-M3P6-03 and CR-M3P6-04 RE-VERIFIED.
+#   CR-03: the gap row now masks at src/modules/overview/ui/month-view.tsx:266.
+#     NO GUARD: removing the call leaves npm test green at 338 and no spec
+#     selects recon-gap-row. Folded into CR-M3P6-08.
+#   CR-04: the double separator is fixed and pinned, "KAART NR 4000  1234
+#     5678 9010" masks, and seven non-card identifier shapes are pinned
+#     untouched.
+#
+# d7 THE TWO MERGED GROUPS, characterised content-free from the real file.
+#   Cluster A: two old keys of 6 and 8 tokens whose ONLY difference is two
+#     rail-vocabulary tokens; every word token is shared. 4 rows.
+#   Cluster B: two old keys of 6 and 8 tokens differing in two rail tokens
+#     AND one WORD token, where the NEW key CARRIES that word: the base
+#     recipe's postal pattern consumed the code AND the following word, and
+#     narrowing it restored a word one side had lost. 8 rows.
+#   Both clusters are entirely card-labelled rows and NO word token that
+#   distinguished two merchants was dropped. CONFIRMED as two legitimate
+#   merges, not an over-strip. Corroborating the pinned HZ-08 trade: card
+#   keys ending in a CITY token on the real file: 0.
+#
+# d8 PRIVACY at the delta head, my own 268 probes from both uploads.
+#   Tight categories iban/ref/card/holder-name: ZERO hits in both halves.
+#   Over-inclusive categories: 5 merchant, 2 amount, 2 date hits that also
+#   match at 77da0c6, plus TWO that do NOT. I located and resolved both by
+#   reading the committed artifacts: one is a quoted generic Dutch card word
+#   inside a captured test-failure transcript at
+#   delivery/work-history/m3-p6-notes.md:400, the other is the generic Dutch
+#   word for a customer-service line in a synthetic test string at
+#   test/domain/merchant-review.test.ts:382. Neither is an identifier, a
+#   holder name or a merchant string from either real file. The implementer's
+#   broad run reports every hit as also matching at the base; that is true of
+#   their 132-probe list and not of my 268-probe list, which is a difference
+#   in probe breadth rather than a false statement.
+#   SCOPE NOTE, recorded because it bounds every real-file claim in this
+#   verdict: upload 0f79fa3d does not parse at this head (no layout template
+#   matches it), so every count above is measured on 39bada64 alone.
+
 findings:
+  - id: CR-M3P6-06
+    severity: high
+    evidence:
+      - >-
+        REGRESSION, isolated to this round on synthetic shapes: token
+        signatures "W W P4 P4 W" and "W W P4 P4 P4 W" (a capitalised word,
+        then a run of four-digit groups, then a capitalised word) are
+        CLOSED under the normaliser at the phase base 68fc7ee and at the
+        round-0 head e0704a5, and are NOT closed at 2f8b62d. Executed
+        against all three recipes in one process.
+      - >-
+        ON THE OWNER'S REAL FILE, through the shipped pipeline (upload
+        39bada64, counts only): normaliseCounterparty(key) != key for 10
+        of 39 rows at 2f8b62d, against 8 of 39 at BOTH 68fc7ee and
+        e0704a5. All 10 are non-card rows.
+      - >-
+        IT ERODES RATHER THAN JUST DIFFERING: each application removes ONE
+        four-digit group, so a real shape goes P4 P4 P4 W, then P4 P4 W,
+        then P4 W. Measured token counts on a synthetic instance: 5 then 4
+        then 3.
+      - >-
+        CAUSE, isolated to one line:
+        src/modules/merchants/domain/normalise-counterparty.ts:252
+        replaced the base pattern, which consumed the postal code AND the
+        word after it, with POSTAL_CODE_BEFORE_CITY, a lookahead that
+        consumes the code alone. In a run of four-digit groups only the
+        last is followed by a word, so one group leaves per pass and the
+        next pass takes the next.
+      - >-
+        END-TO-END CONSEQUENCE, executed by me through the REAL use cases
+        (uploadStatement, confirmImport, listMerchantReview,
+        assignMerchant, recomputeInterpretation) over the in-memory port
+        fakes, with a synthetic two-row statement whose descriptor carries
+        that token signature: submitted subject != stored rule pattern;
+        rowsResolvedByTheRule = 0; namedGroupsAfter = 0; assignMerchant
+        returned ok and every total stayed right. The owner names a
+        merchant and NOTHING resolves, silently.
+      - >-
+        The chain is in the shipped code, not inferred:
+        src/modules/merchants/application/assign-merchant.ts:54 stores
+        normaliseCounterparty(input.counterpartyText) as the EXACT
+        pattern, and src/modules/merchants/domain/merchant-rule.ts:68
+        matches rule.pattern === normalised against the freshly normalised
+        row text.
+      - >-
+        THE ROUND'S OWN NEW INVARIANT ASSERTS THIS CANNOT HAPPEN:
+        test/domain/merchant-review.test.ts:238 declares "the key space is
+        closed under the pipeline, which is what makes a stored rule match
+        (hazard H6.4)" and asserts it over every group the FIXTURE
+        produces. The fixture carries no run of four-digit groups before a
+        word, so the invariant is green at 338 passed while the property
+        it names is false on the owner's file.
+      - >-
+        This is the SAME hazard the implementer invoked to reject finding
+        HZ-M3P6-08, recorded at delivery/work-history/m3-p6.yaml:764. The
+        reasoning there is correct; the recipe shipped in the same round
+        breaks the property by a different route.
+    concrete-fix: >-
+      Restore closure. The narrow repair is to make POSTAL_CODE_BEFORE_CITY
+      consume a RUN of four-digit groups before the word rather than one
+      group, so the pass reaches a fixpoint, or to move the postal strip
+      after the collapseWhitespace at
+      src/modules/merchants/domain/normalise-counterparty.ts:347 so it sees
+      the same single-space adjacencies on every pass. Whichever is chosen,
+      extend the invariant at test/domain/merchant-review.test.ts:244 beyond
+      the fixture's own groups: add a case whose descriptor carries two and
+      three consecutive four-digit groups before a capitalised word, and
+      assert the fixpoint property directly on the normaliser as well as on
+      the review's subjects, since the fixture cannot be relied on to
+      contain every shape the invariant claims. Add the two shapes to the
+      pinned table so the recipe change travels under the CR-402 contract as
+      usual.
+    analysis: >-
+      I did not find this in round 0 and I should say so: my round-0 walk
+      did not test key-space closure at all, because no criterion asks for
+      it, and the property only became a named claim when this round pinned
+      it. What makes it high rather than medium is the combination the round
+      itself identified as the worst shape a defect can have: it is silent,
+      assignMerchant returns ok, every total stays right, and the only
+      symptom is that the owner's naming quietly applies to nothing. It is
+      also a regression: the shape closed at the phase base and at the
+      round-0 head. The fix round improved the masker by moving it from
+      shape to grammar and, in the same round, introduced a shape-based
+      erosion one module over.
+  - id: CR-M3P6-07
+    severity: medium
+    evidence:
+      - >-
+        test/domain/merchant-review.test.ts:450 is named "the SQL rule and
+        the TypeScript rule agree on every value Prisma can produce". Its
+        body, lines 454 to 460, calls counterpartyText three times and
+        evaluates no SQL at all.
+      - >-
+        DEMONSTRATED, not argued: I changed the shared fragment to
+        COALESCE(t."description", t."counterpartyName"), the OPPOSITE
+        precedence, and updated the two pin literals in the test the way a
+        pin update looks. npx vitest run test/domain/merchant-
+        review.test.ts exited 0 with Tests 22 passed (22). The SQL rule
+        and the TypeScript rule then say opposite things and every guard
+        is green. Restored, git diff --quiet clean.
+      - >-
+        The pins themselves ARE falsifiable and I proved that separately:
+        re-inlining ONE of the two uses of the fragment reddens both pin
+        tests, Tests 2 failed | 20 passed.
+      - >-
+        So the accurate statement of what the fix bought is narrower than
+        the test name: neither side can move WITHOUT ITS OWN pin going
+        red, which catches an accidental edit; nothing compares the two
+        rules to each other, which is what "agree" claims.
+    concrete-fix: >-
+      Rename the test to what it establishes, for example "the TypeScript
+      rule's fallthrough is pinned on every value Prisma can produce", so no
+      reader takes it for a cross-language check. Then close the gap it
+      claims to close, by either (a) deriving the SQL pin's expected literal
+      and the TypeScript helper's expected behaviour from one place so the
+      two cannot be edited independently, or (b) adding a database-backed
+      assertion that selects the COALESCE over rows with a null and a non-
+      null counterpartyName and compares each result to counterpartyText
+      over the same rows. Option (b) is the one that actually evaluates SQL
+      and is the only one that makes the test name true.
+    analysis: >-
+      Clause R-087, and raised loudly rather than as a nit because this is
+      the single test that purports to close the divergence the whole of
+      CR-M3P6-02 was about, and the coordinator asked specifically whether
+      the two definitions can still diverge silently. They can, and the
+      artifact says otherwise in a test name.
+  - id: CR-M3P6-08
+    severity: low
+    evidence:
+      - >-
+        The derivation recorded at src/platform/ui/mask-card-number.ts:12
+        does not reproduce at the head. Re-run verbatim by me it returns
+        SEVEN sites in three files, four of them masking, not the eight
+        sites and five masking the comment at src/platform/ui/mask-card-
+        number.ts:14 records.
+      - >-
+        The two line numbers the comment cites,
+        src/modules/import/ui/profile-confirmation.tsx:100 and :101, are
+        at the head a booking-date cell and a comment line; the two
+        preview cells are at :108 to :112 and :113 to :115. Adding the
+        masking call is what pushed them out of the grep's reach, so the
+        act of applying the fix falsified the record of how the fix was
+        found.
+      - >-
+        THE HOLE IS IN THE DANGEROUS DIRECTION, constructed: with the
+        descriptor cell reverted to an UNMASKED multi-line expression, the
+        recorded grep returns six sites and finds NOTHING in that file at
+        all (exit 1), while npm test stays green at 338.
+      - >-
+        A multiline derivation of the same intent does return the recorded
+        8 sites, 5 masked and 3 excluded, and I confirmed all three
+        exclusions against the code: the hidden rule subject (D-12), the
+        reserves label (a."label" ?? counterpartyIban under a query
+        requiring counterpartyIban IS NOT NULL), and the recon part label
+        (t("income") and its siblings).
+      - >-
+        SECOND PIECE, the same class: the gap-row masking added this round
+        at src/modules/overview/ui/month-view.tsx:266 has no guard.
+        Removing the call leaves npm test green at 338, and no spec
+        selects recon-gap-row.
+      - >-
+        Not higher than low because the three screens the fix actually
+        touches DO have an executable guard: reverting the preview cell
+        reddens test/e2e/merchants.spec.ts:159 with the full invented
+        number, which I witnessed.
+    concrete-fix: >-
+      Replace the single-line grep in the comment at src/platform/ui/mask-
+      card-number.ts:12 with one that reproduces the recorded result, for
+      example a multiline search over each .tsx file's JSX expressions, and
+      re-run it to fix the site count and the line numbers. Better, make it
+      a test rather than a comment: read the three .tsx files and assert
+      that every JSX expression rendering a descriptor-derived identifier
+      either passes through maskCardNumbers or appears in a named exclusion
+      list with its reason, the same shape as the SQL pin one module over.
+      Extend the e2e sweep at test/e2e/merchants.spec.ts to the recon-gap-
+      row texts so the site added this round carries a guard too.
+    analysis: >-
+      The fix itself is right and I verified its result independently. What
+      is wrong is the record of how the surface set was derived, and that
+      record is the only thing covering surfaces the e2e does not visit. A
+      derivation that cannot be re-run is a remembered list wearing a
+      derivation's clothes, which is the exact thing the comment claims not
+      to be.
+  - id: CR-M3P6-09
+    severity: low
+    evidence:
+      - >-
+        Criterion 6.3 defines a card-number run as "13 to 19 consecutive
+        digits after spaces, dots and dashes are REMOVED" and requires
+        "that the display helper renders such a run masked to its last
+        four digits". The helper at src/platform/ui/mask-card-number.ts:83
+        now masks only a run preceded by the card-number LABEL, and
+        src/platform/ui/mask-card-number.ts:72 states the trade plainly:
+        "a card number printed with no label is NOT masked by this
+        helper".
+      - >-
+        The narrowing is correct on evidence and I confirmed the evidence
+        myself: the round-0 shape-based helper, re-measured by me over the
+        owner's real file, touched ZERO card keys and FIVE non-card keys
+        on the rendered label surface.
+      - >-
+        It is nonetheless a change to what a criterion asserts, and it is
+        absent from the five deviations declared at delivery/work-
+        history/m3-p6.yaml, which list the pooler substitute, globals.css,
+        the test/application path, the single e2e spec and the overview
+        repository, and nothing about criterion 6.3's masking rule.
+      - >-
+        It has a visible consequence the round-0 verdict recorded as an
+        open question the other way: the permitted exception in 6.3(b) is
+        now USED, and the structured reference renders unmasked in both
+        the key and the label, which is what test/domain/merchant-
+        review.test.ts:312 and :340 now assert.
+    concrete-fix: >-
+      Declare it. Add a deviation to delivery/work-history/m3-p6.yaml naming
+      criterion 6.3's clause "the display helper renders such a run masked
+      to its last four digits", stating that the helper is anchored to the
+      card-number label rather than to the digit shape, with the measured
+      reason (zero card numbers masked and five non-card identifiers damaged
+      on the owner's file under the shape reading) and the accepted cost (an
+      unlabelled card number is not masked). If the orchestrator wants the
+      criterion's text to match the shipped rule, amend criterion 6.3 on the
+      base branch the way the extras were amended.
+    analysis: >-
+      R-057b's rule is that a deviation is declared by the implementer and
+      judged by the reviewer, never assumed. I judge this one to serve the
+      plan's intent, which is why it is low and not higher: the intent of
+      6.3 is that the owner's card number does not reach a screen, and the
+      label-anchored helper serves that better than the shape-anchored one
+      did. But a reviewer had to find it rather than read it, and the next
+      reader of criterion 6.3 will find a sentence the code does not
+      satisfy.
   - id: CR-M3P6-01
     severity: high
     evidence:
       - >-
-        EXECUTED, shipped code path, synthetic fixture only: with the phase
-        head running on a dev server at 390x844, uploading
-        test/fixtures/card-descriptors.csv and stopping on the confirm-
-        format screen, 5 preview rows are rendered and 3 of them contain the
-        invented card number 4000123456789010 in full once separators are
-        removed; 3 of 5 contain a separator-insensitive 13-to-19-digit run;
-        the string **** appears in none of them. Playwright probe run
-        against the head, 1 passed (8.4s), probe removed afterwards and git
-        status clean.
+        RESOLVED at 2f8b62d, verified by my own measurement rather than by
+        reading the fix. My own 390x844 run through a real import of the
+        synthetic fixture: the confirm preview renders 5 rows, 0 of which
+        contain the invented card number with separators removed, 0 of
+        which carry a non-exception 13-to-19-digit run, and 4 of which
+        carry the mask marker; scrollWidth 390. The merchant review and
+        the month view show 12 labels each, 0 and 0.
       - >-
-        src/modules/import/ui/profile-confirmation.tsx:101 renders the
-        descriptor cell as {row.description}, the raw parsed descriptor,
-        with no call to maskCardNumbers. src/modules/import/ui/profile-
-        confirmation.tsx carries no import of src/platform/ui/mask-card-
-        number.ts.
+        Both preview cells render through the masker:
+        src/modules/import/ui/profile-confirmation.tsx:109 (counterparty)
+        and :114 (descriptor).
       - >-
-        src/app/(app)/import/[id]/page.tsx:76 builds previewRows as
-        parsed.value.rows.slice(0, 5), so the first five rows of any
-        statement reach that cell.
+        The guard is real, witnessed: reverting the descriptor cell to an
+        unmasked expression reddens test/e2e/merchants.spec.ts:159, and
+        the committed spec asserts exactly 5 preview rows with at least 4
+        carrying the mask marker, so it cannot pass vacuously.
       - >-
-        MEASURED ON THE OWNER'S OWN FILE through the shipped parser, counts
-        only, upload referred to by its 8-hex prefix 39bada64: of the 5 rows
-        the preview shows, 3 satisfy the phase's own card-row predicate and
-        4 carry a separator-insensitive 13-to-19-digit run in the raw
-        descriptor. So the owner's next upload puts the full number back on
-        screen.
-      - >-
-        The helper WOULD cover it: over the same real file, all 15 raw card
-        descriptors are changed by maskCardNumbers and 0 of 15 retain a
-        13-to-19-digit run afterwards. The gap is placement, not capability.
-      - >-
-        Hazard H6.1 through H6.7 table, class H6.6: 'The full card number
-        surviving into a rendered label or a screenshot after the phase, the
-        exposure the owner reported', addressed-by criterion 6.3. Criterion
-        6.3 is scoped to normalised keys and group labels on two screens, so
-        it cannot see this cell; my execution of 6.3 was green while this
-        surface leaks.
+        On the owner's real file, 23 of 23 card-labelled descriptors are
+        masked and 0 of 23 retain a window run; 0 of the 16 unlabelled
+        rows are touched.
     concrete-fix: >-
-      Apply maskCardNumbers to the descriptor cell at
-      src/modules/import/ui/profile-confirmation.tsx:101 (and to the
-      counterparty cell at :100, which renders counterpartyName ??
-      counterpartyIban ?? "" raw), and add an assertion that sweeps the
-      rendered preview-row texts with the same separator-insensitive
-      13-to-19-digit test the merchants spec already defines, so the surface
-      has a guard rather than a fix. src/modules/import/ui/profile-
-      confirmation.tsx is outside this phase's files-to-touch, so amend the
-      plan phase the same way commit 29c4745 on main amended it for
-      src/app/globals.css, in the same change.
+      No further edit. Recorded closed. The residual weakness in how the
+      surface set was derived is carried by CR-M3P6-08 rather than here.
     analysis: >-
-      This is the criteria contract's own warning made concrete. Every
-      acceptance criterion of M3-P6 is met by execution, and the defect the
-      phase exists to remove is still on the screen the owner uses to
-      upload. The contract enumerated two label surfaces because those were
-      the two the owner named; the confirm-format preview was never
-      enumerated and therefore never checked. The implementer conformed to
-      the plan exactly, so this is a plan gap rather than an implementation
-      error, but the severity ranks the shipped behaviour and the shipped
-      behaviour still renders a full card number.
+      Round-0 finding, closed in round 1.
   - id: CR-M3P6-02
     severity: medium
     evidence:
       - >-
-        grep -rn 'COALESCE' src/ returns
-        src/modules/overview/adapters/overview-repository.ts:95,
-        COALESCE(t."counterpartyName", t."description") AS
-        "counterpartyText", and src/modules/overview/adapters/overview-
-        repository.ts:266, COALESCE(t."counterpartyName", t."description")
-        AS "text". Two occurrences, both live, both the merchant-source
-        rule.
+        RESOLVED in substance at 2f8b62d: the SQL form is written once as
+        COUNTERPARTY_TEXT_SQL at src/modules/overview/adapters/overview-
+        repository.ts:57 and interpolated at the two reads, and a file-
+        reading pin at test/domain/merchant-review.test.ts:434 and :445
+        asserts one occurrence of the SQL form and two uses of the
+        fragment.
       - >-
-        Criterion 6.10's pinned pattern, executed by me at the head: grep
-        -rlE 'counterpartyName \?\? [A-Za-z_]*\.?description' src/ returns
-        exactly three files and none of them is the overview repository. The
-        pattern is a TypeScript expression and cannot match SQL, so the
-        guard is structurally blind to both sites.
+        The pin is falsifiable, proven by mutation: re-inlining one use
+        gives Tests 2 failed | 20 passed.
       - >-
-        src/modules/merchants/domain/normalise-counterparty.ts:31 states 'IF
-        THIS RULE EVER CHANGES, that COALESCE changes with it, and a grep
-        for the TypeScript expression will not find it', and :33 states 'it
-        agrees with the helper today'. Both are present-tense claims with no
-        check behind them, the shape clause R-087 names.
-      - >-
-        The consequence is not symmetric with the two frozen recipes:
-        dedup.ts and corrections.ts keep their copies BY DESIGN and
-        criterion 6.5 exists to hold them there, whereas the SQL copy is the
-        source the MONTH VIEW's grouping actually reads, so a future change
-        to the helper leaves the owner's main screen on the old rule with
-        nothing red.
+        Criterion 6.10's three original greps still hold at the delta
+        head: exactly three files, frozen recipes import nothing, both
+        former call sites import the specifier.
     concrete-fix: >-
-      Add a second executed grep to criterion 6.10 pinning the SQL form,
-      grep -rnE
-      'COALESCE\(\s*t\."counterpartyName",\s*t\."description"\s*\)' src/, to
-      exactly the known sites in src/modules/overview/adapters/overview-
-      repository.ts, so a new SQL copy or a moved one reddens; and hoist the
-      two occurrences in that file into one exported Prisma.sql fragment
-      used at both :95 and :266, so the file carries one copy rather than
-      two. If the orchestrator prefers to leave the aggregation untouched,
-      record it as an explicit decision beside D-11 rather than as an open
-      question, because an open question is not a guard.
+      No further edit for the hoist and the pin. The unclosed half, that
+      nothing compares the SQL rule to the TypeScript rule, is carried by
+      CR-M3P6-07.
     analysis: >-
-      Asked plainly: is this an honest scope call or a hole in the guard? It
-      is both, and the two are not in tension. The implementer named the
-      site at the helper's definition, declared it as open question M3P6-C6,
-      and did not widen scope into a file the plan did not list; that is the
-      right conduct. But decision D-11's operative content is 'one exported
-      helper is the single definition of which text a transaction resolves
-      under', and at the head that is true only within TypeScript: there are
-      three live implementations, one of them written twice. Criterion 6.10
-      is the only witness D-11 has, and it cannot see the copy that feeds
-      the screen the phase is about. Calling 6.10 met, which I do, is not
-      the same as calling D-11 witnessed.
+      Round-0 finding, closed in round 1 as to the copy count and the pin.
   - id: CR-M3P6-03
     severity: low
     evidence:
       - >-
-        src/modules/overview/ui/month-view.tsx:263 renders {row.text} inside
-        GapList with no masking, on the same screen whose group label this
-        phase masked at src/modules/overview/ui/month-view.tsx:87.
+        RESOLVED at src/modules/overview/ui/month-view.tsx:266, which now
+        renders maskCardNumbers(row.text).
       - >-
-        row.text is the RAW descriptor:
-        src/modules/overview/adapters/overview-repository.ts:266 sets it to
-        COALESCE(t."counterpartyName", t."description"), unnormalised, so
-        none of this phase's strip patterns has run on it either.
-      - >-
-        Reachability is narrow but real: the same query admits rows with
-        flow IS NULL (uninterpreted, the window between ingest and
-        recompute) and rows classified UNRESOLVED, which
-        src/modules/ledger/domain/classify-flow.ts:115 assigns to a zero-
-        amount transaction. A card row in either state renders its full card
-        number in the reconciliation panel.
+        Guard absent: removing the call leaves npm test green at 338 and
+        no spec selects recon-gap-row. Carried forward in CR-M3P6-08's
+        concrete fix.
     concrete-fix: >-
-      Wrap the gap-row text at src/modules/overview/ui/month-view.tsx:263 in
-      maskCardNumbers, the same one-line change the two group labels already
-      carry, and extend the merchants phone spec's sweep to the recon-gap-
-      row texts so the surface carries a guard.
+      No further edit to the rendering. Add the gap-row texts to the e2e
+      sweep, as set out in CR-M3P6-08.
     analysis: >-
-      Lower severity than CR-M3P6-01 because a card payment has a nonzero
-      amount and therefore classifies as SPEND rather than UNRESOLVED, so
-      the panel does not hold card rows in the ordinary flow. It is still a
-      rendered surface on the masked screen that the phase left unmasked,
-      and the fix is the same shape as the two it did make.
+      Round-0 finding, fixed; the missing guard is folded into CR-M3P6-08.
   - id: CR-M3P6-04
     severity: low
     evidence:
       - >-
-        src/platform/ui/mask-card-number.ts:46 defines DIGIT_RUN as
-        /\d(?:[\s.-]?\d)*/g, at most ONE separator character between two
-        digits. Executed against the head: maskCardNumbers('4000  1234 5678
-        9010'), two spaces after the first group, returns the input
-        unchanged, while every single-separator form (space, dot, dash,
-        mixed, contiguous) masks to '**** 9010'.
+        RESOLVED: the separator class at src/platform/ui/mask-card-
+        number.ts:84 is now [\s.-]* rather than [\s.-]?, and
+        test/domain/merchant-review.test.ts:362 pins "KAART NR 4000  1234
+        5678 9010" masking to "KAART NR **** 9010".
       - >-
-        Boundaries verified independently by me at the head: 12 digits
-        unchanged, 13 digits -> '**** 0123', 19 digits -> '**** 6789', 20
-        digits unchanged; grouped forms of 13 and 19 mask, grouped 12 and 20
-        do not.
-      - >-
-        Not currently reachable on the two enumerated surfaces, because
-        normaliseCounterparty collapses whitespace before the label is built
-        (src/modules/merchants/domain/normalise-counterparty.ts:226), and
-        measured over the real statement all 15 raw card descriptors are
-        still fully covered: 0 of 15 retain a 13-to-19-digit run after
-        masking. So this is a latent edge, not a live one.
+        The reason the finding gave for raising it, that the fix for
+        CR-M3P6-01 would point the helper at raw text where nothing
+        collapses whitespace, is exactly the reason recorded at
+        src/platform/ui/mask-card-number.ts:79.
     concrete-fix: >-
-      Change DIGIT_RUN to /\d(?:[\s.-]*\d)*/g, keeping the maximal match and
-      the window check that follow it, and add the double-separator form to
-      the helper's own boundary test in test/domain/merchant-review.test.ts.
-      The comment at src/platform/ui/mask-card-number.ts:41 that justifies
-      the single separator ('so this can never join two distant numbers into
-      one run') should then be rewritten to say what the window check
-      already guarantees, since a joined run outside 13 to 19 digits is left
-      alone anyway.
+      No further edit. Recorded closed.
     analysis: >-
-      Raised because the fix demanded by CR-M3P6-01 points this helper at
-      RAW descriptors, where whitespace has not been collapsed by anything.
-      On the owner's real file that turns out to be safe, measured, but the
-      reason it is safe is a property of one bank's extraction gap rule
-      rather than a property of the helper.
+      Round-0 finding, closed in round 1.
   - id: CR-M3P6-05
     severity: low
     evidence:
       - >-
-        Reproduced at the head: /opt/node22/bin/npm ci with node v22.22.2
-        and npm 10.9.7 exits 1 with 'npm error Missing: @swc/helpers@0.5.23
-        from lock file'. The same command under the ambient node v26.7.0 and
-        npm 11.19.0 exits 0, 472 packages in 20s.
-      - >-
-        package.json:4 to :6 pins engines.node to '22.x', so the toolchain
-        the repository declares is exactly the one that cannot install from
-        the committed lockfile.
-      - >-
-        NOT introduced by this phase: git diff --name-only 68fc7ee..HEAD
-        matches no package.json or package-lock.json path (exit 1). The
-        lockfile's last change is commit 07a052e on main, a three-line
-        engines mirror with no dependency change.
-      - >-
-        DEPLOYED-BUILD JUDGEMENT, probed rather than assumed: in a scratch
-        copy of package.json and package-lock.json outside the repository,
-        npm 10.9.7 'npm install --package-lock-only --ignore-scripts' exits
-        0. The repository carries no .github/workflows directory, so no CI
-        path runs npm ci. The deployed build is therefore not threatened
-        today, because the platform install path resolves; what is
-        threatened is any future step that pins the declared engine and uses
-        npm ci.
+        UNCHANGED and out of scope by the coordinator's instruction: npm
+        ci still fails under npm 10 with Node 22 and passes under npm
+        11.19 with Node 26, package.json still pins engines to 22.x, and
+        no package file is in this phase's diff (git diff --name-only
+        77da0c6..2f8b62d lists 15 paths, none of them package.json or
+        package-lock.json).
     concrete-fix: >-
-      On a base-branch chore commit outside this phase, regenerate package-
-      lock.json with the npm that ships with the pinned engine (npm 10 under
-      Node 22) and commit it, or move engines.node to the version range the
-      lockfile was written under. Do not fix it inside M3-P6: package-
-      lock.json is not in this phase's files-to-touch and the breakage
-      predates it.
+      Unchanged from round 0: regenerate package-lock.json under the pinned
+      engine's npm, or move the engines range, on a base-branch chore commit
+      outside this phase. Held by the orchestrator.
     analysis: >-
-      The implementer's environment-warning is true as written and I
-      reproduced both halves. The interesting half is the one the warning
-      does not answer, which the review brief asked for: the deployed build.
-      It survives because the platform's default install path is npm install
-      rather than npm ci, and npm install under npm 10 resolves this
-      lockfile. That is a coincidence of tooling defaults, not a property
-      anyone chose, which is why it is worth a low finding rather than
-      nothing.
+      Round-0 finding, deliberately not addressed in this round.
 
 criteria:
   - id: "6.1"
@@ -439,45 +745,26 @@ criteria:
     met: true
     evidence:
       - >-
-        npm test at the head: EXIT=0, Test Files 28 passed (28), Tests 322
-        passed (322), zero skipped. The expected 322.
+        RE-WALKED at 2f8b62d. npm test EXIT=0, Test Files 28 passed (28),
+        Tests 338 passed (338), the expected 338. The fixture grew from 13
+        to 19 data rows (test/fixtures/card-descriptors.csv is 21 lines,
+        two of them header).
       - >-
-        The one-merchant collapse: test/domain/merchant-review.test.ts:136
-        asserts the five fixture descriptors produce new Set(keys).size ===
-        1, and :144 asserts the imported fixture yields exactly ONE review
-        group with count 5. The five rows are test/fixtures/card-
-        descriptors.csv lines 4 to 8, two months (August and September
-        2026), differing amounts, three carrying the full grouped tail and
-        two the partially masked tail.
+        The five-rows-to-one-key assertions and the pinned pre-change
+        literals are unchanged in substance and green; the e2e still
+        asserts one KOFFIEHUIS DE MOLEN group holding 5 rows at
+        test/e2e/merchants.spec.ts.
       - >-
-        The recorded BEFORE is pinned as literals, not recomputed:
-        test/domain/merchant-review.test.ts:65 declares
-        PRE_CHANGE_KEYS_OF_THE_ONE_MERCHANT as a string array with no call,
-        and :130 asserts its set size is 5. The work history records both
-        numbers, 5 keys before and 1 after.
+        The floor hole the round closed is asserted rather than described:
+        test/domain/merchant-review.test.ts:267 requires exactly one key
+        equal to "KAART NR", the non-destructive floor for a card
+        descriptor with no merchant span, which at the round-0 head would
+        have fallen back to the raw text and carried the full card number
+        into the key and therefore into the stored rule.
       - >-
-        The structured-reference row: test/domain/merchant-
-        review.test.ts:154 asserts the 15-digit reference 415123456789012
-        survives in its key and that it is the only run cardNumberRuns finds
-        there. Fifteen digits is inside the 13-to-19 window, so the row
-        exercises 6.3's exception rather than dodging it.
-      - >-
-        The non-card control: test/domain/merchant-review.test.ts:163
-        asserts its key equals the pre-change literal at :80, so this
-        phase's patterns leave it exactly where the base recipe left it.
-      - >-
-        BOTH DIRECTIONS, my own mutation: deleting the bare day-and-month
-        pattern from DATE_FRAGMENT_PATTERNS in
-        src/modules/merchants/domain/normalise-counterparty.ts made the per-
-        transaction date survive into the key. npx vitest over the two
-        changed domain test files exited 1 with Tests 11 failed | 65 passed
-        (76), and the two named guards above were among the failures.
-        Restored, git diff --quiet clean.
-      - >-
-        OWNER-FACING, beyond the criterion: measured by me through the
-        shipped pipeline over the real Belfius upload 39bada64, counts only.
-        Base recipe: 15 card rows, 15 distinct keys. Head: 15 card rows, 6
-        distinct keys, group sizes 4, 4, 3, 2, 1, 1.
+        OWNER-FACING, re-measured by me: distinct keys over the 15 card
+        rows of the real file remain 6; distinct keys over all 39 rows
+        fall from 27 to 25.
   - id: "6.2"
     quote: >-
       npm test exits 0 with an over-stripping test asserting the two
@@ -487,26 +774,27 @@ criteria:
     met: true
     evidence:
       - >-
-        test/domain/merchant-review.test.ts:176 asserts the two chain rows
-        produce two review groups with two distinct keys, one containing
-        NOORD and one containing ZUID; test/domain/normalise-
-        counterparty.test.ts asserts the same at the key level. Green inside
-        the 322.
+        RE-WALKED. The chain rows still normalise to two distinct keys and
+        two review groups, green inside the 338, and the e2e still asserts
+        two SUPERMARKT DE LINDE groups.
       - >-
-        The fixture is faithful to the hazard: test/fixtures/card-
-        descriptors.csv lines 9 and 10 are SUPERMARKT DE LINDE NOORD GENT
-        and SUPERMARKT DE LINDE ZUID GENT, sharing a chain prefix AND a
-        city.
+        THE NEW MERGES DO NOT VIOLATE IT, characterised by me content-free
+        on the real file: the two clusters that merged fold two old keys
+        each, all rows card-labelled, and the differing tokens are rail
+        vocabulary in one cluster and rail vocabulary plus one word that
+        the NEW key restores in the other. No word token that
+        distinguished two merchants was lost.
       - >-
-        BOTH DIRECTIONS, my own mutation: after stripTrailingCityTokens I
-        truncated the key to its leading three tokens, the plausible over-
-        strip 'the merchant is the leading tokens'. npx vitest exited 1 with
-        Tests 19 failed | 57 passed (76), and the two guards that exist to
-        catch it went red by name: 'criterion 6.2: over-stripping is refused
-        > two distinct merchants sharing a chain prefix AND a city stay two
-        keys and two review groups' and 'two merchants sharing a chain
-        prefix AND a city stay two distinct keys'. Restored, git diff
-        --quiet clean.
+        The one merge the round newly PINS as intended, two branches of
+        one chain in two cities with the city as the final token, is
+        outside what 6.2 asserts: 6.2's witness is two merchants sharing a
+        chain prefix AND a city, which still stay apart. I record that
+        6.2's guard does not cover the newly pinned merge rather than
+        letting the criterion's green stand for both.
+      - >-
+        Corroborating the implementer's claim that no real card row
+        reaches that merge: card keys whose final token is a city, on the
+        real file, 0.
   - id: "6.3"
     quote: >-
       Both halves use the SAME separator-insensitive test, where a card-
@@ -543,62 +831,34 @@ criteria:
     met: true
     evidence:
       - >-
-        The same separator-insensitive test is used by both halves:
-        cardNumberRuns is defined identically at test/domain/merchant-
-        review.test.ts:90, at test/domain/normalise-counterparty.test.ts
-        (the card-grammar block) and at test/e2e/merchants.spec.ts:107, each
-        removing spaces, dots and dashes before matching 13 to 19 digits. No
-        contiguous-digit regex is used as the sweep anywhere.
+        RE-WALKED, both halves. npm test EXIT=0 at 338; npm run test:e2e
+        EXIT=0 with 21 passed (3.2m) across both projects.
       - >-
-        (a) test/domain/merchant-review.test.ts:190 sweeps every key of the
-        imported fixture for the invented number 4000123456789010 with
-        separators removed; test/domain/merchant-review.test.ts:216 sweeps
-        every rendered label on BOTH surfaces, the merchant review's groups
-        and the month view's foldGroups output.
+        The sweep is now three surfaces rather than two:
+        test/e2e/merchants.spec.ts sweeps the confirm preview, the
+        merchant review labels and the month view labels with one helper,
+        asserts exactly 5 preview rows, and asserts at least 4 of them
+        carry the mask marker so the preview half cannot pass vacuously.
       - >-
-        (b) test/domain/merchant-review.test.ts:205 asserts the list of keys
-        carrying a 13-to-19-digit run equals exactly the one named
-        exception, the structured-reference row. The label sweep at :216
-        asserts zero runs on labels, which satisfies 'no label carries a run
-        except possibly that one' a fortiori; the exception is a permission
-        and the implementation does not need it. Recorded as open question
-        M3P6-C7 by the implementer and I agree with the reading.
+        MY OWN INDEPENDENT SWEEP at 390x844 agrees: 0 of 5 preview rows, 0
+        of 12 review labels and 0 of 12 month labels contain the invented
+        number or a non-exception window run.
       - >-
-        The display helper: test/domain/merchant-review.test.ts:253 pins
-        contiguous, space-, dot- and dash-grouped forms to '**** 9010' and
-        pins 13 and 19 as masked with 12 and 20 left alone.
+        RED WITNESS: unmasking the preview descriptor cell reddens
+        test/e2e/merchants.spec.ts:159 with the full invented number in
+        the received string.
       - >-
-        MY OWN INDEPENDENT BOUNDARY MATRIX, executed against the head helper
-        rather than the committed test: 12 digits unchanged; 13 -> '****
-        0123'; 19 -> '**** 6789'; 20 unchanged; 4000123456789010, '4000 1234
-        5678 9010', '4000.1234.5678.9010', '4000-1234-5678-9010' and the
-        mixed-separator form all -> '**** 9010'; grouped 13 and 19 mask,
-        grouped 12 and 20 do not; 'BUS 42 GENT' and 'TOTAL 1.234,56 EUR'
-        untouched. One gap found and raised as CR-M3P6-04: a DOUBLE
-        separator between groups is not seen.
+        6.3(b)'s named exception is now REAL rather than unused: the
+        structured reference renders unmasked in key and label and the
+        tests assert the carrying list equals exactly that one row, at
+        test/domain/merchant-review.test.ts:312 and :340. My round-0 open
+        question about the exception going unused is answered.
       - >-
-        The e2e half: npm run test:e2e EXIT=0, 21 passed, including
-        test/e2e/merchants.spec.ts:120 which sweeps the rendered group
-        labels on /merchants and then on /?month=2026-08 with the same
-        helper.
-      - >-
-        BOTH DIRECTIONS, my own mutation: removing maskCardNumbers from
-        GroupLabel in src/modules/overview/ui/month-view.tsx made the month-
-        view sweep fail at test/e2e/merchants.spec.ts:185 with
-        cardNumberRuns returning 3 entries against an expected 0. So the
-        month-view half of the e2e sweep is not vacuous. Restored, the spec
-        passes again, EXIT=0.
-      - >-
-        OWNER-FACING: over the real Belfius upload 39bada64, 0 of 15 card
-        keys and 0 of 15 rendered card labels retain a separator-insensitive
-        13-to-19-digit run, against 15 of 15 keys at the phase base. Longest
-        digit run left in any card key or label: 6.
-      - >-
-        MET AS WRITTEN AND STILL LEAKING ELSEWHERE. This criterion is scoped
-        to keys and to the two group labels, so it is green while
-        src/modules/import/ui/profile-confirmation.tsx:101 renders the full
-        number. See CR-M3P6-01; that is a limit of the contract, not of the
-        evidence above.
+        MET WITH ONE HONEST QUALIFICATION, which I record rather than
+        absorb: the helper no longer masks an UNLABELLED 13-to-19-digit
+        run, so the criterion's closing clause read literally is no longer
+        satisfied for such runs. The narrowing is right on evidence I re-
+        measured myself, and it is undeclared. Raised as CR-M3P6-09.
   - id: "6.4"
     quote: >-
       npm test exits 0 with a round-trip test: the value the review form
@@ -610,29 +870,25 @@ criteria:
     met: true
     evidence:
       - >-
-        test/domain/merchant-review.test.ts:288 drives the real use cases:
-        it takes group.counterpartyText from the review, asserts it carries
-        no '****', calls assignMerchant with it, asserts world.rules has
-        length 1 with kind EXACT and pattern equal to the submitted string,
-        then asserts all five rows of that merchant carry the new merchant
-        id INCLUDING the two rows whose bookingDate starts 2026-09, which
-        were not the row named, and that the review afterwards holds one
-        group of five.
+        RE-WALKED. The round-trip test is unchanged in shape and green
+        inside the 338, and the hidden field at
+        src/modules/merchants/ui/merchant-review.tsx still carries
+        group.counterpartyText unmasked while the label one span above is
+        masked.
       - >-
-        The UNMASKED subject is what the form actually submits, confirmed in
-        the shipped component rather than only in the test:
-        src/modules/merchants/ui/merchant-review.tsx:46 to :50 sets the
-        hidden input's value to group.counterpartyText while the visible
-        label one span above at :36 is maskCardNumbers(group.label). The
-        masking is on the rendering and not on the value.
+        The round ADDED an invariant that strengthens this criterion,
+        test/domain/merchant-review.test.ts:238, asserting that
+        normalising any group's submitted subject returns it unchanged,
+        over every group the fixture produces rather than over one
+        example. That is the right invariant.
       - >-
-        test/domain/merchant-review.test.ts:273 asserts the same property
-        for every unresolved spend group: counterpartyText contains no
-        '****' and equals normaliseCounterparty(group.label).
-      - >-
-        BOTH DIRECTIONS: my under-strip mutation broke this round trip too,
-        the test failing among the 11, which shows the assertion depends on
-        the collapse rather than passing regardless.
+        AND IT IS FALSE ON THE OWNER'S REAL FILE, which is finding
+        CR-M3P6-06: 10 of 39 real rows produce a subject that is not a
+        fixpoint, and my end-to-end construction shows such a naming
+        resolves zero rows. The criterion as written is met, because it
+        asks for the round trip over the fixture and the fixture round-
+        trips; the property the criterion exists to protect does not hold
+        on the owner's data.
   - id: "6.5"
     quote: >-
       git diff --name-only against the phase base contains neither
@@ -650,33 +906,19 @@ criteria:
     met: true
     evidence:
       - >-
-        File clause, executed by me: git diff --name-only 68fc7ee..HEAD |
-        grep -E 'src/modules/import/domain/dedup\.ts|src/modules/ledger/doma
-        in/corrections\.ts' exits 1 with no output. git diff --stat
-        68fc7ee..HEAD -- test/domain/dedup.test.ts is empty, so the dedup
-        test is unmodified.
+        RE-WALKED against the new base. git diff --name-only
+        77da0c6..2f8b62d matches neither
+        src/modules/import/domain/dedup.ts nor
+        src/modules/ledger/domain/corrections.ts (exit 1), and git diff
+        --stat for test/domain/dedup.test.ts is empty.
       - >-
-        Re-import: test/domain/merchant-review.test.ts:350 imports the
-        fixture, asserts 13 stored rows, uploads the identical bytes again
-        and asserts kind 'ingested' with added 0 and known 13, and that the
-        stored row count did not move. No stored dedup key moved.
+        The re-import assertions moved with the fixture and stay green
+        inside the 338; the e2e asserts rows-added 19, and my own run of
+        the same journey observed rows added 19.
       - >-
-        FACTS UNTOUCHED: test/domain/merchant-review.test.ts:367 asserts
-        every stored rawLine is one of the source file's own lines verbatim,
-        that every card row's rawLine still contains the unmasked
-        4000123456789010 with separators removed, and that no rawLine
-        contains '****'. :392 asserts the stored rawContent deep-equals the
-        uploaded bytes.
-      - >-
-        One reading noted rather than waved through: the criterion says
-        byte-identical to what the PRE-CHANGE pipeline stored, and the test
-        instead asserts identity to the SOURCE FILE. That is the stronger
-        statement given nothing in this phase's diff touches the import path
-        (the 13 changed paths contain no src/modules/import file), and it is
-        what hazard H6.7 actually needs, so I count it met rather than
-        substituted.
-      - >-
-        npm test EXIT=0 covers all of the above inside the 322.
+        The facts assertions are unchanged: stored rawLine verbatim and
+        still carrying the unmasked number, stored rawContent byte-
+        identical to the uploaded bytes.
   - id: "6.6"
     quote: >-
       The work history records the measured deployed MerchantRule count, the
@@ -701,43 +943,23 @@ criteria:
     met: true
     evidence:
       - >-
-        RE-MEASURED BY ME AT THE HEAD, which is the clause finding PR3-007
-        added: a read-only count over the pulse deployed project, pinned by
-        project ref ygsarzjqosqmkqibqogk and confirmed to be the project
-        named 'pulse' in the account's project listing rather than the
-        ambient Hemma credentials fleet warning 1 forbids. The statement
-        'select count(*)::int as merchant_rules, (select count(*)::int from
-        public.merchants) as merchants, (select count(*)::int from
-        public.transactions) as transactions, (select count(*)::int from
-        public.imports) as imports from public.merchant_rules;' returned
-        [{"merchant_rules":0,"merchants":0,"transactions":0,"imports":1}].
+        RE-WALKED. The pinned regression table grew in the same commits as
+        the recipe changes, and the deployed count is still the zero
+        branch: my own read-only count at the round-0 head returned
+        merchant_rules 0 and nothing in this round touches the deployed
+        database.
       - >-
-        ZERO at the head, and zero at the verification-first step, so the
-        condition 'nonzero at the head while zero before' does not fire and
-        no re-normalisation migration is owed. The migration test the
-        criterion makes conditional is therefore not required.
+        The recipe changed again in this round, so the CR-402 obligation
+        applies again and is discharged the same way, by the pinned table
+        moving with it. The pins added this round are visible at
+        test/domain/normalise-counterparty.test.ts:214 to :261.
       - >-
-        The work history records the count, the branch and the command:
-        delivery/work-history/m3-p6.yaml verification-first entry 1 carries
-        all three.
-      - >-
-        Same commit: git show --stat 48cd54d lists BOTH
-        src/modules/merchants/domain/normalise-counterparty.ts (the recipe
-        change, 4 new card pattern constants) and test/domain/normalise-
-        counterparty.test.ts (232 added lines including the eight new pinned
-        rows). The only later commit touching the recipe file, 2096fd1, adds
-        12 lines all of which are comment: filtering its added lines for
-        non-comment content returns nothing.
-      - >-
-        ONE HONEST QUALIFICATION on the read-only clause: the plan asks for
-        a connection string pinned to the session pooler, and the transport
-        used (by the implementer and by me) is the Supabase management API,
-        which is not a read-only connection.
-        current_setting('transaction_read_only') returned 'off' on my own
-        call. The read-only property comes from the statement text, which is
-        a pure SELECT, and not from the connection. Same project, same
-        number, weaker guarantee about the transport; judged as serving the
-        plan's intent under deviation 1 below.
+        NOTE FOR THE NEXT CHANGE, not a finding against this one: the
+        pinned table is what makes an accidental recipe change red, and it
+        did NOT redden for the closure regression in CR-M3P6-06, because a
+        pinned pair only asserts input to output and never output to
+        output. That is the gap the closure invariant was added to cover
+        and the gap CR-M3P6-06 shows it does not yet cover.
   - id: "6.7"
     quote: >-
       npm run test:e2e exits 0 with a phone-viewport spec at 390x844
@@ -753,38 +975,19 @@ criteria:
     met: true
     evidence:
       - >-
-        npm run test:e2e EXIT=0 at the head, 21 passed (3.5m).
-        test/e2e/merchants.spec.ts:120 runs under test.use({ viewport: {
-        width: 390, height: 844 } }) declared at :118 in the spec file, so
-        playwright.config.ts is unchanged, which git diff --name-only
-        68fc7ee..HEAD confirms.
+        RE-WALKED and re-measured by me at 390x844 on BOTH required
+        screens plus the third the fix added: merchant review scrollWidth
+        390, month view 390, confirm preview 390.
       - >-
-        BOTH SCREENS, both assertions present: the spec asserts
-        document.documentElement.scrollWidth <= 390 at
-        test/e2e/merchants.spec.ts:181 after /merchants and again at
-        test/e2e/merchants.spec.ts:197 after /?month=2026-08, and sweeps the
-        rendered group labels on each.
+        npm run test:e2e EXIT=0, 21 passed, including
+        test/e2e/merchants.spec.ts:129 under test.use({ viewport: { width:
+        390, height: 844 } }) declared in the spec file, so
+        playwright.config.ts is still untouched.
       - >-
-        THE TWO REPORTED PRE-EXISTING DEFECTS, REPRODUCED BY ME rather than
-        taken on the report's word. Restoring src/app/globals.css to its
-        base content at 68fc7ee and running the spec: failed at
-        test/e2e/merchants.spec.ts:181 with 'Received: 462', the reported
-        merchant-review value exactly. Restoring the head stylesheet and
-        reverting ONLY the .month-grid rule to the base fixed rail track:
-        failed at test/e2e/merchants.spec.ts:197 with 'Received: 424', the
-        reported month-view value exactly. Both restored, tree clean, spec
-        green again.
-      - >-
-        The claim that neither defect was visible before is consistent with
-        what I read: the M3-P1 phone spec at test/e2e/navigation.spec.ts:180
-        signs up a household with no import, so neither .merchant-row nor
-        .month-grid is in the document.
-      - >-
-        The desk layout is not collateral damage: the flex replacement gives
-        .month-spend flex-grow 1 and .month-rail flex-grow 0 with a
-        --layout-rail basis, which reproduces the old minmax(0,1fr) plus
-        fixed track on a wide screen, and the desktop and multi-locale
-        month-view specs pass inside the same 21.
+        The two pre-existing overflows I reproduced in round 0 at 462 and
+        424 remain fixed; the stylesheet is unchanged in this round
+        (src/app/globals.css appears in the phase diff against 77da0c6 but
+        not in the delta 646b05c..2f8b62d).
   - id: "6.8"
     quote: >-
       Privacy gate, both halves executed with a probe list read from the
@@ -801,36 +1004,26 @@ criteria:
     met: true
     evidence:
       - >-
-        EXECUTED BY ME at review time with a probe list derived from BOTH
-        real uploads in the container, referred to only by their 8-hex
-        prefixes 39bada64 and 0f79fa3d, extracted through the shipped pdf
-        extractor and line reconstruction, never written to disk inside the
-        repository and never quoted anywhere in this document.
+        RE-EXECUTED BY ME at the delta head with 268 probes derived at
+        review time from both real uploads: iban 16, ref 68, card 80 in
+        every grouping shape, holder 18, merchant 35, amount 3, date 48.
       - >-
-        268 probes across all five promised categories plus the holder tail:
-        iban 16, ref 68, card 80 (every grouping shape of every 16-digit run
-        plus each four-group), holder 18, merchant 35, amount 3 (thousands
-        form), date 48.
+        Half (a) whole worktree and half (b) over the 15 changed paths:
+        ZERO hits in every tight category, iban, ref, card and holder-
+        name.
       - >-
-        HALF (a), git grep -lFI over the whole worktree: zero hits for iban,
-        ref, card and holder. The only hits at all are merchant 5, amount 2
-        and date 2, and every one of those probes ALSO matches at the phase
-        base 68fc7ee, so this phase introduced none of them. They are the
-        deliberately over-inclusive probes: any token of five or more
-        letters on a card row, which collects grammar vocabulary rather than
-        statement content.
+        The over-inclusive categories produce 5 merchant, 2 amount and 2
+        date hits that also match at 77da0c6, plus TWO that do not. I
+        located and resolved both by reading the committed artifacts: a
+        quoted generic Dutch card word in a captured test-failure
+        transcript at delivery/work-history/m3-p6-notes.md:400, and the
+        generic Dutch word for a customer-service line inside a synthetic
+        test string at test/domain/merchant-review.test.ts:382. Neither is
+        an identifier, a holder name or a merchant string from either
+        file.
       - >-
-        HALF (b), the same probes restricted to the 13 paths in git diff
-        --name-only 68fc7ee..HEAD: merchant 3 and amount 1, all four also
-        matching at the base.
-      - >-
-        The real PDFs were present in this executing container, so the not-
-        witnessed escalation branch does not apply.
-      - >-
-        The committed fixture is visibly synthetic: test/fixtures/card-
-        descriptors.csv uses 4000 1234 5678 9010, JANSSENS PIETER,
-        KOFFIEHUIS DE MOLEN, SUPERMARKT DE LINDE and BE68539007547034, none
-        of which is a probe hit.
+        The real PDFs were present in this container, so the not-witnessed
+        branch does not apply.
   - id: "6.9"
     quote: >-
       npm run typecheck && npm run lint && npm test exit 0 and npm run
@@ -839,23 +1032,18 @@ criteria:
     met: true
     evidence:
       - >-
-        All four fast gates executed by me at the head with the five local
-        env values pinned: npm run typecheck EXIT=0, npm run lint EXIT=0,
-        npm run gate:tokens EXIT=0, npm test EXIT=0 with Test Files 28
-        passed (28) and Tests 322 passed (322), zero skipped and zero todo.
+        RE-RUN IN FULL at 2f8b62d with the five env values pinned local:
+        npx prisma generate EXIT=0, npm run typecheck EXIT=0, npm run lint
+        EXIT=0, npm run gate:tokens EXIT=0, npm test EXIT=0 with 338
+        passed and zero skipped.
       - >-
-        npm run test:e2e EXIT=0, '21 passed (3.5m)', across BOTH projects:
-        20 under chromium and 1 under chromium-prod, the latter a real
-        production build the gate itself made.
+        npm run test:e2e EXIT=0, "21 passed (3.2m)", 20 under chromium and
+        1 under chromium-prod against a production build the gate itself
+        made.
       - >-
-        The golden journey is unmodified and green: git diff --name-only
-        68fc7ee..HEAD contains no test/e2e/golden-journey.spec.ts, and item
-        4 of the run is 'golden journey: three files, two profiles, one
-        month view whose books close (19.5s)'.
-      - >-
-        npx prisma generate EXIT=0 beforehand. npm ci EXIT=0 under the
-        ambient node v26.7.0; under the pinned engine it fails, which is
-        raised separately as CR-M3P6-05 and is pre-existing at the base.
+        The golden journey is unmodified and green: it is item 4 of the
+        run at 15.4s and test/e2e/golden-journey.spec.ts is not in the
+        phase diff.
   - id: "6.10"
     quote: >-
       grep for the merchant-source expression over src/, where the grep is
@@ -894,61 +1082,20 @@ criteria:
     met: true
     evidence:
       - >-
-        GREP ONE, executed by me verbatim: grep -rlE 'counterpartyName \?\?
-        [A-Za-z_]*\.?description' src/ returns EXACTLY THREE files,
-        src/modules/ledger/domain/corrections.ts,
-        src/modules/import/domain/dedup.ts and
-        src/modules/merchants/domain/normalise-counterparty.ts, the last
-        being the module that exports the shared helper. Exit 0, count 3,
-        the number the criterion demands.
+        RE-WALKED, all three original greps executed by me at 2f8b62d: the
+        operand-bearing pattern matches EXACTLY THREE files
+        (corrections.ts, dedup.ts, normalise-counterparty.ts); the frozen-
+        recipe import grep exits 1; both former call sites still import
+        the specifier.
       - >-
-        GREP TWO, the negative half: grep -nE 'normalise-
-        counterparty|merchants/(domain|application)' over
-        src/modules/import/domain/dedup.ts and
-        src/modules/ledger/domain/corrections.ts exits 1 with no output, so
-        neither frozen recipe imports the helper.
+        The SQL half added this round holds too: one occurrence of the SQL
+        form, two uses of the shared fragment, pinned by a file-reading
+        test I falsified by mutation.
       - >-
-        GREP THREE, the positive half: grep -rln 'counterpartyText' src/
-        matches BOTH former call sites.
-        src/modules/ledger/application/interpret-window.ts:10 imports it
-        from '@/modules/merchants/application' and uses it at :88.
-        src/modules/merchants/domain/merchant-review.ts imports it across
-        lines 10 to 13 from './normalise-counterparty' and re-exports it at
-        :20; the import is multi-line, so a grep written as a single-line
-        'import {...} from' pattern would miss it while grep -l for the
-        specifier does not.
-      - >-
-        THE REVIEW-READING HALF, which is mine to do: no fourth definition
-        exists in a form the literal pattern cannot see. grep -rnE
-        'counterpartyName\s*(\?\?|\?|!==|===|==|!=)' src/ returns, besides
-        the three, only persistence null-mappers
-        (src/modules/import/adapters/import-repository.ts:271 and :360,
-        src/modules/merchants/adapters/merchant-repository.ts:256,
-        src/modules/ledger/adapters/ledger-repository.ts:65 and :98), type
-        declarations, a header-detector probe at
-        src/modules/import/domain/detect-profile.ts:360, and one preview
-        cell at src/modules/import/ui/profile-confirmation.tsx:100 whose
-        rule is a DIFFERENT one, counterpartyName ?? counterpartyIban ?? "".
-        No ternary on undefined and no equivalent spelling.
-      - >-
-        CAN THE POSITIVE HALF BE SATISFIED BY MOVING CODE? Partly, and the
-        answer matters. merchant-review.ts previously DEFINED the helper and
-        now imports it from a sibling file in the same module, so its half
-        of the positive grep is satisfied by a within-module move alone.
-        What that half cannot be satisfied by is the ledger's:
-        src/modules/ledger/application/interpret-window.ts previously wrote
-        the expression itself and now reaches the merchants module's
-        published application interface for it, which is a real cross-module
-        unification and is exactly what the negative grep's drop from four
-        files to three measures. The two halves together do witness D-11's
-        operative content; the positive half alone would not.
-      - >-
-        WHAT THIS CRITERION CANNOT SEE, stated because the criterion is the
-        only witness D-11 has: two further live implementations of the same
-        rule exist in raw SQL at src/modules/overview/adapters/overview-
-        repository.ts:95 and :266. Raised as CR-M3P6-02. The criterion is
-        met as written; D-11's claim of a single definition is true only
-        within TypeScript.
+        The criterion is met MORE fully than in round 0, because the copy
+        it was structurally blind to is now one copy behind its own pin.
+        What is still not witnessed by anything is that the SQL rule and
+        the TypeScript rule say the same thing, which is CR-M3P6-07.
 
 deviations-judged:
   - deviation: >-
@@ -958,70 +1105,66 @@ deviations-judged:
       5)".
     serves-plan-intent: true
     reasoning: >-
-      Judged by me rather than accepted: I re-took the same measurement
-      myself through the same substitute transport and got the same number,
-      zero, and I confirmed the project ref ygsarzjqosqmkqibqogk resolves to
-      the project named 'pulse' rather than to the Hemma project the ambient
-      credentials point at, which is the failure fleet warning 1 exists
-      against. No pulse database password exists in this container, so the
-      pinned-pooler route was not available to either of us, and the
-      substitute preserves what the plan cared about: the right project, a
-      read-only count, and no use of the ambient DATABASE_URL. One property
-      is weaker and I record it rather than let it pass silently: the
-      management API session is not a read-only connection
-      (current_setting('transaction_read_only') returned 'off'), so the
-      read-only guarantee comes from the statement text and not from the
-      transport. For a SELECT count that is sufficient; for anything that
-      touched rows it would not be, and a future step reusing this route
-      should say so.
+      Unchanged from round 0 and my judgement is unchanged: I re-took the
+      measurement myself through the same substitute transport at the
+      round-0 head and got the same zero, and I confirmed the project ref
+      resolves to the project named pulse rather than to the ambient
+      credentials fleet warning 1 forbids. The transport is not a read-only
+      connection and the read-only property comes from the statement text;
+      that is sufficient for a SELECT count and should be said out loud by
+      any future step reusing the route.
   - deviation: >-
       files-to-touch, which does not list src/app/globals.css.
     serves-plan-intent: true
     reasoning: >-
-      Discharged rather than merely reasonable: commit 29c4745 on main,
-      'plan: declare src/app/globals.css in M3-P6 extras before the scope
-      gate', amends the plan phase so the file is declared, and the composed
-      brief I was given carries 'extras: - src/app/globals.css'. The
-      worktree's own plan copy still reads 'extras: []' because this branch
-      is based on 68fc7ee, which is why the deviation was correct to declare
-      at the time it was found. On substance I verified the justification
-      instead of taking it: both overflows are pre-existing and I reproduced
-      both values exactly (462 and 424) by reverting the stylesheet, and
-      neither is fixable from a listed file because the offending rules,
-      .merchant-row's non-wrapping flex and .month-grid's fixed rail track,
-      live only there. The edits are wrapping-only and token-only, and the
-      desk layout is preserved.
+      Discharged by amendment 29c4745 on main, which this branch carries,
+      and the justification is one I verified by reproduction rather than by
+      reading: reverting the stylesheet reddens the phone spec at 462 on the
+      merchant review and, with only the month grid reverted, at 424 on the
+      month view. The edits are wrapping-only and token-only and the desk
+      layout is preserved.
   - deviation: >-
       files-to-touch, which lists no test/application path, while criterion
       6.5 asks for "an import test re-importing the card fixture".
     serves-plan-intent: true
     reasoning: >-
-      The test does live in a declared file, test/domain/merchant-
-      review.test.ts, and it imports the existing fakes from
-      test/application/fake-import-world.ts without modifying them, which
-      git diff --name-only 68fc7ee..HEAD confirms: no test/application path
-      appears in the 13 changed paths. The alternative, a new file outside
-      the declaration, would have been a real excess for no gain. The cost
-      is honest and small and the implementer named it: three describe
-      blocks in a file called 'domain' drive the real import use cases. If
-      the orchestrator wants that cost removed rather than declared, the
-      edit is to add test/application/ to a future phase's files-to-touch
-      and move those blocks, not to undo anything here.
+      Unchanged from round 0. The test lives in a declared file and imports
+      the existing fakes without modifying them; git diff --name-only
+      77da0c6..2f8b62d still lists no test/application path. The cost is a
+      file named domain that drives the import use cases, which is named in
+      the deviation rather than hidden.
   - deviation: >-
       Criterion 6.3's e2e half, "the merchant review and month view specs
       asserting the same two sweeps over rendered group labels", and
       criterion 6.7's phone spec covering both screens.
     serves-plan-intent: true
     reasoning: >-
-      What 6.3 asks for is that the same two sweeps run over the rendered
-      labels of both surfaces, and that is what ships: one spec at
-      test/e2e/merchants.spec.ts:120 navigates to /merchants, sweeps, then
-      to /?month=2026-08 and sweeps again with the same helper defined once
-      at :107. I tested that the second surface is genuinely covered rather
-      than nominally: removing maskCardNumbers from the month view's
-      GroupLabel reddened the run at test/e2e/merchants.spec.ts:185, which
-      is the month-view sweep and not the merchant-review one. Placing it in
-      a second file under test/e2e/month-view.spec.ts would have added an
-      undeclared path for no additional coverage. The one thing lost is that
-      a reader looking for month-view assertions in month-view.spec.ts will
-      not find these; a pointer comment there would cost nothing.
+      Unchanged in shape and now stronger. One spec sweeps three surfaces
+      with one helper, and I tested that each surface is genuinely covered
+      rather than nominally: unmasking the month view label reddens the
+      month-view sweep, and unmasking the preview cell reddens the preview
+      sweep, at two different lines of the same spec. Placing them in
+      separate files would add undeclared paths for no coverage.
+  - deviation: >-
+      files-to-touch plus the plan's extras at 77da0c6, which do not list
+      src/modules/overview/adapters/overview-repository.ts.
+    serves-plan-intent: true
+    reasoning: >-
+      Serves the plan's intent, and it is the deviation this review's own
+      round-0 finding forced. Both reviewers reached the third copy
+      independently, no declared file could reach it, the edit is contained
+      to hoisting two identical expressions into one fragment with the two
+      reads unchanged in meaning, and it arrives with a pin I falsified by
+      mutation. Amendment cae60ff on main declares the file; the branch has
+      not merged it, so at the branch's own base 77da0c6 the path is still
+      an excess, which the merge cures. I judge the excess acceptable and
+      the amendment the right remedy, not a fix inside the phase.
+
+# d9 MY OWN OUTPUT THROUGH THE SAME SWEEP, as in round 0. 217 high-value
+#   probes from both uploads, git grep -F against this document alone:
+#   ZERO hits in the iban, structured-reference, card-number and
+#   holder-name categories. ONE hit, resolved: the five-letter generic
+#   Dutch word for "card", which is the LABEL the masker is anchored on and
+#   therefore unavoidable in any account of this round; it already appears
+#   throughout the committed source and tests. Not an identifier, a name, a
+#   merchant string, an amount or a date from either file.
