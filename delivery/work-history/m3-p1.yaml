@@ -62,6 +62,12 @@ per-step-commits:
     subject: "test: navigation e2e and catalog parity red witnesses, written before the nav exists"
   - sha: c2aceec
     subject: "feat: shell header navigation, active-route marker, empty-state import link"
+  - sha: 5c23aa4
+    subject: "docs: M3-P1 work history (schema-valid) and incremental work notes"
+  - sha: bb6ea80
+    subject: "test: fix-round witnesses for CR-601 and CR-602, red before the fixes"
+  - sha: 1a0e0d8
+    subject: "fix: NavLink marks a section current on its sub-routes (CR-601)"
 key-decisions:
   - decision: >-
       The active-route marker is computed by a small client island,
@@ -219,6 +225,105 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
+  - gate: "fix round: typecheck, lint, gate:tokens (each rerun at 1a0e0d8, exit 0 apiece)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 3
+    passed: 3
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fix round: fast suite (npm test at 1a0e0d8; 21 files, 252 tests, 0 skipped; includes the deep-path parity test)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 252
+    passed: 252
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fix round: slow suite (npm run test:e2e at 1a0e0d8, pinned env, chromium; 15 tests including the CR-601 sub-route witness, 0 skipped, 15 passed in 2.2m)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 15
+    passed: 15
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+fix-round:
+  - mechanism: >-
+      Exact string equality used as a route-membership test over a
+      hierarchical path space (finding CR-601). The finding was "no link is
+      current on /import/[id]"; the mechanism is that pathname === href
+      answers "is this the same page" when the nav's question is "is this
+      page inside this section". Fixed in the one place the decision lives
+      (isCurrentRoute in nav-link.tsx): non-root hrefs match exact or
+      prefix-plus-slash, the root href stays exact so it is not current
+      everywhere. The rule is recorded at the mechanism's definition and
+      the sibling that consumes its output is named there (the CSS state
+      selector in globals.css).
+    derivation:
+      command: grep -rn "usePathname\|pathname" src/; find 'src/app/(app)' -name 'page.tsx' | sort
+      output: |
+        src/middleware.ts:10:const isAuthPath = (pathname: string): boolean =>
+        src/middleware.ts:11:  pathname.startsWith("/sign-in") || pathname.startsWith("/sign-up");
+        src/middleware.ts:38:  if (!user && !isAuthPath(request.nextUrl.pathname)) {
+        src/middleware.ts:40:    target.pathname = "/sign-in";
+        src/middleware.ts:44:  if (user && isAuthPath(request.nextUrl.pathname)) {
+        src/middleware.ts:46:    target.pathname = "/";
+        src/platform/ui/nav-link.tsx:4:import { usePathname } from "next/navigation";
+        src/platform/ui/nav-link.tsx:10:// after the first click; usePathname is the supported way to read the
+        src/platform/ui/nav-link.tsx:28:const isCurrentRoute = (pathname: string, href: string): boolean => {
+        src/platform/ui/nav-link.tsx:30:    return pathname === "/";
+        src/platform/ui/nav-link.tsx:32:  return pathname === href || pathname.startsWith(`${href}/`);
+        src/platform/ui/nav-link.tsx:44:  const pathname = usePathname();
+        src/platform/ui/nav-link.tsx:45:  const active = isCurrentRoute(pathname, href);
+        src/app/(app)/import/[id]/page.tsx
+        src/app/(app)/import/page.tsx
+        src/app/(app)/merchants/page.tsx
+        src/app/(app)/page.tsx
+    not-covered: >-
+      (Derivation captured AFTER the fix; the pre-fix state of the one nav
+      call site was pathname === href at nav-link.tsx line 30, commit
+      c2aceec, and the middleware lines are byte-identical in both states.)
+      The derivation enumerates pathname consumers under src/ only; no
+      other directory ships routing code today. The middleware's two
+      startsWith calls are the OTHER route-membership decisions and were
+      read, not changed: they guard /sign-in and /sign-up prefixes outside
+      the shell and have no active-marker role. The route listing shows
+      /import/[id] as the only sub-route today; a future sub-route under
+      /merchants or a new top-level section inherits the prefix rule
+      automatically, but a future nav link whose href is a PREFIX of a
+      sibling href (say /import and /imports) would mark both current, and
+      no such pair exists to witness now. Query-string and hash variants
+      are outside pathname by construction and were not probed.
+  - mechanism: >-
+      Comparing a nested structure by its top-level projection (finding
+      CR-602). The finding was "a dropped array entry stays green"; the
+      mechanism is that Object.keys flattens the comparison to one level,
+      so any difference below that level (array length, array-versus-string
+      shape) is invisible to the guard. Fixed by comparing the full leaf
+      path sets (collectLeafPaths in the test: object keys join with dots,
+      array entries append their index), so the difference IS a named path.
+    derivation:
+      command: "python3: per locale, list keys whose values are arrays (with lengths) and keys whose values are neither string nor array, over messages/{en,nl,fr}.json"
+      output: |
+        en arrays: {'prevMonth': 2, 'steps': 3, 'emptySteps': 3} other-non-string: {}
+        nl arrays: {'prevMonth': 2, 'steps': 3, 'emptySteps': 3} other-non-string: {}
+        fr arrays: {'prevMonth': 2, 'steps': 3, 'emptySteps': 3} other-non-string: {}
+    not-covered: >-
+      The derivation covers the three committed catalogs at the fix-round
+      head: three array-valued keys, no deeper nesting, no non-string
+      scalars. The repaired test recurses arbitrarily, so deeper shapes a
+      later phase adds are compared without re-derivation, but VALUES are
+      still out of scope on purpose: a translation that is byte-identical
+      to the English source, or one missing an ICU placeholder such as
+      {count} or an <amt> tag that its siblings carry, passes this guard.
+      Placeholder parity is a different check with real legitimate
+      asymmetries (plural arms differ per language) and is not smuggled
+      into this one; recorded as the standing residue.
 claims:
   - id: M3P1-C1
     kind: coverage
@@ -297,6 +402,45 @@ claims:
           That only works in a Server Component ... Build failed because of
           webpack errors. Layout restored afterwards; git status clean of
           src changes.
+  - id: M3P1-C6
+    kind: coverage
+    statement: >-
+      The CR-601 sub-route witness is real: red with a captured numeric
+      exit code against the exact-match NavLink, green after the
+      isCurrentRoute fix, and it also asserts the converse (nav-overview
+      and nav-merchants NOT current on /import/<id>), so the fix could not
+      pass by marking everything current.
+    settled-by:
+      executed-construction:
+        command: "pinned env npx playwright test -g \"import link stays current\" at bb6ea80 (pre-fix src); then pinned env npm run test:e2e at 1a0e0d8"
+        exit-code: 1
+        output: >-
+          Red: exit 1, "Error: expect(locator).toHaveAttribute(expected)
+          failed" at navigation.spec.ts:110
+          (getByTestId("nav-import")).toHaveAttribute("aria-current",
+          "page"), 1 failed. Green: exit 0, 15 passed (2.2m) including
+          "import sub-route: the import link stays current on the confirm
+          step (CR-601)".
+  - id: M3P1-C7
+    kind: coverage
+    statement: >-
+      The CR-602 repair follows R-037a in full: the lying test was shown
+      green against the dangerous state first (old top-level test, nl
+      emptySteps cut to two entries: 3 passed, exit 0), then the repaired
+      deep-path test reddens under two structurally different members and
+      names the drifted paths, then green with intact catalogs.
+    settled-by:
+      executed-construction:
+        command: "mutate nl emptySteps to length 2, npx vitest run test/app/catalog-parity.test.ts (old then new test); restore; replace fr prevMonth array with a string, rerun; restore, rerun"
+        exit-code: 1
+        output: >-
+          Old test on mutated nl: Tests 3 passed (3), exit 0 (the
+          reviewer's construction, reproduced). New test, member A: "paths
+          in en but not in nl: expected [ 'emptySteps[2]' ] to deeply
+          equal []", 1 failed. New test, member B: "paths in en but not in
+          fr: expected [ 'prevMonth[0]', 'prevMonth[1]' ] to deeply equal
+          []", 1 failed. Restored: 3 passed (3), exit 0, git diff over
+          messages/ empty.
   - id: M3P1-Q1
     kind: open-question
     statement: >-
