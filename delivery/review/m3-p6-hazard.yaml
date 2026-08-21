@@ -1,0 +1,360 @@
+# Clean-room review, HAZARD contract, phase M3-P6 (card-descriptor merchant
+# grouping plus display-only card-number masking, severity high).
+#
+# Head reviewed: e0704a5 on claude/m3-p6-card-merchant-grouping, in the
+# isolated clone claude/m3-p6-review-hazard. Phase base 07a052e (the plan
+# commit 68fc7ee introduces no executable change over it).
+#
+# HEADER DISCLOSURES.
+# DR-0003: Claude-family verdict, review-contract hazard, framing
+# destructive-paths, under the same-family varied-lenses allowance; pairs
+# with the criteria review for distinct-contract and distinct-framing.
+#
+# ESCALATION (the plan permits a harm its own criteria cannot see).
+# Criterion 6.2 witnesses non-collapse on exactly one fixture pair, two
+# merchants sharing a chain prefix and a city. Two collapse paths this
+# phase introduces are outside what that pair can reach, and both were
+# probe-demonstrated here: the rail-prefix pattern's unpinned rail token
+# (finding HZ-M3P6-03) and the trailing-city loop newly unblocked once the
+# card tail is removed (finding HZ-M3P6-08). A collapse merges two
+# merchants' spend into one month-view group and, once the owner names it,
+# writes ONE stored EXACT rule over both, which is a persistent
+# misattribution that no total and no criterion reveals. Neither reaches
+# any shape observed in the real statements today, so this is recorded as
+# an escalation rather than as a stop-for.
+#
+# DATABASE: not touched. The criteria reviewer owns the local stack. Every
+# result below is static analysis, a runtime import-closure walk, or a
+# probe executed against the shipped modules under Node v26.7.0. The real
+# uploads were read for structural probes and are referred to by 8-hex
+# prefix only (fleet warning 9): 39bada64 Belfius current account,
+# 0f79fa3d KBC card. No statement content appears anywhere in this file.
+#
+# GATES RE-RUN AT THE HEAD IN THIS CLONE (Node v26.7.0):
+#   npm run typecheck  -> tsc --noEmit, EXIT=0
+#   npm run lint       -> eslint ., EXIT=0
+#   npx vitest run     -> 28 files, 322 passed (322), EXIT=0
+#   npm run test:e2e   -> NOT RUN. It needs the local Postgres and Supabase
+#     stack, which this review is forbidden to touch. Criteria 6.3's e2e
+#     half, 6.7 and 6.9's e2e half are therefore NOT WITNESSED by this
+#     reviewer and are left to the criteria lane.
+#
+# ============================================================
+# WHAT WAS PROBED, INCLUDING THE HAZARDS THAT COULD NOT BE REACHED
+# ============================================================
+#
+# (1) THE FROZEN DEDUP RECIPE (hazard H6.1). CLEAN, by three independent
+#     probes rather than by reading the diff.
+#   1a RUNTIME IMPORT CLOSURE, value imports only, type-only imports
+#      excluded because they are erased before anything runs. The closure
+#      of src/modules/import/domain/dedup.ts is 8 files and the closure of
+#      src/modules/ledger/domain/corrections.ts is 4 files. ZERO
+#      merchants-module files appear in either. The walker was validated in
+#      both directions on the same tree: the same walk over
+#      src/modules/ledger/application/interpret-window.ts returns 9
+#      merchants files at the head and 0 at the base, which is exactly the
+#      edge this phase adds.
+#   1b BYTE EQUALITY OF THE CLOSURES. The two closures make 12
+#      comparisons over 11 distinct files, and every one compares
+#      byte-identical between 07a052e and e0704a5 (cmp, 12 of 12 SAME). The
+#      recipe cannot have moved because no file that computes it changed.
+#   1c DEDUP KEYS DERIVED BEFORE AND AFTER, over a fixture corpus, through
+#      the real detector, the real parser and the real assignDedupKeys: 21
+#      committed CSV fixtures, two account ids each, 160 keys plus one
+#      deliberate parse failure. Base and head output compare byte-identical,
+#      md5 101fd61b1599a56a0659bddc036be47b on both sides. The corpus
+#      exercises both key paths: 116 natural keys and 44 hash keys, and the
+#      hash path is the one whose input is the merchant-source text.
+#   1d THE SAME OVER REAL DATA. Dedup keys for the 39 parsed rows of
+#      39bada64: head md5 = base md5 = a7bd4025599ca39b53647372975c37d4.
+#   1e THE GREP PIN, executed: grep -rlE 'counterpartyName \?\?
+#      [A-Za-z_]*\.?description' src/ returns exactly three files, the
+#      shared helper plus the two frozen siblings; the bare literal returns
+#      five, which is the number the plan predicted. Neither frozen file
+#      names any merchants path outside a comment.
+#   1f THE SQL SIBLING. The third implementation of the merchant-source
+#      rule is SQL, at src/modules/overview/adapters/overview-repository.ts:95
+#      and :266, and the two line numbers the new comment cites are correct.
+#      CAN IT DISAGREE TODAY? No. COALESCE returns the description for SQL
+#      NULL and the TypeScript nullish coalescing returns it for null and
+#      undefined; both return an empty counterpartyName unchanged, so the
+#      two agree on every value Prisma can produce. WHAT A FUTURE
+#      DISAGREEMENT WOULD DO, traced through the code rather than assumed:
+#      the SQL value is only the SOURCE text, and month-projection.ts:80
+#      re-groups it in TypeScript under text:normalise(...) and SUMS the
+#      pre-groups, so a disagreement moves no total. What it moves is the
+#      month view's unresolved GROUPING and LABEL away from the merchant
+#      review's, so a naming made on one screen would leave the other
+#      screen's group unresolved. Filed as HZ-M3P6-05.
+#
+# (2) STORED-DECLARATION DETACHMENT (hazard H6.3). MOSTLY DEFUSED, one
+#     trap left armed.
+#   The zero-rule branch is correctly selected and the machinery that makes
+#   the NEXT change loud is present and real: the pinned regression table in
+#   test/domain/normalise-counterparty.test.ts:141 grew from 18 rows to 26, covering
+#   every pattern family including the card grammar, it carries a
+#   deliberate STARBUCKS OXFORD trap pin at test/domain/normalise-counterparty.test.ts:162 whose purpose is to
+#   redden when the city list widens, and the contract comment at
+#   src/modules/merchants/domain/normalise-counterparty.ts:71 now states
+#   that the next change inherits the obligation and that the count may no
+#   longer be zero. An idempotency test at :215 backs the re-normalisation
+#   branch.
+#   CAN A RULE WRITTEN TODAY STOP MATCHING AFTER A FUTURE STRIP WIDENS?
+#   Yes, and one such widening is the fix this review asks for. Every
+#   second-rail key produced today ends in the residue that finding
+#   HZ-M3P6-06 asks to strip, so a rule the owner writes on a second-rail
+#   group this week detaches the moment that strip lands. The pin makes
+#   that loud rather than silent, which is the contract working, but the
+#   trap is armed by the very gap the phase left open.
+#
+# (3) MASKING AS A LIE SURFACE (hazards H6.4, H6.6, H6.7). THE CONTAINMENT
+#     HOLDS. THE PAYLOAD DOES NOT.
+#   CONTAINMENT, probed and clean. A reverse runtime-closure sweep over
+#   every .ts and .tsx file under src/ finds exactly SEVEN files from which
+#   the masking helper is reachable at runtime: the helper, the two label
+#   components, their two module ui barrels and the two pages. No domain
+#   file, no application file, no adapter and no test fixture can reach it,
+#   so the masked string can never become a rule pattern, a dedup key,
+#   rawLine, rawContent or an aggregation key.
+#   THE ADVERSARIAL NAMING CASE, executed end to end over the committed
+#   fixture through the real buildMerchantReview and the real assignMerchant
+#   with an in-memory repository: for the group whose label IS masked on
+#   screen, the hidden submitted value is the UNMASKED normalised text, the
+#   stored rule kind is EXACT and its pattern equals that value, and the
+#   counterfactual is what proves the hazard was real: a rule written on the
+#   MASKED label matches 0 of the 13 fixture rows while the rule written on
+#   the unmasked value matches 1 of 1. The one-merchant round trip resolves
+#   5 rows across 2 months, including the 2 rows printed with the
+#   partially masked tail, from a single naming.
+#   MONETARY STRINGS. Masking altered a Belgian-amount-shaped substring in
+#   0 of the 27 head keys of 39bada64, and a dot-thousands amount is
+#   unchanged by construction because the helper's run pattern does not
+#   cross a comma. The normaliser, not the masker, is where a monetary
+#   string gets mangled; see HZ-M3P6-04.
+#   THE PAYLOAD IS AIMED AT THE WRONG ROWS. Measured on real data: of the
+#   27 head keys of 39bada64, maskCardNumbers changes 5, and 0 of those 5
+#   are card rows while 5 of 5 are NOT. Of the 16 head keys the KBC card
+#   statement produces once M3-P3 merges, it changes 1, also not a card
+#   row. The reason is structural rather than accidental: the normaliser
+#   already removed the card number from every card key, so on observed
+#   data the masker only ever fires on something else. See HZ-M3P6-01 and
+#   HZ-M3P6-07.
+#
+# (4) OVER-STRIPPING AS SILENT MERGING (hazard H6.2). NO REAL PAIR
+#     COLLAPSES. TWO CONSTRUCTED PAIRS DO.
+#   THE REAL 15 CARD ROWS, using the predicate the work history writes down
+#   at delivery/work-history/m3-p6.yaml:161, produce 15 distinct keys before
+#   the change and SIX after it. Under the broader predicate that also
+#   accepts the bare label word and X-masked groups, 23 rows produce 20 keys
+#   before and 11 after. Across all 39 rows: 36 keys before, 27 after.
+#   EVERY MERGE INSPECTED. Four head keys absorb more than one base key.
+#   All four are card-only, and reading each merged set confirms every one
+#   is the same merchant at the same location differing only in date and
+#   amount. NO cross-merchant collapse exists in the real corpus. Two real
+#   sibling branches of one chain that differ only in a directional suffix
+#   stay two keys, which is the H6.2 property holding on real vocabulary.
+#   ADVERSARIAL PAIRS, ten of them, built in the real grammar with invented
+#   values. Six behave other than a reviewer would want; two of those six
+#   are NEW at this head (base keys differ, head keys are equal) and are
+#   filed as HZ-M3P6-03 and HZ-M3P6-08; three are pre-existing at the base
+#   and unchanged by this phase (a city-final descriptor with no country
+#   marker, a merchant whose own last name token is a city token, and two
+#   second-rail rows of one chain in two cities, all of which already
+#   collapsed before this phase and are recorded here so the next reviewer
+#   does not spend the budget on them again); the sixth is the cross-rail
+#   split filed as HZ-M3P6-06.
+#
+# (5) UNDER-STRIPPING ON THE KBC FORMAT. CLEAN, and M3-P3 does not conflict.
+#   The three committed KBC card CSV fixtures pass through the new grammar
+#   with ZERO key changes and zero new merges: 0 rows carry the card-number
+#   label and 0 match the rail-prefix anchor.
+#   The real 0f79fa3d does not detect at this head (layout-unsupported,
+#   the KBC template is on the unmerged M3-P3 branch), so the decisive
+#   probe was run ACROSS the two branches: M3-P3's KBC template parsing the
+#   real 0f79fa3d, with this head's normaliser. Result: 22 rows, 0 carrying
+#   the card-number label, 0 matching the rail prefix, 16 distinct keys
+#   before and 16 after, ZERO rows whose key changed, ZERO new merges. The
+#   new grammar does not mis-fire on the card-statement format.
+#   FILE-LEVEL CONFLICT: none. M3-P3 touches 11 paths and M3-P6 touches 15,
+#   and the two sets are disjoint. M3-P3 touches no merchants or ledger file.
+#   The one cross-branch consequence is in HZ-M3P6-01.
+#
+# (6) FACTS AND THE USUAL REGRESSIONS. CLEAN.
+#   git diff 07a052e..HEAD over prisma/, package.json and package-lock.json
+#   is EMPTY (0 files), so no schema migration and no dependency was added.
+#   The src diff introduces no prisma create, update, upsert or delete on
+#   transactions or imports, and no parseFloat, no Number( and no toFixed,
+#   so integer cents are untouched. Masking is unreachable from any
+#   persistence path, proven by the reverse closure in (3).
+#
+# (7) THE PRIVACY GATE (hazard H6.5), RE-EXECUTED INDEPENDENTLY rather than
+#   read from the work history. Probes were derived at run time from both
+#   real uploads, through both branches' parsers and the raw extractor, in
+#   the exact categories criterion 6.8 names: IBANs in both printed forms,
+#   the card number in every grouping shape, holder-name tokens, the whole
+#   normalised merchant keys, and the identifier fragments in the two file
+#   names. Result over the whole worktree AND over the 15 files this phase
+#   adds or modifies: 0 holder-name hits, 0 merchant-string hits in scope,
+#   and the ONLY identifier hits are the two 8-hex upload prefixes, which
+#   fleet warning 9 sanctions as the way to refer to the files. A broader
+#   sweep that also included ordinary three-token spans hit the phase's
+#   files on exactly two probes, both of which are pure payment-rail
+#   vocabulary and neither of which is an identifier, a name, a merchant
+#   string, an amount or a date. THE GATE PASSES.
+#   THIS DOCUMENT WAS SWEPT THE SAME WAY, because a review that reads the
+#   real files is itself a leak surface: the 893-probe high-entropy sweep
+#   returns nothing against it, and the category-exact sweep returns only
+#   the two 8-hex prefixes. Every string quoted in a finding below is
+#   invented, re-derived through the shipped helper after the scrub so the
+#   quoted output is captured rather than hand-written.
+#
+# ============================================================
+# VERDICT: FIX-ROUND-NEEDED.
+# ============================================================
+# The destructive paths the phase was built against are closed and were
+# closed by execution, not by assertion: the frozen recipes are provably
+# untouched, no real merchant pair collapses, the stored rule subject is
+# the unmasked text and a masked one would match nothing, the facts layer
+# is unreachable from the masker, and no real statement content is in the
+# tree. What fails is the masking helper's payload, whose own comment makes
+# a safety claim a probe falsifies and which on real data masks zero card
+# numbers and five non-card identifiers, plus two new collapse paths and a
+# cross-rail split that the phase's fixture cannot see.
+kind: finding
+verdict: FIX-ROUND-NEEDED
+produced-by: claude
+findings:
+  - id: HZ-M3P6-01
+    severity: high
+    evidence:
+      - "FALSE CLAIM IN A SHIPPED COMMENT (clause R-087). src/platform/ui/mask-card-number.ts:41 states: the separator may appear at most ONCE between two digits, so this can never join two distant numbers into one run. Probe-executed against that exact function, invented values: input SHOP REF 07 24681357913 S renders as SHOP REF **** 7913 S, while each of the two numbers alone renders unchanged. One space is enough, and one space is exactly what separates two adjacent fields after the normaliser has collapsed whitespace."
+      - "THE JOIN EATS CHARACTERS OUT OF AN ALPHANUMERIC TOKEN. Probe, invented values: SHOP Q82B07 24681357913 S renders as SHOP Q82B**** 7913 S, so four characters of a merchant token are replaced by a mask on the screen the user reads to decide what to name."
+      - "REACHED ON REAL DATA, structurally, no content reproduced. Over the 22 rows the real 0f79fa3d yields once M3-P3's template merges, exactly 1 head key is changed by maskCardNumbers, and the change is of this shape: a two-digit tail of an alphanumeric token joined across one space to an eleven-digit reference, rendered as a four-star mask plus four digits. That row is a merchant, not a card row."
+      - "THE HELPER FIRES ON THE WRONG SET. Over the 27 head keys of the real 39bada64, maskCardNumbers changes 5; 0 of the 5 are card rows and 5 of 5 are not. Over the 16 head keys of the real 0f79fa3d it changes 1, also not a card row. Zero card numbers are masked on either real statement because the normaliser removed them from the keys first."
+      - "WHAT IT DOES MASK, probed with invented values in the real grammar: a Belgian IBAN inside a transfer descriptor renders as BE**** 7034; a hyphenated SEPA mandate reference of the form ten digits, a hyphen and three digits renders as a four-star mask plus four digits; a Belgian phone number renders as **** 3456. All three are identities the user reads to tell one unresolved group from another, and all three now render as something that looks like a masked card number and is not."
+      - "Gates are green at the head and do not see this: npx vitest run gives 28 files, 322 passed (322), EXIT=0. The unit assertions at test/domain/merchant-review.test.ts:254 exercise only single-run inputs, so the join case has no test."
+    concrete-edit: >-
+      Narrow the run pattern at src/platform/ui/mask-card-number.ts:46 so a
+      run cannot begin or end adjacent to a letter and cannot cross a
+      field boundary: require the run to be preceded by a start-of-string
+      or a space and followed by an end-of-string or a space, and allow the
+      internal separator only between GROUPS OF FOUR, which is how a card
+      number is printed, rather than between any two digits. Then either
+      delete the sentence at :41 or restate it as the property the new
+      pattern actually has. Add unit assertions for the three probed cases:
+      two short numeric fields one space apart must stay unmasked, a digit
+      tail of an alphanumeric token must stay unmasked, and a spaced IBAN
+      must stay unmasked. If masking an IBAN is intended, say so in the
+      comment and cover it with its own pin, because today the comment
+      names only a long reference as the cost.
+    analysis: >-
+      This is display-only, so it moves no total, detaches no stored rule
+      and never reaches a fact: the reverse closure proves the helper is
+      reachable from seven files, all of them UI. It is filed high anyway
+      because it is a LIE SURFACE on both money screens, because it
+      degrades the identity the owner reads at the exact moment of naming,
+      and because a present-tense safety sentence in a shipped comment is
+      falsified by a probe, which clause R-087 says to raise loudly rather
+      than as a nit. Two distinct references sharing four trailing digits
+      now render as the same label while remaining two distinct groups.
+  - id: HZ-M3P6-02
+    severity: medium
+    evidence:
+      - "The non-destructive floor at src/modules/merchants/domain/normalise-counterparty.ts:273 returns the collapsed UPPERCASE input whenever the pipeline strips a descriptor to nothing. For a card row that means the FULL descriptor, card number included, becomes the grouping key and therefore the stored EXACT MerchantRule pattern that assign-merchant.ts:54 writes."
+      - "Probe-executed with invented values in the real grammar: a card descriptor whose merchant span is empty, and one whose merchant span is only a postal-code city pair, both floor out and their keys carry a 13-to-19 digit separator-insensitive run. The rendered label is masked, so nothing shows on screen, and the unmasked run sits in the key."
+      - "NOT REACHABLE ON OBSERVED DATA, measured: 0 of the 39 real rows of 39bada64 hit the floor. Reachability is the reason this is medium and not high."
+      - "No test covers it. Criterion 6.3's key sweep runs over the committed fixture, whose 13 rows all carry a merchant span, so the fixture cannot reach the floor and the sweep cannot fail there."
+    concrete-edit: >-
+      Add a fixture row whose card descriptor carries no merchant span, and
+      assert in the criterion 6.3 key sweep that its key carries no
+      13-to-19 digit run. Make it pass by applying the card-tail and
+      rail-prefix strips to the floor value as well, so the fallback is the
+      stripped uppercase form rather than the raw one, or by refusing to
+      floor when what was stripped contained a card-number tail.
+  - id: HZ-M3P6-03
+    severity: medium
+    evidence:
+      - "The file states its own rule at src/modules/merchants/domain/normalise-counterparty.ts:124: PIN the accepted shapes, never widen. The pattern seven lines later at :131 opens with an UNPINNED wildcard for the rail token, so it fires on any capitalised word hyphenated to BETALING or AANKOOP, while the only rail names observed are two."
+      - "BETALING and AANKOOP are ordinary Dutch nouns, not rail-only vocabulary, so the wildcard is not a theoretical widening."
+      - "PROBE, invented values, a NEW collapse at this head: the descriptors GROEPS-AANKOOP SAMENTUIN VZW LIDGELD and SAMENTUIN VZW LIDGELD normalise to DIFFERENT keys at the base 07a052e and to the SAME key at the head e0704a5. Two distinct descriptors become one group and, once named, one stored EXACT rule over both."
+      - "Criterion 6.2's witness pair cannot see this: it varies a branch token inside the merchant name, never the leading rail token."
+    concrete-edit: >-
+      Replace the wildcard at src/modules/merchants/domain/normalise-counterparty.ts:131
+      with the pinned alternation of the rail names actually observed, the
+      same way the wallet list beside it is pinned, and add a pinned-table
+      row asserting that a descriptor opening with some OTHER capitalised
+      word hyphenated to AANKOOP keeps that word in its key.
+  - id: HZ-M3P6-04
+    severity: medium
+    evidence:
+      - "The amount pattern at src/modules/merchants/domain/normalise-counterparty.ts:153 is not anchored to the card grammar at all: it strips an amount plus currency ANYWHERE in ANY descriptor, card row or not. Measured on the real 39bada64, it is one of only two reasons a NON-card row's key moved at this head."
+      - "It also mis-parses the space-grouped thousands form, because it requires dot thousands separators. Probed over the real 0f79fa3d, whose reconstructed lines carry that form: a line whose value is a space-grouped thousands amount normalises to a string ending in a single stray leading digit, because only the tail of the number and the currency code were consumed. The residue is a truncated number that reads as a much smaller one."
+      - "3 of the 82 reconstructed lines of the real 0f79fa3d change under the new recipe, and 2 of the 3 change through this pattern; neither is a transaction descriptor today, which is why this is medium."
+      - "The comment above the pattern calls it the transaction's OWN amount, which is what it is for on a card row and is not what the pattern is scoped to."
+    concrete-edit: >-
+      Either scope the amount strip to the card grammar, by requiring it to
+      sit between the merchant span and the card-number label the same way
+      the other card patterns are anchored, or make it whole-number-safe by
+      accepting the space-grouped thousands form and requiring the match to
+      begin at a field boundary so a partial match cannot leave a residue.
+      Add a pinned-table row for the space-grouped form either way, and
+      correct the comment at :150 to say the pattern is global rather than
+      card-scoped if it stays global.
+  - id: HZ-M3P6-05
+    severity: medium
+    evidence:
+      - "The phase makes the merchant-source rule single-definition in TypeScript and pins that with an executable grep (criterion 6.10, verified here: exactly three files). The THIRD implementation, in SQL at src/modules/overview/adapters/overview-repository.ts:95 and :266, gets a comment at src/modules/merchants/domain/normalise-counterparty.ts:26 and NO guard. grep for COALESCE over test/ returns nothing."
+      - "The comment at :31 states the obligation correctly, that a change to the rule must change the COALESCE with it and that a TypeScript grep will not find it, and then leaves the obligation resting on a reader noticing a comment."
+      - "TRACED CONSEQUENCE, not asserted: the SQL value is only the source text and month-projection.ts:80 re-groups and SUMS it in TypeScript, so a divergence moves NO total. It moves the month view's unresolved grouping and label away from the merchant review's, so a naming made on the review screen would leave the month view's group unresolved and still showing the raw descriptor."
+      - "Today the two agree on every value Prisma can produce: SQL COALESCE and TypeScript nullish coalescing both fall through on NULL and both preserve an empty string."
+    concrete-edit: >-
+      Add one cheap structural test beside the existing pins that reads
+      src/modules/overview/adapters/overview-repository.ts and asserts both
+      SQL sites still contain the exact COALESCE expression, the same shape
+      criterion 6.10 uses on the TypeScript side. That converts the comment
+      into a red gate at the cost of a single assertion and needs no
+      database.
+  - id: HZ-M3P6-06
+    severity: medium
+    evidence:
+      - "MEASURED ON THE REAL 39bada64: TWO merchants each produce TWO distinct keys at this head, because the two payment rails leave different residues. Rail one leaves a city token followed by the country text; rail two leaves a residue built from the country text and a Dutch contactless token. Naming one group leaves the other unresolved, which is the outcome the phase exists to remove."
+      - "THE TOKEN IS IN THE LIST IN THE WRONG LANGUAGE. src/modules/merchants/domain/normalise-counterparty.ts:169 carries the ENGLISH contactless token. grep over src/ and test/ shows that token occurs in the noise list and in two assertions and in NO fixture and no real statement, while the DUTCH token it should be occurs in four committed fixtures including the one this phase added, and in both real statements."
+      - "FALSE CLAIM (clause R-087): the comment at :157 says the list is grounded in the committed fixtures, naming the card-descriptor fixture this phase added. The entry at :169 is grounded in no fixture, and the token the new fixture actually carries has no entry."
+      - "Probe, invented values: the same merchant, same city, printed on the two rails normalises to two different keys at this head; that is the fixture gap, because no fixture merchant appears on both rails."
+      - "THE STORED-DECLARATION TRAP THIS ARMS: every second-rail key produced today ends in that residue, so any rule the owner writes on a second-rail group now detaches the moment the token is added to the list. The pinned table makes that loud rather than silent, which is the CR-402 contract working as designed, and it is still a rework the phase could have avoided by landing the token now while the deployed rule count is measured at zero."
+    concrete-edit: >-
+      Add the Dutch contactless token to the noise list at
+      src/modules/merchants/domain/normalise-counterparty.ts:169 in the same
+      change, update the affected pinned rows in
+      test/domain/normalise-counterparty.test.ts, and add a fixture merchant
+      that appears on BOTH rails with an assertion that the two rows produce
+      ONE key, which is the witness criterion 6.1 is missing. Correct the
+      comment at :157 so it does not claim fixture grounding for an entry
+      that has none.
+  - id: HZ-M3P6-07
+    severity: low
+    evidence:
+      - "Because the normaliser removes the card number from every card key first, the masking helper fires on 0 of the card rows of both real statements. Its entire real-world effect is on non-card rows: 5 of 27 keys on 39bada64 and 1 of 16 on 0f79fa3d."
+      - "Criterion 6.3 names ONE permitted exception, the key AND the rendered label of the fixture's legitimate structured-reference row. Executed over the committed fixture, that row's rendered label does NOT contain the run, because the masker removes it, so the label half of the exception is vacuous and the e2e sweep at test/e2e/merchants.spec.ts:112 needs no exception at all."
+      - "The e2e sweep asserts an empty run list for EVERY label with no exception, which is only green because masking is broad. Narrowing the masker per HZ-M3P6-01 may redden it."
+    concrete-edit: >-
+      Record in the work history that the masker is defence in depth rather
+      than the mechanism that removes the card number from the labels, and
+      state which of the two is the load-bearing guard, so the next reader
+      does not narrow one believing the other covers it. If the criterion
+      6.3 exception is meant to be exercised, add an assertion that the
+      reference row's KEY still carries its run, which is the half that is
+      real.
+  - id: HZ-M3P6-08
+    severity: low
+    evidence:
+      - "A NEW collapse at this head, probe-executed with invented values: two branches of one chain in two different cities, printed in the rail-one card shape WITHOUT the trailing country marker, normalise to DIFFERENT keys at the base 07a052e and to the SAME key at the head e0704a5. Removing the card tail leaves the city as the final token, which unblocks the trailing-city loop at src/modules/merchants/domain/normalise-counterparty.ts:236 that the tail previously shielded."
+      - "NOT REACHABLE ON OBSERVED DATA: all 23 real card rows of 39bada64 carry the country marker after the city, so the loop never reaches a city token; measured, 0 real card keys lost a trailing city."
+      - "Criterion 6.2's witness pair cannot see it either, because both of its members carry the marker."
+    concrete-edit: >-
+      Add a pinned-table row for a card descriptor whose city is the final
+      token with no country marker, asserting that two such descriptors
+      differing only in the city stay two keys, and make it pass by not
+      running the trailing-city loop on a descriptor the card grammar
+      matched, or by requiring at least two surviving tokens before the
+      loop may remove a city.
