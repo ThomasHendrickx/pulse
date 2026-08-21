@@ -526,3 +526,98 @@ the two standing work-history extras account for 14. The one excess is
 src/modules/overview/adapters/overview-repository.ts, required by
 HZ-M3P6-05 and CR-M3P6-02, declared in the commit that makes it and in the
 work history's deviations.
+
+# FIX ROUND 2
+
+Hazard delta APPROVE, criteria delta FIX-ROUND-NEEDED. The HZ-M3P6-08
+dispute STANDS: both reviewers verified the reasoning and the hazard
+reviewer implemented its own proposal and confirmed it breaks closure.
+
+## CR-M3P6-06 and 06b (high): key-space closure, broken by my own fix round
+
+The finding is the same hazard I invoked to win the HZ-M3P6-08 dispute,
+introduced by a different route in the round that made that argument. That
+is worth saying plainly: the argument was right and the code shipped in the
+same commit was wrong, and the thing that separated them was that one was
+measured and the other was not.
+
+MEASURED, rows whose key is not a fixed point on the owner's own statement:
+
+    phase base 77da0c6 : 8 of 39
+    round-0 e0704a5    : 8 of 39
+    fix round 1 2f8b62d: 10 of 39     <- the regression
+    this head          : 0 of 39
+
+The base's own 8 are the same mechanism by the other route: the base pattern
+consumed the postal code AND the word behind it, which on an IBAN followed
+by a counterparty name ate the name. So this round closes an inherited hole
+as well as the one it introduced.
+
+CAUSE, one line. POSTAL_CODE_BEFORE_CITY consumed the code alone. In a run
+of four-digit groups only the LAST is followed by a word, so one group left
+per pass and the next pass took the next: P4 P4 P4 W, then P4 P4 W, then
+P4 W. FIX, one lookbehind: a four-digit group that FOLLOWS another
+four-digit group is not a postal code, so no element of a run is eligible.
+
+RED WITNESS, the new corpus against the round-1 pattern:
+
+    Tests  6 failed | 84 passed (90)
+    x "OVERSCHRIJVING NAAR BE68 5390 7541 7034 ENERGIE NOORD BV" normalises
+      to a fixed point
+    x "STORTING VAN BE68 5390 7541 7034 JAN PEETERS" ...
+    x "MEDEDELING 5390 7541 ENERGIE" ...
+    x "MEDEDELING 5390 7541 7034 ENERGIE" ...
+    x "MEDEDELING 5390 7541 7034 9210 ENERGIE NOORD" ...
+    x and the fixed point is reached in ONE application, never eroded by a
+      second  -> expected 7 to be 8
+
+Five structurally different members. The token-count assertion is there
+because the failure is SHRINKING rather than merely differing.
+
+06b: the invariant now has a corpus written from the real token SIGNATURES
+with invented content, beside the recipe it constrains, asserted to a THIRD
+application. Against the phase base and the round-0 head it reddens on 3 of
+19 members, so it would have caught the inherited hole too. Two fixture rows
+carry the shape as well, so the review-subject invariant reaches it, and
+both shapes are pinned under the CR-402 contract.
+
+## CR-M3P6-07 (medium): a test named for something it did not do
+
+Split in two. One test now says only what it pins. The second reads the SQL
+fragment out of the repository file, DERIVES the operand order from the
+text, and evaluates that order against the TypeScript helper over a value
+corpus, so the expectation cannot be updated beside the mutation. The
+review's exact construction, opposite precedence with both pin literals
+updated, now gives:
+
+    Tests  1 failed | 24 passed (25)
+    -> {"description":"D","counterpartyName":"N"}: expected 'D' to be 'N'
+
+It evaluates the SQL's OPERAND ORDER, read from the shipped file. It does
+not run Postgres; that is stated at the test and here.
+
+## CR-M3P6-08 (low): a derivation that did not reproduce
+
+The recorded grep returned 7 at the head, not the 8 recorded, because
+applying the masking split the cells across lines. The derivation is now a
+test using the TypeScript compiler API over LEAF JSX expressions. It finds
+NINE sites in FOUR files, one file more than the grep ever saw. On the
+review's own construction (an unmasked MULTI-LINE cell) it reddens three
+assertions while the old grep finds nothing in that file at all. The gap row
+added last round now has an e2e guard over the four gap-row test ids.
+
+## CR-M3P6-09 (low), HZ-M3P6-09, 10, 11
+
+The masker narrowing is now a DECLARED deviation against criterion 6.3's
+closing clause. The dash drop's whole-token scope is pinned from both sides.
+The card-number label is recognised in Dutch, French and English in BOTH
+definitions, with a test asserting the two lines are byte-identical, because
+a label pinned in only one of them puts a card number on screen or into a
+stored rule depending which was missed. The false test name about a
+postal-city tail is corrected in place and the mid-string case asserted.
+
+## Regression measurement, phase base versus this head
+
+Every committed CSV fixture except the one this phase added still has ZERO
+key changes, the three KBC card fixtures included: 88 rows, 16 changed, all
+16 in card-descriptors.csv.

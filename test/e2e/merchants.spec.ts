@@ -198,8 +198,10 @@ test.describe("card group labels on a phone", () => {
     // carrying a legitimate structured reference still shows it, because it
     // is not a card number and the narrowed helper leaves it alone.
     await expect(
-      page.getByTestId("unresolved-group").filter({ hasText: "ENERGIE NOORD" }),
-    ).toContainText(PERMITTED_EXCEPTION);
+      page
+        .getByTestId("unresolved-group")
+        .filter({ hasText: PERMITTED_EXCEPTION }),
+    ).toHaveCount(1);
 
     // The same merchant paid on BOTH payment rails is ONE group
     // (finding HZ-M3P6-06).
@@ -237,8 +239,8 @@ test.describe("card group labels on a phone", () => {
       await sweepRenderedTexts(gapTexts);
     }
     await expect(
-      page.getByTestId("group-label").filter({ hasText: "ENERGIE NOORD" }),
-    ).toContainText(PERMITTED_EXCEPTION);
+      page.getByTestId("group-label").filter({ hasText: PERMITTED_EXCEPTION }),
+    ).toHaveCount(1);
     await expect(
       page.getByTestId("group-label").filter({ hasText: "KOFFIEHUIS DE MOLEN" }),
     ).toHaveCount(1);

@@ -102,7 +102,67 @@ per-step-commits:
     subject: "M3-P6 fix round 1: the masking helper is grammar-anchored, and every descriptor rendering surface is derived rather than remembered"
   - sha: ba2e822
     subject: "M3-P6 fix round 1: the four mediums, and the escalation's missing guards"
+  - sha: d52ee31
+    subject: "M3-P6 fix round 1: work history fix-round section, and the notes for the round"
+  - sha: 2f8b62d
+    subject: "M3-P6 fix round 1: record the privacy result at the head, including the one hit that was located and resolved"
+  - sha: c6ad07b
+    subject: "M3-P6 fix round 2: restore key-space closure, and make the invariant measure the property rather than the fixture"
 fix-round:
+  - mechanism: >-
+      A KEY THAT IS NOT A FIXED POINT OF THE PIPELINE THAT PRODUCED IT. Fix
+      round 1 changed the postal-city strip from one that consumed the code
+      AND the word after it to one that consumed the code alone. The instance
+      is "an IBAN's last group followed by a counterparty name reads like a
+      postal code followed by a city". The MECHANISM is that a pass which
+      removes ONE element of a repeating run leaves the next element in the
+      same position, so the pass is not idempotent and every application eats
+      one more. That matters here and not merely aesthetically because
+      assign-merchant.ts normalises the SUBMITTED SUBJECT again before storing
+      it as the EXACT rule pattern, and merchant-rule.ts compares that stored
+      pattern to a freshly normalised row: a key that is not a fixed point is
+      a rule that matches nothing, silently, with assignMerchant returning ok
+      and every total staying right. The fix is one lookbehind that says a
+      four-digit group following another four-digit group is not a postal
+      code, so no element of a run is ever eligible.
+    derivation:
+      command: >-
+        A scratch script, run in one process, importing the normaliser at the
+        phase base 77da0c6, at the round-0 head e0704a5 and at the working
+        head, driving all three over the 39 parsed descriptors of the real
+        Belfius upload and printing, for each recipe, the count of rows whose
+        key is not a fixed point together with the content-free TOKEN
+        SIGNATURE of each such key
+      output: |
+        base 77da0c6: rows not closing = 8 of 39
+            x3  W W X P4 P4 P4 W W W W W X D X X D W X P4 P4 W
+            x2  W W W W X P4 P4 W
+            x1  W W D W X P4 P4 W W W
+            x1  W W W X P4 P4 W W W W X X X X D W X P4 P4 W
+            x1  W W W W X P4 P4 W W W W W W
+        round-0 e0704a5: rows not closing = 8 of 39   (same five signatures)
+        fix round 1 2f8b62d: rows not closing = 10 of 39
+        head: rows not closing = 0 of 39
+        EVERY failing signature contains the same fragment, "P4 P4 W" or
+        "P4 P4 P4 W": a run of four-digit groups ending at a capitalised
+        word. That is the mechanism, and the base's own 8 are the same
+        mechanism reached by the other route, the base pattern eating the
+        group AND the name behind it. The lookbehind closes both.
+        The same corpus of 19 synthetic shapes, run against the three
+        recipes: 3 of 19 not closed at the base, 3 of 19 at the round-0 head,
+        0 of 19 at this head.
+    not-covered: >-
+      The measurement is over ONE real statement (39 rows) and one synthetic
+      corpus of 19 shapes written from that statement's token signatures. It
+      does not reach: shapes no Belgian current-account export produces;
+      the KBC card format, whose three committed fixtures and whose real file
+      were measured separately for KEY EQUALITY but not for closure; any
+      descriptor whose non-closure comes from a pattern other than the postal
+      one, which the run-signature reading would not distinguish; and the
+      question of whether a pipeline can be proved closed rather than
+      measured closed, which nothing here attempts. What the suite carries
+      forward is the corpus, asserted to a THIRD application so an erosion
+      that later stabilises is still visible.
   - mechanism: >-
       IDENTIFYING A VALUE BY THE SHAPE IT HAPPENS TO HAVE INSTEAD OF BY THE
       GRAMMAR THAT DEFINES IT. The finding was that maskCardNumbers masked
@@ -159,6 +219,19 @@ fix-round:
       re-runs it rather than trusting a list.
     derivation:
       command: >-
+        SUPERSEDED IN FIX ROUND 2 AND CORRECTED IN PLACE (clause R-087,
+        finding CR-M3P6-08). The command below is the one this round ran and
+        recorded, and it DOES NOT REPRODUCE at the head: applying the masking
+        split the two preview cells across several lines, so the line-based
+        grep stopped finding them and returns SEVEN sites, not eight. The
+        review also constructed the dangerous direction, an unmasked
+        MULTI-LINE cell the grep cannot see at all while the suite stays
+        green. The derivation is now an executable test, "every rendering
+        surface that shows descriptor text is derived, not remembered" in
+        test/domain/merchant-review.test.ts, which walks every .tsx with the
+        TypeScript compiler API, takes LEAF JSX expressions only, and finds
+        NINE sites in FOUR files, one file more than this grep ever saw. The
+        original command, kept so the record of what was run stays honest:
         grep -rnE
         '\{[^}]*\b(description|counterpartyText|counterpartyName|rawLine|\.label|\.text)\b[^}]*\}'
         --include='*.tsx' src/ | sort
@@ -408,6 +481,29 @@ deviations:
       edit to that file. The change is contained, the two SQL reads are
       unchanged in meaning, and a new test reads the file and pins the SQL form.
       Declared in the commit that makes it; the phase wants the amendment.
+  - plan-clause: >-
+      Criterion 6.3's closing clause, "and that the display helper renders
+      such a run masked to its last four digits", where "such a run" is the
+      criterion's own definition, 13 to 19 consecutive digits once spaces,
+      dots and dashes are removed.
+    why: >-
+      The shipped helper masks a run identified by the card-number LABEL, not
+      by the digit shape, so an unlabelled 13-to-19-digit run is NOT masked.
+      Round 0 implemented the criterion's literal reading; the review
+      measured what it cost on the owner's two real statements, ZERO card
+      numbers masked and SIX non-card identifiers damaged (IBANs, a mandate
+      reference, a phone number), because the normaliser had already removed
+      every card number from the keys. Fix round 1 narrowed the helper on
+      that evidence and both reviewers confirmed the narrowing is right. It
+      is nonetheless a change to what the criterion asserts, and R-057b says
+      a deviation is declared by the implementer and judged by the reviewer,
+      never assumed. DECLARED HERE, in fix round 2, after finding
+      CR-M3P6-09 pointed out it was missing. Accepted cost, stated in the
+      helper: a card number printed with no card-number label is not masked.
+      Visible consequence: 6.3(b)'s permitted exception is now USED, and the
+      structured reference renders in both the key and the label. If the
+      criterion's text should match the shipped rule, amend 6.3 on the base
+      branch the way the extras were amended.
 gate-evidence:
   - gate: typecheck
     result: green
@@ -439,8 +535,8 @@ gate-evidence:
   - gate: suite
     result: green
     wrapper-exit-code: 0
-    discovered: 338
-    passed: 338
+    discovered: 372
+    passed: 372
     failed: 0
     skipped: 0
     todo: 0
@@ -744,15 +840,110 @@ claims:
   - id: M3P6-C13
     kind: open-question
     statement: >-
-      A card number printed with NO card-number label is not masked by the
-      display helper, and not stripped by the normaliser either.
+      A card number printed with no card-number label in ANY of the three
+      languages the two definitions now pin is not masked by the display
+      helper and not stripped by the normaliser either.
     still-open-because: >-
-      That is the price of anchoring both to the grammar rather than to the
-      shape, which is what finding HZ-M3P6-01 asked for and what keeps an IBAN,
-      a mandate reference and a phone number legible. No such shape occurs in
-      either real statement or in any committed fixture, measured. If a future
-      export prints one, the answer is a new pinned label shape in both
-      definitions, not a length test in either.
+      CORRECTED IN FIX ROUND 2 (finding HZ-M3P6-10). This claim used to say
+      "no card-number label", which was narrower by one class than the code:
+      the two definitions pinned the DUTCH label only, so a French or English
+      label was equally unmasked and unstripped, and it landed in the key and
+      therefore in a stored rule. Unreachable through the PDF path, where a
+      French statement fingerprints as layout-unsupported, but reachable
+      through the delimited path, which is generic and language-free, and
+      Pulse ships French user-facing content. The fix was small so it was
+      taken: the label vocabulary is now Dutch, French and English in BOTH
+      definitions, the two lines are asserted identical by a test that reads
+      both files, and each language is pinned in the regression table. What
+      remains open is a label in a language none of the three covers, or a
+      card number with no label at all. That residue is the price of
+      anchoring to the grammar rather than to the shape, which is what keeps
+      an IBAN, a mandate reference and a phone number legible; the answer to
+      a new one is a new pinned label in both definitions, never a length
+      test in either.
+  - id: M3P6-C15
+    kind: remedy
+    statement: >-
+      Key-space closure is restored and is now measured on the real corpus
+      rather than on the fixture: the invariant reddens against the recipe
+      that shipped it and against the phase base.
+    settled-by:
+      executed-construction:
+        command: >-
+          The fix-round-2 closure measurement across three recipes in one
+          process, then the new corpus run against the round-1 pattern with
+          the lookbehind reverted, then the same corpus against the phase
+          base and the round-0 head
+        exit-code: 1
+        output: |
+          rows whose key is not a fixed point, on the owner's own statement:
+            phase base 77da0c6 : 8 of 39
+            round-0 e0704a5    : 8 of 39
+            fix round 1 2f8b62d: 10 of 39
+            this head          : 0 of 39
+          RED WITNESS with the lookbehind reverted, corpus in
+          test/domain/normalise-counterparty.test.ts:
+            Tests 6 failed | 84 passed (90)
+            x "OVERSCHRIJVING NAAR BE68 5390 7541 7034 ENERGIE NOORD BV"
+              normalises to a fixed point
+            x "STORTING VAN BE68 5390 7541 7034 JAN PEETERS" ...
+            x "MEDEDELING 5390 7541 ENERGIE" ...
+            x "MEDEDELING 5390 7541 7034 ENERGIE" ...
+            x "MEDEDELING 5390 7541 7034 9210 ENERGIE NOORD" ...
+            x and the fixed point is reached in ONE application, never eroded
+              by a second  -> expected 7 to be 8 tokens
+          Five structurally different members, and the erosion is visible as
+          a TOKEN COUNT rather than only as a difference.
+          The same corpus against the other two recipes: 3 of 19 not closed
+          at the phase base, 3 of 19 at the round-0 head, 0 of 19 here. The
+          invariant would have caught the inherited hole too.
+  - id: M3P6-C16
+    kind: remedy
+    statement: >-
+      The cross-language check on the merchant-source rule now evaluates the
+      SQL's own operand order, so the mutation that passed every guard in
+      round 1 reddens.
+    settled-by:
+      executed-construction:
+        command: >-
+          The review's exact construction, re-run at this head: set the shared
+          SQL fragment to COALESCE(t."description", t."counterpartyName"), the
+          opposite precedence, and update BOTH pin literals the way a pin
+          update looks, then npx vitest run test/domain/merchant-review.test.ts
+        exit-code: 1
+        output: |
+          Tests  1 failed | 24 passed (25)
+          x criterion 6.10, the SQL half ... > the SQL rule, evaluated from
+            its own text, agrees with the TypeScript rule on every value
+            Prisma can produce
+            -> {"description":"D","counterpartyName":"N"}: expected 'D' to be 'N'
+          The expectation is DERIVED from the SQL text rather than written
+          beside it, so no pin literal can be updated to hide the change.
+          Restored afterwards; the suite returns to green.
+  - id: M3P6-C17
+    kind: remedy
+    statement: >-
+      The rendering-surface derivation is executable, multi-line-safe, and
+      reddens on the construction the review used to show the old grep was
+      blind.
+    settled-by:
+      executed-construction:
+        command: >-
+          Revert the confirm preview's descriptor cell to an UNMASKED
+          MULTI-LINE JSX expression, then npx vitest run
+          test/domain/merchant-review.test.ts, and run the round-1 grep over
+          the same file for comparison
+        exit-code: 1
+        output: |
+          Tests  3 failed | 25 passed (28)
+          x the walk finds surfaces at all ... -> expected 4 to be 5 masked
+          x every unmasked descriptor surface is a DECLARED exclusion with a
+            reason -> expected 6 to be 5
+          x the surfaces that must mask, do -> expected false to be true
+          THE ROUND-1 GREP ON THE SAME TREE: exit 1, it finds NOTHING in that
+          file. The walk finds NINE leaf sites in FOUR files at the head, one
+          file more than the grep ever saw (the import route's declared
+          account labels), five masked and four declared exclusions.
   - id: M3P6-C14
     kind: open-question
     statement: >-
