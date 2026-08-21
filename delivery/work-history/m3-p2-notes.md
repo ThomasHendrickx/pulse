@@ -345,3 +345,18 @@ chromium-prod production-mode smoke project (scoped to one spec; suite
 20 tests, 3.3m). PULSE_FIXED_NOW discovery recorded: the app's own
 guard refuses a frozen clock in production mode, so the prod-mode
 project drops it and the smoke asserts only clock-independent states.
+
+## Micro round 2 (deploy-verify loop): bundle the library, name the failure
+
+Deployed probe after PR 17: moduleLoad failed with no name (the probe
+was blind at that stage). This round removes the failure class instead
+of chasing Vercel packaging: pdfjs is BUNDLED (literal dynamic imports
+of pdf.mjs and pdf.worker.mjs, fake worker wired through the pdfjsWorker
+global that pdf.js consults before its bundler-hostile computed import),
+serverExternalPackages and the tracing includes are gone (R-087
+correction in next.config.ts records the two-round history), and the
+probe forwards errorName/errorCode at every stage. Decisive witness: the
+production journey and health probe fully green with
+node_modules/pdfjs-dist RENAMED AWAY. Post-build diff-before-push check
+run per the CR-921 rule: exactly the four intended files, no tool
+rewrites this round.
