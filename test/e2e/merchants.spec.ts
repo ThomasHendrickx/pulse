@@ -168,7 +168,7 @@ test.describe("card group labels on a phone", () => {
 
     await page.getByTestId("confirm-import").click();
     await expect(page.getByTestId("import-result")).toBeVisible();
-    await expect(page.getByTestId("rows-added")).toHaveText("19");
+    await expect(page.getByTestId("rows-added")).toHaveText("21");
 
     // THE MERCHANT REVIEW SCREEN.
     await page.goto("/merchants");
@@ -218,6 +218,24 @@ test.describe("card group labels on a phone", () => {
     await sweepRenderedTexts(
       await page.getByTestId("group-label").allInnerTexts(),
     );
+    // THE RECONCILIATION GAP ROWS, the surface masked in fix round 1 that
+    // had no guard at all (finding CR-M3P6-08). The list can be empty on a
+    // month whose books close, so the sweep runs only when there is
+    // something to sweep, and the assertion that it is swept at all is the
+    // derivation test in the fast gate rather than this spec.
+    const gapTexts = (
+      await Promise.all(
+        [
+          "uninterpreted-row",
+          "unmatched-leg",
+          "in-transit-leg",
+          "unresolved-gap",
+        ].map((testId) => page.getByTestId(testId).allInnerTexts()),
+      )
+    ).flat();
+    if (gapTexts.length > 0) {
+      await sweepRenderedTexts(gapTexts);
+    }
     await expect(
       page.getByTestId("group-label").filter({ hasText: "ENERGIE NOORD" }),
     ).toContainText(PERMITTED_EXCEPTION);

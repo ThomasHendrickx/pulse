@@ -83,9 +83,23 @@ describe("city fragments", () => {
     expect(normaliseCounterparty("PIZZA NAPOLI BRUSSEL")).toBe("PIZZA NAPOLI");
   });
 
-  test("a postal code plus city tail is stripped wherever it sits", () => {
+  // CORRECTED RATHER THAN QUIETLY RENAMED (clause R-087, fix round 2,
+  // finding HZ-M3P6-11). This test used to be named "a postal code plus city
+  // tail is stripped wherever it sits", which stopped being true when fix
+  // round 1 split the rule in two: the postal CODE is removed wherever it
+  // sits, and the CITY it introduces is left to the trailing-city rule,
+  // which by definition only reaches the end of the string. The body only
+  // ever exercised the trailing case, so the suite could not catch the name
+  // going false. The mid-string case is now asserted too.
+  test("a postal CODE is removed wherever it sits, and the city it introduces is left to the trailing-city rule", () => {
     expect(normaliseCounterparty("SUPERMARKT NOORD 9000 GENT")).toBe(
       "SUPERMARKT NOORD",
+    );
+    // Mid-string: the code goes, the city SURVIVES because it is not
+    // trailing. At the phase base both went, taking a distinguishing word
+    // with them.
+    expect(normaliseCounterparty("SUPERMARKT 9000 GENT NOORD")).toBe(
+      "SUPERMARKT GENT NOORD",
     );
   });
 
@@ -240,6 +254,50 @@ describe("the recipe's output is pinned: stored rule patterns depend on it (find
     // ... and an amount on a NON-card row is NOT the transaction's own
     // amount and is left alone.
     ["ABONNEMENT 1.234,56 EUR SPORTCLUB NOORD", "ABONNEMENT 1.234,56 EUR SPORTCLUB NOORD"],
+    // FIX ROUND 2, finding CR-M3P6-06: a run of four-digit groups before a
+    // capitalised word is NOT a postal code plus a city, and the whole run
+    // survives. Two groups and three, because the defect removed one per
+    // application, so a one-group case cannot see it.
+    [
+      "OVERSCHRIJVING NAAR 5390 7541 7034 ENERGIE NOORD BV",
+      "OVERSCHRIJVING NAAR 5390 7541 7034 ENERGIE NOORD BV",
+    ],
+    [
+      "DOMICILIERING MEDEDELING 5390 7541 ENERGIE NOORD",
+      "DOMICILIERING MEDEDELING 5390 7541 ENERGIE NOORD",
+    ],
+    // ... while a single four-digit group before a capitalised word still
+    // reads as a postal code, which is the behaviour the lookbehind keeps.
+    ["BAKKERIJ ZONNEBLOEM 9000 GENT BE", "BAKKERIJ ZONNEBLOEM GENT BE"],
+    // FIX ROUND 2, finding HZ-M3P6-11: the postal CODE goes wherever it
+    // sits and the CITY it introduces survives unless it is trailing.
+    ["SUPERMARKT 9000 GENT NOORD", "SUPERMARKT GENT NOORD"],
+    // FIX ROUND 2, finding HZ-M3P6-10: the card-number label is recognised
+    // in the three languages a Belgian export can print it in, so a French
+    // or English statement's card number leaves the key exactly as a Dutch
+    // one does. Before this round both were left whole in the key and
+    // therefore in the stored rule pattern.
+    [
+      "CARTE-PAIEMENT 04/08 BOULANGERIE DU PARC GENT BE 4,20 EUR CARTE N\u00b0 4000 1234 5678 9010 - JANSSENS PIETER",
+      "CARTE-PAIEMENT BOULANGERIE DU PARC GENT BE",
+    ],
+    [
+      "COFFEE HOUSE THE ANCHOR GENT BE 4,20 EUR CARD NO 4000 1234 5678 9010 - JANSSENS PIETER",
+      "COFFEE HOUSE THE ANCHOR GENT BE",
+    ],
+    // FIX ROUND 2, finding HZ-M3P6-09: the separator drop on a card
+    // descriptor takes WHOLE dash TOKENS and never a character inside a
+    // word, so an intra-word hyphen in a merchant name survives and two
+    // spans differing only by one stay two keys. These rows fix that scope:
+    // widening the drop from tokens to characters reddens both.
+    [
+      "BANCONTACT-AANKOOP - FIETSPUNT DE-KETTING - 9000 GENT BE - 12/08/26 14:35 - CONTACTLOOS - KAART 4000 12XX XXXX 9010 - JANSSENS PIETER",
+      "FIETSPUNT DE-KETTING GENT BE",
+    ],
+    [
+      "BANCONTACT-AANKOOP - FIETSPUNT DEKETTING - 9000 GENT BE - 12/08/26 14:35 - CONTACTLOOS - KAART 4000 12XX XXXX 9010 - JANSSENS PIETER",
+      "FIETSPUNT DEKETTING GENT BE",
+    ],
     [
       "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 06/08 SUPERMARKT DE LINDE NOORD GENT BE 21,40 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
       "SUPERMARKT DE LINDE NOORD GENT BE",
@@ -268,6 +326,75 @@ describe("the recipe's output is pinned: stored rule patterns depend on it (find
   test("the pipeline is idempotent over its own output, so re-normalising stored patterns is safe", () => {
     for (const [, pinned] of PINNED) {
       expect(normaliseCounterparty(pinned)).toBe(pinned);
+    }
+  });
+});
+
+// FIX ROUND 2, finding CR-M3P6-06. THE KEY SPACE MUST BE CLOSED UNDER THE
+// PIPELINE, and the corpus that checks it is written from the token
+// SIGNATURES the owner's real statement actually produces, not from the
+// fixture. Every string below is synthetic, invented values in a real
+// shape; what is copied from the real file is the SHAPE, expressed as a
+// sequence of token kinds and reproduced here with invented content.
+//
+// WHY THIS PROPERTY IS LOAD-BEARING RATHER THAN TIDY. The merchant review
+// submits the already-normalised key, assign-merchant.ts normalises the
+// submitted subject AGAIN before storing it as the EXACT rule pattern, and
+// merchant-rule.ts compares that stored pattern to a freshly normalised
+// row. A key that is not a fixed point therefore becomes a rule that
+// matches NOTHING, while assignMerchant returns ok and every total stays
+// right. That is hazard H6.4, and it is silent.
+const CLOSURE_CORPUS: readonly string[] = [
+  // An IBAN inside a transfer descriptor, followed by the counterparty
+  // name. The last IBAN group reads exactly like a postal code followed by
+  // a city, which is the shape that eroded one group per pass.
+  "OVERSCHRIJVING NAAR BE68 5390 7541 7034 ENERGIE NOORD BV",
+  "STORTING VAN BE68 5390 7541 7034 JAN PEETERS",
+  // The same shape with two and with three consecutive four-digit groups.
+  "MEDEDELING 5390 7541 ENERGIE",
+  "MEDEDELING 5390 7541 7034 ENERGIE",
+  "MEDEDELING 5390 7541 7034 9210 ENERGIE NOORD",
+  // A genuine postal code and city, trailing and mid-string.
+  "SUPERMARKT NOORD 9000 GENT",
+  "SUPERMARKT 9000 GENT NOORD",
+  "BAKKERIJ ZONNEBLOEM 9000 GENT BE",
+  // Card descriptors on both rails, both printed tail shapes.
+  "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 04/08 KOFFIEHUIS DE MOLEN GENT BE 4,20 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+  "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 18/08 KOFFIEHUIS DE MOLEN GENT BE 4,20 EUR KAART 4000 12XX XXXX 9010 - JANSSENS PIETER",
+  "BANCONTACT-AANKOOP - BAKKERIJ ZONNEBLOEM <B> - 9000 GENT BE - 12/08/26 14:35 - CONTACTLOOS - KAART 4000 12XX XXXX 9010 - JANSSENS PIETER",
+  // A card descriptor with no merchant span, which reaches the floor.
+  "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 28/08 KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+  // Non-card rows the strip must leave alone.
+  "ONLINE AANKOOP WEBSHOP DE VLIEGER 4000 12XX XXXX 9010 - JANSSENS PIETER",
+  "OVERSCHRIJVING NAAR ENERGIE NOORD BV MEDEDELING 415123456789012",
+  "GROEPS-AANKOOP SAMENTUIN VZW LIDGELD",
+  "DOMICILIERING MANDAAT 4152036987-001 ENERGIE NOORD",
+  // Degenerate and separator-heavy shapes.
+  "GENT",
+  "12/08/2026",
+  "BAKKERIJ - ZONNEBLOEM - GENT",
+];
+
+describe("the key space is CLOSED under the pipeline (finding CR-M3P6-06, hazard H6.4)", () => {
+  test.each(CLOSURE_CORPUS)(
+    "%j normalises to a fixed point",
+    (input) => {
+      const once = normaliseCounterparty(input);
+      expect(normaliseCounterparty(once)).toBe(once);
+    },
+  );
+
+  test("and the fixed point is reached in ONE application, never eroded by a second", () => {
+    // The failure this catches is not "different", it is "shrinking": the
+    // old pattern removed one four-digit group per pass, so a third pass
+    // removed another. Comparing token COUNTS makes that visible even if a
+    // future defect happened to keep the string equal by accident.
+    for (const input of CLOSURE_CORPUS) {
+      const once = normaliseCounterparty(input);
+      const twice = normaliseCounterparty(once);
+      const thrice = normaliseCounterparty(twice);
+      expect(twice.split(" ").length, input).toBe(once.split(" ").length);
+      expect(thrice, input).toBe(once);
     }
   });
 });

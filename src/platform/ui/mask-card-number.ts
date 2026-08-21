@@ -5,13 +5,24 @@
 // unresolved counterparty and the import confirmation preview render
 // descriptor text.
 //
-// WHERE THIS IS APPLIED. The enumeration is derived rather than
-// remembered: every JSX expression under src/ that renders a
-// descriptor-derived string was listed with
+// WHERE THIS IS APPLIED. The enumeration is DERIVED, and the derivation is
+// an executable test rather than a sentence: see "every rendering surface
+// that shows descriptor text is derived, not remembered" in
+// test/domain/merchant-review.test.ts. It walks every .tsx under src/ with
+// the TypeScript compiler API, collects every LEAF JSX expression that reads
+// a descriptor-derived field, and requires each one to pass through this
+// helper or to appear in a declared exclusion table with its reason.
 //
-//   grep -rnE '\{[^}]*\b(description|counterpartyText|counterpartyName|rawLine|\.label|\.text)\b[^}]*\}' --include='*.tsx' src/
-//
-// which returns eight sites in three files. Five of them mask:
+// CORRECTED RATHER THAN QUIETLY REWRITTEN (clause R-087, fix round 2,
+// finding CR-M3P6-08). This comment used to carry a single-line grep and
+// claim it returned eight sites in three files. It did when it was written
+// and it did NOT at the head, because applying the masking split the two
+// preview cells across several lines and a line-based grep stopped seeing
+// them: the act of using the derivation falsified the record of it. Worse,
+// the review constructed the dangerous direction, an UNMASKED multi-line
+// cell that the grep could not see at all while the suite stayed green. The
+// compiler-API walk sees it, finds NINE leaf sites in FOUR files, and
+// reddens on that construction. Five of them mask:
 //   - src/modules/import/ui/profile-confirmation.tsx:100 and :101, the
 //     confirm-format preview's counterparty and descriptor cells, which
 //     render the RAW parsed descriptor. This is the screen the owner
@@ -20,12 +31,17 @@
 //   - src/modules/overview/ui/month-view.tsx, the month-view group label
 //     and the reconciliation gap row, which renders the UNNORMALISED
 //     counterparty text.
-// Three are excluded, each for a stated reason rather than by omission:
+// Four are excluded, each for a stated reason rather than by omission, and
+// the reasons live in the test's exclusion table so they are checked rather
+// than merely written:
 //   - merchant-review.tsx's hidden counterpartyText field, which MUST stay
 //     unmasked: it becomes the EXACT MerchantRule pattern (decision D-12).
 //   - month-view.tsx's reserves group label, which is the user's own
 //     declared account label or a counterparty IBAN, not a descriptor.
 //   - month-view.tsx's reconciliation part label, which is translated copy.
+//   - the import route's two declared account labels, typed by the
+//     household itself and never parsed from a statement line. The grep this
+//     comment used to carry never saw that file at all.
 //
 // WHERE IT MUST NEVER BE APPLIED, each with the damage it would do:
 //   - Transaction.rawLine and Import.rawContent (prisma/schema/import.prisma).
@@ -80,8 +96,28 @@
 // separator cannot slip a whole card number past the mask (finding
 // CR-M3P6-04), which matters here because this helper reads RAW descriptors
 // where nothing has collapsed the whitespace.
-const CARD_NUMBER_TAIL =
-  /(\bKAART(?:\s+NR\.?)?\s+)((?:[0-9X]{4}[\s.-]*){3}[0-9X]{4})\b/g;
+// THE CARD-NUMBER LABEL VOCABULARY, in the three languages a Belgian
+// export can print it in (fix round 2, finding HZ-M3P6-10). The Dutch form
+// is what both real statements print; the French and English forms are
+// added because the delimited import path is generic and language-free, and
+// Pulse ships French user-facing content, so a French export is a near-term
+// shape rather than a hypothetical one.
+//
+// THIS LINE IS DUPLICATED, DELIBERATELY AND UNDER A PIN. The other copy is
+// in the file named below, and the two must stay identical: a label pinned
+// in only one of them puts a card number on SCREEN or into a STORED RULE
+// depending on which one was missed. test/domain/merchant-review.test.ts
+// reads both files and asserts the two lines are byte-identical, the same
+// shape as the SQL pin one module over. The two cannot be merged into one
+// module: the normaliser is domain code that imports nothing, and the
+// masker lives in platform/ui.
+// SIBLING: src/modules/merchants/domain/normalise-counterparty.ts
+const CARD_NUMBER_LABEL = "(?:KAART|CARTE|CARD)(?:\\s+(?:NR|NO|N\u00b0|N)\\.?)?";
+
+const CARD_NUMBER_TAIL = new RegExp(
+  `(\\b${CARD_NUMBER_LABEL}\\s+)((?:[0-9X]{4}[\\s.-]*){3}[0-9X]{4})\\b`,
+  "g",
+);
 
 const VISIBLE_CHARACTERS = 4;
 const MASK = "****";

@@ -164,8 +164,28 @@ const CARD_RAIL_PREFIX =
 // to nothing (finding HZ-M3P6-02). The separator between groups is [\s.-]*
 // rather than [\s.-]? so a double separator cannot slip a card number past
 // the pattern (finding CR-M3P6-04).
-const CARD_NUMBER_TAIL =
-  /(\bKAART(?:\s+NR\.?)?)\s+(?:[0-9X]{4}[\s.-]*){3}[0-9X]{4}(?:\s*-\s*[A-Z][A-Z'-]+(?:\s+[A-Z][A-Z'-]+)*\s*$)?/g;
+// THE CARD-NUMBER LABEL VOCABULARY, in the three languages a Belgian
+// export can print it in (fix round 2, finding HZ-M3P6-10). The Dutch form
+// is what both real statements print; the French and English forms are
+// added because the delimited import path is generic and language-free, and
+// Pulse ships French user-facing content, so a French export is a near-term
+// shape rather than a hypothetical one.
+//
+// THIS LINE IS DUPLICATED, DELIBERATELY AND UNDER A PIN. The other copy is
+// in the file named below, and the two must stay identical: a label pinned
+// in only one of them puts a card number on SCREEN or into a STORED RULE
+// depending on which one was missed. test/domain/merchant-review.test.ts
+// reads both files and asserts the two lines are byte-identical, the same
+// shape as the SQL pin one module over. The two cannot be merged into one
+// module: the normaliser is domain code that imports nothing, and the
+// masker lives in platform/ui.
+// SIBLING: src/platform/ui/mask-card-number.ts
+const CARD_NUMBER_LABEL = "(?:KAART|CARTE|CARD)(?:\\s+(?:NR|NO|N\u00b0|N)\\.?)?";
+
+const CARD_NUMBER_TAIL = new RegExp(
+  `(\\b${CARD_NUMBER_LABEL})\\s+(?:[0-9X]{4}[\\s.-]*){3}[0-9X]{4}(?:\\s*-\\s*[A-Z][A-Z'-]+(?:\\s+[A-Z][A-Z'-]+)*\\s*$)?`,
+  "g",
+);
 
 // The same grammar without the global flag, used only as a PREDICATE: does
 // this descriptor carry a card-number tail at all? Three behaviours below
@@ -192,8 +212,10 @@ const ANGLE_COUNTRY_MARKER = /\s*<[A-Z]{1,3}>\s*/g;
 // a much smaller number. Both are fixed here: the match must be followed by
 // the card-number label, must begin at a field boundary, and accepts either
 // thousands form.
-const CARD_AMOUNT_BEFORE_LABEL =
-  /(?:^|\s)\d{1,3}(?:[.\s]\d{3})*,\d{2}\s+(?:EUR|USD|GBP|CHF)(?=\s+KAART\b)/g;
+const CARD_AMOUNT_BEFORE_LABEL = new RegExp(
+  `(?:^|\\s)\\d{1,3}(?:[.\\s]\\d{3})*,\\d{2}\\s+(?:EUR|USD|GBP|CHF)(?=\\s+${CARD_NUMBER_LABEL}\\b)`,
+  "g",
+);
 
 // Payment terminal noise: rail vocabulary and card fragments that say HOW
 // something was paid, never WHO was paid. Most entries are grounded in the
@@ -258,7 +280,26 @@ const DATE_FRAGMENT_PATTERNS: readonly RegExp[] = [
 // prints the city as bare text, so the same merchant produced two keys
 // (finding HZ-M3P6-06). For a trailing postal-city pair the outcome is
 // unchanged: the loop takes the city a moment later.
-const POSTAL_CODE_BEFORE_CITY = /\b[1-9]\d{3} (?=[A-Z][A-Z'-]+\b)/g;
+//
+// A FOUR-DIGIT GROUP THAT FOLLOWS ANOTHER FOUR-DIGIT GROUP IS NOT A POSTAL
+// CODE, and the lookbehind that says so is what makes this pipeline CLOSED
+// over its own output (fix round 2, finding CR-M3P6-06). Without it, an
+// IBAN inside a descriptor ends in a group followed by the counterparty's
+// name, which reads exactly like a postal code followed by a city: the pass
+// eats one group, and the NEXT pass eats the one now exposed, so the key
+// erodes a group at a time and normalise(key) is not key. That is not
+// cosmetic. assign-merchant.ts:54 normalises the submitted subject AGAIN
+// before storing it as the EXACT rule pattern, and merchant-rule.ts:68
+// compares that pattern to a freshly normalised row, so a key that is not a
+// fixed point becomes a rule that matches NOTHING while assignMerchant
+// returns ok and every total stays right. That is hazard H6.4.
+//
+// MEASURED on the owner's own statement, rows whose key is not a fixed
+// point: 8 of 39 at the phase base, 8 at the round-0 head, 10 after fix
+// round 1 introduced this pattern, and 0 with the lookbehind. The base's own
+// 8 are the same family, reached by the base pattern eating the group AND
+// the counterparty name behind it; the lookbehind closes those too.
+const POSTAL_CODE_BEFORE_CITY = /(?<!\d )\b[1-9]\d{3} (?=[A-Z][A-Z'-]+\b)/g;
 
 const CITY_TOKENS: ReadonlySet<string> = new Set([
   "AALST",

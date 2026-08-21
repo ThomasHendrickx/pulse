@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
+import ts from "typescript";
 import { describe, expect, test } from "vitest";
 import { confirmImport } from "../../src/modules/import/application/confirm-import";
 import { uploadStatement } from "../../src/modules/import/application/upload-statement";
@@ -252,6 +253,31 @@ describe("the key space is closed under the pipeline, which is what makes a stor
       expect(normaliseCounterparty(subject), subject).toBe(subject);
     }
   });
+
+  test("the fixture reaches the shape that broke closure, so this invariant is not measuring the fixture's convenience", async () => {
+    // FINDING CR-M3P6-06b. The round-1 version of this invariant read only
+    // the fixture's groups, and the fixture carried no run of four-digit
+    // groups before a capitalised word, so it was green while the property
+    // was false on ten of the owner's own rows. An invariant that reads only
+    // the fixture measures the fixture. Two rows now carry that shape, and
+    // the EXHAUSTIVE corpus lives beside the recipe it constrains, in
+    // test/domain/normalise-counterparty.test.ts, where it is also run
+    // against a second and a third application to catch erosion.
+    const world = await importedWorld();
+    const runsOfGroups = world.transactions.filter((row) =>
+      /\b\d{4} \d{4}(?: \d{4})* [A-Z]/.test(row.description.toUpperCase()),
+    );
+    expect(runsOfGroups.length).toBeGreaterThanOrEqual(2);
+    for (const row of runsOfGroups) {
+      const key = normaliseCounterparty(counterpartyText(row));
+      expect(normaliseCounterparty(key), key).toBe(key);
+      // Not merely equal: the same number of tokens, so a defect that
+      // erodes one group per pass is visible even if it later stabilises.
+      expect(normaliseCounterparty(key).split(" ").length).toBe(
+        key.split(" ").length,
+      );
+    }
+  });
 });
 
 describe("criterion 6.3: no card number in a key, in a rendered label, or on either screen", () => {
@@ -447,10 +473,22 @@ describe("criterion 6.10, the SQL half: the merchant-source rule is written ONCE
     expect(uses).toHaveLength(2);
   });
 
-  test("the SQL rule and the TypeScript rule agree on every value Prisma can produce", () => {
-    // COALESCE falls through on SQL NULL; the TypeScript helper falls
-    // through on null and undefined. Both keep an empty string. The
-    // assertion is over the values, not over the two texts.
+  // CORRECTED RATHER THAN QUIETLY RENAMED (clause R-087, fix round 2,
+  // finding CR-M3P6-07). A test here used to be named "the SQL rule and the
+  // TypeScript rule agree on every value Prisma can produce" and its body
+  // called counterpartyText three times, evaluating no SQL at all. The
+  // review demonstrated the gap rather than arguing it: setting the shared
+  // fragment to the OPPOSITE precedence and updating the two pin literals
+  // the way a pin update looks left the suite green at 22 passed, with the
+  // two rules then saying opposite things. That test is split in two below.
+  // The first says only what it establishes. The second closes the gap the
+  // old name claimed to close, WITHOUT a database: it reads the SQL
+  // fragment out of the repository file, derives the operand ORDER from the
+  // text, and evaluates that order against the TypeScript helper over a
+  // value corpus. Flipping the precedence in the SQL now reddens it, and no
+  // pin literal can be updated to hide that, because the expectation is
+  // derived from the SQL rather than written beside it.
+  test("the TypeScript rule's fallthrough is pinned on every value Prisma can produce", () => {
     expect(counterpartyText({ description: "D" })).toBe("D");
     expect(counterpartyText({ description: "D", counterpartyName: "N" })).toBe(
       "N",
@@ -458,6 +496,263 @@ describe("criterion 6.10, the SQL half: the merchant-source rule is written ONCE
     expect(counterpartyText({ description: "D", counterpartyName: "" })).toBe(
       "",
     );
+  });
+
+  test("the SQL rule, evaluated from its own text, agrees with the TypeScript rule on every value Prisma can produce", () => {
+    // The operand order is READ from the shipped SQL, never assumed.
+    const operands = /COALESCE\(\s*t\."(\w+)",\s*t\."(\w+)"\s*\)/.exec(
+      repositorySource,
+    );
+    expect(operands).not.toBeNull();
+    if (operands === null) {
+      return;
+    }
+    const [, first, second] = operands as unknown as [string, string, string];
+    // COALESCE returns its first non-NULL argument. Prisma maps a nullable
+    // text column to string | null, and the domain type carries the same
+    // field as optional, so undefined and null are the same absence here.
+    const evaluateSql = (row: Record<string, string | undefined>): string => {
+      const a = row[first];
+      const b = row[second];
+      return a ?? b ?? "";
+    };
+    const corpus: readonly Record<string, string | undefined>[] = [
+      { description: "D" },
+      { description: "D", counterpartyName: "N" },
+      { description: "D", counterpartyName: "" },
+      { description: "", counterpartyName: "N" },
+      { description: "", counterpartyName: "" },
+      { description: "SAME", counterpartyName: "SAME" },
+    ];
+    for (const row of corpus) {
+      const description = row["description"] ?? "";
+      const name = row["counterpartyName"];
+      const typescriptResult = counterpartyText({
+        description,
+        ...(name === undefined ? {} : { counterpartyName: name }),
+      });
+      expect(evaluateSql(row), JSON.stringify(row)).toBe(typescriptResult);
+    }
+  });
+
+  test("the card-number LABEL vocabulary is identical in the two definitions that use it (finding HZ-M3P6-10)", () => {
+    // A label pinned in only one of the two puts a card number on SCREEN or
+    // into a STORED RULE depending on which one was missed. The two files
+    // cannot import from each other (domain code imports nothing; the
+    // masker lives in platform/ui), so the duplication is deliberate and
+    // this is its guard.
+    const labelLine = /^const CARD_NUMBER_LABEL = .*$/m;
+    const inNormaliser = labelLine.exec(
+      readFileSync(
+        join(
+          __dirname,
+          "..",
+          "..",
+          "src",
+          "modules",
+          "merchants",
+          "domain",
+          "normalise-counterparty.ts",
+        ),
+        "utf8",
+      ),
+    );
+    const inMasker = labelLine.exec(
+      readFileSync(
+        join(__dirname, "..", "..", "src", "platform", "ui", "mask-card-number.ts"),
+        "utf8",
+      ),
+    );
+    expect(inNormaliser).not.toBeNull();
+    expect(inMasker).not.toBeNull();
+    expect(inMasker?.[0]).toBe(inNormaliser?.[0]);
+    // And it really does carry the three languages, so a future narrowing
+    // reddens here rather than silently on a French export.
+    expect(inNormaliser?.[0]).toContain("KAART");
+    expect(inNormaliser?.[0]).toContain("CARTE");
+    expect(inNormaliser?.[0]).toContain("CARD");
+  });
+});
+
+describe("every rendering surface that shows descriptor text is derived, not remembered (finding CR-M3P6-08)", () => {
+  // THE DERIVATION IS THIS TEST, not a grep in a comment. Round 1 recorded a
+  // single-line grep; applying the fix moved the cells onto several lines
+  // and the grep stopped finding them, so the record of how the surface set
+  // was found was falsified by the act of using it. Worse, the review
+  // constructed the dangerous direction: with the descriptor cell reverted
+  // to an UNMASKED multi-line expression the recorded grep found NOTHING in
+  // that file and the suite stayed green.
+  //
+  // This walks the real JSX with the TypeScript compiler API, the same tool
+  // test/schema/tenancy.test.ts uses, so it cannot be defeated by
+  // reformatting. Every JSX expression that reads a descriptor-derived field
+  // must either pass through maskCardNumbers or appear in the EXCLUSIONS
+  // table below with its reason.
+
+  // A field whose value is, or can be, text a counterparty controls.
+  const DESCRIPTOR_FIELDS = [
+    "description",
+    "counterpartyText",
+    "counterpartyName",
+    "rawLine",
+    "label",
+    "text",
+  ] as const;
+
+  // Keyed by FILE and EXPRESSION TEXT, never by a line number, because a
+  // line number is what went stale last round. RESIDUE, stated rather than
+  // left to be found: an exclusion excuses that exact expression ANYWHERE in
+  // that file, so a second bare {group.label} added to month-view.tsx would
+  // be excused by the reserves entry. It would still have to be written in
+  // a file already on this list, and the e2e sweeps the two label surfaces
+  // independently.
+  const EXCLUSIONS: readonly {
+    readonly file: string;
+    readonly expression: string;
+    readonly why: string;
+  }[] = [
+    {
+      file: "modules/merchants/ui/merchant-review.tsx",
+      expression: "group.counterpartyText",
+      why: "The hidden field the review form submits. It becomes the EXACT MerchantRule pattern, and a masked subject would match nothing (decision D-12, hazard H6.4).",
+    },
+    {
+      file: "modules/overview/ui/month-view.tsx",
+      expression: "group.label",
+      why: "The RESERVES group label, which is the household's own declared account label or a counterparty IBAN, never a descriptor: the reserves query requires counterpartyIban IS NOT NULL and falls back to the account's declared label.",
+    },
+    {
+      file: "modules/overview/ui/month-view.tsx",
+      expression: "part.label",
+      why: "The reconciliation part label: translated copy from t(), never counterparty text.",
+    },
+    {
+      file: "app/(app)/import/[id]/page.tsx",
+      expression: "account?.label",
+      why: "The account's DECLARED label, typed by the household itself at first sight, never parsed from a statement line.",
+    },
+    {
+      file: "app/(app)/import/[id]/page.tsx",
+      expression: "landingAccount?.label",
+      why: "The same declared account label on the landing branch of the same route.",
+    },
+  ];
+
+  const collectSourceFiles = (dir: string): readonly string[] => {
+    const out: string[] = [];
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) {
+        out.push(...collectSourceFiles(full));
+      } else if (entry.endsWith(".tsx")) {
+        out.push(full);
+      }
+    }
+    return out;
+  };
+
+  const srcRoot = join(__dirname, "..", "..", "src");
+
+  type Surface = {
+    readonly file: string;
+    readonly expression: string;
+    readonly masked: boolean;
+  };
+
+  const surfaces: Surface[] = [];
+  for (const file of collectSourceFiles(srcRoot)) {
+    const sourceText = readFileSync(file, "utf8");
+    const sourceFile = ts.createSourceFile(
+      file,
+      sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    // Only LEAF expressions: a map callback or a ternary whose body is JSX
+    // is a container for the real site, and the real site is visited on its
+    // own. Counting containers would inflate the set and hide the leaf.
+    const containsJsx = (node: ts.Node): boolean => {
+      let found = false;
+      const look = (child: ts.Node): void => {
+        if (
+          ts.isJsxElement(child) ||
+          ts.isJsxSelfClosingElement(child) ||
+          ts.isJsxFragment(child)
+        ) {
+          found = true;
+        }
+        ts.forEachChild(child, look);
+      };
+      ts.forEachChild(node, look);
+      return found;
+    };
+    const visit = (node: ts.Node): void => {
+      if (ts.isJsxExpression(node) && node.expression !== undefined) {
+        const expression = node.expression.getText(sourceFile);
+        const readsDescriptor = DESCRIPTOR_FIELDS.some((field) =>
+          new RegExp(`\\.${field}\\b`).test(expression),
+        );
+        if (readsDescriptor && !containsJsx(node.expression)) {
+          surfaces.push({
+            file: relative(srcRoot, file),
+            expression: expression.replace(/\s+/g, " ").trim(),
+            masked: expression.includes("maskCardNumbers("),
+          });
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
+
+  test("the walk finds surfaces at all, so a broken walk cannot pass by finding nothing", () => {
+    // NINE leaf sites in FOUR files at this head. The round-1 grep recorded
+    // eight in three and did not reproduce; this walk also reaches a file
+    // that grep never saw, the import route's own declared account label.
+    expect(surfaces.length).toBeGreaterThanOrEqual(9);
+    expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(4);
+    expect(surfaces.filter((surface) => surface.masked).length).toBe(5);
+  });
+
+  test("every unmasked descriptor surface is a DECLARED exclusion with a reason", () => {
+    const unmasked = surfaces.filter((surface) => !surface.masked);
+    expect(unmasked.length).toBe(EXCLUSIONS.length);
+    for (const surface of unmasked) {
+      const declared = EXCLUSIONS.find(
+        (exclusion) =>
+          exclusion.file === surface.file &&
+          exclusion.expression === surface.expression,
+      );
+      expect(
+        declared,
+        `${surface.file}: ${surface.expression} renders descriptor-derived text without masking and is not a declared exclusion`,
+      ).toBeDefined();
+      expect(declared?.why.length).toBeGreaterThan(20);
+    }
+  });
+
+  test("the surfaces that must mask, do", () => {
+    const mustMask = [
+      "profile-confirmation.tsx",
+      "merchant-review.tsx",
+      "month-view.tsx",
+    ];
+    for (const file of mustMask) {
+      const inFile = surfaces.filter((surface) => surface.file.endsWith(file));
+      expect(inFile.length, file).toBeGreaterThan(0);
+      expect(
+        inFile.some((surface) => surface.masked),
+        file,
+      ).toBe(true);
+    }
+    // The confirm preview is the screen the owner photographed: BOTH of its
+    // descriptor cells mask, and neither is a declared exclusion.
+    const preview = surfaces.filter((surface) =>
+      surface.file.endsWith("profile-confirmation.tsx"),
+    );
+    expect(preview).toHaveLength(2);
+    expect(preview.every((surface) => surface.masked)).toBe(true);
   });
 });
 
@@ -526,7 +821,7 @@ describe("criterion 6.5: facts untouched and no stored dedup key moved", () => {
   test("re-importing the card fixture adds zero rows and reports every row known", async () => {
     const world = await importedWorld();
     const rowCount = world.transactions.length;
-    expect(rowCount).toBe(19);
+    expect(rowCount).toBe(21);
     const again = await uploadStatement(context, world.deps, {
       fileName: FIXTURE,
       bytes: fixtureBytes(),
