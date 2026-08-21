@@ -220,11 +220,22 @@ test.describe("card group labels on a phone", () => {
     await sweepRenderedTexts(
       await page.getByTestId("group-label").allInnerTexts(),
     );
-    // THE RECONCILIATION GAP ROWS, the surface masked in fix round 1 that
-    // had no guard at all (finding CR-M3P6-08). The list can be empty on a
-    // month whose books close, so the sweep runs only when there is
-    // something to sweep, and the assertion that it is swept at all is the
-    // derivation test in the fast gate rather than this spec.
+    // THE RECONCILIATION GAP ROWS. STATED HONESTLY RATHER THAN CLAIMED
+    // (finding CR-M3P6-11): this fixture produces NO gap rows, measured
+    // across all four gap-row test ids in both months, so the sweep below
+    // DOES NOT EXECUTE and this spec is not what guards that surface. The
+    // zero is asserted rather than described, so the sentence cannot go
+    // stale: a fixture that starts producing gap rows reddens here and the
+    // next author decides what to sweep.
+    //
+    // WHAT DOES COVER THE SITE: the derivation test in the fast gate, "every
+    // rendering surface that shows descriptor text is derived, not
+    // remembered", which reddens when the masking call is removed from the
+    // gap row because it becomes an undeclared unmasked descriptor surface.
+    // WHAT NEITHER COVERS: the rendered STRING of a gap row. A masker that
+    // is applied and returns the wrong text would pass the derivation and
+    // has no rendered-output witness on this surface, unlike the three
+    // surfaces swept above.
     const gapTexts = (
       await Promise.all(
         [
@@ -235,6 +246,7 @@ test.describe("card group labels on a phone", () => {
         ].map((testId) => page.getByTestId(testId).allInnerTexts()),
       )
     ).flat();
+    expect(gapTexts).toHaveLength(0);
     if (gapTexts.length > 0) {
       await sweepRenderedTexts(gapTexts);
     }

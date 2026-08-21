@@ -111,8 +111,29 @@
 // shape as the SQL pin one module over. The two cannot be merged into one
 // module: the normaliser is domain code that imports nothing, and the
 // masker lives in platform/ui.
+//
+// NARROWED IN THE FINAL MICRO ROUND (finding HZ-M3P6-12). The alternation
+// used to accept the BARE label word in all three languages, so a label word
+// standing alone as an ORDINARY NOUN immediately before four four-character
+// groups was consumed together with everything after it: a French merchant
+// name ending in the everyday idiom that contains the label word lost its
+// last three words from the key, and a non-card reference rendered as a
+// masked card number. The bare form is now accepted ONLY in Dutch, which is
+// the language both real statements print and the only one where the bare
+// form is OBSERVED: 8 of 23 real card rows carry it. French and English must
+// carry the number word, which is how a card statement prints them and which
+// an ordinary noun does not. That is this file's own rule applied to itself:
+// pin the accepted shapes, never widen to a shape nobody has seen.
+//
+// RESIDUE, stated rather than left to be found: the Dutch bare form is still
+// reachable by an ordinary Dutch noun standing alone before four groups. It
+// cannot be narrowed the same way without dropping a shape 8 real rows use.
+// The label word INSIDE a longer word does not fire in any of the three
+// languages, which is what the word boundary buys and what the negative pins
+// in the regression table hold.
 // SIBLING: src/modules/merchants/domain/normalise-counterparty.ts
-const CARD_NUMBER_LABEL = "(?:KAART|CARTE|CARD)(?:\\s+(?:NR|NO|N\u00b0|N)\\.?)?";
+const CARD_NUMBER_LABEL =
+  "(?:KAART(?:\\s+NR\\.?)?|(?:CARTE|CARD)\\s+(?:N\u00b0|NO|NR)\\.?)";
 
 const CARD_NUMBER_TAIL = new RegExp(
   `(\\b${CARD_NUMBER_LABEL}\\s+)((?:[0-9X]{4}[\\s.-]*){3}[0-9X]{4})\\b`,

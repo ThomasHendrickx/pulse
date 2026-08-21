@@ -390,6 +390,27 @@ describe("criterion 6.3: no card number in a key, in a rendered label, or on eit
     );
   });
 
+  test("the display helper leaves an ordinary noun that happens to be a label word untouched (finding HZ-M3P6-12)", () => {
+    // The mirror of the normaliser's negative pins. Before the final micro
+    // round both of these rendered as a four-star mask plus four digits,
+    // turning a non-card reference into something that looks like a masked
+    // card number, which is the display class of finding HZ-M3P6-01
+    // returning in a narrow form.
+    for (const text of [
+      "RESTAURANT BISTRO A LA CARTE 1234 5678 9012 3456",
+      "DIENST CARTE N 1234 5678 9012 3456",
+    ]) {
+      expect(maskCardNumbers(text), text).toBe(text);
+    }
+    // ... while the printed French and English card tails still mask.
+    expect(maskCardNumbers("CARTE N\u00b0 4000 1234 5678 9010")).toBe(
+      "CARTE N\u00b0 **** 9010",
+    );
+    expect(maskCardNumbers("CARD NO 4000 1234 5678 9010")).toBe(
+      "CARD NO **** 9010",
+    );
+  });
+
   test("the display helper leaves every NON-card identifier untouched (finding HZ-M3P6-01)", () => {
     // THE SIX SHAPES THE REVIEW MEASURED THE OLD, SHAPE-ONLY HELPER
     // DAMAGING on the owner's two real statements, reproduced here with
@@ -541,7 +562,10 @@ describe("criterion 6.10, the SQL half: the merchant-source rule is written ONCE
     // cannot import from each other (domain code imports nothing; the
     // masker lives in platform/ui), so the duplication is deliberate and
     // this is its guard.
-    const labelLine = /^const CARD_NUMBER_LABEL = .*$/m;
+    // The declaration spans two lines since the final micro round narrowed
+    // the alternation, so the pattern reads to the terminating semicolon
+    // rather than to the end of a line.
+    const labelLine = /^const CARD_NUMBER_LABEL =[\s\S]*?;$/m;
     const inNormaliser = labelLine.exec(
       readFileSync(
         join(
@@ -571,6 +595,12 @@ describe("criterion 6.10, the SQL half: the merchant-source rule is written ONCE
     expect(inNormaliser?.[0]).toContain("KAART");
     expect(inNormaliser?.[0]).toContain("CARTE");
     expect(inNormaliser?.[0]).toContain("CARD");
+    // ... and that only the DUTCH label may appear bare (finding
+    // HZ-M3P6-12): the French and English forms must carry the number word,
+    // because their label word is an ordinary noun and the bare form is
+    // observed in Dutch only.
+    expect(inNormaliser?.[0]).toContain("(?:CARTE|CARD)");
+    expect(inNormaliser?.[0]).toMatch(/\(\?:CARTE\|CARD\)\\\\s\+/);
   });
 });
 
@@ -707,10 +737,18 @@ describe("every rendering surface that shows descriptor text is derived, not rem
   }
 
   test("the walk finds surfaces at all, so a broken walk cannot pass by finding nothing", () => {
-    // NINE leaf sites in FOUR files at this head. The round-1 grep recorded
-    // eight in three and did not reproduce; this walk also reaches a file
-    // that grep never saw, the import route's own declared account label.
-    expect(surfaces.length).toBeGreaterThanOrEqual(9);
+    // TEN leaf sites in FOUR files at this head: five masked and five
+    // declared exclusions. The round-1 grep recorded eight in three and did
+    // not reproduce; this walk also reaches a file that grep never saw, the
+    // import route, which renders TWO declared account labels rather than
+    // the one this comment used to count.
+    //
+    // CORRECTED IN PLACE (clause R-087, finding CR-M3P6-10). This comment
+    // said NINE and the walk returned TEN, and the assertion below was a
+    // FLOOR, so the recorded number could drift from the measured one with
+    // nothing going red: the same mechanism this test exists to eliminate,
+    // one level up. The assertion is now EXACT.
+    expect(surfaces.length).toBe(10);
     expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(4);
     expect(surfaces.filter((surface) => surface.masked).length).toBe(5);
   });

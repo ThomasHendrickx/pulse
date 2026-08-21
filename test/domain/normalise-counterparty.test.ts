@@ -285,6 +285,26 @@ describe("the recipe's output is pinned: stored rule patterns depend on it (find
       "COFFEE HOUSE THE ANCHOR GENT BE 4,20 EUR CARD NO 4000 1234 5678 9010 - JANSSENS PIETER",
       "COFFEE HOUSE THE ANCHOR GENT BE",
     ],
+    // FINAL MICRO ROUND, findings CR-M3P6-12 and HZ-M3P6-13: the lookbehind
+    // that keeps this pipeline closed refuses a four-digit GROUP before the
+    // candidate, not any digit, so a house number before a genuine postal
+    // code no longer suppresses the strip. These two rows measure the
+    // difference between the guard and the sentence above it.
+    ["SUPERMARKT NOORD 12 9000 GENT", "SUPERMARKT NOORD 12"],
+    ["SUPERMARKT NOORD 9000 GENT", "SUPERMARKT NOORD"],
+    // FINAL MICRO ROUND, finding HZ-M3P6-12: NEGATIVE pins. A label word
+    // standing alone as an ordinary noun before four four-character groups
+    // must NOT be read as a card-number label, so the merchant name survives
+    // whole. Only the DUTCH label may appear bare, which is the only bare
+    // form any real statement prints.
+    [
+      "RESTAURANT BISTRO A LA CARTE 1234 5678 9012 3456",
+      "RESTAURANT BISTRO A LA CARTE 1234 5678 9012 3456",
+    ],
+    [
+      "DIENST CARTE N 1234 5678 9012 3456",
+      "DIENST CARTE N 1234 5678 9012 3456",
+    ],
     // FIX ROUND 2, finding HZ-M3P6-09: the separator drop on a card
     // descriptor takes WHOLE dash TOKENS and never a character inside a
     // word, so an intra-word hyphen in a merchant name survives and two

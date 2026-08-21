@@ -179,8 +179,29 @@ const CARD_RAIL_PREFIX =
 // shape as the SQL pin one module over. The two cannot be merged into one
 // module: the normaliser is domain code that imports nothing, and the
 // masker lives in platform/ui.
+//
+// NARROWED IN THE FINAL MICRO ROUND (finding HZ-M3P6-12). The alternation
+// used to accept the BARE label word in all three languages, so a label word
+// standing alone as an ORDINARY NOUN immediately before four four-character
+// groups was consumed together with everything after it: a French merchant
+// name ending in the everyday idiom that contains the label word lost its
+// last three words from the key, and a non-card reference rendered as a
+// masked card number. The bare form is now accepted ONLY in Dutch, which is
+// the language both real statements print and the only one where the bare
+// form is OBSERVED: 8 of 23 real card rows carry it. French and English must
+// carry the number word, which is how a card statement prints them and which
+// an ordinary noun does not. That is this file's own rule applied to itself:
+// pin the accepted shapes, never widen to a shape nobody has seen.
+//
+// RESIDUE, stated rather than left to be found: the Dutch bare form is still
+// reachable by an ordinary Dutch noun standing alone before four groups. It
+// cannot be narrowed the same way without dropping a shape 8 real rows use.
+// The label word INSIDE a longer word does not fire in any of the three
+// languages, which is what the word boundary buys and what the negative pins
+// in the regression table hold.
 // SIBLING: src/platform/ui/mask-card-number.ts
-const CARD_NUMBER_LABEL = "(?:KAART|CARTE|CARD)(?:\\s+(?:NR|NO|N\u00b0|N)\\.?)?";
+const CARD_NUMBER_LABEL =
+  "(?:KAART(?:\\s+NR\\.?)?|(?:CARTE|CARD)\\s+(?:N\u00b0|NO|NR)\\.?)";
 
 const CARD_NUMBER_TAIL = new RegExp(
   `(\\b${CARD_NUMBER_LABEL})\\s+(?:[0-9X]{4}[\\s.-]*){3}[0-9X]{4}(?:\\s*-\\s*[A-Z][A-Z'-]+(?:\\s+[A-Z][A-Z'-]+)*\\s*$)?`,
@@ -213,7 +234,12 @@ const ANGLE_COUNTRY_MARKER = /\s*<[A-Z]{1,3}>\s*/g;
 // the card-number label, must begin at a field boundary, and accepts either
 // thousands form.
 const CARD_AMOUNT_BEFORE_LABEL = new RegExp(
-  `(?:^|\\s)\\d{1,3}(?:[.\\s]\\d{3})*,\\d{2}\\s+(?:EUR|USD|GBP|CHF)(?=\\s+${CARD_NUMBER_LABEL}\\b)`,
+  // The lookahead ends with a NEGATIVE letter check rather than a word
+  // boundary: the French number word ends in a non-word character, and a
+  // trailing \b after one of those never matches, which silently left the
+  // amount in a French card key. The letter check refuses "KAARTEN" the way
+  // the boundary did and accepts "N\u00b0 " the way the boundary did not.
+  `(?:^|\\s)\\d{1,3}(?:[.\\s]\\d{3})*,\\d{2}\\s+(?:EUR|USD|GBP|CHF)(?=\\s+${CARD_NUMBER_LABEL}(?![A-Z]))`,
   "g",
 );
 
@@ -299,7 +325,17 @@ const DATE_FRAGMENT_PATTERNS: readonly RegExp[] = [
 // round 1 introduced this pattern, and 0 with the lookbehind. The base's own
 // 8 are the same family, reached by the base pattern eating the group AND
 // the counterparty name behind it; the lookbehind closes those too.
-const POSTAL_CODE_BEFORE_CITY = /(?<!\d )\b[1-9]\d{3} (?=[A-Z][A-Z'-]+\b)/g;
+//
+// THE LOOKBEHIND WAS WIDER THAN THIS SENTENCE AND IS NOW EXACTLY IT (clause
+// R-087, findings CR-M3P6-12 and HZ-M3P6-13). It read (?<!\d ), which
+// refused the strip whenever ANY digit and a space preceded the candidate,
+// so a house number before a genuine postal code suppressed the strip and
+// left the postal code in the key. The sentence above was the rule that was
+// intended; the guard is now that rule, (?<!\d{4} ), and the house-number
+// shape is pinned in the regression table so the two can never drift apart
+// again. Closure is unaffected: still 0 of 39 on the real file and 0 of 19
+// over the closure corpus.
+const POSTAL_CODE_BEFORE_CITY = /(?<!\d{4} )\b[1-9]\d{3} (?=[A-Z][A-Z'-]+\b)/g;
 
 const CITY_TOKENS: ReadonlySet<string> = new Set([
   "AALST",
