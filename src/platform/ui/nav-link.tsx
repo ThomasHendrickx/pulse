@@ -17,6 +17,21 @@ import { usePathname } from "next/navigation";
 // A platform/ui primitive by the section 2 test: it knows an href and a
 // label, not what a transaction is.
 
+// Section membership, not string equality (fix round, finding CR-601):
+// the confirm and result steps live on /import/<id>, and an exact match
+// left NO link current on them. A non-root href is current for its exact
+// path and for any sub-path below it (href plus "/"); the root href "/"
+// stays exact-match only, because under the prefix rule it would be
+// current on every route. Sibling that must stay in step: the CSS state
+// selector .app-nav-link[aria-current="page"] in src/app/globals.css
+// styles whatever this computes; the e2e sub-route test is the witness.
+const isCurrentRoute = (pathname: string, href: string): boolean => {
+  if (href === "/") {
+    return pathname === "/";
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+};
+
 export const NavLink = ({
   href,
   testId,
@@ -27,7 +42,7 @@ export const NavLink = ({
   readonly children: React.ReactNode;
 }) => {
   const pathname = usePathname();
-  const active = pathname === href;
+  const active = isCurrentRoute(pathname, href);
   return (
     <Link
       href={href}
