@@ -27,3 +27,22 @@ Incremental log. Newest entries appended at the bottom.
 
 ## Red witnesses first (R-037a)
 - Writing test/e2e/navigation.spec.ts and test/app/catalog-parity.test.ts BEFORE any implementation. The nav e2e is the natural red (no nav exists). The parity test is born green; will witness it red two structurally different ways per the asserting-a-ci-step-is-wired mechanism rule: (a) a key removed from one target catalog, (b) an extra key added to one target catalog. Commands and output to be captured below.
+- Committed witnesses at 0cc70ad before any implementation code.
+
+## Parity test red witness (criterion 1.2), captured 2026-08-21
+Baseline: `npx vitest run test/app/catalog-parity.test.ts` at 0cc70ad: `Tests  3 passed (3)` (born green; catalogs are in parity at base, so the red is forced locally as the criterion instructs).
+Red member 1 (missing key): deleted `signout` from messages/nl.json, reran. Output:
+```
+× message catalog parity across en, nl, fr > nl carries exactly the en key set 9ms
+  → keys in en but not in nl: expected [ 'signout' ] to deeply equal []
+```
+Red member 2 (structurally different: EXTRA key): added `onlyInFrProbe` to messages/fr.json, reran. Output:
+```
+× message catalog parity across en, nl, fr > fr carries exactly the en key set 8ms
+  → keys in fr but not in en: expected [ 'onlyInFrProbe' ] to deeply equal []
+```
+Both catalogs restored from backups; `git diff --stat` empty afterwards; rerun green.
+
+## Local stack
+- Docker daemon started; pre-existing local supabase stack (project_id m1-p1-skeleton, the id committed in supabase/config.toml) came up with docker: kong on 54321, postgres on 54322. `npx supabase status` gives the local ANON_KEY and SERVICE_ROLE_KEY demo JWTs.
+- Pinned five-value env for every db/e2e invocation (fleet warnings 1 and 6): DATABASE_URL and DIRECT_URL postgresql://postgres:postgres@127.0.0.1:54322/postgres, NEXT_PUBLIC_SUPABASE_URL http://127.0.0.1:54321, NEXT_PUBLIC_SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY from supabase status, plus SEED_USER_EMAIL/SEED_USER_PASSWORD from .env.example for the seed.
