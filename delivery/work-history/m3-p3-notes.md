@@ -338,3 +338,28 @@ revalidated 0). Claim grep run exactly as the brief carries it, line
 and flattened forms: remaining hits are the verbatim prompt quotation
 (R-052a) and one token inside a captured executed-construction command
 whose output settles it.
+
+## Post-handback correction (R-087): the privacy purge rewrote this branch's history
+
+The orchestrator resolved open question M3P3-Q1 by rebuilding the
+branch with purged history: the final tree, byte-identical, squashed
+into one code commit (d47614a "M3-P3: KBC Mastercard PDF template,
+dedup and settlement witnesses, e2e journey") plus one docs commit
+(253e074 "docs: M3-P3 work history, schema-valid, with final gate
+evidence"), force-pushed while the branch had no consumers and no PR
+referencing the old commits. CONSEQUENCE FOR THIS FILE AND THE WORK
+HISTORY, corrected loudly rather than silently: every per-step commit
+sha named in the sections above (the notes commit, the template and
+fixtures commit, the application-tests commit, the e2e commit, the
+H3.1 comment-leak fix, the evidence docs commit, and the final
+pre-purge head the gates section cites) no longer exists on the
+branch; those shas now identify only the pre-purge local objects in
+the implementer worktree. The step-by-step NARRATIVE above remains the
+true record of the order work happened in. The gate evidence stands
+unweakened: the pre-purge head's tree was verified byte-identical to
+the rebuilt branch head (git diff --stat between the retained local
+pre-purge object and 253e074 is empty), so every gate run recorded
+above executed against exactly the tree the branch now carries.
+m3-p3.yaml's per-step-commits, gate strings and claim M3P3-Q1 were
+corrected in the same pass (Q1 is now a settled remedy claim) and the
+document re-validated.
