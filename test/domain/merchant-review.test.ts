@@ -184,6 +184,74 @@ describe("criterion 6.2: over-stripping is refused", () => {
     expect(chain.some((group) => group.label.includes("NOORD"))).toBe(true);
     expect(chain.some((group) => group.label.includes("ZUID"))).toBe(true);
   });
+
+  // THE HAZARD ESCALATION CARRIED FROM ROUND 0, answered here. The one
+  // fixture pair above varies a BRANCH token inside the merchant name, and
+  // the two collapse paths this phase introduces are outside its reach: the
+  // rail prefix, which sits BEFORE the merchant name, and the trailing-city
+  // loop, which sits after it. Both now have their own pair, and a collapse
+  // in either writes ONE stored EXACT rule over two merchants, which no
+  // total reveals.
+  test("a descriptor opening with an ordinary hyphenated word is NOT read as a payment rail (finding HZ-M3P6-03)", async () => {
+    const world = await importedWorld();
+    const review = await reviewOf(world);
+    const withPrefix = review.spend.filter((group) =>
+      group.label.includes("GROEPS-AANKOOP"),
+    );
+    const withoutPrefix = review.spend.filter(
+      (group) =>
+        group.label.includes("SAMENTUIN") && !group.label.includes("GROEPS"),
+    );
+    expect(withPrefix).toHaveLength(1);
+    expect(withoutPrefix).toHaveLength(1);
+    expect(withPrefix[0]?.key).not.toBe(withoutPrefix[0]?.key);
+  });
+
+  test("the same merchant paid on BOTH payment rails is ONE key and ONE group (finding HZ-M3P6-06)", async () => {
+    const world = await importedWorld();
+    const rows = world.transactions.filter((row) =>
+      row.description.includes("BAKKERIJ ZONNEBLOEM"),
+    );
+    // Two rows on the contactless rail, one on the wallet rail.
+    expect(rows).toHaveLength(3);
+    expect(
+      rows.filter((row) => row.description.startsWith("BANCONTACT-AANKOOP")),
+    ).toHaveLength(2);
+    expect(
+      rows.filter((row) =>
+        row.description.startsWith("DEBITMASTERCARD-BETALING"),
+      ),
+    ).toHaveLength(1);
+    expect(
+      new Set(rows.map((row) => normaliseCounterparty(counterpartyText(row))))
+        .size,
+    ).toBe(1);
+    const review = await reviewOf(world);
+    const groups = review.spend.filter((group) =>
+      group.label.includes("BAKKERIJ ZONNEBLOEM"),
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.count).toBe(3);
+  });
+});
+
+describe("the key space is closed under the pipeline, which is what makes a stored rule match (hazard H6.4)", () => {
+  // assign-merchant.ts normalises the submitted subject AGAIN before storing
+  // it, and the review form submits the already-normalised key, so a key the
+  // pipeline would strip further becomes a stored EXACT rule that matches
+  // NOTHING while every total stays right. This is the invariant, asserted
+  // over every group the fixture produces rather than over one example.
+  test("normalising any group's submitted subject returns that subject unchanged", async () => {
+    const world = await importedWorld();
+    const review = await reviewOf(world);
+    const subjects = [...review.income, ...review.spend]
+      .map((group) => group.counterpartyText)
+      .filter((subject): subject is string => subject !== undefined);
+    expect(subjects.length).toBeGreaterThan(0);
+    for (const subject of subjects) {
+      expect(normaliseCounterparty(subject), subject).toBe(subject);
+    }
+  });
 });
 
 describe("criterion 6.3: no card number in a key, in a rendered label, or on either screen", () => {
@@ -192,6 +260,12 @@ describe("criterion 6.3: no card number in a key, in a rendered label, or on eit
     for (const key of keysOf(world)) {
       expect(key.replace(/[ .\-]/g, "")).not.toContain(INVENTED_CARD_NUMBER);
     }
+    // FINDING HZ-M3P6-02: the fixture now carries a card descriptor with NO
+    // merchant span, which strips to nothing and reaches the non-destructive
+    // floor. The floor used to be the RAW input, which put the full card
+    // number into the key and therefore into the stored rule pattern.
+    const floored = keysOf(world).filter((key) => key === "KAART NR");
+    expect(floored).toHaveLength(1);
     // The holder name comes out with the card tail it follows. It survives
     // in exactly ONE key, the non-card control row, which carries
     // holder-like text with NO card-number label and which the strip must
@@ -213,17 +287,29 @@ describe("criterion 6.3: no card number in a key, in a rendered label, or on eit
     expect(carrying).toEqual([LONG_STRUCTURED_REFERENCE_DESCRIPTOR]);
   });
 
-  test("(b) no RENDERED group label carries a 13-to-19-digit run, on either label surface", async () => {
+  test("(b) no RENDERED group label carries a 13-to-19-digit run except the ONE named exception, on either label surface", async () => {
     const world = await importedWorld();
     const review = await reviewOf(world);
-    // The merchant review's label surface.
+    // THE ONE PERMITTED EXCEPTION, on the label side as well as the key
+    // side. Both are needed because for an UNRESOLVED group the key and the
+    // rendered label are the SAME STRING (finding PR5-002), so an exception
+    // covering only the key would be satisfiable by the accident of the row
+    // being resolved. Since fix round 1 narrowed the display helper to the
+    // card-tail grammar (finding HZ-M3P6-01), this exception is REAL rather
+    // than vacuous: the reference is not a card number, so nothing masks it,
+    // and it stays legible to the owner exactly as it should (finding
+    // HZ-M3P6-07).
+    const carryingReview: string[] = [];
     for (const group of [...review.income, ...review.spend]) {
       const rendered = maskCardNumbers(group.label);
-      expect(cardNumberRuns(rendered)).toEqual([]);
+      if (cardNumberRuns(rendered).length > 0) {
+        carryingReview.push(rendered);
+      }
       expect(rendered.replace(/[ .\-]/g, "")).not.toContain(
         INVENTED_CARD_NUMBER,
       );
     }
+    expect(carryingReview).toEqual([LONG_STRUCTURED_REFERENCE_DESCRIPTOR]);
     // The month view's label surface. For an unresolved group both screens
     // set the label to the normalised text that IS the key (finding
     // PR5-002), so the sweep has to cover both or it is satisfied by the
@@ -241,33 +327,73 @@ describe("criterion 6.3: no card number in a key, in a rendered label, or on eit
       useTags: false,
       normalise: normaliseCounterparty,
     });
+    const carryingMonth: string[] = [];
     for (const group of folded) {
       const rendered = maskCardNumbers(group.label);
-      expect(cardNumberRuns(rendered)).toEqual([]);
+      if (cardNumberRuns(rendered).length > 0) {
+        carryingMonth.push(rendered);
+      }
       expect(rendered.replace(/[ .\-]/g, "")).not.toContain(
         INVENTED_CARD_NUMBER,
       );
     }
+    expect(carryingMonth).toEqual([LONG_STRUCTURED_REFERENCE_DESCRIPTOR]);
   });
 
-  test("the display helper masks a card-number run to its last four digits, in every printed shape", () => {
-    expect(maskCardNumbers("KAART 4000 1234 5678 9010 X")).toBe(
-      "KAART **** 9010 X",
+  test("the display helper masks a card-number tail to its last four characters, in every printed shape", () => {
+    expect(maskCardNumbers("KAART NR 4000 1234 5678 9010 X")).toBe(
+      "KAART NR **** 9010 X",
     );
     expect(maskCardNumbers("KAART 4000-1234-5678-9010")).toBe("KAART **** 9010");
-    expect(maskCardNumbers("KAART 4000.1234.5678.9010")).toBe("KAART **** 9010");
-    expect(maskCardNumbers("KAART 4000123456789010")).toBe("KAART **** 9010");
-    // The window boundaries: 13 and 19 are masked, 12 and 20 are not.
-    expect(maskCardNumbers("1234567890123")).toBe("**** 0123");
-    expect(maskCardNumbers("1234567890123456789")).toBe("**** 6789");
-    expect(maskCardNumbers("123456789012")).toBe("123456789012");
-    // A run LONGER than a card number is left whole rather than having its
-    // first nineteen digits masked out of it.
-    expect(maskCardNumbers("A 12345678901234567890 B")).toBe(
-      "A 12345678901234567890 B",
+    expect(maskCardNumbers("KAART NR 4000.1234.5678.9010")).toBe(
+      "KAART NR **** 9010",
     );
-    // A short number a reader needs is untouched.
-    expect(maskCardNumbers("BUS 42 GENT")).toBe("BUS 42 GENT");
+    expect(maskCardNumbers("KAART NR 4000123456789010")).toBe(
+      "KAART NR **** 9010",
+    );
+    // The partially masked tail the bank itself prints.
+    expect(maskCardNumbers("KAART 4000 12XX XXXX 9010")).toBe(
+      "KAART **** 9010",
+    );
+    // FINDING CR-M3P6-04: a DOUBLE separator between two groups must not
+    // slip a whole card number past the mask. This helper reads RAW
+    // descriptors on the confirm preview, where nothing has collapsed the
+    // whitespace first.
+    expect(maskCardNumbers("KAART NR 4000  1234 5678 9010")).toBe(
+      "KAART NR **** 9010",
+    );
+  });
+
+  test("the display helper leaves every NON-card identifier untouched (finding HZ-M3P6-01)", () => {
+    // THE SIX SHAPES THE REVIEW MEASURED THE OLD, SHAPE-ONLY HELPER
+    // DAMAGING on the owner's two real statements, reproduced here with
+    // INVENTED values in the same grammar. Each is an identity the owner
+    // reads to tell one unresolved group from another, and none is a card
+    // number. The old helper masked six of these on real data while masking
+    // zero card numbers.
+    const untouched = [
+      // A spaced IBAN inside a transfer descriptor.
+      "OVERSCHRIJVING NAAR BE68 5390 0754 7034 ENERGIE NOORD",
+      // The same IBAN printed compact.
+      "OVERSCHRIJVING NAAR BE68539007547034 ENERGIE NOORD",
+      // A hyphenated SEPA mandate reference.
+      "DOMICILIERING MANDAAT 4152036987-001 ENERGIE NOORD",
+      // A Belgian phone number as a merchant prints it.
+      "KLANTENDIENST 02 123 45 67 ENERGIE NOORD",
+      // Two short numeric fields ONE SPACE apart: the join the old helper's
+      // own comment claimed could never happen.
+      "SHOP REF 07 24681357913 S",
+      // The digit tail of an ALPHANUMERIC merchant token, joined across one
+      // space to the field after it: the old helper ate four characters out
+      // of the merchant's own name.
+      "SHOP Q82B07 24681357913 S",
+      // A legitimate long structured reference, the row criterion 6.3(b)
+      // names as its permitted exception.
+      "OVERSCHRIJVING NAAR ENERGIE NOORD BV MEDEDELING 415123456789012",
+    ];
+    for (const text of untouched) {
+      expect(maskCardNumbers(text), text).toBe(text);
+    }
   });
 
   test("the display helper is a pure string function and never touches the value the review form submits", async () => {
@@ -282,6 +408,56 @@ describe("criterion 6.3: no card number in a key, in a rendered label, or on eit
       expect(group.counterpartyText).not.toContain("****");
       expect(group.counterpartyText).toBe(normaliseCounterparty(group.label));
     }
+  });
+});
+
+describe("criterion 6.10, the SQL half: the merchant-source rule is written ONCE per language (findings HZ-M3P6-05 and CR-M3P6-02)", () => {
+  // Criterion 6.10's pin is a TypeScript expression and is structurally
+  // blind to SQL, while the copy the MONTH VIEW's grouping actually reads is
+  // written in SQL. Decision D-11's operative content is "one definition",
+  // so the rule needs one pin per language. This is the SQL one: no
+  // database, one file read.
+  const repositorySource = readFileSync(
+    join(
+      __dirname,
+      "..",
+      "..",
+      "src",
+      "modules",
+      "overview",
+      "adapters",
+      "overview-repository.ts",
+    ),
+    "utf8",
+  );
+
+  test("the SQL form of the rule appears exactly once, as the shared fragment", () => {
+    const occurrences =
+      repositorySource.match(
+        /COALESCE\(\s*t\."counterpartyName",\s*t\."description"\s*\)/g,
+      ) ?? [];
+    expect(occurrences).toHaveLength(1);
+    expect(repositorySource).toContain(
+      'export const COUNTERPARTY_TEXT_SQL = Prisma.sql`COALESCE(t."counterpartyName", t."description")`',
+    );
+  });
+
+  test("both SQL reads use the shared fragment rather than their own copy", () => {
+    const uses = repositorySource.match(/\$\{COUNTERPARTY_TEXT_SQL\}/g) ?? [];
+    expect(uses).toHaveLength(2);
+  });
+
+  test("the SQL rule and the TypeScript rule agree on every value Prisma can produce", () => {
+    // COALESCE falls through on SQL NULL; the TypeScript helper falls
+    // through on null and undefined. Both keep an empty string. The
+    // assertion is over the values, not over the two texts.
+    expect(counterpartyText({ description: "D" })).toBe("D");
+    expect(counterpartyText({ description: "D", counterpartyName: "N" })).toBe(
+      "N",
+    );
+    expect(counterpartyText({ description: "D", counterpartyName: "" })).toBe(
+      "",
+    );
   });
 });
 
@@ -350,7 +526,7 @@ describe("criterion 6.5: facts untouched and no stored dedup key moved", () => {
   test("re-importing the card fixture adds zero rows and reports every row known", async () => {
     const world = await importedWorld();
     const rowCount = world.transactions.length;
-    expect(rowCount).toBe(13);
+    expect(rowCount).toBe(19);
     const again = await uploadStatement(context, world.deps, {
       fileName: FIXTURE,
       bytes: fixtureBytes(),

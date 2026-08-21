@@ -183,10 +183,63 @@ describe("the recipe's output is pinned: stored rule patterns depend on it (find
       "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 15/08 TANKSTATION DE BRUG GENT BE 62,00 EUR KAART NR 4000-1234-5678-9010 - JANSSENS PIETER",
       "TANKSTATION DE BRUG GENT BE",
     ],
+    // FIX ROUND 1. The two payment rails now agree: the same merchant in the
+    // same city produces the SAME key whether it was paid on the contactless
+    // rail or the wallet rail (finding HZ-M3P6-06). Before the round these
+    // two pinned to different strings, which split two real merchants in the
+    // owner's statement into two groups each.
     [
       "BANCONTACT-AANKOOP - BAKKERIJ ZONNEBLOEM <B> - 9000 GENT BE - 12/08/26 14:35 - CONTACTLOOS - KAART 4000 12XX XXXX 9010 - JANSSENS PIETER",
-      "BAKKERIJ ZONNEBLOEM - BE - CONTACTLOOS",
+      "BAKKERIJ ZONNEBLOEM GENT BE",
     ],
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 25/08 BAKKERIJ ZONNEBLOEM GENT BE 3,60 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+      "BAKKERIJ ZONNEBLOEM GENT BE",
+    ],
+    // FIX ROUND 1, finding HZ-M3P6-03: the rail prefix is a PINNED
+    // alternation, so an ordinary capitalised word hyphenated to a Dutch
+    // noun keeps its place in the key and two such descriptors stay two.
+    ["GROEPS-AANKOOP SAMENTUIN VZW LIDGELD", "GROEPS-AANKOOP SAMENTUIN VZW LIDGELD"],
+    ["SAMENTUIN VZW LIDGELD", "SAMENTUIN VZW LIDGELD"],
+    // FIX ROUND 1, finding HZ-M3P6-08, PINNED AS THE BEHAVIOUR IT IS rather
+    // than as the behaviour the finding asked for. A card descriptor whose
+    // CITY is the final token, with no country marker after it, reaches the
+    // trailing-city loop once the card tail is gone, so two branches of one
+    // chain in two cities merge. That is M1-P4's deliberate rule (the same
+    // shop seen from two branches normalises identically) reaching card rows
+    // for the first time. Skipping the loop for card descriptors was
+    // implemented and rejected: it breaks the idempotency the CR-402
+    // contract rests on and produces a stored rule that matches nothing. See
+    // the comment at the loop in normalise-counterparty.ts.
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 26/08 FIETSPUNT DE KETTING GENT 24,00 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+      "FIETSPUNT DE KETTING",
+    ],
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 27/08 FIETSPUNT DE KETTING ANTWERPEN 26,00 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+      "FIETSPUNT DE KETTING",
+    ],
+    // FIX ROUND 1, finding HZ-M3P6-02: a card descriptor with no merchant
+    // span strips to nothing and reaches the non-destructive floor. The
+    // floor carries the card-number LABEL and never the number.
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 28/08 KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+      "KAART NR",
+    ],
+    // FIX ROUND 1, finding HZ-M3P6-04: the amount strip is scoped to the
+    // card grammar and reads BOTH thousands forms. The space-grouped form
+    // used to leave a truncated number behind.
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 29/08 MEUBELHUIS DE EIK GENT BE 1 250,00 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+      "MEUBELHUIS DE EIK GENT BE",
+    ],
+    [
+      "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 30/08 MEUBELHUIS DE EIK GENT BE 1.250,00 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
+      "MEUBELHUIS DE EIK GENT BE",
+    ],
+    // ... and an amount on a NON-card row is NOT the transaction's own
+    // amount and is left alone.
+    ["ABONNEMENT 1.234,56 EUR SPORTCLUB NOORD", "ABONNEMENT 1.234,56 EUR SPORTCLUB NOORD"],
     [
       "DEBITMASTERCARD-BETALING VIA GOOGLE PAY 06/08 SUPERMARKT DE LINDE NOORD GENT BE 21,40 EUR KAART NR 4000 1234 5678 9010 - JANSSENS PIETER",
       "SUPERMARKT DE LINDE NOORD GENT BE",

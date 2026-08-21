@@ -259,8 +259,11 @@ const GapList = ({
   <ul className="recon-gap-list">
     {rows.map((row) => (
       <li key={row.id} className="recon-gap-row" data-testid={testId}>
+        {/* The gap row renders the UNNORMALISED counterparty text, so no
+            strip pattern has run on it: masked here for the same reason the
+            group label above is (M3-P6 fix round 1, finding CR-M3P6-03). */}
         <span className={tone === "flag" ? "month-group-unresolved" : undefined}>
-          {row.text}
+          {maskCardNumbers(row.text)}
         </span>
         <span className="month-row-meta">
           {row.bookingDate}
