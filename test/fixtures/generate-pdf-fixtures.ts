@@ -548,6 +548,327 @@ export const FIXTURE_E_TRANSACTIONS: readonly FixtureTransaction[] = [
 ];
 
 // ---------------------------------------------------------------------
+// KBC-layout fixtures (M3-P3, plan step 3; all content invented). The
+// layout mirrors the verified structure of the real uitgavenstaat:
+// header block with fingerprint lines, an indented Vorig saldo line with
+// a per-card sub-heading under it, one-line two-date transaction rows at
+// the row margin with the amount at line end, FX continuation lines at
+// a deeper indent, marketing footer blocks between the last row of a
+// page and the page end, and the closing figure on the Afrekening line
+// with a SPACE thousands separator while the Totaal bedrag line carries
+// no amount. Same five-category privacy contract as the Belfius
+// fixtures above; the KBC layout vocabulary sanctioned as digit-free
+// boilerplate additionally covers: KBC-Mastercard, Uitgavenstaat,
+// Klantenreferentie, Uitgavenstaatnummer, Gebruikslimiet,
+// Kaartnummer(s), the period-line phrasing (Overzicht van je
+// verrichtingen van .. tot ..), the column-header words, Vorig saldo
+// op, DOMICILIERING VIA JE BANK, Bedrag, Koers (1 EUR = ..), Totaal
+// bedrag van de kaartverrichtingen op, and Afrekening via je bank op.
+// Fixture dates are chosen outside BOTH real statements' date sets.
+// ---------------------------------------------------------------------
+
+const KBC_LEFT = 59.5;
+const KBC_ROW_X = 62.4;
+const KBC_CONTINUATION_X = 218.4;
+const KBC_BALANCE_X = 204.2;
+const KBC_AMOUNT_X = 470.0;
+const KBC_FOOTER_X = 94.1;
+
+export const KBC_MASKED_CARD = "5417 88XX XXXX 3210";
+export const KBC_STATEMENT_NUMBER = "30456";
+
+export type KbcFixtureRow = {
+  // DD-MM-YYYY, as rendered. Booking date is the TRANSACTION date
+  // (pulse-v0.2-pdf-addendum.md:76, finding PR2-004); the settlement
+  // date stays in the raw row text.
+  readonly transactionDate: string;
+  readonly settlementDate: string;
+  readonly description: string;
+  // Rendered amount: tight sign, comma decimals, SPACE thousands from
+  // 1 000,00 up, verified against amountCents by the generator.
+  readonly amountText: string;
+  readonly amountCents: number;
+  // FX continuation lines (original amount, exchange rate), rendered at
+  // the continuation indent and folded into the row's rawLine by the
+  // template, never rows.
+  readonly fxLines?: readonly string[];
+};
+
+const centsOfKbcAmountText = (text: string): number => {
+  const match = /^([+-])((?:\d{1,3}(?: \d{3})+|\d+)),(\d{2})$/.exec(text);
+  if (!match || match[1] === undefined || match[2] === undefined || match[3] === undefined) {
+    throw new Error(`Bad KBC fixture amount text: ${text}`);
+  }
+  const sign = match[1] === "-" ? -1 : 1;
+  return sign * (Number(match[2].replace(/ /g, "")) * 100 + Number(match[3]));
+};
+
+const checkedKbcCents = (row: KbcFixtureRow): number => {
+  const parsed = centsOfKbcAmountText(row.amountText);
+  if (parsed !== row.amountCents) {
+    throw new Error(
+      `KBC fixture row ${row.description} declares ${row.amountCents} but renders ${parsed}`,
+    );
+  }
+  return parsed;
+};
+
+const formatKbcCents = (cents: number): string => {
+  const sign = cents < 0 ? "-" : "+";
+  const magnitude = Math.abs(cents);
+  const whole = Math.floor(magnitude / 100);
+  const fraction = String(magnitude % 100).padStart(2, "0");
+  const grouped = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  return `${sign}${grouped},${fraction}`;
+};
+
+// Vorig saldo: what the previous statement settled at, negative (owed).
+// The DOMICILIERING credit below equals its negation exactly, as on the
+// real statement. The magnitude also equals THIS statement's Afrekening
+// magnitude by construction (the debit rows sum to it), so the
+// account-side settlement debit in the companion fixture both matches
+// the card import's settlement total and finds this credit as its
+// mirror leg within the pairing windows (criteria 3.3 and 3.4).
+export const KBC_FIXTURE_OPENING_CENTS = -123456; // "-1 234,56"
+
+export const KBC_FIXTURE_ROWS: readonly KbcFixtureRow[] = [
+  {
+    // The month-straddling row (finding PR2-004): transaction in May,
+    // settlement in June. The stored bookingDate must be 2026-05-31.
+    transactionDate: "31-05-2026",
+    settlementDate: "02-06-2026",
+    description: "KANTOORBOEK PLUS HASSELT B",
+    amountText: "-48,20",
+    amountCents: -4820,
+  },
+  {
+    transactionDate: "02-06-2026",
+    settlementDate: "03-06-2026",
+    description: "STREAMFLIX ABONNEMENT AMSTERDAM N",
+    amountText: "-11,99",
+    amountCents: -1199,
+  },
+  {
+    transactionDate: "04-06-2026",
+    settlementDate: "05-06-2026",
+    description: "CLOUDKRACHT HOSTING BERLIN D",
+    amountText: "-27,50",
+    amountCents: -2750,
+    fxLines: ["Bedrag 30 USD", "Koers (1 EUR = 1,092345678 USD)"],
+  },
+  {
+    transactionDate: "06-06-2026",
+    settlementDate: "07-06-2026",
+    description: "BOEKENHUIS LONDEN LONDON G",
+    amountText: "-14,84",
+    amountCents: -1484,
+    fxLines: ["Bedrag 12,79 GBP", "Koers (1 EUR = 0,861234567 GBP)"],
+  },
+  {
+    // The legitimate identical duplicate pair (addendum section 5, one
+    // real pair observed): same dates, same description, same amount.
+    transactionDate: "08-06-2026",
+    settlementDate: "09-06-2026",
+    description: "TAPAUTOMAAT PERRON 7 GENT B",
+    amountText: "-2,40",
+    amountCents: -240,
+  },
+  {
+    transactionDate: "08-06-2026",
+    settlementDate: "09-06-2026",
+    description: "TAPAUTOMAAT PERRON 7 GENT B",
+    amountText: "-2,40",
+    amountCents: -240,
+  },
+  {
+    // A ROW amount with the space thousands separator.
+    transactionDate: "10-06-2026",
+    settlementDate: "11-06-2026",
+    description: "REISBUREAU NOORDERLICHT OSLO N",
+    amountText: "-1 050,93",
+    amountCents: -105093,
+  },
+  {
+    transactionDate: "12-06-2026",
+    settlementDate: "13-06-2026",
+    description: "WEBWINKEL ZONNELICHT GENT B",
+    amountText: "-76,30",
+    amountCents: -7630,
+  },
+  {
+    // The settlement of the previous statement arriving on the card: a
+    // REAL transaction (the card-side settlement leg), rendered last
+    // among the rows as on the real statement despite its early dates.
+    transactionDate: "01-06-2026",
+    settlementDate: "01-06-2026",
+    description: "DOMICILIERING VIA JE BANK",
+    amountText: "+1 234,56",
+    amountCents: 123456,
+  },
+];
+
+export const KBC_FIXTURE_ROW_COUNT = KBC_FIXTURE_ROWS.length;
+
+export const KBC_FIXTURE_SUM_CENTS = KBC_FIXTURE_ROWS.reduce(
+  (sum, row) => sum + row.amountCents,
+  0,
+);
+
+const kbcHeaderBlock = (builder: LineBuilder, periodLine: string): void => {
+  builder.push([{ x: KBC_LEFT, text: periodLine }]);
+  builder.push([
+    { x: KBC_LEFT, text: "datum" },
+    { x: 110.0, text: "datum" },
+    { x: 170.0, text: "omschrijving verrichtingen" },
+    { x: 420.0, text: "bedrag in EUR" },
+  ]);
+  builder.push([
+    { x: KBC_LEFT, text: "verrichting" },
+    { x: 110.0, text: "verrekening" },
+  ]);
+  builder.gap();
+};
+
+const kbcRow = (builder: LineBuilder, row: KbcFixtureRow): void => {
+  builder.push([
+    {
+      x: KBC_ROW_X,
+      text: `${row.transactionDate} ${row.settlementDate} ${row.description}`,
+    },
+    { x: KBC_AMOUNT_X, text: row.amountText },
+  ]);
+  for (const fxLine of row.fxLines ?? []) {
+    builder.push([{ x: KBC_CONTINUATION_X, text: fxLine }]);
+  }
+};
+
+const kbcFooter = (builder: LineBuilder, pageMarker: string): void => {
+  builder.gap();
+  builder.push([
+    { x: KBC_FOOTER_X, text: "Kaart blokkeren? Open KBC Mobile en volg de stappen." },
+  ]);
+  builder.push([
+    { x: KBC_FOOTER_X, text: "Tip: beheer je kaart met Kate in KBC Mobile." },
+  ]);
+  builder.push([{ x: KBC_LEFT, text: "Een onderneming van de KBC-groep" }]);
+  builder.push([{ x: 534.7, text: pageMarker }]);
+  builder.push([{ x: 435.8, text: "004512 / 4083321870/2210035/202606 /" }]);
+};
+
+const kbcStatement = (input: {
+  readonly openingCents: number;
+  readonly closingCents: number;
+  readonly rows: readonly KbcFixtureRow[];
+  readonly pageOneCount: number;
+}): PageContent[] => {
+  const period = "Overzicht van je verrichtingen van 17-05-2026 tot 14-06-2026";
+
+  const pageOne = makeBuilder();
+  pageOne.push([{ x: 93.6, text: "Jansen Pieter" }]);
+  pageOne.push([{ x: 93.6, text: "Voorbeeldstraat 7" }]);
+  pageOne.push([{ x: 93.6, text: "2000 Demostad" }]);
+  pageOne.gap();
+  pageOne.push([{ x: KBC_LEFT, text: "KBC-Mastercard" }]);
+  pageOne.push([{ x: KBC_LEFT, text: "Uitgavenstaat" }]);
+  pageOne.push([{ x: KBC_LEFT, text: "Klantenreferentie: 4083321870" }]);
+  pageOne.push([
+    { x: KBC_LEFT, text: `Uitgavenstaatnummer: ${KBC_STATEMENT_NUMBER}` },
+  ]);
+  pageOne.push([{ x: KBC_LEFT, text: "Gebruikslimiet: 2 500,00 EUR" }]);
+  pageOne.push([{ x: KBC_LEFT, text: `Kaartnummer(s): ${KBC_MASKED_CARD}` }]);
+  pageOne.gap();
+  kbcHeaderBlock(pageOne, period);
+  pageOne.push([
+    { x: KBC_BALANCE_X, text: "Vorig saldo op 16-05-2026" },
+    { x: KBC_AMOUNT_X, text: formatKbcCents(input.openingCents) },
+  ]);
+  pageOne.push([{ x: KBC_BALANCE_X, text: `Kaartnummer ${KBC_MASKED_CARD}` }]);
+  pageOne.push([{ x: KBC_BALANCE_X, text: "Jansen Pieter" }]);
+  for (const row of input.rows.slice(0, input.pageOneCount)) {
+    kbcRow(pageOne, row);
+  }
+  kbcFooter(pageOne, "1/2");
+
+  const pageTwo = makeBuilder();
+  pageTwo.push([{ x: KBC_LEFT, text: `Vervolg ${period.toLowerCase()}` }]);
+  kbcHeaderBlock(pageTwo, period);
+  for (const row of input.rows.slice(input.pageOneCount)) {
+    kbcRow(pageTwo, row);
+  }
+  pageTwo.push([
+    { x: KBC_BALANCE_X, text: "Totaal bedrag van de kaartverrichtingen op 14-06-2026" },
+  ]);
+  pageTwo.push([
+    { x: KBC_BALANCE_X, text: "Afrekening via je bank op 22-06-2026" },
+    { x: KBC_AMOUNT_X, text: formatKbcCents(input.closingCents) },
+  ]);
+  kbcFooter(pageTwo, "2/2");
+
+  return [pageOne.lines, pageTwo.lines];
+};
+
+// ---------------------------------------------------------------------
+// Companion Belfius-side fixture (statement 7): the account-side
+// settlement debit whose amount equals the KBC fixture's Afrekening
+// total, so the D-11 pairing is witnessable end to end across two PDF
+// imports (plan step 3, criteria 3.3 and 3.4). Booked 03-06, two days
+// after the card-side DOMICILIERING credit: inside the 4-day mirror
+// window and inside the 45-day settlement window of the card import's
+// period end.
+// ---------------------------------------------------------------------
+
+export const COMPANION_SETTLEMENT_DEBIT_SEQUENCE = "0131";
+
+export const COMPANION_OPENING_CENTS = 120000; // "+1.200,00"
+
+export const COMPANION_TRANSACTIONS: readonly FixtureTransaction[] = [
+  {
+    sequence: "0130",
+    bookingDate: "01-06-2026",
+    valueDate: "01-06-2026",
+    amountText: "+2.000,00",
+    amountCents: 200000,
+    description: [
+      `INSTANT STORTING VAN ${COUNTERPARTY_DEPOSIT} Demo Werkgever`,
+      "Loon juni",
+    ],
+  },
+  {
+    sequence: COMPANION_SETTLEMENT_DEBIT_SEQUENCE,
+    bookingDate: "03-06-2026",
+    valueDate: "03-06-2026",
+    amountText: "-1.234,56",
+    amountCents: -123456,
+    description: [
+      `MASTERCARD AFREKENING NUMMER ${KBC_STATEMENT_NUMBER}`,
+      `KAART ${KBC_MASKED_CARD}`,
+    ],
+  },
+  {
+    sequence: "0132",
+    bookingDate: "06-06-2026",
+    valueDate: "06-06-2026",
+    amountText: "- 25,00",
+    amountCents: -2500,
+    description: [
+      "BANCONTACT-AANKOOP - Bakkerij Zonnig - 3000 LEUVEN BE -",
+      "06/06/26 09:15 - CONTACTLOOS - KAART 5599 20XX XXXX 5544",
+    ],
+  },
+  {
+    sequence: "0133",
+    bookingDate: "10-06-2026",
+    valueDate: "10-06-2026",
+    amountText: "+ 50,00",
+    amountCents: 5000,
+    description: [
+      `STORTING VAN ${COUNTERPARTY_DEPOSIT} Gezin Voorbeeld`,
+      "Verjaardag",
+    ],
+  },
+];
+
+// ---------------------------------------------------------------------
 // Fixture D: a perfectly valid PDF that matches NO registered template.
 // ---------------------------------------------------------------------
 
@@ -634,6 +955,51 @@ export const buildPdfFixtures = (): ReadonlyMap<string, Uint8Array> => {
 
   const fixtureD = buildPdf(unknownLayoutPages());
 
+  // KBC family: the generator PROVES the balance identity of the
+  // reconciling KBC fixture arithmetically, the same identity the real
+  // statement satisfies (Vorig saldo + all rows including the credit =
+  // Afrekening): the closing is computed, never hand-written, and the
+  // non-reconciling variant is exactly 1,00 EUR off.
+  const kbcSum = KBC_FIXTURE_ROWS.reduce(
+    (sum, row) => sum + checkedKbcCents(row),
+    0,
+  );
+  const kbcClosing = KBC_FIXTURE_OPENING_CENTS + kbcSum;
+  const kbcFixtureA = buildPdf(
+    kbcStatement({
+      openingCents: KBC_FIXTURE_OPENING_CENTS,
+      closingCents: kbcClosing,
+      rows: KBC_FIXTURE_ROWS,
+      pageOneCount: 4,
+    }),
+  );
+  const kbcNonreconciling = buildPdf(
+    kbcStatement({
+      openingCents: KBC_FIXTURE_OPENING_CENTS,
+      closingCents: kbcClosing - 100,
+      rows: KBC_FIXTURE_ROWS,
+      pageOneCount: 4,
+    }),
+  );
+
+  const companionSum = COMPANION_TRANSACTIONS.reduce(
+    (sum, transaction) => sum + checkedCents(transaction),
+    0,
+  );
+  const companionClosing = COMPANION_OPENING_CENTS + companionSum;
+  const companionFixture = buildPdf(
+    belfiusStatement({
+      pageMarkerFirst: "BLZ. : 7/1",
+      pageMarkerRest: "13-06-2026 7/2",
+      holderDateLine: "VOORBEELDSTRAAT 7 DATUM : 13-06-2026",
+      openingLine: `SALDO OP 31-05-2026 EUR ${formatClosingCents(COMPANION_OPENING_CENTS)}`,
+      closingLine: `SALDO OP 13-06-2026 11:30 EUR ${formatClosingCents(companionClosing)}`,
+      pageOneCount: 2,
+      transactions: COMPANION_TRANSACTIONS,
+      annexPage: false,
+    }),
+  );
+
   const sumE = FIXTURE_E_TRANSACTIONS.reduce(
     (sum, transaction) => sum + checkedCents(transaction),
     0,
@@ -658,6 +1024,9 @@ export const buildPdfFixtures = (): ReadonlyMap<string, Uint8Array> => {
     ["belfius-nonreconciling.pdf", fixtureC],
     ["unknown-layout.pdf", fixtureD],
     ["belfius-inline-shapes.pdf", fixtureE],
+    ["kbc-statement-a.pdf", kbcFixtureA],
+    ["kbc-nonreconciling.pdf", kbcNonreconciling],
+    ["belfius-settlement-companion.pdf", companionFixture],
   ]);
 };
 

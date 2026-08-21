@@ -151,6 +151,91 @@ test("PDF upload: ask-once declaration, rows added, month reconciles, copy names
   );
 });
 
+// Criterion 3.4 (M3-P3): the KBC card journey across TWO PDF imports.
+// The card statement carries no IBAN, so the ask-once declaration binds
+// the profile to the declared card account; the companion Belfius
+// statement carries the account-side settlement debit. With both
+// imported, June's books close: the settlement debit and the
+// DOMICILIERING mirror credit pair INTERNAL (D-11) and the card's own
+// line items are the only counted spend.
+
+const KBC_FIXTURE = join(__dirname, "..", "fixtures", "kbc-statement-a.pdf");
+const COMPANION_FIXTURE = join(
+  __dirname,
+  "..",
+  "fixtures",
+  "belfius-settlement-companion.pdf",
+);
+
+test("KBC card PDF plus companion account PDF: two ask-once declarations, June reconciles", async ({
+  page,
+}) => {
+  const unique = `kbc-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+  const email = `${unique}@pulse-e2e.test`;
+  const password = `pw-${unique}`;
+
+  await page.goto("/sign-up");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Create household" }).click();
+  await expect(page.getByTestId("household-context")).toHaveText(unique);
+
+  // The card statement: recognised layout, so no format question, only
+  // the account declaration. The preview's first row is the
+  // month-straddling row, shown under its TRANSACTION date (PR2-004).
+  await page.goto("/import");
+  await page.getByLabel("Bank export file").setInputFiles(KBC_FIXTURE);
+  await page.getByRole("button", { name: "Upload" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Confirm the detected format" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("landing-new")).toBeVisible();
+  await expect(page.getByTestId("preview-row")).toHaveCount(5);
+  await expect(page.getByTestId("preview-table")).toContainText("2026-05-31");
+  await expect(page.getByTestId("preview-table")).toContainText("48,20");
+  await expect(page.getByLabel("Format name")).toHaveCount(0);
+  await expect(page.getByTestId("account-declaration")).toBeVisible();
+
+  await page.getByLabel("Label").fill("Credit card");
+  await page.getByLabel("Bank").fill("KBC");
+  await page.getByLabel("Ring").selectOption("POT");
+  await page.getByTestId("confirm-import").click();
+
+  await expect(page.getByTestId("import-result")).toBeVisible();
+  await expect(page.getByTestId("landing-account")).toHaveText("Credit card");
+  await expect(page.getByTestId("rows-added")).toHaveText("9");
+  await expect(page.getByTestId("rows-known")).toHaveText("0");
+
+  // The companion current-account statement with the settlement debit.
+  await page.goto("/import");
+  await page.getByLabel("Bank export file").setInputFiles(COMPANION_FIXTURE);
+  await page.getByRole("button", { name: "Upload" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Confirm the detected format" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("account-declaration")).toBeVisible();
+  await page.getByLabel("Label").fill("Daily account");
+  await page.getByLabel("Bank").fill("Belfius");
+  await page.getByLabel("Ring").selectOption("POT");
+  await page.getByTestId("confirm-import").click();
+
+  await expect(page.getByTestId("import-result")).toBeVisible();
+  await expect(page.getByTestId("landing-account")).toHaveText("Daily account");
+  await expect(page.getByTestId("rows-added")).toHaveText("4");
+  await expect(page.getByTestId("rows-known")).toHaveText("0");
+
+  // June's books close: the settlement pair is INTERNAL on both legs,
+  // nothing is unmatched, and the reconciliation panel reads ok.
+  await page.goto("/?month=2026-06");
+  await expect(page.getByTestId("recon-panel")).toBeVisible();
+  await expect(page.getByTestId("recon-panel")).toHaveAttribute(
+    "data-state",
+    "ok",
+  );
+});
+
 // Fix round 1, finding CR-902, extending the phone-viewport rule the
 // M3-P1 defect round instituted (its criterion 1.5: no horizontal
 // scroll at 390x844) to the PDF confirm step, where the preview table's

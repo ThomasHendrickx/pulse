@@ -12,14 +12,16 @@
 // SHARED parse path (parse-pdf-statement.ts), never inside a template, so
 // every future template inherits the gate by construction
 // (pulse-v0.2-pdf-addendum.md:35). Sibling implementations that share the
-// mechanism: the Belfius current-account template (this phase) and the
-// KBC card template (M3-P3).
+// mechanism: the Belfius current-account template (M3-P2) and the KBC
+// Mastercard uitgavenstaat template (M3-P3); both parse reconstructed
+// lines only and neither enforces the balance gate itself.
 
 import type { Cents } from "@/platform/money";
 import type { Result } from "@/platform/result";
 import type { ParsedRow } from "./parse-statement";
 import type { PdfLine } from "./pdf-lines";
 import { belfiusCurrentAccountTemplate } from "./belfius-current-account-template";
+import { kbcMastercardTemplate } from "./kbc-mastercard-template";
 
 // The reconstructed lines of one page, in reading order, each carrying
 // its left edge so templates can classify margin-level structure versus
@@ -86,6 +88,7 @@ export type PdfLayoutTemplate = {
 // match wins.
 export const PDF_LAYOUT_TEMPLATES: readonly PdfLayoutTemplate[] = [
   belfiusCurrentAccountTemplate,
+  kbcMastercardTemplate,
 ];
 
 export const findTemplateByFingerprint = (
