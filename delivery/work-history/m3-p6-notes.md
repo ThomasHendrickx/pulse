@@ -122,3 +122,41 @@ yet at the phase base). See the "pre-change pin" section below.
 Every acceptance criterion in this phase runs on SYNTHETIC fixtures with
 invented values. The real statement's merchant count is a measurement about one
 real file and is deliberately not asserted anywhere in the suite.
+
+## Step 1(b), the pre-change pin on the committed fixture
+
+test/fixtures/card-descriptors.csv is committed in this phase (synthetic,
+invented values in the real grammar, 13 rows, one account, two months).
+Measured through detectSourceProfile -> parseStatement -> normaliseCounterparty:
+
+- BEFORE the recipe change (base 68fc7ee): 12 distinct keys over 13 rows. The
+  ONE fixture merchant's five rows produced FIVE distinct keys, one per row,
+  which is the defect this phase exists to fix.
+- AFTER the recipe change: 8 distinct keys over 13 rows. The same five rows
+  produce ONE key, "KOFFIEHUIS DE MOLEN GENT BE".
+- The row carrying a legitimate 15-digit structured reference keeps it in its
+  key, before and after.
+- The non-card control row (an X-masked token followed by holder-like text,
+  no card-number label) has the SAME key before and after:
+  "ONLINE AANKOOP WEBSHOP DE VLIEGER 4000 12XX - JANSSENS PIETER". That
+  string is pinned in the test as the pre-change literal.
+
+## Steps 2 and 3, executed
+
+RED WITNESS for the grammar, captured before the recipe was applied:
+`npx vitest run test/domain/normalise-counterparty.test.ts` -> 6 failed | 47
+passed. The six were the collapse assertions (same merchant across dates,
+across months, across both tail shapes, the dash-separated number, the second
+rail, and the sweep asserting no key retains the invented card number). After
+the recipe: 61 passed, 0 failed (the eight new pins bring the file to 61).
+
+RED WITNESS for criterion 6.10, captured immediately before the unification:
+`grep -rlE 'counterpartyName \?\? [A-Za-z_]*\.?description' src/` returned 5
+files (the two call sites, the two frozen sibling recipes, and the new shared
+definition). After the unification it returns 3: the module exporting the
+shared helper plus dedup.ts and corrections.ts, which is exactly what the
+criterion demands.
+
+NONE OF THE PRE-M3-P6 PINS MOVED. The card patterns are additive over the
+earlier corpus. Recorded as an observation about this corpus, not as a
+property of future recipe changes.

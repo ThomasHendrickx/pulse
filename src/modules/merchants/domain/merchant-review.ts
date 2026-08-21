@@ -7,7 +7,17 @@
 // groups are, which is what the e2e asserts stays fixed across a naming.
 
 import type { Cents } from "@/platform/money";
-import { normaliseCounterparty } from "./normalise-counterparty";
+import {
+  counterpartyText,
+  normaliseCounterparty,
+} from "./normalise-counterparty";
+
+// The counterparty-source rule has ONE definition (decision D-11), in
+// normalise-counterparty.ts beside the normaliser that consumes it. This
+// module used to carry its own copy of the expression; re-exporting keeps
+// the merchants module's published interface unchanged for every existing
+// importer while leaving exactly one place where the rule is written.
+export { counterpartyText };
 
 export type CountedRow = {
   readonly id: string;
@@ -43,14 +53,6 @@ export type MerchantReview = {
   readonly spend: readonly ReviewGroup[];
   readonly unresolvedCount: number;
 };
-
-// The one counterparty-text convention: the named counterparty when the
-// export carries one, the description otherwise (card rows). The same
-// fallback the ledger's counterpartyKey applies on its own side.
-export const counterpartyText = (row: {
-  readonly description: string;
-  readonly counterpartyName?: string;
-}): string => row.counterpartyName ?? row.description;
 
 const byGroupOrder = (a: ReviewGroup, b: ReviewGroup): number => {
   const magnitudeA = Math.abs(a.totalCents);
