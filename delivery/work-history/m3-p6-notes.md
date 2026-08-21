@@ -621,3 +621,16 @@ postal-city tail is corrected in place and the mid-string case asserted.
 Every committed CSV fixture except the one this phase added still has ZERO
 key changes, the three KBC card fixtures included: 88 rows, 16 changed, all
 16 in card-descriptors.csv.
+
+## claim-grep at the round-2 head
+
+    grep -nEi 'cannot be|impossible|needs a|is covered|catches|would catch|recovers|anyway|always|never|no way to' delivery/work-history/m3-p6.yaml
+
+15 hits, and the flattened run finds nothing extra. Fourteen are "never" in
+one of three settled shapes: inside the verbatim prompt or a quoted plan
+clause (not my claims to settle), adjacent to an executed construction that
+settles them (the masking containment, the SQL derivation, the erosion
+assertion, the pin-never-widen quotation), or restated with their evidence
+this round (the two scratch-script sentences now name the clean git status
+and the 15-path scope diff). The one "no way to" is the honest form the
+clause endorses, inside an open question that carries still-open-because.
