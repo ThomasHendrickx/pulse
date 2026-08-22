@@ -31,12 +31,36 @@
 //   <amount>" line (scout fact 5). All three are balances, never
 //   transactions; the "DOMICILIERING VIA JE BANK" credit row IS a
 //   transaction (the card-side settlement leg, addendum:83).
+//   CORRECTED RATHER THAN QUIETLY REWRITTEN (R-087, fix round 2, finding
+//   HZ-M3P3-07): the sentence above states the shape as SINGULAR and
+//   nothing used to keep it singular. The parse collected every opening
+//   and every closing line it saw and silently kept the first opening and
+//   the last closing, so a repeated or corrected balance line changed the
+//   parsed identity with nothing said. Repeats carrying the SAME value are
+//   now folded; two DIFFERENT values are a loud structure error.
+// - THE CLOSING FIGURE IS ALSO THIS STATEMENT'S SETTLEMENT TOTAL: it is
+//   the amount the issuer collects by direct debit, and it is returned as
+//   settlementTotalCents so nothing downstream has to re-derive it from
+//   the row signs (fix round 2, finding HZ-M3P3-01). The two differ by
+//   exactly any ordinary merchant refund on the statement.
 // - The file carries NO IBAN and NO sequence numbers: accountIbans is
-//   empty (account identity rides the confirmed profile's account
-//   binding, upload-statement.ts resolveAccount) and hasNaturalKey is
-//   false, so dedup takes the HASH path with the occurrence ordinal
-//   (dedup.ts), which is what keeps the format's legitimate identical
-//   duplicate rows distinct (addendum:86, hazard H3.3).
+//   empty and hasNaturalKey is false, so dedup takes the HASH path with
+//   the occurrence ordinal (dedup.ts), which is what keeps the format's
+//   legitimate identical duplicate rows distinct (addendum:86, hazard
+//   H3.3).
+// - ACCOUNT IDENTITY IS THE MASKED CARD NUMBER on the "Kaartnummer(s):"
+//   header line, returned as the spec's accountIdentifier (fix round 2,
+//   finding HZ-M3P3-02, and the plan's own step-1 wording at
+//   pulse-v02.yaml:1087). CORRECTED RATHER THAN QUIETLY REWRITTEN
+//   (R-087): this header used to say identity "rides the confirmed
+//   profile's account binding" and nothing else, which is true of the
+//   binding but not of IDENTITY: the spec carried no discriminator, so
+//   two cards of one issuer produced one spec, one profile and one
+//   account, and the second card's rows landed on the first card's
+//   account with rows that matched an existing day, amount and merchant
+//   absorbed as already known. The masked number is what tells them
+//   apart, and a card file that does not carry one is a loud structure
+//   error, never a silent bind.
 //
 // LINE CLASSIFICATION IS SHAPE-FIRST HERE, deliberately unlike the
 // Belfius template's positional rule (HZ-001): on THIS layout the
@@ -89,6 +113,14 @@ const FX_RATE_LINE = /^Koers\s*\(1\s*EUR\s*=\s*[\d.,]+\s*[A-Z]{3}\)$/;
 const PREVIOUS_BALANCE_LINE = new RegExp(
   `^Vorig\\s*saldo\\s*op\\s*(\\d{2}-\\d{2}-\\d{4})\\s*(${AMOUNT})$`,
 );
+// The masked card number on the header line, and on the per-card
+// sub-heading under the previous balance. Glue-tolerant like every other
+// label here; the value is taken verbatim as the file's own-account
+// identifier. Mask glyphs are part of the value: a card statement never
+// prints a bare PAN.
+const CARD_NUMBER_LINE =
+  /^Kaartnummer(?:\s*\(s\))?\s*:?\s*([0-9Xx*]{4}(?:[ -]?[0-9Xx*]{4}){3})$/;
+
 const TOTAL_LINE =
   /^Totaal\s*bedrag\s*van\s*de\s*kaartverrichtingen\s*op\s*\d{2}-\d{2}-\d{4}$/;
 const SETTLEMENT_TOTAL_LINE = new RegExp(
@@ -122,6 +154,35 @@ const structureError = (
   problem: PdfTemplateError["problem"],
 ): Result<PdfTemplateOutcome, PdfTemplateError> =>
   err({ kind: "pdf-structure" as const, problem });
+
+// Every distinct masked card number the document prints, in first-seen
+// order. Read WITHOUT parsing anything else, because detection needs it
+// before a parse has happened (pdf-template.ts, accountIdentifier).
+const cardNumbersIn = (pages: readonly PdfPageLines[]): readonly string[] => {
+  const seen: string[] = [];
+  for (const page of pages) {
+    for (const line of page) {
+      const match = CARD_NUMBER_LINE.exec(line.text);
+      const value = match?.[1];
+      if (value !== undefined && !seen.includes(value)) {
+        seen.push(value);
+      }
+    }
+  }
+  return seen;
+};
+
+// The file's own-account identity: exactly one masked card number, or
+// nothing. Two different numbers in one document is the multi-card
+// uitgavenstaat nobody has seen (open question M3P3-Q2); it resolves to
+// undefined here and the parse below turns that into a loud structure
+// error rather than a guess about which card the rows belong to.
+const accountIdentifier = (
+  pages: readonly PdfPageLines[],
+): string | undefined => {
+  const numbers = cardNumbersIn(pages);
+  return numbers.length === 1 ? numbers[0] : undefined;
+};
 
 const parse = (
   pages: readonly PdfPageLines[],
@@ -215,10 +276,25 @@ const parse = (
   if (badBalance || openings.length === 0 || closings.length === 0) {
     return structureError("no-balance-lines");
   }
+  // HZ-M3P3-07: repeats of the SAME value (a header block reprinted on a
+  // later page) are folded; two DIFFERENT values are ambiguous and loud.
   const opening = openings[0];
-  const closing = closings[closings.length - 1];
+  const closing = closings[0];
   if (opening === undefined || closing === undefined) {
     return structureError("no-balance-lines");
+  }
+  if (
+    openings.some((value) => value !== opening) ||
+    closings.some((value) => value !== closing)
+  ) {
+    return structureError("ambiguous-balance-lines");
+  }
+
+  // HZ-M3P3-02: identity is the masked card number, and a card file that
+  // does not carry exactly one is never bound to an account by guesswork.
+  const identifier = accountIdentifier(pages);
+  if (identifier === undefined) {
+    return structureError("no-account-identifier");
   }
 
   const rows: ParsedRow[] = [];
@@ -248,11 +324,19 @@ const parse = (
 
   return ok({
     rows,
-    // No IBAN exists anywhere in this format: account identity rides
-    // the confirmed profile's account binding.
+    // No IBAN exists anywhere in this format. Identity is the masked card
+    // number, carried in the profile spec (accountIdentifier above), not
+    // here: accountIbans feeds the account-by-IBAN lookup and the
+    // mixed-account refusal, and a masked card number is neither.
     accountIbans: [],
     openingBalanceCents: opening,
     closingBalanceCents: closing,
+    // The Afrekening magnitude: what the bank collects for this
+    // statement. Negative closing means money owed, which is the ordinary
+    // case; a card standing in credit yields a non-positive settlement
+    // total, which matches no direct debit and is honestly left to find
+    // none (corrections.ts settlementCandidateImports).
+    settlementTotalCents: (-closing) as Cents,
   });
 };
 
@@ -269,5 +353,6 @@ export const kbcMastercardTemplate: PdfLayoutTemplate = {
     pages.some((page) =>
       page.some((line) => line.text.includes(FINGERPRINT_DOCUMENT)),
     ),
+  accountIdentifier,
   parse,
 };
