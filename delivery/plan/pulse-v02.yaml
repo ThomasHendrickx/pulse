@@ -201,6 +201,42 @@
 #   criterion 6.1 asserts its key is unchanged by the strip, so a
 #   masked-tail pattern keyed on holder text alone fails. Re-validated to
 #   exit 0.
+# - M0-P3 round (owner-directed, 2026-08-22), mobile-first rebuild amendment
+#   under DR-0022. Beacon opened before verification. Baseline for this
+#   round is b560e85 (the owner-approved mockup commit). Verification pass
+#   in progress: measured grep -c "@media" src/app/globals.css = 0 at
+#   b560e85, so the whole stylesheet has no breakpoint at any width. The
+#   dispatch's stated root cause names .month-grid as
+#   grid-template-columns: minmax(0, 1fr) var(--layout-rail); that is the
+#   PRE-M3-P6 text. At b560e85 globals.css:704 is a wrapping flex, changed
+#   by 5f7b62c. Recording as a failed claim. Next: read month-view.tsx,
+#   merchant-review.tsx, the mockup frames, playwright.config.ts and the
+#   e2e specs.
+#   Verification pass findings so far, all at b560e85: NO viewport meta and
+#   no viewport export anywhere in src (src/app/layout.tsx:1 through :19,
+#   grep -rn viewport over src/app and src/platform returns nothing), so
+#   whether a phone lays out at 390 or at the 980 default rests on Next's
+#   implicit injection, which node_modules is absent here to confirm:
+#   recorded UNVERIFIED and owned by the rebuild phase's step 1. The
+#   shipped spend grouping COLLAPSES a tag to one row
+#   (month-projection.ts:67 through :74) while the mockup shows merchant
+#   rows under a tag subhead, so mockup fix 4 is a projection change, not
+#   a layout change. ReviewGroup carries no month span
+#   (merchant-review.ts:36) though the mockup prints "3 rows, June and
+#   July". Every existing phone-viewport spec measures scrollWidth only
+#   (navigation.spec.ts:168, merchants.spec.ts:166, import.spec.ts:184)
+#   and month-view.spec.ts sets no viewport at all. Next: the tokens
+#   inventory and the amendment itself.
+#   Amendment written: two new phases, M3-P7 (constraint change, the five
+#   missing tokens, the app shell and the month view, the phone regression
+#   guard) and M3-P8 (merchant review). Eleven new report-code-disagreement
+#   entries, four of them unverified and owned by the two verification-first
+#   steps. Eight new decisions D-14 through D-21. One open question, DR-0023,
+#   on whether the spend card gains merchant rows under tag subheads, with
+#   the recommendation written first. M3-P4 amended so the skill paragraph
+#   is written once: its step 1 becomes a check and criterion 4.4 is added,
+#   4.1 through 4.3 byte unchanged. Seven parked items. Nothing under
+#   delivery/intake/ touched. Validating with tiphys next.
 kind: plan
 status: draft
 baseline-commit: e4ea3ba
@@ -296,6 +332,54 @@ standing-context: |
   with the capability it announces (PR2-007), and privacy gates covering
   all five promised categories on phase-touched files with a not-witnessed
   honesty clause (PR2-008).
+  V0.2 MOBILE ROUND (added by the M0-P3 scout, 2026-08-22), phases M3-P7 and
+  M3-P8. On first real use of the shipped month view the owner, on a phone,
+  graded the product 2 out of 10 for quality and 1 out of 10 for usability
+  and named the cause as the total lack of mobile first. DR-0022 (owner,
+  2026-08-22) decides mobile first and supersedes the desktop-first paragraph
+  at .claude/skills/pulse-frontend/SKILL.md:113. The owner approved a mockup,
+  committed at delivery/design/mobile-v02/, whose README.md:24 through :40
+  lists the six things it fixes and whose canvas.json fixes the frame at 390
+  by 844.
+
+  These two phases are grounded at b560e85, NOT at this plan's
+  baseline-commit e4ea3ba. That field is deliberately left where it is: every
+  citation in M3-P1 through M3-P6 resolves against e4ea3ba, M3-P1, M3-P2 and
+  M3-P6 have merged since, and re-anchoring the field would silently invalidate
+  the line numbers in six merged phases. Every file and line reference in
+  M3-P7, in M3-P8 and in their report-code-disagreement entries was read at
+  b560e85 and says so.
+
+  The bar these phases are held to is the point of them. After the first
+  mobile report the standing acceptance criterion was set as "phone viewport:
+  controls visible and clickable, no horizontal scrolling", and the month view
+  passes that bar today. The fleet backlog carries that as the orchestrator's
+  own recorded error. Measured at b560e85: every phone-viewport assertion in
+  the suite reads document.documentElement.scrollWidth and nothing else
+  (test/e2e/navigation.spec.ts:168, test/e2e/merchants.spec.ts:166,
+  test/e2e/import.spec.ts:184), and test/e2e/month-view.spec.ts sets no
+  viewport at all, so all six of its tests run at the desktop default
+  (playwright.config.ts:53). Criteria 7.5 through 7.9 and 8.2 through 8.6
+  measure rendered tap-target height, the same testid set at both widths, no
+  clipped element anywhere in main, the reconciliation answer inside the first
+  844 pixels, and one column in income, spend, reserves order. A screen that
+  is unusable but does not scroll sideways fails every one of them.
+
+  DR-0023 is raised by this round and stays OPEN. The question: does the spend
+  card keep one row per tag, which is what the shipped projection emits
+  (src/modules/overview/domain/month-projection.ts:67 through :74), or do
+  merchant rows appear nested under tag subheads, which is what the approved
+  mockup draws (delivery/design/mobile-v02/Main.dc.html:124 through :176) and
+  what README.md:33 names as the fourth thing the mockup fixes? This plan's
+  recommendation, written before the question was raised and stated so the
+  owner can simply agree with it: keep one row per tag for the rebuild. It is
+  a projection change rather than a layout change, it makes the spend card
+  roughly three times taller on the screen that was just graded 1 out of 10
+  for usability, and with zero merchant rules in the owner's data it renders
+  nothing either way today. Neither M3-P7 nor M3-P8 waits on the answer and
+  no criterion in either phase changes with it; the affected slot is the spend
+  card's internal grouping and nothing else.
+
 report-code-disagreement:
   - phase: M3-P1
     claim: >-
@@ -603,6 +687,216 @@ report-code-disagreement:
       the number and the branch it selects before the recipe changes, and
       criterion 6.6 fails if that record is missing.
     verified: false
+  - phase: M3-P7
+    claim: >-
+      The M0-P3 dispatch's stated root cause names the layout rule as
+      ".month-grid is declared as grid-template-columns: minmax(0, 1fr)
+      var(--layout-rail), a fixed two-column desktop grid". That is the
+      text at e4ea3ba, not at b560e85. Checked at b560e85: the rule is a
+      WRAPPING FLEX, src/app/globals.css:704 through :709 declaring display
+      flex with flex-wrap wrap, with src/app/globals.css:711 through :714
+      giving spend flex 1 1 var(--layout-rail) and src/app/globals.css:716
+      through :719 giving the rail min-width min(100%, var(--layout-rail));
+      commit 5f7b62c (M3-P6) made that change and its own comment
+      (src/app/globals.css:696 through :703) records why. The top-level
+      grid therefore DOES collapse to one column on a phone already, and
+      the plan must not spend a step fixing it. What survives of the claim
+      is the measured half: grep -c "@media" src/app/globals.css returns 0,
+      so the stylesheet carries no breakpoint at any width, and
+      src/app/globals.css:564 still reads "Desktop first". The real defect
+      is one level down: src/app/globals.css:756 through :760 and
+      src/app/globals.css:781 through :786 both declare
+      grid-template-columns minmax(0, 1fr) auto auto, a three-column row
+      that does not wrap, with src/app/globals.css:767 and :772 pinning two
+      of those columns to min-width var(--space-14), which is 80px each
+      (styles/tokens.css:121).
+    verified: false
+  - phase: M3-P7
+    claim: >-
+      A phone lays the product out at the phone's width. NOT CONFIRMED and
+      the most consequential open item in this amendment. src/app/layout.tsx:1
+      through :19 exports metadata only and declares no viewport object, and
+      grep -rn "viewport" over src/app and src/platform returns nothing at
+      b560e85, so no viewport meta tag is written by this codebase. Next.js
+      App Router is documented to inject width=device-width, initial-scale=1
+      when a route exports no viewport, but node_modules is absent from this
+      worktree so the injected tag could not be read off a rendered page in
+      this pass. If it is absent, a real phone lays the document out at the
+      980px fallback and every other fix in this plan is invisible. No
+      existing spec can see it either way: Playwright chromium without
+      isMobile ignores the meta tag entirely and sizes the layout viewport
+      directly, so test/e2e/navigation.spec.ts:168, test/e2e/merchants.spec.ts:166
+      and test/e2e/import.spec.ts:184 pass whether the tag exists or not.
+      Owned by M3-P7's verification-first step and by criterion 7.2.
+    verified: false
+  - phase: M3-P7
+    claim: >-
+      Mockup fix 4 ("Tag names as subheads inside the spend card rather than
+      a separate level of nesting", delivery/design/mobile-v02/README.md:33)
+      is a layout change. It is NOT: it is a projection change. The mockup
+      draws a tag subhead with its merchants listed beneath it
+      (delivery/design/mobile-v02/Main.dc.html:124 through :176: the
+      "Boodschappen" subhead followed by two merchant rows). The shipped
+      projection cannot emit that shape: src/modules/overview/domain/
+      month-projection.ts:67 through :74 folds every tagged merchant row
+      into ONE group keyed "tag:<name>" whose label is the tag, so the
+      merchant's own total never reaches the screen at all, and
+      src/modules/overview/application/month-overview.ts:101 turns that
+      folding on for spend. Producing the mockup's shape means changing
+      OverviewGroup (month-projection.ts:26 through :40) and the delta
+      attachment keyed on group key (month-projection.ts:118 through :132).
+      Raised to the owner as DR-0023; M3-P7 is planned around the slot and
+      changes no projection file (criterion 7.10).
+    verified: false
+  - phase: M3-P7
+    claim: >-
+      The mockup implies design values that styles/tokens.css does not carry
+      at b560e85, and CLAUDE.md non-negotiable 4 requires the token to exist
+      before a rule uses it. Checked against styles/tokens.css:82 through
+      :132. FIVE are genuinely missing. (i) A 44px minimum tap target
+      (delivery/design/mobile-v02/Main.dc.html:26, :29, :40;
+      delivery/design/mobile-v02/MerchantReview.dc.html:38, :39): the space
+      scale runs 2, 4, 6, 8, 10, 12, 16, 20, 24, 28, 32, 40 and 80px
+      (styles/tokens.css:109 through :121) and carries no 44. (ii) A 56px
+      list-row minimum height (Main.dc.html:85): no 56 in that scale.
+      (iii) A 40px phone headline figure size (Main.dc.html:60): the type
+      scale (styles/tokens.css:82 through :91) has --text-3xl at 32px and
+      --text-4xl at 44px and nothing at 40. (iv) A -0.02em tracking for that
+      figure (Main.dc.html:60): styles/tokens.css:97 and :98 carry -0.03em
+      and -0.01em and nothing between. (v) A breakpoint value of any kind:
+      styles/tokens.css:127 and :128 carry --layout-max and --layout-rail
+      and no breakpoint, and grep -c "@media" src/app/globals.css returns 0.
+      FOUR further mockup values are implied and deliberately NOT added,
+      because an existing token sits within 2px and growing the scale for
+      that is how a scale stops meaning anything: 14px card padding
+      (Main.dc.html:66, use --space-7), 18px button padding
+      (MerchantReview.dc.html:39, use --space-8), a 3px gap
+      (BooksDoNotClose.dc.html:62, use --space-2) and a 1.45 line-height
+      (BooksDoNotClose.dc.html:67, use --leading-normal). One existing token
+      is dead and stays dead: --text-4xl at 44px (styles/tokens.css:91) is
+      referenced by nothing but the theme re-export (grep for text-4xl over
+      src/ and styles/ returns only styles/pulse-theme.css:43).
+    verified: true
+  - phase: M3-P7
+    claim: >-
+      The mockup can be copied as drawn. It cannot, in two places. It draws
+      five inline SVG icons (chevrons at Main.dc.html:41 and :44, a check at
+      Main.dc.html:68, an alert circle at BooksDoNotClose.dc.html:43, an
+      alert at Main.dc.html:52) where the shipped screen uses text glyphs
+      (src/modules/overview/ui/month-view.tsx:447 and :456), and grep -rln
+      "<svg" src/ returns nothing at b560e85, so the product carries no icon
+      and no icon library today. Two of those SVGs hardcode an oklch stroke
+      colour (Main.dc.html:68, BooksDoNotClose.dc.html:43), which
+      CLAUDE.md non-negotiable 4 forbids in a component. Resolved: icons are
+      hand-written inline SVG with stroke="currentColor" and no new runtime
+      dependency, that being a charter stop-for (charter.yaml:92), and the
+      colour-literal grep still exits 1 over src/ (criterion 7.4).
+    verified: true
+  - phase: M3-P7
+    claim: >-
+      The mockup truncates and the product must not. Every long name in the
+      mockup carries overflow hidden with text-overflow ellipsis and
+      white-space nowrap (Main.dc.html:87, :131, :158, :168). The shipped
+      screen wraps instead: src/app/globals.css:803 through :808 sets
+      text-wrap pretty and overflow-wrap anywhere on .month-group-label, and
+      .claude/skills/pulse-frontend/SKILL.md:122 forbids "no truncation of
+      anything the user needs" in as many words. Resolved in favour of the
+      shipped screen: names wrap, never ellipsize, and criterion 7.7
+      fails on any clipped element. The one deliberate exception in the tree
+      stays exactly as merged: src/app/globals.css:160 through :166 lets the
+      household identity ellipsize, which M3-P1 criterion 1.5 decided.
+    verified: true
+  - phase: M3-P7
+    claim: >-
+      The mockup's copy is copy. It is not: delivery/design/mobile-v02/README.md:12
+      says the frames are "not a source of truth for copy" and the shipped
+      catalogue already carries every string the rebuild needs. The mockup
+      shortens the reconciliation part labels to In, Out, Reserves and Pot
+      (Main.dc.html:72 through :75), adds "compared with June 2026"
+      (Main.dc.html:63), "Unexplained difference" (BooksDoNotClose.dc.html:48)
+      and "What is missing" (BooksDoNotClose.dc.html:60). messages/en.json
+      already carries reconciles ("Books close"), reconBroken ("Books do not
+      close"), potChange ("Change in the pot"), income, spend, reserves,
+      difference and vsMonth, 111 keys in total. Resolved in favour of the
+      shipped catalogue: the rebuild adds and changes no message key, in any
+      of the three languages, and criterion 7.10 pins messages/ to an empty
+      diff.
+    verified: true
+  - phase: M3-P7
+    claim: >-
+      The phone viewport is already covered by tests. It is covered by ONE
+      measurement, horizontal overflow, and by nothing else.
+      test/e2e/navigation.spec.ts:168 through :172, test/e2e/merchants.spec.ts:166,
+      :215 and :261, and test/e2e/import.spec.ts:184 through :187 each read
+      document.documentElement.scrollWidth and compare it to the viewport
+      width. test/e2e/month-view.spec.ts sets no viewport anywhere in the
+      file, so all six of its tests run at the chromium project's Desktop
+      Chrome default (playwright.config.ts:53 through :58). The month view at
+      b560e85 therefore passes the entire phone-viewport suite while being
+      the screen the owner graded 1/10 for usability. This is the
+      orchestrator's named error, on the record in the fleet backlog, and
+      criteria 7.5 through 7.9 exist so it cannot repeat.
+    verified: true
+  - phase: M3-P8
+    claim: >-
+      The mockup's merchant review can be built from the shipped projection.
+      Three of its elements have no data and no capability behind them.
+      (i) A month span per group, "3 rows and June and July"
+      (MerchantReview.dc.html:34, :49, :64): ReviewGroup carries key, label,
+      merchantId, counterpartyText, totalCents and count and no date
+      (src/modules/merchants/domain/merchant-review.ts:36 through :47), and
+      CountedRow carries no booking date either (merchant-review.ts:22
+      through :29), so nothing in the review projection can produce it.
+      (ii) A "Recently named" list with a Rename link
+      (MerchantReview.dc.html:74 through :91): no rename capability exists,
+      src/modules/merchants/ui/actions.ts and
+      src/modules/merchants/application/assign-merchant.ts expose assignment
+      only, and messages/en.json carries no rename key. (iii) A named count,
+      "3 left and 17 named" (MerchantReview.dc.html:24 through :26): the
+      projection exposes unresolvedCount only (merchant-review.ts:54) and
+      the screen renders it at
+      src/modules/merchants/ui/merchant-review.tsx:114 through :117. All
+      three are resolved in favour of the shipped screen and parked; none is
+      built by M3-P8, and criterion 8.7 pins the domain, the application
+      layer and messages/ to an empty diff.
+    verified: false
+  - phase: M3-P8
+    claim: >-
+      The mockup's structure can replace the shipped structure. It cannot
+      without losing a guarantee a merged phase bought. The mockup drops the
+      two direction sections and their totals entirely
+      (MerchantReview.dc.html:29 through :92 shows no income or spend
+      total). Those totals are load-bearing:
+      src/modules/merchants/ui/merchant-review.tsx:14 through :16 records
+      that they render beside each section precisely so that naming can be
+      SEEN to leave them unchanged, which is hazard H3.2 from M1-P4, and
+      test/e2e/merchants.spec.ts:18 asserts exactly that across a naming.
+      The mockup also orders groups by resolution state where the shipped
+      screen orders by magnitude in the DOMAIN
+      (src/modules/merchants/domain/merchant-review.ts:57 through :67).
+      Resolved in favour of the shipped screen on both counts: the direction
+      sections and their totals stay (criterion 8.5), and the ordering is
+      not touched, because changing it is a domain edit and M3-P8 is a
+      layout phase. The unresolved rows already carry their own flag
+      treatment at any width (src/app/globals.css:498 through :502).
+    verified: true
+  - phase: M3-P8
+    claim: >-
+      The merchant review's controls are usable on a phone. They are not, by
+      the 44px bar the mockup sets. The naming input carries padding
+      var(--space-3) var(--space-5) on font-size var(--text-base)
+      (src/app/globals.css:522 through :529, which is 6px of vertical
+      padding on 13px text plus a 1px border) and the submit button carries
+      padding var(--space-3) var(--space-6) on the same font size
+      (src/app/globals.css:536 through :544), so both render around 30px
+      tall, not 44. The row itself wraps at phone width already
+      (src/app/globals.css:487 through :496, added by M3-P6 for the overflow
+      measurement) so the form drops onto its own line and nothing scrolls
+      sideways, which is exactly why the shipped bar passed it. The mockup
+      sets both controls to min-height 44px
+      (MerchantReview.dc.html:38 and :39). Criterion 8.2 measures the
+      rendered height instead of the overflow.
+    verified: true
 phases:
   - id: M3-P1
     branch: claude/m3-p1-navigation
@@ -1250,11 +1544,19 @@ phases:
       verified true.
     steps:
       - text: >-
-          Revise the desktop-first line
-          (.claude/skills/pulse-frontend/SKILL.md:113) to the v0.2 stance:
-          import is mobile-first, the month view remains desktop-competent,
-          per addendum section 7. This edit is owner-directed intake
-          application, not a scope decision.
+          AMENDED by the M0-P3 mobile round (decision D-15, DR-0022): do
+          NOT rewrite the skill's constraint here. M3-P7 replaces the
+          desktop-first paragraph once, under DR-0022, and DR-0022 goes
+          further than this step was written to go: mobile first is every
+          screen, not the import screens alone, so the "the month view
+          remains desktop-competent" wording this step carried is
+          superseded. This step is now a CHECK: confirm that the
+          mobile-first constraint M3-P7 wrote is present and unweakened
+          before building on it, and add nothing to it. Criterion 4.4
+          carries the check; criteria 4.1, 4.2 and 4.3 are unchanged and
+          all three remain satisfiable, because the paragraph M3-P7
+          replaced no longer contains "desk activity" and does state a
+          mobile-first stance.
       - text: >-
           Mobile-first import flow: the upload, declaration and result
           screens laid out for a phone viewport with token-only styling
@@ -1297,6 +1599,17 @@ phases:
           test:e2e exits 0 including the unmodified desktop golden journey,
           and grep -rE "oklch\(|#[0-9a-fA-F]{3,8}" over src/ excluding the
           token and theme files exits 1.
+      - id: "4.4"
+        criterion: >-
+          ADDED by the M0-P3 mobile round (decision D-15). At this phase's
+          base, grep -n "Desktop first" .claude/skills/pulse-frontend/SKILL.md
+          exits 1, grep -n "desk activity" over the same file exits 1, and
+          the file contains the literal string DR-0022; and git diff
+          --name-only against this phase's base over
+          .claude/skills/pulse-frontend/SKILL.md prints nothing, so this
+          phase consumes the constraint M3-P7 wrote and does not rewrite it a
+          second time. FALSIFIED BY either grep exiting 0, by DR-0022 being
+          absent from the file, or by the diff printing the skill path.
     hazard-classes:
       - id: H4.1
         statement: >-
@@ -1878,6 +2191,608 @@ phases:
         - src/modules/ledger/application/interpret-window.ts
         - src/platform/ui/
         - test/fixtures/
+  - id: M3-P7
+    branch: claude/m3-p7-mobile-month-view
+    intent: >-
+      Mobile first becomes the project's constraint and the month view is
+      rebuilt against it: the pulse-frontend skill's desktop-first paragraph
+      is replaced under DR-0022, the five design tokens the approved mockup
+      needs are added to styles/tokens.css first, the app shell and the month
+      view are rebuilt one-column at phone width with the reconciliation
+      answer above the fold, and the phone-width regression guard stops
+      measuring horizontal overflow and starts measuring whether the screen
+      can be used.
+    grounding: >-
+      DR-0022 (owner, 2026-08-22): mobile first supersedes the desktop-first
+      charter line, decided against an approved mockup after the owner graded
+      the shipped month view 2/10 for quality and 1/10 for usability on a
+      phone. The layout reference is delivery/design/mobile-v02/, whose
+      README.md:24 through :40 states the six things it fixes and whose
+      canvas.json:3 fixes the frame at 390 by 844. The frames are
+      Main.dc.html (books close), BooksDoNotClose.dc.html (a reconciliation
+      gap) and DenseAlternate.dc.html, which README.md:20 records as
+      considered and NOT chosen. This phase is grounded at b560e85, not at
+      this plan's baseline-commit e4ea3ba: M3-P1, M3-P2 and M3-P6 have merged
+      since, and every file and line reference in this phase and in its
+      report-code-disagreement entries was read at b560e85. Measured there:
+      grep -c "@media" src/app/globals.css returns 0; src/app/globals.css:564
+      reads "Desktop first"; .claude/skills/pulse-frontend/SKILL.md:113 is the
+      paragraph DR-0022 supersedes, and SKILL.md:109 carries the rail
+      sentence that has to move with it. DR-0023 is raised to the owner by
+      this phase and does not gate it: it asks whether the spend card keeps
+      one row per tag or gains merchant rows nested under tag subheads, and
+      every criterion below holds whichever way it resolves.
+    severity: critical
+    verified-root-cause: >-
+      Not a defect round on one commit; the whole screen was built to a
+      charter line that has now been superseded. The measured cause is that
+      src/app/globals.css carries no media query at any width (grep -c
+      "@media" returns 0 at b560e85) and no layout rule below the top-level
+      grid gives way: src/app/globals.css:756 and :781 both declare
+      grid-template-columns minmax(0, 1fr) auto auto with two of those tracks
+      pinned to min-width var(--space-14), 80px each (styles/tokens.css:121),
+      so a spend row spends 160px of a 390px screen on two figures and gives
+      the merchant name what is left. The dispatch's own statement of the
+      cause named a rule that M3-P6 had already replaced, which is why step 1
+      is verification-first: see the first report-code-disagreement entry for
+      this phase. Whether a phone even lays the document out at its own width
+      is UNCONFIRMED and is the first thing step 1 must settle.
+    steps:
+      - kind: verification-first
+        text: >-
+          Before editing any component, settle the four unverified claims
+          this plan records against this phase and write each answer into the
+          phase work history with the command and its captured output beside
+          it. (a) Read the viewport meta tag off a rendered page of the
+          running app and record the exact string, or record that the tag is
+          absent; if it is absent, adding it is this phase's first change and
+          nothing else in the phase is meaningful until it lands. (b) Re-read
+          the .month-grid rule and record its current text, since the
+          dispatch's description of it is stale. (c) Record grep -c "@media"
+          src/app/globals.css and grep -n "Desktop first" over both
+          src/app/globals.css and .claude/skills/pulse-frontend/SKILL.md.
+          (d) Confirm that the spend projection still collapses a tag to one
+          group (src/modules/overview/domain/month-projection.ts:67) so that
+          DR-0023 is asked about the real code and not about a memory of it.
+      - text: >-
+          Replace the desktop-first paragraph. .claude/skills/pulse-frontend/
+          SKILL.md:113 currently reads "Desktop first. The import is a desk
+          activity. Mobile is not a v1 target and no effort is spent on it."
+          It is replaced by a mobile-first constraint written in that
+          document's own voice and at that document's own length: every
+          screen is designed at 390 by 844 first and widened from there,
+          phone-width evidence is a standing acceptance criterion on every UI
+          phase, and the evidence measures reachable targets, readable
+          density and content that survives the narrowing, never the absence
+          of horizontal scrolling. Cite DR-0022 by id in the text. The rail
+          sentence two paragraphs above it (SKILL.md:109) moves with it: the
+          rail at wide widths is a widening of the one-column layout, not the
+          layout the phone degrades from, which is what
+          delivery/design/mobile-v02/README.md:40 records. The stale comment
+          at src/app/globals.css:564 goes in the same change. Touch nothing
+          under delivery/intake/: the intake documents are the record of what
+          was asked for and are not edited to match what was later decided.
+      - text: >-
+          Add the five missing tokens to styles/tokens.css BEFORE any rule
+          uses them, in the file's existing two-layer shape and with the same
+          kind of one-line justification the file already carries: a 44px
+          minimum tap target, a 56px list-row minimum height, a phone
+          headline figure size at 40px, a -0.02em tracking for that figure,
+          and a single breakpoint value. The breakpoint token is
+          documentation only, because a custom property cannot appear in a
+          media-query condition, so the same literal is repeated in the one
+          @media condition the stylesheet is allowed to grow, with a comment
+          saying that. Use the nearest existing token for the four values the
+          mockup implies that are within 2px of one (14px, 18px, 3px and
+          1.45); see this phase's token entry in report-code-disagreement.
+      - text: >-
+          Rebuild the app shell at phone width: the header's brand,
+          navigation, household identity and sign-out laid out per
+          delivery/design/mobile-v02/Main.dc.html:23 through :33, with the
+          three nav links as an equal-width row whose every target clears
+          44px. Keep every testid the shell already publishes (main-nav,
+          nav-overview, nav-import, nav-merchants, household-context) and
+          keep the deliberate identity ellipsis M3-P1 criterion 1.5 decided
+          (src/app/globals.css:160 through :166); the identity is the one
+          element in the product allowed to give way.
+      - text: >-
+          Rebuild the month view one column at phone width, in DOM order
+          income, spend, reserves, with the reconciliation answer above the
+          fold. The three-column rows (src/app/globals.css:756 and :781)
+          become the mockup's two-line row: name and amount on line one,
+          row count and month-over-month delta on line two, amounts
+          right-aligned in the mono face through the existing .pulse-amount
+          class (styles/tokens.css:163 through :168). Every figure the
+          desktop screen shows still renders: the in-progress badge, the
+          days-elapsed meta, the row count, the comparison head, every group
+          total, every delta, the unresolved pill, the pot figure, the
+          reconciliation parts and every cause block with its gap rows. The
+          reconciliation panel moves ahead of the three cards in DOM order.
+          At the one breakpoint and above, the rail returns as a widening:
+          spend wide with income and reserves beside it, produced by grid
+          placement and never by the CSS order property, so the DOM order
+          assistive technology reads is the order the phone shows.
+      - text: >-
+          Rebuild the phone-width regression guard so that a screen which is
+          unusable but does not scroll sideways FAILS. Add a Playwright
+          project to playwright.config.ts that spreads a chromium mobile
+          device descriptor with isMobile true at a 390 by 844 viewport,
+          alongside the existing chromium and chromium-prod projects, and run
+          test/e2e/month-view.spec.ts and test/e2e/navigation.spec.ts under
+          both the desktop project and the new phone project. isMobile is the
+          point and not a detail: without it Playwright sizes the layout
+          viewport directly and the meta viewport tag is never exercised,
+          which is why the existing phone specs could not see its absence.
+          Add the four measurements the old bar did not make: rendered tap
+          target height, the same testid set at both widths, no clipped
+          element anywhere in main, and the reconciliation verdict inside the
+          first 844 pixels. Keep every existing assertion; the overflow check
+          stays, it is simply no longer the only one.
+      - text: >-
+          Raise DR-0023 to the owner with this plan's recommendation stated
+          first: keep the shipped one-row-per-tag spend grouping for the
+          rebuild, because nesting merchants under tag subheads is a change
+          to the projection and to the delta keying rather than to the
+          layout, because it makes the spend card roughly three times taller
+          on the screen the owner just graded 1/10 for usability, and because
+          with zero merchant rules in the owner's data it renders nothing
+          today either way. Build nothing on the answer in this phase.
+    files-to-touch:
+      - .claude/skills/pulse-frontend/SKILL.md
+      - styles/tokens.css
+      - src/app/globals.css
+      - src/app/layout.tsx
+      - src/app/(app)/layout.tsx
+      - src/modules/overview/ui/month-view.tsx
+      - playwright.config.ts
+      - test/e2e/month-view.spec.ts
+      - test/e2e/navigation.spec.ts
+    extras: []
+    acceptance:
+      - id: "7.1"
+        criterion: >-
+          The phase work history records an answer to each of the four
+          verification-first questions with the command and its captured
+          output beside it: the exact content string of the rendered
+          viewport meta tag or a record that no such tag exists, the current
+          text of the .month-grid rule, the output of grep -c "@media"
+          src/app/globals.css, and the output of grep -n
+          "options.useTags" src/modules/overview/domain/month-projection.ts.
+          FALSIFIED BY any of the four missing, or by a recorded answer that
+          carries a conclusion with no captured output beside it.
+      - id: "7.2"
+        criterion: >-
+          A spec running in the new phone project asserts that
+          document.querySelector('meta[name="viewport"]').getAttribute("content")
+          is a string containing "width=device-width". FALSIFIED BY the
+          selector returning null, or by a content string without that
+          substring.
+      - id: "7.3"
+        criterion: >-
+          grep -c "@media" src/app/globals.css returns a number of at least
+          1, and grep -oE "@media[^{]+" src/app/globals.css followed by
+          whitespace normalisation, sort -u and wc -l returns exactly 1, and
+          styles/tokens.css declares a breakpoint token whose value is the
+          same literal that one condition uses. FALSIFIED BY two distinct
+          media conditions anywhere in the stylesheet, or by a breakpoint
+          literal with no token declaring the same value.
+      - id: "7.4"
+        criterion: >-
+          styles/tokens.css declares all five tokens named in this phase's
+          token entry in report-code-disagreement (a 44px tap-target
+          minimum, a 56px row minimum height, a 40px phone headline figure
+          size, a -0.02em tracking, and the breakpoint), and no literal
+          reaches a component or a rule: grep -rEn "oklch\(|#[0-9a-fA-F]{3,8}|[0-9]+px"
+          over src/ restricted to *.tsx exits 1, and grep -nE
+          "^[^/*]*[0-9]+(px|rem)" src/app/globals.css returns exactly four
+          lines, being the three inside the .visually-hidden clip pattern
+          (src/app/globals.css:550, :551 and :553 at b560e85) and the single
+          @media condition. FALSIFIED BY a fifth line, or by either grep
+          exiting 0 on a tsx file.
+      - id: "7.5"
+        criterion: >-
+          At 390 by 844 and again at 360 by 740, on the month view seeded
+          with the reconciling dataset and on the empty state, every element
+          matching "a, button, input:not([type=hidden]), select,
+          [role=button]" inside the shell header and inside main that has a
+          non-zero bounding box has a bounding box height of at least 44 CSS
+          pixels, and the spec names every offender by testid or text in its
+          failure message. FALSIFIED BY one offender. The elements that fail
+          this today and must therefore change are .app-nav-link
+          (src/app/globals.css:129, 4px of vertical padding on 12px text),
+          .app-signout (src/app/globals.css:168, no padding), .month-nav
+          (src/app/globals.css:602 through :609, width and height
+          var(--space-9), 24px), .month-unresolved-pill
+          (src/app/globals.css:651) and .empty-state-cta
+          (src/app/globals.css:210).
+      - id: "7.6"
+        criterion: >-
+          A spec loads the SAME seeded month twice, at 1280 by 720 and at 390
+          by 844, and at each width collects every element carrying a
+          data-testid as the pair of its testid and its trimmed textContent,
+          sorted; the two collections are deeply equal. At 390 by 844 every
+          collected element that does not carry the visually-hidden class has
+          a bounding rect whose width and height are both greater than zero.
+          FALSIFIED BY a testid present at one width and absent at the other,
+          by any differing text, or by any zero-sized element. This is the
+          criterion that makes a tidier phone screen impossible to buy by
+          saying less: the in-progress badge, the days-elapsed meta, the
+          comparison head, every group delta and every reconciliation cause
+          block are inside it by construction.
+      - id: "7.7"
+        criterion: >-
+          At 390 by 844 and at 360 by 740, in each of en, nl and fr, on the
+          reconciling and the non-reconciling seeded datasets, evaluating
+          element.scrollWidth greater than element.clientWidth plus 1 over
+          EVERY element inside main returns an empty offender list. This
+          widens the detector that exists at test/e2e/month-view.spec.ts:300
+          through :323 from a seven-selector list at desktop width to every
+          element at both phone widths. FALSIFIED BY a non-empty list.
+      - id: "7.8"
+        criterion: >-
+          At 390 by 844 with window.scrollY at 0, the element carrying the
+          reconciliation verdict has a bounding rect with top at least 0 and
+          bottom at most 844, on the reconciling dataset AND on the
+          non-reconciling one; and on the non-reconciling dataset the element
+          with testid recon-difference also has bottom at most 844.
+          FALSIFIED BY a bottom greater than 844 in any of the three cases.
+      - id: "7.9"
+        criterion: >-
+          The month view publishes testids income-card, spend-card and
+          reserves-card on its three sections. At 390 by 844 the three have
+          equal x within 1px and equal width within 1px, and
+          income-card.y is less than spend-card.y which is less than
+          reserves-card.y. Their DOM order, read by a single
+          document.querySelectorAll over the three testids, is income-card,
+          spend-card, reserves-card. grep -nE "^[[:space:]]*order:"
+          src/app/globals.css returns nothing, so the visual order is never
+          faked. At 1280 by 720 the same three satisfy spend-card.x less than
+          income-card.x, and income-card.x equal to reserves-card.x within
+          1px, so the rail survives as a widening. FALSIFIED BY any one of
+          these five.
+      - id: "7.10"
+        criterion: >-
+          npm run typecheck && npm run lint && npm test exit 0; npm run
+          test:e2e exits 0 with every pre-existing spec passing under the
+          desktop project, test/e2e/golden-journey.spec.ts and the desktop
+          describe at test/e2e/navigation.spec.ts:192 among them; grep -n
+          "maskCardNumbers" src/modules/overview/ui/month-view.tsx returns at
+          least two call sites, so the M3-P6 display-only masking survives
+          the rebuild (decision D-12); and git diff --name-only against this
+          phase's base over src/modules/overview/application/,
+          src/modules/overview/domain/, src/modules/merchants/,
+          src/modules/import/, prisma/ and messages/ prints NOTHING.
+          FALSIFIED BY any printed path: this is a layout phase and a printed
+          path means it stopped being one.
+      - id: "7.11"
+        criterion: >-
+          grep -n "desk activity" .claude/skills/pulse-frontend/SKILL.md
+          exits 1; grep -n "Desktop first" .claude/skills/pulse-frontend/SKILL.md
+          exits 1; grep -n "Desktop first" src/app/globals.css exits 1; and
+          the skill file contains the literal string DR-0022, the literal
+          string 390, and a sentence placing the wide-width rail as a
+          widening of the one-column layout. FALSIFIED BY any of the three
+          greps exiting 0 or by any of the three strings being absent.
+      - id: "7.12"
+        criterion: >-
+          playwright.config.ts declares a third project alongside chromium
+          and chromium-prod whose use spreads a chromium mobile device
+          descriptor with isMobile true and a 390 by 844 viewport, and npx
+          playwright test --list prints test/e2e/month-view.spec.ts and
+          test/e2e/navigation.spec.ts under BOTH the desktop project and that
+          phone project. FALSIFIED BY either spec appearing under one project
+          only, or by isMobile not being true in the phone project's use.
+      - id: "7.13"
+        criterion: >-
+          git diff --name-only against this phase's base over test/fixtures/
+          prints nothing, and no screenshot, trace or attachment is committed
+          anywhere under test/: the phone specs seed from the synthetic
+          fixtures already committed at the phase base. FALSIFIED BY any
+          printed path or any committed binary under test/ that is not a
+          fixture present at the base.
+    hazard-classes:
+      - id: H7.1
+        statement: >-
+          The phase repeats the orchestrator's recorded error and sets a bar
+          the currently broken screen already passes, by measuring horizontal
+          overflow instead of whether the screen can be used.
+        addressed-by: criterion 7.5
+      - id: H7.2
+        statement: >-
+          The mockup is treated as the specification and the phone view is
+          tidy because it says less: a badge, a meta line, a comparison head
+          or a reconciliation cause quietly stops rendering below the
+          breakpoint.
+        addressed-by: criterion 7.6
+      - id: H7.3
+        statement: >-
+          A literal colour, size, spacing or breakpoint value lands in a
+          component or a rule, because the mockup is written entirely in
+          literals and copying it is the path of least resistance. This is
+          the highest-pressure moment in the project for that violation.
+        addressed-by: criterion 7.4
+      - id: H7.4
+        statement: >-
+          The layout rebuild quietly becomes a projection change, most likely
+          by starting on DR-0023 before the owner has answered it.
+        addressed-by: criterion 7.10
+      - id: H7.5
+        statement: >-
+          The phone is fixed and the desk screen is broken in the same
+          change, trading one unusable surface for another.
+        addressed-by: criterion 7.9
+      - id: H7.6
+        statement: >-
+          Content from the owner's real statements reaches a new fixture, a
+          committed screenshot or a trace added for the phone specs.
+        addressed-by: criterion 7.13
+      - id: H7.7
+        statement: >-
+          The viewport meta question is answered by assertion rather than by
+          measurement, so the product ships a beautiful 390px layout that a
+          real phone renders at 980px.
+        addressed-by: criterion 7.2
+      - id: H7.8
+        statement: >-
+          The rebuilt rows drop the M3-P6 card-number masking, putting a card
+          number back on screen, because the masking lives in the rendering
+          the rebuild replaces.
+        addressed-by: criterion 7.10
+    migrations: >-
+      None. This phase touches no Prisma schema, no query and no projection;
+      criterion 7.10 pins prisma/ and both overview module layers to an empty
+      diff.
+    conflicts-with:
+      - >-
+        M3-P4 and M3-P8 (same stylesheet and, for M3-P4, the same skill
+        paragraph): run this phase first and those after it, never beside it.
+    parallelizable: false
+    citations:
+      - DR-0022
+      - delivery/design/mobile-v02/README.md:24
+      - .claude/skills/pulse-frontend/SKILL.md:113
+      - src/app/globals.css:564
+      - src/app/globals.css:756
+      - src/modules/overview/ui/month-view.tsx:509
+      - test/e2e/month-view.spec.ts:300
+      - playwright.config.ts:53
+    fill-in:
+      filled: true
+      root-cause: >-
+        The month view was built to a charter line that DR-0022 has now
+        superseded, so it has no phone layout to degrade from: grep -c
+        "@media" src/app/globals.css returns 0 at b560e85 and the row grids
+        at src/app/globals.css:756 and :781 pin two tracks to 80px each
+        (styles/tokens.css:121) inside a 390px screen. Whether a phone even
+        lays the document out at its own width is unconfirmed and is step 1.
+      fix-shape: >-
+        Replace the constraint in the skill, add the five missing tokens to
+        styles/tokens.css first, rebuild the shell and the month view one
+        column at 390 by 844 with the reconciliation answer above the fold,
+        and replace the overflow-only phone bar with four measurements that a
+        broken screen fails.
+      files:
+        - .claude/skills/pulse-frontend/SKILL.md
+        - styles/tokens.css
+        - src/app/globals.css
+        - src/modules/overview/ui/month-view.tsx
+        - playwright.config.ts
+        - test/e2e/
+  - id: M3-P8
+    branch: claude/m3-p8-mobile-merchant-review
+    intent: >-
+      The merchant review screen rebuilt at phone width on the primitives
+      M3-P7 defines: the group row becomes two lines, the naming form's input
+      and button clear 44px, and the direction totals that let a naming be
+      SEEN to change no total stay exactly where they are.
+    grounding: >-
+      DR-0022 and the same approved mockup as M3-P7, frame
+      delivery/design/mobile-v02/MerchantReview.dc.html at 390 by 844
+      (canvas.json:5). Read at b560e85: the screen is
+      src/modules/merchants/ui/merchant-review.tsx, its rules are
+      src/app/globals.css:419 through :546, and its row already wraps at
+      phone width because M3-P6 made it wrap to clear an overflow
+      measurement (src/app/globals.css:479 through :496), which is precisely
+      why the shipped bar passed a screen whose controls are 30px tall. This
+      phase consumes M3-P7's tokens and adds none of its own. Three elements
+      the mockup draws have no data or no capability behind them and are
+      resolved in favour of the shipped screen; see this phase's entries in
+      report-code-disagreement.
+    severity: high
+    verified-root-cause: >-
+      Same superseded constraint as M3-P7. Measured here: the naming input
+      (src/app/globals.css:522 through :529) and its submit button
+      (src/app/globals.css:536 through :544) both carry 6px of vertical
+      padding on 13px text and render around 30px tall, against the mockup's
+      44px minimum (MerchantReview.dc.html:38 and :39), and the row wrapping
+      added by M3-P6 means nothing scrolls sideways while that is true.
+    steps:
+      - kind: verification-first
+        text: >-
+          Before editing, record with captured output: the rendered heights
+          of the naming input and its submit button at 390 by 844 on the
+          shipped screen, the current ReviewGroup shape (grep -n over
+          src/modules/merchants/domain/merchant-review.ts:36 through :47),
+          and the result of grep -rn "rename" src/modules/merchants/ and over
+          messages/. The three mockup elements this plan says have no data
+          behind them are asserted from a reading at b560e85 and must be
+          confirmed at the phase base before the phase declines to build
+          them, because declining to build something the code can already do
+          is the same failure as building something it cannot.
+      - text: >-
+          Rebuild the group row two-line at phone width per
+          MerchantReview.dc.html:29 through :42: label and total on line one,
+          row count on line two, the total right-aligned in the mono face
+          through the existing .pulse-amount class. Names wrap and never
+          ellipsize (decision D-17). Keep every testid the screen publishes:
+          unresolved-group, merchant-group, group-label, group-total,
+          unresolved-count, income-total, spend-total.
+      - text: >-
+          Give the naming form phone-sized controls using M3-P7's tap-target
+          token: the input and the submit button both clear 44px, the input
+          stays wide enough to type a merchant name into, and the hidden
+          counterpartyText field keeps submitting the UNMASKED value, which
+          decision D-12 requires because that value becomes the exact
+          MerchantRule subject (src/modules/merchants/application/
+          assign-merchant.ts:54).
+      - text: >-
+          Run test/e2e/merchants.spec.ts under both the desktop project and
+          the phone project M3-P7 adds, so the naming journey and the
+          card-label masking assertions are both proved at both widths, and
+          add the tap-target, same-testids-at-both-widths and no-clipped-
+          element measurements to it. Do not delete the existing overflow
+          assertions; they stay, they are simply no longer the only ones.
+    files-to-touch:
+      - src/modules/merchants/ui/merchant-review.tsx
+      - src/app/globals.css
+      - test/e2e/merchants.spec.ts
+      - playwright.config.ts
+    extras: []
+    acceptance:
+      - id: "8.1"
+        criterion: >-
+          The phase work history records, with captured output beside each,
+          the rendered bounding-box heights of the naming input and its
+          submit button at 390 by 844 on the screen as shipped at the phase
+          base, the ReviewGroup field list, and the output of grep -rn
+          "rename" over src/modules/merchants/ and messages/. FALSIFIED BY a
+          missing record or by a stated height with no captured measurement
+          beside it.
+      - id: "8.2"
+        criterion: >-
+          At 390 by 844 and again at 360 by 740, on /merchants seeded with at
+          least one resolved and one unresolved group in each direction,
+          every element matching "a, button, input:not([type=hidden]),
+          select, [role=button]" inside main that has a non-zero bounding box
+          has a bounding box height of at least 44 CSS pixels. FALSIFIED BY
+          one offender. The naming input (src/app/globals.css:522) and its
+          submit button (src/app/globals.css:536) are the two that fail this
+          at the phase base.
+      - id: "8.3"
+        criterion: >-
+          /merchants is loaded twice with the same seed, at 1280 by 720 and
+          at 390 by 844; the sorted collection of every data-testid paired
+          with its trimmed textContent is deeply equal at the two widths, and
+          at 390 by 844 every collected element that does not carry the
+          visually-hidden class has a bounding rect with width and height
+          both greater than zero. FALSIFIED BY a testid present at one width
+          only, by any differing text, or by any zero-sized element.
+      - id: "8.4"
+        criterion: >-
+          At 390 by 844 and at 360 by 740, in en, nl and fr, evaluating
+          element.scrollWidth greater than element.clientWidth plus 1 over
+          every element inside main returns an empty offender list; and grep
+          -n "text-overflow" src/app/globals.css returns exactly one line,
+          the one inside the .app-household rule that M3-P1 criterion 1.5
+          decided (src/app/globals.css:164 at b560e85). FALSIFIED BY a
+          non-empty offender list or by a second text-overflow declaration.
+      - id: "8.5"
+        criterion: >-
+          The testids income-total and spend-total are present and non-zero
+          in size at 390 by 844, and the existing journey at
+          test/e2e/merchants.spec.ts:18, which asserts that naming an
+          unresolved counterparty regroups it and changes no total, passes
+          UNCHANGED in its assertions under BOTH the desktop project and the
+          phone project. FALSIFIED BY either testid missing at phone width,
+          by that spec failing at either width, or by any weakening of its
+          assertions.
+      - id: "8.6"
+        criterion: >-
+          At 390 by 844 the naming input and its submit button both have a
+          bounding rect whose right edge is at most 390, and the input's
+          bounding width is at least 200 CSS pixels. FALSIFIED BY a control
+          extending past 390 or by an input narrower than 200.
+      - id: "8.7"
+        criterion: >-
+          npm run typecheck && npm run lint && npm test exit 0; npm run
+          test:e2e exits 0 under every project; and git diff --name-only
+          against this phase's base over
+          src/modules/merchants/application/,
+          src/modules/merchants/domain/, src/modules/overview/, prisma/,
+          messages/ and styles/tokens.css prints NOTHING. FALSIFIED BY any
+          printed path: this phase consumes M3-P7's tokens and changes no
+          projection, no sort order, no copy and no schema.
+      - id: "8.8"
+        criterion: >-
+          The card-label describe at test/e2e/merchants.spec.ts:126 through
+          :262 passes unchanged, and grep -n "maskCardNumbers"
+          src/modules/merchants/ui/merchant-review.tsx returns the rendering
+          call site while grep -n "maskCardNumbers" against the hidden
+          counterpartyText input returns nothing, so masking stays
+          display-only per decision D-12. FALSIFIED BY that describe failing
+          or by the masked value reaching the submitted field.
+      - id: "8.9"
+        criterion: >-
+          grep -rEn "oklch\(|#[0-9a-fA-F]{3,8}|[0-9]+px" over
+          src/modules/merchants/ exits 1. FALSIFIED BY any hit.
+    hazard-classes:
+      - id: H8.1
+        statement: >-
+          The mockup is treated as the specification and the screen grows a
+          capability it does not have (a rename link, a month span, a named
+          count) or loses one it does.
+        addressed-by: criterion 8.3
+      - id: H8.2
+        statement: >-
+          The direction totals are dropped to match the mockup, and with them
+          the M1-P4 guarantee that naming a counterparty can be SEEN to move
+          no money between income and spend.
+        addressed-by: criterion 8.5
+      - id: H8.3
+        statement: >-
+          The overflow-only bar is repeated: the row already wraps at phone
+          width, so a screen with 30px controls passes every measurement the
+          suite makes today.
+        addressed-by: criterion 8.2
+      - id: H8.4
+        statement: >-
+          A presentation problem is solved in the domain, most likely by
+          reordering groups so unresolved ones come first, which edits the
+          sort at src/modules/merchants/domain/merchant-review.ts:57 to serve
+          a layout.
+        addressed-by: criterion 8.7
+      - id: H8.5
+        statement: >-
+          The rebuilt row drops the M3-P6 display-only masking, or masks the
+          hidden counterpartyText value, which would make the stored
+          MerchantRule subject match nothing ever again.
+        addressed-by: criterion 8.8
+      - id: H8.6
+        statement: >-
+          The phase starts before M3-P7 has landed its tokens and invents its
+          own tap-target and row-height values, so the two screens drift.
+        addressed-by: criterion 8.7
+    migrations: >-
+      None. This phase touches no Prisma schema and no query; criterion 8.7
+      pins prisma/ and both merchants module layers to an empty diff.
+    conflicts-with:
+      - >-
+        M3-P7 (same stylesheet, and this phase consumes its tokens): runs
+        strictly after it, never beside it.
+    parallelizable: false
+    citations:
+      - DR-0022
+      - delivery/design/mobile-v02/MerchantReview.dc.html:29
+      - src/modules/merchants/ui/merchant-review.tsx:14
+      - src/app/globals.css:522
+      - src/modules/merchants/domain/merchant-review.ts:36
+      - test/e2e/merchants.spec.ts:18
+    fill-in:
+      filled: true
+      root-cause: >-
+        The naming controls render around 30px tall at phone width
+        (src/app/globals.css:522 and :536, 6px of vertical padding on 13px
+        text) and the row wraps rather than overflowing
+        (src/app/globals.css:487), so the screen is hard to use and passes
+        every phone measurement the suite makes today.
+      fix-shape: >-
+        Two-line group rows and 44px controls on M3-P7's tokens, the
+        direction sections and totals untouched, the phone measurements added
+        to test/e2e/merchants.spec.ts and that file run under both projects.
+      files:
+        - src/modules/merchants/ui/merchant-review.tsx
+        - src/app/globals.css
+        - test/e2e/merchants.spec.ts
 decisions:
   - id: D-1
     statement: >-
@@ -2018,8 +2933,127 @@ decisions:
       patterns in the same change. The claim that production holds no
       rules is thereby made checkable rather than asserted, and criterion
       6.6 fails if the record or the migration is missing.
+  - id: D-14
+    statement: >-
+      The rebuild is TWO phases, not one and not three: M3-P7 carries the
+      constraint change, the tokens, the app shell and the month view, and
+      M3-P8 carries the merchant review. They are separable because the
+      dependency runs one way only: M3-P8 consumes the tap-target token, the
+      row-height token and the two-line row primitive that M3-P7 defines and
+      contributes none of its own back, which criterion 8.7 pins by requiring
+      styles/tokens.css to be unchanged by M3-P8. Splitting further would be
+      dishonest, and so would merging them: the shell, the tokens and the
+      month view cannot be split from each other because the shell is where
+      the 44px rule first lands and the month view is the only screen that
+      exercises the wide-width rail, while the merchant review shares nothing
+      with them except the stylesheet and the primitives. The cost of the
+      split is that the two screens are briefly inconsistent between the two
+      merges, which is visible only to whoever is running the fleet.
+  - id: D-15
+    statement: >-
+      The pulse-frontend skill's desktop-first paragraph is replaced ONCE, by
+      M3-P7, and M3-P4 does not replace it a second time. M3-P4 was written
+      before DR-0022 and its step 1 said the same paragraph would be revised
+      to "import is mobile-first, the month view remains desktop-competent",
+      which DR-0022 supersedes: mobile first is now every screen, not the
+      import screens alone. M3-P4's step 1 is amended to a CHECK that the
+      constraint M3-P7 wrote is present and unweakened, and criterion 4.4 is
+      ADDED to carry that check; criteria 4.1, 4.2 and 4.3 are left byte
+      unchanged and are all still satisfiable, because 4.2's grep for "desk
+      activity" exits 1 either way and 4.2's mobile-first stance line is
+      present either way. Nothing in M3-P4 is weakened; one duplicated edit
+      is removed.
+  - id: D-16
+    statement: >-
+      The stylesheet is allowed exactly ONE breakpoint, and the value is
+      declared as a token even though the token cannot be referenced from the
+      media condition. The tree reached b560e85 with zero media queries on
+      purpose: src/app/globals.css:97 records that a var() cannot appear in a
+      media-query condition, so the alternative to a literal was intrinsic
+      wrapping, and the M3-P6 comment at src/app/globals.css:696 chose
+      wrapping for exactly that reason. Mobile first changes the calculation:
+      the phone layout is now the default and the rail is the exception, and
+      an exception stated as "wrap when it happens to fit" cannot express
+      "spend wide with income and reserves beside it". So one @media
+      (min-width) condition is permitted, its literal is mirrored by a
+      breakpoint token in styles/tokens.css so a reader finds it where every
+      other layout constant lives, a comment says why the literal is repeated,
+      and criterion 7.3 fails the moment a second distinct condition appears.
+      This is an engineering call with a defensible answer, not a product
+      fork, so it is decided here and no decision record is raised.
+  - id: D-17
+    statement: >-
+      Names WRAP and are never truncated, on both rebuilt screens, against
+      the mockup. The mockup ellipsizes every long name
+      (Main.dc.html:87, :131, :158, :168; MerchantReview.dc.html:31, :46,
+      :61), the shipped screen wraps (src/app/globals.css:803 through :808),
+      and .claude/skills/pulse-frontend/SKILL.md:122 forbids truncating
+      anything the user needs. A Belgian bank descriptor and a Dutch or
+      French label are exactly the strings that lose their meaning in their
+      last twelve characters, and the mockup's own README says it is a layout
+      reference and not a source of truth. The single deliberate exception in
+      the tree stays: the household identity may ellipsize
+      (src/app/globals.css:160 through :166), which M3-P1 criterion 1.5
+      decided and criterion 8.4 pins to that one rule.
+  - id: D-18
+    statement: >-
+      The mockup is a LAYOUT reference. Where it and the shipped product
+      disagree about copy, about data, or about what the screen can do, the
+      shipped product wins unless the difference is one of the six things
+      delivery/design/mobile-v02/README.md:24 through :40 says the mockup
+      exists to fix. By that rule the rebuild adds no message key in any
+      language (criteria 7.10 and 8.7 pin messages/ to an empty diff), builds
+      no rename capability, prints no month span it has no dates for, and
+      keeps the merchant review's two direction sections and their totals.
+      Four mockup elements are parked rather than dropped silently; each is
+      listed under parked with the file and line that shows it has nothing
+      behind it.
+  - id: D-19
+    statement: >-
+      ORDERING. M3-P7 runs first, then M3-P8, and both run BEFORE M3-P4 and
+      M3-P5. Before M3-P4 because M3-P4 rewrites the same skill paragraph
+      (decision D-15) and because M3-P4 designs the import screens
+      mobile-first and would otherwise invent its own tap-target and row
+      tokens hours before M3-P7 adds the real ones. Before M3-P5 because the
+      whole point of a share target is that the phone hands Pulse a statement
+      and the user lands on the month view: shipping that entry point onto
+      the screen the owner graded 1/10 delivers the defect faster rather than
+      fixing it. INDEPENDENT of M3-P3, which is implemented, green and
+      paused: M3-P3's files-to-touch are src/modules/import/domain/,
+      test/fixtures/ and test/application/ and it changes no UI file, so its
+      review can resume at any point without waiting for or blocking the
+      rebuild. Severity is the tie-breaker where the ordering was otherwise
+      free: the owner's own grade of the shipped product is the highest-
+      severity open item in v0.2 and DR-0002's clock does not start until the
+      owner can actually use Pulse from a phone.
+  - id: D-20
+    statement: >-
+      Both rebuild phases are LAYOUT phases and the plan makes that
+      falsifiable rather than aspirational: criteria 7.10 and 8.7 require git
+      diff --name-only over the domain and application directories, prisma/
+      and messages/ to print nothing. If the rebuild turns out to need a
+      projection change, the phase stops and says so rather than growing one,
+      which is the same discipline CLAUDE.md's scope-discipline section
+      applies to queues, caches and state libraries. Nothing in either phase
+      needs a queue, a cron, an event bus, a cache, a state management
+      library, a component library, a per-transaction override, a goal or a
+      budget, and the icons the mockup draws are hand-written inline SVG
+      precisely so that no icon library is added.
+  - id: D-21
+    statement: >-
+      The phone project uses a chromium device descriptor with isMobile true
+      rather than a bare viewport override, and this is load-bearing rather
+      than stylistic. Playwright without isMobile sizes the layout viewport
+      directly and never consults the meta viewport tag, which is exactly why
+      three existing phone specs (test/e2e/navigation.spec.ts:168,
+      test/e2e/merchants.spec.ts:166, test/e2e/import.spec.ts:184) pass
+      whether that tag exists or not, and whether it exists is unconfirmed at
+      b560e85. The specs that already set their own viewport with test.use
+      keep doing so and keep working; the project adds the device profile
+      that makes criterion 7.2 mean something.
 open-questions:
   - DR-0002
+  - DR-0023
 parked:
   - item: >-
       Cross-format dedup unification (the same period imported once as CSV
@@ -2059,3 +3093,70 @@ parked:
       The deliberately-absent list is binding (charter.yaml:80); nothing in
       the PDF path needs any of them, and the share-target phase carries an
       explicit no-caching criterion so PWA work cannot smuggle one in.
+  - item: >-
+      Merchant rows nested under tag subheads in the spend card, as
+      delivery/design/mobile-v02/Main.dc.html:124 through :176 draws them.
+    reason: >-
+      Raised to the owner as DR-0023 and not decided here. It is a projection
+      change, not a layout change: src/modules/overview/domain/
+      month-projection.ts:67 through :74 folds every tagged merchant row into
+      one group labelled with the tag, so producing the mockup's shape means
+      changing OverviewGroup and the delta keying. This plan's recommendation
+      is stated in M3-P7 step 7 and in the open question below; whichever way
+      it resolves, no criterion in M3-P7 or M3-P8 changes. With zero merchant
+      rules in the owner's data it renders nothing today either way.
+  - item: >-
+      A month span per group on the merchant review ("3 rows and June and
+      July", delivery/design/mobile-v02/MerchantReview.dc.html:34).
+    reason: >-
+      No data behind it: ReviewGroup carries no date
+      (src/modules/merchants/domain/merchant-review.ts:36 through :47) and
+      neither does CountedRow (merchant-review.ts:22 through :29). Adding it
+      means widening the review projection and its query, which is not a
+      layout change. Revisit if the owner asks for it after using the
+      rebuilt screen.
+  - item: >-
+      A "Recently named" list with a Rename affordance on the merchant review
+      (delivery/design/mobile-v02/MerchantReview.dc.html:74 through :91).
+    reason: >-
+      No capability behind it: src/modules/merchants/ui/actions.ts and
+      src/modules/merchants/application/assign-merchant.ts expose assignment
+      only, and messages/ carries no rename key. Renaming a merchant that
+      already has stored MerchantRule rows is a rule-rewrite question with a
+      stability contract attached, not a button; it is its own phase if the
+      owner wants it.
+  - item: >-
+      A named count beside the unresolved count on the merchant review ("3
+      left and 17 named", MerchantReview.dc.html:24 through :26).
+    reason: >-
+      Cheap to derive but it is new copy in three languages for a number the
+      owner did not ask for, and the screen already shows the count that
+      matters (src/modules/merchants/ui/merchant-review.tsx:114 through :117,
+      testid unresolved-count). Decision D-18: the mockup is not a source of
+      copy.
+  - item: >-
+      Ordering the merchant review's groups unresolved first, as
+      delivery/design/mobile-v02/MerchantReview.dc.html shows them.
+    reason: >-
+      The order is a DOMAIN sort by magnitude
+      (src/modules/merchants/domain/merchant-review.ts:57 through :67) and
+      M3-P8 is a layout phase that changes no domain file (criterion 8.7).
+      The unresolved rows already carry their own flag treatment at every
+      width (src/app/globals.css:498 through :502), so the work queue is
+      visible without a resort.
+  - item: >-
+      A 48px compact-row height token, implied by the mockup's "recently
+      named" rows (MerchantReview.dc.html:77 and :84).
+    reason: >-
+      Only that parked section needs it. Adding a token nothing references is
+      how a token scale stops being a scale; add it with the section, if the
+      section is ever built.
+  - item: >-
+      A dense single-ledger month view, the DenseAlternate frame.
+    reason: >-
+      delivery/design/mobile-v02/README.md:20 records it as considered and
+      NOT chosen by the owner, and canvas.json's second annotation states its
+      cost: the comparison with the previous month moves behind a tap, and
+      that comparison is part of the primary view by
+      .claude/skills/pulse-frontend/SKILL.md:111. Recorded so a later reader
+      does not rediscover it as a new idea.
