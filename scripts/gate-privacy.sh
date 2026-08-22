@@ -1,24 +1,36 @@
 #!/usr/bin/env bash
 # gate:privacy
 #
-# Real statement content must never reach the repository. This gate makes
-# that mechanical instead of something reviewers are asked to notice, after
-# a real amount from a real statement reached three pushed commits in M3-P3.
+# WHAT THIS GATE DECIDES, exactly, and nothing more. Two clean-room reviews
+# independently found that its first version claimed to make "real statement
+# content never reaches the repository" mechanical, and did not. Read this
+# list before trusting it.
 #
-# Two rules, both of which a regex can decide:
+#   1. Commit messages on this branch carry no amount and no data row. This
+#      is the owner's rule of 2026-08-22, and it is the one rule here that is
+#      complete: a message needs no data, ever, so the check can be absolute.
 #
-#   1. Commit messages carry no amount and no data row. A commit message
-#      describes the change. It never carries a sample of the data, not even
-#      an invented one, because nobody reviewing a message can tell which it
-#      is. This is the owner's rule of 2026-08-22.
+#   2. Every account, card or masked-card shape in the tree is on the allow
+#      list at test/fixtures/allowed-identifiers.txt. Fixtures need
+#      identifiers and theirs are invented, so the check is not "is there
+#      one" but "is this one known". A new one fails until a person writes
+#      down where it came from.
 #
-#   2. Every account or card number shape in the tree is on the allow list at
-#      test/fixtures/allowed-identifiers.txt. Fixtures need identifiers and
-#      theirs are invented, so the check is not "is there one" but "is this
-#      one known". A new one fails until a human puts it on the list, which is
-#      the moment someone looks at where it came from.
+#   3. No tracked PDF carries a compressed stream. A real bank PDF does, and
+#      compression is also why rule 2 cannot see inside one. The fixture
+#      builder emits uncompressed PDFs.
 #
-# Exit 0 clean, 1 with the offending location and reason.
+# WHAT IT DOES NOT DECIDE, and what still needs a human:
+#
+#   A merchant name, a place name, a person's name, a date or an amount
+#   sitting inside a tracked FILE is invisible to every rule above. That is
+#   not a bug to be regexed away: those strings look exactly like invented
+#   ones, which is the whole difficulty. Two real merchant descriptors
+#   reached this public repository that way and both reviews found them by
+#   probing the tree against the real documents, not by running this gate.
+#   Until something does that automatically, this gate narrows the hole; it
+#   does not close it.
+
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -30,14 +42,18 @@ AMOUNT='([0-9]{1,3}(\.[0-9]{3})+,[0-9]{2}|[0-9]+,[0-9]{2})'
 CURRENCY='(EUR|€)[[:space:]]*[0-9]'
 IBAN='\b[A-Z]{2}[0-9]{2}([[:space:]]?[0-9]{4}){3}\b'
 PAN='\b([0-9]{4}[[:space:]-]){3}[0-9]{4}\b'
+# Masked PAN: the only form a card statement prints, and invisible to a
+# digits-only pattern. Any mix of digits and mask glyphs in card grouping.
+MASKED='\b[0-9Xx*]{4}[[:space:]-]?[0-9Xx*]{4}[[:space:]-]?[0-9Xx*]{4}[[:space:]-]?[0-9Xx*]{4}\b'
 
 # --- 1. commit messages on this branch -------------------------------------
 base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
 if [ -n "$base" ]; then
   for sha in $(git rev-list "$base"..HEAD); do
     msg="$(git log -1 --format=%B "$sha")"
-    for pat in "$AMOUNT" "$CURRENCY" "$IBAN" "$PAN"; do
+    for pat in "$AMOUNT" "$CURRENCY" "$IBAN" "$PAN" "$MASKED"; do
       hit="$(printf '%s' "$msg" | grep -Eo "$pat" | head -1 || true)"
+      case "$pat" in "$MASKED") printf '%s' "$hit" | grep -qE '[Xx*]' || hit="";; esac
       [ -n "$hit" ] && report "commit ${sha:0:8}: message carries an amount or a data row (\"$hit\"). A commit message describes the change, never a sample of the data."
     done
   done
@@ -53,7 +69,12 @@ else
     case "$f" in \
       package-lock.json|*.png|*.jpg|*.jpeg|*.ico|*.woff|*.woff2|"$ALLOW") continue;; \
     esac
-    for hit in $(grep -Eoh "$IBAN|$PAN" "$f" 2>/dev/null | tr -d ' ' | sort -u); do
+    # MASKED matches are only taken when they actually carry a mask glyph,
+    # otherwise the shape swallows UUID fragments and plain digit runs that
+    # $PAN already covers.
+    for hit in $( { grep -Eoh "$IBAN|$PAN" "$f" 2>/dev/null; \
+                    grep -Eoh "$MASKED" "$f" 2>/dev/null | grep -E '[Xx*]'; \
+                  } | tr -d ' ' | sort -u); do
       printf '%s\n' "$known" | grep -qxF "$hit" || \
         report "$f: identifier shape not on the allow list. Add it to $ALLOW with a note on where it came from, or replace it with an invented value. Never add a value taken from a real statement."
     done
