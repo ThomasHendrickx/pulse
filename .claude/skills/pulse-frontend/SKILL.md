@@ -106,11 +106,11 @@ Never hide an unknown to make a screen look clean. A hidden unknown is what make
 
 ## 6. Layout
 
-Income, spend and reserves are not symmetric and must not be rendered as three equal columns. Income is a handful of large stable rows, spend is dozens of grouped rows and is where attention goes, reserves is one to three rows. Spend takes the wide column, income and reserves sit in the rail (`--layout-rail`).
+Income, spend and reserves are not symmetric and must not be rendered as three equal columns. Income is a handful of large stable rows, spend is dozens of grouped rows and is where attention goes, reserves is one to three rows. One column is the layout: income, spend and reserves stack in that order at every width. At the one breakpoint and above, the rail is a widening of that one-column layout, spend wide with income and reserves beside it (`--layout-rail`), never a layout the phone degrades from. Produce the widening with grid placement, never with the CSS `order` property, so the order assistive technology reads is the order the phone shows.
 
 Comparison against the previous month is part of the primary view, not a separate mode.
 
-Desktop first. The import is a desk activity. Mobile is not a v1 target and no effort is spent on it.
+Mobile first (DR-0022). Every screen, the import included, is designed at 390 by 844 first and widened from there; the import stance in `pulse-v0.2-pdf-addendum.md` is a phone stance, because a statement arrives on the phone that photographed it. Phone-width evidence is a standing acceptance criterion on every UI phase, and that evidence measures reachable tap targets, readable density and content that survived the narrowing. It never measures the absence of horizontal scrolling: the screen this rule replaced did not scroll sideways and was still unusable.
 
 ## 7. Copy and i18n
 
