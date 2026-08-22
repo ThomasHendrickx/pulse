@@ -1,0 +1,256 @@
+# Clean-room review, HAZARD contract, phase M3-P6 (card-descriptor merchant
+# grouping plus display-only card-number masking, severity high).
+#
+# DELTA VERDICT, FIX ROUND 2. Head reviewed: 23196fe on
+# claude/m3-p6-card-merchant-grouping, merged into this isolated clone;
+# verified after merging, git diff 23196fe HEAD touches only this verdict
+# file, so the tree probed here is the tree under review.
+# Prior verdicts in this file's git history: round 0 FIX-ROUND-NEEDED at
+# e0704a5 (commit 8a4fe60), round 1 APPROVE at 2f8b62d (commit dcea429).
+#
+# HEADER DISCLOSURES.
+# DR-0003: Claude-family verdict, review-contract hazard, framing
+# destructive-paths, under the same-family varied-lenses allowance; pairs
+# with the criteria review for distinct-contract and distinct-framing.
+#
+# ESCALATION, CARRIED FORWARD UNCHANGED. The plan permits a group-level
+# misattribution its own criteria cannot see: the trailing-city loop
+# reaching card rows (HZ-M3P6-08), disputed in round 1 with evidence I
+# reproduced and accepted, now pinned as deliberate behaviour and declared
+# as an open question. It remains an owner-visible risk acknowledgement,
+# not a fix-round demand. Round 2 adds nothing to it and takes nothing away.
+#
+# DATABASE: not touched. Everything below is static analysis, a runtime
+# import-closure walk, mutation of the tree followed by restoration, or a
+# probe executed against the shipped modules under Node v26.7.0. The real
+# uploads were read for structural probes and are referred to by 8-hex
+# prefix only (fleet warning 9): 39bada64 Belfius current account, 0f79fa3d
+# KBC card. No statement content appears in this file, verified by sweeping
+# this document itself.
+#
+# GATES RE-RUN AT 23196fe IN THIS CLONE (Node v26.7.0):
+#   npm run typecheck -> EXIT=0
+#   npm run lint      -> EXIT=0
+#   npx vitest run    -> 28 files, 372 passed (372), EXIT=0
+#                        (322 at e0704a5, 338 at 2f8b62d)
+#   npm run test:e2e  -> NOT RUN, it needs the local stack this review may
+#     not touch. Criterion 6.3's e2e half, 6.7 and 6.9's e2e half remain NOT
+#     WITNESSED by this lane, unchanged across all three rounds.
+#
+# ============================================================
+# (1) THE DEDUP FREEZE, RE-RUN BECAUSE THE RECIPE MOVED AGAIN
+# ============================================================
+# Runtime closures unchanged: src/modules/import/domain/dedup.ts reaches 8
+# files, src/modules/ledger/domain/corrections.ts reaches 4, ZERO merchants
+# files in either, and every file in both closures is byte-identical to
+# 07a052e.
+# THE MD5S FROM MY EARLIER VERDICTS REPRODUCE EXACTLY. Running this head's
+# dedup over the ROUND-0 fixture corpus gives 161 lines byte-identical to
+# the round-0 capture, md5 101fd61b1599a56a0659bddc036be47b. Over the real
+# 39bada64 rows: 23196fe md5 = base md5 = a7bd4025599ca39b53647372975c37d4.
+# Over the real 0f79fa3d rows through M3-P3's template: 23196fe md5 = base
+# md5 = b4aff667fcdbc3a748cd12f38df9f880.
+# THE CURRENT CORPUS HASHES DIFFERENTLY AND THAT IS THE FIXTURE, NOT THE
+# RECIPE: 177 lines, md5 011cc4c75ff18496d472781ed7c0b3ed, IDENTICAL between
+# the phase base and this head. The fixture has grown twice since round 0.
+#
+# ============================================================
+# (2) THE CLOSURE REGRESSION AND THE NEW ELIGIBILITY RULE
+# ============================================================
+# THE CRITERIA SIBLING'S MEASUREMENT REPRODUCES EXACTLY, run here from four
+# separate revisions of the recipe against the owner's real file, rows whose
+# key is not a fixed point under re-normalisation:
+#   phase base 07a052e   8 of 39
+#   round-0 head e0704a5 8 of 39
+#   round-1 head 2f8b62d 10 of 39
+#   round-2 head 23196fe 0 of 39
+# The real 0f79fa3d gives 0 of 22 at every revision.
+# WHY IT MATTERS, traced rather than assumed and matching what the code
+# comment at src/modules/merchants/domain/normalise-counterparty.ts:284
+# says: a key that is not a fixed point becomes a stored EXACT rule that
+# matches nothing, because assign-merchant normalises the submitted subject
+# again. That is hazard H6.4, the same one that made me accept the round-1
+# dispute, and it was live on 10 real rows at the head I approved. I did not
+# find it in round 1: my closure probe ran over the fixture and the
+# adversarial corpus, not over the real file's key space, and that is the
+# gap the criteria lane closed. Recorded plainly.
+# DOES THE NEW RULE CHANGE ANY MERGE? NO, measured. Against the phase base,
+# the real file gives 4 merges at 2f8b62d and 4 at 23196fe, with an
+# identical merge-size signature of 2, 4, 4 and 5 rows. Distinct keys over
+# all 39 rows: 36 at the base, 25 at 2f8b62d, 25 at 23196fe. Ten row keys
+# moved between the two heads and not one of them changed a grouping
+# decision: every move restores digits the round-1 pattern was eroding.
+# THE CARD-ROW MEASUREMENT HOLDS: the real 15 card rows under the predicate
+# the work history writes down produce SIX distinct keys, the same six as at
+# 2f8b62d, and under the broader predicate 23 rows produce 9. Every merge
+# was inspected and every one is one merchant at one location.
+# WHAT THE ELIGIBILITY RULE BUYS ELSEWHERE, probed with invented values: a
+# Belgian IBAN followed by a name, a foreign IBAN whose digit part is four
+# groups of four, and a run of four-digit reference fields all KEEP their
+# final group at this head and all lost it at 2f8b62d. The repair is broad
+# and it only ever leaves MORE text in a key, so it cannot collapse two
+# merchants.
+#
+# ============================================================
+# (3) THE WIDENED LABEL VOCABULARY, PRESSED FOR A NEW MIS-FIRE CLASS
+# ============================================================
+# The label is now three languages, at normalise-counterparty.ts:183 and
+# mask-card-number.ts:115.
+# ON EVERY BODY OF REAL AND COMMITTED TEXT, THE WIDENING ADDS NOTHING.
+# Descriptors matching the full label-plus-number grammar: 23 of 39 on
+# 39bada64 under the Dutch-only grammar and 23 under the three-language one,
+# NEWLY matched 0. On the real 0f79fa3d through M3-P3's template: 0 and 0.
+# Across every committed fixture, CSV and PDF, 154 descriptor strings: 18
+# and 18, NEWLY matched 0. Descriptors carrying a label WORD without the
+# full grammar, on either real file: 0.
+# THE MASKER IS UNMOVED BY THE WIDENING: on both real files, the round-1 and
+# round-2 maskers produce identical output on every row. Card rows masked
+# 23 of 23 on 39bada64, non-card rows touched 0 of 16, card descriptors
+# retaining a window run after masking 0, and 12 non-card KEYS carrying a
+# window run keep it intact (5 at round 1; the rise is the closure repair
+# putting eroded IBAN groups back).
+# I DID FIND ONE NEW CLASS, and it is filed as HZ-M3P6-12 below. Word
+# boundaries hold where I expected them to fail: a label word inside a
+# longer word does not fire, probed in both the English and the French
+# form. What fires is a label word standing alone as an ordinary noun
+# immediately before four four-character groups.
+#
+# ============================================================
+# (4) THE MASKER'S REACHABLE SURFACE
+# ============================================================
+# RE-DERIVED, not read. The reverse runtime closure over every .ts and .tsx
+# under src/ returns ELEVEN files, unchanged from round 1: the helper, three
+# components, three module ui barrels and four pages. Nothing in domain,
+# application or adapters can reach it. Five textual call sites.
+# THE PHASE'S OWN CENSUS AND MINE ARE DIFFERENT CENSUSES AND BOTH ARE RIGHT:
+# theirs counts LEAF JSX EXPRESSIONS that read a descriptor-derived field,
+# 9 of them in 4 files, 5 masking and 4 declared exclusions; mine counts
+# MODULES from which the helper is reachable at runtime. The fourth file in
+# their count is an import route rendering household-declared account
+# labels, which is a page in my count and never a descriptor.
+# THE DERIVATION IS NOW AN EXECUTABLE TEST rather than a grep in a comment,
+# at test/domain/merchant-review.test.ts:577, and the comment that used to
+# carry a stale grep is corrected in the R-087 shape rather than quietly
+# rewritten.
+#
+# ============================================================
+# (5) FACTS, SCHEMA, DEPENDENCIES
+# ============================================================
+# git diff 07a052e..23196fe over prisma/, package.json and package-lock.json
+# is EMPTY: no migration, no dependency. The src diff introduces no prisma
+# create, update, upsert or delete on transactions or imports. Masking
+# remains unreachable from any persistence path, proven by the reverse
+# closure above. The hidden counterpartyText field the review form submits
+# is still rendered unmasked.
+#
+# ============================================================
+# THE THREE GUARDS THIS ROUND ADDED, EACH MUTATION-VERIFIED
+# ============================================================
+# Reading a guard is not evidence that it guards. Each was broken in the
+# working tree, the suite run, and the tree restored (git status clean after
+# each).
+#   LABEL PARITY, test/domain/merchant-review.test.ts:538. Adding a fourth
+#     language to the masker's line only: 1 failed | 27 passed. RED.
+#   RENDERING-SURFACE DERIVATION, merchant-review.test.ts:577. Removing the
+#     masking from one descriptor surface: 2 failed, including the
+#     anti-vacuity assertion that the walk finds surfaces at all. RED.
+#   KEY-SPACE CLOSURE, test/domain/normalise-counterparty.test.ts:378.
+#     Reverting the lookbehind at normalise-counterparty.ts:302: 5 failed.
+#     RED.
+#
+# ============================================================
+# MY THREE CARRIED LOWS, EACH CHECKED AGAINST THE CLAIM
+# ============================================================
+# HZ-M3P6-09 SWEPT. The dash-drop scope is pinned from both sides at
+#   test/domain/normalise-counterparty.test.ts:290: an intra-word hyphen in
+#   a merchant name survives and a standalone dash token drops, so a later
+#   widening from whole tokens to characters reddens.
+# HZ-M3P6-10 SWEPT, and better than I asked. I asked for the residue
+#   statement to be corrected; the round widened the label vocabulary in
+#   BOTH definitions instead, and guarded the specific divergence hazard I
+#   named with a byte-identity pin that I broke and watched redden. The
+#   residue that remains is now a card number behind a label in none of
+#   three languages, which is narrower than what I filed.
+# HZ-M3P6-11 SWEPT. The false test name is corrected at
+#   test/domain/normalise-counterparty.test.ts:94, the correction names the
+#   old sentence and why it went false rather than quietly replacing it, and
+#   the mid-string case the old body never exercised is now asserted.
+#
+# PRIVACY, re-executed at this head with probes derived at run time from
+# both uploads. Over the 17 paths this phase touches plus this verdict: 0
+# holder-name hits, 0 merchant-string hits, and the only identifier hits are
+# the two 8-hex prefixes fleet warning 9 sanctions. The broad 1412-probe
+# high-entropy sweep hits five probes, all of them format vocabulary in plan
+# or review documents and none an identifier, a name, a merchant string, an
+# amount or a date. Unchanged from round 1. THIS DOCUMENT WAS SWEPT THE SAME
+# WAY and every string quoted below is invented.
+#
+# ============================================================
+# DELTA VERDICT: APPROVE.
+# ============================================================
+# The closure regression is real, was live on 10 real rows at the head I
+# approved in round 1, and is now closed to 0 of 39 along with the 8 the
+# phase inherited from its own base. It cost no merge and no grouping
+# decision. The dedup freeze still holds to the byte against three separate
+# recorded hashes. The label widening adds zero matches on every body of
+# real and committed text I could reach, and the divergence hazard I named
+# is guarded by a pin I broke and watched redden. All three of my carried
+# lows are swept. What remains is two LOW findings, one a new over-strip
+# class that no observed row reaches and no pin covers, one a comment that
+# describes its guard more precisely than the guard behaves. Neither blocks
+# the merge.
+kind: finding
+verdict: APPROVE
+produced-by: claude
+findings:
+  - id: HZ-M3P6-12
+    severity: low
+    evidence:
+      - "A NEW over-strip class introduced by the label widening at src/modules/merchants/domain/normalise-counterparty.ts:183. The label alternation is matched on a word boundary followed by whitespace and four four-character groups, so a label word standing alone as an ORDINARY NOUN immediately before four such groups is consumed together with everything after it."
+      - "Probe-executed with invented values. A French restaurant descriptor whose name ends in the ordinary French idiom containing the label word, followed by a sixteen-digit reference, normalises to a key with the last three words of the merchant name REMOVED. It kept its full key at 2f8b62d. A second shape, an administrative descriptor carrying the label word plus the optional single-letter number token before a reference, normalises to its first word alone."
+      - "The same two strings are MASKED on screen, rendering a non-card reference as a four-star mask plus four digits, which is the display class round 0 filed as HZ-M3P6-01 returning in a narrow form."
+      - "NOT REACHABLE ON ANY OBSERVED TEXT, measured: descriptors newly matched by the three-language grammar over the Dutch-only one are 0 of 39 on 39bada64, 0 of 22 on the real 0f79fa3d through M3-P3's template, and 0 of 154 strings across every committed fixture, CSV and PDF."
+      - "Word boundaries do hold where they matter: the label word inside a longer word does not fire, probed in both the English and the French form, and the hyphenated rail token that opens a French card descriptor is already pinned as surviving at test/domain/normalise-counterparty.test.ts:281."
+      - "The regression table gained POSITIVE pins for the French and English card labels but carries no NEGATIVE pin for a label word occurring inside a merchant name, so nothing would redden if the anchor were later loosened."
+    concrete-edit: >-
+      Add one regression-table row pinning that a descriptor whose merchant
+      name ends in a standalone label word, followed by four four-character
+      groups, keeps that merchant name in its key, and add the mirror
+      assertion for the masker. Make it pass by requiring the label to sit
+      at a FIELD boundary rather than at any word boundary, which is how
+      both real statements print it: preceded by the start of the
+      descriptor or by a separator token, never by an ordinary word. That
+      keeps every one of the 23 real card rows matching, verified here, and
+      removes the ordinary-noun case.
+    analysis: >-
+      Filed low because the collapse needs a conjunction that no observed
+      row supplies: a label word standing alone at the end of a merchant
+      name AND four four-character groups immediately after it. It is
+      raised at all because the widening was made FOR French exports and
+      the French label word is a far more common ordinary noun than the
+      Dutch one, so the class the change opens is largest exactly where the
+      change is aimed. The cost of the pin is one line and it fixes the
+      anchor rather than the instance.
+  - id: HZ-M3P6-13
+    severity: low
+    evidence:
+      - "The comment at src/modules/merchants/domain/normalise-counterparty.ts:284 states that a four-digit group following another four-digit group is not a postal code, and that the lookbehind is what says so. The lookbehind at :302 does not say that: it refuses the strip whenever ANY digit followed by a space precedes the candidate, whatever the length of that digit run."
+      - "Probe-executed with invented values: a descriptor carrying a single digit before a genuine postal-code-and-city pair keeps the postal code in its key, and so does one carrying a two-digit token. Only the case with no preceding digit strips."
+      - "The consequence is benign in the direction that matters and I checked it rather than assuming: every one of those keys is a FIXED POINT, and the rule only ever leaves MORE text in a key, so it can under-strip but can never collapse two merchants."
+      - "The same imprecision is in the round-2 dispatch's own description of the change, so the sentence has already propagated once beyond the file."
+      - "No pinned row covers the single-digit case, so the gap between the sentence and the guard is not measured anywhere."
+    concrete-edit: >-
+      Correct the sentence at src/modules/merchants/domain/normalise-counterparty.ts:284
+      to say that a candidate preceded by a digit and a space is not treated
+      as a postal code, which is what the lookbehind does, and add one
+      pinned row for a descriptor carrying a single digit before a genuine
+      postal-code-and-city pair so the difference between the two readings
+      is measured rather than argued. If the narrower rule was actually
+      intended, change the lookbehind to require four digits and pin both
+      cases.
+    analysis: >-
+      Raised as a finding rather than a nit under clause R-087: it is a
+      present-tense claim about what a guard does, sitting directly above
+      that guard, and it is more precise than the guard is. The behaviour
+      is fine; the record of it is not, and the record is what the next
+      implementer will change the guard from.
