@@ -563,6 +563,11 @@ test("the dense month is usable at 390 and at 360: targets, rows, cards and the 
   page,
   baseURL,
 }) => {
+  // Two viewports times three languages on a 25-row month, after a sign-up
+  // and an import: this one test is the phase's whole measurement bar and
+  // it is deliberately not split, because each split would pay for another
+  // sign-up and another import.
+  test.setTimeout(240_000);
   await seedDense(page);
 
   for (const viewport of [PHONE, NARROW_PHONE] as const) {
@@ -570,22 +575,22 @@ test("the dense month is usable at 390 and at 360: targets, rows, cards and the 
     await page.goto("/?month=2026-08");
     await expect(page.getByTestId("spend-group")).toHaveCount(DENSE_SPEND_GROUPS);
 
-    expect(
+    expect.soft(
       await tapTargetOffenders(page),
       `tap targets at ${viewport.width}`,
     ).toEqual([]);
 
     const rows = await rowOffenders(page, viewport.width as 390 | 360);
-    expect(rows.trackCount, `track count at ${viewport.width}`).toEqual([]);
-    expect(rows.nameWidth, `name width at ${viewport.width}`).toEqual([]);
-    expect(rows.twoLines, `two-line rows at ${viewport.width}`).toEqual([]);
+    expect.soft(rows.trackCount, `track count at ${viewport.width}`).toEqual([]);
+    expect.soft(rows.nameWidth, `name width at ${viewport.width}`).toEqual([]);
+    expect.soft(rows.twoLines, `two-line rows at ${viewport.width}`).toEqual([]);
 
     for (const locale of ["en", "nl", "fr"]) {
       await setLocale(page, locale, baseURL);
       await page.goto("/?month=2026-08");
       const clipped = await clippingOffenders(page);
-      expect(clipped.horizontal, `${locale} at ${viewport.width}`).toEqual([]);
-      expect(clipped.vertical, `${locale} at ${viewport.width}`).toEqual([]);
+      expect.soft(clipped.horizontal, `${locale} at ${viewport.width}`).toEqual([]);
+      expect.soft(clipped.vertical, `${locale} at ${viewport.width}`).toEqual([]);
 
       // Criterion 7.7 (d): the label is not shortened BEFORE render, which
       // clips nothing and would pass every other axis here. The fixture
@@ -617,9 +622,9 @@ test("the dense month is usable at 390 and at 360: targets, rows, cards and the 
     await setLocale(page, locale, baseURL);
     await page.goto("/?month=2026-08");
     const box = await page.getByTestId("recon-verdict").boundingBox();
-    expect(box, `verdict box in ${locale}`).not.toBeNull();
-    expect(box?.y ?? -1, `verdict top in ${locale}`).toBeGreaterThanOrEqual(0);
-    expect(
+    expect.soft(box, `verdict box in ${locale}`).not.toBeNull();
+    expect.soft(box?.y ?? -1, `verdict top in ${locale}`).toBeGreaterThanOrEqual(0);
+    expect.soft(
       (box?.y ?? 0) + (box?.height ?? 0),
       `verdict bottom in ${locale}`,
     ).toBeLessThanOrEqual(FOLD);
@@ -636,7 +641,7 @@ test("the dense month is usable at 390 and at 360: targets, rows, cards and the 
       ),
     ].map((element) => element.getAttribute("data-testid")),
   );
-  expect(domOrder).toEqual(["income-card", "spend-card", "reserves-card"]);
+  expect.soft(domOrder).toEqual(["income-card", "spend-card", "reserves-card"]);
 
   const cardBoxes = (target: Page) =>
     target.evaluate(() =>
@@ -660,12 +665,12 @@ test("the dense month is usable at 390 and at 360: targets, rows, cards and the 
     (typeof phoneBoxes)[number],
     (typeof phoneBoxes)[number],
   ];
-  expect(Math.abs(phoneIncome.x - phoneSpend.x)).toBeLessThanOrEqual(1);
-  expect(Math.abs(phoneIncome.x - phoneReserves.x)).toBeLessThanOrEqual(1);
-  expect(Math.abs(phoneIncome.width - phoneSpend.width)).toBeLessThanOrEqual(1);
-  expect(Math.abs(phoneIncome.width - phoneReserves.width)).toBeLessThanOrEqual(1);
-  expect(phoneIncome.y).toBeLessThan(phoneSpend.y);
-  expect(phoneSpend.y).toBeLessThan(phoneReserves.y);
+  expect.soft(Math.abs(phoneIncome.x - phoneSpend.x)).toBeLessThanOrEqual(1);
+  expect.soft(Math.abs(phoneIncome.x - phoneReserves.x)).toBeLessThanOrEqual(1);
+  expect.soft(Math.abs(phoneIncome.width - phoneSpend.width)).toBeLessThanOrEqual(1);
+  expect.soft(Math.abs(phoneIncome.width - phoneReserves.width)).toBeLessThanOrEqual(1);
+  expect.soft(phoneIncome.y).toBeLessThan(phoneSpend.y);
+  expect.soft(phoneSpend.y).toBeLessThan(phoneReserves.y);
 
   await page.setViewportSize(DESK);
   await page.goto("/?month=2026-08");
@@ -676,8 +681,8 @@ test("the dense month is usable at 390 and at 360: targets, rows, cards and the 
     (typeof deskBoxes)[number],
     (typeof deskBoxes)[number],
   ];
-  expect(deskSpend.x).toBeLessThan(deskIncome.x);
-  expect(Math.abs(deskIncome.x - deskReserves.x)).toBeLessThanOrEqual(1);
+  expect.soft(deskSpend.x).toBeLessThan(deskIncome.x);
+  expect.soft(Math.abs(deskIncome.x - deskReserves.x)).toBeLessThanOrEqual(1);
 });
 
 // Criterion 7.6 (hazard H7.2). The mockup is not allowed to make the phone
@@ -687,6 +692,7 @@ test("the dense month is usable at 390 and at 360: targets, rows, cards and the 
 test("the dense month says exactly the same things at 1280 and at 390", async ({
   page,
 }) => {
+  test.setTimeout(180_000);
   await seedDense(page);
 
   await page.setViewportSize(DESK);
@@ -749,6 +755,7 @@ test("the non-reconciling month is usable at phone width and keeps its causes", 
   page,
   baseURL,
 }) => {
+  test.setTimeout(240_000);
   await signUp(page, "mv-gap-phone");
   await uploadPotFile(page, "mv-gapped-a.csv", "Daily account", "3");
   await uploadPotFile(page, "mv-gapped-b.csv", "Second account", "1");
@@ -756,20 +763,20 @@ test("the non-reconciling month is usable at phone width and keeps its causes", 
   for (const viewport of [PHONE, NARROW_PHONE] as const) {
     await page.setViewportSize(viewport);
     await page.goto("/?month=2026-08");
-    expect(
+    expect.soft(
       await tapTargetOffenders(page),
       `tap targets at ${viewport.width}`,
     ).toEqual([]);
     const rows = await rowOffenders(page, viewport.width as 390 | 360);
-    expect(rows.trackCount, `track count at ${viewport.width}`).toEqual([]);
-    expect(rows.nameWidth, `name width at ${viewport.width}`).toEqual([]);
-    expect(rows.twoLines, `two-line rows at ${viewport.width}`).toEqual([]);
+    expect.soft(rows.trackCount, `track count at ${viewport.width}`).toEqual([]);
+    expect.soft(rows.nameWidth, `name width at ${viewport.width}`).toEqual([]);
+    expect.soft(rows.twoLines, `two-line rows at ${viewport.width}`).toEqual([]);
     for (const locale of ["en", "nl", "fr"]) {
       await setLocale(page, locale, baseURL);
       await page.goto("/?month=2026-08");
       const clipped = await clippingOffenders(page);
-      expect(clipped.horizontal, `${locale} at ${viewport.width}`).toEqual([]);
-      expect(clipped.vertical, `${locale} at ${viewport.width}`).toEqual([]);
+      expect.soft(clipped.horizontal, `${locale} at ${viewport.width}`).toEqual([]);
+      expect.soft(clipped.vertical, `${locale} at ${viewport.width}`).toEqual([]);
     }
     await setLocale(page, "en", baseURL);
   }
@@ -779,13 +786,13 @@ test("the non-reconciling month is usable at phone width and keeps its causes", 
     await setLocale(page, locale, baseURL);
     await page.goto("/?month=2026-08");
     const verdict = await page.getByTestId("recon-verdict").boundingBox();
-    expect(verdict?.y ?? -1, `verdict top in ${locale}`).toBeGreaterThanOrEqual(0);
-    expect(
+    expect.soft(verdict?.y ?? -1, `verdict top in ${locale}`).toBeGreaterThanOrEqual(0);
+    expect.soft(
       (verdict?.y ?? 0) + (verdict?.height ?? 0),
       `verdict bottom in ${locale}`,
     ).toBeLessThanOrEqual(FOLD);
     const difference = await page.getByTestId("recon-difference").boundingBox();
-    expect(
+    expect.soft(
       (difference?.y ?? 0) + (difference?.height ?? 0),
       `difference bottom in ${locale}`,
     ).toBeLessThanOrEqual(FOLD);
@@ -808,6 +815,7 @@ test("the non-reconciling month is usable at phone width and keeps its causes", 
 test("the partial month renders its own states at phone width", async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   await signUp(page, "mv-partial-phone");
   await uploadPotFile(page, "mv-partial.csv", "Daily account", "4");
   await page.setViewportSize(PHONE);
@@ -815,9 +823,9 @@ test("the partial month renders its own states at phone width", async ({
 
   expect(await tapTargetOffenders(page)).toEqual([]);
   const rows = await rowOffenders(page, 390);
-  expect(rows.trackCount).toEqual([]);
-  expect(rows.nameWidth).toEqual([]);
-  expect(rows.twoLines).toEqual([]);
+  expect.soft(rows.trackCount).toEqual([]);
+  expect.soft(rows.nameWidth).toEqual([]);
+  expect.soft(rows.twoLines).toEqual([]);
 
   const testids = new Set(
     (await collectTestids(page)).map((entry) => entry.testId),
@@ -832,17 +840,18 @@ test("the partial month renders its own states at phone width", async ({
 test("the empty state's controls clear the tap target minimum at 390 and 360", async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   await signUp(page, "mv-empty-phone");
   for (const viewport of [PHONE, NARROW_PHONE] as const) {
     await page.setViewportSize(viewport);
     await page.goto("/");
     await expect(page.getByTestId("empty-state")).toBeVisible();
-    expect(
+    expect.soft(
       await tapTargetOffenders(page),
       `empty state tap targets at ${viewport.width}`,
     ).toEqual([]);
     const clipped = await clippingOffenders(page);
-    expect(clipped.horizontal).toEqual([]);
-    expect(clipped.vertical).toEqual([]);
+    expect.soft(clipped.horizontal).toEqual([]);
+    expect.soft(clipped.vertical).toEqual([]);
   }
 });
