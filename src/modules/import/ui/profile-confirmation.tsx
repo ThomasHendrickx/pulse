@@ -4,6 +4,7 @@ import { maskCardNumbers } from "@/platform/ui/mask-card-number";
 import type { ParsedRow } from "../domain/parse-statement";
 import { confirmImportAction, previewImportAction } from "./actions";
 import { ImportStatusLine } from "./import-status-line";
+import { PREVIEW_ROW_LIMIT } from "./preview-limit";
 
 // The stored profile name for a code-owned layout: the template id, a
 // stable machine identifier rather than translated copy, because profile
@@ -64,7 +65,11 @@ export const ProfileConfirmation = async ({
   return (
     <section className="import-screen">
       <h1>{t("confirmFormat")}</h1>
-      <p className="import-lead">{isPdfLayout ? t("confirmBodyPdf") : t("confirmBody")}</p>
+      <p className="import-lead">
+        {isPdfLayout
+          ? t("confirmBodyPdf", { count: PREVIEW_ROW_LIMIT })
+          : t("confirmBody")}
+      </p>
       <ImportStatusLine status={status} />
       {landingLabel === undefined ? (
         <p className="import-note" data-testid="landing-new">
@@ -82,7 +87,9 @@ export const ProfileConfirmation = async ({
         </p>
       ) : (
         <div className="preview-block">
-          <p className="import-note">{t("previewNote")}</p>
+          <p className="import-note">
+            {t("previewNote", { count: PREVIEW_ROW_LIMIT })}
+          </p>
           <table className="preview-table" data-testid="preview-table">
             <thead>
               <tr>
