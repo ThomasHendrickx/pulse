@@ -11,12 +11,23 @@ import type {
   OverviewGroup,
 } from "../application";
 
-// The two-sided month view, built against the committed prototype
-// (design/reference/pulse-prototype.html): spend takes the wide column,
-// income and reserves sit in the rail, the reconciliation panel SHIPS at
-// the bottom of the view, never behind a flag. Server components only;
-// there is no client state here, the whole screen is a projection of one
-// read (pulse-frontend sections 1 and 2).
+// The month view, rebuilt ONE COLUMN AT PHONE WIDTH in M3-P7 under
+// DR-0022 against delivery/design/mobile-v02/Main.dc.html and
+// BooksDoNotClose.dc.html. The reconciliation panel comes FIRST in DOM
+// order, because whether the books close is the first thing the screen
+// answers (mockup README fix 5); income, spend and reserves follow in that
+// order and stack (README fix 6). At the one breakpoint the rail returns
+// as a widening of that column, produced by grid placement in the
+// stylesheet, so nothing here reorders and the order assistive technology
+// reads is the order the phone shows. The panel SHIPS in the view, never
+// behind a flag. Server components only; there is no client state here,
+// the whole screen is a projection of one read (pulse-frontend sections 1
+// and 2).
+//
+// EVERY ROW IS TWO LINES (mockup README fix 1): name and amount on line
+// one, row count and month-over-month delta on line two. The three-track
+// row that preceded it left the counterparty name about 116 CSS pixels at
+// 390, and that row is why this phase exists.
 //
 // The states that matter (pulse-frontend section 5) all render here: the
 // empty state before the first import, the partial current month (in
@@ -98,7 +109,7 @@ const SpendBlock = async ({
 }) => {
   const t = await getTranslations();
   return (
-    <section className="month-card month-spend">
+    <section className="month-card month-spend" data-testid="spend-card">
       <header className="month-card-header">
         <h2>{t("spend")}</h2>
         <span className="month-card-total">
@@ -126,24 +137,23 @@ const SpendBlock = async ({
       <ul className="month-list">
         {overview.spend.groups.map((group) => (
           <li key={group.key} className="month-row" data-testid="spend-group">
-            <span className="month-row-main">
-              <GroupLabel group={group} />
-              <span className="month-row-meta">
-                {group.rowCount}
-                {" "}
-                {t("rows")}
-              </span>
-            </span>
-            <span className="month-col-amount" data-testid="group-total">
+            <GroupLabel group={group} />
+            <span
+              className="month-row-amount pulse-amount"
+              data-testid="group-total"
+            >
               <Amount cents={0 - group.totalCents} />
             </span>
-            <span className="month-col-compare">
-              {overview.compared && group.deltaCents !== undefined ? (
-                <span data-testid="group-delta">
-                  <Delta deltaCents={group.deltaCents} />
-                </span>
-              ) : null}
+            <span className="month-row-count month-row-meta">
+              {group.rowCount}
+              {" "}
+              {t("rows")}
             </span>
+            {overview.compared && group.deltaCents !== undefined ? (
+              <span className="month-row-delta" data-testid="group-delta">
+                <Delta deltaCents={group.deltaCents} />
+              </span>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -163,7 +173,7 @@ const IncomeBlock = async ({
 }) => {
   const t = await getTranslations();
   return (
-    <section className="month-card">
+    <section className="month-card month-income" data-testid="income-card">
       <header className="month-card-header">
         <h2>{t("income")}</h2>
         <span className="month-card-total" data-testid="income-total">
@@ -172,25 +182,24 @@ const IncomeBlock = async ({
       </header>
       <ul className="month-list">
         {overview.income.groups.map((group) => (
-          <li key={group.key} className="month-row month-row-rail" data-testid="income-group">
-            <span className="month-row-main">
-              <GroupLabel group={group} />
-              <span className="month-row-meta">
-                {group.rowCount}
-                {" "}
-                {t("rows")}
-              </span>
+          <li key={group.key} className="month-row" data-testid="income-group">
+            <GroupLabel group={group} />
+            <span
+              className="month-row-amount pulse-amount"
+              data-testid="group-total"
+            >
+              <Amount cents={group.totalCents} />
             </span>
-            <span className="month-rail-amount">
-              <span data-testid="group-total">
-                <Amount cents={group.totalCents} />
-              </span>
-              {overview.compared && group.deltaCents !== undefined ? (
-                <span data-testid="group-delta">
-                  <Delta deltaCents={group.deltaCents} />
-                </span>
-              ) : null}
+            <span className="month-row-count month-row-meta">
+              {group.rowCount}
+              {" "}
+              {t("rows")}
             </span>
+            {overview.compared && group.deltaCents !== undefined ? (
+              <span className="month-row-delta" data-testid="group-delta">
+                <Delta deltaCents={group.deltaCents} />
+              </span>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -205,7 +214,7 @@ const ReservesBlock = async ({
 }) => {
   const t = await getTranslations();
   return (
-    <section className="month-card">
+    <section className="month-card month-reserves" data-testid="reserves-card">
       <header className="month-card-header">
         <div>
           <h2>{t("reserves")}</h2>
@@ -219,19 +228,20 @@ const ReservesBlock = async ({
         {overview.reserves.groups.map((group) => (
           <li
             key={group.counterpartyIban}
-            className="month-row month-row-rail"
+            className="month-row"
             data-testid="reserve-group"
           >
-            <span className="month-row-main">
-              <span className="month-group-label">{group.label}</span>
-              <span className="month-row-meta">
-                {group.rowCount}
-                {" "}
-                {t("rows")}
-              </span>
-            </span>
-            <span data-testid="group-total">
+            <span className="month-group-label">{group.label}</span>
+            <span
+              className="month-row-amount pulse-amount"
+              data-testid="group-total"
+            >
               <SignedAmount cents={group.parkedCents} />
+            </span>
+            <span className="month-row-count month-row-meta">
+              {group.rowCount}
+              {" "}
+              {t("rows")}
             </span>
           </li>
         ))}
@@ -308,7 +318,10 @@ const ReconciliationPanel = async ({
       data-state={figures.reconciles ? "ok" : "broken"}
     >
       <div className="recon-strip">
-        <span className="pulse-eyebrow recon-verdict">
+        <span
+          className="pulse-eyebrow recon-verdict"
+          data-testid="recon-verdict"
+        >
           {figures.reconciles ? t("reconciles") : t("reconBroken")}
         </span>
         <div className="recon-parts">
@@ -437,7 +450,7 @@ export const MonthScreen = async ({
   return (
     <div className="month-screen">
       <header className="month-header">
-        <div>
+        <div className="month-header-left">
           <div className="month-title-row">
             <Link
               className="month-nav"
@@ -506,15 +519,21 @@ export const MonthScreen = async ({
         </div>
       </header>
 
-      <div className="month-grid">
-        <SpendBlock overview={overview} locale={locale} />
-        <div className="month-rail">
-          <IncomeBlock overview={overview} />
-          <ReservesBlock overview={overview} />
-        </div>
-      </div>
-
+      {/* The reconciliation answer comes FIRST (mockup README fix 5,
+          criterion 7.8): whether the books close is what the screen is
+          for, and on a phone anything below the first screenful is a
+          scroll the owner has to know to make. */}
       <ReconciliationPanel overview={overview} />
+
+      {/* DOM order is income, spend, reserves, at every width. The rail at
+          the one breakpoint is grid PLACEMENT in the stylesheet, never the
+          order property, so this order is the order that is read
+          (criterion 7.9). */}
+      <div className="month-grid">
+        <IncomeBlock overview={overview} />
+        <SpendBlock overview={overview} locale={locale} />
+        <ReservesBlock overview={overview} />
+      </div>
     </div>
   );
 };
