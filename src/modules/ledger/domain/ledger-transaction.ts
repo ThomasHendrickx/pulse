@@ -108,19 +108,51 @@ export const deriveDeclaredSets = (
 // excluding the settlement credit, which is the definition of the printed
 // figure: opening plus every row equals the printed total, and the credit
 // cancels the opening, so what remains is the net of everything else.
-// WHERE THE DERIVATION IS STILL NOT THE TRUTH, said plainly rather than
-// left for the next reviewer: if a previous statement was underpaid the
-// credit does not cancel the opening and no derivation from rows alone can
-// recover the printed figure. That is exactly why a printed figure is
-// stored and always wins. The derivation is the best available answer for
-// a source that prints nothing, and it is never worse than the sum it
-// replaced: the two are equal unless the statement carries a positive row
-// that is not the settlement credit, and in that case the old one is
-// certainly wrong.
+// CORRECTED AGAIN IN FIX ROUND 4 (R-087, finding HZ3-M3P3-01), because the
+// paragraph above ended with a claim that was FALSE AND FORECLOSING. It
+// said the net "is never worse than the sum it replaced: the two are equal
+// unless the statement carries a positive row that is not the settlement
+// credit, and in that case the old one is certainly wrong". A settlement
+// credit whose wording SETTLEMENT_CREDIT_PATTERNS does not match is a
+// positive row this code treats as not the settlement credit, so the
+// escape clause fired on precisely the case that breaks the claim, and on
+// that case the net is wrong by the whole credit while the old sum was
+// right. It was demonstrated end to end: the account-side debit fell from
+// INTERNAL to SPEND, no settlement link was made, and the month double
+// counted. The pattern is ONE Dutch regex read off ONE observed statement,
+// and this derivation is by construction the path for sources nobody has
+// observed, so depending on it here was the wrong shape of dependency.
+//
+// WHAT THE CODE DOES NOW, instead of picking. The two derivations differ
+// by exactly the positive rows the pattern did not claim, and from the
+// rows alone NOTHING can tell an unrecognised settlement credit from an
+// ordinary merchant refund: one makes the old sum right, the other makes
+// the net right. So the summary carries BOTH as candidate totals and the
+// account-side debit matches either. That is not a guess dressed up as an
+// answer: a debit equal to a candidate IS the evidence that the candidate
+// is what the issuer collected, and a debit equal to neither still finds
+// no match and is still loud. A stored printed figure collapses the
+// candidates to itself, because the document said so and the rows only
+// ever approximated it.
+//
+// WHERE NO DERIVATION IS THE TRUTH, enumerated rather than gestured at,
+// and each one LOUD (measured: debit at SPEND, zero settlement links, the
+// books open, so the household sees a gap rather than a quiet number).
+// UNDERPAYMENT of a previous statement, where the credit does not cancel
+// the opening. OVERPAYMENT, the same in the other direction. A settlement
+// credit that ARRIVES AFTER the statement's cut-off, so the month carries
+// no credit at all. In all three the rows genuinely do not contain the
+// printed figure, which is exactly why a printed figure is stored and
+// always wins.
 export type CardImportSummary = {
   readonly importId: string;
   readonly accountId: string;
-  readonly settlementTotalCents: Cents;
+  // EVERY total this import could plausibly settle for, deduplicated, in
+  // signed integer cents. One entry when the statement printed a figure or
+  // when both derivations agree, which is every card month with no
+  // positive row beyond a recognised settlement credit. Two when they
+  // disagree, which is the ambiguity the rows cannot resolve.
+  readonly settlementTotalsCents: readonly Cents[];
   readonly periodEnd: PlainDate;
 };
 
@@ -144,7 +176,17 @@ export const summarizeCardImports = (
 ): readonly CardImportSummary[] => {
   const byImport = new Map<
     string,
-    { accountId: string; total: number; periodEnd: PlainDate }
+    {
+      accountId: string;
+      // The net of the line items, excluding every RECOGNISED settlement
+      // credit: right whenever the pattern claimed every credit there is.
+      net: number;
+      // The sum of the magnitudes of the debit rows: right whenever every
+      // positive row on the statement is a settlement credit, recognised
+      // or not. The two are equal unless an unclaimed positive row exists.
+      debitSum: number;
+      periodEnd: PlainDate;
+    }
   >();
   for (const transaction of transactions) {
     if (!sets.cardAccountIds.has(transaction.accountId)) {
@@ -154,32 +196,42 @@ export const summarizeCardImports = (
     // statement's settlement arriving on the card, and the same
     // code-owned pattern the classification step uses recognises it, so
     // the two cannot drift apart.
-    const contribution = isSettlementCreditRow(transaction)
+    const net = isSettlementCreditRow(transaction)
       ? 0
       : -transaction.amountCents;
+    const debitSum =
+      transaction.amountCents < 0 ? -transaction.amountCents : 0;
     const entry = byImport.get(transaction.importId);
     if (entry === undefined) {
       byImport.set(transaction.importId, {
         accountId: transaction.accountId,
-        total: contribution,
+        net,
+        debitSum,
         periodEnd: transaction.bookingDate,
       });
       continue;
     }
-    entry.total += contribution;
+    entry.net += net;
+    entry.debitSum += debitSum;
     if (transaction.bookingDate > entry.periodEnd) {
       entry.periodEnd = transaction.bookingDate;
     }
   }
   return [...byImport.entries()]
-    .map(([importId, entry]) => ({
-      importId,
-      accountId: entry.accountId,
-      // The statement's own figure wins whenever the statement carried
-      // one; the row sum is the fallback for a source that prints none.
-      settlementTotalCents:
-        statementSettlementTotals?.get(importId) ?? (entry.total as Cents),
-      periodEnd: entry.periodEnd,
-    }))
+    .map(([importId, entry]) => {
+      const printed = statementSettlementTotals?.get(importId);
+      // The document's own figure ends the question: the derivations only
+      // ever approximated what it states outright.
+      const totals =
+        printed !== undefined
+          ? [printed]
+          : [...new Set([entry.net, entry.debitSum])].map((v) => v as Cents);
+      return {
+        importId,
+        accountId: entry.accountId,
+        settlementTotalsCents: totals,
+        periodEnd: entry.periodEnd,
+      };
+    })
     .sort((a, b) => (a.importId < b.importId ? -1 : 1));
 };

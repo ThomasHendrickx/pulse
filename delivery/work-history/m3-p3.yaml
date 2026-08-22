@@ -119,6 +119,13 @@ files-touched:
   - src/modules/import/application/fix-profile.ts
   - test/application/resolve-merchants.test.ts
   - design/reference/pulse-prototype.html
+  # FIX ROUND 4 adds the following.
+  - test/fixtures/kbc-statement-underpaid.pdf
+  - test/fixtures/underpaid-companion.csv
+  - test/fixtures/kbc-card-unrecognised-credit.csv
+  - test/fixtures/unrecognised-credit-companion.csv
+  - test/application/kbc-settlement.test.ts
+  - scripts/gate-privacy.sh
 # CORRECTED LOUDLY (R-087) AFTER THE PRIVACY PURGE, not quietly rewritten:
 # this list previously named six per-step implementation commits (subjects,
 # in order: the work-notes commit; the template-plus-fixtures commit,
@@ -356,18 +363,48 @@ deviations:
       supermarket chain name found in that same prototype was replaced
       too. They survive only in the merchant normaliser's own list of
       generic city tokens, which is domain vocabulary a normaliser must
-      hold to work and not statement content. BRUSSEL is left, measured
-      and argued rather than waved through: it occurs in the real
-      documents as part of a BANK'S REGISTERED-ADDRESS line, verified by
-      probing the postal-code-and-city form and finding it present, while
-      no fixture descriptor carrying it occurs in either document. That is
-      the sanctioned bank-controlled-boilerplate class, the same class as
-      the footer lines, and it is what the fixtures' own Belfius footer
-      reproduces deliberately.
-      ON THE TWO LANES' DISAGREEMENT: both measured correctly and they
-      differ on whether BRUSSEL counts. It does count as a coincidence and
-      it does not count as a leak, and saying only one of those is what
-      produced two numbers.
+      hold to work and not statement content.
+      THE THIRD IS THE BANK'S OWN CITY and it is left. CORRECTED IN FIX
+      ROUND 4 (R-087, finding HZ3-M3P3-02) IN ONE PARTICULAR: the sentence
+      that stood here said one added PDF carried the bank's address city
+      and one carried none, and the delta hazard lane replied that this
+      generator emits no bank address at all. The lane is wrong about the
+      emission and I can point at it: the Belfius header block emits the
+      bank name, then a street-and-city line, then an account and a company
+      number (test/fixtures/generate-pdf-fixtures.ts, pushHeader). The
+      street is invented; the city is the real one, and it is the same
+      token that occurs in BOTH real documents, where it likewise sits in a
+      bank's own address, verified by probing the postal-code-and-city
+      form. That is the bank-controlled-boilerplate class the file
+      sanctions, so it stays. What WAS wrong in the old sentence is the
+      "one carried none" half, which was true only under the whole-word
+      test and not under the substring test the lane used.
+      THE THREE-WAY DISAGREEMENT, SETTLED BY LOCATING RATHER THAN
+      COUNTING, which is what the orchestrator asked for and what worked.
+      The delta hazard lane located a coinciding token in five transaction
+      descriptors (row descriptors at :713, :720, :735, :780 and a
+      card-payment block at :1066). It is right about WHERE the token is
+      and I confirm every site. IT IS WRONG ABOUT WHETHER IT COINCIDES.
+      ONE STRING, ONE PROBE, ONE ANSWER, method written down: the exact
+      token from those five descriptors, upper-cased, tested against each
+      real document's text layer extracted with this repository's own
+      pdfjs, three ways. Case-folded WHOLE WORD: zero occurrences in
+      either document. Plain substring: zero in the card document, five in
+      the account document. Every one of those five sits strictly INSIDE a
+      single seventeen-character word; the count of containing words whose
+      length is anything else is zero, and the count of occurrences as a
+      word in its own right is zero. So the token is a FRAGMENT of a longer
+      unrelated word, not a place name in either document. The descriptors
+      stay, and the file's rule at :570 is not broken by them.
+      That also reconciles the third lane: the criteria lane's corrected
+      method is whole-word and case-folded, the same as mine, and its
+      finding that the coinciding city tokens sit in NO FIXTURE is correct
+      under that method and correct at this head. The hazard lane's count
+      of three place tokens also stands and my own re-measurement
+      corroborates it; the criteria lane's earlier two was the undercount,
+      caused by probing case-sensitively against mixed-case footer text,
+      and that lane withdrew and explained it. Three numbers, one cause
+      each, none of them averaged.
   - plan-clause: >-
       Fix-round dispatch: work every finding in both verdicts.
     why: >-
@@ -406,6 +443,16 @@ deviations:
       proved wrong. The residue is stated at the code: on an underpaid
       previous statement no derivation from rows alone can recover the
       printed figure, which is exactly why a printed figure is stored.
+      NOTED IN FIX ROUND 4 BECAUSE IT IS WORTH KEEPING: the criteria lane
+      endorsed this deviation and, in doing so, corrected reasoning THAT
+      SAME LANE had endorsed a round earlier. It had rejected
+      derivation-from-balances on evidence it built itself, and then let
+      "every storage-free alternative is another re-derivation" stand
+      without noticing that the pre-existing fallback was a DIFFERENT
+      derivation. Both sides reached the same correction from opposite
+      directions, one round apart. That is the two-lane process doing what
+      it is for, and it is recorded rather than left to disappear into a
+      green verdict.
   - plan-clause: >-
       Fix round 3 dispatch: give the confirmation flow a way to bind a
       card file to an account that already exists.
@@ -433,6 +480,73 @@ deviations:
       PUBLIC tree is not something to leave for the phase that owns the
       file. Each replacement was probed absent from both documents before
       it was written.
+
+  # ---------------- FIX ROUND 4 -----------------------------------------
+  - plan-clause: >-
+      DEV-M3P3-08 as fix round 3 wrote it: the net of the line items is the
+      derivation, and it is never worse than the sum it replaced.
+    why: >-
+      DEV-M3P3-11. The second half of that sentence was FALSE and
+      foreclosing, and finding HZ3-M3P3-01 demonstrated it end to end. A
+      settlement credit whose wording the one code-owned Dutch pattern does
+      not match is a positive row the code treats as not-the-settlement-
+      credit, so the sentence's own escape clause fired on exactly the case
+      that breaks it: there the net is wrong by the whole credit while the
+      sum it replaced was right, and the account-side debit fell from
+      INTERNAL to SPEND with the month doubled. WHICH OPTION I TOOK, of the
+      three offered: neither widening the pattern nor refusing. Widening
+      swaps one dependency on unobserved wording for another, in a code
+      path whose entire population is sources nobody has observed, and
+      refusing produces the silently doubled month the dispatch forbids.
+      Instead the summary now carries BOTH derivations as CANDIDATE totals
+      and the account-side debit matches either. From the rows alone an
+      unrecognised settlement credit and an ordinary merchant refund are
+      the same shape and imply different totals; a debit equal to one of
+      them is the evidence of which, and a debit equal to neither is still
+      loud. A stored printed figure still collapses the candidates to
+      itself. THE RESIDUAL IS ASSERTED, not hidden: an unrecognised credit
+      is still read as a refund by the classifier, so the card's own spend
+      is UNDER-stated by it rather than doubled, and the settlement link
+      has no incoming side so the leg is surfaced and the books stay open.
+      THE ENUMERATION IS ALSO CORRECTED: underpayment, overpayment and a
+      late-arriving credit all leave the debit loud, which the lane
+      measured and which the earlier comment named only in part.
+  - plan-clause: >-
+      Criterion 3.3's witnesses, and the fixture family they run on.
+    why: >-
+      DEV-M3P3-12, finding CR3-M3P3-01. Every card fixture in the tree had
+      a settlement credit that exactly cancels its previous balance AND
+      carries the observed wording, so the stored figure and both
+      derivations agreed and criterion 3.3's assertions held under an
+      implementation that never read the stored figure. Measured before the
+      fix: ignoring the stored figure reddened exactly ONE test in the
+      whole fast gate, and it was not one of 3.3's. A new fixture whose
+      credit settles LESS than its previous balance makes the printed
+      figure, the net of the line items and the sum of the debit magnitudes
+      three different numbers, and the same fixture serves the wording case
+      above. The discrimination is now inside criterion 3.3's own witness
+      file as well: ignoring the stored figure reddens two tests, one of
+      them there.
+  - plan-clause: >-
+      M3-P3 files-to-touch, once more: fix round 4 touches
+      scripts/gate-privacy.sh and test/fixtures/allowed-identifiers.txt
+      again, and three generic delimited fixtures by reference.
+    why: >-
+      DEV-M3P3-13, finding HZ3-M3P3-03. The allow list's first sentence is
+      the strongest promise in this repository's privacy machinery and the
+      script did not keep it in two more forms nobody had probed: an
+      account number whose body carries LETTERS never matched the pattern
+      at all, and one had been sitting in two tracked fixtures unlisted
+      with the gate green; and a lower-case account shape passed unlisted
+      while the card half of the same script folds case. Both are closed
+      with red witnesses. The sweep that followed the widening surfaced
+      three account numbers, all of them the published worked examples from
+      the account-numbering specification's own documentation, now listed
+      with that provenance. The widening was measured rather than assumed:
+      an earlier form that allowed separators inside a variable-length body
+      ran past the account number into the following upper-case word and
+      invented four shapes nobody could write a note for, so the
+      letters-in-body pattern takes the compact form only.
 
 gate-evidence:
   - gate: "typecheck (npm run typecheck, tsc --noEmit, node v26.7.0, at the pre-purge implementation head; its tree is byte-identical to the rebuilt branch, verified by an empty git diff --stat against 253e074)"
@@ -615,6 +729,61 @@ gate-evidence:
     todo: 0
     did-not-run: 0
   - gate: "fix round 3, slow suite (npm run test:e2e, playwright, chromium plus chromium-prod). 22 tests, 21 passed, 1 skipped, 3.4m. The default ports were free this time, so playwright.config.ts was NOT touched: git diff over it is empty, verified rather than asserted"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 22
+    passed: 21
+    failed: 0
+    skipped: 1
+    todo: 0
+    did-not-run: 0
+  # ---------------- FIX ROUND 4 -----------------------------------------
+  - gate: "fix round 4, typecheck (npm run typecheck, tsc --noEmit, node v22.12.0)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fix round 4, lint (npm run lint, eslint .)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fix round 4, fast suite (npm test, vitest run; 32 files, 428 tests, 0 skipped; up from 420, the 8 added being this round's witnesses)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 428
+    passed: 428
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fix round 4, privacy gate (npm run gate:privacy). Both new account-shape gaps were witnessed red before the fix and green after: an unlisted lower-case account shape written into a tracked fixture, and the three letters-in-body account numbers removed from the allow list"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fix round 4, migration (npx prisma migrate deploy against the local stack with the ambient foreign Supabase variables cleared): no pending migrations to apply"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fix round 4, slow suite (npm run test:e2e, playwright, chromium plus chromium-prod)"
     result: green
     wrapper-exit-code: 0
     discovered: 22
@@ -883,6 +1052,66 @@ claims:
           the repair: the two that coincided with real transaction content
           are absent from every fixture, and the one that remains is the
           bank-address token, argued in DEV-M3P3-06.
+  - id: M3P3-F4-C1
+    kind: coverage
+    statement: >-
+      The regression fix round 3 introduced has a red witness written
+      before the fix, and it reproduces the delta lane's scenario 7 rather
+      than restating it.
+    settled-by:
+      executed-construction:
+        command: "write the unrecognised-credit block in test/domain/kbc-fix-round-3.test.ts and the delimited witness in test/application/kbc-fix-round-2.test.ts against the unfixed summariser; run; then fix and run again"
+        exit-code: 1
+        output: >-
+          PRE-FIX: "14 tests | 4 failed" on the domain file. The truthful
+          total was not among the import's candidates because there was no
+          candidate list; the account-side debit came back SPEND instead of
+          INTERNAL; the refund month's own total was likewise unreachable
+          through the new field; and a stored figure did not collapse the
+          candidates because none existed. POST-FIX: 14 passed. The
+          delimited application witness moved the same way. The one that
+          passed pre-fix was the spend total, and it passed for a reason
+          worth recording rather than hiding: the unrecognised credit is
+          read as a refund and nets against the card's own spend, so the
+          month is UNDER-stated rather than doubled, and that residual is
+          now asserted in the test instead of being left to be rediscovered.
+  - id: M3P3-F4-C2
+    kind: coverage
+    statement: >-
+      Criterion 3.3's witnesses can once again tell the stored figure from
+      a derivation, which they could not at the previous head.
+    settled-by:
+      executed-construction:
+        command: "make interpretWindow pass an empty statement-totals map so the stored figure is ignored; npm test; restore"
+        exit-code: 1
+        output: >-
+          BEFORE the new fixture: "1 failed | 419 passed (420)", and the
+          one was in the fix-round file rather than in criterion 3.3's
+          witnesses, which is the thinning CR3-M3P3-01 names. AFTER: "2
+          failed | 426 passed (428)", and one of the two is in
+          test/application/kbc-settlement.test.ts, the file criterion 3.3
+          cites. Restored: 428 passed.
+  - id: M3P3-F4-C3
+    kind: coverage
+    statement: >-
+      The two remaining account-shape gaps in the privacy gate are closed,
+      each with a red witness, and the widening was measured rather than
+      assumed.
+    settled-by:
+      executed-construction:
+        command: "append an unlisted lower-case account shape to a tracked fixture and run the gate, before and after the pattern change; then remove the three letters-in-body account numbers from the allow list and run again; then enumerate everything the widened pattern catches across the tree"
+        exit-code: 1
+        output: >-
+          LOWER CASE: with the pattern widened the gate exits 1 and names
+          the file; the PARENT commit's script over the same tree prints
+          "gate:privacy clean". LETTERS IN BODY: removing the three entries
+          exits 1 and names the two fixtures carrying them; restored, "
+          gate:privacy clean". THE SWEEP behind the widening: an earlier
+          form allowing separators inside a variable-length body matched
+          past the account number into the following upper-case word and
+          produced four unlistable shapes, so the pattern takes the compact
+          form only; with that, the whole tree yields exactly three
+          previously invisible account numbers and nothing else.
   - id: M3P3-Q2
     kind: open-question
     statement: >-
@@ -934,6 +1163,17 @@ claims:
       product decision as much as a mechanism: binding a file to an
       existing account is a question the confirmation screen does not ask
       today and would have to.
+      ADDED IN FIX ROUND 4 (finding HZ3-M3P3-04), because whoever builds
+      that screen needs it: the account a card file binds to may ALREADY
+      hold another card's rows. The identity is the masked form, and two
+      different cards sharing their visible digits and mask positions print
+      one masked form, so the binding screen cannot assume that one account
+      means one card. The delta hazard lane judged leaving this open safe
+      for the owner's real data now that capture is normalised, because the
+      accidental split is closed and the remaining trigger is a reissue the
+      owner initiates and will recognise, whose consequence is a second
+      account with split history rather than the same rows twice. Recorded
+      here rather than argued again.
   - id: M3P3-F2-Q2
     kind: open-question
     statement: >-

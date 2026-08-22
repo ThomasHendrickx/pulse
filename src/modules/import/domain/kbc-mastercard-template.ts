@@ -138,11 +138,27 @@ const CARD_NUMBER_LINE =
 // Typography out, identity in: separators dropped, mask glyphs folded to
 // one form. A number printed with spaces, with hyphens, with neither, and
 // with the mask written in lower case or as asterisks is one card and now
-// one identity; two genuinely different numbers still differ, because only
-// the separators and the glyph CHARACTER are normalised away, never a
-// digit and never a position. No example is written out here: a card-
-// shaped literal in a source comment is exactly the shape gate:privacy
-// exists to stop, and the cases are enumerated in the test instead.
+// one identity. No example is written out here: a card-shaped literal in a
+// source comment is exactly the shape gate:privacy exists to stop, and the
+// cases are enumerated in the test instead.
+//
+// HOW UNIQUE THIS IDENTITY IS, corrected rather than quietly rewritten
+// (R-087, fix round 4, finding HZ3-M3P3-04). This sentence used to say two
+// genuinely different numbers still differ, because only the separators
+// and the glyph character are normalised away, never a digit and never a
+// position. That is true of the NORMALISER and it is NOT true of the
+// identity it produces. The identity is the MASKED form, and a masked form
+// is not a card: two different cards that share their visible digits and
+// their mask positions print the same one, and this template cannot tell
+// them apart because the document never shows the rest. The consequence of
+// such a collision is exactly the defect round 1 raised, two cards on one
+// profile, one account and one dedup scope, and it is silent. It needs two
+// cards of one household on one issuer product sharing their visible
+// digits, which is roughly a one in ten thousand coincidence, and the
+// normalisation barely moves that number since folding the glyph only
+// merges cards whose statements print different glyph characters. So: the
+// normaliser preserves every digit and every mask position, and the
+// identity is as unique as the masked form is, which is not absolutely.
 const normaliseCardIdentifier = (raw: string): string =>
   raw.replace(/[ -]/g, "").replace(/[x*]/g, "X");
 

@@ -18,6 +18,9 @@ import {
   KBC_REFUND_ROW_COUNT,
   KBC_REFUND_SETTLEMENT_CENTS,
   KBC_CREDIT_SETTLEMENT_CENTS,
+  KBC_UNDERPAID_DEBIT_SUM_CENTS,
+  KBC_UNDERPAID_ROWS,
+  KBC_UNDERPAID_SETTLEMENT_CENTS,
   KBC_REFUND_STATEMENT_NUMBER,
   KBC_SECOND_MASKED_CARD_IDENTITY,
 } from "../fixtures/generate-pdf-fixtures";
@@ -356,5 +359,79 @@ describe("a card statement standing in credit imports and settles nothing (HZ2-M
     expect(
       world.links.some((link) => link.settlementImportId !== undefined),
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------
+// FIX ROUND 4. Two witnesses the tree had no shape for.
+// ---------------------------------------------------------------------
+
+describe("a delimited card export whose credit wording is NOT the observed one (HZ3-M3P3-01)", () => {
+  test("the account-side debit still links, and the month is not doubled", async () => {
+    const world = makeFakeImportWorld();
+    const card = await ingest(world, "kbc-card-unrecognised-credit.csv", {
+      label: "Card, unobserved wording",
+      bank: "KBC",
+      role: "POT",
+    });
+    await ingest(world, "unrecognised-credit-companion.csv", {
+      label: "Daily account",
+      bank: "Demobank",
+      role: "POT",
+    });
+    // A delimited parse prints and stores no figure, so this is the
+    // derivation path, and the credit's wording is outside the one
+    // code-owned pattern.
+    expect(world.imports.get(card.importId)?.settlementTotalCents).toBeUndefined();
+
+    const debit = world.transactions.find((transaction) =>
+      transaction.description.includes("MASTERCARD AFREKENING NUMMER 45"),
+    );
+    expect(debit?.amountCents).toBe(-50000);
+    // Before the candidate fix this fell through to SPEND on top of the
+    // card's own rows: the doubled month.
+    expect(debit?.flow).toBe("INTERNAL");
+    const link = world.links.find(
+      (candidate) => candidate.settlementImportId !== undefined,
+    );
+    expect(link?.settlementImportId).toBe(card.importId);
+  });
+});
+
+describe("a card statement whose credit does NOT cancel its previous balance (CR3-M3P3-01)", () => {
+  test("the three numbers differ, so only the STORED figure can settle the debit", async () => {
+    // The discrimination criterion 3.3 had lost: on every other fixture
+    // the stored figure and both derivations agree, so the witnesses held
+    // under an implementation that never read the stored figure.
+    expect(KBC_UNDERPAID_SETTLEMENT_CENTS).not.toBe(KBC_UNDERPAID_DEBIT_SUM_CENTS);
+    const netOfLineItems = -(
+      KBC_UNDERPAID_ROWS.reduce((sum, row) => sum + row.amountCents, 0)
+    );
+    expect(netOfLineItems).not.toBe(KBC_UNDERPAID_SETTLEMENT_CENTS);
+    expect(netOfLineItems).not.toBe(KBC_UNDERPAID_DEBIT_SUM_CENTS);
+
+    const world = makeFakeImportWorld();
+    const card = await ingest(world, "kbc-statement-underpaid.pdf", {
+      label: "Credit card four",
+      bank: "KBC",
+      role: "POT",
+    });
+    expect(world.imports.get(card.importId)?.settlementTotalCents).toBe(
+      KBC_UNDERPAID_SETTLEMENT_CENTS,
+    );
+    await ingest(world, "underpaid-companion.csv", {
+      label: "Daily account",
+      bank: "Demobank",
+      role: "POT",
+    });
+    const debit = world.transactions.find((transaction) =>
+      transaction.description.includes("MASTERCARD AFREKENING NUMMER 31776"),
+    );
+    expect(debit?.amountCents).toBe(-KBC_UNDERPAID_SETTLEMENT_CENTS);
+    expect(debit?.flow).toBe("INTERNAL");
+    expect(
+      world.links.find((l) => l.settlementImportId !== undefined)
+        ?.settlementImportId,
+    ).toBe(card.importId);
   });
 });

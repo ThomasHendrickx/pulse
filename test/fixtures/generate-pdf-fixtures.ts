@@ -617,6 +617,15 @@ export const KBC_THIRD_MASKED_CARD_IDENTITY = KBC_THIRD_MASKED_CARD.replace(
   "",
 );
 export const KBC_CREDIT_STATEMENT_NUMBER = "31204";
+// A FOURTH card, for the underpaid statement (fix round 4). Invented and
+// probed against both real documents in its masked form, its six-digit
+// head and its four-digit tail before being listed.
+export const KBC_FOURTH_MASKED_CARD = "5417 88XX XXXX 6503";
+export const KBC_FOURTH_MASKED_CARD_IDENTITY = KBC_FOURTH_MASKED_CARD.replace(
+  /[ -]/g,
+  "",
+);
+export const KBC_UNDERPAID_STATEMENT_NUMBER = "31776";
 
 export type KbcFixtureRow = {
   // DD-MM-YYYY, as rendered. Booking date is the TRANSACTION date
@@ -886,6 +895,70 @@ export const KBC_CREDIT_ROW_COUNT = KBC_CREDIT_ROWS.length;
 export const KBC_CREDIT_SETTLEMENT_CENTS = -(
   KBC_CREDIT_OPENING_CENTS +
   KBC_CREDIT_ROWS.reduce((sum, row) => sum + row.amountCents, 0)
+);
+
+// ---------------------------------------------------------------------
+// THE UNDERPAID STATEMENT (fix round 4, findings CR3-M3P3-01 and
+// HZ3-M3P3-01). Every other card fixture in this tree has a settlement
+// credit that exactly cancels its previous balance AND is worded so the
+// code-owned credit pattern claims it, which means the STORED figure and
+// both row derivations agree, which means criterion 3.3's witnesses hold
+// under an implementation that never reads the stored figure at all.
+// Measured: with the stored figure ignored, exactly one test in the whole
+// fast gate reddens, and it is not one of 3.3's.
+//
+// This statement breaks the agreement twice over. Its credit settles LESS
+// than the previous balance, because the household underpaid, and its
+// wording is not the observed one, so the pattern does not claim it:
+//
+//   previous balance   -60000
+//   credit            +55000, worded so the pattern does not match
+//   debits            -20000 and -15000
+//   Afrekening         -40000, so the issuer collects 40000
+//
+// and the three numbers are all different:
+//   printed figure               40000   (the truth, and stored)
+//   net of the line items       -20000   (the credit counted as an item)
+//   sum of the debit magnitudes  35000
+// So a companion debit for the printed figure links ONLY when the stored
+// figure is read, which is the discrimination criterion 3.3 had lost.
+export const KBC_UNDERPAID_OPENING_CENTS = -60000; // "-600,00"
+
+export const KBC_UNDERPAID_ROWS: readonly KbcFixtureRow[] = [
+  {
+    transactionDate: "02-06-2026",
+    settlementDate: "03-06-2026",
+    description: "MEUBELMAKERIJ DE ESDOORN BRUGGE B",
+    amountText: "-200,00",
+    amountCents: -20000,
+  },
+  {
+    transactionDate: "04-06-2026",
+    settlementDate: "05-06-2026",
+    description: "BOEKBINDERIJ DE PENSEELSTREEK TONGEREN B",
+    amountText: "-150,00",
+    amountCents: -15000,
+  },
+  {
+    // The settlement of the previous statement, PARTIAL and worded so the
+    // code-owned pattern does not claim it. Both properties matter and
+    // both are deliberate.
+    transactionDate: "01-06-2026",
+    settlementDate: "01-06-2026",
+    description: "AFBETALING VORIGE STAAT",
+    amountText: "+550,00",
+    amountCents: 55000,
+  },
+];
+
+export const KBC_UNDERPAID_ROW_COUNT = KBC_UNDERPAID_ROWS.length;
+export const KBC_UNDERPAID_SETTLEMENT_CENTS = -(
+  KBC_UNDERPAID_OPENING_CENTS +
+  KBC_UNDERPAID_ROWS.reduce((sum, row) => sum + row.amountCents, 0)
+);
+export const KBC_UNDERPAID_DEBIT_SUM_CENTS = KBC_UNDERPAID_ROWS.reduce(
+  (sum, row) => sum + (row.amountCents < 0 ? -row.amountCents : 0),
+  0,
 );
 
 export const KBC_FIXTURE_ROW_COUNT = KBC_FIXTURE_ROWS.length;
@@ -1293,6 +1366,21 @@ export const buildPdfFixtures = (): ReadonlyMap<string, Uint8Array> => {
     }),
   );
 
+  const kbcUnderpaidSum = KBC_UNDERPAID_ROWS.reduce(
+    (sum, row) => sum + checkedKbcCents(row),
+    0,
+  );
+  const kbcUnderpaid = buildPdf(
+    kbcStatement({
+      openingCents: KBC_UNDERPAID_OPENING_CENTS,
+      closingCents: KBC_UNDERPAID_OPENING_CENTS + kbcUnderpaidSum,
+      rows: KBC_UNDERPAID_ROWS,
+      pageOneCount: 2,
+      maskedCard: KBC_FOURTH_MASKED_CARD,
+      statementNumber: KBC_UNDERPAID_STATEMENT_NUMBER,
+    }),
+  );
+
   const companionRefundSum = COMPANION_REFUND_TRANSACTIONS.reduce(
     (sum, transaction) => sum + checkedCents(transaction),
     0,
@@ -1339,6 +1427,7 @@ export const buildPdfFixtures = (): ReadonlyMap<string, Uint8Array> => {
     ["kbc-statement-second-card.pdf", kbcSecondCard],
     ["kbc-statement-refund.pdf", kbcRefund],
     ["kbc-statement-credit.pdf", kbcCredit],
+    ["kbc-statement-underpaid.pdf", kbcUnderpaid],
     ["belfius-settlement-companion.pdf", companionFixture],
     ["belfius-settlement-companion-refund.pdf", companionRefundFixture],
   ]);

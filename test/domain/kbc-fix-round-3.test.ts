@@ -78,8 +78,12 @@ describe("a card import with no STORED settlement figure still settles for the t
     // nothing is printed to store.
     const summaries = summarizeCardImports(cardRows, sets);
     expect(summaries).toHaveLength(1);
-    expect(summaries[0]?.settlementTotalCents).toBe(TRUE_SETTLEMENT_CENTS);
-    expect(summaries[0]?.settlementTotalCents).not.toBe(DEBIT_SUM_CENTS);
+    // Both candidates are present, because from the rows alone the refund
+    // and an unrecognised settlement credit are the same shape; what
+    // matters is that the TRUTHFUL one is there and the debit finds it.
+    expect(summaries[0]?.settlementTotalsCents).toContain(TRUE_SETTLEMENT_CENTS);
+    expect(summaries[0]?.settlementTotalsCents?.[0]).toBe(TRUE_SETTLEMENT_CENTS);
+    expect(DEBIT_SUM_CENTS).not.toBe(TRUE_SETTLEMENT_CENTS);
   });
 
   test("the account-side debit is INTERNAL and linked to the card import", () => {
@@ -138,7 +142,7 @@ describe("a card import with no STORED settlement figure still settles for the t
     const sets = deriveDeclaredSets(ACCOUNTS);
     const stored = new Map([["card-1", cents(12345) as Cents]]);
     const summaries = summarizeCardImports(cardRows, sets, stored);
-    expect(summaries[0]?.settlementTotalCents).toBe(12345);
+    expect(summaries[0]?.settlementTotalsCents).toEqual([12345]);
   });
 });
 
@@ -214,5 +218,93 @@ describe("one card is one identity however its statement prints it (HZ2-M3P3-02)
     ];
     expect(kbcMastercardTemplate.accountIdentifier?.(pages)).toBeDefined();
     expect(kbcMastercardTemplate.parse(pages).ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------
+// FIX ROUND 4, finding HZ3-M3P3-01. The derivation fix round 3 introduced
+// is WORSE than the sum it replaced on one shape, and the comment above it
+// said that shape could not exist: a settlement credit whose wording the
+// one code-owned Dutch pattern does not recognise. The fallback is BY
+// CONSTRUCTION the path for sources nobody has observed, which is exactly
+// where unobserved wording lives.
+// ---------------------------------------------------------------------
+
+describe("an UNRECOGNISED settlement credit does not double the month (HZ3-M3P3-01)", () => {
+  // The same month as above, minus the refund, with the credit worded so
+  // SETTLEMENT_CREDIT_PATTERNS does not match it. The credit still cancels
+  // the opening balance exactly, so the issuer collects the debit rows:
+  //   debits           -300,00 and -200,00
+  //   credit          +500,00, wording unrecognised
+  // The truthful settlement is 500,00. The net-of-line-items derivation
+  // returns 0 because it counts the credit as a line item; the sum of the
+  // debit magnitudes returns 500,00 and is right here.
+  const unrecognisedCardRows: readonly LedgerTransaction[] = [
+    tx({ id: "u1", accountId: "acc-card", importId: "card-9", date: "2026-08-04", amount: -30000, description: "BOEKBINDERIJ DE PENSEELSTREEK" }),
+    tx({ id: "u2", accountId: "acc-card", importId: "card-9", date: "2026-08-06", amount: -20000, description: "SPORTHAL DE WATERMOLEN" }),
+    tx({ id: "u3", accountId: "acc-card", importId: "card-9", date: "2026-08-01", amount: 50000, description: "REGLEMENT PAR PRELEVEMENT BANCAIRE" }),
+  ];
+  const unrecognisedDebit = tx({
+    id: "d9",
+    accountId: "acc-current",
+    importId: "current-9",
+    date: "2026-08-12",
+    amount: -50000,
+    description: "MASTERCARD AFREKENING NUMMER 51",
+  });
+  const unrecognisedWorld = [...unrecognisedCardRows, unrecognisedDebit];
+
+  test("the truthful total is among the import's settlement candidates", () => {
+    const sets = deriveDeclaredSets(ACCOUNTS);
+    const summaries = summarizeCardImports(unrecognisedCardRows, sets);
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]?.settlementTotalsCents).toContain(50000);
+  });
+
+  test("the account-side debit is INTERNAL and linked, not a doubled month", () => {
+    const interpretation = interpretLedger({
+      transactions: unrecognisedWorld,
+      accounts: ACCOUNTS,
+    });
+    expect(interpretation.flows.get("d9")).toBe("INTERNAL");
+    expect(interpretation.settlements).toHaveLength(1);
+    expect(interpretation.settlements[0]?.cardImportId).toBe("card-9");
+  });
+
+  test("the month is not DOUBLED, and the residual that remains is LOUD", () => {
+    const interpretation = interpretLedger({
+      transactions: unrecognisedWorld,
+      accounts: ACCOUNTS,
+    });
+    const spend = unrecognisedWorld
+      .filter((t) => interpretation.flows.get(t.id) === "SPEND")
+      .reduce((sum, t) => sum + t.amountCents, 0);
+    // Before the candidate fix the direct debit fell through to SPEND on
+    // top of the card's own rows: the doubled month this phase exists to
+    // stop. It does not any more.
+    expect(spend).not.toBe(-100000);
+    // THE RESIDUAL, ASSERTED RATHER THAN HIDDEN. The credit is still not
+    // recognised as the settlement mirror, so the card-refund arm reads it
+    // as a refund and it nets against the card's own spend. The month's
+    // card spend is therefore UNDER-stated, not doubled. That is a
+    // different and smaller error, and it does not close quietly: the
+    // settlement link has no incoming side, so the debit is surfaced as an
+    // unmatched internal leg and the books stay open.
+    expect(spend).toBe(0);
+    expect(interpretation.unmatchedInternalIds).toContain("d9");
+    expect(interpretation.settlements[0]?.mirrorCreditTransactionId).toBeUndefined();
+  });
+
+  test("the RECOGNISED refund month still settles for the net, so neither reading is lost", () => {
+    const sets = deriveDeclaredSets(ACCOUNTS);
+    const summaries = summarizeCardImports(cardRows, sets);
+    expect(summaries[0]?.settlementTotalsCents).toContain(TRUE_SETTLEMENT_CENTS);
+  });
+
+  test("a STORED figure collapses the candidates to the one the statement printed", () => {
+    const sets = deriveDeclaredSets(ACCOUNTS);
+    const stored = new Map([["card-1", cents(12345) as Cents]]);
+    const summaries = summarizeCardImports(cardRows, sets, stored);
+    expect(summaries[0]?.settlementTotalsCents).toEqual([12345]);
   });
 });
