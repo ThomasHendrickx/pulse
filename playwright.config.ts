@@ -62,13 +62,22 @@ export default defineConfig({
       testMatch: /prod-smoke/,
     },
     // THE PHONE PROJECT (M3-P7, DR-0022, criterion 7.12). A chromium mobile
-    // device descriptor at the mockup's own frame size, and isMobile is the
-    // POINT rather than a detail: without it Playwright sizes the layout
-    // viewport directly and the meta viewport tag is never exercised, which
-    // is exactly why the phone specs that shipped before this phase could
-    // not see whether the tag was there at all. The two specs that carry
-    // the month view and the shell run under this project AND under the
-    // desktop project above, so a regression at either width is red.
+    // device descriptor at the mockup's own frame size. The two specs that
+    // carry the month view and the shell run under this project AND under
+    // the desktop project above, so a regression at either width is red.
+    //
+    // CORRECTED RATHER THAN QUIETLY REWRITTEN (clause R-087, M3-P7 fix
+    // round, finding HZ-M3P7-06). This comment used to say that without
+    // isMobile the meta viewport tag is never exercised and that the phone
+    // specs shipped before this phase could not see whether the tag was
+    // there at all. THAT WAS FALSE of the guard as written: reading the
+    // tag's content attribute out of the DOM works in any project and does
+    // pass under the desktop project, which the suite's own run shows.
+    // What isMobile actually buys is that the browser HONOURS the tag, so
+    // window.innerWidth is the declared device width rather than a layout
+    // viewport Playwright sized directly. That is now asserted beside the
+    // DOM read in test/e2e/month-view.spec.ts, and it is the assertion this
+    // project exists for.
     {
       name: "chromium-phone",
       use: {

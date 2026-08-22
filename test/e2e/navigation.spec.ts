@@ -199,3 +199,53 @@ test.describe("desktop viewport (criterion 1.5, kept assertion)", () => {
     await expectFullHeaderWithoutHorizontalScroll(page, 1280);
   });
 });
+
+// FINDING HZ-M3P7-05 (M3-P7 fix round). The shell rebuild moved the
+// sign-out form into an identity row placed ahead of the navigation, so the
+// FIRST Tab on every route in the product landed on Sign out. Document
+// order and visual order agreed, so it was not a reading-order defect; it
+// was the destructive control becoming the first stop for a keyboard or a
+// switch user, and nothing measured it. Nothing in the fifteen criteria
+// names the header's focusable sequence and no spec pressed Tab.
+//
+// The header keeps its two visual rows. What changed is that the rows are
+// placed with CSS grid rather than by document order, which is the same
+// technique the three month-view cards already use and the same reason:
+// the order the document has is the order that is read.
+test.describe("shell header focus order (M3-P7 fix round, HZ-M3P7-05)", () => {
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1280, height: 720 },
+  ] as const) {
+    test(`at ${viewport.width} the navigation is reached before sign out`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      await signUp(page, `nav-focus-${viewport.width}`);
+      await page.goto("/");
+      await expect(page.getByTestId("main-nav")).toBeVisible();
+
+      const reached: string[] = [];
+      for (let step = 0; step < 4; step += 1) {
+        await page.keyboard.press("Tab");
+        reached.push(
+          await page.evaluate(() => {
+            const active = document.activeElement;
+            if (active === null) {
+              return "(none)";
+            }
+            return (
+              active.getAttribute("data-testid") ??
+              (active.textContent ?? "").trim().slice(0, 20)
+            );
+          }),
+        );
+      }
+
+      expect(
+        reached,
+        "the first four stops are the three nav links, then sign out",
+      ).toEqual(["nav-overview", "nav-import", "nav-merchants", "Sign out"]);
+    });
+  }
+});

@@ -110,7 +110,7 @@ Income, spend and reserves are not symmetric and must not be rendered as three e
 
 Comparison against the previous month is part of the primary view, not a separate mode.
 
-Mobile first (DR-0022). Every screen, the import included, is designed at 390 by 844 first and widened from there; the import stance in `pulse-v0.2-pdf-addendum.md` is a phone stance, because a statement arrives on the phone that photographed it. Phone-width evidence is a standing acceptance criterion on every UI phase, and that evidence measures reachable tap targets, readable density and content that survived the narrowing. It never measures the absence of horizontal scrolling: the screen this rule replaced did not scroll sideways and was still unusable.
+Mobile first (DR-0022). Every screen, the import included, is designed at 390 by 844 first and widened from there; the import stance in `pulse-v0.2-pdf-addendum.md` is a phone stance, because a PDF statement is exported by the phone's banking app, so the natural import path is the phone share sheet. Phone-width evidence is a standing acceptance criterion on every UI phase, and that evidence measures reachable tap targets, readable density and content that survived the narrowing. It never measures the absence of horizontal scrolling: the screen this rule replaced did not scroll sideways and was still unusable.
 
 ## 7. Copy and i18n
 
