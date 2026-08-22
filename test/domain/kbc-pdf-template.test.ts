@@ -10,7 +10,7 @@ import {
   KBC_FIXTURE_ROWS,
   KBC_FIXTURE_ROW_COUNT,
   KBC_FIXTURE_SUM_CENTS,
-  KBC_MASKED_CARD,
+  KBC_MASKED_CARD_IDENTITY,
 } from "../fixtures/generate-pdf-fixtures";
 import type { ParsedStatement } from "../../src/modules/import/domain/parse-statement";
 
@@ -50,10 +50,15 @@ describe("KBC card template over the synthetic fixture (criterion 3.1)", () => {
       expect(detected.value).toEqual({
         kind: "pdf-layout",
         templateId: KBC_TEMPLATE_ID,
-        templateVersion: 1,
+        // Fix round 3 (CR2-M3P3-01): the template's registered version
+        // moved with the change of meaning, which is the mechanism
+        // parse-pdf-statement.ts names for exactly this.
+        templateVersion: 2,
         // Fix round 2 (HZ-M3P3-02): the card's own identity is part of
-        // the spec, so two cards of one issuer are two sources.
-        accountIdentifier: KBC_MASKED_CARD,
+        // the spec, so two cards of one issuer are two sources. Fix round
+        // 3 (HZ2-M3P3-02): it is the NORMALISED identity, so one card
+        // stays one card whatever its statement prints.
+        accountIdentifier: KBC_MASKED_CARD_IDENTITY,
       });
     }
   });
