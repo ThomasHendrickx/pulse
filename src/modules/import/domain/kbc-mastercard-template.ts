@@ -115,11 +115,36 @@ const PREVIOUS_BALANCE_LINE = new RegExp(
 );
 // The masked card number on the header line, and on the per-card
 // sub-heading under the previous balance. Glue-tolerant like every other
-// label here; the value is taken verbatim as the file's own-account
-// identifier. Mask glyphs are part of the value: a card statement never
+// label here. Mask glyphs are part of the value: a card statement never
 // prints a bare PAN.
+//
+// CORRECTED RATHER THAN QUIETLY REWRITTEN (R-087, fix round 3, finding
+// HZ2-M3P3-02): this comment used to say the value is taken VERBATIM as
+// the file's own-account identifier, and that is exactly what made one
+// card into several. The capture below deliberately tolerates the
+// separator being a space, a hyphen or nothing at all, and the mask glyph
+// being upper or lower case, because extraction word spacing on this
+// layout is tolerance-sensitive and the line reconstructor decides word
+// gaps against a numeric threshold, so a hair of kerning between two
+// statements of ONE card flips a separator in or out of the captured
+// string. Taken verbatim, each of those printings was a different
+// identity, therefore a different profile, a different account and a
+// different dedup scope, and the same facts were stored twice. The value
+// is now NORMALISED at the point of capture: identity is the digits and
+// the mask POSITIONS, never the typography.
 const CARD_NUMBER_LINE =
   /^Kaartnummer(?:\s*\(s\))?\s*:?\s*([0-9Xx*]{4}(?:[ -]?[0-9Xx*]{4}){3})$/;
+
+// Typography out, identity in: separators dropped, mask glyphs folded to
+// one form. A number printed with spaces, with hyphens, with neither, and
+// with the mask written in lower case or as asterisks is one card and now
+// one identity; two genuinely different numbers still differ, because only
+// the separators and the glyph CHARACTER are normalised away, never a
+// digit and never a position. No example is written out here: a card-
+// shaped literal in a source comment is exactly the shape gate:privacy
+// exists to stop, and the cases are enumerated in the test instead.
+const normaliseCardIdentifier = (raw: string): string =>
+  raw.replace(/[ -]/g, "").replace(/[x*]/g, "X");
 
 const TOTAL_LINE =
   /^Totaal\s*bedrag\s*van\s*de\s*kaartverrichtingen\s*op\s*\d{2}-\d{2}-\d{4}$/;
@@ -163,8 +188,12 @@ const cardNumbersIn = (pages: readonly PdfPageLines[]): readonly string[] => {
   for (const page of pages) {
     for (const line of page) {
       const match = CARD_NUMBER_LINE.exec(line.text);
-      const value = match?.[1];
-      if (value !== undefined && !seen.includes(value)) {
+      const raw = match?.[1];
+      if (raw === undefined) {
+        continue;
+      }
+      const value = normaliseCardIdentifier(raw);
+      if (!seen.includes(value)) {
         seen.push(value);
       }
     }
@@ -172,11 +201,15 @@ const cardNumbersIn = (pages: readonly PdfPageLines[]): readonly string[] => {
   return seen;
 };
 
-// The file's own-account identity: exactly one masked card number, or
-// nothing. Two different numbers in one document is the multi-card
-// uitgavenstaat nobody has seen (open question M3P3-Q2); it resolves to
-// undefined here and the parse below turns that into a loud structure
-// error rather than a guess about which card the rows belong to.
+// The file's own-account identity: exactly one masked card number after
+// normalisation, or nothing. Two different numbers in one document is the
+// multi-card uitgavenstaat nobody has seen (open question M3P3-Q2); it
+// resolves to undefined here and the parse below turns that into a loud
+// structure error rather than a guess about which card the rows belong
+// to. Because the comparison is over NORMALISED values, the same card
+// printed two ways on one document (the header line and the per-card
+// sub-heading, which the real layout prints differently) is one number
+// and not an ambiguous document.
 const accountIdentifier = (
   pages: readonly PdfPageLines[],
 ): string | undefined => {
@@ -334,15 +367,37 @@ const parse = (
     // The Afrekening magnitude: what the bank collects for this
     // statement. Negative closing means money owed, which is the ordinary
     // case; a card standing in credit yields a non-positive settlement
-    // total, which matches no direct debit and is honestly left to find
-    // none (corrections.ts settlementCandidateImports).
+    // total.
+    // CORRECTED RATHER THAN QUIETLY REWRITTEN (R-087, fix round 3,
+    // finding HZ2-M3P3-05): this comment used to credit the positive-total
+    // guard in settlementCandidateImports for making that case safe, and
+    // that guard is REDUNDANT, measured by deleting it and watching the
+    // whole fast gate stay green. What actually makes a non-positive
+    // figure safe is the equality one line above it: the figure is
+    // compared against the MAGNITUDE of a debit, which is strictly
+    // positive, so a non-positive figure equals no candidate and the
+    // statement is honestly reported as settling nothing. The guard is
+    // kept as a cheap statement of intent; the equality is the mechanism.
     settlementTotalCents: (-closing) as Cents,
   });
 };
 
 export const kbcMastercardTemplate: PdfLayoutTemplate = {
   id: "kbc-mastercard-uitgavenstaat",
-  version: 1,
+  // VERSION 2 (fix round 3, finding CR2-M3P3-01). Fix round 2 changed what
+  // this template RETURNS (a settlement total, and a spec-borne account
+  // identifier) and what it ACCEPTS (a document carrying no card number,
+  // or two different ones, is now a loud structure error where it used to
+  // parse), and fix round 3 changed the identifier's normalisation, all
+  // while the registered version stayed 1. parse-pdf-statement.ts states
+  // that a declared templateVersion must equal the registered one or the
+  // parse fails closed, and that a version bump is a migration rather than
+  // a silent reinterpretation of stored bytes; that is the mechanism this
+  // codebase names for exactly this change and it could not fire while the
+  // number stood still. The bump is FREE here, measured rather than
+  // assumed: this template does not exist on main, so no stored
+  // declaration anywhere names version 1 of it outside this branch.
+  version: 2,
   // No sequence numbers exist in this format: the dedup key is the HASH
   // path with the occurrence ordinal, never a natural key (addendum:86).
   hasNaturalKey: false,

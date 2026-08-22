@@ -63,7 +63,16 @@ fi
 if [ ! -f "$ALLOW" ]; then
   report "missing $ALLOW: the allow list of invented identifiers is required."
 else
-  known="$(grep -vE '^[[:space:]]*(#|$)' "$ALLOW" | tr -d ' ' | sort -u)"
+  # NORMALISE BOTH SIDES THE WAY THE ALLOW LIST ALREADY PROMISES. Its
+  # header says spaces and dashes are ignored when matching, and until fix
+  # round 3 this only stripped spaces, so a listed card written with
+  # hyphens failed the gate and a lower-case mask glyph failed it too. A
+  # card number's identity is its digits and its mask POSITIONS, never its
+  # typography, which is the same rule the KBC template now applies when
+  # it decides whether two statements belong to one card. Case is folded
+  # so a mask written x or X or * is one value.
+  norm() { tr -d ' -' | tr 'x*' 'XX' | tr 'a-z' 'A-Z'; }
+  known="$(grep -vE '^[[:space:]]*(#|$)' "$ALLOW" | norm | sort -u)"
   for f in $(git ls-files); do
     [ -f "$f" ] || continue
     case "$f" in \
@@ -74,7 +83,7 @@ else
     # $PAN already covers.
     for hit in $( { grep -Eoh "$IBAN|$PAN" "$f" 2>/dev/null; \
                     grep -Eoh "$MASKED" "$f" 2>/dev/null | grep -E '[Xx*]'; \
-                  } | tr -d ' ' | sort -u); do
+                  } | norm | sort -u); do
       printf '%s\n' "$known" | grep -qxF "$hit" || \
         report "$f: identifier shape not on the allow list. Add it to $ALLOW with a note on where it came from, or replace it with an invented value. Never add a value taken from a real statement."
     done

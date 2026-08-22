@@ -8,16 +8,18 @@ import {
 } from "../../src/platform/tenancy";
 import { confirmImport } from "../../src/modules/import/application/confirm-import";
 import { uploadStatement } from "../../src/modules/import/application/upload-statement";
+import { fixSourceProfile } from "../../src/modules/import/application/fix-profile";
 import { statementParser } from "../../src/modules/import/adapters/statement-parser";
 import { specEquals } from "../../src/modules/import/domain/source-profile";
 import {
-  KBC_MASKED_CARD,
+  KBC_MASKED_CARD_IDENTITY,
   KBC_REFUND_DEBIT_SUM_CENTS,
   KBC_REFUND_OPENING_CENTS,
   KBC_REFUND_ROW_COUNT,
   KBC_REFUND_SETTLEMENT_CENTS,
+  KBC_CREDIT_SETTLEMENT_CENTS,
   KBC_REFUND_STATEMENT_NUMBER,
-  KBC_SECOND_MASKED_CARD,
+  KBC_SECOND_MASKED_CARD_IDENTITY,
 } from "../fixtures/generate-pdf-fixtures";
 import { makeFakeImportWorld } from "./fake-import-world";
 
@@ -177,9 +179,11 @@ describe("two cards of one issuer are two sources (HZ-M3P3-02, CR-M3P3-02)", () 
     if (!first.ok || !second.ok) {
       throw new Error("unreachable");
     }
-    expect(first.value).toMatchObject({ accountIdentifier: KBC_MASKED_CARD });
+    expect(first.value).toMatchObject({
+      accountIdentifier: KBC_MASKED_CARD_IDENTITY,
+    });
     expect(second.value).toMatchObject({
-      accountIdentifier: KBC_SECOND_MASKED_CARD,
+      accountIdentifier: KBC_SECOND_MASKED_CARD_IDENTITY,
     });
     expect(specEquals(first.value, second.value)).toBe(false);
   });
@@ -217,5 +221,140 @@ describe("two cards of one issuer are two sources (HZ-M3P3-02, CR-M3P3-02)", () 
     expect(rowsTwo.length).toBe(rowsOne.length);
     expect(rowsTwo.length).toBeGreaterThan(0);
     expect(rowsOne[0]?.accountId).not.toBe(rowsTwo[0]?.accountId);
+  });
+});
+
+// ---------------------------------------------------------------------
+// FIX ROUND 3, finding HZ2-M3P3-01: the SAME witness on the DELIMITED
+// card path, which prints no settlement figure and therefore stores none.
+// This is the path v0.1 shipped and the one round 2 left defective.
+// ---------------------------------------------------------------------
+
+describe("a delimited card export settles for the truth with no stored figure (HZ2-M3P3-01)", () => {
+  test("the account-side debit is INTERNAL and linked, and the card's rows are counted once", async () => {
+    const world = makeFakeImportWorld();
+    const card = await ingest(world, "kbc-card-refund.csv", {
+      label: "Card, delimited export",
+      bank: "KBC",
+      role: "POT",
+    });
+    await ingest(world, "card-refund-companion.csv", {
+      label: "Daily account",
+      bank: "Demobank",
+      role: "POT",
+    });
+
+    // Nothing was stored for this import: a delimited parse prints no
+    // settlement figure and sets none.
+    const record = world.imports.get(card.importId);
+    expect(record?.settlementTotalCents).toBeUndefined();
+
+    const debit = world.transactions.find((transaction) =>
+      transaction.description.includes("MASTERCARD AFREKENING NUMMER 44"),
+    );
+    expect(debit).toBeDefined();
+    // The issuer collects the NET of the line items, which is not the sum
+    // of the debit rows: the refund is the difference.
+    expect(debit?.amountCents).toBe(-45000);
+    expect(debit?.flow).toBe("INTERNAL");
+
+    const link = world.links.find(
+      (candidate) => candidate.settlementImportId !== undefined,
+    );
+    expect(link?.settlementImportId).toBe(card.importId);
+    expect(link?.outgoingTransactionId).toBe(debit?.id);
+
+    // And the card's own rows stay the counted spend, once.
+    const cardSpend = world.transactions.filter(
+      (transaction) =>
+        transaction.importId === card.importId && transaction.flow === "SPEND",
+    );
+    const total = cardSpend.reduce((sum, t) => sum + t.amountCents, 0);
+    expect(total).toBe(-45000);
+  });
+});
+
+// ---------------------------------------------------------------------
+// FIX ROUND 3, finding HZ2-M3P3-04: the settlement figure is a FACT, and
+// the one sanctioned facts rebuild rebuilds it with the rows it belongs
+// to rather than skipping it silently.
+// ---------------------------------------------------------------------
+
+describe("the profile-fix re-parse rebuilds the settlement figure too (HZ2-M3P3-04)", () => {
+  test("a re-parse of a card import writes the figure its own re-parse produced", async () => {
+    const world = makeFakeImportWorld();
+    const card = await ingest(world, "kbc-statement-refund.pdf", {
+      label: "Credit card two",
+      bank: "KBC",
+      role: "POT",
+    });
+    const stored = world.imports.get(card.importId);
+    expect(stored?.settlementTotalCents).toBe(KBC_REFUND_SETTLEMENT_CENTS);
+
+    // Corrupt the stored figure the way only a bug could, then re-parse:
+    // the rebuild must restore it from the document rather than leave a
+    // figure describing a reading the rows no longer have.
+    if (stored !== undefined) {
+      stored.settlementTotalCents = 1;
+    }
+    const profileId = world.profiles.find(
+      (candidate) => candidate.spec.kind === "pdf-layout",
+    )?.id;
+    expect(profileId).toBeDefined();
+    const detected = await world.deps.parser.detect(
+      fixture("kbc-statement-refund.pdf"),
+    );
+    expect(detected.ok).toBe(true);
+    if (!detected.ok || profileId === undefined) {
+      throw new Error("unreachable");
+    }
+    const outcome = await fixSourceProfile(context, world.deps, {
+      profileId,
+      spec: detected.value,
+    });
+    expect(outcome.ok).toBe(true);
+    expect(world.imports.get(card.importId)?.settlementTotalCents).toBe(
+      KBC_REFUND_SETTLEMENT_CENTS,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------
+// FIX ROUND 3, finding HZ2-M3P3-05: a card standing in CREDIT. Round 2
+// made a non-positive settlement figure storable and nothing measured it.
+// ---------------------------------------------------------------------
+
+describe("a card statement standing in credit imports and settles nothing (HZ2-M3P3-05)", () => {
+  test("the figure is stored SIGNED, and it matches no direct debit", async () => {
+    const world = makeFakeImportWorld();
+    const card = await ingest(world, "kbc-statement-credit.pdf", {
+      label: "Credit card three",
+      bank: "KBC",
+      role: "POT",
+    });
+    // The statement imports: money owed back is an ordinary statement.
+    expect(world.imports.get(card.importId)?.status).toBe("INTERPRETED");
+    const stored = world.imports.get(card.importId)?.settlementTotalCents;
+    expect(stored).toBe(KBC_CREDIT_SETTLEMENT_CENTS);
+    expect(stored).toBeLessThan(0);
+
+    // Both refunds are SPEND with a positive amount, never INCOME, and
+    // the settlement credit is INTERNAL.
+    const refunds = world.transactions.filter((transaction) =>
+      transaction.description.startsWith("TERUGBETALING"),
+    );
+    expect(refunds).toHaveLength(2);
+    expect(refunds.every((r) => r.flow === "SPEND")).toBe(true);
+    expect(
+      world.transactions.find(
+        (t) => t.description === "DOMICILIERING VIA JE BANK",
+      )?.flow,
+    ).toBe("INTERNAL");
+
+    // And no settlement link exists, because a negative figure equals the
+    // magnitude of no debit. Nothing is silently matched.
+    expect(
+      world.links.some((link) => link.settlementImportId !== undefined),
+    ).toBe(false);
   });
 });

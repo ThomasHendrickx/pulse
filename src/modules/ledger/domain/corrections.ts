@@ -96,6 +96,13 @@ export const settlementCandidateImports = (
   return cardImports.filter(
     (candidate) =>
       candidate.accountId !== transaction.accountId &&
+      // THE EQUALITY IS THE MECHANISM (fix round 3, finding
+      // HZ2-M3P3-05): `magnitude` is strictly positive by construction
+      // two lines above, so a card statement standing in credit, whose
+      // figure is non-positive, equals no debit and settles nothing. The
+      // guard below is redundant against that equality, measured by
+      // deleting it and watching the whole fast gate stay green; it is
+      // kept as a cheap statement of intent, not as the thing that works.
       candidate.settlementTotalCents === magnitude &&
       candidate.settlementTotalCents > 0 &&
       dayDistance(transaction.bookingDate, candidate.periodEnd) <=

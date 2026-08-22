@@ -378,14 +378,14 @@ describe("the resolver use case: distinct raw strings in, certain assignments ou
       { merchants: world.merchantsPort },
       [
         "BETALING MET DEBETKAART SUPERMARKT NOORD 9000 GENT",
-        "Supermarkt Zuid Leuven",
+        "Supermarkt Zuid Tongeren",
         "ONBEKENDE BAKKER",
       ],
     );
     expect(
       resolved.get("BETALING MET DEBETKAART SUPERMARKT NOORD 9000 GENT"),
     ).toBe(merchant.id);
-    expect(resolved.get("Supermarkt Zuid Leuven")).toBe(merchant.id);
+    expect(resolved.get("Supermarkt Zuid Tongeren")).toBe(merchant.id);
     expect(resolved.has("ONBEKENDE BAKKER")).toBe(false);
   });
 });

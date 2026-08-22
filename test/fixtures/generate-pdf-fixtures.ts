@@ -313,7 +313,7 @@ export const FIXTURE_A_TRANSACTIONS: readonly FixtureTransaction[] = [
     amountText: "-15,00",
     amountCents: -1500,
     description: [
-      "BANCONTACT-AANKOOP - Bakkerij Zonnig - 3000 LEUVEN BE -",
+      "BANCONTACT-AANKOOP - Bakkerij Zonnig - 3700 TONGEREN BE -",
       "14/05/26 08:12 - CONTACTLOOS - KAART 5599 20XX XXXX 5544",
     ],
   },
@@ -494,7 +494,7 @@ const fixtureCTransactions: readonly FixtureTransaction[] = [
     valueDate: "30-05-2026",
     amountText: "- 10,00",
     amountCents: -1000,
-    description: ["BANCONTACT-AANKOOP - Bakkerij Zonnig - 3000 LEUVEN BE"],
+    description: ["BANCONTACT-AANKOOP - Bakkerij Zonnig - 3700 TONGEREN BE"],
   },
   {
     sequence: "0114",
@@ -596,8 +596,27 @@ export const KBC_MASKED_CARD = "5417 88XX XXXX 3210";
 // witness that two cards are two sources. Invented, and on the allow list
 // at test/fixtures/allowed-identifiers.txt with its provenance.
 export const KBC_SECOND_MASKED_CARD = "5417 88XX XXXX 7654";
+// The IDENTITY those two printings normalise to (fix round 3, finding
+// HZ2-M3P3-02): separators dropped, mask glyphs folded to one form. What
+// the statement PRINTS is above; what the profile spec carries is this.
+export const KBC_MASKED_CARD_IDENTITY = KBC_MASKED_CARD.replace(/[ -]/g, "");
+export const KBC_SECOND_MASKED_CARD_IDENTITY = KBC_SECOND_MASKED_CARD.replace(
+  /[ -]/g,
+  "",
+);
 export const KBC_STATEMENT_NUMBER = "30456";
 export const KBC_REFUND_STATEMENT_NUMBER = "30871";
+// A THIRD card, for the credit-balance statement (fix round 3, finding
+// HZ2-M3P3-05): its own card so the fixture family keeps one card per
+// document and the identity witnesses stay unambiguous. Invented the same
+// way as the other two and probed against both real documents in its
+// masked form, its six-digit head and its four-digit tail before listing.
+export const KBC_THIRD_MASKED_CARD = "5417 88XX XXXX 9081";
+export const KBC_THIRD_MASKED_CARD_IDENTITY = KBC_THIRD_MASKED_CARD.replace(
+  /[ -]/g,
+  "",
+);
+export const KBC_CREDIT_STATEMENT_NUMBER = "31204";
 
 export type KbcFixtureRow = {
   // DD-MM-YYYY, as rendered. Booking date is the TRANSACTION date
@@ -681,7 +700,7 @@ export const KBC_FIXTURE_ROWS: readonly KbcFixtureRow[] = [
   {
     transactionDate: "06-06-2026",
     settlementDate: "07-06-2026",
-    description: "BOEKENHUIS LONDEN LONDON G",
+    description: "BOEKENHUIS DE MIJLPAAL OXFORD B",
     amountText: "-14,84",
     amountCents: -1484,
     fxLines: ["Bedrag 12,79 GBP", "Koers (1 EUR = 0,861234567 GBP)"],
@@ -812,6 +831,62 @@ export const KBC_REFUND_DEBIT_SUM_CENTS = KBC_REFUND_ROWS.reduce(
 );
 export const KBC_REFUND_SETTLEMENT_CENTS =
   -(KBC_REFUND_OPENING_CENTS + KBC_REFUND_SUM_CENTS);
+
+// ---------------------------------------------------------------------
+// THE CREDIT-BALANCE STATEMENT (fix round 3, finding HZ2-M3P3-05). Fix
+// round 2 made a non-positive settlement figure STORABLE and three
+// comments declared the column positive, while nothing measured the one
+// state the column had newly gained. A card can stand in credit: the
+// household paid the previous statement in full and then returned more
+// than it bought, so the Afrekening line prints money owed BACK. That is
+// an ordinary statement, not a corrupt one, so it must import.
+//
+//   previous balance   -40000  (and the settlement credit that cancels it)
+//   one debit           -8000
+//   two refunds        +12000 and +27550
+//   Afrekening         +31550, money owed TO the household
+//
+// What keeps a negative settlement total safe is not a range check: the
+// settlement match compares it against the MAGNITUDE of a debit, which is
+// strictly positive, so this statement settles nothing and says so.
+export const KBC_CREDIT_OPENING_CENTS = -40000; // "-400,00"
+
+export const KBC_CREDIT_ROWS: readonly KbcFixtureRow[] = [
+  {
+    transactionDate: "02-06-2026",
+    settlementDate: "03-06-2026",
+    description: "BOEKBINDERIJ DE PENSEELSTREEK TONGEREN B",
+    amountText: "-80,00",
+    amountCents: -8000,
+  },
+  {
+    transactionDate: "05-06-2026",
+    settlementDate: "06-06-2026",
+    description: "TERUGBETALING REISBUREAU NOORDERLICHT",
+    amountText: "+120,00",
+    amountCents: 12000,
+  },
+  {
+    transactionDate: "07-06-2026",
+    settlementDate: "08-06-2026",
+    description: "TERUGBETALING WEBWINKEL ZONNELICHT",
+    amountText: "+275,50",
+    amountCents: 27550,
+  },
+  {
+    transactionDate: "01-06-2026",
+    settlementDate: "01-06-2026",
+    description: "DOMICILIERING VIA JE BANK",
+    amountText: "+400,00",
+    amountCents: 40000,
+  },
+];
+
+export const KBC_CREDIT_ROW_COUNT = KBC_CREDIT_ROWS.length;
+export const KBC_CREDIT_SETTLEMENT_CENTS = -(
+  KBC_CREDIT_OPENING_CENTS +
+  KBC_CREDIT_ROWS.reduce((sum, row) => sum + row.amountCents, 0)
+);
 
 export const KBC_FIXTURE_ROW_COUNT = KBC_FIXTURE_ROWS.length;
 
@@ -1024,7 +1099,7 @@ export const COMPANION_TRANSACTIONS: readonly FixtureTransaction[] = [
     amountText: "- 25,00",
     amountCents: -2500,
     description: [
-      "BANCONTACT-AANKOOP - Bakkerij Zonnig - 3000 LEUVEN BE -",
+      "BANCONTACT-AANKOOP - Bakkerij Zonnig - 3700 TONGEREN BE -",
       "06/06/26 09:15 - CONTACTLOOS - KAART 5599 20XX XXXX 5544",
     ],
   },
@@ -1203,6 +1278,21 @@ export const buildPdfFixtures = (): ReadonlyMap<string, Uint8Array> => {
     }),
   );
 
+  const kbcCreditSum = KBC_CREDIT_ROWS.reduce(
+    (sum, row) => sum + checkedKbcCents(row),
+    0,
+  );
+  const kbcCredit = buildPdf(
+    kbcStatement({
+      openingCents: KBC_CREDIT_OPENING_CENTS,
+      closingCents: KBC_CREDIT_OPENING_CENTS + kbcCreditSum,
+      rows: KBC_CREDIT_ROWS,
+      pageOneCount: 2,
+      maskedCard: KBC_THIRD_MASKED_CARD,
+      statementNumber: KBC_CREDIT_STATEMENT_NUMBER,
+    }),
+  );
+
   const companionRefundSum = COMPANION_REFUND_TRANSACTIONS.reduce(
     (sum, transaction) => sum + checkedCents(transaction),
     0,
@@ -1248,6 +1338,7 @@ export const buildPdfFixtures = (): ReadonlyMap<string, Uint8Array> => {
     ["kbc-nonreconciling.pdf", kbcNonreconciling],
     ["kbc-statement-second-card.pdf", kbcSecondCard],
     ["kbc-statement-refund.pdf", kbcRefund],
+    ["kbc-statement-credit.pdf", kbcCredit],
     ["belfius-settlement-companion.pdf", companionFixture],
     ["belfius-settlement-companion-refund.pdf", companionRefundFixture],
   ]);

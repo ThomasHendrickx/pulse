@@ -6,6 +6,7 @@
 
 import type { Cents } from "@/platform/money";
 import type { PlainDate } from "@/platform/plain-date";
+import { SETTLEMENT_CREDIT_PATTERNS, matchesAny } from "./constants";
 
 export type LedgerTransaction = {
   readonly id: string;
@@ -72,10 +73,10 @@ export const deriveDeclaredSets = (
 
 // One imported card statement, summarised for settlement matching
 // (owner v0.2 addendum section 5, decision D-11): its settlement total is
-// the total the statement carries when it carries one; a statement that
-// carries none has it computed as the sum of its line items, meaning the
-// magnitude of its debit rows. Settlement credit rows (the previous
-// statement's settlement arriving on the card) are not line items.
+// the figure the statement carries when it carries one, and otherwise the
+// NET OF ITS LINE ITEMS, which is what that printed figure is. Settlement
+// credit rows (the previous statement's settlement arriving on the card)
+// are not line items and are excluded from the net.
 //
 // CORRECTED RATHER THAN QUIETLY REWRITTEN (R-087, fix round 2, finding
 // HZ-M3P3-01). The sentence above used to read "a CSV statement carries
@@ -91,15 +92,46 @@ export const deriveDeclaredSets = (
 // the honest-unitemised SPEND arm, and the month counts both that whole
 // debit and the card's own rows, with the mirror credit left as an
 // unmatched INTERNAL leg. statementSettlementTotals below carries the
-// document's own figure; the row-sum arm is now the FALLBACK it was
-// always described as, reached only by an import whose statement printed
-// no such figure.
+// document's own figure; the derivation is the FALLBACK, reached only by
+// an import whose source printed no such figure.
+//
+// CORRECTED AGAIN IN FIX ROUND 3 (R-087, finding HZ2-M3P3-01), because the
+// round-2 correction above fixed the defect only where a figure is stored
+// and left the identical defect live where none is. ONLY THE PDF PATH
+// STORES ONE. A card account is a pot account with no IBAN whatever format
+// its statements arrive in, this tree ships four delimited card-export
+// fixtures, and a delimited parse sets no figure, so the fallback is a
+// LIVE path and not a theoretical one: it is the path v0.1 shipped. The
+// fallback used to be the sum of the MAGNITUDES OF THE DEBIT ROWS, which
+// is wrong by exactly any ordinary merchant refund, which is the defect
+// this whole round exists to remove. It is now the NET of the line items,
+// excluding the settlement credit, which is the definition of the printed
+// figure: opening plus every row equals the printed total, and the credit
+// cancels the opening, so what remains is the net of everything else.
+// WHERE THE DERIVATION IS STILL NOT THE TRUTH, said plainly rather than
+// left for the next reviewer: if a previous statement was underpaid the
+// credit does not cancel the opening and no derivation from rows alone can
+// recover the printed figure. That is exactly why a printed figure is
+// stored and always wins. The derivation is the best available answer for
+// a source that prints nothing, and it is never worse than the sum it
+// replaced: the two are equal unless the statement carries a positive row
+// that is not the settlement credit, and in that case the old one is
+// certainly wrong.
 export type CardImportSummary = {
   readonly importId: string;
   readonly accountId: string;
   readonly settlementTotalCents: Cents;
   readonly periodEnd: PlainDate;
 };
+
+// A card-side settlement credit: positive, and matching the ONE
+// code-owned credit pattern the classification step matches
+// (corrections.ts correction 1). Same predicate, same source of truth, so
+// a row the classifier calls the mirror leg is the same row this
+// summariser leaves out of the net.
+const isSettlementCreditRow = (transaction: LedgerTransaction): boolean =>
+  transaction.amountCents > 0 &&
+  matchesAny(transaction.description, SETTLEMENT_CREDIT_PATTERNS);
 
 export const summarizeCardImports = (
   transactions: readonly LedgerTransaction[],
@@ -118,18 +150,23 @@ export const summarizeCardImports = (
     if (!sets.cardAccountIds.has(transaction.accountId)) {
       continue;
     }
+    // The settlement credit is not a line item: it is the PREVIOUS
+    // statement's settlement arriving on the card, and the same
+    // code-owned pattern the classification step uses recognises it, so
+    // the two cannot drift apart.
+    const contribution = isSettlementCreditRow(transaction)
+      ? 0
+      : -transaction.amountCents;
     const entry = byImport.get(transaction.importId);
     if (entry === undefined) {
       byImport.set(transaction.importId, {
         accountId: transaction.accountId,
-        total: transaction.amountCents < 0 ? -transaction.amountCents : 0,
+        total: contribution,
         periodEnd: transaction.bookingDate,
       });
       continue;
     }
-    if (transaction.amountCents < 0) {
-      entry.total += -transaction.amountCents;
-    }
+    entry.total += contribution;
     if (transaction.bookingDate > entry.periodEnd) {
       entry.periodEnd = transaction.bookingDate;
     }

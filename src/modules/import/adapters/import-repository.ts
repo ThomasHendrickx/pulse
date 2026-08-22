@@ -239,6 +239,7 @@ export const applyReparse = async (
         readonly transactionId: string;
         readonly dedupKey: string;
       })[];
+      readonly settlementTotalCents?: number;
     }[];
   },
 ): Promise<void> => {
@@ -282,6 +283,19 @@ export const applyReparse = async (
           },
         });
       }
+    }
+    // Finding HZ2-M3P3-04: the settlement figure is a FACT of the same
+    // document, so the one sanctioned facts rebuild rebuilds it too,
+    // inside this same transaction. Before fix round 3 this path rewrote
+    // every other fact column from the corrected re-parse and skipped
+    // this one silently, which would have left rows describing one
+    // reading of the document and a figure describing another. Absent
+    // clears it, so a figure cannot outlive the reading that produced it.
+    for (const entry of input.imports) {
+      await tx.import.updateMany({
+        where: { id: entry.importId, householdId: context.householdId },
+        data: { settlementTotalCents: entry.settlementTotalCents ?? null },
+      });
     }
     // Finding CR-304: the facts rewrite invalidates the stored
     // interpretation, so the SAME transaction moves every affected import
