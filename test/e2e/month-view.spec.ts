@@ -323,3 +323,526 @@ test("the month view renders in EN, NL and FR without truncation or overflow", a
     expect(clipped).toEqual([]);
   }
 });
+
+// ---------------------------------------------------------------------
+// M3-P7, the mobile-first rebuild (DR-0022). Everything below MEASURES
+// WHETHER THE SCREEN CAN BE USED, which is the bar the orchestrator's own
+// recorded wording ("visible and clickable with no horizontal scrolling")
+// did not reach: the row this phase replaced neither overflowed nor
+// clipped at 390 and was still graded 1 out of 10 for usability.
+//
+// Every measurement below runs on the DENSE dataset as well as on the
+// small committed ones (criterion 7.13). The dense one exists because the
+// owner's real month is dozens of transactions with zero merchant rules,
+// so every spend row folds under a raw bank descriptor, and a three-row
+// fixture cannot reproduce the screen that was graded.
+// ---------------------------------------------------------------------
+
+const PHONE = { width: 390, height: 844 } as const;
+const NARROW_PHONE = { width: 360, height: 740 } as const;
+const DESK = { width: 1280, height: 720 } as const;
+
+// The tap-target floor, and the floors criterion 7.14 sets. Literals
+// belong in a spec: the ban on literals is a ban on literals in
+// COMPONENTS (CLAUDE.md non-negotiable 4), and a measurement that read its
+// own bar out of the stylesheet it is measuring would be a mirror.
+const TAP_MIN = 44;
+const NAME_RATIO_MIN = 0.55;
+const NAME_FLOOR = { 390: 180, 360: 160 } as const;
+const FOLD = 700;
+const ROW_TESTIDS = ["spend-group", "income-group", "reserve-group"] as const;
+const LABEL_MIN_LENGTH = 28;
+const DENSE_SPEND_GROUPS = 23;
+
+const INTERACTIVE = "a, button, input:not([type=hidden]), select, [role=button]";
+
+const seedDense = async (page: Page): Promise<void> => {
+  await signUp(page, "mv-dense");
+  await uploadPotFile(page, "mv-dense.csv", "Daily account", "25");
+};
+
+// Criterion 7.5. Every interactive control in the shell header and in main
+// is at least TAP_MIN tall, and the failure message names each offender.
+const tapTargetOffenders = (page: Page): Promise<string[]> =>
+  page.evaluate(
+    ({ selector, min }) => {
+      const roots = [
+        document.querySelector("header.app-header"),
+        document.querySelector("main"),
+      ];
+      const offenders: string[] = [];
+      for (const root of roots) {
+        if (root === null) {
+          continue;
+        }
+        for (const element of root.querySelectorAll(selector)) {
+          const rect = element.getBoundingClientRect();
+          if (rect.width === 0 && rect.height === 0) {
+            continue;
+          }
+          if (rect.height < min) {
+            const name =
+              element.getAttribute("data-testid") ??
+              (element.textContent ?? "").trim().slice(0, 40);
+            offenders.push(`${name}: ${Math.round(rect.height)}px`);
+          }
+        }
+      }
+      return offenders;
+    },
+    { selector: INTERACTIVE, min: TAP_MIN },
+  );
+
+// Criterion 7.6. Every element carrying a data-testid, as the pair of its
+// testid and its trimmed text, sorted, with its box and its hiding.
+const collectTestids = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll("[data-testid]")]
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+          testId: element.getAttribute("data-testid") ?? "",
+          text: (element.textContent ?? "").trim(),
+          width: rect.width,
+          height: rect.height,
+          hidden:
+            style.display === "none" ||
+            style.visibility === "hidden" ||
+            element.classList.contains("visually-hidden"),
+        };
+      })
+      .sort((a, b) =>
+        `${a.testId} ${a.text}`.localeCompare(`${b.testId} ${b.text}`),
+      ),
+  );
+
+// Criterion 7.7 (a) and (b). Horizontal clipping over everything inside
+// main that is not .visually-hidden, and vertical clipping over the
+// elements that actually clip: an element with visible overflow reports
+// content height it is not hiding.
+const clippingOffenders = (page: Page) =>
+  page.evaluate(() => {
+    const horizontal: string[] = [];
+    const vertical: string[] = [];
+    const main = document.querySelector("main");
+    if (main === null) {
+      return { horizontal: ["no main element"], vertical: [] };
+    }
+    const name = (element: Element): string =>
+      element.getAttribute("data-testid") ??
+      (element.textContent ?? "").trim().slice(0, 40);
+    for (const element of main.querySelectorAll("*")) {
+      if (!(element instanceof HTMLElement)) {
+        continue;
+      }
+      if (
+        !element.matches(".visually-hidden") &&
+        element.scrollWidth > element.clientWidth + 1
+      ) {
+        horizontal.push(`${name(element)} (horizontal)`);
+      }
+      const overflowY = getComputedStyle(element).overflowY;
+      if (
+        ["hidden", "clip", "scroll", "auto"].includes(overflowY) &&
+        element.scrollHeight > element.clientHeight + 1
+      ) {
+        vertical.push(`${name(element)} (vertical)`);
+      }
+    }
+    return { horizontal, vertical };
+  });
+
+// Criterion 7.14, the criterion this phase exists for. Track count, name
+// width against the row's BORDER box, and the two lines. The border box is
+// the denominator on purpose: the row's own padding sits inside the
+// content box, so padding the row out can no longer move the number the
+// ratio is taken against, and the absolute floor catches the other cheat,
+// narrowing everything one level up.
+const rowOffenders = (page: Page, viewportWidth: 390 | 360) =>
+  page.evaluate(
+    ({ testIds, ratioMin, floor }) => {
+      const trackCount: string[] = [];
+      const nameWidth: string[] = [];
+      const twoLines: string[] = [];
+      const main = document.querySelector("main");
+      if (main === null) {
+        return { trackCount: ["no main element"], nameWidth: [], twoLines: [] };
+      }
+      const tracks = (element: Element): number => {
+        const value = getComputedStyle(element).gridTemplateColumns;
+        return value === "none" ? 0 : value.trim().split(/\s+/).length;
+      };
+      for (const element of main.querySelectorAll(".month-columns, .month-row")) {
+        const count = tracks(element);
+        if (count > 2) {
+          trackCount.push(
+            `${(element.textContent ?? "").trim().slice(0, 40)}: ${count} tracks`,
+          );
+        }
+      }
+      const selector = testIds.map((id) => `[data-testid="${id}"]`).join(", ");
+      for (const row of main.querySelectorAll(selector)) {
+        const label = row.querySelector(
+          '[data-testid="group-label"], .month-group-label',
+        );
+        const total = row.querySelector('[data-testid="group-total"]');
+        const count = row.querySelector(".month-row-count");
+        const delta = row.querySelector('[data-testid="group-delta"]');
+        const rowName = (label?.textContent ?? "").trim().slice(0, 40);
+        if (label === null || total === null) {
+          nameWidth.push(`${rowName}: missing label or total`);
+          continue;
+        }
+        const rowRect = row.getBoundingClientRect();
+        const labelRect = label.getBoundingClientRect();
+        const totalRect = total.getBoundingClientRect();
+        const distance = totalRect.left - labelRect.left;
+        const ratio = distance / rowRect.width;
+        if (ratio < ratioMin || distance < floor) {
+          nameWidth.push(
+            `${rowName}: name area ${Math.round(distance)}px of a ${Math.round(rowRect.width)}px border box, ${Math.round(ratio * 100)} percent`,
+          );
+        }
+        if (Math.abs(totalRect.top - labelRect.top) > 6) {
+          twoLines.push(`${rowName}: the amount is not on line one`);
+        }
+        if (count === null) {
+          twoLines.push(`${rowName}: no row count renders`);
+        } else if (count.getBoundingClientRect().top < labelRect.bottom - 2) {
+          twoLines.push(`${rowName}: the row count sits beside the name`);
+        }
+        if (
+          delta !== null &&
+          delta.getBoundingClientRect().top < labelRect.bottom - 2
+        ) {
+          twoLines.push(`${rowName}: the delta sits beside the name`);
+        }
+      }
+      return { trackCount, nameWidth, twoLines };
+    },
+    {
+      testIds: ROW_TESTIDS,
+      ratioMin: NAME_RATIO_MIN,
+      floor: NAME_FLOOR[viewportWidth],
+    },
+  );
+
+const setLocale = async (
+  page: Page,
+  locale: string,
+  base: string | undefined,
+): Promise<void> => {
+  await page.context().addCookies([
+    { name: "locale", value: locale, url: base ?? "http://127.0.0.1:3000" },
+  ]);
+};
+
+// Criterion 7.2 (hazard H7.7). The tag is a FRAMEWORK DEFAULT this project
+// does not control, which is why it is pinned rather than dropped: a later
+// viewport export that lost width=device-width would silently render the
+// product at the 980px fallback on a real phone while every measurement
+// here stayed green. Only a project with isMobile can see it at all.
+test("the rendered page pins the layout viewport to the device width", async ({
+  page,
+}) => {
+  await page.goto("/sign-in");
+  const content = await page.evaluate(
+    () =>
+      document.querySelector('meta[name="viewport"]')?.getAttribute("content") ??
+      null,
+  );
+  expect(content).not.toBeNull();
+  expect(content).toContain("width=device-width");
+});
+
+// Criteria 7.5, 7.7, 7.8, 7.9 and 7.14 on the DENSE dataset (criterion
+// 7.13): 23 spend groups under raw descriptors, which is the shape of the
+// screen the owner graded.
+test("the dense month is usable at 390 and at 360: targets, rows, cards and the verdict", async ({
+  page,
+  baseURL,
+}) => {
+  await seedDense(page);
+
+  for (const viewport of [PHONE, NARROW_PHONE] as const) {
+    await page.setViewportSize(viewport);
+    await page.goto("/?month=2026-08");
+    await expect(page.getByTestId("spend-group")).toHaveCount(DENSE_SPEND_GROUPS);
+
+    expect(
+      await tapTargetOffenders(page),
+      `tap targets at ${viewport.width}`,
+    ).toEqual([]);
+
+    const rows = await rowOffenders(page, viewport.width as 390 | 360);
+    expect(rows.trackCount, `track count at ${viewport.width}`).toEqual([]);
+    expect(rows.nameWidth, `name width at ${viewport.width}`).toEqual([]);
+    expect(rows.twoLines, `two-line rows at ${viewport.width}`).toEqual([]);
+
+    for (const locale of ["en", "nl", "fr"]) {
+      await setLocale(page, locale, baseURL);
+      await page.goto("/?month=2026-08");
+      const clipped = await clippingOffenders(page);
+      expect(clipped.horizontal, `${locale} at ${viewport.width}`).toEqual([]);
+      expect(clipped.vertical, `${locale} at ${viewport.width}`).toEqual([]);
+
+      // Criterion 7.7 (d): the label is not shortened BEFORE render, which
+      // clips nothing and would pass every other axis here. The fixture
+      // defines these strings, so the comparison is exact.
+      const labels = (
+        await page
+          .getByTestId("spend-group")
+          .getByTestId("group-label")
+          .allTextContents()
+      ).map((text) => text.trim());
+      for (const label of labels) {
+        expect(label.length, label).toBeGreaterThanOrEqual(LABEL_MIN_LENGTH);
+        expect(label).not.toContain("…");
+        expect(label).not.toMatch(/\.\.\.$/);
+      }
+      expect(labels).toContain("ONDERHOUDSCONTRACT VERWARMINGSKETEL WARMTEHUIS");
+      expect(labels).toContain(
+        "WASSERIJ EN STRIJKATELIER SCHONE VOUW BESTELLING",
+      );
+    }
+    await setLocale(page, "en", baseURL);
+  }
+
+  // Criterion 7.8: the verdict is inside the first screenful at 390, in
+  // all three languages. 700 is 844 less an allowance for the browser
+  // chrome a real phone spends and Playwright does not render.
+  await page.setViewportSize(PHONE);
+  for (const locale of ["en", "nl", "fr"]) {
+    await setLocale(page, locale, baseURL);
+    await page.goto("/?month=2026-08");
+    const box = await page.getByTestId("recon-verdict").boundingBox();
+    expect(box, `verdict box in ${locale}`).not.toBeNull();
+    expect(box?.y ?? -1, `verdict top in ${locale}`).toBeGreaterThanOrEqual(0);
+    expect(
+      (box?.y ?? 0) + (box?.height ?? 0),
+      `verdict bottom in ${locale}`,
+    ).toBeLessThanOrEqual(FOLD);
+  }
+  await setLocale(page, "en", baseURL);
+
+  // Criterion 7.9: one column in DOM order income, spend, reserves at
+  // phone width, and the rail as a WIDENING at the desk width.
+  await page.goto("/?month=2026-08");
+  const domOrder = await page.evaluate(() =>
+    [
+      ...document.querySelectorAll(
+        '[data-testid="income-card"], [data-testid="spend-card"], [data-testid="reserves-card"]',
+      ),
+    ].map((element) => element.getAttribute("data-testid")),
+  );
+  expect(domOrder).toEqual(["income-card", "spend-card", "reserves-card"]);
+
+  const cardBoxes = (target: Page) =>
+    target.evaluate(() =>
+      ["income-card", "spend-card", "reserves-card"].map((id) => {
+        const rect = document
+          .querySelector(`[data-testid="${id}"]`)
+          ?.getBoundingClientRect();
+        return {
+          id,
+          x: rect?.x ?? -1,
+          y: rect?.y ?? -1,
+          width: rect?.width ?? -1,
+        };
+      }),
+    );
+
+  const phoneBoxes = await cardBoxes(page);
+  expect(phoneBoxes).toHaveLength(3);
+  const [phoneIncome, phoneSpend, phoneReserves] = phoneBoxes as [
+    (typeof phoneBoxes)[number],
+    (typeof phoneBoxes)[number],
+    (typeof phoneBoxes)[number],
+  ];
+  expect(Math.abs(phoneIncome.x - phoneSpend.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(phoneIncome.x - phoneReserves.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(phoneIncome.width - phoneSpend.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(phoneIncome.width - phoneReserves.width)).toBeLessThanOrEqual(1);
+  expect(phoneIncome.y).toBeLessThan(phoneSpend.y);
+  expect(phoneSpend.y).toBeLessThan(phoneReserves.y);
+
+  await page.setViewportSize(DESK);
+  await page.goto("/?month=2026-08");
+  const deskBoxes = await cardBoxes(page);
+  expect(deskBoxes).toHaveLength(3);
+  const [deskIncome, deskSpend, deskReserves] = deskBoxes as [
+    (typeof deskBoxes)[number],
+    (typeof deskBoxes)[number],
+    (typeof deskBoxes)[number],
+  ];
+  expect(deskSpend.x).toBeLessThan(deskIncome.x);
+  expect(Math.abs(deskIncome.x - deskReserves.x)).toBeLessThanOrEqual(1);
+});
+
+// Criterion 7.6 (hazard H7.2). The mockup is not allowed to make the phone
+// tidy by saying less: the SAME testids with the SAME text render at both
+// widths, every one of them has a box, and nothing is hidden at one width
+// and not at the other.
+test("the dense month says exactly the same things at 1280 and at 390", async ({
+  page,
+}) => {
+  await seedDense(page);
+
+  await page.setViewportSize(DESK);
+  await page.goto("/?month=2026-08");
+  const desk = await collectTestids(page);
+
+  await page.setViewportSize(PHONE);
+  await page.goto("/?month=2026-08");
+  const phone = await collectTestids(page);
+
+  expect(phone.map((entry) => [entry.testId, entry.text])).toEqual(
+    desk.map((entry) => [entry.testId, entry.text]),
+  );
+
+  expect(
+    phone.filter((entry) => entry.width <= 0 || entry.height <= 0).map((e) => e.testId),
+  ).toEqual([]);
+
+  expect(
+    phone
+      .filter((entry, index) => entry.hidden && desk[index]?.hidden !== true)
+      .map((entry) => entry.testId),
+  ).toEqual([]);
+
+  const present = new Set(phone.map((entry) => entry.testId));
+  for (const required of [
+    "month-title",
+    "month-meta",
+    "compare-head",
+    "pot-change",
+    "recon-panel",
+    "recon-verdict",
+    "spend-delta",
+    "group-label",
+    "group-total",
+    "group-delta",
+    "income-total",
+    "spend-total",
+    "reserves-net",
+    "unresolved-pill",
+    "no-reserves",
+    "income-card",
+    "spend-card",
+    "reserves-card",
+  ]) {
+    expect(present.has(required), `${required} is missing at 390`).toBe(true);
+  }
+
+  // A month this household has data for, with no rows of its own: the note
+  // still renders at phone width.
+  await page.goto("/?month=2026-07");
+  await expect(page.getByTestId("month-no-rows")).toBeVisible();
+});
+
+// The same measurements on the NON-RECONCILING dataset, which is the one
+// that renders the difference figure and a cause block. Between this, the
+// dense month and the partial month, every testid criterion 7.6 names is
+// covered by a dataset that renders it.
+test("the non-reconciling month is usable at phone width and keeps its causes", async ({
+  page,
+  baseURL,
+}) => {
+  await signUp(page, "mv-gap-phone");
+  await uploadPotFile(page, "mv-gapped-a.csv", "Daily account", "3");
+  await uploadPotFile(page, "mv-gapped-b.csv", "Second account", "1");
+
+  for (const viewport of [PHONE, NARROW_PHONE] as const) {
+    await page.setViewportSize(viewport);
+    await page.goto("/?month=2026-08");
+    expect(
+      await tapTargetOffenders(page),
+      `tap targets at ${viewport.width}`,
+    ).toEqual([]);
+    const rows = await rowOffenders(page, viewport.width as 390 | 360);
+    expect(rows.trackCount, `track count at ${viewport.width}`).toEqual([]);
+    expect(rows.nameWidth, `name width at ${viewport.width}`).toEqual([]);
+    expect(rows.twoLines, `two-line rows at ${viewport.width}`).toEqual([]);
+    for (const locale of ["en", "nl", "fr"]) {
+      await setLocale(page, locale, baseURL);
+      await page.goto("/?month=2026-08");
+      const clipped = await clippingOffenders(page);
+      expect(clipped.horizontal, `${locale} at ${viewport.width}`).toEqual([]);
+      expect(clipped.vertical, `${locale} at ${viewport.width}`).toEqual([]);
+    }
+    await setLocale(page, "en", baseURL);
+  }
+
+  await page.setViewportSize(PHONE);
+  for (const locale of ["en", "nl", "fr"]) {
+    await setLocale(page, locale, baseURL);
+    await page.goto("/?month=2026-08");
+    const verdict = await page.getByTestId("recon-verdict").boundingBox();
+    expect(verdict?.y ?? -1, `verdict top in ${locale}`).toBeGreaterThanOrEqual(0);
+    expect(
+      (verdict?.y ?? 0) + (verdict?.height ?? 0),
+      `verdict bottom in ${locale}`,
+    ).toBeLessThanOrEqual(FOLD);
+    const difference = await page.getByTestId("recon-difference").boundingBox();
+    expect(
+      (difference?.y ?? 0) + (difference?.height ?? 0),
+      `difference bottom in ${locale}`,
+    ).toBeLessThanOrEqual(FOLD);
+  }
+  await setLocale(page, "en", baseURL);
+
+  await page.goto("/?month=2026-08");
+  const gapTestids = new Set(
+    (await collectTestids(page)).map((entry) => entry.testId),
+  );
+  for (const required of [
+    "recon-difference",
+    "recon-cause-unmatched",
+    "unmatched-leg",
+  ]) {
+    expect(gapTestids.has(required), `${required} is missing at 390`).toBe(true);
+  }
+});
+
+test("the partial month renders its own states at phone width", async ({
+  page,
+}) => {
+  await signUp(page, "mv-partial-phone");
+  await uploadPotFile(page, "mv-partial.csv", "Daily account", "4");
+  await page.setViewportSize(PHONE);
+  await page.goto("/");
+
+  expect(await tapTargetOffenders(page)).toEqual([]);
+  const rows = await rowOffenders(page, 390);
+  expect(rows.trackCount).toEqual([]);
+  expect(rows.nameWidth).toEqual([]);
+  expect(rows.twoLines).toEqual([]);
+
+  const testids = new Set(
+    (await collectTestids(page)).map((entry) => entry.testId),
+  );
+  for (const required of ["in-progress-badge", "compare-na", "month-meta"]) {
+    expect(testids.has(required), `${required} is missing at 390`).toBe(true);
+  }
+});
+
+// Criterion 7.5 second half: the EMPTY STATE is a screen too, and its one
+// control is the import link the owner's first complaint was about.
+test("the empty state's controls clear the tap target minimum at 390 and 360", async ({
+  page,
+}) => {
+  await signUp(page, "mv-empty-phone");
+  for (const viewport of [PHONE, NARROW_PHONE] as const) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    expect(
+      await tapTargetOffenders(page),
+      `empty state tap targets at ${viewport.width}`,
+    ).toEqual([]);
+    const clipped = await clippingOffenders(page);
+    expect(clipped.horizontal).toEqual([]);
+    expect(clipped.vertical).toEqual([]);
+  }
+});

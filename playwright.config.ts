@@ -61,6 +61,24 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], baseURL: prodBaseURL },
       testMatch: /prod-smoke/,
     },
+    // THE PHONE PROJECT (M3-P7, DR-0022, criterion 7.12). A chromium mobile
+    // device descriptor at the mockup's own frame size, and isMobile is the
+    // POINT rather than a detail: without it Playwright sizes the layout
+    // viewport directly and the meta viewport tag is never exercised, which
+    // is exactly why the phone specs that shipped before this phase could
+    // not see whether the tag was there at all. The two specs that carry
+    // the month view and the shell run under this project AND under the
+    // desktop project above, so a regression at either width is red.
+    {
+      name: "chromium-phone",
+      use: {
+        ...devices["Pixel 5"],
+        isMobile: true,
+        hasTouch: true,
+        viewport: { width: 390, height: 844 },
+      },
+      testMatch: /(month-view|navigation)\.spec\.ts/,
+    },
   ],
   ...(externalBaseUrl
     ? {}
