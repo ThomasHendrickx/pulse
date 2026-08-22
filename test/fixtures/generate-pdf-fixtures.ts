@@ -565,6 +565,19 @@ export const FIXTURE_E_TRANSACTIONS: readonly FixtureTransaction[] = [
 // op, DOMICILIERING VIA JE BANK, Bedrag, Koers (1 EUR = ..), Totaal
 // bedrag van de kaartverrichtingen op, and Afrekening via je bank op.
 // Fixture dates are chosen outside BOTH real statements' date sets.
+//
+// BANK-CONTROLLED BOILERPLATE IS SANCTIONED AS LAYOUT VOCABULARY, and
+// COUNTERPARTY-CONTROLLED TEXT IS NOT (fix round 2, findings HZ-M3P3-08
+// and CR-M3P3-06). The three marketing and group-identity footer lines
+// this fixture prints (kbcFooter below) are bank-composed, identical on
+// every statement of this product, and carry no household data, so they
+// may coincide with a real document; one of the three does, measured at
+// fix-round-2 review time. Anything a MERCHANT, a PAYER or the HOLDER
+// controls, meaning row descriptors, names, addresses, references,
+// amounts and dates, may never coincide and is invented here. The line
+// between the two is the decision, not the habit: bank-controlled text
+// is a property of the layout, counterparty-controlled text is a
+// property of the household.
 // ---------------------------------------------------------------------
 
 const KBC_LEFT = 59.5;
@@ -575,7 +588,16 @@ const KBC_AMOUNT_X = 470.0;
 const KBC_FOOTER_X = 94.1;
 
 export const KBC_MASKED_CARD = "5417 88XX XXXX 3210";
+// A SECOND, GENUINELY DIFFERENT CARD of the same issuer (fix round 2,
+// finding HZ-M3P3-02). The household this product is built for is a
+// two-person household, so a second card is the ordinary case: the
+// second-card fixture below is the first one with this number in place of
+// the one above and nothing else changed, which is what makes it a clean
+// witness that two cards are two sources. Invented, and on the allow list
+// at test/fixtures/allowed-identifiers.txt with its provenance.
+export const KBC_SECOND_MASKED_CARD = "5417 88XX XXXX 7654";
 export const KBC_STATEMENT_NUMBER = "30456";
+export const KBC_REFUND_STATEMENT_NUMBER = "30871";
 
 export type KbcFixtureRow = {
   // DD-MM-YYYY, as rendered. Booking date is the TRANSACTION date
@@ -707,6 +729,90 @@ export const KBC_FIXTURE_ROWS: readonly KbcFixtureRow[] = [
   },
 ];
 
+// ---------------------------------------------------------------------
+// THE REFUND FIXTURE (fix round 2, findings HZ-M3P3-01, HZ-M3P3-05 and
+// HZ-M3P3-06). The fixture above is arithmetically DEGENERATE and was
+// recorded as deliberately so: its previous-balance magnitude, its
+// debit-row sum and its Afrekening figure are ONE NUMBER, because a card
+// statement with no positive row other than the settlement credit has
+// Afrekening == the debit-row sum by identity, and this family's single
+// companion debit had to satisfy the settlement window and the mirror
+// window at once. A test over it therefore holds under three mutually
+// incompatible definitions of a card import's settlement total, which is
+// how an implementation that never read the statement's own figure passed
+// criterion 3.3.
+//
+// This statement carries ONE ORDINARY MERCHANT REFUND, and that single
+// row separates all three numbers:
+//   previous-balance magnitude   87500  (and the settlement credit)
+//   debit-row sum magnitude      48850
+//   Afrekening (settlement)      46350  = 48850 - 2500
+// The companion below carries a settlement debit equal to the AFREKENING
+// figure, which is the truthful one. Under the old row-sum derivation
+// that debit matches no card import at all; that is the red witness.
+// It also carries the first non-settlement credit any fixture anywhere
+// has, which is what makes the card-refund classification testable.
+export const KBC_REFUND_OPENING_CENTS = -87500; // "-875,00"
+
+export const KBC_REFUND_ROWS: readonly KbcFixtureRow[] = [
+  {
+    transactionDate: "02-06-2026",
+    settlementDate: "03-06-2026",
+    description: "BLOEMENHOEK DE ZONNEBLOEM GENT B",
+    amountText: "-65,40",
+    amountCents: -6540,
+  },
+  {
+    transactionDate: "04-06-2026",
+    settlementDate: "05-06-2026",
+    description: "SPORTHAL DE WATERMOLEN TONGEREN B",
+    amountText: "-123,10",
+    amountCents: -12310,
+  },
+  {
+    transactionDate: "06-06-2026",
+    settlementDate: "07-06-2026",
+    description: "MEUBELMAKERIJ DE ESDOORN BRUGGE B",
+    amountText: "-300,00",
+    amountCents: -30000,
+  },
+  {
+    // THE ORDINARY MERCHANT REFUND. Its descriptor is deliberately NOT
+    // byte-identical to the purchase it reverses, because a real refund
+    // line never is, and that is exactly why the descriptor-keyed refund
+    // correction cannot see it (finding HZ-M3P3-06).
+    transactionDate: "08-06-2026",
+    settlementDate: "09-06-2026",
+    description: "TERUGBETALING SPORTHAL DE WATERMOLEN",
+    amountText: "+25,00",
+    amountCents: 2500,
+  },
+  {
+    // The settlement of the previous statement arriving on the card.
+    transactionDate: "01-06-2026",
+    settlementDate: "01-06-2026",
+    description: "DOMICILIERING VIA JE BANK",
+    amountText: "+875,00",
+    amountCents: 87500,
+  },
+];
+
+export const KBC_REFUND_ROW_COUNT = KBC_REFUND_ROWS.length;
+
+// The three numbers the degenerate fixture cannot tell apart, computed
+// here so a test can assert they really are distinct rather than trust
+// the table above.
+export const KBC_REFUND_SUM_CENTS = KBC_REFUND_ROWS.reduce(
+  (sum, row) => sum + row.amountCents,
+  0,
+);
+export const KBC_REFUND_DEBIT_SUM_CENTS = KBC_REFUND_ROWS.reduce(
+  (sum, row) => sum + (row.amountCents < 0 ? -row.amountCents : 0),
+  0,
+);
+export const KBC_REFUND_SETTLEMENT_CENTS =
+  -(KBC_REFUND_OPENING_CENTS + KBC_REFUND_SUM_CENTS);
+
 export const KBC_FIXTURE_ROW_COUNT = KBC_FIXTURE_ROWS.length;
 
 export const KBC_FIXTURE_SUM_CENTS = KBC_FIXTURE_ROWS.reduce(
@@ -742,6 +848,9 @@ const kbcRow = (builder: LineBuilder, row: KbcFixtureRow): void => {
   }
 };
 
+// Bank-composed, identical on every statement of this product, carrying
+// no household data: sanctioned layout vocabulary per the block comment
+// above, not invented content.
 const kbcFooter = (builder: LineBuilder, pageMarker: string): void => {
   builder.gap();
   builder.push([
@@ -760,7 +869,15 @@ const kbcStatement = (input: {
   readonly closingCents: number;
   readonly rows: readonly KbcFixtureRow[];
   readonly pageOneCount: number;
+  // Which card this document belongs to, and which statement number it
+  // carries. Parameters rather than constants since fix round 2, because
+  // the second-card witness (HZ-M3P3-02) is this same document under a
+  // different card identity.
+  readonly maskedCard?: string;
+  readonly statementNumber?: string;
 }): PageContent[] => {
+  const maskedCard = input.maskedCard ?? KBC_MASKED_CARD;
+  const statementNumber = input.statementNumber ?? KBC_STATEMENT_NUMBER;
   const period = "Overzicht van je verrichtingen van 17-05-2026 tot 14-06-2026";
 
   const pageOne = makeBuilder();
@@ -772,17 +889,17 @@ const kbcStatement = (input: {
   pageOne.push([{ x: KBC_LEFT, text: "Uitgavenstaat" }]);
   pageOne.push([{ x: KBC_LEFT, text: "Klantenreferentie: 4083321870" }]);
   pageOne.push([
-    { x: KBC_LEFT, text: `Uitgavenstaatnummer: ${KBC_STATEMENT_NUMBER}` },
+    { x: KBC_LEFT, text: `Uitgavenstaatnummer: ${statementNumber}` },
   ]);
   pageOne.push([{ x: KBC_LEFT, text: "Gebruikslimiet: 2 500,00 EUR" }]);
-  pageOne.push([{ x: KBC_LEFT, text: `Kaartnummer(s): ${KBC_MASKED_CARD}` }]);
+  pageOne.push([{ x: KBC_LEFT, text: `Kaartnummer(s): ${maskedCard}` }]);
   pageOne.gap();
   kbcHeaderBlock(pageOne, period);
   pageOne.push([
     { x: KBC_BALANCE_X, text: "Vorig saldo op 16-05-2026" },
     { x: KBC_AMOUNT_X, text: formatKbcCents(input.openingCents) },
   ]);
-  pageOne.push([{ x: KBC_BALANCE_X, text: `Kaartnummer ${KBC_MASKED_CARD}` }]);
+  pageOne.push([{ x: KBC_BALANCE_X, text: `Kaartnummer ${maskedCard}` }]);
   pageOne.push([{ x: KBC_BALANCE_X, text: "Jansen Pieter" }]);
   for (const row of input.rows.slice(0, input.pageOneCount)) {
     kbcRow(pageOne, row);
@@ -820,6 +937,62 @@ const kbcStatement = (input: {
 export const COMPANION_SETTLEMENT_DEBIT_SEQUENCE = "0131";
 
 export const COMPANION_OPENING_CENTS = 120000; // "+1.200,00"
+
+// The refund family's own companion (fix round 2): its settlement debit
+// equals the REFUND statement's Afrekening figure, which differs from
+// that statement's debit-row sum by exactly the refund. Under the
+// pre-fix row-sum derivation this debit matches no card import and stays
+// SPEND while the card's own rows are counted too; under the fix it is
+// INTERNAL and linked. Booked two days after the card statement's last
+// row, inside the settlement window.
+//
+// STATED PLAINLY, because it is a property of this fixture and not a
+// defect: this statement's card-side DOMICILIERING credit settles the
+// PREVIOUS card statement, which this scenario does not import, so the
+// credit has no debit to mirror here and stays a surfaced unmatched
+// INTERNAL leg. That is the honest shape of a single imported card
+// month; the zero-gap month view lives on the other family, whose
+// companion debit does double duty precisely because that family is
+// degenerate.
+export const COMPANION_REFUND_SETTLEMENT_SEQUENCE = "0141";
+
+export const COMPANION_REFUND_OPENING_CENTS = 90000; // "+900,00"
+
+export const COMPANION_REFUND_TRANSACTIONS: readonly FixtureTransaction[] = [
+  {
+    sequence: "0140",
+    bookingDate: "05-06-2026",
+    valueDate: "05-06-2026",
+    amountText: "+1.500,00",
+    amountCents: 150000,
+    description: [
+      `INSTANT STORTING VAN ${COUNTERPARTY_DEPOSIT} Demo Werkgever`,
+      "Loon juni deel twee",
+    ],
+  },
+  {
+    sequence: COMPANION_REFUND_SETTLEMENT_SEQUENCE,
+    bookingDate: "10-06-2026",
+    valueDate: "10-06-2026",
+    amountText: "-463,50",
+    amountCents: -46350,
+    description: [
+      `MASTERCARD AFREKENING NUMMER ${KBC_REFUND_STATEMENT_NUMBER}`,
+      `KAART ${KBC_SECOND_MASKED_CARD}`,
+    ],
+  },
+  {
+    sequence: "0142",
+    bookingDate: "12-06-2026",
+    valueDate: "12-06-2026",
+    amountText: "- 40,00",
+    amountCents: -4000,
+    description: [
+      "BANCONTACT-AANKOOP - Kruidenier De Notelaar - 9000 GENT BE -",
+      "12/06/26 17:40 - CONTACTLOOS - KAART 5599 20XX XXXX 5544",
+    ],
+  },
+];
 
 export const COMPANION_TRANSACTIONS: readonly FixtureTransaction[] = [
   {
@@ -981,6 +1154,36 @@ export const buildPdfFixtures = (): ReadonlyMap<string, Uint8Array> => {
       pageOneCount: 4,
     }),
   );
+  // THE SECOND CARD (HZ-M3P3-02): byte-for-byte the reconciling fixture
+  // above except for which card it belongs to. Two documents, two cards,
+  // one household: the case a two-person household actually hits.
+  const kbcSecondCard = buildPdf(
+    kbcStatement({
+      openingCents: KBC_FIXTURE_OPENING_CENTS,
+      closingCents: kbcClosing,
+      rows: KBC_FIXTURE_ROWS,
+      pageOneCount: 4,
+      maskedCard: KBC_SECOND_MASKED_CARD,
+    }),
+  );
+  // THE REFUND STATEMENT (HZ-M3P3-01, -05, -06): the closing is computed
+  // from the same identity, so the three numbers separate arithmetically
+  // rather than by hand.
+  const kbcRefundSum = KBC_REFUND_ROWS.reduce(
+    (sum, row) => sum + checkedKbcCents(row),
+    0,
+  );
+  const kbcRefundClosing = KBC_REFUND_OPENING_CENTS + kbcRefundSum;
+  const kbcRefund = buildPdf(
+    kbcStatement({
+      openingCents: KBC_REFUND_OPENING_CENTS,
+      closingCents: kbcRefundClosing,
+      rows: KBC_REFUND_ROWS,
+      pageOneCount: 3,
+      maskedCard: KBC_SECOND_MASKED_CARD,
+      statementNumber: KBC_REFUND_STATEMENT_NUMBER,
+    }),
+  );
 
   const companionSum = COMPANION_TRANSACTIONS.reduce(
     (sum, transaction) => sum + checkedCents(transaction),
@@ -996,6 +1199,23 @@ export const buildPdfFixtures = (): ReadonlyMap<string, Uint8Array> => {
       closingLine: `SALDO OP 13-06-2026 11:30 EUR ${formatClosingCents(companionClosing)}`,
       pageOneCount: 2,
       transactions: COMPANION_TRANSACTIONS,
+      annexPage: false,
+    }),
+  );
+
+  const companionRefundSum = COMPANION_REFUND_TRANSACTIONS.reduce(
+    (sum, transaction) => sum + checkedCents(transaction),
+    0,
+  );
+  const companionRefundFixture = buildPdf(
+    belfiusStatement({
+      pageMarkerFirst: "BLZ. : 8/1",
+      pageMarkerRest: "13-06-2026 8/2",
+      holderDateLine: "VOORBEELDSTRAAT 7 DATUM : 13-06-2026",
+      openingLine: `SALDO OP 31-05-2026 EUR ${formatClosingCents(COMPANION_REFUND_OPENING_CENTS)}`,
+      closingLine: `SALDO OP 13-06-2026 11:30 EUR ${formatClosingCents(COMPANION_REFUND_OPENING_CENTS + companionRefundSum)}`,
+      pageOneCount: 2,
+      transactions: COMPANION_REFUND_TRANSACTIONS,
       annexPage: false,
     }),
   );
@@ -1026,7 +1246,10 @@ export const buildPdfFixtures = (): ReadonlyMap<string, Uint8Array> => {
     ["belfius-inline-shapes.pdf", fixtureE],
     ["kbc-statement-a.pdf", kbcFixtureA],
     ["kbc-nonreconciling.pdf", kbcNonreconciling],
+    ["kbc-statement-second-card.pdf", kbcSecondCard],
+    ["kbc-statement-refund.pdf", kbcRefund],
     ["belfius-settlement-companion.pdf", companionFixture],
+    ["belfius-settlement-companion-refund.pdf", companionRefundFixture],
   ]);
 };
 

@@ -14,6 +14,7 @@ import type {
   MerchantRepositoryPort,
   TagRecord,
 } from "../../src/modules/merchants/application/ports";
+import type { Cents } from "../../src/platform/money";
 import type { Flow } from "../../src/modules/ledger/domain/flow";
 import type {
   DeclaredAccount,
@@ -65,6 +66,7 @@ type MutableImport = {
   sourceProfileId?: string;
   rowsAdded?: number;
   rowsKnown?: number;
+  settlementTotalCents?: number;
   failureReason?: ImportFailureReason;
 };
 
@@ -278,6 +280,9 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       record.status = "INGESTED";
       record.accountId = input.accountId;
       record.sourceProfileId = input.sourceProfileId;
+      if (input.settlementTotalCents !== undefined) {
+        record.settlementTotalCents = input.settlementTotalCents;
+      }
       let added = 0;
       for (const row of input.rows) {
         const exists = transactions.some(
@@ -538,6 +543,20 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
               ? {}
               : { counterpartyName: stored.counterpartyName }),
           })),
+      listCardStatementTotals: async (context, input) =>
+        [...imports.values()]
+          .filter(
+            (record) =>
+              record.householdId === context.householdId &&
+              record.accountId !== undefined &&
+              input.accountIds.includes(record.accountId) &&
+              record.settlementTotalCents !== undefined,
+          )
+          .map((record) => ({
+            importId: record.id,
+            settlementTotalCents: record.settlementTotalCents as Cents,
+          }))
+          .sort((a, b) => (a.importId < b.importId ? -1 : 1)),
       importPeriod: async (context, importId) => {
         const dates = transactions
           .filter(
@@ -649,6 +668,9 @@ const toImportRecord = (record: MutableImport): ImportRecord => ({
     : { sourceProfileId: record.sourceProfileId }),
   ...(record.rowsAdded === undefined ? {} : { rowsAdded: record.rowsAdded }),
   ...(record.rowsKnown === undefined ? {} : { rowsKnown: record.rowsKnown }),
+  ...(record.settlementTotalCents === undefined
+    ? {}
+    : { settlementTotalCents: record.settlementTotalCents }),
   ...(record.failureReason === undefined
     ? {}
     : { failureReason: record.failureReason }),

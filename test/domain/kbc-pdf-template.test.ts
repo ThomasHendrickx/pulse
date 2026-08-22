@@ -10,6 +10,7 @@ import {
   KBC_FIXTURE_ROWS,
   KBC_FIXTURE_ROW_COUNT,
   KBC_FIXTURE_SUM_CENTS,
+  KBC_MASKED_CARD,
 } from "../fixtures/generate-pdf-fixtures";
 import type { ParsedStatement } from "../../src/modules/import/domain/parse-statement";
 
@@ -50,6 +51,9 @@ describe("KBC card template over the synthetic fixture (criterion 3.1)", () => {
         kind: "pdf-layout",
         templateId: KBC_TEMPLATE_ID,
         templateVersion: 1,
+        // Fix round 2 (HZ-M3P3-02): the card's own identity is part of
+        // the spec, so two cards of one issuer are two sources.
+        accountIdentifier: KBC_MASKED_CARD,
       });
     }
   });
@@ -216,6 +220,121 @@ describe("loud structure guards on the KBC layout", () => {
         problem: "unrecognized-line",
       });
     }
+  });
+});
+
+describe("fix round 2 structure guards on the KBC layout", () => {
+  const template = getTemplateById(KBC_TEMPLATE_ID);
+  const line = (text: string, x = 62.4): { text: string; x: number } => ({ text, x });
+  // A well-formed miniature document: fingerprint, one card number, one
+  // opening, one row, one closing. Each test below breaks exactly one of
+  // those and asserts the specific loud failure.
+  const document = (
+    bodyLines: readonly { text: string; x: number }[],
+  ): { text: string; x: number }[][] => [
+    [
+      line("KBC-Mastercard", 59.5),
+      line("Uitgavenstaat", 59.5),
+      ...bodyLines,
+    ],
+  ];
+  const CARD = line("Kaartnummer(s): 5417 88XX XXXX 3210", 59.5);
+  const OPENING = line("Vorig saldo op 16-05-2026 -10,00", 204.2);
+  const CLOSING = line("Afrekening via je bank op 22-06-2026 -10,00", 204.2);
+
+  test("the well-formed miniature parses, so every failure below is about the ONE thing it breaks", () => {
+    const outcome = template?.parse(document([CARD, OPENING, CLOSING]));
+    expect(outcome?.ok).toBe(true);
+  });
+
+  // HZ-M3P3-07: the header used to state the balance shape as singular
+  // and nothing kept it singular. The parse silently kept the first
+  // opening and the LAST closing, so a repeated or corrected balance line
+  // changed the parsed identity with nothing said.
+  test("two DIFFERENT previous-balance lines fail loudly instead of silently keeping the first", () => {
+    const outcome = template?.parse(
+      document([
+        CARD,
+        OPENING,
+        line("Vorig saldo op 16-05-2026 -20,00", 204.2),
+        CLOSING,
+      ]),
+    );
+    expect(outcome?.ok).toBe(false);
+    if (outcome?.ok === false) {
+      expect(outcome.error).toEqual({
+        kind: "pdf-structure",
+        problem: "ambiguous-balance-lines",
+      });
+    }
+  });
+
+  test("two DIFFERENT settlement-total lines fail loudly instead of silently keeping the last", () => {
+    const outcome = template?.parse(
+      document([
+        CARD,
+        OPENING,
+        CLOSING,
+        line("Afrekening via je bank op 22-06-2026 -20,00", 204.2),
+      ]),
+    );
+    expect(outcome?.ok).toBe(false);
+    if (outcome?.ok === false) {
+      expect(outcome.error).toEqual({
+        kind: "pdf-structure",
+        problem: "ambiguous-balance-lines",
+      });
+    }
+  });
+
+  test("a balance line REPEATED with the same value is a reprinted header block, folded rather than refused", () => {
+    const outcome = template?.parse(
+      document([CARD, OPENING, OPENING, CLOSING, CLOSING]),
+    );
+    expect(outcome?.ok).toBe(true);
+  });
+
+  // HZ-M3P3-02: a card file whose own identity cannot be read is never
+  // bound to whatever account a spec-equal profile happens to hold.
+  test("a card document carrying NO card number fails loudly rather than binding to a profile's account", () => {
+    const outcome = template?.parse(document([OPENING, CLOSING]));
+    expect(outcome?.ok).toBe(false);
+    if (outcome?.ok === false) {
+      expect(outcome.error).toEqual({
+        kind: "pdf-structure",
+        problem: "no-account-identifier",
+      });
+    }
+  });
+
+  test("a card document carrying TWO DIFFERENT card numbers fails loudly (the unobserved multi-card statement, M3P3-Q2)", () => {
+    const outcome = template?.parse(
+      document([
+        CARD,
+        line("Kaartnummer(s): 5417 88XX XXXX 7654", 59.5),
+        OPENING,
+        CLOSING,
+      ]),
+    );
+    expect(outcome?.ok).toBe(false);
+    if (outcome?.ok === false) {
+      expect(outcome.error).toEqual({
+        kind: "pdf-structure",
+        problem: "no-account-identifier",
+      });
+    }
+    // And detection reports no identity for it either, rather than
+    // guessing which card the rows belong to.
+    expect(
+      template?.accountIdentifier?.(
+        document([
+          CARD,
+          line("Kaartnummer(s): 5417 88XX XXXX 7654", 59.5),
+          OPENING,
+          CLOSING,
+        ]),
+      ),
+    ).toBeUndefined();
   });
 });
 
