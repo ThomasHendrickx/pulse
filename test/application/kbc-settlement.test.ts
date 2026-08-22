@@ -7,6 +7,8 @@ import { uploadStatement } from "../../src/modules/import/application/upload-sta
 import {
   KBC_FIXTURE_ROW_COUNT,
   KBC_STATEMENT_NUMBER,
+  KBC_UNDERPAID_SETTLEMENT_CENTS,
+  KBC_UNDERPAID_STATEMENT_NUMBER,
 } from "../fixtures/generate-pdf-fixtures";
 import { makeFakeImportWorld } from "./fake-import-world";
 
@@ -213,5 +215,72 @@ describe("the settlement pairing across two PDF imports (criterion 3.3, hazard H
     expect(
       world.links.some((link) => link.settlementImportId !== undefined),
     ).toBe(false);
+  });
+});
+
+// FIX ROUND 4, finding CR3-M3P3-01. Criterion 3.3's witnesses above all
+// run on a fixture family whose settlement credit exactly cancels its
+// previous balance, so the STORED figure and both row derivations agree
+// and every assertion here holds under an implementation that never reads
+// the stored figure at all. Measured: with the stored figure ignored, the
+// whole fast gate reddened by ONE test, and it was not one of these. This
+// block puts the discrimination back inside criterion 3.3's own witness
+// file, on a statement whose credit settles LESS than its previous
+// balance, where the printed figure, the net of the line items and the sum
+// of the debit magnitudes are three different numbers.
+describe("the settlement pairing needs the STORED figure, not a derivation (criterion 3.3, CR3-M3P3-01)", () => {
+  const upload = async (
+    world: ReturnType<typeof makeFakeImportWorld>,
+    name: string,
+    profileName: string,
+    declaration: { label: string; bank: string; role: "POT" },
+  ): Promise<string> => {
+    const uploaded = await uploadStatement(context, world.deps, {
+      fileName: name,
+      bytes: fixture(name),
+    });
+    if (uploaded.kind !== "awaiting-declaration") {
+      throw new Error("unreachable");
+    }
+    const detected = await world.deps.parser.detect(fixture(name));
+    if (!detected.ok) {
+      throw new Error("unreachable");
+    }
+    const confirmed = await confirmImport(context, world.deps, {
+      importId: uploaded.importId,
+      profileName,
+      spec: detected.value,
+      declaration,
+    });
+    expect(confirmed.kind, JSON.stringify(confirmed)).toBe("ingested");
+    return uploaded.importId;
+  };
+
+  test("the account-side debit for an UNDERPAID card month is INTERNAL and linked", async () => {
+    const world = makeFakeImportWorld();
+    const cardImportId = await upload(
+      world,
+      "kbc-statement-underpaid.pdf",
+      "kbc-mastercard-uitgavenstaat",
+      { label: "Credit card four", bank: "KBC", role: "POT" },
+    );
+    await upload(world, "underpaid-companion.csv", "demobank-delimited", {
+      label: "Daily account",
+      bank: "Demobank",
+      role: "POT",
+    });
+
+    const debit = world.transactions.find((transaction) =>
+      transaction.description.includes(
+        `MASTERCARD AFREKENING NUMMER ${KBC_UNDERPAID_STATEMENT_NUMBER}`,
+      ),
+    );
+    expect(debit).toBeDefined();
+    expect(debit?.amountCents).toBe(-KBC_UNDERPAID_SETTLEMENT_CENTS);
+    expect(debit?.flow).toBe("INTERNAL");
+    const link = world.links.find(
+      (candidate) => candidate.settlementImportId !== undefined,
+    );
+    expect(link?.settlementImportId).toBe(cardImportId);
   });
 });
