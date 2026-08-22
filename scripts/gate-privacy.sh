@@ -51,7 +51,7 @@ else
   for f in $(git ls-files); do
     [ -f "$f" ] || continue
     case "$f" in \
-      package-lock.json|*.png|*.jpg|*.jpeg|*.pdf|*.ico|*.woff|*.woff2|"$ALLOW") continue;; \
+      package-lock.json|*.png|*.jpg|*.jpeg|*.ico|*.woff|*.woff2|"$ALLOW") continue;; \
     esac
     for hit in $(grep -Eoh "$IBAN|$PAN" "$f" 2>/dev/null | tr -d ' ' | sort -u); do
       printf '%s\n' "$known" | grep -qxF "$hit" || \
@@ -59,6 +59,18 @@ else
     done
   done
 fi
+
+# --- 3. no compressed PDF is ever committed -------------------------------
+# A real bank statement PDF carries compressed content streams, which is also
+# why rule 2 cannot see inside one: grep reads no text at all. The fixture
+# PDFs are emitted uncompressed by test/fixtures/generate-pdf-fixtures.ts, so
+# "carries a compressed stream" is a clean stand-in for "came from a bank".
+for f in $(git ls-files '*.pdf'); do
+  [ -f "$f" ] || continue
+  if grep -aq 'FlateDecode' "$f" 2>/dev/null; then
+    report "$f: PDF carries a compressed stream, so it did not come from the fixture builder and no identifier check can read inside it. Real statements are never committed. Generate fixtures with test/fixtures/generate-pdf-fixtures.ts."
+  fi
+done
 
 [ "$fail" -eq 0 ] && echo "gate:privacy clean"
 exit "$fail"
