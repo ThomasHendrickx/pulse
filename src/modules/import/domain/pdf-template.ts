@@ -43,7 +43,18 @@ export type PdfTemplateError = {
     // the statement's continuous sequence numbering. Both are the
     // zero-sum corruption shapes the balance gate alone is blind to.
     | "unrecognized-line"
-    | "sequence-order";
+    | "sequence-order"
+    // Fix round 2 (HZ-M3P3-02): a layout whose own-account identity is
+    // carried by a line the template MUST find (the masked card number on
+    // a card statement) and that line is absent or repeated. Binding such
+    // a file to whatever account the profile happens to hold is the
+    // silent cross-card write that finding names.
+    | "no-account-identifier"
+    // Fix round 2 (HZ-M3P3-07): more than one DIFFERENT opening or
+    // closing balance line in one document. Keeping the first opening and
+    // the last closing was a silent choice; two different values now fail
+    // loudly, like every other ambiguous shape in these templates.
+    | "ambiguous-balance-lines";
 };
 
 export type PdfTemplateOutcome = {
@@ -54,6 +65,14 @@ export type PdfTemplateOutcome = {
   readonly accountIbans: readonly string[];
   readonly openingBalanceCents: Cents;
   readonly closingBalanceCents: Cents;
+  // THE FIGURE THE STATEMENT ITSELF CARRIES as the amount its issuer will
+  // collect by direct debit, in positive integer cents (fix round 2,
+  // finding HZ-M3P3-01). Present only for a layout that prints one, which
+  // today means a card statement; a current-account statement has no such
+  // number and leaves this absent. It is a FACT of the document and is
+  // stored as one: nothing downstream may re-derive it from the row signs,
+  // because an ordinary merchant refund makes the two differ.
+  readonly settlementTotalCents?: Cents;
 };
 
 export type PdfLayoutTemplate = {
@@ -64,6 +83,17 @@ export type PdfLayoutTemplate = {
   // the template because the layout is code-owned (D-4).
   readonly hasNaturalKey: boolean;
   readonly matches: (pages: readonly PdfPageLines[]) => boolean;
+  // The file's OWN-ACCOUNT identity when the layout carries no IBAN (fix
+  // round 2, finding HZ-M3P3-02). Read at DETECT time, before any parse,
+  // because it belongs in the profile spec: two cards of one issuer share
+  // a template and must not share a profile, an account or a dedup scope.
+  // Absent on a layout whose files identify themselves by IBAN; undefined
+  // from a template that declares it means the identifying line was not
+  // found, and that template's parse must fail loudly rather than let the
+  // file bind to whatever account the profile holds.
+  readonly accountIdentifier?: (
+    pages: readonly PdfPageLines[],
+  ) => string | undefined;
   readonly parse: (
     pages: readonly PdfPageLines[],
   ) => Result<PdfTemplateOutcome, PdfTemplateError>;

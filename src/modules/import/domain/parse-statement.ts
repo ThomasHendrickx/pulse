@@ -38,6 +38,13 @@ export type ParsedStatement = {
   // ingest use case fails loudly (hazard H1.2); resolving which account a
   // file belongs to is the use case's job, not the parser's.
   readonly accountIbans: readonly string[];
+  // The figure the statement itself carries as the amount its issuer will
+  // collect by direct debit, positive integer cents (fix round 2, finding
+  // HZ-M3P3-01). Only a card statement prints one; a delimited export
+  // carries none and leaves this absent, which is the case the ledger's
+  // fallback covers. Never re-derived from the rows: an ordinary refund
+  // separates the statement's figure from the sum of its debit rows.
+  readonly settlementTotalCents?: Cents;
 };
 
 export type StatementParseError =

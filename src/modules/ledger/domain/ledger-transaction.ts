@@ -72,10 +72,28 @@ export const deriveDeclaredSets = (
 
 // One imported card statement, summarised for settlement matching
 // (owner v0.2 addendum section 5, decision D-11): its settlement total is
-// the total the statement carries when it carries one; a CSV statement
-// carries none, so v1 computes the sum of its line items, meaning the
+// the total the statement carries when it carries one; a statement that
+// carries none has it computed as the sum of its line items, meaning the
 // magnitude of its debit rows. Settlement credit rows (the previous
 // statement's settlement arriving on the card) are not line items.
+//
+// CORRECTED RATHER THAN QUIETLY REWRITTEN (R-087, fix round 2, finding
+// HZ-M3P3-01). The sentence above used to read "a CSV statement carries
+// none, so v1 computes the sum of its line items", and it described what
+// this function did for EVERY card import, including one whose statement
+// does carry the figure. It was true when written, in a world where no
+// PDF card statement could be imported at all; phase M3-P3 made card PDFs
+// importable and nothing here changed, so the code went on re-deriving a
+// number the document had already stated. The two agree only when the
+// statement carries no positive row other than the settlement credit. ONE
+// ORDINARY MERCHANT REFUND separates them by exactly the refund: the
+// account-side direct debit then matches no card import, falls through to
+// the honest-unitemised SPEND arm, and the month counts both that whole
+// debit and the card's own rows, with the mirror credit left as an
+// unmatched INTERNAL leg. statementSettlementTotals below carries the
+// document's own figure; the row-sum arm is now the FALLBACK it was
+// always described as, reached only by an import whose statement printed
+// no such figure.
 export type CardImportSummary = {
   readonly importId: string;
   readonly accountId: string;
@@ -86,6 +104,11 @@ export type CardImportSummary = {
 export const summarizeCardImports = (
   transactions: readonly LedgerTransaction[],
   sets: DeclaredSets,
+  // Import id to the settlement figure ITS OWN STATEMENT carries, in
+  // positive integer cents, read from the stored fact column. An import
+  // absent from this map printed no such figure and takes the row-sum
+  // fallback below.
+  statementSettlementTotals?: ReadonlyMap<string, Cents>,
 ): readonly CardImportSummary[] => {
   const byImport = new Map<
     string,
@@ -115,7 +138,10 @@ export const summarizeCardImports = (
     .map(([importId, entry]) => ({
       importId,
       accountId: entry.accountId,
-      settlementTotalCents: entry.total as Cents,
+      // The statement's own figure wins whenever the statement carried
+      // one; the row sum is the fallback for a source that prints none.
+      settlementTotalCents:
+        statementSettlementTotals?.get(importId) ?? (entry.total as Cents),
       periodEnd: entry.periodEnd,
     }))
     .sort((a, b) => (a.importId < b.importId ? -1 : 1));

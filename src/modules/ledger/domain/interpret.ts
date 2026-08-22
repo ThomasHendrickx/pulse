@@ -9,6 +9,7 @@
 // Everything here is derived, disposable and rebuildable from facts plus
 // declarations. Nothing here writes; persistence is an adapter concern.
 
+import type { Cents } from "@/platform/money";
 import { classifyFlow, type Classification } from "./classify-flow";
 import { TRANSFER_DATE_TOLERANCE_DAYS } from "./constants";
 import {
@@ -59,12 +60,21 @@ export const interpretLedger = (input: {
   // recompute. When absent (recompute, pure-domain tests over complete
   // datasets), history is derived from the given transactions.
   readonly outgoingHistoryKeys?: ReadonlySet<string>;
+  // Import id to the settlement figure that import's own statement
+  // carries (fix round 2, finding HZ-M3P3-01). Absent entries fall back
+  // to the row-sum derivation; an absent map is the pure-domain default
+  // for a dataset built from rows alone.
+  readonly statementSettlementTotals?: ReadonlyMap<string, Cents>;
 }): LedgerInterpretation => {
   const sets = deriveDeclaredSets(input.accounts);
   const potTransactions = input.transactions.filter((transaction) =>
     sets.potAccountIds.has(transaction.accountId),
   );
-  const cardImports = summarizeCardImports(potTransactions, sets);
+  const cardImports = summarizeCardImports(
+    potTransactions,
+    sets,
+    input.statementSettlementTotals,
+  );
   const outgoingHistoryKeys =
     input.outgoingHistoryKeys ?? buildOutgoingHistoryKeys(potTransactions);
 

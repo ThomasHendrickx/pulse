@@ -90,6 +90,9 @@ export type ImportRecord = {
   readonly rowsAdded?: number;
   readonly rowsKnown?: number;
   readonly failureReason?: ImportFailureReason;
+  // The statement's own settlement figure, positive integer cents, for a
+  // layout that prints one (finding HZ-M3P3-01). Absent otherwise.
+  readonly settlementTotalCents?: number;
 };
 
 export type StoredProfile = {
@@ -209,6 +212,11 @@ export type ImportRepositoryPort = {
       readonly sourceProfileId: string;
       readonly fromStatus: ImportStatus;
       readonly rows: readonly IngestRow[];
+      // Written on the import row inside the SAME transaction as the
+      // rows, because it is a fact of the same document and must never
+      // exist without them (finding HZ-M3P3-01). Absent for a statement
+      // that prints no such figure.
+      readonly settlementTotalCents?: number;
     },
   ) => Promise<
     | { readonly ok: true; readonly added: number; readonly known: number }

@@ -124,6 +124,11 @@ export const confirmImport = async (
     fromStatus: "AWAITING_DECLARATION",
     // zipRowsWithDedupKeys THROWS on a row/key desync (finding F7).
     rows: zipRowsWithDedupKeys(parsed.value.rows, keys),
+    // The document's own settlement figure travels with its rows
+    // (HZ-M3P3-01); absent for every statement that prints none.
+    ...(parsed.value.settlementTotalCents === undefined
+      ? {}
+      : { settlementTotalCents: parsed.value.settlementTotalCents }),
   });
   if (!ingested.ok) {
     return { kind: "rejected", reason: "already-confirmed" };

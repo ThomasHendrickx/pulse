@@ -59,6 +59,21 @@ export const interpretWindow = async (
         });
   const transactions = [...windowed, ...cardRows];
 
+  // Finding HZ-M3P3-01: a card import's settlement total is the figure its
+  // own statement carries, read from the stored fact column, never
+  // re-derived from the row signs. Loaded over the same unbounded card
+  // account set and for the same reason (CR-301): the figure describes the
+  // whole import, not the rows a window happened to load.
+  const statementTotals =
+    cardAccountIds.length === 0
+      ? []
+      : await deps.ledger.listCardStatementTotals(context, {
+          accountIds: cardAccountIds,
+        });
+  const statementSettlementTotals = new Map(
+    statementTotals.map((entry) => [entry.importId, entry.settlementTotalCents]),
+  );
+
   // Finding CR-303: refund history over the WHOLE ledger, so a window run
   // and a recompute agree on every refund. The read happens after ingest
   // persisted the new rows, so it includes the window's own outgoing rows.
@@ -71,6 +86,7 @@ export const interpretWindow = async (
     transactions,
     accounts,
     outgoingHistoryKeys,
+    statementSettlementTotals,
   });
 
   // Merchant resolution over the SAME interpreted set (M1-P4): counted

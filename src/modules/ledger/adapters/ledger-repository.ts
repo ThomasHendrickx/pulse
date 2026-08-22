@@ -101,6 +101,42 @@ export const listOutgoingCounterpartyRefs = async (
   }));
 };
 
+// The settlement figure each card import's own statement carries, over
+// the given accounts (finding HZ-M3P3-01). A FACT column, read here and
+// never written here: the import module owns writing it, with the rows.
+// Imports whose statement printed no such figure are absent from the
+// result rather than reported as zero, so the row-sum fallback stays
+// distinguishable from a statement that really settles at nothing.
+export const listCardStatementTotals = async (
+  context: HouseholdContext,
+  input: { readonly accountIds: readonly string[] },
+): Promise<
+  readonly { readonly importId: string; readonly settlementTotalCents: Cents }[]
+> => {
+  if (input.accountIds.length === 0) {
+    return [];
+  }
+  const rows = await prisma.import.findMany({
+    where: {
+      householdId: context.householdId,
+      accountId: { in: [...input.accountIds] },
+      settlementTotalCents: { not: null },
+    },
+    select: { id: true, settlementTotalCents: true },
+    orderBy: { id: "asc" },
+  });
+  return rows.flatMap((row) =>
+    row.settlementTotalCents === null
+      ? []
+      : [
+          {
+            importId: row.id,
+            settlementTotalCents: row.settlementTotalCents as Cents,
+          },
+        ],
+  );
+};
+
 export const importPeriod = async (
   context: HouseholdContext,
   importId: string,

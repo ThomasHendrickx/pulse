@@ -44,6 +44,7 @@ const toImportRecord = (row: {
   sourceProfileId: string | null;
   rowsAdded: number | null;
   rowsKnown: number | null;
+  settlementTotalCents: number | null;
   failureReason: string | null;
 }): ImportRecord => ({
   id: row.id,
@@ -54,6 +55,9 @@ const toImportRecord = (row: {
   ...(row.sourceProfileId === null ? {} : { sourceProfileId: row.sourceProfileId }),
   ...(row.rowsAdded === null ? {} : { rowsAdded: row.rowsAdded }),
   ...(row.rowsKnown === null ? {} : { rowsKnown: row.rowsKnown }),
+  ...(row.settlementTotalCents === null
+    ? {}
+    : { settlementTotalCents: row.settlementTotalCents }),
   ...(row.failureReason !== null &&
   (FAILURE_REASONS as readonly string[]).includes(row.failureReason)
     ? { failureReason: row.failureReason as ImportFailureReason }
@@ -323,6 +327,7 @@ export const ingestRows = async (
     readonly sourceProfileId: string;
     readonly fromStatus: ImportStatus;
     readonly rows: readonly IngestRow[];
+    readonly settlementTotalCents?: number;
   },
 ): Promise<
   | { readonly ok: true; readonly added: number; readonly known: number }
@@ -343,6 +348,11 @@ export const ingestRows = async (
         status: "INGESTED",
         accountId: input.accountId,
         sourceProfileId: input.sourceProfileId,
+        // The document's own settlement figure, written with the claim so
+        // it can never exist without the rows it belongs to (HZ-M3P3-01).
+        ...(input.settlementTotalCents === undefined
+          ? {}
+          : { settlementTotalCents: input.settlementTotalCents }),
       },
     });
     if (claimed.count !== 1) {

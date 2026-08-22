@@ -4,6 +4,7 @@
 // module's PUBLISHED application interface, and tests run the use cases
 // against in-memory fakes.
 
+import type { Cents } from "@/platform/money";
 import type { PlainDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
 import type { CounterpartyRef } from "../domain/corrections";
@@ -73,6 +74,23 @@ export type LedgerRepositoryPort = {
     context: HouseholdContext,
     input: { readonly accountIds: readonly string[] },
   ) => Promise<readonly CounterpartyRef[]>;
+  // The settlement figure each card import's OWN STATEMENT carries, over
+  // the given card accounts, in positive integer cents (fix round 2,
+  // finding HZ-M3P3-01). Imports whose statement printed no such figure
+  // are simply absent from the result, which is what makes the row-sum
+  // fallback in summarizeCardImports reachable and correct. UNBOUNDED for
+  // the same reason listPotTransactions loads card accounts unbounded
+  // (finding CR-301): a settlement total is a property of the whole
+  // import, never of the slice a window happens to load.
+  readonly listCardStatementTotals: (
+    context: HouseholdContext,
+    input: { readonly accountIds: readonly string[] },
+  ) => Promise<
+    readonly {
+      readonly importId: string;
+      readonly settlementTotalCents: Cents;
+    }[]
+  >;
   // The booking-date span of one import's fact rows; null when the import
   // has no rows.
   readonly importPeriod: (

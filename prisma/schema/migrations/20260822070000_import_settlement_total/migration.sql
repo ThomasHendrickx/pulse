@@ -1,0 +1,15 @@
+-- The settlement figure a card statement carries, stored as the FACT it is
+-- (fix round 2, finding HZ-M3P3-01). Before this column a card import's
+-- settlement total was re-derived downstream as the sum of the magnitudes
+-- of its negative rows, while the figure the document itself prints was
+-- parsed for the balance gate and then discarded. The two are equal only
+-- on a statement carrying no ordinary merchant refund; with one refund the
+-- re-derived number is too large by the refund, the account-side direct
+-- debit finds no matching card import, and the month counts both the card's
+-- own rows and the whole direct debit.
+--
+-- Nullable, because only a layout that PRINTS such a figure has one: every
+-- current-account statement and every delimited export leaves it null, and
+-- the ledger keeps its documented row-sum fallback for exactly that case.
+-- Existing rows are pre-PDF-card imports and are correctly null.
+ALTER TABLE "imports" ADD COLUMN "settlementTotalCents" INTEGER;
