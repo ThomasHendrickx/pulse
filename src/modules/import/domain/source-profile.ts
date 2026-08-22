@@ -5,6 +5,7 @@
 // this spec (pulse-domain section 5).
 
 import { err, ok, type Result } from "@/platform/result";
+import { templateHasNaturalKey } from "./pdf-template";
 
 export type Delimiter = ";" | ",";
 export type FileEncoding = "utf-8" | "windows-1252";
@@ -46,7 +47,18 @@ export type ColumnRoles = {
   readonly sequenceNumber?: number;
 };
 
-export type SourceProfileSpec = {
+// D-2 (v0.2 plan): the spec is a discriminated union. "delimited" carries
+// the pre-widening shape unchanged; "pdf-layout" names a CODE-OWNED layout
+// template by id and version (pulse-v0.2-pdf-addendum.md:23), because a
+// PDF layout is not something a user can declare by answering questions.
+// COMPATIBILITY CONTRACT (criterion 2.4, hazard H2.4): every profile
+// stored BEFORE the widening carries no kind field, so the parser below
+// normalises a kind-less object to the delimited variant, and both sides
+// of every specEquals comparison pass through parseSourceProfileSpec or
+// detection, so a pre-widening stored profile keeps being recognised by
+// findProfileBySpec on the next upload.
+export type DelimitedSourceProfileSpec = {
+  readonly kind: "delimited";
   readonly delimiter: Delimiter;
   readonly encoding: FileEncoding;
   readonly headerRowIndex: number;
@@ -56,12 +68,27 @@ export type SourceProfileSpec = {
   readonly columns: ColumnRoles;
 };
 
+export type PdfLayoutSourceProfileSpec = {
+  readonly kind: "pdf-layout";
+  readonly templateId: string;
+  readonly templateVersion: number;
+};
+
+export type SourceProfileSpec =
+  | DelimitedSourceProfileSpec
+  | PdfLayoutSourceProfileSpec;
+
 // The dedup key choice is a per-profile property (verification-first step):
-// the statement-plus-sequence natural key exists only when the profile has
-// both columns; card profiles have neither and take the hash path.
+// for delimited sources the statement-plus-sequence natural key exists only
+// when the profile has both columns; card profiles have neither and take
+// the hash path. For PDF layouts the choice belongs to the code-owned
+// template (the Belfius template emits natural-key components per D-4; the
+// KBC card format has no sequence numbers and will not).
 export const hasNaturalKey = (spec: SourceProfileSpec): boolean =>
-  spec.columns.statementNumber !== undefined &&
-  spec.columns.sequenceNumber !== undefined;
+  spec.kind === "pdf-layout"
+    ? templateHasNaturalKey(spec.templateId)
+    : spec.columns.statementNumber !== undefined &&
+      spec.columns.sequenceNumber !== undefined;
 
 export type SpecParseError = { readonly kind: "invalid-spec"; readonly at: string };
 
@@ -80,6 +107,8 @@ const OPTIONAL_ROLES = [
 
 // Boundary validation for the Json column on SourceProfile: everything
 // crossing a boundary is parsed, never cast (pulse-typescript section 6).
+// Branches on the kind discriminant; an ABSENT kind is the pre-widening
+// stored shape and parses as the delimited variant (criterion 2.4).
 export const parseSourceProfileSpec = (
   input: unknown,
 ): Result<SourceProfileSpec, SpecParseError> => {
@@ -87,6 +116,29 @@ export const parseSourceProfileSpec = (
     return err({ kind: "invalid-spec" as const, at: "root" });
   }
   const record = input as Record<string, unknown>;
+
+  if (record.kind === "pdf-layout") {
+    const templateId = record.templateId;
+    if (typeof templateId !== "string" || templateId === "") {
+      return err({ kind: "invalid-spec" as const, at: "templateId" });
+    }
+    const templateVersion = record.templateVersion;
+    if (
+      typeof templateVersion !== "number" ||
+      !Number.isInteger(templateVersion) ||
+      templateVersion < 1
+    ) {
+      return err({ kind: "invalid-spec" as const, at: "templateVersion" });
+    }
+    // Whether the template EXISTS in this build's registry is a parse-time
+    // question for the statement parser, not a validity question for the
+    // stored declaration: a spec naming a template this build does not
+    // carry must still round-trip so the profile row stays readable.
+    return ok({ kind: "pdf-layout" as const, templateId, templateVersion });
+  }
+  if (record.kind !== undefined && record.kind !== "delimited") {
+    return err({ kind: "invalid-spec" as const, at: "kind" });
+  }
 
   const delimiter = record.delimiter;
   if (delimiter !== ";" && delimiter !== ",") {
@@ -186,6 +238,7 @@ export const parseSourceProfileSpec = (
   }
 
   return ok({
+    kind: "delimited" as const,
     delimiter,
     encoding,
     headerRowIndex: record.headerRowIndex,

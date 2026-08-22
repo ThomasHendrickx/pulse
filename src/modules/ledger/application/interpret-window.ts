@@ -7,6 +7,7 @@
 
 import type { PlainDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
+import { counterpartyText } from "@/modules/merchants/application";
 import { INTERPRETATION_WINDOW_PADDING_DAYS } from "../domain/constants";
 import { counterpartyKey } from "../domain/corrections";
 import { interpretLedger } from "../domain/interpret";
@@ -84,8 +85,14 @@ export const interpretWindow = async (
     const flow = interpretation.flows.get(transactionId);
     return flow === "INCOME" || flow === "SPEND";
   };
+  // The counterparty-source rule has ONE definition (decision D-11), and it
+  // is the merchants module's, reached through that module's published
+  // application interface rather than copied here. This file used to carry
+  // its own copy of the expression, which meant the ledger and the merchant
+  // review could silently disagree about which text a transaction resolves
+  // under while both looked right in isolation.
   const merchantText = (transaction: LedgerTransaction): string =>
-    transaction.counterpartyName ?? transaction.description;
+    counterpartyText(transaction);
   const countedTexts = [
     ...new Set(
       transactions

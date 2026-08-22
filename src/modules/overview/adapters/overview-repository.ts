@@ -37,6 +37,26 @@ const CASH_SQL_PATTERN = CASH_WITHDRAWAL_PATTERNS.map(
 // with BOTH sides present (a pot-to-pot pair or a settled card debit with
 // its mirror row). An INTERNAL row without such a link is an unmatched
 // leg: excluded from both sides and surfaced, never dropped.
+// THE MERCHANT-SOURCE RULE, IN SQL, WRITTEN ONCE (M3-P6 fix round 1,
+// findings HZ-M3P6-05 and CR-M3P6-02). Which TEXT a transaction resolves
+// under is one decision, decision D-11: the named counterparty when the
+// export carries one, the description otherwise. The TypeScript definition
+// lives at src/modules/merchants/domain/normalise-counterparty.ts and is
+// pinned by an executable grep (criterion 6.10), but that grep is a
+// TypeScript expression and is structurally blind to SQL, and this file is
+// the copy the MONTH VIEW's grouping actually reads. It used to be written
+// out twice in this file, in the grouped counted read and in the gap read.
+//
+// Two guards now hold it: this single fragment, so the file carries ONE
+// copy, and a second pin in test/domain/merchant-review.test.ts that reads
+// this file and asserts the SQL form is still here and still written once.
+// If decision D-11 ever changes, this fragment changes with it.
+// MODULE-LOCAL, not exported: this file is held by the tenancy gate, which
+// fails closed on any repository export that does not take a household
+// context (test/schema/tenancy.test.ts). The SQL pin reads this file's TEXT
+// rather than importing the symbol, so nothing needs to be exported.
+const COUNTERPARTY_TEXT_SQL = Prisma.sql`COALESCE(t."counterpartyName", t."description")`;
+
 const MATCHED_LINK_EXISTS = Prisma.sql`EXISTS (
   SELECT 1 FROM "transfer_links" l
   WHERE l."householdId" = t."householdId"
@@ -92,7 +112,7 @@ const countedGroups = async (
       t."merchantId"                                        AS "merchantId",
       m."name"                                              AS "merchantName",
       pt."name"                                             AS "primaryTag",
-      COALESCE(t."counterpartyName", t."description")       AS "counterpartyText",
+      ${COUNTERPARTY_TEXT_SQL}                              AS "counterpartyText",
       (t."description" ~* ${CASH_SQL_PATTERN})              AS "isCash",
       SUM(t."amountCents")::bigint                          AS "totalCents",
       COUNT(*)::bigint                                      AS "rowCount"
@@ -263,7 +283,7 @@ export const listGapRows = async (
         ELSE 'unmatched-internal'
       END                                             AS "gap",
       t."bookingDate"                                 AS "bookingDate",
-      COALESCE(t."counterpartyName", t."description") AS "text",
+      ${COUNTERPARTY_TEXT_SQL}                        AS "text",
       a."label"                                       AS "accountLabel",
       t."amountCents"                                 AS "amountCents"
     FROM "transactions" t

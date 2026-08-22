@@ -160,8 +160,249 @@
 # lists are subsets of their phases' files-to-touch. The findings below
 # are the round-1 findings at head 2ddacf7, retained as the record this
 # delta closes; their plan line citations refer to that head.
+#
+# ROUND 2's delta verdict was APPROVE at head b179b76 and stands for that
+# head. The verdict field below now carries ROUND 3's verdict, revise,
+# for the M3-P6 addition at head 62cc0bb; the PR2 findings are retained
+# below as the closed record of round 1.
+#
+# ROUND 3 (focused), phase M3-P6 only, at head 62cc0bb merged into this
+# branch. Scope per dispatch: the appended phase, decisions D-11/D-12/D-13,
+# the seven new report-code-disagreement entries, and cross-references.
+# work-log for this round, newest last:
+# - confirmed the additive claim myself rather than trusting it: git diff
+#   --numstat 07a052e 62cc0bb prints "425 0 delivery/plan/pulse-v02.yaml",
+#   git diff | grep -c '^-[^-]' is 0, and the four hunks are insertions at
+#   @@ -85 (work-log), @@ -371 (report-code-disagreement), @@ -1225
+#   (phases, after M3-P5's end) and @@ -1317 (decisions). Every existing
+#   phase is byte-unchanged, as the plan states.
+# - re-ran the validator: npx tiphys validate --type plan --context .
+#   delivery/plan/pulse-v02.yaml exits 0, "dispatchable: true"; every
+#   addressed-by in M3-P6 resolves to a criterion that exists (6.2, 6.3,
+#   6.4, 6.5, 6.6, 6.8); grep -c em-dash over the plan is 0.
+# - read the code the phase stands on: interpret-window.ts:87 sets
+#   merchantText to counterpartyName ?? description; merchant-review.ts:50
+#   exports the same rule a second time; merchant-review.ts:77 to :92 shows
+#   label AND the submitted counterpartyText both derive from the one
+#   `normalised` value, and merchant-review.ts:91 already submits the
+#   NORMALISED text, so criterion 6.4's premise matches the code;
+#   assign-merchant.ts:54 stores normaliseCounterparty(counterpartyText) as
+#   the EXACT pattern, so the round trip closes only because the pipeline
+#   is idempotent over its own output; the CR-402 contract is verbatim at
+#   normalise-counterparty.ts:16 to :34; dedup.ts:30 holds its own
+#   normalizeCounterpartyForKey and dedup.ts imports nothing from the
+#   merchants module (grep over src/ for the merchants normaliser outside
+#   its own module returns nothing), so the two recipes are independent as
+#   claimed.
+# - MEASURED the real Belfius upload (39bada64) again in-container,
+#   structure and counts only, nothing copied out: 39 transaction blocks;
+#   ZERO contiguous 16-digit runs anywhere in the document; 5 blocks carry
+#   a full card number in GROUPED 4-4-4-4 form with single spaces (1
+#   distinct sequence), 8 blocks carry a partially masked tail of shape
+#   "XX XXXX 9999", and both forms are followed on the same line by a
+#   " - <holder>" tail, so 13 of 39 blocks carry a card identifier at all;
+#   47 bracket-delimited tokens exist, 39 of shape "(AAA. 99-99-9999)" (the
+#   value-date parenthetical on every transaction start line) and 8 of
+#   shape "<A>" (the angle marker), and only 1 of the 13 card-identifier
+#   blocks carries the angle marker.
+# - checked whether the shipped extractor could explain a contiguous run:
+#   src/modules/import/domain/pdf-lines.ts:54 inserts a space whenever the
+#   horizontal gap between runs exceeds 1.0 unit, and the gaps that made my
+#   own reconstruction split those digit groups are wider than 2.0 units,
+#   so the shipped pipeline separates them at least as often. A literal
+#   16-consecutive-digit regex over the shipped normalised descriptor
+#   should therefore match nothing, which is finding PR3-001 and part of
+#   PR3-003.
+# - a construction I built and then DISCARDED, recorded because a refuted
+#   construction is information: "strip from the card tail to the end of
+#   the descriptor" eating a merchant name that follows. Under crude
+#   block segmentation the identifier looked mid-descriptor in 3 blocks,
+#   but with page-confined blocks truncated at the repeated header, all 13
+#   card blocks are exactly 4 lines with the identifier on the LAST line
+#   and nothing after it. The strip-to-end shape is safe on this
+#   statement, so no finding is raised for it.
+# - privacy scrub re-run for this round: probe list rebuilt from both
+#   uploads (IBANs in both forms, the filename-borne identifiers, every
+#   digit run of 6 or more, the card number in compact, spaced and dashed
+#   forms, holder-name tokens taken from the text following each card
+#   identifier, thousands-form amounts, booking dates, capitalised
+#   name candidates). Against the plan file: ZERO digit-shaped hits (no
+#   identifier, no card number in any grouping, no amount, no date) and 7
+#   word-shaped hits, every one of them a term that appears in the owner's
+#   own intake document. The holder-name probes hit only two tokens, both
+#   already present in the tree at e4ea3ba (charter.yaml and M1-era CSV
+#   fixtures), so neither can have come from the statements. Limitation
+#   stated honestly: descriptor vocabulary and merchant names are not
+#   separable by any automatic rule I have, so criterion 6.8 half (a)
+#   still rests on a human enumeration of merchant strings, and my scrub
+#   cannot certify that half for the M3-P2 fixtures it already covers.
+# - judgements the dispatch asked for that produced NO finding, stated so
+#   the next reader knows they were examined rather than skipped.
+#   (a) The dedup frozen recipe is genuinely protected: criterion 6.5's
+#   name-only diff check is executable and falsifiable, and it guards a
+#   REAL trap, because the merchant-source expression occurs four times in
+#   src/ (interpret-window.ts, merchant-review.ts, dedup.ts:44 and
+#   corrections.ts), so an implementer unifying by grep would sweep the two
+#   frozen copies in and 6.5 is what stops it. Nothing in 6.1 to 6.9 can be
+#   satisfied by editing dedup.ts, since every grouping assertion runs on
+#   the merchants key and 6.5 forbids the file appearing in the diff.
+#   (b) D-13's measured-count branch is coherent: zero rules makes the
+#   re-normalisation a no-op honestly rather than by assumption, and the
+#   count is recorded, which is what makes the no-rules premise checkable.
+#   (c) D-11 is judged CORRECT as a product call, and I say so plainly: a
+#   template-declared merchant extractor would put an interpretation
+#   concern inside the code-owned facts-parsing layer, the CSV path carries
+#   the same descriptor shapes, the merchants normaliser is the only place
+#   with a stability contract and a pinned regression table, and a template
+#   hook remains additive later. The one cost the plan should keep in view,
+#   not a finding: every future bank grammar added to the shared normaliser
+#   is a CR-402 recipe change that re-normalises every household's stored
+#   rules, so the second bank's grammar is the moment to revisit D-11.
+#   (d) The handling of the two orchestrator counts the plan-writer could
+#   not reproduce is exemplary: both are recorded verified: false, owned by
+#   the verification-first step, and no criterion hardcodes either number.
+#   PR3-003 exists because the plan's OWN new counts did not get the same
+#   treatment.
+#   (e) Nothing on the deliberately-absent list enters with this phase.
+#
+# ROUND 4, delta verification of the M3-P6 fix round at head 15a5e05,
+# merged into this branch. Verdict for this round: REVISE, on one new
+# finding that the fix round created rather than inherited (PR4-001), plus
+# two low ones. All eight PR3 findings are themselves closed; the
+# dispositions and the measurements behind them are below.
+# work-log for this round, newest last:
+# - re-ran the validator: exit 0, "dispatchable: true". Confirmed the fix
+#   round touched only what it claimed: phases M3-P1 through M3-P5 hash
+#   identical across 62cc0bb and 15a5e05 (sha256 3df18fc4a22b929b over the
+#   whole M3-P1..M3-P5 span), decisions D-1 through D-10 likewise
+#   (5ec48eeb3228b7ad); grep -c em-dash over the plan 0; no criterion
+#   contains "works correctly"; git diff e4ea3ba -- delivery/intake/ empty.
+# - privacy scrub over the DELTA specifically: 98 probes rebuilt from both
+#   uploads (IBANs both forms, filename-borne identifiers, every digit run
+#   of 6 or more, the card number in compact, spaced, dashed and dotted
+#   forms, thousands-form amounts, booking dates) against the added lines
+#   of git diff 62cc0bb 15a5e05: ZERO hits, none digit-shaped.
+# - EMULATED THE SHIPPED TEMPLATE to settle the descriptor-level question
+#   rather than argue it: rebuilt lines with the shipped gap rule, skipped
+#   the annex page, opened blocks on the template's own TRANSACTION_START
+#   regex (belfius-current-account-template.ts:84) and collected indented
+#   lines as description lines at the template's own INDENT_THRESHOLD of
+#   6.0 (belfius-current-account-template.ts:79), then joined them with a
+#   space exactly as belfius-current-account-template.ts:260 does. Result:
+#   39 blocks; 15 descriptors carry the card number in grouped four-by-four
+#   form; 0 carry a contiguous 16-digit run.
+# - PR3-002, THE HONESTY CORRECTION: their descriptor-level measurement is
+#   RIGHT and my round-3 evidence was line-level. I say that plainly. At
+#   line level I counted 5 full-PAN lines and 8 X-token lines; at
+#   descriptor level, after the template's line join restores numbers that
+#   wrapped at group boundaries (the template comments this at
+#   belfius-current-account-template.ts:263), the count is 15 card
+#   descriptors, which is exactly their figure. Their fixture requirement
+#   for a second tail shape is therefore prospective robustness, as they
+#   now record, and keeping it is the right call. One residue of their
+#   correction is itself imprecise and is finding PR4-002.
+# - PR3-003's TWO NEW FACTS, verified independently. (a) "20 of 39 rows
+#   carry a 13-to-19-digit run, 15 of them card rows": reproduced exactly.
+#   My emulation counts 28 descriptors with such a run when IBAN digits
+#   are included, and exactly 20 when IBANs are excluded, which is the
+#   right predicate because the template extracts IBANs separately
+#   (DESCRIPTION_IBAN, belfius-current-account-template.ts:88); 15 card
+#   plus 5 non-card, their split, digit by digit. (b) The digit-run length
+#   histogram over descriptors, separators removed, is 13:1, 14:15, 15:9,
+#   16:17, which is IBAN digits at 14, card numbers at 16 and the
+#   structured references at 13 and 15. The five non-card long-reference
+#   rows are real and a length-only strip would eat them.
+# - PR3-001, RAN THE CRITERION'S OWN PREDICATE, which is what the dispatch
+#   asked for. Against the real printed card-number string (length 19,
+#   shape 9999 9999 9999 9999) the NEW predicate, remove spaces, dots and
+#   dashes then look for 13 to 19 consecutive digits, returns TRUE, and
+#   the OLD contiguous-16 predicate returns FALSE. The new 6.3 can fail on
+#   the real shape and the old one could not. PR3-001 is closed.
+# - AND THAT SAME EXECUTION FOUND PR4-001: run the new predicate against
+#   the real non-card structured reference (length 15, all digits) and it
+#   also returns TRUE. Criterion 6.1 now REQUIRES that reference to
+#   survive in its key while criterion 6.3 forbids any key from the same
+#   fixture carrying a 13-to-19-digit run. The two are unsatisfiable
+#   together at the shape the real statement carries.
+# - remaining dispositions, each checked against the revised text rather
+#   than the claim. PR3-004: criterion 6.10 exists, pins three files,
+#   forbids either frozen recipe importing the helper, and H6.1 now points
+#   at it and names the reverse error; falsifiable, with one escape that is
+#   finding PR4-003. PR3-005: 6.6 now requires input patterns produced by
+#   the PRE-change recipe, never by calling the new normaliser, and asserts
+#   new(old(x)) equals new(raw), which is the property the migration needs;
+#   closed. PR3-006: 6.5 gains the facts-untouched clause and H6.4 is split
+#   with the rawLine half becoming H6.7 addressed by 6.5. Judged closed,
+#   and the clause that carries the weight is "and still carry the unmasked
+#   card-number run": that half is directly witnessable and defeats the
+#   self-seeded tautology, whereas "byte-identical to what the pre-change
+#   pipeline stored" would be circular on its own if both sides were
+#   computed after the change. Worth knowing at implementation time, not
+#   worth a finding, because the hazard is caught either way. PR3-007: 6.6
+#   re-measures at the release head and blocks the close if the count moved
+#   off zero; closed. PR3-008: 6.7 names Playwright test.use and cites two
+#   existing specs that already use the shape, so files-to-touch stays
+#   accurate and conflicts-with stays empty; closed. D-11's forward note is
+#   recorded as I suggested.
+#
+# ROUND 5, final delta check of the M3-P6 micro fix round at head 8f64677,
+# merged into this branch. Verdict for this round: REVISE, on one criterion
+# the micro round made UNSATISFIABLE (PR5-001, and the wording it applied
+# was mine, which I own below) plus two low findings. PR4-001 and PR4-002
+# are closed; PR4-003's intent is closed and its execution is not.
+# work-log for this round, newest last:
+# - byte-identical claim confirmed LINE BY LINE, not by block hashing:
+#   unified diff over the M3-P1..M3-P5 span is 853 lines on both sides with
+#   ZERO differing lines for 62cc0bb to 15a5e05 and again for 15a5e05 to
+#   8f64677; the D-1..D-10 span is 91 lines on both sides with zero
+#   differing lines across the same two steps. For the record, my round-4
+#   check reported those spans as matching too (sha256 3df18fc4a22b929b and
+#   5ec48eeb3228b7ad), so I saw no mismatch to reconcile.
+# - validator re-run: exit 0, "dispatchable: true"; zero em dashes; git
+#   diff e4ea3ba -- delivery/intake/ empty. Privacy scrub over this delta's
+#   added lines with the 98-probe list rebuilt from both uploads: ZERO
+#   hits.
+# - PR4-001 CLOSED, both predicates executed against both real lengths.
+#   6.3 now sweeps (a) for the fixture's invented card number exactly and
+#   (b) for any 13-to-19-digit run except the key of the one row 6.1
+#   declares. Joint satisfiability: the card rows' keys must carry neither,
+#   which stripping the tail achieves; the reference row's key carries a run
+#   that (b) excepts by name and is not the invented number, so (a) passes.
+#   Neither guard is disarmed: 6.1 now pins the reference at 13 to 19
+#   digits, the lengths the real statement carries (measured 13-digit run
+#   x1, 15-digit x9), so the sub-13-digit escape my round-4 finding named is
+#   closed by construction. The exception is narrow: it names ONE row, so a
+#   second long-reference row still trips (b).
+# - PR4-002 CLOSED, and the re-anchoring is verified as the load-bearing
+#   half rather than taken on the word. Measured over the emulated shipped
+#   template: a single 8-character label token immediately precedes the card
+#   number in 15 of 15 card descriptors, occurs in exactly 15 of 39
+#   descriptors, and occurs in 0 of the 11 X-token descriptors, so anchoring
+#   on the card-number label DOES exclude those 11 rows. The other half of
+#   the anchor does not: holder-like text follows the token in 8 of the 11
+#   X descriptors as well as in 15 of 15 card descriptors, so the conjunction
+#   is safe and the holder half alone would hit 8 real non-card rows. That
+#   asymmetry is finding PR5-003, and the entry's restatement to the
+#   measured predicate is accurate as written.
+# - PR4-003's INTENT closed, its EXECUTION not, which is PR5-001. I own the
+#   wording: my round-4 concrete-edit proposed the literal string and did not
+#   check what else in the tree matches it. Executed now: grep -rln
+#   'counterpartyName ??' over src/ returns SIX files today, and the two
+#   extra ones are unrelated null-coalescings, a repository mapper writing
+#   ?? null at import-repository.ts:271 and :360 and a table cell at
+#   profile-confirmation.tsx:100, neither of which is the merchant-source
+#   rule and neither of which is in M3-P6's files-to-touch. After
+#   unification the literal matches FIVE files while the criterion demands
+#   THREE. A pattern that also requires the description operand,
+#   grep -rlE 'counterpartyName \?\? [A-Za-z_]*\.?description', returns
+#   exactly FOUR files today (interpret-window.ts, merchant-review.ts,
+#   dedup.ts, corrections.ts) and would return exactly THREE after
+#   unification, which is the count the criterion wants.
+# - the positive half of 6.10 is sound as written: it names both former call
+#   sites and the helper's import specifier, so an inline recomputation that
+#   imports nothing fails it, which was the second escape round 4 named.
 kind: finding
-verdict: approve
+verdict: revise
 produced-by: claude (Fable 5, claude-fable-5)
 findings:
   - id: PR2-001
@@ -463,3 +704,603 @@ findings:
       PDFs are readable at review time; in a container without the uploads
       the grep of an empty probe list exits 1 and the criterion goes green
       having probed nothing, the vacuous-gate shape PR-008 flagged in v1.
+  - id: PR3-001
+    severity: high
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml, criterion 6.3: "tests asserting that
+        no normalised key produced from the card fixture matches a 16-digit
+        run (whitespace-insensitive), and that the display helper renders
+        such a run masked to its last four digits; and npm run test:e2e
+        exits 0 with the merchant review and month view specs asserting no
+        rendered group label matches a 16-digit run". The e2e half carries
+        no whitespace qualifier.
+      - >-
+        Hazard H6.6 ("The full card number surviving into a rendered label
+        or a screenshot after the phase, the exposure the owner reported")
+        is addressed-by criterion 6.3, so 6.3 is the only witness of the
+        defect the owner actually reported.
+      - >-
+        Measured in-container against the real Belfius upload (39bada64),
+        counts and shapes only: ZERO contiguous 16-digit runs anywhere in
+        the reconstructed document; 5 transaction blocks carry the card
+        number in grouped 4-4-4-4 form separated by single spaces (one
+        distinct sequence), each followed on the same line by a " - holder"
+        tail.
+      - >-
+        src/modules/import/domain/pdf-lines.ts:54: WORD_GAP_THRESHOLD is
+        1.0 and a space is inserted whenever the gap between two runs
+        exceeds it, so the shipped reconstruction separates those digit
+        groups at least as often as the reconstruction used for the
+        measurement above; the shipped normalised descriptor therefore
+        carries the grouped form, and the merchants normaliser collapses
+        whitespace rather than removing it
+        (src/modules/merchants/domain/normalise-counterparty.ts:102).
+      - >-
+        The plan already knows the shape problem elsewhere: criterion 6.8
+        probes for "card number in every grouping shape".
+    concrete-edit: >-
+      Rewrite both halves of criterion 6.3 to be separator-insensitive and
+      length-correct: "no normalised key produced from the card fixture
+      contains a card-number run, where a card-number run is 13 to 19
+      digits after removing spaces, dots and dashes; the display helper
+      renders such a run masked to its last four digits; and npm run
+      test:e2e exits 0 with the merchant review and month view specs
+      asserting no rendered group label contains a card-number run under
+      the same separator-insensitive test". Extend the fixture step so the
+      card fixture prints the number in the grouped four-by-four form with
+      separators, which is the form the real statement prints.
+    analysis: >-
+      The construction that passes 6.3 as written and ships the reported
+      exposure intact: leave the grouped card number in the label and test
+      for a contiguous 16-digit run. The regex matches nothing, both the
+      unit clause on keys and the e2e clause on labels go green on day one
+      and stay green after the violation lands, and H6.6 is discharged by a
+      check that cannot see its own hazard. The fixture step makes this the
+      LIKELY implementation rather than a perverse one, because it directs
+      the author to reproduce the real grammar, and the real grammar is
+      grouped. The unit clause's "(whitespace-insensitive)" parenthetical
+      shows the author saw the risk on one half and not the other.
+  - id: PR3-002
+    severity: medium
+    evidence:
+      - >-
+        Measured in-container against the real Belfius upload (39bada64):
+        the card identifier appears in TWO shapes, a full grouped 4-4-4-4
+        number on 5 transaction blocks and a partially masked tail of shape
+        "XX XXXX 9999" on 8 blocks, both followed by the same " - holder"
+        tail; 13 of 39 blocks carry a card identifier at all.
+      - >-
+        delivery/plan/pulse-v02.yaml, M3-P6 step 3: the strip list names
+        "the card-number tail together with the holder name that follows
+        it", one shape.
+      - >-
+        delivery/plan/pulse-v02.yaml, M3-P6 step 6 (fixtures): "several
+        card rows of ONE merchant spread across two months with differing
+        dates and amounts"; nothing requires the card tail to vary in
+        shape, so criterion 6.1 can pass with a single tail shape.
+      - >-
+        The plan's own grounding says the shipped normaliser's masked-PAN
+        pattern does not match this descriptor grammar, so neither shape is
+        handled today.
+    concrete-edit: >-
+      Extend the M3-P6 fixture step and criterion 6.1: the several card
+      rows of the one fixture merchant carry the card tail in BOTH observed
+      shapes, a full grouped number on some rows and a partially masked
+      tail ending in four digits on others (the shape a second card of the
+      same household produces), and criterion 6.1 asserts all of those rows
+      still produce exactly ONE distinct normalised key and one review
+      group.
+    analysis: >-
+      The construction: write one strip pattern anchored to a full-digit
+      card tail. Criterion 6.1 passes, because the fixture merchant's rows
+      all carry that one shape; 6.2 passes; 6.3 passes, because the masked
+      shape carries only four digits. On the owner's real month, the rows
+      whose tail is masked keep their tail in the key, so a merchant paid
+      with two cards stays split into two groups and the reported defect is
+      only partly fixed. The measurement shows both shapes in ONE real
+      statement, so this is not a hypothetical second bank; it is the file
+      the phase was written from.
+  - id: PR3-003
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml, report-code-disagreement entry for
+        M3-P6 defect 2, recorded verified: true: "15 of 15 card rows carry
+        a 16-digit run in their NORMALISED descriptor". Measured
+        independently: zero contiguous 16-digit runs exist in the document,
+        5 blocks carry a full grouped number, 8 carry a masked tail, 13 of
+        39 blocks carry any card identifier.
+      - >-
+        Same document, the angle-marker entry recorded verified: true: "the
+        literal bracketed token occurs on exactly 8 reconstructed lines, it
+        is the only bracketed token shape in the document, and 7 of the 15
+        card rows carry it inside their descriptor". Measured: the 8-line
+        count reproduces exactly, but 47 bracket-delimited tokens exist, 39
+        of them the value-date parenthetical on every transaction start
+        line, and only 1 of the 13 card-identifier blocks carries the angle
+        marker.
+      - >-
+        The plan's own discipline for exactly this situation is stated two
+        entries earlier, where the orchestrator's five-merchants and
+        two-card-sequences counts are recorded verified: false and handed
+        to the verification-first step.
+      - >-
+        Criterion 6.1's pre-change measurement and the whole strip list are
+        grounded in these counts, and step 3 justifies the angle-marker
+        strip with the "stable grammar marker" reading the false
+        only-bracketed-shape sub-claim supports.
+    concrete-edit: >-
+      Re-measure the three counts through the shipped pipeline and record
+      the exact predicate used for "card row" (the plan never states it),
+      then correct the entries: restate the defect-2 entry as "every card
+      row's normalised descriptor carries a card identifier, in a grouped
+      or partially masked form, with the exact shape and count recorded in
+      the work history" and mark it verified: true only for the sub-claims
+      that reproduce; restate the angle-marker entry as "the angle-bracketed
+      token occurs on exactly 8 reconstructed lines and is the only
+      ANGLE-bracketed token shape; parenthesised value-date tokens also
+      exist on every transaction start line, so the strip pattern must be
+      anchored to the angle-bracket shape and never to bracketing in
+      general", and drop or re-measure the "7 of the 15" sub-claim. Add to
+      the verification-first step: "record the predicate that defines a card
+      row, and the count of rows carrying each card-tail shape".
+    analysis: >-
+      No criterion hardcodes these numbers, which is why this is medium and
+      not high, and the plan deserves credit for the discipline it applied
+      to the counts it inherited. But an entry recorded verified: true is
+      what the next agent builds on without re-checking, and two of these do
+      not survive an independent measurement of the same file. The
+      only-bracketed-shape sub-claim is the load-bearing one: it is the
+      stated reason a strip rule may treat the marker as stable grammar, and
+      a reader who takes it at face value writes a bracket-general strip
+      that also eats the value-date parenthetical the Belfius template
+      depends on.
+  - id: PR3-004
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml, M3-P6 step 2: "one exported helper is
+        the single definition of which text a transaction resolves under,
+        and both call sites use it". No criterion in 6.1 through 6.9
+        mentions the helper, the call sites, or a single definition.
+      - >-
+        Decision D-11's entire operative content is that the rule "gets ONE
+        definition", and the report-code-disagreement entry calls the
+        duplicate at merchant-review.ts:50 "One detail the report does not
+        state and this phase must carry".
+      - >-
+        Measured: the merchant-source expression occurs four times under
+        src/ (src/modules/ledger/application/interpret-window.ts,
+        src/modules/merchants/domain/merchant-review.ts,
+        src/modules/import/domain/dedup.ts:44 and
+        src/modules/ledger/domain/corrections.ts), the last two being the
+        frozen sibling recipes that MUST keep their own copies, so a naive
+        single-definition pin would be wrong in the other direction.
+      - >-
+        The plan already accepted this exact criterion shape once: finding
+        PR2-006 added a one-file grep pin for the navigation testid.
+    concrete-edit: >-
+      Add criterion 6.10: "grep -rln for the merchant-source expression
+      (counterpartyName followed by the nullish fallback to description)
+      over src/ matches exactly three files: the module exporting the
+      shared helper, src/modules/import/domain/dedup.ts and
+      src/modules/ledger/domain/corrections.ts, the last two being the
+      frozen sibling recipes that keep their own copies by design; and grep
+      for the shared helper's module path over those two files exits 1, so
+      neither frozen recipe imports it." Point hazard H6.1 at 6.5 and 6.10
+      together.
+    analysis: >-
+      The construction: fix the descriptor grammar and update BOTH call
+      sites in place, never extracting the helper. Every criterion passes,
+      because 6.1 and 6.2 assert grouping outcomes and both surfaces now
+      compute the same thing independently. The duplication that caused
+      this phase survives it, and the next change to the rule reopens the
+      exact drift the entry calls out. The pin has to be written carefully
+      rather than as "exactly one file", because two of the four
+      occurrences are the frozen recipes criterion 6.5 exists to protect.
+  - id: PR3-005
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml, criterion 6.6: "if the count was
+        nonzero, npm test exits 0 with a migration test asserting every
+        stored EXACT and PREFIX pattern re-normalises to a value that still
+        matches the transactions it matched before". Nothing pins how the
+        test obtains its stored patterns.
+      - >-
+        src/modules/merchants/domain/normalise-counterparty.ts:29 (the
+        CR-402 contract): "the pipeline is idempotent over its own output,
+        so re-normalising stored patterns is safe". Idempotency is
+        new(new(x)) equals new(x); what the migration needs is that
+        new(old(x)) still equals new(raw), a different property that
+        idempotency does not imply.
+      - >-
+        The contract's own worked example (normalise-counterparty.ts:23 to
+        :26) is a stored pattern ceasing to match when a token joins the
+        city list, which is precisely a new-versus-old composition
+        failure.
+      - >-
+        Hazard H6.3 ("The recipe change silently detaching stored
+        MerchantRule patterns ... so the owner's namings quietly stop
+        applying while totals stay right") is addressed-by criterion 6.6.
+    concrete-edit: >-
+      Extend criterion 6.6's migration clause: "the migration test's input
+      patterns are produced by the PRE-change recipe, either by pinning the
+      pre-change outputs as literals captured before the recipe is edited
+      or by running the previous implementation, never by calling the new
+      normaliser; for each such pattern the test asserts that its
+      re-normalised value equals the NEW normalisation of the raw
+      descriptor it was created from, so a strip that only fires in the
+      presence of a prefix the old recipe already removed is caught."
+    analysis: >-
+      The construction that passes 6.6 and detaches every stored rule: write
+      the migration test after the recipe change, seed its stored patterns
+      by calling the new normaliser over fixture descriptors, and assert
+      they re-normalise to matching values. Idempotency makes that assertion
+      true by construction for any recipe whatsoever, so the test is green
+      and the old-to-new transition, the only transition the migration
+      exists for, is never exercised. The failure it hides is concrete: any
+      new strip pattern anchored to a token the old recipe already removed
+      leaves the stored pattern un-stripped while fresh transactions get
+      stripped, and the owner's namings silently stop applying, which is
+      H6.3 word for word.
+  - id: PR3-006
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml, hazard H6.4: "Masking applied to the
+        grouping key or to the value the review form submits, producing an
+        EXACT rule that can never match, or applied to rawLine, editing an
+        immutable fact", addressed-by criterion 6.4.
+      - >-
+        Criterion 6.4 asserts only the submitted value, the stored EXACT
+        pattern and the re-resolution round trip. No clause of 6.4, or of
+        any other criterion in the phase, reads rawLine or rawContent.
+      - >-
+        The rawLine half is a real risk here rather than a formality,
+        because the masking helper's natural home is a shared render path
+        and the fact row's verbatim line is the one place the unmasked
+        number legitimately lives (prisma/schema/import.prisma:106, and
+        CLAUDE.md non-negotiable 5).
+    concrete-edit: >-
+      Extend criterion 6.5 with a facts-untouched clause: "and an import
+      test asserts that after the phase's changes the stored rawLine and
+      rawContent of the card fixture's rows are byte-identical to what the
+      pre-change pipeline stored, still carrying the unmasked card-number
+      run, so masking never reached the facts layer", and change H6.4's
+      addressed-by to name criteria 6.4 and 6.5 together.
+    analysis: >-
+      Two of H6.4's three clauses are genuinely witnessed by 6.4's round
+      trip, and I could not construct an implementation that masks the key
+      or the subject and still passes it. The third clause has no witness at
+      all: an implementation that maps the masking helper over the parsed
+      row before ingest, which is one plausible reading of "mask where the
+      descriptor is rendered" for a developer who thinks of the label as
+      starting at the fact, passes every criterion in the phase while
+      quietly editing an immutable fact and destroying the re-parse
+      contract M3-P2 shipped.
+  - id: PR3-007
+    severity: low
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml, M3-P6 verification-first step (a) and
+        decision D-13: the deployed MerchantRule count is measured before
+        the recipe changes and selects the branch.
+      - >-
+        The owner is actively using the deployed product; this phase exists
+        because of what the owner did with it on 2026-08-21, and naming a
+        merchant on the review screen is exactly the action that creates
+        the first MerchantRule row.
+      - >-
+        Criterion 6.6 asserts the recorded count and the conditional
+        migration, both keyed to the measurement moment, and nothing
+        re-checks at merge.
+    concrete-edit: >-
+      Extend criterion 6.6: "and the MerchantRule count is re-measured at
+      the release head with the same pinned read-only command and recorded;
+      if it is nonzero while the verification-first measurement was zero,
+      the phase does not close until the re-normalisation branch ships."
+    analysis: >-
+      No construction is needed for this one; it is a window, not a
+      loophole. The zero branch is only sound while zero holds, and the one
+      person able to invalidate it is the same person waiting for this fix,
+      using the screen that creates the rows. The cost of closing it is one
+      repeat of a command the phase already runs.
+  - id: PR3-008
+    severity: low
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml, criterion 6.7 requires "a
+        phone-viewport spec at 390x844", and M3-P6's files-to-touch does
+        not list playwright.config.ts.
+      - >-
+        M3-P4 owns playwright.config.ts (its files-to-touch names it) for
+        the mobile project, and M3-P6's conflicts-with is the empty list.
+      - >-
+        files-to-touch is the projected scope contract that the scope
+        auditor reads, so an unlisted edit fails the phase rather than the
+        criterion.
+    concrete-edit: >-
+      Amend criterion 6.7 to name the mechanism: "a phone-viewport spec at
+      390x844 that sets its own viewport in the spec file (Playwright's
+      test.use), so no change to playwright.config.ts is needed; if the
+      M3-P4 mobile project has already merged the spec may run under it
+      instead", and if the project route is preferred, add
+      playwright.config.ts to files-to-touch and M3-P4 to conflicts-with.
+    analysis: >-
+      Either resolution is fine; what is not fine is leaving the phase to
+      discover at implementation time that the only obvious way to satisfy
+      a criterion is to edit a file its scope contract does not permit. The
+      cost of the ambiguity is a scope-audit failure and a round trip, for
+      a criterion whose intent is entirely uncontroversial.
+  - id: PR4-001
+    severity: high
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml, criterion 6.1 as revised: "A separate
+        row in the same fixture carries a legitimate long structured
+        reference that is NOT a card number, and the test asserts that
+        reference survives in its key".
+      - >-
+        delivery/plan/pulse-v02.yaml, criterion 6.3 as revised: "a
+        card-number run is 13 to 19 consecutive digits after spaces, dots
+        and dashes are REMOVED ... tests asserting no normalised key
+        produced from the card fixture contains a card-number run under
+        that test", and the e2e half asserts the same over rendered group
+        labels.
+      - >-
+        Executed the revised 6.3 predicate myself against both real shapes,
+        taken from the emulated shipped template: the printed card number
+        (length 19, shape "9999 9999 9999 9999") returns TRUE, which is the
+        fix working; the real non-card structured reference (length 15, all
+        digits) ALSO returns TRUE.
+      - >-
+        Measured digit-run length histogram over the 39 descriptors with
+        separators removed: 13 digits on 1 run, 14 on 15 (IBAN digits), 15
+        on 9, 16 on 17 (card numbers). Every real structured reference sits
+        inside 6.3's 13-to-19 window, so no faithful fixture reference can
+        avoid it.
+      - >-
+        Both criteria are scoped to the same artifact: 6.1 puts the
+        reference row "in the same fixture" and 6.3 sweeps "no normalised
+        key produced from the card fixture".
+    concrete-edit: >-
+      Make 6.3's sweep exact rather than shape-general, and name the one
+      permitted exception. Replace 6.3's two assertions with: "no normalised
+      key produced from the card fixture, and no rendered group label,
+      contains the fixture's invented card number under the
+      separator-insensitive test above; and no key or label contains ANY
+      13-to-19-digit run except the key of the row 6.1 declares as carrying
+      a legitimate structured reference, which the test names explicitly, so
+      the sweep stays broad without contradicting 6.1." Add to 6.1: "the
+      structured reference is 13 to 19 digits long, the length the real
+      statement carries, so it exercises 6.3's exception rather than
+      dodging it."
+    analysis: >-
+      The fix round closed PR3-001 and PR3-003 with two guards that cannot
+      both hold. An implementer meeting 6.1 and 6.3 together has exactly one
+      escape: make the fixture's structured reference twelve digits or
+      fewer. Every criterion then passes, and the guard PR3-003 bought is
+      disarmed in the same motion, because a 12-digit reference is not the
+      shape the real statement carries and a length-anchored strip aimed at
+      13-plus runs sails past it. That is an implementation satisfying every
+      acceptance criterion as written while the defect it was written for
+      ships. The alternative escape, dropping the reference row, fails 6.1
+      outright, so the plan does not merely permit the weak resolution; it
+      pushes toward it. The fix is small because the intent of each
+      criterion is right: 6.3 wants the card number gone, not every long
+      digit run, and saying so exactly removes the collision.
+  - id: PR4-002
+    severity: low
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml, corrected report-code-disagreement
+        entry for M3-P6 defect 2, now recorded verified: true: "X-masked
+        card shapes occur on 11 raw lines that reach no parsed descriptor
+        here".
+      - >-
+        Measured against the emulated shipped template: 11 DESCRIPTORS
+        contain an X token, not zero, so those lines do reach parsed
+        descriptors. What is true, and is the fact their conclusion needs,
+        is that ZERO of those 11 descriptors is a card descriptor: the X
+        tokens sit on non-card rows, in two shapes, "XX XXXX 9999" on 8 and
+        an "XX" prefix followed by 15 digits on 3.
+      - >-
+        The conclusion drawn from the sentence, that no measured key-level
+        split exists from a second card-tail shape, is CORRECT and survives
+        the correction; only the stated reason does not.
+      - >-
+        This matters beyond bookkeeping because
+        src/modules/merchants/domain/normalise-counterparty.ts already
+        carries a masked-PAN pattern, and M3-P6 step 3 now says to strip
+        "the card-number tail in every observed shape (full grouped and
+        partially masked)": a partially-masked pattern will fire on those 11
+        NON-card descriptors, where the token is not a card tail.
+    concrete-edit: >-
+      Restate the sentence as measured: "X-masked tokens appear in 11
+      parsed descriptors, in two shapes, and NONE of them is a card
+      descriptor, so this statement carries no measured key-level split
+      from a second card-tail shape; the second shape required in the
+      fixture (finding PR3-002) is prospective robustness." Add to step 3:
+      "the partially-masked card-tail pattern is anchored to the card-tail
+      grammar (the tail's position and the holder text that follows it),
+      never to the presence of an X-masked token alone, because X-masked
+      tokens occur in 11 non-card descriptors in the real statement."
+    analysis: >-
+      No criterion rests on the false half, which is why this is low, and
+      the fix round deserves credit for going back to the file rather than
+      defending its first numbers. But this entry is the one PR3-003 was
+      raised about, and it is recorded verified: true again with a sentence
+      that an independent measurement contradicts. The second-order cost is
+      concrete: the strip step now names a partially-masked shape, and the
+      only real instances of that shape sit on rows the strip must not
+      touch.
+  - id: PR4-003
+    severity: low
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml, criterion 6.10: "grep -rln for the
+        merchant-source expression (counterpartyName followed by the
+        nullish fallback to description) over src/ matches exactly THREE
+        files".
+      - >-
+        The criterion names the gate in prose and never fixes its literal
+        pattern, the shape the v1 review's finding PR-008 was raised
+        against and the plan accepted then.
+      - >-
+        The pin is purely negative: nothing asserts that
+        src/modules/ledger/application/interpret-window.ts and
+        src/modules/merchants/domain/merchant-review.ts, the two call sites
+        D-11 exists to unify, actually import the shared helper.
+    concrete-edit: >-
+      Extend 6.10 with the literal pattern and a positive half: "the grep
+      pattern is the literal string counterpartyName ?? , and in addition
+      grep -l for the shared helper's import specifier over src/ matches
+      both former call sites, src/modules/ledger/application/
+      interpret-window.ts and src/modules/merchants/domain/
+      merchant-review.ts, so the unification is witnessed by what the call
+      sites import and not only by what no longer appears."
+    analysis: >-
+      Two small escapes. First, a semantically identical duplicate written
+      with a different operator, a ternary on undefined rather than the
+      nullish coalescing, is invisible to a grep for the nullish form: the
+      count still reads three and a fourth definition exists. Second, an
+      implementation that deletes both call-site definitions and computes
+      the text inline from a helper it does not import satisfies the
+      negative pin while D-11's single definition never materialises. Both
+      are unlikely and neither is expensive to close, which is why this is
+      low rather than dropped: the criterion is the only witness D-11 has.
+  - id: PR5-001
+    severity: high
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml, criterion 6.10 as revised: "grep -rln
+        for the merchant-source expression over src/, where the grep pattern
+        is the LITERAL string "counterpartyName ??" rather than a prose
+        description of it (finding PR4-003), matches exactly THREE files".
+      - >-
+        Executed in the worktree: grep -rln 'counterpartyName ??' src/
+        returns SIX files today, not four:
+        src/modules/import/adapters/import-repository.ts,
+        src/modules/import/domain/dedup.ts,
+        src/modules/import/ui/profile-confirmation.tsx,
+        src/modules/ledger/application/interpret-window.ts,
+        src/modules/ledger/domain/corrections.ts and
+        src/modules/merchants/domain/merchant-review.ts.
+      - >-
+        The two extra matches are not the merchant-source rule:
+        import-repository.ts:271 and :360 write "counterpartyName:
+        row.counterpartyName ?? null" in a persistence mapper, and
+        profile-confirmation.tsx:100 renders "row.counterpartyName ??
+        row.counterpartyIban ?? \"\"" in a preview table cell.
+      - >-
+        After the unification the literal therefore matches FIVE files (the
+        shared helper plus the two frozen recipes plus those two), while the
+        criterion demands exactly THREE, so 6.10 cannot pass. Neither extra
+        file is in M3-P6's files-to-touch, so the only way to reach three
+        would be an out-of-scope edit to unrelated code.
+      - >-
+        A pattern that also requires the description operand,
+        grep -rlE 'counterpartyName \?\? [A-Za-z_]*\.?description' over
+        src/, returns exactly FOUR files today (interpret-window.ts,
+        merchant-review.ts, dedup.ts, corrections.ts) and would return
+        exactly THREE after unification: executed, counts captured.
+    concrete-edit: >-
+      Replace 6.10's pattern clause with the operand-bearing literal:
+      "where the grep is grep -rlE 'counterpartyName \?\? [A-Za-z_]*\.?
+      description' over src/, a literal pattern that requires the
+      description operand and therefore does not match the unrelated
+      null-coalescings at src/modules/import/adapters/import-repository.ts
+      and src/modules/import/ui/profile-confirmation.tsx (verified: four
+      matching files before the unification, three after)". Leave the
+      three-file expectation, the two named frozen recipes, the
+      no-import clause and the positive half exactly as they are.
+    analysis: >-
+      The criterion is now unsatisfiable, and it is the only witness
+      decision D-11 has, so the phase would arrive at its gate with a red
+      criterion nobody can turn green without editing files outside its
+      scope. The likely resolutions are both bad: an implementer edits the
+      two unrelated files to dodge the grep, which is an out-of-scope change
+      to a persistence mapper for a cosmetic reason, or the criterion is
+      quietly reinterpreted at review time, which is how a pin stops being a
+      pin. I own the cause: my round-4 concrete-edit proposed that literal
+      string and I did not run it against the tree before proposing it. The
+      fix is the same pin with the operand included, and I have executed
+      both counts rather than proposing a second unverified pattern.
+  - id: PR5-002
+    severity: low
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml, criterion 6.3 as revised: "(b) no key
+        or label contains ANY 13-to-19-digit run except the key of the
+        single row criterion 6.1 declares as carrying a legitimate
+        structured reference"; the exception names the KEY only, while the
+        prohibition covers "key or label", and the e2e half then asserts
+        "the same two sweeps over rendered group labels".
+      - >-
+        For an unresolved group the rendered label is the same string as the
+        grouping key: src/modules/merchants/domain/merchant-review.ts:77
+        computes one `normalised` value and :86 uses it as the label while
+        :91 submits it as counterpartyText, and
+        src/modules/overview/domain/month-projection.ts:83 sets the
+        unresolved group's label to the same normalised text that :81 makes
+        the key.
+      - >-
+        Criterion 6.1 requires that reference row to exist in the fixture
+        and its reference to survive in its key, so the row is present and,
+        while unresolved, renders a label carrying the run.
+    concrete-edit: >-
+      Extend 6.3's exception to cover the same row's label: "except the key
+      AND the rendered label of the single row criterion 6.1 declares as
+      carrying a legitimate structured reference, which the test names
+      explicitly, the two being the same string for an unresolved group
+      (merchant-review.ts:86, month-projection.ts:83)".
+    analysis: >-
+      This is the residue of the contradiction PR4-001 closed, surviving in
+      the label half only. It is low rather than high because a way to pass
+      exists: if the e2e scenario resolves that row to a merchant before
+      asserting, its label becomes the merchant name and carries no digits
+      (month-projection.ts:78). So the criterion is satisfiable, but only
+      through an incidental property of the scenario that nothing states,
+      and the implementer who leaves the row unresolved, which is the
+      simpler scenario, hits a red criterion that the plan's own text says
+      must be there. One clause removes the ambiguity.
+  - id: PR5-003
+    severity: low
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml, M3-P6 step 3 as revised: the
+        partially-masked pattern is "anchored to the CARD-TAIL GRAMMAR, the
+        tail's position after the card-number label and the holder text that
+        follows it, and never to the presence of an X-masked token alone".
+      - >-
+        Measured over the emulated shipped template: the card-number label
+        token occurs in 15 of 15 card descriptors and in 0 of the 11
+        X-token descriptors, so that half of the conjunction separates them
+        cleanly.
+      - >-
+        The other half does not: holder-like text follows the token in 8 of
+        the 11 X descriptors as well as in 15 of 15 card descriptors, so an
+        implementation of the holder half without the label half fires on 8
+        real non-card rows.
+      - >-
+        No criterion witnesses the anchor. The fixture spec asks only for "a
+        non-card row that must be unaffected", with no shape stated, so a
+        non-card row without an X token satisfies it.
+    concrete-edit: >-
+      Extend the fixture step and criterion 6.1: "the non-card row that must
+      be unaffected carries an X-masked token followed by holder-like text
+      and NO card-number label, the shape 8 of the 11 real non-card X rows
+      have, and criterion 6.1 asserts its key is unchanged by the strip", so
+      a partially-masked pattern anchored on the holder text alone fails.
+    analysis: >-
+      The prose is right and the plan reached it by measurement, so this is
+      a witness gap rather than a design error. The construction it admits:
+      implement the masked-tail strip as "an X run followed by a name",
+      which reads like the card-tail grammar and passes every criterion,
+      then watch 8 non-card descriptors lose a distinguishing token on the
+      owner's real statement. Since the phase already commits to a non-card
+      control row, giving that row the measured shape costs nothing and
+      turns step 3's most easily mis-implemented sentence into something a
+      test can fail on.

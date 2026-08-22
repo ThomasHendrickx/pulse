@@ -1,0 +1,1182 @@
+kind: verdict
+phase: M3-P6
+verdict: APPROVE
+#
+# DR-0003 family escalation, stated in the header as the pilot record
+# requires: this review and its hazard-contract sibling are BOTH
+# Claude-family. DR-0012 condition 1 (two model families) is discharged
+# for this pilot under DR-0003's "same family, varied lenses" decision:
+# the pair must differ in review-contract (this one is criteria) and in
+# framing (this one is criteria-contract). Any merge decision must
+# check the sibling verdict differs on both fields.
+produced-by: claude
+framing: criteria-contract
+review-contract: criteria
+
+# BEACON LOG (appended as work happens)
+# t0: brief read in full including fleet warnings 1-10. df: 17G free on /,
+#     55% used, healthy per warning 10. Node 26.7.0 / npm 11.19.0 ambient.
+#     Worktree /home/user/pulse-fleet/worktrees/m3-p6-review-criteria at
+#     e0704a5 on claude/m3-p6-review-criteria, tree clean, 8 commits on
+#     top of base 68fc7ee. Diff vs base: 13 files, +2003 -20.
+#     Private context dir: /home/user/pulse-fleet/.ctx-m3p6-review-criteria-6a2f
+
+# t1 TOOLCHAIN + FAST GATES, executed in the isolated clone at e0704a5:
+#   /opt/node22/bin/npm ci (npm 10.9.7, node v22.22.2) -> EXIT=1,
+#     "npm error Missing: @swc/helpers@0.5.23 from lock file".
+#     The implementer's environment-warning is TRUE as written.
+#   npm ci (ambient node v26.7.0, npm 11.19.0) -> EXIT=0, 472 packages, 20s.
+#   package-lock.json is NOT in this phase's diff (git diff --name-only
+#     68fc7ee..HEAD | grep package -> exit 1), so the breakage is
+#     PRE-EXISTING at the phase base, not introduced here.
+#   DEPLOYED-BUILD JUDGEMENT, probed: in a scratch copy outside the repo,
+#     npm 10.9.7 "npm install --package-lock-only --ignore-scripts" -> EXIT=0.
+#     The repository carries no .github/workflows, so no CI path runs npm ci.
+#     Vercel's default npm install path therefore still resolves. The
+#     hazard is real but does not threaten the deployed build today; it is
+#     recorded as finding CR-M3P6-05 (low), pre-existing and out of scope.
+#   npx prisma generate -> EXIT=0
+#   npm run typecheck -> EXIT=0
+#   npm run lint -> EXIT=0
+#   npm run gate:tokens -> EXIT=0
+#   npm test -> EXIT=0, Test Files 28 passed (28), Tests 322 passed (322),
+#     zero skipped. The expected 322.
+
+# t2 THE OWNER-FACING MEASUREMENT, executed by me in the isolated clone
+#   through the SHIPPED pipeline (statementParser.detect -> .parse ->
+#   counterpartyText -> normaliseCounterparty -> maskCardNumbers), over the
+#   real Belfius upload referred to by its 8-hex prefix 39bada64 only.
+#   Probe scripts were written under test/, run, then moved OUT of the
+#   worktree into my private context dir; git status is clean and no probe
+#   is committed. COUNTS ONLY, no statement content anywhere.
+#     BEFORE (base recipe 68fc7ee, same parse): 39 rows, 15 card rows,
+#       distinct keys over the 15 card rows = 15, card keys carrying a
+#       separator-insensitive 13-to-19-digit run = 15 of 15.
+#     AFTER (head e0704a5): 39 rows, 15 card rows, 0 of them carrying a
+#       counterpartyName, distinct keys over the 15 card rows = 6,
+#       card group sizes 4, 4, 3, 2, 1, 1.
+#       Card KEYS carrying a separator-insensitive 13-to-19-digit run: 0
+#         of 15; longest digit run left in any card key: 6.
+#       Card rendered LABELS (maskCardNumbers applied) carrying such a
+#         run: 0 of 15; longest digit run in any card label: 6.
+#       Over all 39 rows: 5 keys still carry a window run (the legitimate
+#         structured references, which criterion 6.3(b) permits in the key)
+#         and 0 of 39 rendered labels carry one.
+#     CONCLUSION: the owner's two reported defects are both gone on the
+#     owner's own file. One-group-per-transaction became 6 groups over 15
+#     card rows, and no rendered label retains a card-number-shaped run.
+
+# t3 MUTATIONS AND RED WITNESSES, all executed by me, all restored after
+#   (git diff --quiet returns clean after each).
+#   OVER-STRIP MUTATION (mine): after stripTrailingCityTokens, truncate the
+#     key to its leading three tokens ("the merchant is the leading
+#     tokens"). npx vitest run over the two changed domain test files ->
+#     EXIT=1, Tests 19 failed | 57 passed (76). The two guards that exist
+#     to catch it went red BY NAME:
+#       merchant-review.test.ts "criterion 6.2: over-stripping is refused >
+#         two distinct merchants sharing a chain prefix AND a city stay two
+#         keys and two review groups"
+#       normalise-counterparty.test.ts "two merchants sharing a chain
+#         prefix AND a city stay two distinct keys"
+#   UNDER-STRIP MUTATION (mine): the bare day-and-month DATE_FRAGMENT
+#     pattern deleted, so the per-transaction date stays in the key.
+#     EXIT=1, Tests 11 failed | 65 passed (76). Criterion 6.1's guards went
+#     red BY NAME: "the same five descriptors ... now produce exactly ONE
+#     key" and "the imported fixture yields exactly ONE review group for
+#     that merchant, holding all five rows", plus 6.4's round trip.
+#   6.7 RED WITNESS, base stylesheet restored at 68fc7ee: the phone spec
+#     failed at test/e2e/merchants.spec.ts:181 with Received 462. THE
+#     REPORTED PRE-EXISTING VALUE, reproduced exactly.
+#   6.7 RED WITNESS, second half: head stylesheet with ONLY .month-grid
+#     reverted to the base fixed rail track -> failed at
+#     test/e2e/merchants.spec.ts:197 with Received 424. THE SECOND
+#     REPORTED VALUE, reproduced exactly.
+#   6.3 e2e RED WITNESS: maskCardNumbers removed from month-view.tsx's
+#     GroupLabel -> the month-view sweep failed at
+#     test/e2e/merchants.spec.ts:185 (cardNumberRuns(label) received 3
+#     entries, expected 0). The e2e masking half is NOT vacuous there.
+#   Restored, the same spec passes again: 1 passed (10.2s), EXIT=0.
+#
+# t4 FULL SLOW GATE at the head, five env values pinned local:
+#   npm run test:e2e -> EXIT=0, "21 passed (3.5m)", both projects
+#   (20 chromium including the unmodified golden journey, 1 chromium-prod
+#   smoke over a production build the gate itself made).
+#
+# t5 CRITERION 6.6 RE-MEASURED BY ME at the head, read-only count over the
+#   pulse deployed project (ref ygsarzjqosqmkqibqogk, confirmed by name
+#   "pulse" in the project listing, distinct from the ambient Hemma
+#   credentials fleet warning 1 forbids):
+#     select count(*)::int as merchant_rules, ... from public.merchant_rules
+#     -> [{"merchant_rules":0,"merchants":0,"transactions":0,"imports":1}]
+#   ZERO, the same branch the work history recorded. The statement is a
+#   pure SELECT; the SESSION is not read-only (current_setting
+#   ('transaction_read_only') returned "off"), so the read-only property
+#   comes from the statement text rather than from the connection.
+#
+# t6 CRITERION 6.10, all three greps executed by me at the head:
+#   grep -rlE 'counterpartyName \?\? [A-Za-z_]*\.?description' src/ ->
+#     EXACTLY THREE: src/modules/ledger/domain/corrections.ts,
+#     src/modules/import/domain/dedup.ts,
+#     src/modules/merchants/domain/normalise-counterparty.ts. EXIT=0.
+#   grep -nE 'normalise-counterparty|merchants/(domain|application)' over
+#     the two frozen recipes -> EXIT=1, no output.
+#   grep -rln 'counterpartyText' src/ matches both former call sites,
+#     src/modules/ledger/application/interpret-window.ts (line 10,
+#     import from "@/modules/merchants/application") and
+#     src/modules/merchants/domain/merchant-review.ts (multi-line import
+#     from "./normalise-counterparty", re-exported at line 20).
+#   Equivalent-form sweep (my own, the criterion's review-reading half):
+#     grep -rnE 'counterpartyName\s*(\?\?|\?|!==|===|==|!=)' src/ finds
+#     no fourth TypeScript definition. The remaining hits are persistence
+#     null-mappers (import-repository.ts:271 and :360,
+#     merchant-repository.ts:256, ledger-repository.ts:65 and :98), a type
+#     declaration, a detector column probe, and one preview cell
+#     (profile-confirmation.tsx:100) whose rule is a DIFFERENT one,
+#     counterpartyName ?? counterpartyIban ?? "".
+
+# t7 SCHEMA VALIDATION, executed under Node 26 via nvm with my own private
+#   context dir (never a shared scratch dir):
+#     npx --prefix /home/user/pulse-fleet tiphys validate --type verdict
+#       --context <my private ctx>/verdict-context
+#       delivery/review/m3-p6-criteria.yaml
+#   verdict-criteria-complete: PASSES, all ten acceptance criteria of phase
+#     M3-P6 are walked here.
+#   verdict-deviations-judged: PASSES, all four declared deviations of
+#     delivery/work-history/m3-p6.yaml are judged here and none extra.
+#   JSON-schema validation: PASSES, no schema error is reported. The path
+#     is live rather than vacuous, proved on a copy outside the repository:
+#     changing verdict to APPROVE while this document carries a high
+#     finding is refused with 'INVALID #/verdict value "APPROVE" is not one
+#     of the permitted values "FIX-ROUND-NEEDED"'.
+#   The one check still red is dual-review-decorrelation, "only 1 verdict
+#     document(s) exist under delivery/review for phase M3-P6, and a
+#     delegated grant requires two independent clean-room reviews of the
+#     exact head". That is the SIBLING's absence, not a defect in this
+#     document: the hazard-contract review of e0704a5 has not been
+#     produced yet. When it is, the pair must differ in review-contract
+#     (this one is criteria) and in framing (this one is criteria-contract)
+#     per the DR-0003 escalation in the header above.
+##
+# t8 MY OWN OUTPUT PUT THROUGH THE SAME PRIVACY SWEEP. 217 high-value
+#   probes derived at review time from BOTH real uploads (IBANs in both
+#   printed forms, every 12-to-25-digit run in all four grouping shapes,
+#   the holder tail after a card-number label and each of its tokens, and
+#   every five-or-more-letter token on a card row), git grep -F against
+#   this verdict document alone: ONE hit, resolved rather than waved past.
+#   It was the generic Dutch banking word for "total", which I had written
+#   into a synthetic mask-boundary example of my own; it is not an
+#   identifier, a name, a merchant string, an amount or a date from either
+#   file. I replaced it with its English equivalent so the next privacy
+#   sweep does not have to re-resolve it. Zero hits in every other
+#   category: iban 0, digit-run 0, holder 0.
+
+# WHAT THIS CONTRACT DID NOT REACH, stated because "all acceptance criteria
+# met" is one input and never a terminal green. All ten criteria are met by
+# execution and the phase still ships the defect it exists to remove, on a
+# screen no criterion names: the import confirmation preview renders the
+# raw descriptor with the full card number (CR-M3P6-01, measured, 3 of 5
+# preview rows). The criteria are scoped to normalised keys, to two group
+# labels and to three greps; they do not enumerate the rendering surfaces
+# of the application, they cannot see a rule written in SQL (CR-M3P6-02),
+# and they say nothing about the reconciliation panel that renders an
+# unnormalised descriptor on the very screen this phase masked
+# (CR-M3P6-03). I make no completeness claim. What I checked is written
+# above, criterion by criterion, with the command and the exit code.
+
+
+# ============================================================
+# DELTA VERDICT, ROUND 1. Everything above stands as the round 0
+# record at head e0704a5; everything below is the fix-round-1
+# verification at head 2f8b62d. The implementation session was not
+# seen in this round either.
+# ============================================================
+##
+# ============================================================
+# DELTA VERDICT AT 2f8b62d: FIX-ROUND-NEEDED.
+#
+# WHAT ROUND 1 FIXED, each re-verified by my own execution and not by
+# reading the fix: CR-M3P6-01 (closed, and the guard reddens under
+# mutation), CR-M3P6-02 (closed as to the copy count and the pin),
+# CR-M3P6-03 and CR-M3P6-04 (closed). CR-M3P6-05 is held by the
+# orchestrator by instruction. Those five carry their round-0 severities
+# in findings[] for the record; every one of them opens its evidence with
+# its resolved state.
+#
+# WHAT IS OPEN, and why the verdict is not APPROVE:
+#   CR-M3P6-06, HIGH. Key-space closure is broken on the owner's real file
+#     for 10 of 39 rows, up from 8 at both the base and the round-0 head,
+#     and the pipeline erodes a four-digit group per application. I drove
+#     it end to end through the real use cases: the owner names a merchant,
+#     assignMerchant returns ok, every total stays right, and ZERO rows
+#     resolve. That is hazard H6.4, and it is a regression of this round.
+#   CR-M3P6-07, medium. A test named for cross-language agreement evaluates
+#     no SQL; I diverged the two rules with the suite green.
+#   CR-M3P6-08 and CR-M3P6-09, low.
+#
+# ALL TEN CRITERIA ARE MET, again, and that is again not a terminal green.
+# 6.4 asks for a round trip over the fixture and the fixture round-trips;
+# the property 6.4 exists to protect fails on the owner's data. Nothing in
+# this contract asks whether the key space is closed, which is why the
+# round's own new invariant, not a criterion, is what CR-M3P6-06
+# contradicts. I make no completeness claim.
+#
+# ON THE ONE JUDGEMENT CALL I WAS ASKED TO REVIEW RATHER THAN VERIFY.
+# The implementer disputed the sibling's HZ-08 edit, implemented it, found
+# it broke closure, reverted, and pinned the behaviour plus a closure
+# invariant. I judge the REASONING CORRECT and I verified its two load-
+# bearing steps myself: assign-merchant.ts:54 re-normalises the submitted
+# subject and merchant-rule.ts:68 matches on equality, so a subject that is
+# not a fixpoint yields a rule that matches nothing; and the merge the
+# finding objects to is M1-P4's pinned rule reaching card rows, which no
+# real card row hits (card keys ending in a city on the real file: 0).
+# The trade is the right way round: a silent H6.4 outranks a latent merge
+# of two branches of one chain. The proposed edit is not repairable either,
+# and I checked that rather than assumed it: if the loop is skipped for
+# card descriptors then the fixpoint of such a key IS the city-less string,
+# so taking the fixpoint would simply re-introduce the merge. Disputing the
+# edit was right.
+# THE INVARIANT IS THE RIGHT INVARIANT AND IT IS UNDER-TESTED. It asserts
+# the fixpoint property over every group the FIXTURE produces, and the
+# fixture contains no run of four-digit groups before a word, so it is
+# green at 338 while the property is false on 10 real rows. An invariant
+# that reads only the fixture measures the fixture. That is CR-M3P6-06's
+# second half and its concrete fix says exactly what to add.
+# ============================================================
+#
+# d0 SETUP. 2f8b62d fetched and merged into this review branch; the
+#   merge was clean (no conflicts, 12 files). Executable head proved
+#   identical: git diff 2f8b62d..HEAD --stat lists exactly ONE path,
+#   delivery/review/m3-p6-criteria.yaml, so every command below ran on a
+#   tree byte-identical to 2f8b62d.
+#   The branch merged origin/main at a3ef5ed, so its base is 77da0c6 and
+#   the first two plan amendments are visible in the tree. The THIRD,
+#   cae60ff ("plan: declare the overview repository in M3-P6 extras"), is
+#   on main but NOT in this branch, so the tree's own plan copy still
+#   lists two extras while the phase touches three. Judged below.
+#   Phase diff 77da0c6..2f8b62d: 15 files, +2894 -34.
+#   df at start of round: 15G free on /, healthy.
+#
+# d1 FAST GATES at 2f8b62d, five env values pinned local:
+#   npx prisma generate 0; npm run typecheck 0; npm run lint 0;
+#   npm run gate:tokens 0; npm test 0 with Test Files 28 passed (28),
+#   Tests 338 passed (338), zero skipped. The expected 338.
+#   test/fixtures/card-descriptors.csv is 21 lines, 2 header plus 19 data
+#   rows, up from 13.
+#
+# d2 THE OWNER'S REAL FILE, re-measured by me through the shipped pipeline
+#   at 2f8b62d (upload 39bada64, counts only):
+#     39 rows, 15 card rows under the strict predicate, 23 under the
+#     card-number-LABEL grammar the masker anchors on.
+#     Distinct keys over all 39 rows: 27 at e0704a5, 25 at 2f8b62d.
+#     CONFIRMED, the reported 27 to 25.
+#     Exactly TWO merged clusters, each folding 2 old keys into 1, holding
+#     4 and 8 rows; every row in both is card-labelled. CONFIRMED as two
+#     merged groups of card rows.
+#     Masking: 23 of 23 card-labelled descriptors are changed by the new
+#     masker and 0 of 23 still carry a separator-insensitive 13-to-19-digit
+#     run afterwards; 0 of the 16 unlabelled rows are touched at all.
+#     CONFIRMED and STRONGER than reported: the claim was 15 of 15 with no
+#     non-card run touched, and the label grammar covers 23 of 23.
+#     The round-0 masker, re-measured for the sibling's HZ-01: over the
+#     rendered label surface it touched 0 card keys and 5 non-card keys on
+#     this file. The sibling's finding is confirmed by my own measurement.
+#
+# d3 THE FINDING OF THIS ROUND, which no criterion asks for and which the
+#   round's own new invariant asserts cannot happen. KEY-SPACE CLOSURE IS
+#   BROKEN ON THE OWNER'S FILE AND IT IS A REGRESSION OF THIS ROUND.
+#     normaliseCounterparty(key) != key for 10 of 39 real rows at 2f8b62d,
+#     against 8 of 39 at BOTH the phase base 68fc7ee and the round-0 head
+#     e0704a5. All 10 are NON-card rows.
+#     Token-type signature, content-free: the raw text carries a RUN of
+#     consecutive four-digit groups before a capitalised word,
+#     [... P4 P4 W ...]. Each pass removes ONE group and the next pass
+#     removes the next, so the pipeline ERODES a four-digit group per
+#     application: one real shape goes P4 P4 P4 W, then P4 P4 W, then P4 W.
+#     Cause, isolated: POSTAL_CODE_BEFORE_CITY, which this round narrowed
+#     from the base pattern that consumed the code AND the following word
+#     to a lookahead that consumes the code alone.
+#     PURE REGRESSION, proved on synthetic shapes: "W W P4 P4 W" and
+#     "W W P4 P4 P4 W" both CLOSE at 68fc7ee and at e0704a5 and DO NOT
+#     close at 2f8b62d (token counts 5->4->3).
+#   END-TO-END CONSEQUENCE, executed through the real use cases with a
+#   synthetic descriptor of that signature and the in-memory port fakes:
+#     submitted subject != stored rule pattern;
+#     rowsResolvedByTheRule = 0;
+#     namedGroupsAfter = 0;
+#     assignMerchant returned ok and every total stayed right.
+#   That is hazard H6.4 realised silently, and it is the SAME hazard the
+#   implementer invoked to reject the sibling's HZ-08 edit.
+#
+# d4 CR-M3P6-01 RE-VERIFIED BY MY OWN MEASUREMENT, not by reading the fix.
+#   Surface set RE-DERIVED. The recorded command returns SEVEN sites for me,
+#   not the eight the comment claims, and the two line numbers it cites are
+#   now a date cell and a comment. A MULTILINE derivation of the same
+#   intent returns EIGHT expression sites in three files, 5 masked and 3
+#   excluded, which is the recorded split. I judged all three exclusions
+#   against the code rather than the comment and all three are right:
+#   the hidden rule subject must stay unmasked (D-12, and my round-0 round
+#   trip depends on it); the reserves label is a."label" ?? counterpartyIban
+#   under a query that requires counterpartyIban IS NOT NULL, so it is an
+#   account label or an IBAN and never a descriptor; the recon part label is
+#   t("income"), t("spend"), t("reserves"), t("potChange"), t("difference").
+#   MY OWN 390x844 RUN through a real import of the synthetic fixture:
+#     confirm preview: 5 rows, 0 showing the invented number, 0 carrying a
+#       non-exception 13-to-19 run, 4 of 5 carrying the mask marker,
+#       scrollWidth 390.
+#     merchant review: 12 labels, 0 and 0, scrollWidth 390.
+#     month view: 12 labels, 0 and 0, scrollWidth 390.
+#     rows added 19.
+#   RED WITNESS: reverting the preview descriptor cell to an UNMASKED
+#   MULTI-LINE expression reddens the committed spec at
+#   test/e2e/merchants.spec.ts:159 with the full invented number in the
+#   received string, while the recorded derivation grep drops to six sites
+#   and finds nothing at all in that file, and npm test stays green at 338.
+#   So the surface has a real guard, and the guard is the e2e, not the
+#   derivation.
+#
+# d5 CR-M3P6-02 RE-VERIFIED. One fragment at
+#   src/modules/overview/adapters/overview-repository.ts, used twice.
+#   FALSIFIABLE: re-inlining ONE use reddens both pin tests
+#   (Tests 2 failed | 20 passed).
+#   BUT THE DIVERGENCE GAP IS NOT CLOSED, demonstrated: changing the SQL
+#   fragment to the OPPOSITE precedence and updating the two pin literals
+#   the way a pin update looks leaves the whole file green, 22 passed,
+#   INCLUDING the test named "the SQL rule and the TypeScript rule agree on
+#   every value Prisma can produce", whose body calls only the TypeScript
+#   helper and evaluates no SQL. Raised as CR-M3P6-07.
+#
+# d6 CR-M3P6-03 and CR-M3P6-04 RE-VERIFIED.
+#   CR-03: the gap row now masks at src/modules/overview/ui/month-view.tsx:266.
+#     NO GUARD: removing the call leaves npm test green at 338 and no spec
+#     selects recon-gap-row. Folded into CR-M3P6-08.
+#   CR-04: the double separator is fixed and pinned, "KAART NR 4000  1234
+#     5678 9010" masks, and seven non-card identifier shapes are pinned
+#     untouched.
+#
+# d7 THE TWO MERGED GROUPS, characterised content-free from the real file.
+#   Cluster A: two old keys of 6 and 8 tokens whose ONLY difference is two
+#     rail-vocabulary tokens; every word token is shared. 4 rows.
+#   Cluster B: two old keys of 6 and 8 tokens differing in two rail tokens
+#     AND one WORD token, where the NEW key CARRIES that word: the base
+#     recipe's postal pattern consumed the code AND the following word, and
+#     narrowing it restored a word one side had lost. 8 rows.
+#   Both clusters are entirely card-labelled rows and NO word token that
+#   distinguished two merchants was dropped. CONFIRMED as two legitimate
+#   merges, not an over-strip. Corroborating the pinned HZ-08 trade: card
+#   keys ending in a CITY token on the real file: 0.
+#
+# d8 PRIVACY at the delta head, my own 268 probes from both uploads.
+#   Tight categories iban/ref/card/holder-name: ZERO hits in both halves.
+#   Over-inclusive categories: 5 merchant, 2 amount, 2 date hits that also
+#   match at 77da0c6, plus TWO that do NOT. I located and resolved both by
+#   reading the committed artifacts: one is a quoted generic Dutch card word
+#   inside a captured test-failure transcript at
+#   delivery/work-history/m3-p6-notes.md:400, the other is the generic Dutch
+#   word for a customer-service line in a synthetic test string at
+#   test/domain/merchant-review.test.ts:382. Neither is an identifier, a
+#   holder name or a merchant string from either real file. The implementer's
+#   broad run reports every hit as also matching at the base; that is true of
+#   their 132-probe list and not of my 268-probe list, which is a difference
+#   in probe breadth rather than a false statement.
+#   SCOPE NOTE, recorded because it bounds every real-file claim in this
+#   verdict: upload 0f79fa3d does not parse at this head (no layout template
+#   matches it), so every count above is measured on 39bada64 alone.
+
+
+# d9 MY OWN OUTPUT THROUGH THE SAME SWEEP, as in round 0. 217 high-value
+#   probes from both uploads, git grep -F against this document alone:
+#   ZERO hits in the iban, structured-reference, card-number and
+#   holder-name categories. ONE hit, resolved: the five-letter generic
+#   Dutch word for "card", which is the LABEL the masker is anchored on and
+#   therefore unavoidable in any account of this round; it already appears
+#   throughout the committed source and tests. Not an identifier, a name, a
+#   merchant string, an amount or a date from either file.
+#
+# ============================================================
+# ROUND 2 VERDICT AT 23196fe: APPROVE.
+#
+# WHY THE VERDICT FIELD CHANGED, and where the earlier findings went.
+# findings[] below carries the findings THIS verdict raises: three new lows
+# and CR-M3P6-05, which is still open and delegated to the orchestrator.
+# The findings of rounds 0 and 1 are not repeated there because they are
+# closed, and a closed finding left at severity high would force
+# FIX-ROUND-NEEDED by a rule that exists to stop a review saying yes while
+# recording a reason to say no. I have no such reason. The full text of
+# every earlier finding is preserved above in this same document, and here
+# is the resolution record, each line verified by my own execution and not
+# by reading the fix:
+#   CR-M3P6-01 high, CLOSED in round 1, re-verified in round 2 by my own
+#     390x844 run over three screens: 0 of 5 preview rows, 0 of 14 review
+#     labels and 0 of 14 month labels carry the number or a non-exception
+#     run, and the guard reddens on my multi-line construction.
+#   CR-M3P6-02 medium, CLOSED in round 1 as to the copy count and the pin.
+#   CR-M3P6-03 low, CLOSED in round 1; its guard question became
+#     CR-M3P6-11 below.
+#   CR-M3P6-04 low, CLOSED in round 1.
+#   CR-M3P6-06 high, CLOSED in round 2 AT THE MECHANISM. Non-fixpoint rows
+#     on the owner's real file across four recipes: 8, 8, 10, 0. My own
+#     end-to-end counterexample now resolves every row instead of none.
+#   CR-M3P6-07 medium, CLOSED in round 2. My exact mutation now reddens,
+#     with the expectation derived from the SQL rather than written beside
+#     it, so no pin edit can hide a divergence.
+#   CR-M3P6-08 low, CLOSED in substance in round 2; two residues raised as
+#     CR-M3P6-10 and CR-M3P6-11.
+#   CR-M3P6-09 low, CLOSED in round 2 by declaration as the sixth
+#     deviation, judged below.
+#
+# THE THREE NEW FINDINGS ARE ALL LOW AND NONE PUTS SHIPPED BEHAVIOUR AT
+# RISK: a recorded site count that is one off and unchecked, an e2e sweep
+# that never executes on the fixture it runs against while the site it
+# covers is guarded elsewhere, and a lookbehind that is broader than the
+# rule its own comment states, with a proven one-token edit that restores
+# the stated rule and keeps every property this round bought.
+#
+# AND THE SENTENCE THIS CONTRACT EXISTS TO CARRY, for the third time.
+# All ten criteria are met, and that is one input. What earns the APPROVE
+# is not the ten greens: it is that the defect my contract could not reach
+# in round 0, and that round 1 introduced, is now measured at ZERO on the
+# owner's own file by four recipes in one process, that my own
+# counterexample was re-run rather than retired, and that the invariant
+# protecting it is verified to catch the inherited hole rather than
+# asserted to. What my contract still does not reach: whether the
+# grammar-anchored masker covers a card statement Pulse cannot yet parse
+# (upload 0f79fa3d matches no layout template at this head, so every real
+# count in this document is 39bada64 alone), and whether an exclusion in
+# the derivation table, which excuses an expression text anywhere in its
+# file, will still be right when that file next changes. Both are declared
+# in the artifact by the implementer. I make no completeness claim.
+# ============================================================
+#
+# ============================================================
+# DELTA VERDICT, ROUND 2, at head 23196fe. Everything above stands as the
+# round 0 record at e0704a5 and the round 1 record at 2f8b62d.
+# ============================================================
+#
+# e0 SETUP. 23196fe fetched and merged into this review branch, clean, 8
+#   files. Executable head proved identical: git diff 23196fe..HEAD --stat
+#   lists exactly ONE path, delivery/review/m3-p6-criteria.yaml, so every
+#   command below ran on a tree byte-identical to 23196fe.
+#   Round-2 delta 2f8b62d..23196fe: 8 files, +880 -38. No src file outside
+#   the merchants normaliser and the masking helper is touched.
+#   df at start of round: 15G free on /, healthy.
+#
+# e1 FAST GATES at 23196fe: prisma generate 0; typecheck 0; lint 0;
+#   gate:tokens 0; npm test 0 with Test Files 28 passed (28), Tests 372
+#   passed (372). The expected 372. Fixture now 23 lines, 21 data rows.
+#
+# e2 CR-M3P6-06 CONFIRMED FIXED AT THE MECHANISM. All four recipes run in
+#   one process over the owner's real file (39bada64), rows whose key is
+#   not a fixed point: base 68fc7ee 8, round-0 e0704a5 8, round-1 2f8b62d
+#   10, THIS HEAD 0. Every number the round claims, reproduced. Also 0
+#   when carried to a THIRD application.
+#   MY OWN ROUND-1 END-TO-END WITNESS RE-RUN at this head, both the two-
+#   group and three-group shapes: closed once, closed to a third
+#   application, submitted subject EQUALS the stored pattern, and
+#   rowsResolvedByTheRule 2 of 2 rows in each case. The silent H6.4 is gone.
+#   The fix is the one line claimed, a (?<!\d ) lookbehind at
+#   src/modules/merchants/domain/normalise-counterparty.ts:302, and I
+#   checked the reasoning holds in both directions: in a RUN only the last
+#   group is followed by a word and the lookbehind blocks exactly that one,
+#   so no element of a run is eligible and the pass is a fixpoint.
+#
+# e3 CR-M3P6-06b CONFIRMED, and this is the claim that mattered most.
+#   I read the CLOSURE_CORPUS out of the committed test file rather than
+#   transcribing it, and ran it against all four recipes. 19 members.
+#   Members that are not a fixed point: base 68fc7ee 3, round-0 e0704a5 3,
+#   round-1 2f8b62d 5, this head 0. The same three under the erosion form
+#   (token count preserved and stable to a third application).
+#   So the invariant WOULD have caught the inherited hole that neither my
+#   round-0 walk nor the phase's own contract reached. That is the whole
+#   point of it and it is verified rather than asserted.
+#
+# e4 CR-M3P6-07 CONFIRMED. I replayed MY EXACT round-1 mutation verbatim,
+#   opposite operand precedence in the shared SQL fragment AND both pin
+#   literals updated the way a pin update looks. Round 1: 22 passed.
+#   THIS HEAD: Tests 1 failed | 27 passed, the failure being "the SQL rule,
+#   evaluated from its own text, agrees with the TypeScript rule on every
+#   value Prisma can produce" with
+#   {"description":"D","counterpartyName":"N"}: expected 'D' to be 'N'.
+#   Exactly the claimed message. The expectation is DERIVED from the SQL
+#   operand order, so no pin-literal edit can hide it, which is why my
+#   mutation no longer passes.
+#
+# e5 HZ-M3P6-10 CONFIRMED. The two CARD_NUMBER_LABEL lines at
+#   src/modules/merchants/domain/normalise-counterparty.ts:183 and
+#   src/platform/ui/mask-card-number.ts:115 are byte-identical, and the pin
+#   is falsifiable: dropping one language from the masker's copy alone
+#   reddens the identity test, 1 failed | 27 passed.
+#
+# e6 SLOW GATE at 23196fe: npm run test:e2e EXIT=0, "21 passed (3.2m)",
+#   both projects, golden journey unmodified and green.
+#
+# e7 MY OWN 390x844 MEASUREMENT at round 2, through a real import of the
+#   synthetic fixture, all three screens:
+#     confirm preview 5 rows, 0 showing the invented number, 0 carrying a
+#       non-exception run, 4 of 5 carrying the mask marker, scrollWidth 390
+#     merchant review 14 labels, 0 and 0, scrollWidth 390
+#     month view 14 labels, 0 and 0, scrollWidth 390
+#     rows added 21
+#
+# e8 CR-M3P6-08 CONFIRMED IN SUBSTANCE, with two residues.
+#   The derivation is now a TypeScript compiler API walk in the test suite
+#   rather than a grep in a comment, and MY OWN independent AST walk agrees
+#   with it: FOUR files, 5 masked and 5 unmasked, including the file the
+#   round-1 grep never saw, the import route's declared account labels.
+#   It reddens on MY round-1 multi-line construction: reverting the preview
+#   descriptor cell to an unmasked multi-line expression fails three of its
+#   tests. The hole is closed in the dangerous direction.
+#   RESIDUE 1: the walk returns TEN sites, not the NINE its own comment
+#     records, and the assertion is a FLOOR (toBeGreaterThanOrEqual(9)) so
+#     the number is never checked. Proven on their own test: forcing
+#     toBe(9) fails with "expected 10 to be 9"; toBe(10) passes. Raised as
+#     CR-M3P6-10.
+#   RESIDUE 2: the gap-row sweep added to the e2e never executes. Gap rows
+#     on the card fixture, measured by me across all four test ids in both
+#     months: 0, 0, 0, 0 and 0, 0, 0, 0, and the sweep sits behind
+#     if (gapTexts.length > 0). Removing the gap-row mask leaves the e2e
+#     GREEN. The site is nonetheless guarded, by the derivation test, which
+#     I verified reddens on the same mutation. Raised as CR-M3P6-11.
+#
+# e9 CRITERION 6.6 RE-MEASURED BY ME at the head, and the environment did
+#   move: merchant_rules 0, merchants 0, transactions 39, imports 3 (1
+#   INTERPRETED, 2 AWAITING_DECLARATION), accounts 1, transactions carrying
+#   a merchantId 0. The work history's own re-measurement matches mine.
+#   JUDGEMENT ASKED FOR, and it holds: the CR-402 branch keys on the RULE
+#   count, which is still zero, so no stored pattern can detach and no
+#   re-normalisation migration is owed. What changed is exposure, not
+#   obligation, and it cuts in the phase's favour rather than against it:
+#   those 39 rows are the SAME 39 I measured, and at the round-1 head 10 of
+#   them produced a key that was not a fixed point. Had round 1 merged, the
+#   owner's first naming on one of those groups would have written a rule
+#   that matched nothing, on real deployed data. At this head it is 0 of 39.
+#   The zero-rule reasoning still holds AND the closure fix is now
+#   load-bearing for data that actually exists.
+#
+# e10 A BEHAVIOUR NOBODY NAMED, found by reading the fix rather than the
+#   report. The lookbehind is (?<!\d ), which blocks ANY digit followed by a
+#   space, while the rule its own comment states is that a FOUR-DIGIT GROUP
+#   following another four-digit group is not a postal code. Measured
+#   consequence: a house number before a postal code now suppresses the
+#   postal strip, "W W D P4 W" keying as "... 12 9000" where round 1 gave
+#   "... 12". I tested the tighter (?<!\d{4} ), which says what the comment
+#   says, and it keeps everything the round bought: 0 non-fixpoint rows on
+#   the real file, 0 of 19 corpus members, the same 25 distinct keys, the
+#   IBAN run still intact, the house-number case back to "... 12", and the
+#   suite green. Raised as CR-M3P6-12 with that proven edit.
+#
+# e11 PRIVACY at 23196fe, my own 268 probes from both uploads, both halves.
+#   Tight categories iban, structured reference, card number and holder
+#   name: ZERO hits. The only non-base hits are the same two I located and
+#   resolved in round 1, unchanged in kind: a quoted generic Dutch card word
+#   in a captured test-failure transcript at
+#   delivery/work-history/m3-p6-notes.md:400, and the generic Dutch word for
+#   a customer-service line inside a synthetic test string at
+#   test/domain/merchant-review.test.ts:408. Neither is an identifier.
+
+findings:
+  - id: CR-M3P6-10
+    severity: low
+    evidence:
+      - >-
+        The comment at test/domain/merchant-review.test.ts:709 records
+        "NINE leaf sites in FOUR files at this head". The walk it
+        describes returns TEN.
+      - >-
+        PROVEN ON THEIR OWN TEST rather than argued: replacing the floor
+        assertion with expect(surfaces.length).toBe(9) gives
+        "AssertionError: expected 10 to be 9", and toBe(10) passes with
+        Tests 28 passed (28).
+      - >-
+        MY OWN INDEPENDENT AST WALK, written from the intent rather than
+        copied, also returns 10 sites in 4 files, 5 masked and 5 unmasked
+        (the two declared account labels on the import route, the hidden
+        rule subject, the reserves label and the recon part label).
+      - >-
+        The number is unchecked by construction: the assertion at
+        test/domain/merchant-review.test.ts:712 is
+        toBeGreaterThanOrEqual(9), a floor, so the recorded count can
+        drift from the measured one without anything going red. The test's
+        other two assertions, masked === 5 and unmasked.length ===
+        EXCLUSIONS.length === 5, force the total to be 10 and are the
+        arithmetic that makes the comment's 9 impossible.
+      - >-
+        The wrong number propagated: the round reported the derivation as
+        finding nine sites.
+    concrete-fix: >-
+      Change test/domain/merchant-review.test.ts:712 from
+      toBeGreaterThanOrEqual(9) to toBe(10) so the recorded count is the
+      checked count, and correct the comment at test/domain/merchant-
+      review.test.ts:709 to say ten leaf sites in four files. If the floor
+      was deliberate so that a newly added masked surface does not redden
+      the test, say that in the comment and keep the exact number in a
+      separate assertion over the masked and unmasked splits, which is where
+      the real content is.
+    analysis: >-
+      Small, and raised anyway because of what it is an instance of. This
+      test exists precisely because round 1 recorded a derivation whose
+      number did not reproduce, and the replacement records a number that
+      does not reproduce either. The mechanism is the same one twice: a
+      count written into prose beside an assertion that does not check it.
+      The guard itself is sound and I verified it independently, so nothing
+      is at risk beyond the record.
+  - id: CR-M3P6-11
+    severity: low
+    evidence:
+      - >-
+        The round reports gap rows guarded across all four gap-row test
+        ids. Measured by me on the fixture that spec actually imports, at
+        390x844 through a real import: uninterpreted-row 0, unmatched-leg
+        0, in-transit-leg 0, unresolved-gap 0 for 2026-08, and the same
+        four zeros for 2026-09.
+      - >-
+        The sweep sits behind if (gapTexts.length > 0) at
+        test/e2e/merchants.spec.ts:238, so with no gap rows it never runs.
+      - >-
+        CONSTRUCTED: removing maskCardNumbers from the gap row at
+        src/modules/overview/ui/month-view.tsx:266 and running the
+        committed spec gives 1 passed. The e2e does not catch it.
+      - >-
+        The site is NOT unguarded, and I checked that rather than assuming
+        the worst: the same mutation reddens the derivation test, Tests 2
+        failed | 26 passed, because the gap row becomes an unmasked
+        descriptor surface that is not a declared exclusion.
+    concrete-fix: >-
+      Either give the card fixture a row that lands in a gap list, which is
+      one zero-amount row for the unresolved-gap id
+      (src/modules/ledger/domain/classify-flow.ts:115 assigns UNRESOLVED to
+      a zero amount), so the sweep it added actually executes; or drop the
+      conditional and assert the gap lists are non-empty before sweeping, so
+      a fixture that stops producing gap rows reddens instead of skipping.
+      Do not simply delete the sweep: the derivation test covers the site
+      but not the rendered output, and a masker that is applied and returns
+      the wrong string would pass the derivation and fail a real sweep.
+    analysis: >-
+      Raised as a claim about a guard rather than as an unguarded surface,
+      which is why it is low. The dispatch contract names the shape exactly:
+      a guard that reports success and then says nothing is green and
+      worthless, and this one is skipped in silence on the only fixture it
+      runs against.
+  - id: CR-M3P6-12
+    severity: low
+    evidence:
+      - >-
+        The lookbehind shipped at src/modules/merchants/domain/normalise-
+        counterparty.ts:302 is (?<!\d ), which disqualifies a postal code
+        preceded by ANY digit and a space. The rule its own comment
+        states, at src/modules/merchants/domain/normalise-
+        counterparty.ts:284, is narrower: "A FOUR-DIGIT GROUP THAT FOLLOWS
+        ANOTHER FOUR-DIGIT GROUP IS NOT A POSTAL CODE".
+      - >-
+        MEASURED CONSEQUENCE, on synthetic shapes: "W W D P4 W" (a house
+        number before a postal code before a city) keys as "... 12 9000"
+        at this head where round 1 and the phase base gave "... 12". The
+        postal code now survives in the key whenever a short numeric token
+        precedes it.
+      - >-
+        I TESTED THE TIGHTER ALTERNATIVE rather than proposing it
+        untested. With (?<!\d{4} ): rows whose key is not a fixed point on
+        the owner's real file, 0; corpus members that are not a fixed
+        point, 0 of 19; distinct keys on the real file, 25, unchanged; the
+        IBAN run case unchanged; the house-number case back to "SUPERMARKT
+        NOORD 12"; and the full suite green.
+      - >-
+        No real-file impact today: the owner's file carries no descriptor
+        of that shape, which is why every count I confirmed for this round
+        is unaffected either way.
+    concrete-fix: >-
+      Change the lookbehind at src/modules/merchants/domain/normalise-
+      counterparty.ts:302 from (?<!\d ) to (?<!\d{4} ) so the pattern says
+      what its comment says, and add the house-number shape to the pinned
+      regression table in test/domain/normalise-counterparty.test.ts and to
+      CLOSURE_CORPUS, so both the postal behaviour and the closure property
+      are held by a pin. If the broader form is deliberate, say so at the
+      pattern and state the accepted cost, that a postal code following any
+      numeric token stays in the key.
+    analysis: >-
+      The pipeline is closed either way, which is the property that carries
+      the hazard, so this is low. What makes it worth a line of work is that
+      the recipe is under a stability contract: the pattern's behaviour on a
+      shape nobody pinned is exactly what CR-402 exists to stop drifting,
+      and today the only record of what it does is a comment that describes
+      a different rule.
+  - id: CR-M3P6-05
+    severity: low
+    evidence:
+      - >-
+        OPEN AND DELEGATED, unchanged at 23196fe and out of this phase's
+        diff by the coordinator's instruction. npm ci still fails under
+        npm 10 with Node 22 ("Missing: @swc/helpers@0.5.23 from lock
+        file") and passes under npm 11.19 with Node 26; package.json still
+        pins engines to 22.x.
+      - >-
+        git diff --name-only 77da0c6..23196fe lists 15 paths, none of them
+        package.json or package-lock.json, so the phase neither caused nor
+        can close it.
+      - >-
+        Judged in round 0 and unchanged: it does not threaten the deployed
+        build, because the repository carries no .github/workflows and npm
+        install under npm 10 resolves this lockfile (probed, exit 0 in a
+        scratch copy).
+    concrete-fix: >-
+      Unchanged: regenerate package-lock.json with the npm that ships with
+      the pinned engine, or move the engines range to match the lockfile, on
+      a base-branch chore commit outside this phase.
+    analysis: >-
+      Carried in findings[] rather than dropped, because it is still open.
+      It is low and delegated, so it does not stand against the verdict.
+
+criteria:
+  - id: "6.1"
+    quote: >-
+      npm test exits 0 with a grouping test over the synthetic card fixture
+      asserting that the several rows of the one fixture merchant, differing
+      in date and amount across two months AND carrying the card tail in
+      BOTH observed shapes, a full grouped number on some rows and a
+      partially masked tail ending in four digits on others (finding
+      PR3-002), produce exactly ONE distinct normalised key and exactly one
+      review group, where the same test pinned against the pre-change recipe
+      produces one key per row; the work history records both numbers. A
+      separate row in the same fixture carries a legitimate long structured
+      reference that is NOT a card number, 13 to 19 digits long, the length
+      the real statement carries (measured: 13-digit and 15-digit
+      references, and 20 of 39 real descriptors fall inside that window
+      while only 15 are card rows), so it exercises criterion 6.3's named
+      exception rather than dodging the sweep by being shorter (finding
+      PR4-001); and the test asserts that reference survives in its key, so
+      the strip stays anchored to the card-tail grammar rather than to any
+      long digit run; and the test asserts that the non-card control row's
+      key, an X-masked token followed by holder-like text with NO card-
+      number label, is UNCHANGED by the strip, which is what witnesses step
+      3's anchor and fails an implementation that keys the masked-tail
+      pattern on the holder text alone (finding PR5-003; measured, the card-
+      number label occurs in 15 of 15 card descriptors and 0 of the 11
+      X-token descriptors, while holder-like text follows the token in 8 of
+      those 11 as well).
+    met: true
+    evidence:
+      - >-
+        RE-WALKED at 23196fe. npm test EXIT=0, Test Files 28 passed (28),
+        Tests 372 passed (372), the expected 372. Fixture now 23 lines, 21
+        data rows.
+      - >-
+        The one-merchant collapse and the pinned pre-change literals are
+        unchanged and green; the e2e still asserts one KOFFIEHUIS DE MOLEN
+        group of 5 rows, and my own run observed rows added 21.
+      - >-
+        OWNER-FACING, re-measured by me through the shipped pipeline: 39
+        rows, 15 card rows under the strict predicate, distinct keys over
+        those 15 rows 6, group sizes 4, 4, 3, 2, 1, 1. The 15-to-6
+        grouping the phase exists to deliver is confirmed at this head.
+  - id: "6.2"
+    quote: >-
+      npm test exits 0 with an over-stripping test asserting the two
+      distinct fixture merchants that share a chain prefix and a city
+      normalise to two DIFFERENT keys and stay two review groups, so a strip
+      that swallows the distinguishing token fails.
+    met: true
+    evidence:
+      - >-
+        RE-WALKED. The chain rows stay two keys and two review groups,
+        green inside the 372, and the e2e still asserts two SUPERMARKT DE
+        LINDE groups.
+      - >-
+        Distinct keys over all 39 real rows: 25, unchanged from round 1,
+        so the label-vocabulary widening in this round merged nothing
+        further and split nothing.
+      - >-
+        The card-grammar widening to three languages does not over-strip:
+        the pinned table and the closure corpus both carry the non-card
+        control rows, and 0 of the 16 unlabelled real descriptors are
+        touched by the masker.
+  - id: "6.3"
+    quote: >-
+      Both halves use the SAME separator-insensitive test, where a card-
+      number run is 13 to 19 consecutive digits after spaces, dots and
+      dashes are REMOVED (finding PR3-001: the real statement carries the
+      number grouped four by four, the extractor's own gap rule inserts
+      those spaces and the normaliser collapses whitespace rather than
+      removing it, so a contiguous-16-digit regex matches nothing and cannot
+      fail; measured through the shipped pipeline, contiguous runs in the
+      parsed descriptors: 0, separator-insensitive runs: every card row).
+      npm test exits 0 with tests asserting, under that separator-
+      insensitive test, that (a) no normalised key produced from the card
+      fixture and no rendered group label contains the fixture's INVENTED
+      CARD NUMBER exactly, and (b) no key or label contains ANY
+      13-to-19-digit run except the key AND the rendered label of the single
+      row criterion 6.1 declares as carrying a legitimate structured
+      reference, which this test names explicitly as its one permitted
+      exception, the key and the label being the SAME STRING for an
+      unresolved group (src/modules/merchants/domain/ merchant-review.ts:86
+      and src/modules/overview/domain/ month-projection.ts:83 both set the
+      label to the normalised text that is the key), so the exception must
+      cover both or the criterion is satisfiable only by the accident of
+      that row happening to be resolved in the scenario (finding PR5-002);
+      and that the display helper renders such a run masked to its last four
+      digits. npm run test:e2e exits 0 with the merchant review and month
+      view specs asserting the same two sweeps over rendered group labels.
+      The exact sweep and the named exception exist because the general
+      sweep alone contradicted 6.1 (finding PR4-001): measured over the real
+      statement, every structured reference is 13 or 15 digits and 5 non-
+      card descriptors fall inside the 13-to-19 window, so a faithful
+      fixture reference cannot avoid it and the only way to satisfy both
+      criteria without this exception is a sub-13-digit reference, which
+      would disarm the guard criterion 6.1 exists to provide.
+    met: true
+    evidence:
+      - >-
+        RE-WALKED, both halves. npm test EXIT=0 at 372; npm run test:e2e
+        EXIT=0 with 21 passed across both projects.
+      - >-
+        MY OWN INDEPENDENT SWEEP at 390x844 over all three surfaces:
+        preview 5 rows, review 14 labels, month 14 labels; 0 showing the
+        invented number and 0 carrying a non-exception 13-to-19-digit run
+        on every one of them.
+      - >-
+        Masking coverage on the owner's real file, measured by me: 23 of
+        23 card-labelled descriptors are changed by the masker, 0 of 23
+        still carry a window run afterwards, and 0 of the 16 unlabelled
+        rows are touched. Confirms the reported 15 of 15 and is stronger,
+        since the label grammar covers 23.
+      - >-
+        The label vocabulary is now three languages and is duplicated in
+        two files under a pin I falsified: dropping one language from the
+        masker's copy alone reddens the byte-identity test, 1 failed | 27
+        passed.
+      - >-
+        The qualification I recorded in round 1 stands and is now
+        DECLARED: the helper masks a label-anchored run, not any
+        13-to-19-digit run, which is the sixth deviation below. My round-1
+        finding CR-M3P6-09 is closed by that declaration.
+  - id: "6.4"
+    quote: >-
+      npm test exits 0 with a round-trip test: the value the review form
+      submits for a card group is the UNMASKED normalised text, assigning a
+      merchant from it writes an EXACT rule whose pattern equals that text,
+      and re-running resolution over the fixture resolves every row of that
+      merchant, including a row from the other month that was not the one
+      named.
+    met: true
+    evidence:
+      - >-
+        RE-WALKED and this is where the round's main repair lands. The
+        round-trip test is green inside the 372, and the closure invariant
+        that backs it now measures the property rather than the fixture.
+      - >-
+        MY ROUND-1 COUNTEREXAMPLE NO LONGER REPRODUCES. Re-run at this
+        head through the real use cases, both the two-group and three-
+        group shapes: closed once, closed to a third application,
+        submitted subject EQUALS the stored rule pattern, and
+        rowsResolvedByTheRule 2 of 2 in each case.
+      - >-
+        ON THE OWNER'S REAL FILE, rows whose key is not a fixed point: 0
+        of 39, against 10 at the round-1 head and 8 at both the phase base
+        and the round-0 head. Measured by me with all four recipes in one
+        process.
+      - >-
+        The invariant would have caught the inherited hole, which is the
+        claim that mattered and which I verified rather than accepted: I
+        read CLOSURE_CORPUS out of the committed test file and ran it
+        against every recipe. 19 members; members that are not a fixed
+        point are 3 at the phase base, 3 at the round-0 head, 5 at the
+        round-1 head and 0 here. The claimed 3 of 19 is exact.
+  - id: "6.5"
+    quote: >-
+      git diff --name-only against the phase base contains neither
+      src/modules/import/domain/dedup.ts nor
+      src/modules/ledger/domain/corrections.ts, npm test exits 0 with
+      test/domain/dedup.test.ts unmodified, and an import test re-importing
+      the card fixture reports zero rows added and all rows known, so no
+      stored dedup key moved. FACTS UNTOUCHED (finding PR3-006): the same
+      test asserts that after this phase's changes the stored rawLine and
+      rawContent of the card fixture's rows are byte-identical to what the
+      pre-change pipeline stored and still carry the unmasked card-number
+      run, so masking never reached the facts layer
+      (prisma/schema/import.prisma:106, CLAUDE.md non-negotiable 5) and the
+      M3-P2 re-parse contract still holds.
+    met: true
+    evidence:
+      - >-
+        RE-WALKED against the base. git diff --name-only 77da0c6..23196fe
+        matches neither dedup.ts nor corrections.ts (exit 1), and
+        test/domain/dedup.test.ts is unmodified.
+      - >-
+        The re-import and facts assertions moved with the fixture and are
+        green inside the 372; the e2e asserts rows-added 21 and my own run
+        observed 21.
+      - >-
+        Nothing in this round touches the import path: the round-2 delta
+        is 8 files, none of them under src/modules/import.
+  - id: "6.6"
+    quote: >-
+      The work history records the measured deployed MerchantRule count, the
+      branch selected under the CR-402 contract and the command that
+      produced the count; the pinned regression table in
+      test/domain/normalise-counterparty.test.ts is updated in the same
+      commit as the recipe change; and if the count was nonzero, npm test
+      exits 0 with a migration test whose input patterns are produced by the
+      PRE-change recipe, either pinned as literals captured before the
+      recipe is edited or produced by running the previous implementation,
+      NEVER by calling the new normaliser, and which asserts for each such
+      pattern that its re-normalised value equals the NEW normalisation of
+      the raw descriptor it was created from (finding PR3-005: the
+      contract's idempotency, new(new(x)) equals new(x), makes a self-seeded
+      test green for any recipe whatever; the property the migration needs
+      is new(old(x)) equals new(raw), and a strip anchored to a token the
+      old recipe already removed fails exactly there). RE-MEASURED AT THE
+      HEAD (finding PR3-007): the MerchantRule count is measured again at
+      the release head with the same pinned read-only command and recorded;
+      if it is nonzero while the verification-first measurement was zero,
+      the phase does not close until the re-normalisation branch ships.
+    met: true
+    evidence:
+      - >-
+        RE-MEASURED BY ME AT THIS HEAD, and the environment moved between
+        rounds: merchant_rules 0, merchants 0, transactions 39, imports 3
+        (1 INTERPRETED, 2 AWAITING_DECLARATION), accounts 1, transactions
+        carrying a merchantId 0. Read-only SELECT pinned to project ref
+        ygsarzjqosqmkqibqogk, confirmed to be the project named pulse.
+      - >-
+        THE ZERO BRANCH STILL HOLDS, judged rather than assumed: the
+        CR-402 obligation keys on the stored RULE count, that count is
+        still zero, so no stored pattern can detach and no re-
+        normalisation migration is owed. The recipe this phase ships
+        simply applies to those 39 rows on the next recompute, and no
+        interpretation is invalidated because no transaction carries a
+        merchantId.
+      - >-
+        What the moved number changes is exposure, and it cuts in the
+        phase's favour: those 39 rows are the same 39 I have been
+        measuring, and 10 of them produced a non-fixpoint key at the
+        round-1 head. A merge of round 1 would have put the owner one
+        naming away from a rule that matched nothing, on real deployed
+        data. At this head it is 0 of 39.
+      - >-
+        The pinned table moved with the recipe again in this round, so the
+        contract's other half is discharged the same way, and the work
+        history's own re-measurement matches mine exactly.
+  - id: "6.7"
+    quote: >-
+      npm run test:e2e exits 0 with a phone-viewport spec at 390x844
+      asserting the month view and the merchant review render their group
+      labels masked and document.documentElement.scrollWidth does not exceed
+      390 on both screens. The spec sets its own viewport in the spec file
+      (Playwright test.use, the shape test/e2e/import.spec.ts:160 and
+      test/e2e/navigation.spec.ts:178 already use), so no change to
+      playwright.config.ts is needed and this phase's files-to-touch stays
+      accurate (finding PR3-008); if M3-P4's mobile project has already
+      merged, the spec may run under it instead, which is additive either
+      way and is why conflicts-with stays empty.
+    met: true
+    evidence:
+      - >-
+        RE-WALKED and re-measured by me at 390x844 on both required
+        screens plus the confirm preview: merchant review scrollWidth 390,
+        month view 390, preview 390.
+      - >-
+        npm run test:e2e EXIT=0, 21 passed, including the phone spec under
+        test.use in the spec file, so playwright.config.ts is still
+        untouched.
+      - >-
+        src/app/globals.css is unchanged in this round, so the two
+        overflows I reproduced in round 0 at 462 and 424 remain fixed by
+        the same edits I witnessed then.
+  - id: "6.8"
+    quote: >-
+      Privacy gate, both halves executed with a probe list read from the
+      real PDFs in the container uploads at review time and never committed:
+      (a) git grep across the whole worktree for the real statement's
+      identifiers, holder name, card number in every grouping shape and each
+      merchant string from it exits 1; (b) over the files this phase adds or
+      modifies (git diff --name-only against the phase base), the same grep
+      extended to all five promised categories (identifiers, names, merchant
+      strings, thousands-form amounts and dates) exits 1. If the real PDFs
+      are absent from the executing container, this criterion is recorded as
+      not-witnessed in the work history and the review escalates for a
+      container that has them, never marked green by vacuity.
+    met: true
+    evidence:
+      - >-
+        RE-EXECUTED BY ME at this head with 268 probes derived at review
+        time from both real uploads: iban 16, ref 68, card 80 in every
+        grouping shape, holder 18, merchant 35, amount 3, date 48.
+      - >-
+        Half (a) whole worktree and half (b) over the 15 changed paths:
+        ZERO hits in every tight category.
+      - >-
+        The only non-base hits are the two I located and resolved in round
+        1, unchanged in kind and both generic Dutch vocabulary:
+        delivery/work-history/m3-p6-notes.md:400 and test/domain/merchant-
+        review.test.ts:408. Neither is an identifier, a name, a merchant
+        string, an amount or a date from either file.
+      - >-
+        The fixture grew by two rows in this round and introduced no new
+        hit.
+  - id: "6.9"
+    quote: >-
+      npm run typecheck && npm run lint && npm test exit 0 and npm run
+      test:e2e exits 0 at the phase head, including the unmodified golden
+      journey.
+    met: true
+    evidence:
+      - >-
+        RE-RUN IN FULL at 23196fe with the five env values pinned local:
+        prisma generate EXIT=0, npm run typecheck EXIT=0, npm run lint
+        EXIT=0, npm run gate:tokens EXIT=0, npm test EXIT=0 with 372
+        passed and zero skipped.
+      - >-
+        npm run test:e2e EXIT=0, "21 passed (3.2m)", 20 under chromium and
+        1 under chromium-prod against a production build the gate itself
+        made.
+      - >-
+        The golden journey is unmodified and green.
+  - id: "6.10"
+    quote: >-
+      grep for the merchant-source expression over src/, where the grep is
+      grep -rlE 'counterpartyName \?\? [A-Za-z_]*\.?description', a literal
+      operand-bearing pattern rather than a prose description of one
+      (findings PR4-003 and PR5-001), matches exactly THREE files: the
+      module exporting the shared helper, src/modules/import/domain/dedup.ts
+      and src/modules/ledger/domain/corrections.ts, the last two being the
+      frozen sibling recipes that keep their own copies by design; and grep
+      for the shared helper's module path over those two files exits 1, so
+      neither frozen recipe imports it. This is what witnesses decision
+      D-11's operative content, the single definition, which no other
+      criterion can see (finding PR3-004); the pin allows three files rather
+      than one precisely because criterion 6.5 exists to keep the two frozen
+      copies where they are. THE OPERAND IS PART OF THE PATTERN, not
+      decoration (finding PR5-001, executed by the scout against the tree at
+      this plan's head rather than asserted): the bare literal
+      "counterpartyName ??" matches SIX files today, because
+      src/modules/import/adapters/import-repository.ts:271 and :360 write a
+      persistence mapper's null-coalescing and
+      src/modules/import/ui/profile-confirmation.tsx:100 renders a preview
+      cell, neither of them the merchant-source rule and neither in this
+      phase's files-to-touch, so a bare-literal pin would match FIVE after
+      unification and could be reached only by editing unrelated code. The
+      operand-bearing pattern above matches exactly FOUR files today
+      (interpret-window.ts, merchant-review.ts, dedup.ts, corrections.ts)
+      and exactly THREE after the unification, which is the number this
+      criterion demands. POSITIVE HALF (finding PR4-003): grep -l for the
+      shared helper's import specifier over src/ matches BOTH former call
+      sites, src/modules/ledger/application/interpret-window.ts and
+      src/modules/merchants/domain/merchant-review.ts, so the unification is
+      witnessed by what those call sites import and not only by what no
+      longer appears; a review reading of the diff confirms no fourth
+      definition was written in an equivalent form the literal pattern
+      cannot see, such as a ternary on undefined.
+    met: true
+    evidence:
+      - >-
+        RE-WALKED. All three original greps still hold at this head, and
+        the SQL half is now genuinely closed rather than nominally.
+      - >-
+        MY EXACT ROUND-1 MUTATION REPLAYED VERBATIM, opposite operand
+        precedence in the shared fragment AND both pin literals updated
+        the way a pin update looks: round 1 gave 22 passed, this head
+        gives Tests 1 failed | 27 passed with
+        {"description":"D","counterpartyName":"N"}: expected 'D' to be
+        'N'. The claimed message, exactly.
+      - >-
+        The reason it now fails is the right reason: the expectation is
+        DERIVED from the SQL operand order read out of the shipped file,
+        so no pin-literal edit can hide a divergence. My round-1 finding
+        CR-M3P6-07 is closed.
+      - >-
+        The false test name that round 1 raised is corrected in place with
+        the correction stated, not quietly renamed.
+
+deviations-judged:
+  - deviation: >-
+      Step 1(a): the deployed MerchantRule count is measured "over a
+      connection string pinned explicitly to the pulse deployed project's
+      session pooler (never the ambient DATABASE_URL, fleet warnings 1 and
+      5)".
+    serves-plan-intent: true
+    reasoning: >-
+      Unchanged and re-verified this round: I re-took the count myself at
+      this head through the same substitute transport and it matches, and
+      the project ref still resolves to the project named pulse rather than
+      to the ambient credentials fleet warning 1 forbids. The transport is
+      not a read-only connection and the read-only property comes from the
+      statement text, which is sufficient for a SELECT count and should be
+      said out loud by any future step reusing the route.
+  - deviation: >-
+      files-to-touch, which does not list src/app/globals.css.
+    serves-plan-intent: true
+    reasoning: >-
+      Discharged by amendment 29c4745 and verified by reproduction in round
+      0: reverting the stylesheet reddens the phone spec at 462, and with
+      only the month grid reverted at 424. Unchanged in this round.
+  - deviation: >-
+      files-to-touch, which lists no test/application path, while criterion
+      6.5 asks for "an import test re-importing the card fixture".
+    serves-plan-intent: true
+    reasoning: >-
+      Unchanged. The test lives in a declared file and imports the existing
+      fakes without modifying them, and git diff --name-only
+      77da0c6..23196fe still lists no test/application path.
+  - deviation: >-
+      Criterion 6.3's e2e half, "the merchant review and month view specs
+      asserting the same two sweeps over rendered group labels", and
+      criterion 6.7's phone spec covering both screens.
+    serves-plan-intent: true
+    reasoning: >-
+      Unchanged in shape and stronger again this round: one spec now sweeps
+      three surfaces with one helper, and I verified each surface is
+      genuinely covered rather than nominally, by reddening the preview
+      sweep with an unmasked multi-line cell. The one part of that spec that
+      is NOT exercised is the gap-row sweep, which is finding CR-M3P6-11 and
+      is about the sweep rather than about the placement.
+  - deviation: >-
+      files-to-touch plus the plan's extras at 77da0c6, which do not list
+      src/modules/overview/adapters/overview-repository.ts.
+    serves-plan-intent: true
+    reasoning: >-
+      Serves the plan's intent and is the deviation this review's own
+      round-0 finding forced. Amendment cae60ff declares the file. The edit
+      is contained, the two SQL reads are unchanged in meaning, and the pin
+      that came with it is now falsifiable in the way it claimed to be,
+      which I proved with my own mutation.
+  - deviation: >-
+      Criterion 6.3's closing clause, "and that the display helper renders
+      such a run masked to its last four digits", where "such a run" is the
+      criterion's own definition, 13 to 19 consecutive digits once spaces,
+      dots and dashes are removed.
+    serves-plan-intent: true
+    reasoning: >-
+      SERVES THE PLAN'S INTENT, and I judge it on evidence I re-measured
+      myself rather than on the argument. Criterion 6.3's literal reading is
+      that any 13-to-19-digit run is masked; the shipped helper masks a run
+      the card-number LABEL identifies. Measured on the owner's file, the
+      literal reading masked ZERO card numbers on the label surface (the
+      normaliser had already removed them) and damaged five non-card
+      identifiers, which are the identities the owner reads to tell one
+      unresolved group from another. The grammar-anchored helper covers 23
+      of 23 card-labelled descriptors and touches none of the 16 others. The
+      accepted cost is stated at the definition and in the deviation: a card
+      number printed with no label is not masked. Declaring it in this round
+      is the correct response to my round-1 finding CR-M3P6-09, and the
+      declaration is accurate about both the reason and the cost. What it
+      does not do, and what nobody can do inside this phase, is test the
+      cost against a card statement Pulse cannot yet parse; that belongs to
+      whichever phase lands that template.
+
+# e12 MY OWN OUTPUT THROUGH THE SAME SWEEP, third round running. 217
+#   high-value probes from both uploads against this document alone: ZERO
+#   hits in the iban, structured-reference, card-number and holder-name
+#   categories. ONE hit, the five-letter generic Dutch word for "card",
+#   which is the LABEL the masker is anchored on and is unavoidable in any
+#   account of this phase; already present throughout the committed source.
+#
+# e13 THE APPROVE IS A CHOICE, NOT A SCHEMA ACCIDENT, and I proved the rule
+#   is live rather than assuming it: on a copy outside the repository,
+#   raising a single finding to severity high while keeping verdict APPROVE
+#   is refused with 'INVALID #/verdict value "APPROVE" is not one of the
+#   permitted values "FIX-ROUND-NEEDED"'. The document validates because
+#   there is no high or critical finding left standing, and there is none
+#   because each was closed by execution I ran myself.
+#   The only check still red is dual-review-decorrelation, "only 1 verdict
+#   document(s) exist under delivery/review for phase M3-P6": the
+#   hazard-contract sibling of 23196fe has not been produced. That is the
+#   pair's state, not a defect in this document, and the DR-0003 escalation
+#   in the header states what the sibling must differ on.

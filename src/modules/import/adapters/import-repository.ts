@@ -29,6 +29,10 @@ const FAILURE_REASONS: readonly ImportFailureReason[] = [
   "mixed-accounts",
   "undetectable",
   "unparseable",
+  "layout-unsupported",
+  "balance-mismatch",
+  "extraction-failed",
+  "layout-version-mismatch",
 ];
 
 const toImportRecord = (row: {

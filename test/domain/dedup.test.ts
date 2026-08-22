@@ -13,6 +13,7 @@ import { plainDate } from "../../src/platform/plain-date";
 const ACCOUNT = "acc-1";
 
 const naturalKeySpec: SourceProfileSpec = {
+  kind: "delimited",
   delimiter: ";",
   encoding: "utf-8",
   headerRowIndex: 0,

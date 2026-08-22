@@ -14,6 +14,9 @@ const eslintConfig = [
     ignores: [
       "node_modules/**",
       ".next/**",
+      // The production-mode e2e project builds into its own dist
+      // directory (PULSE_DIST_DIR, deploy-verify defect round).
+      ".next-prod/**",
       "out/**",
       "test-results/**",
       "playwright-report/**",
