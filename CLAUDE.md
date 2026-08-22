@@ -23,6 +23,7 @@ If a task touches two, read both.
 5. **Facts are immutable.** Imported transaction rows are never updated to fix an interpretation. See `pulse-domain`.
 6. **Every table carries `householdId`.** Every query filters on it.
 7. **No em dashes** in code comments, docs, commit messages or user-facing copy. Use a comma, colon, parenthesis or a new sentence.
+8. **No data in a commit message.** No amount, no counterparty, no date from a row, no account or card number, not even an invented one. A commit message says what changed and why; it never carries a sample of the data. Invented values live in fixtures and nowhere else, and every account or card number in the tree is listed with its provenance in `test/fixtures/allowed-identifiers.txt`. Nothing from a real statement is ever committed anywhere, in any form. `npm run gate:privacy` enforces both halves and must pass with the other gates.
 
 ## Commands
 
@@ -31,12 +32,13 @@ npm run dev           # local dev server
 npm run typecheck     # tsc --noEmit
 npm run lint
 npm test              # fast gate: unit and property tests
+npm run gate:privacy  # no data in commit messages, no unknown identifiers in the tree
 npm run test:e2e      # slow gate: Playwright
 npm run db:reset      # prisma migrate reset against local Docker Postgres
 npm run db:migrate    # prisma migrate dev
 ```
 
-`npm run typecheck && npm run lint && npm test` must pass before any slice is considered done. `npm run test:e2e` must pass before a slice is closed.
+`npm run typecheck && npm run lint && npm test && npm run gate:privacy` must pass before any slice is considered done. `npm run test:e2e` must pass before a slice is closed.
 
 ## Stack
 

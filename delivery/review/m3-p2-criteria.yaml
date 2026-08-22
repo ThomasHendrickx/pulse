@@ -12,14 +12,136 @@ produced-by: claude
 framing: criteria-contract
 review-contract: criteria
 
-# Clean-room CRITERIA review of phase M3-P2 (pdf-belfius), TWO
+# Clean-room CRITERIA review of phase M3-P2 (pdf-belfius), THREE
 # ROUNDS, all by execution in the isolated clone
 # /home/user/pulse-fleet/worktrees/m3-p2-review-criteria. Round 0
-# (record below) approved head 9b40b14; round 1 covers the fix round
-# 9b40b14..22f717b and this verdict now stands at head 22f717b. The
-# implementation session was never seen in either round. Round 0's
+# (record below) approved head 9b40b14; round 1 covered the fix
+# round 9b40b14..22f717b; round 2 covers the DEPLOY-VERIFY DEFECT
+# ROUND on the REBUILT branch (restarted from main a577e51 after PR
+# 16 merged) and this verdict now stands at head f0d6fb8 (executable
+# head 073f824: git diff 073f824..f0d6fb8 touches
+# delivery/work-history/m3-p2.yaml only, verified). The
+# implementation session was never seen in any round. Round 0's
 # diff was 44 files, +3501 -109, one deletion (the superseded
 # delimited-file-parser adapter), zero deletions under test/.
+#
+# ROUND 2 DELTA SHAPE, verified myself: f0d6fb8 was merged into this
+# review branch (conflicts resolved by taking f0d6fb8's side for
+# every phase file) and git diff f0d6fb8 HEAD was EMPTY before this
+# verdict update, so every round 2 execution ran on a tree
+# byte-identical to f0d6fb8. The defect delta a577e51..f0d6fb8 is 14
+# files, +551 -23: the extraction adapter (module-load failure now a
+# Result member pdf-module-unavailable with ONE logged server stack,
+# plus the embedded-document probePdfExtraction), /api/health/pdf
+# (staged booleans plus at most error NAME and string CODE),
+# next.config.ts (outputFileTracingIncludes for pdfjs-dist
+# package.json, pdf.mjs and pdf.worker.mjs; the PULSE_DIST_DIR
+# seam), package.json (engines node 22.x), playwright.config.ts (a
+# chromium-prod project and a second production webServer building
+# .next-prod), test/e2e/prod-smoke.spec.ts,
+# test/application/pdf-module-unavailable.test.ts (vi.mock of the
+# package as unresolvable), eslint and gitignore and tsconfig
+# hygiene for the prod dist dir, and the defect-round work-history
+# record.
+#
+# ROUND 2 EXECUTED CHAIN at the merged head, five env values pinned
+# local: npm ci EXIT=0; npx prisma generate EXIT=0; npm run
+# typecheck EXIT=0; npm run lint EXIT=0 BEFORE the prod build AND
+# AGAIN WITH .next-prod PRESENT (EXIT=0 both times); npm run
+# gate:tokens EXIT=0; npm test EXIT=0 (27 files, 283 passed, 0
+# failed, 0 skipped, the expected 283); npm run test:e2e EXIT=0, 20
+# PASSED (3.4m), 0 skipped, including the chromium-prod smoke
+# (health probe ok, PDF upload lands rows-added 9, month reconciles)
+# against a real next start over a production build the gate itself
+# made. Eslint-ignore teeth verified fresh: with the .next-prod
+# ignore removed, npm run lint EXIT=1 with 6094 problems from the
+# generated dist; restored, EXIT=0, tree clean.
+#
+# ROUND 2 REPRODUCTION, RE-EXECUTED MYSELF end to end against the
+# production build (.next-prod, next start on a scratch port, module
+# renamed away then restored, scripts deleted after):
+#   BROKEN (node_modules/pdfjs-dist renamed off, fresh server):
+#   /, /import and /merchants ALL render HTTP 200 with no
+#   "Application error" text anywhere; uploading the committed
+#   Belfius fixture lands on the import detail with the
+#   extraction-failed copy ("could not be read", "Nothing was
+#   imported") and NO rows-added element; the database row for that
+#   import reads status FAILED, failureReason extraction-failed,
+#   transaction count 0 (psql against the local stack); GET
+#   /api/health/pdf returns HTTP 500 with the EXACT body
+#   {"status":"error","pdfExtraction":"failed","moduleLoad":"failed",
+#   "extraction":"failed"} and NOTHING else (redaction verified on
+#   the actual response: booleans only, no message, no env value, no
+#   path; errorName and errorCode appear only in the
+#   module-loads-but-extraction-fails stage and carry a name and a
+#   string code only by construction,
+#   src/modules/import/adapters/pdf-text-extractor.ts:169-177); the
+#   server log carries EXACTLY ONE [pulse:pdf] stack with
+#   ERR_MODULE_NOT_FOUND (count measured 1). The owner's symptom
+#   class (page-wide 500, zero rows) is GONE under the exact
+#   condition that produced it.
+#   RESTORED (module back, fresh server): GET /api/health/pdf
+#   returns HTTP 200 {"status":"ok","pdfExtraction":"ok",
+#   "moduleLoad":"ok","extraction":"ok"} and the same journey lands
+#   rows-added 9. Module directory verified restored exactly once,
+#   worktree clean.
+#   BUNDLE COMPLETENESS VERIFIED in my own build: the .next-prod nft
+#   traces for both the /import page and the health route each carry
+#   exactly the three pdfjs-dist files the fix names (package.json,
+#   legacy/build/pdf.mjs, legacy/build/pdf.worker.mjs), so
+#   outputFileTracingIncludes does what the record claims.
+#
+# ROUND 2 UNREGRESSED CRITERIA: 2.1 through 2.4 suites all green
+# inside the 283-pass EXIT=0 fast gate (template, structure guards,
+# balance and version gates, dedup witnesses, spec-compat); the
+# REAL-STATEMENT parse re-run through the adapter at f0d6fb8
+# (scratch script deleted after): detect ok, parse ok, 39 rows, one
+# IBAN, deterministic second parse, so the balance identity and
+# continuity gates still hold on the real file. Privacy (2.6): a
+# fresh in-memory probe list from both real PDFs (306 probes:
+# identifiers, amounts, dates, words, both upload file names) ran
+# against the defect delta's added lines AND its commit messages
+# with base filtering: ZERO hits. Em and en dash count over the
+# delta's added lines and messages: 0.
+#
+# ROUND 2 DESIGN NOTE, verified in the diff rather than assumed: the
+# new pdf-module-unavailable Result kind is collapsed at the
+# composite parser seam (extractPages maps any extraction error to
+# undefined, src/modules/import/adapters/statement-parser.ts:35-40)
+# and re-emitted as pdf-extraction-failed, so the upload flow
+# reports extraction-failed for BOTH corrupt bytes and a missing
+# module, exactly as the record's contract sentence says ("both
+# surface as a loud FAILED import"); the runtime-versus-bytes
+# distinction lives in the health probe and the single logged
+# stack. The pdf-module-unavailable branches in the two
+# failure-reason mappers are therefore defensive rather than
+# reachable through the composite parser today; behaviour matches
+# the record, so this is a note, not a finding.
+#
+# ROUND 1 FINDINGS, disposition verified by execution: CR-911
+# RESOLVED (playwright.config.ts and src/app/globals.css sit in the
+# plan's extras on main, and the work-history deviation clause at
+# delivery/work-history/m3-p2.yaml:337 declares them plus
+# detect-profile.ts); CR-912 RESOLVED LOUDLY per R-087 (the notes
+# passage at delivery/work-history/m3-p2-notes.md:249 now records
+# that the original sentence was false when written, why the
+# round-1 edit silently failed to apply, and when the claim became
+# true). The ESCAPED-DEFECT MECHANISM record
+# (delivery/work-history/m3-p2.yaml:902-953) is judged sound: it
+# names the real mechanism (the gate exercised next dev only, and
+# dev and the built server resolve and load modules differently, so
+# a prod-only resolution failure had no witness anywhere), fixes it
+# structurally on both ends (no user-flow throw remains in the pdf
+# chain; the gate now builds and drives next start), and carries
+# honest not-covered clauses: the exact Vercel expression is
+# unobserved (connector scoped away, the 403 probe recorded), and
+# the Node-version theory was probed and DISPROVEN as the trigger
+# (loads on 20.20 and 22.12), so the engines pin is labelled
+# hygiene, matching my own evidence that the module loads on this
+# container's Node. My round 2 executions reproduce its captured
+# outputs class for class, digest noise aside.
+#
+# ROUND 1 RECORD BELOW, kept as written at 22f717b.
 #
 # ROUND 1 DELTA SHAPE, verified myself: 22f717b was merged into this
 # review branch and git diff 22f717b HEAD is this verdict file only,
@@ -371,6 +493,11 @@ criteria:
         structure and template suites EXIT=1; restored EXIT=0. The
         real statement still parses 39 rows through the rewritten
         template with the balance identity held.
+      - >-
+        ROUND 2, head f0d6fb8: all template and structure suites green
+        inside the 283-pass EXIT=0 gate; the real statement re-parsed
+        through the adapter at this head: 39 rows, deterministic,
+        parse ok through every gate.
     met: true
   - id: "2.2"
     quote: >-
@@ -420,6 +547,16 @@ criteria:
         and duplicate guards EXIT=1; restored EXIT=0. The version
         gate was also witnessed on the REAL statement bytes: declared
         version 999 refuses with template-version-mismatch.
+      - >-
+        ROUND 2, head f0d6fb8: both loud-failure tests green inside
+        the 283-pass EXIT=0 gate, and the failure space gains the
+        module-unavailable case witnessed THREE ways: the new
+        fast-gate test (vi.mock the package unresolvable: FAILED,
+        extraction-failed, zero rows, and the delimited path
+        untouched), my own production-mode reproduction (module
+        renamed away against the real build: FAILED import row in the
+        database with zero transaction rows, every page rendering),
+        and the health probe reporting failed booleans.
     met: true
   - id: "2.3"
     quote: >-
@@ -472,6 +609,11 @@ criteria:
         statement through the fixed adapter: 39 rows, the same
         year-plus-sequence key shape, all distinct, deterministic
         across two parses.
+      - >-
+        ROUND 2, head f0d6fb8: idempotency, overlap and re-parse
+        witnesses green unmodified inside the 283-pass EXIT=0 gate;
+        the real statement re-parse at this head is deterministic
+        with the same 39 rows.
     met: true
   - id: "2.4"
     quote: >-
@@ -531,6 +673,11 @@ criteria:
         diff --name-status origin/main..22f717b still shows zero
         deletions under test/ (the one D remains the superseded
         adapter under src).
+      - >-
+        ROUND 2, head f0d6fb8: spec-compat green inside the 283-pass
+        EXIT=0 gate (the defect delta touches neither
+        source-profile.ts nor the test); git diff --name-status
+        a577e51..f0d6fb8 contains zero D entries anywhere.
     met: true
   - id: "2.5"
     quote: >-
@@ -588,6 +735,14 @@ criteria:
         completes the declaration to rows-added 9 at phone width,
         inside the same EXIT=0 run (CR-902's regression guard now
         lives in the suite).
+      - >-
+        ROUND 2, head f0d6fb8: the suite grows to 20 with the
+        chromium-prod smoke and passed EXIT=0, 20 of 20, in my own
+        run: the dev-server journey unchanged, and the SAME journey
+        now also witnessed against a real production build (next
+        start over .next-prod built by the gate), health probe ok,
+        rows-added 9, month view data-state ok. Catalogs unchanged
+        at 116-key parity.
     met: true
   - id: "2.6"
     quote: >-
@@ -653,6 +808,13 @@ criteria:
         suspects, so the new fixture, structure tests and corrected
         generator comment (HZ-006) introduce no real statement
         string.
+      - >-
+        ROUND 2, head f0d6fb8: fresh in-memory probe list from both
+        real PDFs (306 probes including both upload file names) run
+        against the defect delta's added lines and its commit
+        messages with base filtering: ZERO hits. The delta's only
+        new embedded document is the health probe's synthetic
+        base64 PDF whose text is an invented English marker phrase.
     met: true
   - id: "2.7"
     quote: >-
@@ -702,6 +864,13 @@ criteria:
         recorded honestly; it did not recur in the EXIT=0 run and is
         a known slow-server-action flake class, not this phase's
         code.
+      - >-
+        ROUND 2, head f0d6fb8, the full chain re-witnessed CLEAN in
+        one pass: typecheck EXIT=0, lint EXIT=0 (twice, before the
+        prod build and with .next-prod present), gate:tokens EXIT=0,
+        npm test EXIT=0 (283 passed), npm run test:e2e EXIT=0 (20
+        passed, 3.4m) with the production build inside the gate. No
+        crash, no flake, first full run green at this head.
     met: true
   - id: "2.8"
     quote: >-
@@ -737,6 +906,20 @@ criteria:
         would diagnose itself; and extraction no longer consults
         system fonts (useSystemFonts false), removing an environment
         surface from the local-versus-deployed comparison.
+      - >-
+        ROUND 2, head f0d6fb8: still post-merge by its own wording,
+        and the groundwork is now substantially stronger, all
+        verified by my own executions: the gate itself drives a
+        production build (prod smoke green in my EXIT=0 run), the
+        function bundle carries the three pdfjs-dist files (nft
+        traces measured in my own .next-prod for the /import page
+        AND the health route), a missing module in the deployed
+        runtime now degrades to a loud FAILED import with every page
+        rendering (reproduced myself against the production build),
+        and /api/health/pdf makes the deployed runtime's module
+        state observable without log access (probed in both states,
+        redaction verified on the wire). The deployed-URL
+        observation itself remains the release verification's.
     met: false
 
 deviations-judged:
@@ -825,75 +1008,98 @@ deviations-judged:
       implementer proceeded on evidence rather than on the dispatch
       prose, recorded the swap as verification-first finding 4 and an
       environment warning for M3-P3, and no plan content is affected.
+  - deviation: >-
+      Declaration coverage of the fix round (finding CR-911, the CR-901
+      class recreated one round after it was named): fix round 1 touched
+      playwright.config.ts and src/app/globals.css without declaring
+      them in this document's deviations at push time, and the round-0
+      clause above still does not name
+      src/modules/import/domain/detect-profile.ts (a round-1 edit meant
+      to add it silently failed to apply, see the notes correction for
+      CR-912).
+    serves-plan-intent: true
+    reasoning: >-
+      This clause is the fix round's own answer to my CR-911 and
+      CR-912, judged and verified rather than accepted: all three files
+      are real and each serves a named finding or forced step (the
+      CR-903 hardening flags and root-cause record, the CR-902 overflow
+      container my concrete-fix demanded, the D-2 kind emission), the
+      plan-side extras on main now carry all three (present in the
+      extras list 51b71d0 builds on), and the notes correct the false
+      sentence loudly per R-087 with the failure mode of the silent
+      str.replace named. The internalized rule the clause states (diff
+      the branch against the declaration before every push) is the
+      right mechanism; the defect round's tsconfig.json miss (finding
+      CR-921) shows it is not yet applied to build-tool-rewritten
+      files, which the finding, not this judgement, carries.
+  - deviation: >-
+      Deploy-verify defect round files beyond the standing declaration:
+      src/app/api/health/pdf/route.ts, test/e2e/prod-smoke.spec.ts,
+      test/application/pdf-module-unavailable.test.ts, .gitignore,
+      eslint.config.mjs (ignoring the prod-mode dist directory the new
+      e2e project builds, found when lint scanned it at the final-head
+      gate run), and a second round of edits to playwright.config.ts,
+      package.json and next.config.ts.
+    serves-plan-intent: true
+    reasoning: >-
+      Each named file was read in the diff and verified to serve the
+      defect-round dispatch's ordered fixes: the health probe route
+      (probed by me in both runtime states with redaction verified on
+      the wire), the production-mode project and smoke spec (green in
+      my own EXIT=0 gate run), the module-unavailable red witness
+      (green in the 283-pass gate), the dist-dir ignores (lint teeth
+      re-reddened and restored myself), the engines pin (labelled
+      hygiene, matching the disproof record) and the tracing includes
+      (nft traces measured in my own build). The plan-side amendment
+      51b71d0 on main names the five new paths; the second-round edits
+      ride the already-amended extras. The one file this clause and
+      the amendment BOTH miss is tsconfig.json, raised as CR-921
+      rather than absorbed into this approval.
 
 findings:
-  # Round 0 raised CR-901 (scope amendment incomplete), CR-902 (PDF
-  # preview overflow at 390) and CR-903 (no witnessed full-suite e2e
-  # EXIT=0). All three are RESOLVED and verified by execution this
-  # round (see the ROUND 0 FINDINGS disposition in the header) and are
-  # not re-raised; the two entries below are ROUND 1 findings.
-  - id: CR-911
+  # Round 0 raised CR-901/902/903 (resolved in fix round 1, verified
+  # then); round 1 raised CR-911/912 (resolved in the defect round,
+  # verified above). None is re-raised. The entry below is the
+  # deploy-verify defect round's one finding.
+  - id: CR-921
     severity: medium
     evidence:
       - >-
-        EXECUTED at head 22f717b: git diff --name-only
-        origin/main..22f717b measured against the phase's
-        files-to-touch plus the d324182-amended extras leaves exactly
-        TWO changed files outside the envelope, both introduced by fix
-        commit aabf540: playwright.config.ts (the CR-903 launch-args
-        block and root-cause record) and src/app/globals.css (the
-        CR-902 preview-block overflow container and overflow-wrap
-        rules).
+        EXECUTED at head f0d6fb8: git diff --name-only a577e51..f0d6fb8
+        measured against the phase's files-to-touch plus the
+        51b71d0-amended extras leaves exactly ONE changed file outside
+        the envelope: tsconfig.json (its include list now carries
+        .next-prod/types plus a formatting rewrite, the shape of a
+        next-build auto-edit when PULSE_DIST_DIR introduced the second
+        dist directory).
       - >-
-        Neither file is named in the plan's M3-P2 extras at d324182
-        (which lists six entries ending at detect-profile.ts) nor in
-        any of the four deviation clauses of
-        delivery/work-history/m3-p2.yaml (the deviations section at
-        line 289 still carries only the round 0 four), so the fix
-        round recreated the exact declaration gap CR-901 named, one
-        round after it was named: the scope audit (assurance-modes
-        condition 5) cannot pass as declared.
+        tsconfig.json appears NOWHERE in any declaration: not in
+        files-to-touch, not in the plan extras at 51b71d0 (the round-0
+        and fix-round entries plus the five defect-round entries, none
+        of them tsconfig.json), not in the defect-round deviation
+        clause (which names .gitignore, eslint.config.mjs,
+        playwright.config.ts, package.json and next.config.ts but not
+        tsconfig.json), and not in the work history's files-touched
+        list (grep for tsconfig over delivery/work-history/m3-p2.yaml,
+        m3-p2-notes.md and delivery/plan/pulse-v02.yaml returns
+        nothing). This is the CR-901/CR-911 declaration class a third
+        time, one round after the work history wrote down the
+        diff-before-push rule, this time on a file the build tool
+        rewrote rather than one the implementer edited by hand.
       - >-
-        Both edits themselves are correct and demanded by the round 0
-        findings they implement; this finding is about the
-        declaration, not the code. The M3-P1 defect-round precedent
-        put src/app/globals.css into ITS phase's amended extras for
-        the same reason.
+        The change itself is benign and forced (typecheck must see the
+        prod dist's generated types; my typecheck and both lint runs
+        pass with it), so this is a declaration gap, not a code
+        defect.
     concrete-fix: >-
       Amend delivery/plan/pulse-v02.yaml phase M3-P2 extras on main
-      with playwright.config.ts and src/app/globals.css (one commit,
-      as d324182 did), and add a fix-round deviation clause to
-      delivery/work-history/m3-p2.yaml naming both files and the
-      findings that forced them, before the scope audit runs. No code
-      change is demanded.
-  - id: CR-912
-    severity: low
-    evidence:
-      - >-
-        R-087 false claim: delivery/work-history/m3-p2-notes.md:250
-        states, of the fix round, that "detect-profile.ts is now
-        named in the files-to-touch deviation". It is not: the only
-        occurrence of detect-profile.ts in
-        delivery/work-history/m3-p2.yaml is the files-touched list at
-        line 72 (present since round 0), and the files-to-touch
-        deviation clause at delivery/work-history/m3-p2.yaml:303-320
-        is byte-unchanged from round 0 and does not name it (verified
-        by grep over the file and by reading the clause).
-      - >-
-        The substantive half of the CR-901 remainder IS done: the
-        plan-side amendment d324182 names
-        src/modules/import/domain/detect-profile.ts in the extras, so
-        the scope envelope covers it and this is a false sentence in
-        the notes, not an open scope gap. Low for that reason.
-    concrete-fix: >-
-      Either add detect-profile.ts (with its forced edits: the kind
-      emission and the narrowed return type) to the files-to-touch
-      deviation clause in delivery/work-history/m3-p2.yaml so the
-      notes sentence becomes true, or correct the sentence at
-      delivery/work-history/m3-p2-notes.md:250 to say the remainder
-      was discharged by the plan-side amendment d324182 alone,
-      loudly, per R-087.
-
+      with tsconfig.json (one line, as 51b71d0 did for the other five
+      paths) and extend the defect-round deviation clause in
+      delivery/work-history/m3-p2.yaml to name it with its cause (the
+      build's auto-rewrite for the second dist directory), before the
+      scope audit runs; and extend the internalized diff-before-push
+      rule to run AFTER the final gate build so tool-rewritten files
+      are caught.
 
 # VALIDATION RECORD, measured: npx --prefix /home/user/pulse-fleet
 # tiphys validate --type verdict (Node v26.7.0 via nvm) with a
@@ -933,3 +1139,19 @@ findings:
 # discharged by the orchestrator under DR-0003. Schema,
 # verdict-criteria-complete and verdict-deviations-judged all pass;
 # no other violation is reported.
+#
+# VALIDATION RECORD, ROUND 2 (deploy-verify defect round),
+# re-measured with the updated file: same command, Node v26.7.0 via
+# nvm, a FRESH private uniquely-named context dir carrying plan.yaml
+# from origin/main at 51b71d0 (the amended declaration), the
+# defect-round delivery/work-history/m3-p2.yaml from head f0d6fb8,
+# charter.yaml, assurance-modes.yaml, and this file under the
+# context's delivery/review. Result recorded below; the em and en
+# dash grep over this file still counts 0.
+# Result: reddens on EXACTLY ONE check, dual-review-decorrelation
+# (one verdict of the required two in the validation context), the
+# same single violation as rounds 0 and 1 and the same standing
+# escalation discharged by the orchestrator under DR-0003. Schema,
+# verdict-criteria-complete and verdict-deviations-judged (now six
+# judgements against the work history's six clauses) all pass; no
+# other violation is reported.

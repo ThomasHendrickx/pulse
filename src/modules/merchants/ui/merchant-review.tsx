@@ -1,5 +1,6 @@
 import { getTranslations } from "next-intl/server";
 import { Amount } from "@/platform/ui/amount";
+import { maskCardNumbers } from "@/platform/ui/mask-card-number";
 import type { HouseholdContext } from "@/platform/tenancy";
 import { listMerchantReview } from "../application";
 import type { ReviewGroup } from "../application";
@@ -26,8 +27,13 @@ const GroupRow = async ({
       className={unresolved ? "merchant-row merchant-row-unresolved" : "merchant-row"}
       data-testid={unresolved ? "unresolved-group" : "merchant-group"}
     >
+      {/* The label of an unresolved group IS the normalised descriptor, so a
+          card descriptor rendered the card number here. Masked in the
+          RENDERING only (M3-P6, decision D-12): the hidden counterpartyText
+          field below stays UNMASKED, because that value becomes the EXACT
+          MerchantRule pattern and a masked subject would match nothing. */}
       <span className="merchant-row-label" data-testid="group-label">
-        {group.label}
+        {maskCardNumbers(group.label)}
       </span>
       <span className="merchant-row-count">
         {group.count} {t("rows")}

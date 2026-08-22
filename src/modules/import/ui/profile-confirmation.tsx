@@ -1,5 +1,6 @@
 import { getTranslations } from "next-intl/server";
 import { Amount } from "@/platform/ui/amount";
+import { maskCardNumbers } from "@/platform/ui/mask-card-number";
 import type { ParsedRow } from "../domain/parse-statement";
 import { confirmImportAction, previewImportAction } from "./actions";
 import { ImportStatusLine } from "./import-status-line";
@@ -97,8 +98,21 @@ export const ProfileConfirmation = async ({
               {previewRows.map((row, index) => (
                 <tr key={index} data-testid="preview-row">
                   <td>{row.bookingDate}</td>
-                  <td>{row.counterpartyName ?? row.counterpartyIban ?? ""}</td>
-                  <td className="preview-descriptor">{row.description}</td>
+                  {/* THE RAW PARSED DESCRIPTOR, masked in the RENDERING
+                      only (M3-P6 fix round 1, finding CR-M3P6-01). This is
+                      the screen the owner photographed: a card descriptor
+                      embeds the full card number and this preview showed it
+                      whole. The parsed row itself is untouched, the stored
+                      rawLine keeps the number the bank printed, and nothing
+                      here reaches a key, a rule subject or a fact. */}
+                  <td>
+                    {maskCardNumbers(
+                      row.counterpartyName ?? row.counterpartyIban ?? "",
+                    )}
+                  </td>
+                  <td className="preview-descriptor">
+                    {maskCardNumbers(row.description)}
+                  </td>
                   <td className="preview-amount-cell">
                     <Amount cents={row.amountCents} />
                   </td>

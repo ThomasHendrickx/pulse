@@ -111,6 +111,14 @@ files-touched:
   - test/fixtures/belfius-inline-shapes.pdf
   - playwright.config.ts
   - src/app/globals.css
+  - src/app/api/health/pdf/route.ts
+  - test/e2e/prod-smoke.spec.ts
+  - test/application/pdf-module-unavailable.test.ts
+  - .gitignore
+  - eslint.config.mjs
+  - tsconfig.json (tool-rewritten by the Next build, CR-921)
+  - src/modules/import/adapters/pdfjs-worker.d.ts
+  - src/modules/import/adapters/pdf-runtime-shims.ts
   - delivery/work-history/m3-p2-notes.md
   - delivery/work-history/m3-p2.yaml
 per-step-commits:
@@ -352,6 +360,34 @@ deviations:
       branch against the declaration (files-to-touch plus extras on
       main) and declare any excess in the same commit, never after.
   - plan-clause: >-
+      Deploy-verify defect round files beyond the standing declaration:
+      src/app/api/health/pdf/route.ts, test/e2e/prod-smoke.spec.ts,
+      test/application/pdf-module-unavailable.test.ts, .gitignore,
+      eslint.config.mjs (ignoring the prod-mode dist directory the new
+      e2e project builds, found when lint scanned it at the final-head
+      gate run), tsconfig.json (finding CR-921: NOT hand-edited but
+      TOOL-REWRITTEN by the Next build during the gate's prod-mode run,
+      which reformatted the lib array and appended the
+      .next-prod/types include for the new dist directory; the rewrite
+      was swept into a docs commit by git add -A without being declared,
+      the CR-901/CR-911 declaration class a third time, this time via a
+      file no one edited), and a second round of edits to
+      playwright.config.ts, package.json and next.config.ts. Rule
+      sharpened accordingly, third iteration: run the
+      diff-against-declaration check AFTER the final gate build and
+      immediately before the push, because gate runs themselves rewrite
+      files (Next rewrites tsconfig.json, prisma generate can touch
+      artifacts), so a check done before the build misses exactly the
+      tool-rewritten class; and never stage with add -A without reading
+      the resulting name list against the declaration.
+    why: >-
+      Each is a fix the defect-round dispatch orders by name: the health
+      probe sibling, the production-mode e2e project and smoke spec, the
+      module-unavailable red witness, the prod dist directory ignore,
+      the engines pin and the tracing includes. Declared in the fixing
+      commit itself per the fix-round rule; amendment requested from the
+      orchestrator for the paths not yet in the plan's extras.
+  - plan-clause: >-
       The dispatch prompt's file mapping (0f79fa3d as the Belfius
       statement).
     why: >-
@@ -436,6 +472,87 @@ gate-evidence:
     wrapper-exit-code: 0
     discovered: 19
     passed: 19
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "defect round: typecheck, lint, gate:tokens (each exit 0)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 3
+    passed: 3
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "defect round: fast suite (npm test; 27 files, 283 tests, 0 skipped)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 283
+    passed: 283
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "defect round: full e2e including the NEW production-mode project (npm run test:e2e, pinned env; chromium 19 tests over next dev plus chromium-prod 1 smoke over a real production build via next start; 20 passed, 0 skipped, 3.3m)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 20
+    passed: 20
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "micro round 2: typecheck, lint, gate:tokens (each exit 0)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 3
+    passed: 3
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "micro round 2: fast suite (npm test; 27 files, 283 tests, 0 skipped)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 283
+    passed: 283
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "micro round 2: full e2e including the prod-mode smoke (20 passed, 0 skipped, 3.3m, pinned env)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 20
+    passed: 20
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "micro round 3: typecheck, lint, gate:tokens (each exit 0)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 3
+    passed: 3
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "micro round 3: fast suite (npm test; 27 files, 283 tests, 0 skipped)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 283
+    passed: 283
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "micro round 3: full e2e including the prod-mode smoke (20 passed, 0 skipped, 3.3m, pinned env)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 20
+    passed: 20
     failed: 0
     skipped: 0
     todo: 0
@@ -662,6 +779,45 @@ claims:
           rows 39, accounts 1, parse ok (gate held), deep-equal across
           two extractions; fast suite 26 files 280 tests 0 skipped exit
           0.
+  - id: M3P2-D1
+    kind: coverage
+    statement: >-
+      The production symptom class is reproduced red and closed green in
+      real production mode: with the extraction module absent, the
+      pre-fix build renders the application-error digest page with zero
+      import rows, and the fixed build renders a loud FAILED import
+      (extraction-failed) with exactly one import row, pages intact, and
+      the health probe reporting the runtime state; the fast gate guards
+      the same class via a mocked missing module (upload FAILED, zero
+      transactions, delimited path untouched), shown red against the
+      pre-fix code first (2 failed: the action threw and the probe did
+      not exist).
+    settled-by:
+      executed-construction:
+        command: "prod-mode drive with module renamed, pre-fix and post-fix (full outputs in the defect-round derivation); npx vitest run test/application/pdf-module-unavailable.test.ts pre-fix then post-fix"
+        exit-code: 1
+        output: >-
+          Pre-fix vitest: "3 tests | 2 failed", the upload test rejecting
+          with the simulated Cannot-find-package error. Post-fix: 3
+          passed; prod-mode outputs as recorded in the derivation.
+  - id: M3P2-D2
+    kind: coverage
+    statement: >-
+      The gate now witnesses production-runtime behaviour: the
+      chromium-prod project builds the real bundle into its own dist
+      directory, serves it with next start (no frozen clock, honouring
+      the app's production guard), and the smoke spec asserts the health
+      probe plus the exact journey that broke plus a clock-independent
+      month verdict; scoped deliberately to one smoke spec to bound the
+      gate's duration, recorded per the dispatch's scoping clause.
+    settled-by:
+      executed-construction:
+        command: "pinned-env npm run test:e2e at the defect-round head"
+        exit-code: 0
+        output: >-
+          "20 passed (3.3m)": 19 chromium tests over next dev and 1
+          chromium-prod prod-smoke test over the production build, exit
+          0, 0 skipped.
   - id: M3P2-Q1
     kind: open-question
     statement: >-
@@ -812,6 +968,178 @@ fix-round:
       The chromium launch flags added alongside
       (--disable-dev-shm-usage, --disable-gpu) are hardening, explicitly
       NOT credited with the fix in the config comment.
+  - mechanism: >-
+      THE ESCAPED-DEFECT MECHANISM (deploy-verify defect round,
+      owner-reported production 500): the e2e gate exercised `next dev`
+      only, and dev and the built production server RESOLVE AND LOAD
+      MODULES DIFFERENTLY, so a failure that exists only in the deployed
+      bundle's runtime module resolution had no witness anywhere in the
+      gate. The instance: the deployed function could not load
+      pdfjs-dist, the fix-round-1 rethrow design turned that into an
+      unhandled server-action throw, and the owner saw "Application
+      error: a server-side exception" with zero import rows. Fixed at
+      the mechanism on both ends: any pdf-chain failure is now a Result
+      that lands a loud FAILED import (no user-flow throw remains in the
+      chain), and the gate now drives a production build (`next start`,
+      chromium-prod project, single smoke spec) so dev-only coverage of
+      runtime behaviour is structurally over.
+    derivation:
+      command: "mv node_modules/pdfjs-dist node_modules/pdfjs-dist.off; npx next start -p 3200 (production build, pinned env); scripted sign-up plus PDF upload; psql count of import rows; then the same drive against the FIXED build"
+      output: |
+        Pre-fix (module absent): page body after upload = "Application
+        error: a server-side exception has occurred while loading
+        127.0.0.1 ... Digest: 2876883342"; server log = "Error: Cannot
+        find package 'pdfjs-dist' imported from
+        .next/server/app/(app)/import/page.js { code:
+        'ERR_MODULE_NOT_FOUND', digest: '2876883342' }"; import rows for
+        the probe household: 0. This is the owner's symptom class
+        end to end (their digest differs per build, same class).
+        Post-fix (module still absent): GET /import renders; upload
+        redirects to the import detail showing "Import failed / This PDF
+        could not be read ... Nothing was imported."; import rows: 1
+        (status FAILED, extraction-failed); GET /api/health/pdf =
+        {"status":"error","pdfExtraction":"failed","moduleLoad":
+        "failed","extraction":"failed"}; server log carries exactly one
+        [pulse:pdf] stack with ERR_MODULE_NOT_FOUND.
+        Bundle-gap measurements: the pre-fix /import nft.json listed
+        pdfjs-dist/legacy/build/pdf.mjs ONLY; on a filesystem holding
+        only traced files, extraction failed with "Setting up fake
+        worker failed: Cannot find module ... pdf.worker.mjs" (probed on
+        Node 20, 22.12 and 26); post-fix nft.json for /import AND the
+        health route lists package.json, pdf.mjs and pdf.worker.mjs.
+    not-covered: >-
+      The exact expression that threw ON VERCEL is not directly observed:
+      the Vercel MCP connector is scoped to three pre-pulse projects
+      (probe: get_runtime_errors on the pulse project id returned 403,
+      matching the fleet's deployed-infrastructure note), so the deployed
+      stack behind digest 2180347594 was never read. The local
+      reproduction proves the CLASS (module unavailable at runtime ->
+      rethrow -> action 500 -> zero rows) and the health probe makes the
+      deployed state directly observable after the next deploy; if
+      /api/health/pdf reports ok on the deployed URL and the owner's
+      symptom persists, the classification must be reopened. Node-version
+      theories were probed and narrowed: pdfjs-dist 6.2.108 loads and
+      extracts on Node 20.20 and 22.12 despite its engines floor, so the
+      engines pin is runtime hygiene, not the proven trigger.
+  - mechanism: >-
+      MICRO ROUND 2 (deploy-verify loop): depending on FUNCTION-BUNDLE
+      FILE RESOLUTION for a runtime-loaded package. Two rounds kept the
+      package external (serverExternalPackages, then explicit tracing
+      includes) and the deployed probe still reported moduleLoad failed
+      while the identical local production build passed: whether the
+      deployed filesystem carries the files is Vercel's packaging, which
+      this fleet cannot observe or test. Fixed at the mechanism by
+      REMOVING the runtime resolution entirely: pdf.mjs and
+      pdf.worker.mjs are imported with literal specifiers, webpack
+      bundles both as lazy server chunks, and the fake worker is wired
+      through the pdfjsWorker global. The global is what MAKES bundling
+      possible and is the recorded sub-mechanism: pdf.js's fake-worker
+      setup ends in a COMPUTED dynamic import (await import of a
+      template string) that no bundler can carry, which is the true
+      mechanism behind round 1's "bundling breaks extraction" finding;
+      the setup consults globalThis.pdfjsWorker?.WorkerMessageHandler
+      first, so assigning it short-circuits the computed import. The
+      probe now also forwards errorName and errorCode at EVERY stage
+      including moduleLoad (it was blind exactly there in the first
+      deployed round), name and string code only.
+    derivation:
+      command: >-
+        grep -o over node_modules/pdfjs-dist/legacy/build/pdf.mjs for
+        the pdfjsWorker global and for dynamic import call sites; npm
+        run build; mv node_modules/pdfjs-dist node_modules/pdfjs-dist.off;
+        npx next start; curl /api/health/pdf; scripted sign-up plus PDF
+        upload; psql row count
+      output: |
+        pdf.mjs carries: globalThis.pdfjsWorker?.WorkerMessageHandler
+        || null (the global consulted first) and await import("${url}")
+        (the computed specifier no bundler can carry).
+        With node_modules/pdfjs-dist RENAMED AWAY under the fixed
+        production build: GET /api/health/pdf =
+        {"status":"ok","pdfExtraction":"ok","moduleLoad":"ok",
+        "extraction":"ok"}; the upload journey reached "Confirm the
+        detected format ... layout is recognised" (the PDF parsed
+        through the bundled chunks) and the probe household's import row
+        was written. Zero external resolution remains, witnessed by
+        deletion, not by reasoning. Size cost recorded: the package
+        ships 35M (16M legacy); the two bundled lazy chunks add about
+        6M of server-side JS and nothing else is carried.
+        Diagnosis channel: the fast-gate mock shows errorName forwarded
+        at moduleLoad failure; a mutation stripping the forwarding
+        reddens the test ("Tests 1 failed | 2 passed"), restored green.
+    not-covered: >-
+      The standard (non-legacy) build was not adopted: the legacy build
+      bundles and runs cleanly with the worker global, so switching
+      entry points would change more than the round needs; recorded as
+      an option if a future pdfjs upgrade drops the legacy build. The
+      deployed Vercel behaviour itself remains observable only through
+      the probe after the next deploy; if moduleLoad still fails
+      deployed WITH the bundle carrying the chunks, the probe now names
+      the error, which is the diagnosis channel this round adds. A
+      future pdfjs upgrade that stops consulting the pdfjsWorker global
+      reddens the prod smoke and the renamed-module witness rather than
+      failing silently.
+  - mechanism: >-
+      MICRO ROUND 3 (deployed probe named ReferenceError at moduleLoad):
+      an engine whose module evaluation DEPENDS ON ITS OWN OPTIONAL
+      POLYFILL CHAIN. pdf.mjs's Node prelude polyfills DOMMatrix from
+      the optional native package @napi-rs/canvas, obtained via
+      process.getBuiltinModule("module").createRequire, and later
+      module-scope code runs `new DOMMatrix()` unconditionally. Two
+      independent breaks were measured: Node below 20.16 has no
+      process.getBuiltinModule (the prelude cannot obtain require at
+      all), and the deployed function bundle carries ZERO files of the
+      optional native package (no @napi-rs path in the build's nft
+      trace), so on ANY deployed Node version the prelude has nothing to
+      polyfill from. Fixed at the mechanism: a guarded, minimal, CORRECT
+      2D-affine DOMMatrix shim installs before the engine chunks
+      evaluate (defined only when missing, so any real implementation
+      wins), removing the dependence on both the runtime version and the
+      optional native package.
+    derivation:
+      command: >-
+        production build; next start under Node 18.20.8 (unfixed) and
+        probe; grep of the failing chunk offset; grep of the prelude in
+        pdf.mjs; nft.json scan for napi paths; then the FIXED build
+        under Node 18.20.8, and under Node 26 with
+        node_modules/@napi-rs/canvas and its platform binary RENAMED
+        AWAY; vitest template suites with the native package still
+        renamed away
+      output: |
+        Unfixed under Node 18: probe {"errorName":"ReferenceError"}
+        (byte-identical shape to the deployed report) and the log names
+        the identifier: "ReferenceError: DOMMatrix is not defined at
+        75555 (.next/server/chunks/555.js...)"; the chunk offset shows
+        the throwing statement "let bU=new DOMMatrix". pdf.mjs
+        prelude: require via process.getBuiltinModule (Node 20.16+;
+        typeof on 18.20.8 = undefined, on 20.20.2 = function), canvas
+        polyfill optional, then module-scope "const SCALE_MATRIX = new
+        DOMMatrix()". nft trace: napi files traced: 0. Fixed build,
+        Node 18: probe all ok. Fixed build, Node 26 with the native
+        canvas renamed away: probe all ok, upload journey reaches the
+        recognition screen, exactly one prelude warn in the log, and
+        the template suites pass byte-exact (10 tests: same rows, same
+        cents) with the polyfill source absent, so the shim does not
+        change extraction output.
+    not-covered: >-
+      Which of the two variants the deployed function actually is (Node
+      version below 20.16 versus missing native package on a newer
+      runtime) is not decided from here; the shim closes both, and the
+      probe now names errors at every stage if a third variant exists.
+      The engines 22.x pin not taking effect on Vercel is a STANDING
+      CAVEAT for the record: the owner can set Node 22.x in the Vercel
+      project settings; the shim removes the dependence either way.
+      Separately OBSERVED and deliberately not fixed this round: under
+      Node 18 the app has version floors beyond the PDF engine (the
+      upload action's `instanceof File` throws ReferenceError, File
+      being global since Node 20), so Node 18 is not a supportable
+      runtime for this app regardless of pdfjs; recorded rather than
+      patched because the round's scope is what the reproduction named
+      for the PDF loop, and an EOL runtime floor is the engines pin's
+      territory. The prod smoke is NOT wired to run under alternate
+      Node versions in playwright (the webServer uses the ambient
+      toolchain); the equivalent journeys were driven manually under
+      Node 18 and under Node 26 with the package renamed, recorded
+      here per the dispatch's "record if not" clause.
 environment-warnings:
   - warning: >-
       pdfjs-dist must be listed in next.config.ts serverExternalPackages:
