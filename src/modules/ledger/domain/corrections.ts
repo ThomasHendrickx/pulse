@@ -99,12 +99,22 @@ export const settlementCandidateImports = (
       // THE EQUALITY IS THE MECHANISM (fix round 3, finding
       // HZ2-M3P3-05): `magnitude` is strictly positive by construction
       // two lines above, so a card statement standing in credit, whose
-      // figure is non-positive, equals no debit and settles nothing. The
-      // guard below is redundant against that equality, measured by
-      // deleting it and watching the whole fast gate stay green; it is
+      // figure is non-positive, equals no candidate and settles nothing.
+      // The positivity guard is redundant against that equality, measured
+      // by deleting it and watching the whole fast gate stay green; it is
       // kept as a cheap statement of intent, not as the thing that works.
-      candidate.settlementTotalCents === magnitude &&
-      candidate.settlementTotalCents > 0 &&
+      //
+      // CANDIDATES, PLURAL (fix round 4, finding HZ3-M3P3-01): an import
+      // with no printed figure carries every total its rows could
+      // plausibly settle for, because from the rows alone an unrecognised
+      // settlement credit and an ordinary merchant refund are the same
+      // shape and they imply different totals. Matching ONE of them is
+      // what identifies which; matching none leaves the debit loud, as
+      // before. Exclusivity is unchanged: interpretLedger still allocates
+      // each import to at most one debit.
+      candidate.settlementTotalsCents.some(
+        (total) => total === magnitude && total > 0,
+      ) &&
       dayDistance(transaction.bookingDate, candidate.periodEnd) <=
         SETTLEMENT_DATE_WINDOW_DAYS,
   );
