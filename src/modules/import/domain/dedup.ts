@@ -138,6 +138,16 @@ export const compareDedupKeys = (a: string, b: string): number => {
 // when every file occurrence's key is already held elsewhere (a spec
 // correction merged previously distinct tuples). Throws for natural keys:
 // a taken natural key has no ordinal dimension and means corrupted state.
+//
+// ITS ONLY CALLER IS THE RE-PARSE PATH, fix-profile.ts (finding
+// CR-M3P3-07): no import path reaches this helper, so the duplicate-pair
+// witness over the KBC fixture does NOT cover it, however much it looks
+// like it should. MEASURED IN FIX ROUND 2, and wider than the finding
+// stated: neutering the taken-check here so it can never allocate a free
+// ordinal left the WHOLE fast gate green, all 31 files and 405 tests,
+// re-parse suite included, while freezing the ordinal assignDedupKeys
+// allocates below reddens two tests at once. The helper had no witness
+// anywhere. It has one now, directly, in test/domain/dedup.test.ts.
 export const nextFreeDedupKey = (
   baseKey: string,
   isTaken: (key: string) => boolean,
