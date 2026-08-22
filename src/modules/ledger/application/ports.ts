@@ -75,8 +75,10 @@ export type LedgerRepositoryPort = {
     input: { readonly accountIds: readonly string[] },
   ) => Promise<readonly CounterpartyRef[]>;
   // The settlement figure each card import's OWN STATEMENT carries, over
-  // the given card accounts, in positive integer cents (fix round 2,
-  // finding HZ-M3P3-01). Imports whose statement printed no such figure
+  // the given card accounts, in SIGNED integer cents (fix round 2, finding
+  // HZ-M3P3-01; the sign corrected in fix round 3, finding HZ2-M3P3-05,
+  // because a card standing in credit prints a non-positive figure and the
+  // settlement match, not a range check, is what makes that safe). Imports whose statement printed no such figure
   // are simply absent from the result, which is what makes the row-sum
   // fallback in summarizeCardImports reachable and correct. UNBOUNDED for
   // the same reason listPotTransactions loads card accounts unbounded
