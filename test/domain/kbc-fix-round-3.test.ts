@@ -308,3 +308,92 @@ describe("an UNRECOGNISED settlement credit does not double the month (HZ3-M3P3-
     expect(summaries[0]?.settlementTotalsCents).toEqual([12345]);
   });
 });
+
+// ---------------------------------------------------------------------
+// FIX ROUND 5, finding HZ4-M3P3-01. The second candidate doubles the
+// accidental-match surface, and the review lane constructed the link it
+// uniquely enables: statement A carries an unclaimed positive row so it
+// offers two totals, A's SECOND candidate coincides with statement B's
+// only total, and A's period end is nearer the debit, so the tie-break
+// preferred A and the debit was linked to the statement that did not
+// receive it. Every consequence is loud, and the cost is the settlement
+// record rather than the month, but a link made on the weaker of two
+// readings should lose to one made on the only reading there is.
+// ---------------------------------------------------------------------
+
+describe("a link made on the weaker reading loses to one made on the only reading (HZ4-M3P3-01)", () => {
+  // Statement A: two debits summing to 400,00 and an unclaimed positive
+  // row of 100,00, so its candidates are the net 300,00 and the debit sum
+  // 400,00. Period end 10 August, nearer the debit than B's.
+  const statementA: readonly LedgerTransaction[] = [
+    tx({ id: "a1", accountId: "acc-card", importId: "card-A", date: "2026-08-08", amount: -25000, description: "BOEKBINDERIJ DE PENSEELSTREEK" }),
+    tx({ id: "a2", accountId: "acc-card", importId: "card-A", date: "2026-08-09", amount: -15000, description: "SPORTHAL DE WATERMOLEN" }),
+    tx({ id: "a3", accountId: "acc-card", importId: "card-A", date: "2026-08-10", amount: 10000, description: "TERUGBETALING SPORTHAL DE WATERMOLEN" }),
+  ];
+  // Statement B, on its own card account: one debit of 400,00, so its
+  // only candidate is 400,00 and it is unambiguous. Period end 2 August,
+  // further from the debit than A's.
+  const statementB: readonly LedgerTransaction[] = [
+    tx({ id: "b1", accountId: "acc-card-b", importId: "card-B", date: "2026-08-02", amount: -40000, description: "MEUBELMAKERIJ DE ESDOORN" }),
+  ];
+  const debit = tx({
+    id: "dx",
+    accountId: "acc-current",
+    importId: "current-x",
+    date: "2026-08-12",
+    amount: -40000,
+    description: "MASTERCARD AFREKENING NUMMER 61",
+  });
+  const accountsWithTwoCards: readonly DeclaredAccount[] = [
+    ...ACCOUNTS,
+    { id: "acc-card-b", role: "POT" },
+  ];
+  const collisionWorld = [...statementA, ...statementB, debit];
+
+  test("the construction really is a collision: A offers two totals and B offers one", () => {
+    const sets = deriveDeclaredSets(accountsWithTwoCards);
+    const summaries = summarizeCardImports([...statementA, ...statementB], sets);
+    const a = summaries.find((s) => s.importId === "card-A");
+    const b = summaries.find((s) => s.importId === "card-B");
+    expect(a?.settlementTotalsCents).toHaveLength(2);
+    expect(a?.settlementTotalsCents?.[0]).toBe(30000);
+    expect(a?.settlementTotalsCents?.[1]).toBe(40000);
+    expect(b?.settlementTotalsCents).toEqual([40000]);
+    // And A really is the nearer statement, so the date tie-break alone
+    // would prefer it.
+    expect(a?.periodEnd).toBe("2026-08-10");
+    expect(b?.periodEnd).toBe("2026-08-02");
+  });
+
+  test("the debit links to the statement whose ONLY reading it matches, not the nearer one it matches on its second", () => {
+    const interpretation = interpretLedger({
+      transactions: collisionWorld,
+      accounts: accountsWithTwoCards,
+    });
+    expect(interpretation.flows.get("dx")).toBe("INTERNAL");
+    expect(interpretation.settlements).toHaveLength(1);
+    expect(interpretation.settlements[0]?.cardImportId).toBe("card-B");
+  });
+
+  test("the debit that truly belonged to A still finds A, and neither statement is consumed by the other", () => {
+    const debitForA = tx({
+      id: "dy",
+      accountId: "acc-current",
+      importId: "current-y",
+      date: "2026-08-13",
+      amount: -30000,
+      description: "MASTERCARD AFREKENING NUMMER 62",
+    });
+    const interpretation = interpretLedger({
+      transactions: [...collisionWorld, debitForA],
+      accounts: accountsWithTwoCards,
+    });
+    const byDebit = new Map(
+      interpretation.settlements.map((l) => [l.debitTransactionId, l.cardImportId]),
+    );
+    expect(byDebit.get("dx")).toBe("card-B");
+    expect(byDebit.get("dy")).toBe("card-A");
+    expect(interpretation.flows.get("dx")).toBe("INTERNAL");
+    expect(interpretation.flows.get("dy")).toBe("INTERNAL");
+  });
+});
