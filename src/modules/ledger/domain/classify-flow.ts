@@ -8,7 +8,10 @@
 //   3. The settlement-match step (owner v0.2 addendum section 5, decision
 //      D-11), BETWEEN the declared-set checks and the sign fallback.
 //   4. Otherwise sign decides: negative SPEND, positive INCOME, with the
-//      refund and cash-withdrawal corrections applied on the way.
+//      refund and cash-withdrawal corrections applied on the way. On a
+//      DECLARED CARD ACCOUNT the positive branch never reaches INCOME: a
+//      card can only receive money as a settlement (step 3) or as a
+//      merchant refund (finding HZ-M3P3-06).
 //
 // A row none of that reaches (a zero amount: no direction to read) is
 // UNRESOLVED: shown as a visible gap, never dropped, never defaulted into
@@ -104,7 +107,14 @@ export const classifyFlow = (
     return { flow: "SPEND" };
   }
   if (transaction.amountCents > 0) {
-    const refund = correctRefund(transaction, context.outgoingHistoryKeys);
+    // The card arm of correction 3 (finding HZ-M3P3-06): a positive row on
+    // a declared card account that the settlement step did not claim is a
+    // merchant refund, not income.
+    const refund = correctRefund(
+      transaction,
+      context.outgoingHistoryKeys,
+      sets.cardAccountIds,
+    );
     if (refund !== undefined) {
       return { flow: refund };
     }

@@ -124,12 +124,35 @@ export const correctReserveDrawdown = (
 // that counterparty's spend and keeps the income side honest and small.
 // The counterparty identity here is the pre-merchant-resolution key below;
 // M1-P4's resolver refines grouping, not this rule.
+//
+// THE CARD ARM (fix round 2, finding HZ-M3P3-06), decided explicitly here
+// rather than left to fall through the sign rule. On an account in the
+// DECLARED card set, a positive row that is not the settlement credit is a
+// refund BY CONSTRUCTION: a card account has no other way to receive
+// money. Nobody is paid a salary onto a Mastercard. The history test the
+// counterparty arm applies cannot see it, because it keys on descriptor
+// text (counterpartyKey below) and a merchant's refund line is almost
+// never byte-identical to the purchase it reverses, so before this arm an
+// ordinary card refund classified INCOME and reported money that never
+// entered the household as income for the month. The treatment is the one
+// correction 3 already gives a matched refund: SPEND with a positive
+// amount, netting against that merchant's spend.
+//
+// The mirror credit does NOT reach here: correctCardSettlement runs first
+// (classify-flow.ts step 3) and returns INTERNAL for it. This arm is
+// therefore "positive, on a card account, and not the settlement leg".
+// The shape became reachable when phase M3-P3 made card statements
+// importable from PDF; the observed statement carries no refund row, so
+// nothing shipped is misreported today, which is why the rule is written
+// down now rather than discovered later from a wrong month total.
 export const correctRefund = (
   transaction: LedgerTransaction,
   outgoingHistoryKeys: ReadonlySet<string>,
+  cardAccountIds?: ReadonlySet<string>,
 ): "SPEND" | undefined =>
   transaction.amountCents > 0 &&
-  outgoingHistoryKeys.has(counterpartyKey(transaction))
+  (outgoingHistoryKeys.has(counterpartyKey(transaction)) ||
+    cardAccountIds?.has(transaction.accountId) === true)
     ? "SPEND"
     : undefined;
 
