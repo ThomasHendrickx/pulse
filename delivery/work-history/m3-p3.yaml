@@ -72,6 +72,44 @@ files-touched:
   - test/e2e/import.spec.ts
   - delivery/work-history/m3-p3-notes.md
   - delivery/work-history/m3-p3.yaml
+  # FIX ROUND 2 adds the following. Eight of them sit outside the phase's
+  # declared files-to-touch and that departure is deviation DEV-M3P3-02.
+  - prisma/schema/import.prisma
+  - prisma/schema/migrations/20260822070000_import_settlement_total/migration.sql
+  - src/modules/import/domain/pdf-template.ts
+  - src/modules/import/domain/source-profile.ts
+  - src/modules/import/domain/parse-statement.ts
+  - src/modules/import/domain/parse-pdf-statement.ts
+  - src/modules/import/domain/parse-amount.ts
+  - src/modules/import/domain/dedup.ts
+  - src/modules/import/adapters/statement-parser.ts
+  - src/modules/import/adapters/import-repository.ts
+  - src/modules/import/application/ports.ts
+  - src/modules/import/application/upload-statement.ts
+  - src/modules/import/application/confirm-import.ts
+  - src/modules/import/ui/preview-limit.ts
+  - src/modules/import/ui/profile-confirmation.tsx
+  - src/modules/import/ui/index.ts
+  - src/app/(app)/import/[id]/page.tsx
+  - messages/en.json
+  - messages/nl.json
+  - messages/fr.json
+  - src/modules/ledger/domain/ledger-transaction.ts
+  - src/modules/ledger/domain/corrections.ts
+  - src/modules/ledger/domain/classify-flow.ts
+  - src/modules/ledger/domain/interpret.ts
+  - src/modules/ledger/application/ports.ts
+  - src/modules/ledger/application/interpret-window.ts
+  - src/modules/ledger/application/index.ts
+  - src/modules/ledger/adapters/ledger-repository.ts
+  - test/fixtures/allowed-identifiers.txt
+  - test/fixtures/kbc-statement-second-card.pdf
+  - test/fixtures/kbc-statement-refund.pdf
+  - test/fixtures/belfius-settlement-companion-refund.pdf
+  - test/application/kbc-fix-round-2.test.ts
+  - test/application/fake-import-world.ts
+  - test/domain/dedup.test.ts
+  - test/domain/profile-detection.test.ts
 # CORRECTED LOUDLY (R-087) AFTER THE PRIVACY PURGE, not quietly rewritten:
 # this list previously named six per-step implementation commits (subjects,
 # in order: the work-notes commit; the template-plus-fixtures commit,
@@ -178,7 +216,139 @@ verification-first:
       through mid-July 2026 plus one early-August date; the fixtures
       use mid-May through 14 June plus 22 June).
     contradicts-plan: false
-deviations: []
+deviations:
+  - plan-clause: >-
+      M3-P3 "migrations: none, template and fixtures only."
+      (delivery/plan/pulse-v02.yaml, phase M3-P3).
+    why: >-
+      DEV-M3P3-01. Fix round 2 adds ONE migration,
+      prisma/schema/migrations/20260822070000_import_settlement_total, a
+      single nullable integer column imports.settlementTotalCents. It is
+      what closes finding HZ-M3P3-01, and the finding cannot be closed
+      without it. The defect is that a card import's settlement total was
+      RE-DERIVED as the sum of the magnitudes of its negative rows while
+      the figure the statement itself prints was parsed for the balance
+      gate and then discarded. Every alternative that avoids storage is
+      another re-derivation from the rows: the closest one, minus the sum
+      of all rows except the settlement credit, gives the right answer
+      only while the credit exactly cancels the previous balance, so it
+      breaks the moment a household underpays a statement or a charge is
+      disputed, which is precisely the class of assumption this finding
+      exists to remove. The settlement figure is a FACT the document
+      carries, and CLAUDE.md non-negotiable 5 plus pulse-domain's
+      facts-versus-interpretation split say a fact is stored, never
+      recomputed by interpretation. The column is nullable and written
+      only by the ingest that writes the rows; every pre-existing import
+      and every statement that prints no such figure is null, and the
+      documented row-sum fallback is what those take. Escalated here
+      rather than decided quietly, because "migrations: none" is a phase
+      contract clause and this is a departure from it.
+  - plan-clause: >-
+      M3-P3 files-to-touch: src/modules/import/domain/, test/fixtures/,
+      test/domain/, test/application/, test/e2e/import.spec.ts; extras [].
+      Reinforced by decision D-19, which describes M3-P3 as changing no UI
+      file.
+    why: >-
+      DEV-M3P3-02. Fix round 2 touches eight paths outside that list, and
+      each is owed by a finding rather than chosen. src/modules/ledger/
+      (domain, application, adapters): HZ-M3P3-01's settlement total and
+      HZ-M3P3-06's card-refund arm both live in the ledger, because that
+      is where a card import is summarised and where a positive row is
+      classified. src/modules/import/application/ and adapters/: the
+      figure has to travel from the parse to the stored row.
+      prisma/schema/: see DEV-M3P3-01. src/modules/import/ui/ and
+      src/app/(app)/import/[id]/page.tsx and messages/{en,nl,fr}.json:
+      CR-M3P3-04, the preview row limit and the copy that discloses it
+      were two unlinked literals. NO LAYOUT CHANGED and no stylesheet was
+      touched: the UI edits are one new constant module, one import, a
+      slice that reads the constant, and two message strings that
+      interpolate a count where they used to spell the word "five".
+      src/app/globals.css and every overview surface are untouched, so the
+      mobile rebuild phases keep their ground. Stated as a departure
+      anyway, because D-19 asserts in the plan that this phase changes no
+      UI file and that sentence is now false.
+  - plan-clause: >-
+      Fix-round dispatch: "Do not touch anything under delivery/intake/."
+    why: >-
+      DEV-M3P3-03. Finding CR-M3P3-08 is not fixed. It reports that
+      delivery/intake/pulse-v0.2-pdf-addendum.md quotes one real FX
+      continuation line verbatim, including its original-currency amount,
+      as a format example. The fix is one line and I did not make it,
+      because the dispatch forbids touching that directory and the file is
+      owner-authored. It stays open and it is a real leak in a PUBLIC
+      repository: it needs the owner, both to change the line and to
+      decide whether main's history needs the same purge M3-P3's own
+      amount received under M3P3-Q1.
+  - plan-clause: >-
+      CLAUDE.md non-negotiable 8 and fleet warning 12: nothing from a real
+      statement is committed, in any form, and the repository is public.
+    why: >-
+      DEV-M3P3-04. A repair inside two files this phase does not own.
+      Re-derived in fix round 2: one seven-significant-digit thousands-form
+      amount from the real Belfius statement occurred verbatim in
+      test/domain/profile-detection.test.ts as a parser case AND, in
+      dot-decimal form, inside a source comment in
+      src/modules/import/domain/parse-amount.ts. It is not round, its
+      coincidence is not plausible, and the comment reads like a value
+      copied from something open on the desk. Both occurrences were
+      replaced with an invented value, measured absent from both real
+      statements in six rendering forms before being written. Neither file
+      is in M3-P3's files-to-touch and neither is this phase's work; a
+      real amount sitting in a public tree is not something to leave for
+      the phase that owns the file. HEAD is clean of it; HISTORY IS NOT,
+      on this branch and on main, and that purge is the owner's call.
+  - plan-clause: >-
+      Same clause as DEV-M3P3-04, recorded separately because the decision
+      went the other way.
+    why: >-
+      DEV-M3P3-05. A second thousands-form amount from the same real
+      statement occurs in three committed CSV fixtures, two test
+      assertions and one e2e comment, and on a line THIS PHASE ADDED to
+      the fixture generator. It was NOT replaced. It is a round figure; it
+      sits in its fixture as a deliberately absurd reimbursement amount
+      whose leading digits read as a joke rather than as a transcription;
+      both review lanes independently judged the round-figure class a
+      plausible coincidence; and replacing it churns three committed
+      fixtures plus the merged M1-P4 records that quote the totals derived
+      from them. Recorded, measured and escalated for owner adjudication
+      instead of decided here. If the owner reads it the other way the
+      change is mechanical and I have listed every location.
+  - plan-clause: >-
+      Same clause again, for a class no gate and neither review lane
+      reached.
+    why: >-
+      DEV-M3P3-06. Fix round 2 ran its own whole-tree sweep for the class
+      that actually leaked twice, multi-word capitalised runs probed
+      against both real uploads: 956 runs, 23 hits, and every one of the
+      23 is bank-controlled layout vocabulary (transaction-type labels,
+      column headers, annex and footer boilerplate, the bank's own app and
+      product names). No merchant name, no holder name and no
+      place-and-merchant pair is in the tree. TWO BARE PLACE TOKENS DO
+      COINCIDE, one with each real statement, both inside otherwise
+      invented merchant descriptors in fixtures that predate this round.
+      They were left alone and are recorded here: the codebase's own
+      merchant normaliser already carries both as generic city vocabulary,
+      a bare city token identifies nothing on its own, and changing them
+      churns committed fixture bytes. One row this round AUTHORED had
+      picked up one of those two tokens by accident; that one was changed
+      before commit to a place name measured absent from both documents,
+      because for new content the measured-absent choice is free.
+  - plan-clause: >-
+      Fix-round dispatch: work every finding in both verdicts.
+    why: >-
+      DEV-M3P3-07. Two findings are answered by argument rather than by a
+      code change, and both are named in the report. CR-M3P3-03 asked for
+      an honest header on scripts/gate-privacy.sh; that landed on main
+      before this round started (commits 364227a, 88c861e and fd1d51d),
+      and the file now states what its three rules decide and what they
+      cannot see, so nothing is owed. HZ-M3P3-03's design-mockup half also
+      landed on main and was re-verified clean by this round's own sweep.
+      HZ-M3P3-08's second half is CORRECTED RATHER THAN ACCEPTED: it
+      reports that two of the three KBC marketing footer lines occur
+      verbatim in the real card statement, and measurement in fix round 2
+      finds exactly ONE of the three does. The record in the fixture
+      generator says one, not two, and says how it was measured.
+
 gate-evidence:
   - gate: "typecheck (npm run typecheck, tsc --noEmit, node v26.7.0, at the pre-purge implementation head; its tree is byte-identical to the rebuilt branch, verified by an empty git diff --stat against 253e074)"
     result: green
@@ -234,16 +404,24 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
-  - gate: "privacy half (b): the same grep over the 10 files this phase changed (git diff --name-only a577e51..HEAD), extended to all five categories plus diligence (identifiers, holder name and address, merchant strings, all KBC row amounts, thousands-form amounts from both statements, every date of both statements in DD-MM-YYYY and ISO form, FX values, Belfius IBAN forms, every digit-carrying whole line of both statements, upload file names and stems; 341 probes)"
-    result: green
-    wrapper-exit-code: 0
+  - gate: "privacy half (b): the same grep over the 10 files this phase changed (git diff --name-only a577e51..HEAD), extended to all five categories plus diligence (identifiers, holder name and address, merchant strings, all KBC row amounts, thousands-form amounts from both statements, every date of both statements in DD-MM-YYYY and ISO form, FX values, Belfius IBAN forms, every digit-carrying whole line of both statements, upload file names and stems; 341 probes). CORRECTED IN FIX ROUND 2, NOT REWRITTEN (R-087, finding CR-M3P3-05): this entry recorded 341 discovered, 341 passed, 0 failed, and that 0 is wrong under the scope this same entry declares. Re-derived in fix round 2 by extracting every thousands-form amount of both real statements in memory and running each rendering form as git grep over the tracked tree: one round thousands-form figure that occurs in the Belfius statement also occurs on a line THIS PHASE ADDED, in the fixture generator and inside the phase-added companion fixture. The counts below are corrected to 340 passed and 1 failed. The judgement, stated rather than hidden in a count: the figure is round, it reads as a deliberately absurd invented value in its fixture row, and the codebase carries no evidence of transcription, so it is recorded as a probable coincidence and escalated for owner adjudication (deviation DEV-M3P3-05) rather than replaced. What was wrong was calling the sweep 341 of 341 while a probe inside its own declared category hit."
+    result: amber
+    no-wrapper-exit-code: >-
+      The half (b) sweep is a probe-set walk, not a single wrapped
+      command: each probe is one grep whose exit code was read
+      individually, so there is no wrapper process and no wrapper exit
+      code to report. Amber rather than green because one probe inside
+      this gate's own declared category hits a line this phase added;
+      amber rather than red because the hit is a round figure judged a
+      probable coincidence and escalated (deviation DEV-M3P3-05) rather
+      than left unexamined.
     discovered: 341
-    passed: 341
-    failed: 0
+    passed: 340
+    failed: 1
     skipped: 0
     todo: 0
     did-not-run: 0
-  - gate: "independent scrub: plain grep -rIF -e <probe> over the working tree (git, node_modules, .next excluded), same 379-probe set; 8 hits remained, every one in a file verified byte-identical to the phase base a577e51 (M1-era generic amounts and dates in tests, fixtures and seed, plus the owner-authored intake document quoting one real FX line as a format example): baseline residues recorded, none introduced by this phase"
+  - gate: "independent scrub: plain grep -rIF -e <probe> over the working tree (git, node_modules, .next excluded), same 379-probe set; 8 hits remained, every one in a file verified byte-identical to the phase base a577e51. CORRECTED IN FIX ROUND 2, LOUDLY (R-087, both review lanes named this sentence): this entry used to characterise those 8 hits as \"M1-era generic amounts and dates in tests, fixtures and seed, plus the owner-authored intake document quoting one real FX line as a format example\" and then clear them because the files predate the phase. THE METHOD WAS WRONG EVEN WHERE THE CONCLUSION HELD. Two things are wrong with it. First, \"generic amount\" is not a category anyone measured: re-derived in fix round 2, two of the hits are SEVEN-SIGNIFICANT-DIGIT thousands-form amounts that occur verbatim in the real Belfius statement, one of them reproduced a second time inside a source comment, and a seven-digit figure is not generic by any test. Second, \"it predates the phase\" is a statement about authorship, not about whether real content is sitting in a PUBLIC repository, and CLAUDE.md admits no such exemption. What fix round 2 did with them: the NON-ROUND one, which reads as transcription and whose coincidence is not plausible, was replaced with an invented value in both of its two locations; the ROUND one was measured, judged a probable coincidence, and escalated rather than replaced (deviations DEV-M3P3-04 and DEV-M3P3-05). The corrected disposition of this gate is amber with the hits NAMED by category and count, not cleared by provenance"
     result: amber
     no-wrapper-exit-code: >-
       The scrub is a probe-set sweep, not a single wrapped command: each
@@ -257,6 +435,52 @@ gate-evidence:
     passed: 371
     failed: 8
     skipped: 0
+    todo: 0
+    did-not-run: 0
+  # ---------------- FIX ROUND 2, run by the inheriting implementer ------
+  - gate: "fix round 2, typecheck (npm run typecheck, tsc --noEmit, node v22.12.0, at the fix-round head with origin/claude/m3-p3-pdf-kbc merged in)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fix round 2, lint (npm run lint, eslint ., same head)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fix round 2, fast suite (npm test, vitest run, node v22.12.0, same head; 31 files, 408 tests, 0 skipped; up from 30 files and 393 tests, the 15 added being the fix round's own witnesses)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 408
+    passed: 408
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fix round 2, privacy gate (npm run gate:privacy, the standing gate line's fourth member). It FAILED at the round's start, on four files carrying the KBC fixture's masked card shape, because main strengthened the gate to see masked forms while this branch's fixtures carried one that was on no allow list. Both masked cards are now listed with provenance"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fix round 2, slow suite (npm run test:e2e, playwright, chromium plus chromium-prod, config-owned dev and production webServers, all five env values pinned local per fleet warning 6 by clearing the ambient foreign Supabase variables so the repository's own .env is what loads; the new migration applied to the local stack with prisma migrate deploy first). 22 tests, 21 passed, 1 skipped, 3.5m. ENVIRONMENT NOTE, stated because it changes how the evidence should be read: another agent's dev server occupied ports 3000 and 3001 in this container, and playwright.config.ts refuses to reuse a server it did not start (finding CR-505). The two webServer ports were moved to 3200 and 3300 for the run and playwright.config.ts was restored immediately after; git diff over that file is empty at the committed head. Nothing else about the run differed: both servers were started by the config, the production project built and ran its own bundle, and the criterion 3.4 journey passed inside the full suite"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 22
+    passed: 21
+    failed: 0
+    skipped: 1
     todo: 0
     did-not-run: 0
 claims:
@@ -356,6 +580,119 @@ claims:
           object is EMPTY (trees byte-identical), and the six former
           per-step shas are absent from the branch. The pre-purge gate
           runs therefore executed against this exact tree.
+  - id: M3P3-F2-C1
+    kind: coverage
+    statement: >-
+      Every defect fix in fix round 2 has a red witness: the new tests
+      redden against the pre-fix source and green against it, and the
+      witness for each finding names that finding. Executed by stashing
+      src/ alone (fixtures and tests kept at their post-fix state) and
+      running the suites, then restoring.
+    settled-by:
+      executed-construction:
+        command: "git stash push -- src/ ; npx vitest run test/application/kbc-fix-round-2.test.ts ; git stash pop ; npx vitest run test/application/kbc-fix-round-2.test.ts"
+        exit-code: 1
+        output: >-
+          PRE-FIX: "Test Files 1 failed (1)", "Tests 5 failed | 1 passed
+          (6)". The five, by finding: HZ-M3P3-05 "expected undefined to be
+          <the statement's settlement figure>", the statement's own figure
+          did not survive the parse; HZ-M3P3-01 "expected 'SPEND' to be
+          'INTERNAL'", the account-side debit for the Afrekening amount
+          matched no card import because the total was re-derived from the
+          row signs; HZ-M3P3-06 "expected 'INCOME' to be 'SPEND'", the
+          ordinary card refund reported as income; HZ-M3P3-02 first,
+          "expected {kind, templateId, templateVersion} to match object
+          {accountIdentifier}", the spec carried no card identity;
+          HZ-M3P3-02 second, "expected false to be true" on
+          askedDeclaration, the second card was ingested onto the first
+          card's account with no question asked. The one that stayed green
+          pre-fix is the arithmetic assertion that the new fixture's three
+          numbers differ, which is a property of the fixture and not of
+          the code. POST-FIX: "Test Files 1 passed (1)", "Tests 6 passed
+          (6)".
+  - id: M3P3-F2-C2
+    kind: coverage
+    statement: >-
+      The structure guards added for HZ-M3P3-07 and for the missing-card
+      case are witnesses too, not assertions of current behaviour: the
+      same stash-src construction reddens exactly them.
+    settled-by:
+      executed-construction:
+        command: "git stash push -- src/ ; npx vitest run test/domain/kbc-pdf-template.test.ts ; git stash pop"
+        exit-code: 1
+        output: >-
+          PRE-FIX: "18 tests | 5 failed". Two DIFFERENT previous-balance
+          lines and two DIFFERENT settlement-total lines both parsed
+          happily ("expected true to be false"), which is the silent
+          first-and-last reduction HZ-M3P3-07 names; a card document
+          carrying NO card number and one carrying TWO DIFFERENT card
+          numbers both parsed happily too. The fifth was the detected-spec
+          equality, which reddens because the spec now carries the card
+          identity. Green pre-fix and still green after: the repeated
+          IDENTICAL balance line, which must be folded rather than
+          refused, and every pre-existing criterion 3.1 assertion.
+          POST-FIX: "Test Files 1 passed (1)", "Tests 18 passed (18)".
+  - id: M3P3-F2-C3
+    kind: coverage
+    statement: >-
+      nextFreeDedupKey had NO witness anywhere in the fast gate, wider
+      than finding CR-M3P3-07 stated, and now has one.
+    settled-by:
+      executed-construction:
+        command: "neuter the taken-check in nextFreeDedupKey so it can never allocate a free ordinal; npm test; restore; npx vitest run test/domain/dedup.test.ts against the neutered copy"
+        exit-code: 0
+        output: >-
+          NEUTERED, BEFORE THE NEW TEST: "Test Files 31 passed (31)",
+          "Tests 405 passed (405)". The whole fast gate, re-parse suite
+          included, stayed green with the helper unable to do its job.
+          CR-M3P3-07 said no M3-P3 witness covered it; measurement says
+          nothing anywhere did. NEUTERED, AFTER THE NEW TEST: "9 tests | 2
+          failed", "expected 'h:acc-1:abc#0' to be 'h:acc-1:abc#3'" and
+          "expected [Function] to throw an error". RESTORED: 9 passed.
+  - id: M3P3-F2-C4
+    kind: coverage
+    statement: >-
+      The allow-list task had a red witness of its own: gate:privacy
+      FAILED on this branch before the round and passes after, and the
+      identifier it failed on was established invented by measurement
+      rather than by assertion.
+    settled-by:
+      executed-construction:
+        command: "npm run gate:privacy at the round's start; then again after the two masked card forms were added to test/fixtures/allowed-identifiers.txt with provenance"
+        exit-code: 1
+        output: >-
+          BEFORE: four failures, one per file carrying the KBC fixture's
+          masked card shape (the generator and the three KBC-family PDFs),
+          each reading "identifier shape not on the allow list". AFTER:
+          "gate:privacy clean", exit 0. The invention check, run before
+          listing anything: the fixture's masked card was probed against
+          both real uploads in its masked form, its six-digit head and its
+          four-digit tail, zero hits in all three forms in both documents;
+          the second card added this round was probed the same way with
+          the same result. Nothing was added on the strength of it looking
+          invented.
+  - id: M3P3-F2-C5
+    kind: coverage
+    statement: >-
+      The privacy class that actually leaked twice, and that gate:privacy
+      cannot see, was swept by this round rather than assumed clean.
+    settled-by:
+      executed-construction:
+        command: "extract the text layer of both real uploads with the repository's own pinned pdfjs into the session scratchpad; derive every multi-word capitalised run of ten or more characters from every tracked text file and from the fixture PDFs; probe each against both documents. Separately, derive 199 probes from the three NEW fixture PDFs (every digit run, every alphabetic token, every capitalised run, every line) and probe those."
+        exit-code: 0
+        output: >-
+          WHOLE TREE: 956 multi-word runs probed, 23 hits, every one
+          bank-controlled layout vocabulary (transaction-type labels,
+          column headers, annex and footer boilerplate, the bank's own app
+          and product names). No merchant name, no holder name, no
+          place-and-merchant pair. THE THREE NEW FIXTURES: 199 probes, 68
+          hits before a correction and 67 after, all layout vocabulary
+          except one bare city token inherited from a pre-existing fixture
+          row (deviation DEV-M3P3-06). DATES: every fixture date token
+          probed against both documents, zero collisions, in both
+          directions. Nothing derived from the real documents was written
+          into the worktree; the probe lists exist only in the session
+          scratchpad.
   - id: M3P3-Q2
     kind: open-question
     statement: >-
@@ -366,6 +703,51 @@ claims:
       rule; whether KBC emits multi-card statements, and what identity
       they carry, is unknowable from the available document and is
       left for the first real example.
+  - id: M3P3-F2-Q1
+    kind: open-question
+    statement: >-
+      FIX ROUND 2 LEAVES THREE THINGS FOR THE OWNER, none of which an
+      implementer can settle. (1) delivery/intake/pulse-v0.2-pdf-addendum.md
+      quotes one real FX continuation line verbatim, amount included
+      (CR-M3P3-08); the dispatch forbids touching that directory and the
+      file is owner-authored, so it is untouched and still leaking.
+      (2) One round thousands-form amount shared with a real statement was
+      judged a probable coincidence and left in three fixtures and two
+      tests (DEV-M3P3-05); if the owner reads it the other way, every
+      location is listed there. (3) HEAD is now clean of the non-round
+      amount this round replaced, but HISTORY IS NOT, on this branch and
+      on main, and the repository is public: whether main's history needs
+      the purge M3-P3's own amount received under M3P3-Q1 is a decision
+      only the owner can make.
+    still-open-because: >-
+      The statement carries the word "every" where it says the fixture
+      locations are listed, which is a guarded token, so this field is
+      owed. All three items are open for the same reason and it is not a
+      derivation gap: each needs the owner. (1) and (3) are the owner's
+      own artifacts and the owner's own history-rewrite decision, and (2)
+      is an adjudication between two readings of a measurement I have
+      already made and recorded in full.
+  - id: M3P3-F2-Q2
+    kind: open-question
+    statement: >-
+      The card identity now rides the profile spec as accountIdentifier,
+      which means a stored pdf-layout profile created BEFORE this change
+      is no longer spec-equal to a freshly detected one for the same card,
+      and its next upload would ask a declaration and create a twin
+      profile rather than fail closed. No migration is owed TODAY, because
+      the KBC template has never been merged or deployed and no stored KBC
+      profile can exist anywhere. It is written down because the next
+      person to change a pdf-layout spec shape will not have that luxury:
+      at that point the template-version bump procedure at pdf-template.ts
+      is the mechanism, and it fails closed by design.
+    still-open-because: >-
+      The statement carries "never" where it says the template has never
+      been merged or deployed, which is a guarded token, so this field is
+      owed. It stays open because the migration question it names is not
+      answerable until a pdf-layout spec shape changes AFTER something is
+      stored, and nothing is stored today; I checked the branch history
+      and the deployed state rather than assuming, and there is no stored
+      KBC profile to migrate.
   - id: M3P3-Q3
     kind: open-question
     statement: >-
