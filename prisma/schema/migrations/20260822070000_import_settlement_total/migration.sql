@@ -9,7 +9,25 @@
 -- own rows and the whole direct debit.
 --
 -- Nullable, because only a layout that PRINTS such a figure has one: every
--- current-account statement and every delimited export leaves it null, and
--- the ledger keeps its documented row-sum fallback for exactly that case.
--- Existing rows are pre-PDF-card imports and are correctly null.
+-- current-account statement and every delimited export leaves it null.
+--
+-- CORRECTED IN FIX ROUND 3 (finding HZ2-M3P3-01), because the two sentences
+-- that stood here were both wrong. The first said the ledger keeps its
+-- row-sum fallback "for exactly that case", presenting the delimited export
+-- as a case the fallback covers. It did not: a DELIMITED CARD export is an
+-- ordinary shape, a card account is a pot account with no IBAN whatever
+-- format its statements arrive in, and on that path the row-sum derivation
+-- was wrong by exactly any ordinary merchant refund, which is the defect
+-- this column exists to remove. The fallback is now the NET of the line
+-- items excluding the settlement credit, which is what a printed figure is,
+-- so the null case is answered rather than merely tolerated.
+--
+-- The second sentence asserted that existing rows are pre-PDF-card imports.
+-- THAT IS A CLAIM ABOUT THE OWNER'S DEPLOYED DATABASE and nothing in this
+-- repository can check it, so it is not asserted. What is true and checkable
+-- is that the KBC card template does not exist on main, so no import made by
+-- a deployed build can have carried a printed card figure; whether the
+-- deployed database holds card imports from the DELIMITED path is for the
+-- owner to confirm, and if it does they are null here and take the corrected
+-- derivation above, which is the right answer for them.
 ALTER TABLE "imports" ADD COLUMN "settlementTotalCents" INTEGER;
