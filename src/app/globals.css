@@ -8,8 +8,16 @@
  * token is added to styles/tokens.css first, never inlined here.
  */
 
+ /* VIEWPORT HEIGHT ON A PHONE (M3-P7 fix round, finding HZ-M3P7-08). vh is
+  * the LARGE viewport, the height with the URL bar retracted, so a screen
+  * sized in vh is taller than the area the user can see at load and the page
+  * scrolls by the difference even when the content fits. dvh is the height
+  * the user actually has. The vh line stays immediately above as the
+  * fallback for a browser without dvh; both are units rather than values, so
+  * neither is a token. */
 .auth-screen {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -86,8 +94,10 @@
   color: var(--color-ink-muted);
 }
 
+/* Sized in dvh with a vh fallback, for the reason at .auth-screen above. */
 .app-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -95,32 +105,53 @@
 /* The shell header, rebuilt one-column at phone width in M3-P7 under
  * DR-0022, following delivery/design/mobile-v02/Main.dc.html:23 through
  * :33: an identity row (brand, household, sign out) above a navigation row
- * whose three links share the width equally. It is a COLUMN at every
- * width, so no breakpoint is spent on the header and the wrapping the
- * M3-P1 defect round bought is no longer load-bearing; the nav row is a
- * row of equal flex children instead, which is what makes each target
- * clear --tap-target-min at 360 as well as at 390.
+ * whose three links share the width equally, at every width, so no
+ * breakpoint is spent on the header's shape.
+ *
+ * THE ROWS ARE PLACED, NOT ORDERED (M3-P7 fix round, finding HZ-M3P7-05).
+ * The first version put the sign-out form ahead of the nav in the DOCUMENT
+ * because that is where it is drawn, and the consequence was that the FIRST
+ * Tab on every route in the product landed on Sign out. The document now
+ * reads identity, navigation, sign out; grid placement is what still draws
+ * the sign-out control up on the identity row. Same technique and same
+ * reason as the three month cards: the order the document has is the order
+ * that is read, so it is the order that is chosen first.
  *
  * Every control in here is at least --tap-target-min tall (criterion 7.5).
  * The brand is not a control and is not sized to one. */
 .app-header {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-4);
   padding: var(--space-3) var(--space-4) 0;
   border-bottom: var(--border-hairline) solid var(--color-border-subtle);
   background: var(--color-surface-raised);
 }
 
+/* THE IDENTITY ROW SPANS, AND SIGN OUT SITS ON THE NAVIGATION ROW
+ * (follow-up round, finding HZ2-07). The fix round drew the sign-out
+ * control on row 1 while the document reads it after the nav on row 2, and
+ * the consequence was that focus ran along the second row and then jumped
+ * back UP to it: document order and visual order stopped agreeing at phone
+ * width, which is the property this header's comment above promises and the
+ * property the whole grid-placement rule in this phase rests on. Sign out
+ * is now drawn where it is read, at the end of the navigation row. */
 .app-header-identity {
+  grid-column: 1 / -1;
+  grid-row: 1;
   display: flex;
   align-items: center;
   gap: var(--space-4);
+  min-width: 0;
   padding: 0 var(--space-4);
 }
 
-/* The sign-out form never shrinks and never vanishes off the row. */
 .app-header form {
-  flex-shrink: 0;
+  grid-column: 2;
+  grid-row: 2;
+  align-self: center;
+  padding-right: var(--space-4);
 }
 
 /* Shell navigation (M3-P1). Rendered by the shell layout only, so a route
@@ -132,12 +163,21 @@
  * the row means the third label cannot be pushed onto a line of its own in
  * the longest of the three languages. */
 .app-nav {
+  grid-column: 1;
+  grid-row: 2;
   display: flex;
   gap: var(--space-2);
+  min-width: 0;
 }
 
+/* min-width 0 and the break rule are the text-scale half (finding
+ * HZ-M3P7-04): at a 200 percent device text size the longest label in the
+ * longest language no longer fits a third of a 360px row, and without these
+ * it pushes the document wider instead of wrapping inside its own third. */
 .app-nav-link {
   flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -173,6 +213,11 @@
  * than pushing the sign-out control out of the viewport. Its text content
  * stays complete for assistive tech and tests; only the painting is
  * clipped. */
+/* The smaller muted treatment is the PHONE's, not the product's (follow-up
+ * round, finding HZ2-01). It was set on this base rule in the rebuild and
+ * restored nowhere, so the desk screen lost the identity to 12px muted ink
+ * as well, unrecorded and unmeasured, in the one region the desk bar did
+ * not look at. The media condition gives the desk its 16px ink back. */
 .app-household {
   margin-left: auto;
   min-width: 0;
@@ -698,6 +743,8 @@
   display: inline-flex;
   align-items: center;
   align-self: flex-start;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: var(--space-4);
   min-height: var(--tap-target-min);
   font-size: var(--text-base);
@@ -738,6 +785,28 @@
   font-size: var(--text-xl);
   color: var(--color-ink-subtle);
   margin-right: var(--space-3);
+}
+
+/* THE HEADLINE FIGURE MAY OVERFLOW ITS OWN BOX AND MAY NEVER WIDEN THE
+ * DOCUMENT (follow-up round, finding HZ2-03). At a device text size of 200
+ * percent an eight-character figure at 80px is wider than a 390px phone,
+ * and .pulse-amount may not wrap, which is the money rule with no
+ * exceptions. Allowing the block to shrink below its content keeps the
+ * DOCUMENT at the viewport width, so the page never scrolls sideways; the
+ * figure itself then paints past its box at that one type size.
+ *
+ * THE ALTERNATIVE WAS MEASURED AND REJECTED: letting the currency sign wrap
+ * onto its own line does fit the figure, and costs 53 CSS pixels above the
+ * fold at that size, which pushes the reconciliation verdict from 668 to
+ * 721 against criterion 7.8's bound of 700. The criterion this phase exists
+ * for outranks a clipped currency sign at 200 percent type. Recorded in the
+ * work history as a decision rather than left as an absent assertion. */
+.month-pot {
+  min-width: 0;
+}
+
+.month-pot-figure {
+  min-width: 0;
 }
 
 /* ONE COLUMN IS THE LAYOUT (DR-0022, mockup README fix 6). Income, spend
@@ -784,10 +853,17 @@
   letter-spacing: var(--tracking-tight);
 }
 
+/* The delta drops BENEATH the total rather than pushing the card wider,
+ * which is the same two-line move the rows make. Measured as the innermost
+ * offender when a device text-size preference is applied (finding
+ * HZ-M3P7-04): at a factor of 2 this element alone took the document to
+ * 481px inside a 390px viewport. */
 .month-card-total {
   display: flex;
   align-items: baseline;
-  gap: var(--space-6);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
   font-size: var(--text-xl);
   min-width: 0;
 }
@@ -804,6 +880,16 @@
   padding: var(--space-3) var(--space-7);
   background: var(--color-surface-sunken);
   border-bottom: var(--border-hairline) solid var(--color-border-subtle);
+}
+
+/* Under a device text-size preference a single long column label has no
+ * wrap opportunity, so it pushes its track wider than the row (finding
+ * HZ-M3P7-04, the last offender at 360 with the factor at 2). Breaking
+ * inside the word is what a label does when the reader has asked for twice
+ * the type; at the default size nothing here changes. */
+.month-columns > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .month-col-amount {
@@ -1022,6 +1108,16 @@
   max-width: 100%;
 }
 
+/* The gap row's meta carries a date and an account label, and it inherits
+ * the row count's nowrap, which the row count wants and this does not. At a
+ * device text size of 200 percent it was the innermost element pushing the
+ * document past the viewport (follow-up round, finding HZ2-03). Wrapping is
+ * what a two-part caption does when the reader has asked for twice the
+ * type; at the default size it is one line either way. */
+.recon-gap-row .month-row-meta {
+  white-space: normal;
+}
+
 /* -----------------------------------------------------------------
  * THE ONE BREAKPOINT (M3-P7, DR-0022).
  *
@@ -1038,19 +1134,27 @@
  * ----------------------------------------------------------------- */
 @media (min-width: 768px) {
   .app-header {
-    flex-direction: row;
-    align-items: center;
-    gap: var(--space-8);
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    column-gap: var(--space-8);
     padding: var(--space-4) var(--space-9);
   }
 
   .app-header-identity {
-    flex: 1;
+    grid-column: 1;
+    grid-row: 1;
     padding: 0;
   }
 
   .app-nav {
+    grid-column: 2;
+    grid-row: 1;
     gap: var(--space-7);
+  }
+
+  .app-header form {
+    grid-column: 3;
+    grid-row: 1;
+    padding-right: 0;
   }
 
   .app-nav-link {
@@ -1060,6 +1164,103 @@
 
   .app-main {
     padding: var(--space-12) var(--space-9);
+  }
+
+  /* ---------------------------------------------------------------
+   * THE DESK SCREEN'S TYPE SCALE AND DENSITY (M3-P7 fix round, finding
+   * HZ-M3P7-03).
+   *
+   * The first round of this phase set the phone sizes on the base rules and
+   * restored no font size and no row shape here, so a laptop reader lost a
+   * step on the month title, the card heading, the card total and the
+   * reconciliation figures, and the same month became forty percent taller.
+   * None of that was in the mockup, which is a phone reference, none of it
+   * was recorded as a decision, and none of the fifteen criteria could see
+   * it: hazard H7.5 is addressed by a criterion that measures three
+   * x-coordinates, three widths and one y-ordering.
+   *
+   * MOBILE FIRST IS NOT DESK LAST. EVERY TYPE SIZE below is the value
+   * measured at this phase's base, 5ab1680, on the same dataset at 1280 by
+   * 720, and the spec that holds them is in test/e2e/month-view.spec.ts.
+   *
+   * CORRECTED RATHER THAN QUIETLY REWRITTEN (clause R-087, follow-up round,
+   * finding HZ2-02). THIS SENTENCE USED TO SAY "Every value below is the
+   * value measured at this phase's base", AND THAT WAS FALSE ABOUT TWO OF
+   * THEM. The row's padding is --space-3 where the base has --space-5, and
+   * the row's line-height is --leading-tight, 1.15, where the base declares
+   * none and inherits 1.5, computing to 24px. THE DESK DENSITY WAS BOUGHT
+   * WITH LEADING, NOT GIVEN BACK: measured across the whole desk screen,
+   * 116 computed line-heights differ from the base and 111 of them are
+   * reductions of about 23 percent, all inherited from the row. That is a
+   * deliberate trade, because the row now carries two lines where the base
+   * carried one, and it is written down here because a reader will trust
+   * this comment instead of measuring.
+   *
+   * WHAT THE TRADE DOES NOT COVER: a WRAPPING counterparty name, which at
+   * this width is the income and reserve rows inside the rail. Those get
+   * --leading-normal back below, which costs about 12px of card height and
+   * is the difference between a tight row and a cramped paragraph.
+   *
+   * What the desk screen does NOT get back is the three-track row: the
+   * two-line row is the layout at every width (mockup README fix 1) and the
+   * wide screen spends the space it gains on the name, whose TRACK grew
+   * from 566px to 669px.
+   * --------------------------------------------------------------- */
+  .month-title-row h1 {
+    font-size: var(--text-3xl);
+    font-weight: var(--weight-medium);
+  }
+
+  .month-card-header {
+    padding: var(--space-7);
+  }
+
+  .month-card-header h2 {
+    font-size: var(--text-xl);
+  }
+
+  .month-card-total {
+    font-size: var(--text-2xl);
+  }
+
+  .month-pot-figure {
+    margin-top: var(--space-2);
+    font-size: var(--text-3xl);
+    font-weight: var(--weight-normal);
+    letter-spacing: var(--tracking-normal);
+  }
+
+  .recon-parts {
+    font-size: var(--text-md);
+  }
+
+  /* Density: the two lines stay, the padding the phone needs for a
+   * comfortable touch row does not. This is what returns the desk row to
+   * the height it had. */
+  .month-row {
+    min-height: auto;
+    padding: var(--space-3) var(--space-7);
+    row-gap: 0;
+    line-height: var(--leading-tight);
+  }
+
+  .month-screen {
+    gap: var(--space-10);
+  }
+
+  /* A wrapping name is a small paragraph and is led like one (finding
+   * HZ2-02). The row's own tighter leading stays; this is the one element
+   * inside it that runs to more than one line at desk width. */
+  .month-group-label {
+    line-height: var(--leading-normal);
+  }
+
+  /* The identity is 16px ink on a desk screen, which is what it was before
+   * the rebuild (finding HZ2-01). The smaller muted treatment above is the
+   * phone's. */
+  .app-household {
+    font-size: inherit;
+    color: var(--color-ink);
   }
 
   .month-header {
@@ -1081,6 +1282,8 @@
   .month-pot {
     text-align: right;
   }
+
+
 
   /* The rail returns as grid PLACEMENT, never as the order property: the
    * document still reads income, spend, reserves, and this puts spend in

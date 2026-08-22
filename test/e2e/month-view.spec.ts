@@ -46,11 +46,18 @@ const signUp = async (page: Page, prefix: string): Promise<void> => {
   await expect(page.getByTestId("household-context")).toHaveText(unique);
 };
 
+// The RING is a parameter and not a constant (M3-P7 fix round, finding
+// CR-M3P7-01). It was hardcoded to POT here, and the first round of this
+// phase read that as a limit on the FIXTURES rather than on this helper, and
+// recorded an impossibility that was not one: declaring an existing
+// committed fixture under RESERVE produces a reserve row from zero new
+// fixtures, which is what witnesses the reserve arm of criterion 7.14.
 const uploadPotFile = async (
   page: Page,
   file: string,
   label: string,
   expectedAdded: string,
+  ring: "POT" | "RESERVE" = "POT",
 ): Promise<void> => {
   await page.goto("/import");
   await page.getByLabel("Bank export file").setInputFiles(join(FIXTURES, file));
@@ -61,7 +68,7 @@ const uploadPotFile = async (
   await page.getByLabel("Format name").fill("Demobank current account");
   await page.getByLabel("Label").fill(label);
   await page.getByLabel("Bank").fill("Demobank");
-  await page.getByLabel("Ring").selectOption("POT");
+  await page.getByLabel("Ring").selectOption(ring);
   await page.getByTestId("confirm-import").click();
   await expect(page.getByTestId("import-result")).toBeVisible();
   await expect(page.getByTestId("rows-added")).toHaveText(expectedAdded);
@@ -356,6 +363,251 @@ const DENSE_SPEND_GROUPS = 23;
 
 const INTERACTIVE = "a, button, input:not([type=hidden]), select, [role=button]";
 
+// ---------------------------------------------------------------------
+// M3-P7 FIX ROUND. Everything from here to the reserve test closes findings
+// HZ-M3P7-03, HZ-M3P7-04 and CR-M3P7-04: the first round of this phase
+// bounded the phone screen by GEOMETRY ALONE, so a font size, a row height
+// and a scroll length were free in both directions, and the desk screen's
+// type scale was reduced by four steps with nothing able to see it.
+//
+// The desk numbers below were measured on two live servers, the phase base
+// at 5ab1680 on one port and the head on another, same dataset, 1280 by 720.
+// They are the values a laptop reader had before this phase and the values
+// this bar now holds the desk screen to.
+//
+// THE SHELL IS IN HERE TOO (M3-P7 follow-up round, finding HZ2-01). The
+// first version of this bar read five selectors and every one of them was
+// inside the month view, so one region of the desk screen was outside it:
+// the household identity went from 16px ink to 12px muted ink and no
+// assertion in the suite could see it. The shell is the other half of every
+// screen in this product and it is on the same page at the same time.
+const DESK_BASE_TYPE = {
+  monthTitle: 32,
+  cardHeading: 18,
+  cardTotal: 24,
+  reconParts: 14,
+  potFigure: 32,
+  household: 16,
+} as const;
+// The base's --color-ink, computed. The identity was restyled to
+// --color-ink-muted in the rebuild and that is a desk regression too: a
+// colour is as much a type property as a size.
+const DESK_BASE_HOUSEHOLD_COLOUR = "oklch(0.23 0.008 265)";
+// The desk spend card was 1136px for this dataset at the base. The two-line
+// row is deliberate at every width (mockup README fix 1), so the card is
+// allowed to grow; it is not allowed to grow by half again, which is what
+// the first round of this phase did unrecorded.
+const DESK_BASE_SPEND_CARD_HEIGHT = 1136;
+const DESK_CARD_HEIGHT_FACTOR = 1.25;
+// FINDING HZ2-06. The round's own account of the round-0 damage quotes the
+// desk row height and the desk document height, and then bounded neither.
+// Both are held to the base times the same factor the card already uses.
+const DESK_BASE_ROW_HEIGHT = 45;
+const DESK_BASE_DOCUMENT_HEIGHT = 1490;
+
+// FINDING HZ2-02. The desk density was not given back, it was BOUGHT WITH
+// LEADING: the base row inherits 1.5 and computes to 24px, and this tree
+// sets --leading-tight on the row inside the media condition. That is a
+// deliberate trade and it is recorded as one in the stylesheet, but it was
+// unmeasured, so a later change could tighten it further and nothing would
+// say so. These two floors are the value the trade settled on, which is
+// what a floor is for.
+const DESK_MIN_ROW_LINE_HEIGHT = 18;
+const DESK_MIN_LABEL_LINE_HEIGHT = 21;
+
+// The phone bounds. A label smaller than the row amount, a row twice as tall
+// as the fixture needs, or a month that runs to twice the scroll it does
+// today would each satisfy every geometric axis of criterion 7.14 while
+// making the screen worse, which is finding CR-M3P7-04 in one sentence.
+const PHONE_LABEL_MIN_FONT = 14;
+const PHONE_PHONE_FIGURE_MIN_FONT = 40;
+const PHONE_ROW_MAX_HEIGHT = 140;
+const PHONE_SCROLL_CEILING = { 390: 3700, 360: 3900 } as const;
+
+// FINDING HZ2-03. The fold is the criterion this phase exists for, and the
+// text-scale axis the fix round added pointed at horizontal overflow, which
+// is the quantity this phase was convened to stop treating as the
+// measurement. 700 is criterion 7.8's own bound, 844 less an allowance for
+// the browser chrome Playwright does not render.
+const FOLD_UNDER_SCALE = FOLD;
+
+// A device text-size preference is a narrowing, and it is the narrowing the
+// accessibility case turns on (finding HZ-M3P7-04). Android Chrome's slider
+// reaches 200 percent and the owner is on Android (DR-0021), so the bar is
+// set at the top of that slider rather than at a comfortable factor. One
+// shot, no compounding, which is what a platform text-scaling setting does.
+const TEXT_SCALES = [1.5, 2] as const;
+
+// Type size and density at whatever width the page is currently at.
+//
+// NO SENTINEL (finding HZ2-04). Three of these used to return -1 when their
+// element was absent, and -1 satisfies a less-than-or-equal bound, so a
+// ceiling passed on a missing element. The measurements that would have
+// caught round 0's regression are ceilings, so that is the half it mattered
+// for. An absent element now THROWS, and the message names the selector: a
+// measurement of something that is not there is an error, not a number.
+const typeAndDensity = (page: Page) =>
+  page.evaluate(() => {
+    const need = (selector: string): Element => {
+      const element = document.querySelector(selector);
+      if (element === null) {
+        throw new Error(`typeAndDensity: nothing matches ${selector}`);
+      }
+      return element;
+    };
+    const px = (selector: string): number =>
+      Math.round(parseFloat(getComputedStyle(need(selector)).fontSize));
+    const leading = (selector: string): number => {
+      const value = getComputedStyle(need(selector)).lineHeight;
+      const parsed = parseFloat(value);
+      if (!Number.isFinite(parsed)) {
+        throw new Error(`typeAndDensity: ${selector} has line-height ${value}`);
+      }
+      return Math.round(parsed);
+    };
+    const rows = [...document.querySelectorAll('[data-testid="spend-group"]')];
+    const labels = [
+      ...document.querySelectorAll(
+        '[data-testid="spend-group"] [data-testid="group-label"]',
+      ),
+    ];
+    if (rows.length === 0 || labels.length === 0) {
+      throw new Error("typeAndDensity: no spend rows or no group labels render");
+    }
+    const heights = rows.map((row) =>
+      Math.round(row.getBoundingClientRect().height),
+    );
+    return {
+      monthTitle: px('[data-testid="month-title"]'),
+      cardHeading: px(".month-card-header h2"),
+      cardTotal: px(".month-card-total"),
+      reconParts: px(".recon-parts"),
+      potFigure: px(".month-pot-figure"),
+      household: px('[data-testid="household-context"]'),
+      householdColour: getComputedStyle(
+        need('[data-testid="household-context"]'),
+      ).color,
+      rowLineHeight: leading('[data-testid="spend-group"]'),
+      labelLineHeight: leading(
+        '[data-testid="spend-group"] [data-testid="group-label"]',
+      ),
+      labelFontMin: Math.min(
+        ...labels.map((label) =>
+          Math.round(parseFloat(getComputedStyle(label).fontSize)),
+        ),
+      ),
+      rowHeightMax: Math.max(...heights),
+      rowHeightMin: Math.min(...heights),
+      spendCardHeight: Math.round(
+        need('[data-testid="spend-card"]').getBoundingClientRect().height,
+      ),
+      documentHeight: document.documentElement.scrollHeight,
+    };
+  });
+
+// Finding CR-M3P7-02. The hidden-state half of criterion 7.6 was compared
+// only over elements carrying a testid, so an element without one could be
+// hidden at one width and shown at the other and nothing would say so. Keyed
+// by a structural path rather than by testid, which is what lets it cover
+// everything inside main.
+const collectHiding = (page: Page) =>
+  page.evaluate(() => {
+    const main = document.querySelector("main");
+    if (main === null) {
+      return ["no main element"];
+    }
+    const pathOf = (element: Element): string => {
+      const parts: string[] = [];
+      let node: Element | null = element;
+      while (node !== null && node !== main) {
+        const parent: Element | null = node.parentElement;
+        if (parent === null) {
+          break;
+        }
+        parts.unshift(String([...parent.children].indexOf(node)));
+        node = parent;
+      }
+      return parts.join(".");
+    };
+    return [...main.querySelectorAll("*")].map((element) => {
+      const style = getComputedStyle(element);
+      const hidden =
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        element.classList.contains("visually-hidden");
+      return `${pathOf(element)}:${element.tagName}:${hidden}`;
+    });
+  });
+
+// Finding HZ-M3P7-04. One shot of a text-size preference over the rendered
+// page: every element's own computed size multiplied by the factor.
+const applyTextScale = (page: Page, factor: number) =>
+  page.evaluate((scale) => {
+    // SNAPSHOT FIRST, THEN APPLY. Reading a computed size after an ancestor
+    // has already been written compounds the factor down the tree, because
+    // font-size inherits: the first draft of this helper did exactly that
+    // and reported a document 17 times too wide. A platform text-scaling
+    // setting multiplies each element's own size once.
+    const elements = [...document.querySelectorAll("*")].filter(
+      (element): element is HTMLElement => element instanceof HTMLElement,
+    );
+    const sizes = elements.map((element) =>
+      parseFloat(getComputedStyle(element).fontSize),
+    );
+    elements.forEach((element, index) => {
+      const size = sizes[index];
+      if (size !== undefined && Number.isFinite(size)) {
+        element.style.fontSize = `${size * scale}px`;
+      }
+    });
+  }, factor);
+
+const horizontalOverflow = (page: Page) =>
+  page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+
+// FINDING HZ2-03. The whole sweep under a device text-size preference, not
+// the horizontal half of it. The fold is included because criterion 7.8 is
+// the criterion this phase exists for and it was the one axis the scaled
+// block did not touch; the tap targets are included because round 0's own
+// concrete edit asked for them by name and the fix round left them out.
+const scaledSweep = async (
+  page: Page,
+  href: string,
+  scale: number,
+): Promise<{
+  readonly scrollWidth: number;
+  readonly clientWidth: number;
+  readonly horizontal: readonly string[];
+  readonly vertical: readonly string[];
+  readonly tapTargets: readonly string[];
+  readonly verdictBottom: number;
+  readonly differenceBottom: number;
+}> => {
+  await page.goto(href);
+  await applyTextScale(page, scale);
+  const overflow = await horizontalOverflow(page);
+  const clipping = await clippingOffenders(page);
+  const tapTargets = await tapTargetOffenders(page);
+  const folds = await page.evaluate(() => {
+    const bottom = (testId: string): number => {
+      const element = document.querySelector(`[data-testid="${testId}"]`);
+      // -1 means ABSENT and the caller asserts on presence separately; a
+      // bottom of -1 must never read as "comfortably above the fold".
+      return element === null
+        ? -1
+        : Math.round(element.getBoundingClientRect().bottom);
+    };
+    return {
+      verdictBottom: bottom("recon-verdict"),
+      differenceBottom: bottom("recon-difference"),
+    };
+  });
+  return { ...overflow, ...clipping, tapTargets, ...folds };
+};
+
 const seedDense = async (page: Page): Promise<void> => {
   await signUp(page, "mv-dense");
   await uploadPotFile(page, "mv-dense.csv", "Daily account", "25");
@@ -497,7 +749,16 @@ const rowOffenders = (page: Page, viewportWidth: 390 | 360) =>
         const rowRect = row.getBoundingClientRect();
         const labelRect = label.getBoundingClientRect();
         const totalRect = total.getBoundingClientRect();
-        const distance = totalRect.left - labelRect.left;
+        // FINDING CR-M3P7-03. Measured label-left to total-left, the row's
+        // own column-gap counted as name area although the name cannot use
+        // it, so raising the gap raised the measured number for nothing.
+        // The gap is subtracted, which makes the number mean what the
+        // criterion says it means.
+        const columnGap = parseFloat(getComputedStyle(row).columnGap);
+        const distance =
+          totalRect.left -
+          labelRect.left -
+          (Number.isFinite(columnGap) ? columnGap : 0);
         const ratio = distance / rowRect.width;
         if (ratio < ratioMin || distance < floor) {
           nameWidth.push(
@@ -541,8 +802,18 @@ const setLocale = async (
 // Criterion 7.2 (hazard H7.7). The tag is a FRAMEWORK DEFAULT this project
 // does not control, which is why it is pinned rather than dropped: a later
 // viewport export that lost width=device-width would silently render the
-// product at the 980px fallback on a real phone while every measurement
-// here stayed green. Only a project with isMobile can see it at all.
+// product at the 980px fallback on a real phone.
+//
+// CORRECTED RATHER THAN QUIETLY REWRITTEN (clause R-087, M3-P7 fix round,
+// finding HZ-M3P7-06). This comment used to end by saying only a project
+// with isMobile can see the tag at all. THAT WAS FALSE and the suite's own
+// run contradicted it: the first assertion below is a DOM read of an
+// element that is in the served HTML whatever the project's emulation, and
+// it passes under the desktop project. What isMobile buys is the second
+// assertion: the browser HONOURING the tag, so the layout viewport is the
+// device width. That is the half the first round of this phase described
+// and did not build, and it is the assertion that reddens under the phone
+// project when the tag stops pinning the layout viewport.
 test("the rendered page pins the layout viewport to the device width", async ({
   page,
 }) => {
@@ -554,6 +825,13 @@ test("the rendered page pins the layout viewport to the device width", async ({
   );
   expect(content).not.toBeNull();
   expect(content).toContain("width=device-width");
+
+  const declared = page.viewportSize();
+  expect(declared).not.toBeNull();
+  const innerWidth = await page.evaluate(() => window.innerWidth);
+  expect(innerWidth, "the layout viewport is the declared device width").toBe(
+    declared?.width,
+  );
 });
 
 // Criteria 7.5, 7.7, 7.8, 7.9 and 7.14 on the DENSE dataset (criterion
@@ -584,6 +862,70 @@ test("the dense month is usable at 390 and at 360: targets, rows, cards and the 
     expect.soft(rows.trackCount, `track count at ${viewport.width}`).toEqual([]);
     expect.soft(rows.nameWidth, `name width at ${viewport.width}`).toEqual([]);
     expect.soft(rows.twoLines, `two-line rows at ${viewport.width}`).toEqual([]);
+
+    // FINDING CR-M3P7-04. Geometry alone leaves the type size, the row
+    // height and the scroll length free, and each of the three can make the
+    // screen worse without moving a single coordinate the row criterion
+    // measures.
+    const density = await typeAndDensity(page);
+    expect
+      .soft(density.labelFontMin, `label font size at ${viewport.width}`)
+      .toBeGreaterThanOrEqual(PHONE_LABEL_MIN_FONT);
+    expect
+      .soft(density.rowHeightMax, `tallest row at ${viewport.width}`)
+      .toBeLessThanOrEqual(PHONE_ROW_MAX_HEIGHT);
+    expect
+      .soft(density.documentHeight, `scroll length at ${viewport.width}`)
+      .toBeLessThanOrEqual(PHONE_SCROLL_CEILING[viewport.width]);
+
+    // FINDING HZ-M3P7-04. The same screen under a device text-size
+    // preference, which is the narrowing an accessibility setting produces
+    // and the one no measurement in the first round had an axis for.
+    for (const scale of TEXT_SCALES) {
+      const swept = await scaledSweep(page, "/?month=2026-08", scale);
+      expect
+        .soft(swept.scrollWidth, `text scale ${scale} at ${viewport.width}`)
+        .toBeLessThanOrEqual(swept.clientWidth);
+      expect
+        .soft(
+          swept.horizontal,
+          `text scale ${scale} horizontal clipping at ${viewport.width}`,
+        )
+        .toEqual([]);
+      expect
+        .soft(
+          swept.vertical,
+          `text scale ${scale} vertical clipping at ${viewport.width}`,
+        )
+        .toEqual([]);
+      expect
+        .soft(
+          swept.tapTargets,
+          `text scale ${scale} tap targets at ${viewport.width}`,
+        )
+        .toEqual([]);
+      expect
+        .soft(
+          swept.verdictBottom,
+          `text scale ${scale} verdict renders at ${viewport.width}`,
+        )
+        .toBeGreaterThan(0);
+      // THE FOLD IS A 390 BY 844 PROPERTY, which is what criterion 7.8
+      // specifies and the frame the mockup is drawn at. 700 is 844 less the
+      // browser chrome allowance; a 360 by 740 device has 104 fewer pixels
+      // of screen and the same bound there would be a stricter criterion
+      // than the one the plan sets, so the fold is asserted at the width it
+      // is defined for and the narrower phone keeps the other four axes.
+      if (viewport.width === PHONE.width) {
+        expect
+          .soft(
+            swept.verdictBottom,
+            `text scale ${scale} verdict above the fold at ${viewport.width}`,
+          )
+          .toBeLessThanOrEqual(FOLD_UNDER_SCALE);
+      }
+    }
+    await page.goto("/?month=2026-08");
 
     for (const locale of ["en", "nl", "fr"]) {
       await setLocale(page, locale, baseURL);
@@ -698,10 +1040,12 @@ test("the dense month says exactly the same things at 1280 and at 390", async ({
   await page.setViewportSize(DESK);
   await page.goto("/?month=2026-08");
   const desk = await collectTestids(page);
+  const deskHiding = await collectHiding(page);
 
   await page.setViewportSize(PHONE);
   await page.goto("/?month=2026-08");
   const phone = await collectTestids(page);
+  const phoneHiding = await collectHiding(page);
 
   expect(phone.map((entry) => [entry.testId, entry.text])).toEqual(
     desk.map((entry) => [entry.testId, entry.text]),
@@ -716,6 +1060,13 @@ test("the dense month says exactly the same things at 1280 and at 390", async ({
       .filter((entry, index) => entry.hidden && desk[index]?.hidden !== true)
       .map((entry) => entry.testId),
   ).toEqual([]);
+
+  // FINDING CR-M3P7-02. The line above can only reach an element that
+  // carries a testid, and criterion 7.6's last sentence is about EVERY
+  // element inside main. Keyed structurally so it covers the rest.
+  expect(phoneHiding, "hiding state inside main differs between widths").toEqual(
+    deskHiding,
+  );
 
   const present = new Set(phone.map((entry) => entry.testId));
   for (const required of [
@@ -799,6 +1150,69 @@ test("the non-reconciling month is usable at phone width and keeps its causes", 
   }
   await setLocale(page, "en", baseURL);
 
+  // FINDING HZ2-03. The fold under a device text-size preference, on the
+  // dataset that actually renders the difference figure. Criterion 7.8 is
+  // the criterion this phase exists for and it was the one axis the scaled
+  // block did not touch, so the reconciliation answer was required above the
+  // fold only at the default type size.
+  //
+  // WHAT IS ASSERTED AND WHAT IS RECORDED INSTEAD. The VERDICT is held above
+  // the fold at every scale, including 2.0, which is the top of Android's
+  // slider and the owner's device (DR-0021). The DIFFERENCE figure is held
+  // above it at 1.5 and NOT at 2.0: measured, it is at 939 against a 700
+  // bound, and getting it there would mean removing something above it,
+  // which criterion 7.6 forbids and which would be a worse screen. That is a
+  // decision and it is written down here and in the work history rather than
+  // left as an absent assertion.
+  await page.setViewportSize(PHONE);
+  for (const scale of TEXT_SCALES) {
+    const swept = await scaledSweep(page, "/?month=2026-08", scale);
+    // THE HORIZONTAL AXIS IS ASSERTED AT 1.5 AND NOT AT 2.0 ON THIS DATASET,
+    // AND THAT IS A DECISION RATHER THAN AN OVERSIGHT. This month's pot
+    // change is a four-figure amount; at a device text size of 200 percent
+    // it renders at 80px and is about 384 CSS pixels wide inside a 358px
+    // content box, and .pulse-amount may not wrap, which is the money rule
+    // with no exceptions. Measured: the document reaches 416px against a
+    // 390px viewport. The alternative, wrapping the currency sign onto its
+    // own line, does fit and costs 53 pixels above the fold, taking the
+    // reconciliation verdict from 679 to 721 against a bound of 700. This
+    // phase's own stance sentence says the evidence never measures the
+    // absence of horizontal scrolling, so the verdict wins and the sideways
+    // scroll at 200 percent type is recorded. The dense month, whose figure
+    // is smaller, holds the horizontal axis at both scales.
+    if (scale <= 1.5) {
+      expect
+        .soft(swept.scrollWidth, `text scale ${scale} horizontal fit`)
+        .toBeLessThanOrEqual(swept.clientWidth);
+      expect
+        .soft(swept.horizontal, `text scale ${scale} horizontal clipping`)
+        .toEqual([]);
+    }
+    expect
+      .soft(swept.vertical, `text scale ${scale} vertical clipping`)
+      .toEqual([]);
+    expect
+      .soft(swept.tapTargets, `text scale ${scale} tap targets`)
+      .toEqual([]);
+    expect
+      .soft(swept.verdictBottom, `text scale ${scale} verdict renders`)
+      .toBeGreaterThan(0);
+    expect
+      .soft(swept.verdictBottom, `text scale ${scale} verdict above the fold`)
+      .toBeLessThanOrEqual(FOLD_UNDER_SCALE);
+    expect
+      .soft(swept.differenceBottom, `text scale ${scale} difference renders`)
+      .toBeGreaterThan(0);
+    if (scale <= 1.5) {
+      expect
+        .soft(
+          swept.differenceBottom,
+          `text scale ${scale} difference above the fold`,
+        )
+        .toBeLessThanOrEqual(FOLD_UNDER_SCALE);
+    }
+  }
+
   await page.goto("/?month=2026-08");
   const gapTestids = new Set(
     (await collectTestids(page)).map((entry) => entry.testId),
@@ -854,4 +1268,137 @@ test("the empty state's controls clear the tap target minimum at 390 and 360", a
     expect.soft(clipped.horizontal).toEqual([]);
     expect.soft(clipped.vertical).toEqual([]);
   }
+});
+
+// FINDING HZ-M3P7-03, and it is the hole as much as the defect. Hazard H7.5
+// is "the phone is fixed and the desk screen is broken in the same change",
+// and the criterion addressing it measures three x-coordinates, three widths
+// and one y-ordering. The first round of this phase reduced the desk
+// screen's month title, card heading, card total and reconciliation figures
+// by one step each and made the same month forty percent taller, and every
+// one of the fifteen criteria stayed green.
+//
+// This is that missing bar. The numbers are the phase base's own, measured
+// side by side on two servers, so the assertion is against the screen the
+// laptop reader actually had rather than against a number someone liked.
+test("the desk screen keeps the type scale and the density it had at the phase base", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await seedDense(page);
+  await page.setViewportSize(DESK);
+  await page.goto("/?month=2026-08");
+  await expect(page.getByTestId("spend-group")).toHaveCount(DENSE_SPEND_GROUPS);
+
+  const desk = await typeAndDensity(page);
+  expect
+    .soft(desk.monthTitle, "desk month title")
+    .toBeGreaterThanOrEqual(DESK_BASE_TYPE.monthTitle);
+  expect
+    .soft(desk.cardHeading, "desk card heading")
+    .toBeGreaterThanOrEqual(DESK_BASE_TYPE.cardHeading);
+  expect
+    .soft(desk.cardTotal, "desk card total")
+    .toBeGreaterThanOrEqual(DESK_BASE_TYPE.cardTotal);
+  expect
+    .soft(desk.reconParts, "desk reconciliation parts")
+    .toBeGreaterThanOrEqual(DESK_BASE_TYPE.reconParts);
+  expect
+    .soft(desk.potFigure, "desk pot figure")
+    .toBeGreaterThanOrEqual(DESK_BASE_TYPE.potFigure);
+  expect
+    .soft(desk.spendCardHeight, "desk spend card height")
+    .toBeLessThanOrEqual(
+      Math.round(DESK_BASE_SPEND_CARD_HEIGHT * DESK_CARD_HEIGHT_FACTOR),
+    );
+
+  // FINDING HZ2-01. The shell is on the same page at the same time, and it
+  // is where a desk regression survived the round convened to find them.
+  expect
+    .soft(desk.household, "desk household identity size")
+    .toBeGreaterThanOrEqual(DESK_BASE_TYPE.household);
+  expect
+    .soft(desk.householdColour, "desk household identity colour")
+    .toBe(DESK_BASE_HOUSEHOLD_COLOUR);
+
+  // FINDING HZ2-02. The desk density was bought with leading rather than
+  // returned. The trade is recorded in the stylesheet; these floors are what
+  // stop the next change buying a little more of it in silence.
+  expect
+    .soft(desk.rowLineHeight, "desk row leading")
+    .toBeGreaterThanOrEqual(DESK_MIN_ROW_LINE_HEIGHT);
+  expect
+    .soft(desk.labelLineHeight, "desk counterparty name leading")
+    .toBeGreaterThanOrEqual(DESK_MIN_LABEL_LINE_HEIGHT);
+
+  // FINDING HZ2-06. Two quantities this bar's own account of the damage
+  // quotes, and neither was bounded in either direction.
+  expect
+    .soft(desk.rowHeightMax, "desk row height")
+    .toBeLessThanOrEqual(
+      Math.round(DESK_BASE_ROW_HEIGHT * DESK_CARD_HEIGHT_FACTOR),
+    );
+  expect
+    .soft(desk.documentHeight, "desk document height")
+    .toBeLessThanOrEqual(
+      Math.round(DESK_BASE_DOCUMENT_HEIGHT * DESK_CARD_HEIGHT_FACTOR),
+    );
+
+  // The phone is unchanged by any of the above, and this is the assertion
+  // that says so: the desk restoration lives entirely inside the one media
+  // condition, so the phone screen keeps the sizes the rebuild gave it.
+  await page.setViewportSize(PHONE);
+  await page.goto("/?month=2026-08");
+  const phone = await typeAndDensity(page);
+  // FLOORS, NOT EQUALITIES (finding HZ2-06). These were written as toBe,
+  // which turns an IMPROVEMENT red: raising the group label to the next step
+  // of the scale is exactly what this pair is supposed to protect, and an
+  // equality punished it. A floor is what the comment always described.
+  expect(phone.potFigure, "the phone keeps its headline figure").toBeGreaterThanOrEqual(
+    PHONE_PHONE_FIGURE_MIN_FONT,
+  );
+  expect(phone.labelFontMin, "the phone keeps its label size").toBeGreaterThanOrEqual(
+    PHONE_LABEL_MIN_FONT,
+  );
+});
+
+// FINDING CR-M3P7-01. The reserve arm of criterion 7.14 was added
+// deliberately in the second M0-P3 fix round (MPR-018) because a criterion
+// bound to spend rows alone proves nothing for two of the three cards. The
+// first round of this phase left it unwitnessed and gave a reason that was
+// false: criterion 7.13 bounds new FIXTURES, not the RING an existing
+// committed fixture is declared under. This test uses zero new fixtures.
+test("the reserve rows are measured by the same bar as the spend rows", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await signUp(page, "mv-reserve-phone");
+  await uploadPotFile(page, "mv-gapped-a.csv", "Daily account", "3");
+  await uploadPotFile(page, "mv-gapped-b.csv", "Savings account", "1", "RESERVE");
+
+  for (const viewport of [PHONE, NARROW_PHONE] as const) {
+    await page.setViewportSize(viewport);
+    await page.goto("/?month=2026-08");
+    await expect(
+      page.getByTestId("reserve-group"),
+      `a reserve row renders at ${viewport.width}`,
+    ).toHaveCount(1);
+
+    const rows = await rowOffenders(page, viewport.width as 390 | 360);
+    expect.soft(rows.trackCount, `track count at ${viewport.width}`).toEqual([]);
+    expect.soft(rows.nameWidth, `name width at ${viewport.width}`).toEqual([]);
+    expect.soft(rows.twoLines, `two-line rows at ${viewport.width}`).toEqual([]);
+    expect
+      .soft(await tapTargetOffenders(page), `tap targets at ${viewport.width}`)
+      .toEqual([]);
+    const clipped = await clippingOffenders(page);
+    expect.soft(clipped.horizontal, `clipping at ${viewport.width}`).toEqual([]);
+    expect.soft(clipped.vertical, `clipping at ${viewport.width}`).toEqual([]);
+  }
+
+  // The reserves card stops rendering its empty note once it has a row, so
+  // this also pins that the row and the note are the same slot rather than
+  // two states that can both be absent.
+  await expect(page.getByTestId("no-reserves")).toHaveCount(0);
+  await expect(page.getByTestId("reserves-net")).toBeVisible();
 });
