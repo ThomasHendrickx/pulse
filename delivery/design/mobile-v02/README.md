@@ -22,6 +22,15 @@ copied into a component as a literal.
 All names, amounts and account numbers are invented. `BE00 0000 0000 0000`
 is deliberately not a valid IBAN.
 
+Correction, 2026-08-22: that sentence was false when first written. Two
+merchant descriptors in `MerchantReview.dc.html` named a real shop and a real
+parking location, carried over from reading a real statement while drafting
+the frames, and they were committed to this public repository before anyone
+noticed. A hazard review found them. They are replaced above, but they remain
+in this repository's history at commit b560e85 until that history is dealt
+with. Treat the claim in the paragraph above as something to verify against
+each frame, not as something that was checked once.
+
 What the mockup fixes, in order of why it exists:
 
 1. Two-line rows. Name and amount on line one, row count and month-over-month
