@@ -1,0 +1,944 @@
+# Adversarial plan review of the M0-P3 mobile-first amendment to
+# delivery/plan/pulse-v02.yaml (dispatch dispatch-plan-mobile.yaml,
+# reviewer worktree wt-m0p3-adv, branch claude/m0-p3-plan-review,
+# plan-writer head b4e6704, amendment baseline b560e85).
+#
+# work-log, incremental, newest last:
+# - created this file as a beacon before deep reading.
+# - read: BRIEF.md with the fleet warnings, dispatch-plan-mobile.yaml,
+#   decisions/DR-0022.yaml, backlog.md section "M0-P3 corrections to the
+#   orchestrator's dispatch", the full amendment diff (git diff b560e85 --
+#   delivery/plan/pulse-v02.yaml, 1106 insertions and 5 deletions in one
+#   file), phases M3-P7 and M3-P8 in full, decisions D-14 through D-21, the
+#   open questions and the parked list, delivery/design/mobile-v02/ (README,
+#   canvas.json and all four frames), CLAUDE.md, schemas/finding.schema.json
+#   and schemas/verdict.schema.json.
+# - confirmed the amendment is additive: git diff --stat b560e85 prints one
+#   file, delivery/plan/pulse-v02.yaml, 1106 insertions and 5 deletions; the
+#   only deleted lines are M3-P4's step 1, replaced in place per D-15.
+#
+# CODE VERIFICATION PASS, every claim checked in the worktree at b4e6704
+# (the code tree is identical to b560e85; the amendment touched only the
+# plan file). Commands run and what they printed:
+# - styles/tokens.css: the five tokens the plan calls missing are missing.
+#   The space scale ends at :121 and jumps from 40px to 80px with no 44 and
+#   no 56 (:109 through :121 read directly). The type scale carries
+#   --text-3xl at 32px (:90) and --text-4xl at 44px (:91) and nothing at 40.
+#   :97 and :98 carry the two tracking values the plan names and nothing
+#   between them. :127 and :128 are --layout-max and --layout-rail and there
+#   is no breakpoint token. VERIFIED TRUE.
+# - the four values the plan declines to tokenise are each within 2px of an
+#   existing token: --space-7 is 16px, --space-8 is 20px, --space-2 is 4px,
+#   --leading-normal is 1.5. VERIFIED TRUE.
+# - grep -rn "text-4xl" src/ styles/ prints styles/tokens.css:91 and
+#   styles/pulse-theme.css:43 and nothing else. The plan's claim that the
+#   token is referenced by nothing but the theme re-export is TRUE as
+#   written; the qualification I would add is in finding MP-006, because
+#   pulse-theme.css:43 re-exports it into a Tailwind @theme block and
+#   src/app/globals.css:1 imports tailwindcss, so the utility class exists.
+# - src/app/globals.css line references all resolve: :564 "Desktop first";
+#   :704 through :719 the wrapping flex with flex-wrap wrap, the spend
+#   flex basis and the rail min-width min(100%, var(--layout-rail)); :756
+#   through :760 and :781 through :786 the two three-track grids; :767 and
+#   :772 the two min-width var(--space-14) tracks; :803 through :808 the
+#   wrapping label; :160 through :166 the household ellipsis; :129, :168,
+#   :210, :602 through :609, :651 the named tap-target offenders; :487
+#   through :496 the merchant row wrap; :498 through :502 the unresolved
+#   flag; :522 through :529 and :536 through :544 the naming controls; :548
+#   through :556 the visually-hidden block. grep -c "@media"
+#   src/app/globals.css prints 0. ALL VERIFIED TRUE.
+# - grep -nE "^[^/*]*[0-9]+(px|rem)" src/app/globals.css prints exactly
+#   three lines today, 550, 551 and 553, which are the three the plan names,
+#   so criterion 7.4's arithmetic of "exactly four after one @media" is
+#   internally consistent. grep -n "text-overflow" src/app/globals.css
+#   prints exactly one line, 164. VERIFIED TRUE.
+# - src/modules/overview/domain/month-projection.ts: OverviewGroup at :26
+#   through :40, the tag-folding branch at :67 through :74 gated on
+#   options.useTags (:68) and requiring both merchantId and primaryTag,
+#   attachDeltas keyed on group.key at :118 through :132;
+#   src/modules/overview/application/month-overview.ts:101 passes useTags
+#   true for spend. VERIFIED TRUE, including the consequence the plan draws:
+#   with zero merchant rules no group can take the tag branch, so the
+#   mockup's subhead shape renders nothing today.
+# - src/modules/merchants/domain/merchant-review.ts: CountedRow :22 through
+#   :29 carries no date, ReviewGroup :36 through :47 carries no date,
+#   unresolvedCount at :54, the magnitude sort from :56. VERIFIED TRUE.
+# - grep -rln "<svg" src/ exits 1: the product carries no icon today.
+#   VERIFIED TRUE. month-view.tsx:447 and :456 are the two text glyphs.
+# - messages/en.json has 111 top-level keys, matching the plan's count.
+#   VERIFIED TRUE (I first miscounted 116 by counting array elements).
+# - the e2e claim is MOSTLY true and overstated in one place: the three
+#   scrollWidth reads are at test/e2e/navigation.spec.ts:168 through :172,
+#   test/e2e/merchants.spec.ts:165 through :167 (and again at :214 and
+#   :259) and test/e2e/import.spec.ts:184 through :187, and
+#   test/e2e/month-view.spec.ts declares six tests and no test.use viewport
+#   anywhere. But navigation.spec.ts's phone describe (:177 through :192)
+#   ALSO asserts main-nav, the three nav links, household-context and the
+#   Sign out button are visible, and then clicks Sign out and asserts the
+#   sign-in heading, at 390 width. See finding MP-016.
+# - delivery/design/mobile-v02/: every Main.dc.html citation resolves
+#   correctly, and every BooksDoNotClose.dc.html and MerchantReview.dc.html
+#   citation is short by exactly 19 lines. canvas.json declares artboard
+#   heights of 1180 and 1010, not 844. See findings MP-011 and MP-005.
+# - the mockup carries an IBAN-shaped token in four committed files, which
+#   the privacy gate on branch claude/gate-privacy checks against an allow
+#   list. See finding MP-010.
+#
+# ADVERSARIAL PASS. For every criterion in M3-P7 and M3-P8 I tried to
+# construct an implementation that satisfies its literal text and leaves the
+# screen unusable at 390 width. The constructions that SUCCEEDED are the
+# findings below. Constructions attempted and REFUSED by the plan as
+# written, recorded because a failed construction is information:
+# - reversing the card order visually with flex-direction column-reverse or
+#   grid-auto-flow instead of the order property fails 7.9, which compares
+#   rendered y against DOM order rather than grepping for one property.
+# - hiding a figure only at phone width while keeping its testid fails 7.6's
+#   zero-size half.
+# - dropping the merchant review's direction totals fails 8.5.
+# - masking the submitted counterpartyText fails 8.8.
+# - reordering the review groups unresolved-first fails 8.7's domain pin.
+# - starting DR-0023's projection change inside either phase fails 7.10.
+# - a second media condition anywhere in src/app/globals.css fails 7.3.
+# Those six are genuinely good criteria and I say so rather than padding the
+# list with remarks about them.
+#
+# VALIDATION. The dispatch instructed --type verdict. That is the WRONG type
+# for this artifact and I did not follow it: verdict.schema.json is the
+# clean-room PHASE review contract and hard-requires phase, framing,
+# review-contract, criteria[] and deviations-judged[], and permits
+# concrete-fix rather than concrete-edit. Run against the existing plan
+# review this document was told to match, --type verdict prints INVALID for
+# every finding in the file. The role brief names schemas/finding.schema.json
+# and the existing artifact carries kind: finding, so this document does
+# too, and it validates with --type finding printing no INVALID lines. The
+# dispatch's flag is recorded here as an error rather than silently worked
+# around.
+kind: finding
+verdict: revise
+produced-by: claude (Opus 5, claude-opus-5)
+findings:
+  - id: MPR-001
+    severity: critical
+    evidence:
+      - >-
+        The amendment's own verified-root-cause for M3-P7 names the defect:
+        "src/app/globals.css:756 and :781 both declare grid-template-columns
+        minmax(0, 1fr) auto auto with two of those tracks pinned to min-width
+        var(--space-14), 80px each (styles/tokens.css:121), so a spend row
+        spends 160px of a 390px screen on two figures and gives the merchant
+        name what is left."
+      - >-
+        Step 5 is the only place that fix appears: "The three-column rows
+        (src/app/globals.css:756 and :781) become the mockup's two-line row:
+        name and amount on line one, row count and month-over-month delta on
+        line two." No acceptance criterion in M3-P7 measures it. Criteria 7.1
+        through 7.13 read in full: 7.1 work history, 7.2 viewport tag, 7.3
+        one media condition, 7.4 tokens and literals, 7.5 tap-target height,
+        7.6 same testids at both widths, 7.7 horizontal clipping, 7.8
+        reconciliation above 844, 7.9 card order and geometry, 7.10 gates and
+        empty diffs, 7.11 skill greps, 7.12 playwright projects, 7.13
+        fixtures.
+      - >-
+        Measured at the phase base: .month-row is minmax(0, 1fr) auto auto
+        with gap var(--space-7) and padding var(--space-5) var(--space-7)
+        (src/app/globals.css:781 through :787), so its min-content width at
+        390 is 80 plus 80 plus two gaps of 16 plus 32 of padding, which is
+        224. It does not overflow 390 and never has.
+      - >-
+        .month-group-label carries text-wrap pretty and overflow-wrap anywhere
+        (src/app/globals.css:803 through :808), so a long Belgian descriptor
+        WRAPS inside the leftover 166px rather than clipping, and
+        element.scrollWidth never exceeds element.clientWidth.
+      - >-
+        .pulse-amount is white-space nowrap (styles/tokens.css:163 through
+        :168) inside an 80px track, and the widest figure the existing
+        fixtures render fits it, so it does not clip either.
+    analysis: >-
+      This is the failure the whole round exists to prevent, reproduced one
+      level down from where it was caught last time. THE CHEAT, concretely:
+      an implementer moves the reconciliation panel to the top of the DOM
+      (7.8), gives the three cards testids and stacks them income, spend,
+      reserves (7.9), pads .app-nav-link, .app-signout, .month-nav,
+      .month-unresolved-pill and .empty-state-cta to 44px (7.5), adds the
+      five tokens and one media condition (7.3, 7.4), adds the phone project
+      (7.12), and DOES NOT TOUCH .month-columns OR .month-row. Every one of
+      7.1 through 7.13 passes. The screen still spends 160px of 390 on two
+      amount tracks, and every merchant name wraps character by character in
+      the 166px that are left, because overflow-wrap anywhere breaks inside
+      words. That is precisely the screen the owner graded 1 out of 10, with
+      a tidier header. The one structural change the phase exists to make is
+      the only one no criterion falsifies.
+    concrete-edit: >-
+      Add criterion 7.14 to M3-P7: "At 390 by 844 and again at 360 by 740, on
+      the reconciling seeded dataset, for every element with data-testid
+      group-label inside main: (a) its bounding width is at least 55 percent
+      of the bounding width of its containing row element; (b) for a label of
+      at most 24 characters its bounding height is at most 1.6 times its own
+      computed line-height, so a short name occupies one line; (c) the amount
+      element in the same row has a bounding top within 4 CSS pixels of the
+      label's top, and the row-count element's bounding top is greater than
+      or equal to the label's bounding bottom, so line one carries name and
+      amount and line two carries count and delta. FALSIFIED BY a label
+      narrower than 55 percent of its row, a short label taller than one
+      line, a row count sharing line one with the label, or an amount that is
+      not on line one. The spec names every offending row by its group-label
+      text in the failure message." Add to criterion 7.4's second half, or as
+      part of 7.14: "grep -nE 'grid-template-columns' src/app/globals.css
+      returns no declaration of three or more tracks on .month-row or
+      .month-columns outside the single @media block." Re-point hazard H7.1's
+      addressed-by from criterion 7.5 to criteria 7.5 and 7.14, since 7.5
+      alone does not reach the row.
+  - id: MPR-002
+    severity: high
+    evidence:
+      - >-
+        Criterion 7.6: "collects every element carrying a data-testid as the
+        pair of its testid and its trimmed textContent, sorted; the two
+        collections are deeply equal. At 390 by 844 every collected element
+        THAT DOES NOT CARRY THE VISUALLY-HIDDEN CLASS has a bounding rect
+        whose width and height are both greater than zero." Criterion 8.3
+        carries the same exemption verbatim.
+      - >-
+        src/app/globals.css:548 through :556 declares .visually-hidden as
+        position absolute, width 1px, height 1px, padding 0, margin -1px,
+        overflow hidden, clip-path inset(50%), white-space nowrap. clip-path
+        does not alter the layout box, so getBoundingClientRect on such an
+        element returns width 1 and height 1, both greater than zero. The
+        exemption therefore protects nothing that the zero-size test would
+        have caught, and its only effect is to license the class.
+      - >-
+        Nothing in M3-P7 or M3-P8 forbids REMOVING a data-testid. An element
+        with no testid is collected at neither width, so its collections stay
+        deeply equal.
+      - >-
+        The plan asserts the coverage this criterion buys: "the in-progress
+        badge, the days-elapsed meta, the comparison head, every group delta
+        and every reconciliation cause block are inside it by construction."
+        Those testids do exist at the base (in-progress-badge at
+        src/modules/overview/ui/month-view.tsx:460, month-meta at :465,
+        compare-head at :118, group-delta at :142 and :189, the four
+        recon-cause blocks at :342, :354, :366 and :382), but "by
+        construction" holds only while they are still published.
+    analysis: >-
+      Hazard H7.2 is the second reason this round exists and criterion 7.6 is
+      the only thing addressing it. TWO CHEATS, both cheap. (1) Add the
+      visually-hidden class to the days-elapsed meta and the comparison head
+      at phone width: they stay in the collection with identical text, and
+      the criterion's own exemption removes them from the size test. The
+      phone screen is tidier because it says less, exactly as H7.2 predicts,
+      and 7.6 passes by its own wording. (2) Delete data-testid="month-meta"
+      and render the meta only above the breakpoint: absent at both widths,
+      collections equal, and 7.10's requirement that pre-existing specs pass
+      under the DESKTOP project does not notice, because the element still
+      renders at desktop width.
+    concrete-edit: >-
+      In criterion 7.6, delete the clause "that does not carry the
+      visually-hidden class" so the zero-size test applies to every collected
+      element, and append: "The collected testid set at 390 by 844 contains
+      at least month-title, in-progress-badge, month-meta, compare-head,
+      pot-change, recon-panel, income-total, spend-total, reserves-net, and
+      every group-total and group-delta the desktop width renders; and no
+      element inside main has computed display none, visibility hidden, or
+      the visually-hidden class at 390 by 844 unless it also has it at 1280
+      by 720. FALSIFIED BY a missing testid from that list, or by any element
+      hidden at one width and not the other." Make the same two edits to
+      criterion 8.3, with the testid list unresolved-group, merchant-group,
+      group-label, group-total, unresolved-count, income-total, spend-total.
+  - id: MPR-003
+    severity: high
+    evidence:
+      - >-
+        Criterion 8.4: "evaluating element.scrollWidth greater than
+        element.clientWidth plus 1 over every element inside main returns an
+        empty offender list". Criterion 7.7 is the same sweep on the month
+        view.
+      - >-
+        src/modules/merchants/ui/merchant-review.tsx:52 renders <span
+        className="visually-hidden">{t("namePlaceholder")}</span> INSIDE main
+        on /merchants. With width 1px, overflow hidden and white-space
+        nowrap (src/app/globals.css:548 through :556), that span's
+        scrollWidth is the full rendered width of its label text and its
+        clientWidth is 1. It is an offender on the first evaluation, at the
+        phase base, before M3-P8 changes anything.
+      - >-
+        M3-P7 rebuilds the month navigation as icon-only controls: step 4 and
+        the mockup's own pattern (delivery/design/mobile-v02/Main.dc.html:40
+        and :43 carry aria-label on 44px anchors wrapping an inline SVG), and
+        the project's accessible-label pattern is exactly the class above
+        (src/app/globals.css:546 through :547 states it as the house rule).
+        Any such label added inside main makes 7.7 an offender too.
+      - >-
+        The sweep measures width only. A name limited with -webkit-line-clamp
+        and overflow hidden, or with a max-height and overflow hidden, is
+        clipped VERTICALLY: textContent is unchanged, so criterion 7.6 and
+        8.3 pass, and scrollWidth equals clientWidth, so 7.7 and 8.4 pass.
+      - >-
+        Decision D-17 is what that defeats: "Names WRAP and are never
+        truncated, on both rebuilt screens, against the mockup." Criterion
+        8.4's only other half greps for text-overflow, which line-clamp does
+        not use.
+    analysis: >-
+      Two defects in one pair of criteria, in opposite directions. As
+      written, 8.4 CANNOT PASS without deleting an accessible label the
+      project mandates, which pushes the implementer either into an
+      accessibility regression or into inventing an exclusion nobody
+      reviewed; and once an exclusion is invented ad hoc it will be written
+      to whatever makes the run green. Meanwhile the sweep's chosen axis is
+      the wrong one for the hazard it is guarding: a phone rebuild truncates
+      DOWNWARD, by clamping a wrapped name to one or two lines, and that is
+      the one clipping mode neither criterion can see. The narrower version
+      of this sweep that exists today (test/e2e/month-view.spec.ts:300
+      through :323) avoids the first problem only by listing seven selectors
+      by hand, none of which is a hidden label.
+    concrete-edit: >-
+      Rewrite the sweep in criteria 7.7 and 8.4 as: "over every element
+      inside main that does not match .visually-hidden, evaluating
+      element.scrollWidth greater than element.clientWidth plus 1 OR
+      element.scrollHeight greater than element.clientHeight plus 1 returns
+      an empty offender list, and the failure message names each offender by
+      its testid or its first 40 characters of text and says which axis
+      overflowed. FALSIFIED BY a non-empty list." Add to both criteria: "grep
+      -nE 'line-clamp|-webkit-box-orient|text-overflow' src/app/globals.css
+      returns exactly one line, the text-overflow inside .app-household that
+      M3-P1 criterion 1.5 decided. FALSIFIED BY any line-clamp or box-orient
+      declaration, or by a second text-overflow." Delete the standalone
+      text-overflow half of 8.4, which this subsumes.
+  - id: MPR-004
+    severity: high
+    evidence:
+      - >-
+        Criterion 7.8: "At 390 by 844 with window.scrollY at 0, the element
+        carrying the reconciliation verdict has a bounding rect with top at
+        least 0 and bottom at most 844".
+      - >-
+        844 is the DEVICE height of the frame the mockup targets, not the
+        visible viewport of a browser on that device. Under Playwright a
+        viewport of 390 by 844 gives window.innerHeight 844, because there is
+        no browser chrome; on the phone the owner actually uses, the URL bar
+        and the bottom bar consume roughly 100 CSS pixels of that 844.
+      - >-
+        The plan states the fold's provenance as "delivery/design/mobile-v02/
+        canvas.json:3 fixes the frame at 390 by 844" (M3-P7 grounding, and
+        the same claim for canvas.json:5 in M3-P8's grounding). canvas.json:3
+        actually reads w 390, h 1180 and canvas.json:5 reads w 390, h 1010.
+        The only 844 in the design directory is the min-height on the frame
+        wrapper (Main.dc.html:21, BooksDoNotClose.dc.html:21,
+        MerchantReview.dc.html:21) and the prose of the canvas annotation at
+        canvas.json:9. The artboards are 1180 and 1010 tall, so the approved
+        design itself expects the page to scroll.
+      - >-
+        The criterion runs in one locale. Criterion 7.7 runs "in each of en,
+        nl and fr"; 7.8 does not. The Dutch and French reconciliation copy is
+        the longest in the catalogue (messages/nl.json and fr.json carry the
+        same 111 keys), and it is the copy directly above and inside the
+        panel being measured.
+    analysis: >-
+      THE CHEAT: place the reconciliation verdict at a top of about 790 so
+      its bottom lands just inside 844. Criterion 7.8 passes; on the device,
+      the verdict is below the fold and the criterion has certified the exact
+      thing it was written to prevent. The plan's own words for this criterion
+      are "the reconciliation answer is above the fold", and 844 is not the
+      fold. This is also the one place where a wrong citation has become
+      load-bearing: the number is presented as coming from the approved
+      canvas and does not.
+    concrete-edit: >-
+      Replace criterion 7.8 with: "At 390 by 844 with window.scrollY at 0, in
+      each of en, nl and fr, on the reconciling seeded dataset AND on the
+      non-reconciling one, the element with testid recon-verdict has a
+      bounding rect with top at least 0 and bottom at most 700, that being
+      844 less an allowance of about 144 CSS pixels for the browser chrome a
+      real phone spends on the URL bar and the bottom bar, which Playwright
+      does not render; and on the non-reconciling dataset the element with
+      testid recon-difference also has bottom at most 700. FALSIFIED BY a
+      bottom greater than 700 in any of the six cases." Add "the month view
+      publishes testid recon-verdict on the element carrying the books-close
+      or books-do-not-close answer" to the same criterion, because as written
+      its subject, "the element carrying the reconciliation verdict", names
+      no testid and no selector and an implementer chooses it after the fact.
+      Correct both groundings to cite Main.dc.html:21 and
+      MerchantReview.dc.html:21 for the 390 by 844 frame, and record that the
+      artboards are 1180 and 1010 tall so the design expects scrolling below
+      the fold.
+  - id: MPR-005
+    severity: high
+    evidence:
+      - >-
+        Criterion 7.3 measures "@media" in src/app/globals.css only.
+        Criterion 7.4's literal half measures src/app/globals.css and files
+        matching *.tsx under src/ only.
+      - >-
+        There are four stylesheets in the tree today (src/app/globals.css,
+        styles/tokens.css, styles/pulse-theme.css, styles/pulse-tokens.css)
+        and nothing in either criterion, or in files-to-touch, prevents a
+        fifth. A new src/app/month.css imported from globals.css would carry
+        any number of media conditions and any number of px literals, and
+        both criteria would still pass.
+      - >-
+        src/app/globals.css:1 is @import "tailwindcss", and
+        styles/pulse-theme.css:11 through :52 re-exports the tokens into an
+        @theme block. Tailwind's own numeric utilities are therefore live: a
+        className of "min-h-11" resolves to 2.75rem, which is 44px, and
+        "md:flex-row" emits a media query into the generated CSS rather than
+        into globals.css. Neither string is matched by "oklch\(",
+        "#[0-9a-fA-F]{3,8}" or "[0-9]+px".
+      - >-
+        package.json:13 already declares a gate for this: "gate:tokens": "!
+        grep -rE 'oklch\(|#[0-9a-fA-F]{3,8}|font-size:\s*[0-9.]+px'
+        src/modules/*/ui". Neither M3-P7 nor M3-P8 requires it to pass.
+    analysis: >-
+      Hazard H7.3 states that this is "the highest-pressure moment in the
+      project for that violation", and the criterion addressing it is scoped
+      to two file patterns out of the several the change can reach. The
+      cheapest cheat is not even adversarial: an implementer building a
+      phone layout naturally reaches for a second stylesheet or for a
+      Tailwind responsive utility, and both routes leave criteria 7.3 and 7.4
+      green while D-16's "exactly one breakpoint" and CLAUDE.md
+      non-negotiable 4 are both broken.
+    concrete-edit: >-
+      In criterion 7.3, replace "grep -c \"@media\" src/app/globals.css" with
+      "grep -rc \"@media\" over every file matching *.css under src/ and
+      styles/", and add "git ls-files '*.css' returns exactly the four files
+      present at the phase base, so no stylesheet is added to escape this
+      count. FALSIFIED BY a fifth stylesheet or by a media condition in any
+      file other than the one permitted." In criterion 7.4, replace the
+      globals.css-only literal grep with the same grep run over every *.css
+      file under src/ and styles/ except styles/tokens.css, and add: "npm run
+      gate:tokens exits 0, and a grep over files matching *.tsx under src/
+      for a Tailwind responsive prefix (the token sm:, md:, lg:, xl: or 2xl:
+      appearing inside a className value) and for a Tailwind arbitrary value
+      (an opening square bracket immediately after a utility prefix such as
+      min-h-, max-h-, h-, w-, p-, gap- or text-) exits 1, so no responsive
+      prefix and no arbitrary value carries a breakpoint or a literal past
+      this gate. FALSIFIED BY any hit."
+  - id: MPR-006
+    severity: high
+    evidence:
+      - >-
+        M3-P8's files-to-touch includes src/app/globals.css. Its criterion
+        8.9 reads in full: "grep -rEn \"oklch\(|#[0-9a-fA-F]{3,8}|[0-9]+px\"
+        over src/modules/merchants/ exits 1." src/app/globals.css is not
+        under src/modules/merchants/.
+      - >-
+        Criterion 8.7's empty-diff list is src/modules/merchants/application/,
+        src/modules/merchants/domain/, src/modules/overview/, prisma/,
+        messages/ and styles/tokens.css. src/app/globals.css is deliberately
+        absent, because the phase edits it.
+      - >-
+        M3-P7's globals.css literal check (criterion 7.4, "grep -nE
+        \"^[^/*]*[0-9]+(px|rem)\" src/app/globals.css returns exactly four
+        lines") is a criterion of M3-P7 and is evaluated at M3-P7's head.
+        Nothing re-evaluates it after M3-P8.
+      - >-
+        Hazard H8.6 is exactly this: "The phase starts before M3-P7 has
+        landed its tokens and invents its own tap-target and row-height
+        values, so the two screens drift." Its addressed-by is criterion 8.7,
+        which pins styles/tokens.css and says nothing about where a literal
+        may land instead.
+    analysis: >-
+      THE CHEAT: M3-P8 writes min-height 44px and min-height 56px directly
+      into the .merchant-row and .merchant-name-field rules in
+      src/app/globals.css. styles/tokens.css is untouched, so 8.7 passes;
+      the literals are outside src/modules/merchants/, so 8.9 passes; M3-P7's
+      count criterion is not re-run. CLAUDE.md non-negotiable 4 is broken and
+      the invariant M3-P7 bought at some cost is silently spent by the phase
+      that runs immediately after it, which is the drift H8.6 names.
+    concrete-edit: >-
+      Extend criterion 8.9 to: "grep -rEn \"oklch\(|#[0-9a-fA-F]{3,8}|
+      [0-9]+px\" over src/modules/merchants/ exits 1, AND grep -nE
+      \"^[^/*]*[0-9]+(px|rem)\" src/app/globals.css returns the same line
+      count it returned at this phase's base, with the same declarations,
+      so this phase adds no literal to the stylesheet M3-P7 cleaned; AND the
+      rules this phase adds or changes reference the tap-target and row-height
+      tokens M3-P7 declared, shown by grep -n for those two token names in
+      src/app/globals.css returning at least one use each. FALSIFIED BY any
+      hit, by a changed line count, or by either token being declared and
+      never referenced." Re-point H8.6's addressed-by to criteria 8.7 and 8.9.
+  - id: MPR-007
+    severity: high
+    evidence:
+      - >-
+        DR-0022's decided consequence: "Phone-width evidence becomes a
+        standing acceptance criterion on every UI phase, measuring usability
+        (reachable targets, readable density, no lost content) rather than
+        only absence of horizontal overflow."
+      - >-
+        M3-P4's criterion 4.1 is left byte-unchanged by this amendment: "npm
+        run test:e2e exits 0 including a mobile-viewport spec that completes
+        the synthetic-PDF import journey at a 390px-class viewport and
+        asserts document.documentElement.scrollWidth does not exceed the
+        viewport width on the import, declaration, result and month screens."
+        That is the overflow-only bar, in the phase that ships three new
+        mobile screens.
+      - >-
+        M3-P5's four criteria (5.1 through 5.4) contain no phone-width
+        measurement of any kind. It is the phase that makes the phone the
+        entry point.
+      - >-
+        The amendment did amend M3-P4: it rewrote step 1 and added criterion
+        4.4. So the phase was open for editing and 4.1 was left as it was.
+      - >-
+        Decision D-19's own reasoning for ordering the rebuild before M3-P5
+        is that "shipping that entry point onto the screen the owner graded
+        1/10 delivers the defect faster rather than fixing it." The same
+        argument applies to M3-P4's and M3-P5's own screens and is not drawn.
+    analysis: >-
+      The amendment fixes the two screens that are already broken and leaves
+      the next three mobile screens to be built to the discredited bar. The
+      dispatch's criterion 3 only constrains NEW phases, so nothing in the
+      M0-P3 acceptance set would catch this, which is precisely why an
+      adversarial pass has to. Six weeks from now the import flow ships with
+      30px controls and a screen that says less at 390, and the record will
+      show that the mobile round was open in the same file and did not carry
+      the constraint forward.
+    concrete-edit: >-
+      Amend M3-P4's criterion 4.1 to: "npm run test:e2e exits 0 including the
+      synthetic-PDF import journey run under the phone project M3-P7 added,
+      and at 390 by 844 the import, declaration and result screens satisfy
+      the three standing phone measurements M3-P7 introduced: every element
+      matching \"a, button, input:not([type=hidden]), select, [role=button]\"
+      inside main with a non-zero box has bounding height at least 44 CSS
+      pixels; the sorted testid-and-text collection is deeply equal at 1280
+      by 720 and 390 by 844; and the clipping sweep over every element inside
+      main returns an empty offender list on both axes. FALSIFIED BY one
+      offender in any of the three." Add criterion 5.5 to M3-P5 requiring the
+      same three measurements on the screen the share target lands on. Add a
+      sentence to decision D-19 recording that the standing criterion DR-0022
+      decided applies to M3-P4 and M3-P5 and not only to the rebuild phases.
+  - id: MPR-008
+    severity: high
+    evidence:
+      - >-
+        Criterion 7.13: "git diff --name-only against this phase's base over
+        test/fixtures/ prints nothing, and no screenshot, trace or attachment
+        is committed anywhere under test/: the phone specs seed from the
+        synthetic fixtures already committed at the phase base."
+      - >-
+        The plan's own standing-context, quoting the dispatch, describes the
+        shape the rebuild is used against: one account, one interpreted
+        import, 39 transactions over one month, ZERO merchant rules.
+      - >-
+        With zero merchant rules no spend row can take the tag branch
+        (src/modules/overview/domain/month-projection.ts:67 through :74
+        requires both merchantId and primaryTag non-null) and none can take
+        the merchant branch (:75 requires merchantId non-null), so every
+        spend row folds under its normalised counterparty text. The owner's
+        spend card is therefore a long list of raw bank descriptors, which is
+        the densest state the screen has.
+      - >-
+        The committed month-view fixtures produce nothing like it. The
+        fixture arithmetic documented at test/e2e/month-view.spec.ts:4
+        through :40 describes datasets of three to five rows each, with short
+        invented labels.
+      - >-
+        Every phone measurement in M3-P7 (7.5, 7.6, 7.7, 7.8, 7.9) is taken
+        on those datasets, and 7.13 forbids adding one that is not.
+    analysis: >-
+      The measurements are taken on a screen that has three rows and short
+      labels, and the screen that was graded 1 out of 10 has dozens of rows
+      and long descriptors. Density, wrapping, above-the-fold placement and
+      row height all behave differently between the two, and the criteria
+      certify only the easy one. The hazard 7.13 is actually guarding, H7.6,
+      is that REAL statement content reaches a fixture or a committed
+      artifact; banning all new fixtures is a blunt instrument for that, and
+      it happens to ban the one fixture that would make the rest of the phase
+      mean something. The privacy half belongs in a privacy gate, which
+      finding MPR-009 asks for anyway.
+    concrete-edit: >-
+      Replace criterion 7.13 with: "The phase adds exactly one synthetic
+      fixture, generated by the committed fixture builder and containing no
+      value taken from any real statement, that produces at least 20 spend
+      groups on one month with labels of at least 28 characters in the shape
+      of a bank descriptor, and criteria 7.5, 7.7, 7.8, 7.9 and 7.14 are
+      evaluated against it as well as against the existing reconciling and
+      non-reconciling datasets. No screenshot, trace or attachment is
+      committed anywhere under test/, and git diff --name-only over
+      test/fixtures/ prints only that one new fixture. FALSIFIED BY the
+      fixture being absent, by fewer than 20 groups, by any criterion above
+      being evaluated only on the small datasets, or by any committed binary
+      under test/." Add the same dense-state requirement to M3-P8's criterion
+      8.2 and 8.3 seed, which today asks only for "at least one resolved and
+      one unresolved group in each direction".
+  - id: MPR-009
+    severity: high
+    evidence:
+      - >-
+        M3-P2 carries criterion 2.6 and M3-P3 carries criterion 3.5, both of
+        which are two-half privacy gates: a whole-tree identifier grep and a
+        five-category grep scoped to the files the phase touched. M3-P7 and
+        M3-P8 carry no privacy criterion at all.
+      - >-
+        Both new phases require captured rendered output to be pasted into
+        the phase work history: criterion 7.1 ("the exact content string of
+        the rendered viewport meta tag", "the command and its captured output
+        beside it") and criterion 8.1 ("the rendered bounding-box heights of
+        the naming input and its submit button at 390 by 844 on the screen as
+        shipped").
+      - >-
+        The dispatch's standing-context states where the rebuilt screens are
+        used first: the deployed database with the owner's real transactions.
+        A rendered measurement captured there carries real counterparty text
+        in the same output.
+      - >-
+        Fleet warning 11 records the failure mode verbatim: the M3-P3 leak
+        survived three pushes, and "the same applies to prose in reports,
+        verdicts and notes".
+      - >-
+        Separately, the approved mockup itself carries an IBAN-shaped token
+        in four committed files: grep -rEoh over delivery/design/mobile-v02/
+        for the IBAN shape prints four occurrences of one invented value, in
+        Main.dc.html, DenseAlternate.dc.html, MerchantReview.dc.html and
+        README.md. The privacy gate on branch claude/gate-privacy checks
+        every identifier shape in the tree against
+        test/fixtures/allowed-identifiers.txt, and neither that file nor the
+        gate script exists at b560e85, so nothing in the plan records that
+        the mockup will need an allow-list entry when the gate lands.
+      - >-
+        Hazard H7.6 names the risk ("Content from the owner's real statements
+        reaches a new fixture, a committed screenshot or a trace") and its
+        addressed-by is criterion 7.13, a git diff over test/fixtures/, which
+        cannot see the work history, a report, or a note.
+    analysis: >-
+      The two phases that most need a privacy criterion are the two that have
+      none. They are the phases whose criteria require pasted rendered output
+      of screens showing transactions, and the fleet has already lost a round
+      to exactly that. The pattern is established three phases earlier in the
+      same document, so this is an omission rather than a design choice.
+    concrete-edit: >-
+      Add criterion 7.14 to M3-P7 and 8.10 to M3-P8, in the shape of
+      criterion 2.6: "Privacy gate, both halves. (a) A whole-worktree grep
+      for the real statements' identifier, name, merchant-string,
+      thousands-form amount and date probes, built in the container at review
+      time and never committed, exits 1. (b) Over the files this phase adds
+      or modifies, the same grep exits 1, and every rendered measurement
+      quoted in the phase work history is captured from a committed synthetic
+      fixture rather than from the deployed household, stated with the
+      command that produced it. If the real statements are absent from the
+      executing container, the criterion is recorded as not witnessed rather
+      than green. FALSIFIED BY any hit, or by a captured measurement whose
+      source is the deployed database." Re-point H7.6's addressed-by to
+      criteria 7.13 and 7.14. Add a parked entry recording that
+      delivery/design/mobile-v02/ carries an invented IBAN-shaped token in
+      four files and will need an entry in
+      test/fixtures/allowed-identifiers.txt when the privacy gate merges.
+  - id: MPR-010
+    severity: medium
+    evidence:
+      - >-
+        Every citation in the amendment to delivery/design/mobile-v02/
+        MerchantReview.dc.html and to BooksDoNotClose.dc.html is short by
+        exactly 19 lines. Measured, cited line first and actual line second:
+        the named count "3 left" and "17 named" is cited as :24 through :26
+        and is at :42 through :46; the group row cited as :29 through :42 is
+        at :48 through :61; the naming input and submit button cited as :38
+        and :39, in a report-code-disagreement entry and in the token entry's
+        18px button padding, are at :57 and :58 (:38 is an h1 and :39 is a
+        paragraph); the month span cited as :34, :49 and :64 is at :53, :68
+        and :83; the ellipsized names cited in decision D-17 as :31, :46 and
+        :61 are at :50, :65 and :80; the "Recently named" list cited as :74
+        through :91 is at :93 through :111; the 48px compact rows cited as
+        :77 and :84 are at :96 and :103; the direction-total absence cited as
+        ":29 through :92" spans :35 through :111.
+      - >-
+        Same offset in BooksDoNotClose.dc.html: the alert circle cited as :43
+        is at :62 (:43 is a next-month chevron anchor); "Unexplained
+        difference" cited as :48 is at :67; "What is missing" cited as :60 is
+        at :79; the 3px gap cited as :62 is at :81; the 1.45 line-height
+        cited as :67 is at :86.
+      - >-
+        Main.dc.html's citations are all CORRECT: :26, :29, :40, :41, :44,
+        :52, :60, :63, :66, :68, :72 through :75, :85, :87, :124 through
+        :176, :131, :158 and :168 each resolve to the content the plan
+        describes. So the defect is per-file, not systemic, and a reader who
+        spot-checks one file will conclude the citations are sound.
+      - >-
+        Four further citations to README.md and canvas.json are wrong.
+        README.md is 37 lines long, so "README.md:24 through :40", used three
+        times for the six things the mockup fixes, runs past the end of the
+        file; the six fixes are at :25 through :37. "README.md:40 records"
+        the rail-as-widening sentence, which is at :36 through :37.
+        "README.md:12 says the frames are not a source of truth for copy":
+        that sentence is at :8 through :9. "README.md:20 records
+        DenseAlternate as considered and NOT chosen": that is the table row
+        at :19.
+    analysis: >-
+      The dispatch's acceptance criterion 5 requires each
+      report-code-disagreement entry to name a file and line, and the reason
+      is that the next reader checks them. A wrong line is worse than an
+      absent one: a reviewer who opens MerchantReview.dc.html:38 finds a
+      heading, concludes the plan is describing something they cannot see,
+      and either re-derives the whole entry or waves it through. Two
+      report-code-disagreement entries, one decision (D-17), M3-P8's
+      grounding, its verified-root-cause and four parked items all rest on
+      these numbers. This is a mechanical error, not a judgement error, and
+      the fix is mechanical.
+    concrete-edit: >-
+      Add 19 to every line number cited against
+      delivery/design/mobile-v02/MerchantReview.dc.html and
+      delivery/design/mobile-v02/BooksDoNotClose.dc.html throughout the
+      amendment, giving the values listed in this finding's evidence.
+      Replace all three occurrences of "README.md:24 through :40" with
+      "README.md:25 through :37"; replace "README.md:40" with "README.md:36
+      through :37"; replace "README.md:12" with "README.md:8 through :9";
+      replace "README.md:20" with "README.md:19". Add a line to M3-P7's
+      verification-first step: "Re-open each cited line of every mockup frame
+      and confirm it carries the content the entry describes; the M0-P3
+      review found a uniform 19-line offset in two of the four frames."
+  - id: MPR-011
+    severity: medium
+    evidence:
+      - >-
+        Decision D-15 asserts: "criteria 4.1, 4.2 and 4.3 are left byte
+        unchanged and are all still satisfiable, because 4.2's grep for
+        \"desk activity\" exits 1 either way and 4.2's mobile-first stance
+        line is present either way."
+      - >-
+        M3-P4's criterion 4.2 in full: "grep -n \"desk activity\"
+        .claude/skills/pulse-frontend/SKILL.md exits 1 and the file contains
+        a mobile-first import stance line CITING THE V0.2 ADDENDUM."
+      - >-
+        M3-P7's step 2, which is the only place the replacement paragraph is
+        specified, requires "Cite DR-0022 by id in the text" and says nothing
+        about the v0.2 addendum. Criterion 7.11 requires the file to contain
+        "the literal string DR-0022, the literal string 390, and a sentence
+        placing the wide-width rail as a widening of the one-column layout",
+        again with no addendum citation.
+      - >-
+        M3-P4's new criterion 4.4 requires "git diff --name-only against this
+        phase's base over .claude/skills/pulse-frontend/SKILL.md prints
+        nothing", so M3-P4 cannot add the missing citation itself.
+    analysis: >-
+      D-15's satisfiability claim is right about the first half of 4.2 and
+      wrong about the second. If M3-P7 writes the paragraph as specified,
+      M3-P4 arrives at a file that does not cite the v0.2 addendum and is
+      forbidden from editing it, so criterion 4.2 is unsatisfiable and the
+      phase cannot close. This is small and entirely avoidable, and it is the
+      kind of contradiction that surfaces as a blocked phase months later
+      rather than as a review comment now.
+    concrete-edit: >-
+      Add to M3-P7's step 2, after "Cite DR-0022 by id in the text": "and
+      cite delivery/intake/pulse-v0.2-pdf-addendum.md by name, because M3-P4
+      criterion 4.2 requires the stance line to cite the v0.2 addendum and
+      M3-P4 criterion 4.4 forbids that phase from editing the file." Add the
+      addendum string to criterion 7.11's list of literals the file must
+      contain. Correct D-15's sentence to read "criteria 4.1, 4.2 and 4.3 are
+      left byte unchanged; 4.2 stays satisfiable only because M3-P7 step 2 is
+      required to cite the v0.2 addendum as well as DR-0022."
+  - id: MPR-012
+    severity: medium
+    evidence:
+      - >-
+        Criterion 7.5 requires "every element matching \"a, button,
+        input:not([type=hidden]), select, [role=button]\" inside the shell
+        header and inside main that has a non-zero bounding box has a
+        bounding box height of at least 44 CSS pixels", and names
+        .month-unresolved-pill (src/app/globals.css:651) among the elements
+        "that fail this today and must therefore change".
+      - >-
+        .month-unresolved-pill renders as a Next Link, that is an anchor
+        (src/modules/overview/ui/month-view.tsx:484 through :495), so it is
+        inside the selector.
+      - >-
+        The approved mockup gives that same control a min-height of 32px, not
+        44: delivery/design/mobile-v02/Main.dc.html:51 is the "3 unnamed"
+        anchor with "min-height: 32px". The 44px minimum appears on the sign
+        out link (:26), the three nav links (:29 through :31) and the two
+        month-nav anchors (:40, :43), and nowhere on this control.
+      - >-
+        delivery/design/mobile-v02/README.md:29 states fix 2 as "Tap targets
+        of at least 44px on every row that navigates or opens", which the
+        mockup's own pill does not satisfy.
+      - >-
+        No report-code-disagreement entry records this. The plan's five
+        recorded mockup disagreements cover icons, truncation, copy, the
+        projection shape and the merchant review's missing capabilities.
+    analysis: >-
+      The implementer is handed a criterion and an owner-approved reference
+      that contradict each other on a specific control, with no recorded
+      resolution. The likely outcome is that they follow the mockup, fail
+      7.5, and then either weaken the criterion in a fix round or discover
+      the conflict at review time. It is exactly the class of thing the
+      verification-first step and report-code-disagreement exist to catch,
+      and the pass caught the other five.
+    concrete-edit: >-
+      Add a report-code-disagreement entry for M3-P7: "The mockup's own tap
+      targets are not all 44px. delivery/design/mobile-v02/README.md:29 states
+      the 44px rule, and Main.dc.html:26, :29 through :31, :40 and :43 honour
+      it, but the unnamed-counterparties pill at Main.dc.html:51 carries
+      min-height 32px while being an anchor that navigates to /merchants.
+      Resolved in favour of the CRITERION: .month-unresolved-pill
+      (src/app/globals.css:651, rendered as a Link at
+      src/modules/overview/ui/month-view.tsx:484) is rebuilt at the 44px
+      token like every other navigating control, against the mockup's 32.
+      verified: true." Add one clause to criterion 7.5: "the unresolved pill
+      is inside this selector and the mockup's 32px treatment of it does not
+      apply."
+  - id: MPR-013
+    severity: medium
+    evidence:
+      - >-
+        Criterion 7.10's empty-diff list is "src/modules/overview/
+        application/, src/modules/overview/domain/, src/modules/merchants/,
+        src/modules/import/, prisma/ and messages/". src/platform/ is not on
+        it.
+      - >-
+        src/platform/ui/ contains amount.tsx, mask-card-number.ts and
+        nav-link.tsx. amount.tsx is the one mandatory way this product
+        renders a monetary value, which the pulse-frontend skill calls a
+        visible product defect to get wrong; mask-card-number.ts is the
+        M3-P6 masking that hazard H7.8 exists to protect.
+      - >-
+        Criterion 7.10's masking guard is "grep -n \"maskCardNumbers\"
+        src/modules/overview/ui/month-view.tsx returns at least two call
+        sites", which checks the call sites and not the function.
+      - >-
+        M3-P7's step 4 rebuilds the header navigation ("the three nav links
+        as an equal-width row whose every target clears 44px"), and the nav
+        link component is src/platform/ui/nav-link.tsx, which is NOT in
+        M3-P7's files-to-touch.
+    analysis: >-
+      The pin is the plan's own instrument for keeping a layout phase a
+      layout phase (decision D-20 says so in as many words), and it has a
+      hole in the one directory where a money-rendering change would be
+      invisible to every other criterion. A phone-friendly amount format that
+      drops the cents would change textContent at BOTH widths, so criterion
+      7.6 stays green. Separately, files-to-touch omits a file the phase's own
+      step 4 must edit, which will read at review time as an undeclared
+      deviation.
+    concrete-edit: >-
+      Add to criterion 7.10's empty-diff list: "src/platform/ui/amount.tsx,
+      src/platform/ui/mask-card-number.ts, src/platform/auth/ and
+      src/modules/ledger/", and add "grep -n \"maskCardNumbers\"
+      src/platform/ui/mask-card-number.ts shows the function body unchanged
+      from this phase's base". Add src/platform/ui/nav-link.tsx to M3-P7's
+      files-to-touch. Add src/platform/ to M3-P8's criterion 8.7 empty-diff
+      list, where it is also absent.
+  - id: MPR-014
+    severity: low
+    evidence:
+      - >-
+        The plan raises DR-0023 as an open question and states its
+        recommendation three times: in standing-context, in M3-P7 step 7, and
+        in the parked entry.
+      - >-
+        Criterion 7.10 pins src/modules/overview/domain/ and
+        src/modules/overview/application/ to an empty diff, and criterion 8.7
+        pins src/modules/overview/ entirely. So neither rebuild phase can
+        implement a "yes" answer whatever the owner decides, and no other
+        phase in the plan carries the work.
+      - >-
+        Decision D-18 states the rule the plan applies to the mockup: "Where
+        it and the shipped product disagree about copy, about data, or about
+        what the screen can do, the shipped product wins UNLESS the difference
+        is one of the six things delivery/design/mobile-v02/README.md says the
+        mockup exists to fix." Tag subheads inside the spend card are fix 4 of
+        those six (README.md:32 through :33).
+      - >-
+        The recommendation's supporting figure, that the change "makes the
+        spend card roughly three times taller", is stated in all three places
+        and is not measured anywhere.
+    analysis: >-
+      The plan is admirably explicit that this is the owner's call, and it
+      states its recommendation first so the owner can simply agree, which is
+      good practice. What it does not do is tell the owner what agreeing or
+      disagreeing costs: because both rebuild phases pin the projection to an
+      empty diff and no third phase exists, a "yes" cannot land in v0.2 at
+      all. So the question as framed is not "one row per tag or merchant rows
+      under subheads" but "not now or not in v0.2", and the owner is not told
+      that. D-18's own rule points the other way on this specific item, which
+      the decision does not acknowledge.
+    concrete-edit: >-
+      Add to the DR-0023 paragraph in standing-context and to the parked
+      entry: "This recommendation forecloses mockup fix 4 for v0.2: criteria
+      7.10 and 8.7 pin the overview projection to an empty diff and no phase
+      in this plan carries the change, so a yes answer lands as a new phase
+      after M3-P8 rather than inside either rebuild. The question the owner
+      is answering is therefore whether tag subheads ship in v0.2 or later,
+      not whether they ship." Add to D-18: "The one exception this rule does
+      not settle by itself is fix 4, which is a projection change and is
+      raised as DR-0023 rather than decided here." Either drop the "roughly
+      three times taller" figure or attach the measurement behind it.
+  - id: MPR-015
+    severity: low
+    evidence:
+      - >-
+        The viewport report-code-disagreement entry is recorded verified:
+        false and calls itself "the most consequential open item in this
+        amendment". The fleet backlog now records the answer: the tag exists,
+        injected by Next's App Router as width=device-width, initial-scale=1,
+        observed in the live deployment's rendered head on 2026-08-22.
+      - >-
+        M3-P7's step 1(a) still carries the contingency: "if it is absent,
+        adding it is this phase's first change and nothing else in the phase
+        is meaningful until it lands."
+      - >-
+        M3-P7's files-to-touch includes src/app/layout.tsx, whose only
+        apparent purpose in the phase is that contingency: no other step
+        names it (src/app/layout.tsx:1 through :19 exports metadata only).
+      - >-
+        Hazard H7.7 states the risk as live: "the product ships a beautiful
+        390px layout that a real phone renders at 980px."
+    analysis: >-
+      The record was honest when written and is stale now. The cost of
+      leaving it is small but real: a phase whose first step is gated on a
+      non-problem, a hazard class spent on it, and a file in files-to-touch
+      that the phase should not need to open. Criterion 7.2 and decision
+      D-21's isMobile requirement should both STAY: 7.2 becomes a regression
+      pin on a tag the framework injects and the project does not control,
+      which is worth having, and isMobile is independently justified because
+      it is what makes the tag load-bearing in the test at all.
+    concrete-edit: >-
+      Change the viewport entry to verified: true, restate it as "A phone
+      lays the product out at the phone's width. CONFIRMED: Next's App Router
+      injects width=device-width, initial-scale=1 when no route exports a
+      viewport object, observed in the deployed application's rendered head
+      on 2026-08-22 (fleet backlog, M0-P3 corrections). The codebase writes
+      no tag of its own, so criterion 7.2 pins a framework default the
+      project does not control, which is why it is kept." Delete the
+      contingency clause from step 1(a), leaving the requirement to record
+      the observed string. Drop src/app/layout.tsx from files-to-touch unless
+      another step needs it. Reword H7.7 to the regression it now is: "a
+      later change adds a viewport export that drops width=device-width."
+  - id: MPR-016
+    severity: low
+    evidence:
+      - >-
+        The plan states, in standing-context and again in a
+        report-code-disagreement entry: "every phone-viewport assertion in
+        the suite reads document.documentElement.scrollWidth and nothing
+        else" and "It is covered by ONE measurement, horizontal overflow, and
+        by nothing else."
+      - >-
+        test/e2e/navigation.spec.ts's phone describe (:177 through :192, with
+        test.use viewport 390 by 844 at :178) calls a helper that asserts
+        main-nav is visible, each of the three nav links is visible,
+        household-context is visible and the Sign out button is visible on
+        every authenticated route (:161 through :175), and then at :186
+        through :190 clicks Sign out at that width and asserts the sign-in
+        heading appears. Its own comment reads "Clickable, not merely
+        visible: sign out works at this viewport."
+      - >-
+        test/e2e/merchants.spec.ts's phone describe (:126 through :262) also
+        asserts at phone width that at least four rendered preview rows carry
+        a masked card tail (:163 through :164).
+    analysis: >-
+      The overstatement does not change the conclusion, which is sound: the
+      existing bar is visibility plus overflow, and the broken month view
+      passes it. But the plan is the document a fix round and two clean-room
+      reviews will read as the record of what the suite does, and "nothing
+      else" is checkable and false. The accurate version is also the stronger
+      argument, because "visible and clickable and no horizontal scrolling"
+      is precisely the orchestrator's recorded wording that this round exists
+      to replace.
+    concrete-edit: >-
+      Replace both sentences with: "The existing phone bar is visibility plus
+      overflow and nothing more. test/e2e/navigation.spec.ts:161 through :192
+      asserts at 390 that main-nav, the three nav links, household-context
+      and Sign out are visible and that Sign out is clickable;
+      test/e2e/merchants.spec.ts:126 through :262 asserts masked card labels
+      at 390; and all four phone assertions end at
+      document.documentElement.scrollWidth (navigation.spec.ts:168,
+      merchants.spec.ts:165, :214 and :259, import.spec.ts:184). Nothing
+      measures a rendered height, a density, or whether content survived the
+      narrowing. That is the orchestrator's recorded criterion, controls
+      visible and clickable with no horizontal scrolling, and the month view
+      passes it today."
