@@ -40,7 +40,30 @@ report() { printf '%s\n' "$1" >&2; fail=1; }
 
 AMOUNT='([0-9]{1,3}(\.[0-9]{3})+,[0-9]{2}|[0-9]+,[0-9]{2})'
 CURRENCY='(EUR|€)[[:space:]]*[0-9]'
-IBAN='\b[A-Z]{2}[0-9]{2}([[:space:]]?[0-9]{4}){3}\b'
+# Account shapes, TWO patterns since fix round 4 (finding HZ3-M3P3-03),
+# because one pattern could not cover both gaps without swallowing every
+# base64 asset hash in the tree, measured rather than guessed.
+#
+# IBAN_LOCAL is the Belgian-length, digits-body shape the gate has always
+# had, with the country letters now matched in either case: a lower-case
+# account shape used to pass unlisted while the card half of this same
+# script folded case, so the two halves disagreed with each other and with
+# the allow list's promise.
+#
+# IBAN_FOREIGN accepts LETTERS IN THE BODY and any real IBAN length. An
+# account number whose body carries letters never matched the old pattern
+# at all, and one has been sitting in two tracked fixtures unlisted with
+# this gate exiting 0. It is deliberately UPPER-CASE ONLY: an IBAN is
+# written in capitals by convention, while the mixed-case runs this
+# widening otherwise catches are asset hashes and base64 fragments, four of
+# which this tree carries and none of which anyone can write a provenance
+# note for. It also takes the COMPACT form only: allowing a separator
+# inside a variable-length body let the match run past the account number
+# into the following upper-case word, which invented four shapes nobody
+# could list. The spaced form is what IBAN_LOCAL is for.
+IBAN_LOCAL='\b[A-Za-z]{2}[0-9]{2}([[:space:]]?[0-9]{4}){3}\b'
+IBAN_FOREIGN='\b[A-Z]{2}[0-9]{2}[0-9A-Z]{10,30}\b'
+IBAN="$IBAN_LOCAL|$IBAN_FOREIGN"
 PAN='\b([0-9]{4}[[:space:]-]){3}[0-9]{4}\b'
 # Masked PAN: the only form a card statement prints, and invisible to a
 # digits-only pattern. Any mix of digits and mask glyphs in card grouping.
