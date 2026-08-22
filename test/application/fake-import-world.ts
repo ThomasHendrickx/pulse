@@ -181,6 +181,18 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
           dedupKey: stored.dedupKey,
         })),
     applyReparse: async (context, input) => {
+      // HZ2-M3P3-04: the settlement figure is rebuilt by the same
+      // operation that rebuilds the facts it belongs to.
+      for (const entry of input.imports) {
+        const record = imports.get(entry.importId);
+        if (record !== undefined && record.householdId === context.householdId) {
+          if (entry.settlementTotalCents === undefined) {
+            delete record.settlementTotalCents;
+          } else {
+            record.settlementTotalCents = entry.settlementTotalCents;
+          }
+        }
+      }
       // Mirrors the adapter's contract: the profile spec and every listed
       // row's fact columns move together; row identity, importId,
       // accountId and rawLine never change. Finding CR-302: this fake now
