@@ -1,0 +1,640 @@
+# Adversarial plan review of the M0-P4 amendment to delivery/plan/pulse-v02.yaml
+# (phases M3-P9, M3-P10, M3-P11), reviewed at b045d7d against the tree at
+# 89ed187. Input report: pulse-fleet/dispatch-plan-feedback.yaml. Decisions
+# read: DR-0025, DR-0026. The reviewer edited nothing.
+#
+# Method: every acceptance criterion in the three new phases was read against
+# the code it names, and for each one the question asked was "what could an
+# implementer ship that satisfies this sentence literally while the owner
+# still presses a control and feels nothing". Where a cheat exists it is
+# written out. Where none could be constructed, the criterion is not
+# mentioned, which is most of criterion 10.3, 10.4, 10.8, 9.5, 9.6, 9.7,
+# 10.7, 11.6 and every privacy criterion.
+kind: finding
+verdict: >-
+  Reject and return for one fix round. The amendment is unusually well
+  grounded: every one of the sixteen new report-code-disagreement entries
+  that names a file and line was spot-checked and every line number is
+  correct, the plan validates dispatchable, it needs no package, and it
+  found three real things the dispatch had wrong. But the criterion the
+  round exists for, 10.2, is satisfiable by a single line that changes
+  nothing a reader can see; the criteria in M3-P9 and 10.5 are evaluated
+  over a control set the implementer's own spec decides the size of; 11.3
+  is not satisfiable as written because the DOM identity it asserts on does
+  not exist; and the whole interval measurement is taken against a
+  development server whose behaviour differs from the owner's deployed
+  build in exactly the dimension 10.5 turns on. Four of those are
+  correctable with sentence-level edits and none of them requires
+  re-planning the round or changing the three-phase split, which is sound.
+produced-by: Anthropic Claude (Opus 5)
+findings:
+  - id: ADV-M0P4-01
+    severity: critical
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml criterion 10.2: "the spec installs a
+        MutationObserver on document with childList, subtree, attributes and
+        characterData before the press, records the timestamp of the click
+        event and the timestamp of the first mutation after it, and asserts
+        BOTH of the following. (a) The interval from the click to the first
+        mutation is at most 200 MILLISECONDS."
+      - >-
+        The criterion places no constraint on WHERE the mutation occurs, on
+        WHAT changed, or on the mutation being caused by the press. The
+        observer's target is the whole document with subtree true, so every
+        mutation from every source in the page qualifies.
+      - >-
+        The gate that would run it is a development server:
+        playwright.config.ts webServer entry two is `command: "npm run dev"`,
+        and the chromium-phone project 10.2 names uses that baseURL.
+      - >-
+        Framework bookkeeping is present in that tree and is observable from
+        a document-scoped observer. In the installed next 15.5.23:
+        `grep -o 'createElement("nextjs-portal")' node_modules/next/dist/compiled/next-devtools/index.js`
+        returns 2 and `grep -o 'document.body.appendChild'` on the same file
+        returns 4. The dev tools host element is appended to and removed from
+        document.body in the light DOM; only its shadow content is hidden
+        from an observer.
+      - >-
+        The plan already knows the shape of the guard this criterion is
+        missing and uses it twice elsewhere: criterion 10.11(b) "THE RED
+        WITNESS ... Without half (b) this criterion would pass on a glob
+        that matches nothing", and criterion 11.6(c) for the same reason.
+        10.2, which the phase calls "THE CRITERION THE PHASE EXISTS FOR",
+        has no control run and no red witness.
+    analysis: >-
+      The concrete cheat needs no framework noise at all and takes one line.
+      Build the shared submit leaf as a client component whose onClick does
+      `document.body.dataset.pulsePressed = "1"` and which renders exactly
+      what the server rendered before. Under a 2000 millisecond route delay,
+      the attribute mutation lands within a frame of the click, so 10.2(a)
+      passes at every one of the seven controls, and because it lands at
+      roughly 5 milliseconds it also precedes the released response by far
+      more than 1500, so 10.2(b) passes too. The owner presses the control
+      and nothing changes on screen. Criterion 10.3 would catch that
+      particular implementation at 1000 milliseconds, which is the only
+      reason the phase as a whole is not defeated; but 10.3 is a different
+      criterion measuring a different thing, and 10.2 is the one carrying the
+      claim that the dead interval is gone. A criterion whose failure is
+      covered only by a neighbouring criterion is not measuring what its own
+      text says it measures. Whether the dev tools portal alone fires inside
+      200 milliseconds of every click in this app is a SUSPICION and not
+      demonstrated here: the mechanism is captured above but no browser run
+      was made. The text-level defect does not depend on it.
+    concrete-edit: >-
+      Replace criterion 10.2's observer clause with: "the spec installs a
+      MutationObserver whose target is the pressed control's nearest ancestor
+      form (childList, subtree, attributes, characterData) and DISCARDS any
+      record whose target is not the pressed control or a node inside it,
+      records the timestamp of the click and of the first surviving record,
+      and asserts (a) that interval is at most 200 MILLISECONDS." Add a third
+      half: "(c) THE CONTROL RUN. The identical measurement is run once with
+      the phase's submit leaf replaced by the plain server-rendered button it
+      replaces, on the same page under the same delay, and NO surviving
+      record appears within 2000 milliseconds of the click; the captured
+      output of both runs is recorded in the phase work history. Without (c)
+      this criterion passes on a mutation the phase did not cause." Add to
+      (b): "and the spec asserts the route handler's request counter for that
+      action is at least 1 before evaluating (a) or (b), so a handler that
+      never matched the action's request cannot make (b) vacuous."
+  - id: ADV-M0P4-02
+    severity: high
+    evidence:
+      - >-
+        Criterion 9.2 measures "for every element matching 'a, button,
+        [role=button], summary' inside the shell header and inside main that
+        has a non-zero bounding box" on "every screen the phase's spec
+        reaches". Criteria 9.3 and 9.4 inherit that set. The denominator is
+        whatever the implementer's own spec renders, and a control that does
+        not render, or renders with a zero box, is silently out of scope.
+      - >-
+        M3-P9's step 6 and M3-P10's last step both say the spec drives "the
+        same journey test/e2e/merchants.spec.ts already drives (fresh
+        household, one import of a committed synthetic fixture, the month
+        view and the merchant review), so that every screen carrying a
+        control is reached". Four of the fourteen controls D-22 counts are
+        not reachable on that journey.
+      - >-
+        The preview-again submit the plan cites as one of the seven
+        (src/modules/import/ui/profile-confirmation.tsx:160) sits inside
+        `<details className="spec-editor">` at profile-confirmation.tsx:151
+        with no `open` attribute, so its bounding box is zero until the
+        summary is toggled, and the whole branch is behind `isPdfLayout`
+        (profile-confirmation.tsx:64 and :136), so it does not render at all
+        for the CSV fixture that journey imports.
+      - >-
+        The next-month step control the plan cites
+        (src/modules/overview/ui/month-view.tsx:464) is inside
+        `{overview.canGoNext ? (` at month-view.tsx:463, and the suite's
+        clock is pinned to the current partial month
+        (playwright.config.ts, PULSE_FIXED_NOW), so it is absent on the month
+        the journey lands on.
+      - >-
+        The empty-state import link (month-view.tsx:421) renders only inside
+        the empty state (month-view.tsx:416), which is gone once the journey
+        has imported.
+      - >-
+        The sign-in submit (src/app/(auth)/sign-in/page.tsx:33) is never
+        reached by a journey that signs UP; test/e2e/merchants.spec.ts:26
+        onward creates a household and never visits /sign-in.
+    analysis: >-
+      This is the failure class the phase's own grounding names, "the same
+      error as measuring horizontal overflow", arriving through the
+      denominator rather than through the metric. An implementer writes a
+      spec that visits two screens, the selector finds eleven controls, all
+      eleven differ under a held press, and 9.2, 9.3 and 9.4 are green while
+      two of the seven submit controls and two of the seven navigations the
+      plan enumerated were never looked at, and a third submit, sign-out, ends
+      the session the moment it is pressed. Nothing in the criteria
+      compares the measured set against the enumerated one. The same hole is
+      in 10.5, which says "for each of the three shell nav links, the two
+      month step controls, the unresolved pill and the empty-state import
+      link" and then measures only what the page happened to render.
+    concrete-edit: >-
+      Add to criterion 9.2, before the measurement clause: "The spec first
+      builds the measured set and asserts its size and membership against a
+      list written in the spec by testid, or by selector and text where a
+      control has no testid, covering all fourteen controls this plan
+      enumerates; a control the spec does not reach fails the criterion
+      rather than being skipped. Reaching them requires the spec to visit the
+      month view BEFORE the import (for the empty-state link), a month with a
+      later month available (for the next step control), a PDF fixture with
+      the spec editor's disclosure OPENED (for the preview-again submit) and
+      the sign-in screen (for the sign-in submit); the spec does all four."
+      Add the same size-and-membership assertion to criterion 10.5 for its
+      seven navigating controls and to criterion 10.2 for its seven submit
+      controls.
+  - id: ADV-M0P4-03
+    severity: high
+    evidence:
+      - >-
+        Criterion 11.3: "and the sequence of group keys in DOM order is
+        unchanged, so no row has been moved or merged by the prediction."
+      - >-
+        There is no group key in the DOM. src/modules/merchants/ui/merchant-review.tsx:93 through :95
+        passes it as a React key only: `{groups.map((group) => (<GroupRow
+        key={group.key} group={group} />))}`.
+      - >-
+        The two DOM identities a row does carry are both ones the prediction
+        is REQUIRED to change. merchant-review.tsx:28 renders
+        `data-testid={unresolved ? "unresolved-group" : "merchant-group"}`,
+        and D-31 requires the prediction to make "the row leave the
+        unresolved treatment". merchant-review.tsx:35 renders
+        `data-testid="group-label"`, and criterion 11.2 requires that
+        element's text to become the string the reader typed within 200
+        milliseconds.
+    analysis: >-
+      Asked directly whether 11.3 is satisfiable: its MONEY half is, and
+      cleanly. The four testids it names all exist and all are rendered by
+      server components the prediction does not own (income-total and
+      spend-total at merchant-review.tsx:120 and :126, passed into
+      DirectionSection and rendered at :87, unresolved-count at :114,
+      group-total at :41), and D-31 forbids
+      predicting any of them, so a client leaf owning one row cannot move
+      them. The merge case is safe for the same reason: the merge happens
+      only in assign-merchant.ts:58 through :60 on the server, and the
+      prediction is forbidden to run it. The ORDER half is not satisfiable:
+      whichever DOM attribute an implementer reads as "the group key", the
+      prediction changes it by design, so the criterion fails by construction
+      on the very row under test. The likely outcome is not a red run but a
+      silent reinterpretation, where the implementer compares only the rows
+      OTHER than the named one and the criterion stops guarding against the
+      thing it was written for, which is a prediction that reorders the list.
+    concrete-edit: >-
+      Add to M3-P11's third step: "The row element gains
+      `data-group-key={group.key}`, the value already passed as the React key
+      at src/modules/merchants/ui/merchant-review.tsx:94, so the row has a DOM
+      identity the prediction does not change." Then replace 11.3's order
+      clause with: "and the sequence of data-group-key values in DOM order is
+      byte identical to the sequence captured immediately before the click,
+      so no row has been moved or merged by the prediction. The named row's
+      own data-testid and its group-label text are outside this comparison,
+      because criterion 11.2 requires both to change; every other row's
+      data-testid and group-label are inside it."
+  - id: ADV-M0P4-04
+    severity: high
+    evidence:
+      - >-
+        Every interval measurement in M3-P10 and M3-P11 is taken under the
+        chromium-phone project, whose baseURL is the dev server:
+        playwright.config.ts webServer entry two is `command: "npm run dev"`,
+        and the only production-mode server in the config is bound to
+        prodBaseURL and is matched exclusively by /prod-smoke/.
+      - >-
+        Viewport prefetching, which criterion 10.5 turns on, is switched off
+        in development. node_modules/next/dist/client/components/links.js:194
+        through :199: "if (process.env.NODE_ENV !== 'production') { //
+        Prefetching on viewport is disabled in development for performance
+        reasons, because it requires compiling the target page. return; }".
+      - >-
+        The owner's report is about the deployed build. dispatch-plan-feedback.yaml
+        standing-context: "The owner is now using the deployed app on a
+        phone."
+      - >-
+        Criterion 10.5 offers two admissible answers, "either the destination
+        has rendered or the pressed control carries the pending marker".
+    analysis: >-
+      The two branches of 10.5 are each unreachable in the environment where
+      the other one is real. In the gate, prefetch is off and the
+      destination's response is held for 2000 milliseconds, so the
+      destination cannot render inside 200 milliseconds and only the marker
+      branch can ever pass: the criterion is in effect single-branch there.
+      In the owner's deployed build, prefetch is on, a link in the viewport
+      is already in the router cache and the navigation completes with no
+      pending state, so the marker the gate proved is the branch that never
+      shows. The criterion's stated reason for having two branches, "whether
+      a prefetched navigation ever reaches a pending state is a property of
+      the framework's prefetching and not of this phase", is exactly right
+      and is the reason the measurement cannot be taken where prefetching is
+      absent. The same environment gap sits under 10.2 and 10.3 more weakly:
+      a dev server compiles routes on demand, so the absolute millisecond
+      figures the criteria pin are measured against a server that behaves
+      differently from the one the owner presses.
+    concrete-edit: >-
+      Add to criterion 10.5, after the two admissible answers: "and the same
+      measurement is repeated under the chromium-prod project against the
+      production-mode server (playwright.config.ts, prodBaseURL), where
+      viewport prefetching is ON (node_modules/next/dist/client/components/links.js:194
+      disables it in development only). In the production run the admissible
+      answers are the same two, and the phase work history records WHICH
+      branch each of the seven controls took in each run; a control that
+      takes the marker branch in dev and neither branch in production fails
+      this criterion." Add to M3-P10's files-to-touch note that registering
+      the new spec under chromium-prod means widening that project's
+      testMatch as well, and add the production run to criterion 10.7's
+      "exits 0 under every project".
+  - id: ADV-M0P4-05
+    severity: high
+    evidence:
+      - >-
+        Criterion 9.2 requires only that "the held snapshot differs from the
+        hovering snapshot in at least one of those seven properties"
+        (background-color, color, border-color, box-shadow, transform,
+        opacity, text-decoration-line). It states no magnitude and no
+        direction.
+      - >-
+        Criterion 9.3(a) requires the disabled snapshot to differ "in at
+        least one of background-color, color, border-color and opacity", also
+        with no magnitude.
+      - >-
+        The magnitude requirement exists only in M3-P9's step 4, which is not
+        an acceptance criterion: "A pressed control moves by --press-offset
+        and changes its surface, and it does BOTH rather than either".
+    analysis: >-
+      `button:active { transform: translateY(0.01px); }` satisfies 9.2 at
+      both widths, on every control, under reduced motion (9.4(c) re-runs 9.2
+      and it still differs), and against the hover baseline the criterion
+      correctly insists on. It is a difference no eye can see. `[disabled] {
+      opacity: 0.995 }` does the same against 9.3(a) on every control that
+      does not carry one of the five cursor: pointer rules, and on those five
+      it costs one extra declaration. This is the phase's
+      whole first half reduced to a rounding error, and the phase would be
+      green. The plan is right that comparing against at-rest rather than
+      hover would let the five pre-existing hover rules pass the criterion;
+      it then stops one step short of pinning the size of the difference it
+      demands.
+    concrete-edit: >-
+      Replace 9.2's difference clause with: "and the held snapshot differs
+      from the hovering snapshot in BOTH of the following: its computed
+      transform contains a vertical translation whose magnitude is at least 1
+      device-independent pixel and equals the computed value of
+      --press-offset, and its computed background-color differs from the
+      hovering background-color by at least 3 percent in relative luminance.
+      styles/tokens.css declares --press-offset at 1px or more." Replace
+      9.3(a)'s difference clause with: "differs from the at-rest snapshot in
+      at least one of background-color, color and border-color, by at least 3
+      percent in relative luminance, or in opacity by at least 0.15".
+  - id: ADV-M0P4-06
+    severity: medium
+    evidence:
+      - >-
+        M3-P9 verification-first step (e): "THE ONE THING THAT COULD
+        INVALIDATE THE MEASUREMENT TECHNIQUE: whether a held page.mouse.down
+        produces the :active state under the chromium-phone project, which
+        sets isMobile and hasTouch ... If it does not, record that, and
+        measure the pressed appearance at 390 by 844 in a context without
+        touch emulation rather than dropping the phone half of criterion 9.2".
+      - >-
+        The phase's own report-code-disagreement entry establishes that the
+        touch case is the one that matters: "a POINTER device already gets
+        one pressability cue on the controls that carry those rules and a
+        TOUCH device gets none of it, because a cursor does not exist on a
+        phone. The owner's report is a phone report."
+      - >-
+        playwright.config.ts chromium-phone sets `isMobile: true, hasTouch:
+        true`.
+    analysis: >-
+      The escape hatch is pre-authorised, so an implementer may take it with
+      no review, and taking it converts the phone half of 9.2 into a
+      measurement of a desktop browser sized to 390 pixels. That is a width
+      measurement standing in for a touch measurement, which is the M3-P7
+      error the phase cites in its own grounding. It matters more than a
+      procedural point because the risk the step names is real: whether
+      :active applies to a tap is a touch-platform behaviour, and a pressed
+      appearance built entirely on :active can be correct in the gate and
+      invisible on the owner's phone. The fallback the plan authorises is the
+      one fallback that cannot detect that.
+    concrete-edit: >-
+      Replace the second half of step (e) with: "If a held page.mouse.down
+      does not produce :active under that project, the fallback is NOT to
+      drop touch emulation. Drive the press with the touch API instead
+      (page.touchscreen or a dispatched touchstart held open) under
+      hasTouch, and record the captured result. If :active still does not
+      apply under touch, the pressed appearance is not built on :active at
+      all: it is built on a class or attribute the control carries between
+      pointerdown and pointerup, and criterion 9.2 is measured against that,
+      still under hasTouch at 390 by 844. Measuring the phone width without
+      touch emulation is not an admissible answer to this question."
+  - id: ADV-M0P4-07
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml lines 4956 and 4957, criterion 11.9(a),
+        as written in the file: `(a) grep -rEn "oklch\(|` then a line break
+        then `#[0-9a-fA-F]{3,8}|[0-9]+px" over src/modules/ and
+        src/platform/`.
+      - >-
+        The criterion is a folded block scalar, so the line break parses as a
+        space. The regex the criterion actually specifies is
+        `oklch\(| #[0-9a-fA-F]{3,8}|[0-9]+px`, with a literal space before
+        the hash.
+      - >-
+        The same grep at criterion 9.5(a) (plan line 3967) is intact:
+        `grep -rEn "oklch\(|#[0-9a-fA-F]{3,8}|[0-9]+px"`. Criteria 8.9 (plan
+        line 3620) and the M3-P7 pair (lines 1513, 2143) are intact too, so
+        11.9(a) is the only corrupted copy.
+      - >-
+        Both forms exit 1 over the tree at 89ed187 (checked: `grep -rEn
+        "oklch\(|#[0-9a-fA-F]{3,8}|[0-9]+px" --include='*.tsx' src/` exits 1;
+        the spaced form over src/modules/ and src/platform/ exits 1), so the
+        defect is latent rather than visible today.
+    analysis: >-
+      With the space, the hex-colour branch matches only a hex literal
+      preceded by a space. A colour written in the hand-built toast as
+      `fill="#5b5b5b"`, `stroke="#000"` or `color:"#fff"` is preceded by a
+      quote or a colon and escapes; it would be caught by the intact form at
+      9.5(a). M3-P11 is the phase that adds a hand-built notice component,
+      which is exactly where a stray hex is most likely, and 11.9 is the
+      criterion standing in front of it.
+    concrete-edit: >-
+      Rewrite 11.9(a) so the pattern is not broken across a fold, as a single
+      line: `(a) grep -rEn "oklch\(|#[0-9a-fA-F]{3,8}|[0-9]+px" over
+      src/modules/ and src/platform/ restricted to *.tsx exits 1, the same
+      pattern criterion 9.5(a) uses, character for character.` If the line
+      length forces a break, break it after `over` and never inside the
+      quoted pattern.
+  - id: ADV-M0P4-08
+    severity: medium
+    evidence:
+      - >-
+        Criterion 10.6(c) forbids, in every client file, `grep -nE "from
+        \"(@/modules/|\.\./(application|domain|adapters))"` matching. That
+        bans any import from @/modules at all.
+      - >-
+        Criterion 11.7(c) restates the same guard with a narrower pattern:
+        `grep -nE "from
+        \"(@/modules/[a-z]+/(application|domain|adapters)|\.\./(application|domain|adapters))"`.
+        It applies to "every file that carries it", which includes the two
+        leaves M3-P10 pinned under the wider pattern.
+      - >-
+        Neither criterion looks past the files that carry the directive. In
+        Next.js a module imported by a "use client" file joins the client
+        bundle without carrying the directive itself, so `grep -rln "use
+        client" src/` counts client FILES and not client MODULES.
+      - >-
+        The claim the two criteria are asked to support is D-23's: "what does
+        not cross at all: no domain type, no application function, no
+        repository, no projection and no household context".
+    analysis: >-
+      Two separate holes. First, M3-P11 silently relaxes a criterion a merged
+      phase established: after 11.7 lands, `src/platform/ui/<submit leaf>.tsx`
+      may import `@/modules/overview/ui/month-view` and 11.7(c) exits 1 while
+      10.6(c) would have failed it. A later phase weakening an earlier
+      phase's guard while its own headline says "THE BOUNDARY STILL DOES NOT
+      LEAK" is the shape this plan is otherwise careful about (D-14, D-22).
+      Second, and the one the greps cannot reach at all: a client leaf that
+      imports a shared helper under src/platform/ which itself imports a
+      domain module ships that module to the browser and neither grep sees
+      it. Today no such helper exists (src/platform/ui carries only
+      amount.tsx and mask-card-number.ts, both self-contained, checked), so
+      this is a hole in the guard rather than a live defect.
+    concrete-edit: >-
+      Replace 11.7(c)'s pattern with 10.6(c)'s pattern verbatim, so the later
+      phase cannot be greener than the earlier one on the same files. Add a
+      new half to 10.6, carried forward into 11.7: "(e) THE IMPORT CLOSURE,
+      not just the file. A script under test/ walks the import specifiers of
+      every file carrying 'use client' and of every file those reach,
+      transitively, and asserts that the closure contains no path under
+      src/modules/*/application/, src/modules/*/domain/, src/modules/*/adapters/
+      or src/platform/auth/, and no non-type import of @/platform/tenancy.
+      No package is added for this; the walk is a regex over import lines and
+      a resolver over the tsconfig paths alias."
+  - id: ADV-M0P4-09
+    severity: medium
+    evidence:
+      - >-
+        Criterion 11.4 requires the forced failure "twice by two different
+        causes ... and a transport failure, a route handler that fulfils the
+        action's request with a 500", in three languages at two viewports,
+        with all five sub-assertions holding "In both cases".
+      - >-
+        Whether that reaches the client is open by the plan's own account:
+        11.1(e) asks the implementer to "confirm the same for a request the
+        route handler fails with a 500". No branch is stated for the answer
+        being no.
+      - >-
+        Every other mechanism question in the round carries a branch. 10.1(a)
+        "If NEITHER works, stop and say so rather than adding a test-only
+        delay to product code". 10.5 offers two admissible answers by
+        construction. 9.1(e) states the fallback measurement.
+      - >-
+        The other half of 11.4 is sound and was checked: the naming input at
+        src/modules/merchants/ui/merchant-review.tsx:57 carries `required`,
+        which a whitespace-only value satisfies, and
+        src/modules/merchants/application/assign-merchant.ts:50 through :53
+        trims and returns err on the empty result, so the domain cause does
+        reach the use case exactly as the plan claims.
+    analysis: >-
+      A server action rejection raised inside a transition propagates to the
+      nearest error boundary rather than to the caller unless the client
+      wrapper catches it, and a non-2xx response to a server-action POST is
+      handled by the router before any component sees it. It is buildable,
+      but it is genuinely open, and if the answer turns out to be no then
+      half of the phase's headline criterion is unsatisfiable with nothing
+      in the plan saying what to do. That is the one place in three phases
+      where a "stop and say so" is missing and the pressure to improvise
+      instead is highest, because the alternative on the day is to reach for
+      a test-only hook in product code.
+    concrete-edit: >-
+      Add to 11.1(e): "If a 500 fulfilment does not reach the client wrapper
+      and surfaces as a framework error page instead, record the captured
+      evidence and use the second admissible transport failure instead: the
+      route handler ABORTS the action's request (page.route ... route.abort),
+      which a client wrapper awaiting the action observes as a rejection. If
+      NEITHER reaches the wrapper, stop and say so rather than adding a
+      test-only failure path to product code." Add to 11.4: "the transport
+      failure is whichever of the two forms 11.1(e) recorded as reaching the
+      client wrapper, named in the phase work history."
+  - id: ADV-M0P4-10
+    severity: medium
+    evidence:
+      - >-
+        Criterion 11.2 makes the prediction's marking `aria-busy="true"`:
+        "that row carries the unconfirmed marking, being aria-busy='true' and
+        the busy mark M3-P9 shipped".
+      - >-
+        D-30 claims what that marking buys: "a prediction is shown MARKED as
+        a prediction, using the busy vocabulary M3-P9 ships ... so no reader
+        ever has to guess whether a value on a finance screen has been
+        stored."
+      - >-
+        aria-busy="true" tells assistive technology to hold back changes
+        inside the element until they are complete. Applied to a row whose
+        label has just changed to a predicted value, it suppresses the
+        announcement of the very change it is supposed to mark.
+      - >-
+        D-27 caps the round's copy: "M3-P11 adds AT MOST THREE keys", and
+        criterion 11.6(a) enforces "at most three". The three are spent on
+        the failure message, the dismiss label and the difference notice, so
+        there is no key left for a non-visual reader to be told a value is
+        unconfirmed.
+      - >-
+        D-27 already parks the adjacent gap for M3-P10 ("aria-busy is
+        supported unevenly by screen readers, so between M3-P10 and M3-P11 a
+        non-visual reader gets a non-pressable control and not the word
+        busy") but does not carry the park forward to the prediction, where
+        D-30 makes the stronger claim about every reader.
+    analysis: >-
+      The marking works for a sighted reader and inverts for a non-visual
+      one: they are told less about the predicted row than they would have
+      been with no optimism at all, and D-30's sentence "no reader ever has
+      to guess" is then false for exactly the reader H11.3 was written to
+      protect. The fix is small and the plan's own copy budget is what blocks
+      it, which is why this needs deciding in the plan rather than on the day.
+    concrete-edit: >-
+      Raise 11.6(a)'s cap from three keys to four and add to M3-P11's copy
+      step: "the fourth key is the unconfirmed marking's accessible text,
+      rendered as visually-hidden text inside the predicted row and
+      referenced by aria-describedby, so a non-visual reader is told the
+      value is not yet stored." Add to criterion 11.2: "and the predicted row
+      carries an accessible description whose trimmed text is the catalogue
+      value of the unconfirmed key for the language under test, present from
+      within 200 milliseconds of the click until the response is released."
+      Amend D-30 to say that aria-busy alone is a visual marking and that the
+      described text is what carries the claim for a non-visual reader.
+  - id: ADV-M0P4-11
+    severity: low
+    evidence:
+      - >-
+        Criterion 10.2: "And on the merchant naming submit, which is the
+        control the owner presses most, the same measurement is taken FIVE
+        consecutive times and the MEDIAN interval is at most 100
+        MILLISECONDS."
+      - >-
+        A successful naming removes the row that carried the control:
+        test/e2e/merchants.spec.ts:71 through :74 assert the named group's
+        unresolved row is gone and the unresolved count drops.
+      - >-
+        The committed fixture yields exactly five unresolved groups:
+        test/e2e/merchants.spec.ts:54, `await
+        expect(page.getByTestId("unresolved-group")).toHaveCount(5)`.
+    analysis: >-
+      "The same measurement five consecutive times" on "the merchant naming
+      submit" cannot mean the same control, because after the first press
+      succeeds that control does not exist. It has to mean five different
+      unresolved rows, which the fixture supplies exactly five of, so the
+      criterion is executable but only just and only on that fixture. The
+      cheap misreading is to press one row five times with the action forced
+      to fail, which measures a failure path rather than the press the
+      criterion names, and would still produce a median.
+    concrete-edit: >-
+      Replace with: "And the same measurement is taken on FIVE DIFFERENT
+      unresolved rows' naming submits, each named successfully, and the
+      MEDIAN of the five intervals is at most 100 MILLISECONDS. Five is what
+      the committed fixture supports: test/e2e/merchants.spec.ts:54 asserts
+      exactly five unresolved groups, and a successful naming consumes one.
+      Pressing one control five times, or measuring a naming that fails, does
+      not satisfy this."
+  - id: ADV-M0P4-12
+    severity: low
+    evidence:
+      - >-
+        Criterion 10.2(b) and its rationale: "That first mutation occurs at
+        least 1500 MILLISECONDS before the route handler releases the
+        response, so no measurement here can be satisfied by the server
+        merely being fast ... the 1500 margin is seven and a half times the
+        ceiling."
+      - >-
+        The arithmetic holds and has 300 milliseconds of slack: with a 2000
+        millisecond delay and a first mutation at the 200 millisecond
+        ceiling, the gap is 1800.
+      - >-
+        Because the delay is a fixed 2000 and (a) already caps the mutation
+        at 200, (b) cannot fail whenever (a) passes AND the delay actually
+        applied. Its only real failure mode is the delay not applying, and in
+        that case "the route handler releases the response" never happens, so
+        the criterion has no defined value to compare.
+      - >-
+        The 1500 figure is described as "seven and a half times the ceiling",
+        which is 1500 over 200; that is correct arithmetic on the ceiling but
+        the quantity that has to clear 1500 is 2000 minus the measured
+        interval, not the ceiling itself.
+    analysis: >-
+      The threshold is not wrong and nothing in the round fails because of
+      it. What is wrong is that its stated purpose, catching a measurement
+      satisfied by a fast server, is served only in the case the criterion
+      leaves undefined. This is the same gap ADV-M0P4-01's edit closes from
+      the other side, and it is recorded separately because it is worth
+      fixing even if that finding is rejected.
+    concrete-edit: >-
+      Replace 10.2(b) with: "(b) The route handler recorded at least one
+      request carrying the server-action header for that action, and the
+      response it released arrived at least 1500 MILLISECONDS after the
+      click, so no measurement here can be satisfied by the server merely
+      being fast or by a route handler that never matched the request. With a
+      2000 millisecond delay and a 200 millisecond ceiling on (a) the slack
+      is 300 milliseconds, which is stated so a later reader tuning either
+      number sees what it costs."
+  - id: ADV-M0P4-13
+    severity: low
+    evidence:
+      - >-
+        The dispatch's acceptance criterion 6 (pulse-fleet/dispatch-plan-feedback.yaml):
+        "DR-0025 appears in open-questions with both options and their
+        consequences, is referenced by at least one phase, and no acceptance
+        criterion anywhere changes with its answer", guarding hazard H3.
+      - >-
+        The amended plan's open-questions field carries DR-0002 and DR-0023
+        only; DR-0025 is absent (delivery/plan/pulse-v02.yaml, open-questions
+        block).
+      - >-
+        Criteria 10.6(d), 10.10, 11.2, 11.3, 11.4 and 11.5 all change with
+        DR-0025's answer; M3-P11 exists only because of it.
+      - >-
+        The amendment explains the deviation in prose (the plan's header
+        comment, "TWO OWNER DECISIONS ARRIVED WHILE THE ROUND WAS BEING
+        WRITTEN and both are planned on rather than raised", and D-30), but
+        the plan's `parked` list carries only the cross-format dedup item and
+        no entry naming the superseded dispatch criterion.
+    analysis: >-
+      The deviation is correct on the merits: the owner decided DR-0025 and
+      DR-0026 on 2026-08-23 and a plan that raised a decided question as open
+      would be worse. The problem is procedural and lands on the next reader:
+      a phase review evaluating M0-P4 against its own dispatch has a
+      criterion it must mark failed, with the reason spread across a header
+      comment and a decision rather than recorded in the field the criterion
+      reads. This plan is careful about exactly this elsewhere, D-24 records
+      why criterion 7.3's count changes rather than letting a later reader
+      find a contradiction, and the same courtesy is owed here.
+    concrete-edit: >-
+      Add to the plan's `parked` list: "item: Dispatch M0-P4 acceptance
+      criterion 6, which required DR-0025 to appear in open-questions
+      undecided and no criterion to depend on its answer. reason: The owner
+      decided DR-0025 and DR-0026 in session on 2026-08-23, after the
+      dispatch was written and while this round was being written. A decided
+      question is not an open question, so DR-0025 is deliberately absent
+      from open-questions and is recorded as decisions D-30, D-31 and D-32
+      instead; criteria 10.10, 11.2, 11.3, 11.4 and 11.5 depend on the
+      decided answer by design. Hazard H3 of the dispatch, that DR-0025 is
+      decided silently, is answered by those three decision entries rather
+      than by criterion 6."
