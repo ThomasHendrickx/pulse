@@ -87,12 +87,29 @@ const liveRepository: MerchantRepositoryPort = {
   findMerchantByName: repository.findMerchantByName,
   createMerchant: repository.createMerchant,
   upsertRule: repository.upsertRule,
+  updateRulePattern: repository.updateRulePattern,
   findTagByName: repository.findTagByName,
   createTag: repository.createTag,
   setMerchantTag: repository.setMerchantTag,
   listMerchantTags: repository.listMerchantTags,
   listCountedTransactions: repository.listCountedTransactions,
 };
+
+// The live repository, published for the ONE command that needs the
+// declaration-writing port outside a use case: the M3-P12 re-derivation
+// script (scripts/rederive-merchant-rules.ts). Nothing in the app reaches
+// for it; the use cases above are how a route writes a declaration.
+export const merchantRepository: MerchantRepositoryPort = liveRepository;
+
+export {
+  rederiveMerchantRules,
+  formatDecisionReport,
+} from "./rederive-rules";
+export type {
+  RederiveReport,
+  RuleDecision,
+  RuleCounts,
+} from "./rederive-rules";
 
 // The RuleResolver behind the ledger's MerchantResolver port: distinct
 // counterparty IDENTITY KEYS in, merchant assignments out, rules only

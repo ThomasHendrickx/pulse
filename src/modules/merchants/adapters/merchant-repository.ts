@@ -114,6 +114,30 @@ export const upsertRule = async (
   };
 };
 
+// M3-P12, pass one of the re-derivation. Household ownership is verified in
+// the SAME statement as the write (CLAUDE.md non-negotiable 6): the where
+// clause carries the household id, so a foreign rule id updates zero rows
+// and throws rather than silently moving another household's declaration.
+export const updateRulePattern = async (
+  context: HouseholdContext,
+  input: { readonly ruleId: string; readonly pattern: string },
+): Promise<MerchantRuleLike> => {
+  const rows = await prisma.merchantRule.updateManyAndReturn({
+    where: { id: input.ruleId, householdId: context.householdId },
+    data: { pattern: input.pattern },
+  });
+  const row = rows[0];
+  if (row === undefined) {
+    throw new Error("updateRulePattern: rule does not belong to the household");
+  }
+  return {
+    id: row.id,
+    merchantId: row.merchantId,
+    kind: row.kind,
+    pattern: row.pattern,
+  };
+};
+
 export const findTagByName = async (
   context: HouseholdContext,
   name: string,

@@ -387,6 +387,23 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       merchants.push(merchant);
       return merchant;
     },
+    // M3-P12: pass one of the re-derivation rewrites a pattern in place.
+    // Household ownership is checked here the same way the adapter checks it.
+    updateRulePattern: async (context, input) => {
+      const existing = rules.find(
+        (rule) =>
+          rule.householdId === context.householdId && rule.id === input.ruleId,
+      );
+      if (existing === undefined) {
+        throw new Error(
+          "updateRulePattern: rule does not belong to the household",
+        );
+      }
+      declarationWriteCount += 1;
+      const updated = { ...existing, pattern: input.pattern };
+      rules[rules.indexOf(existing)] = updated;
+      return updated;
+    },
     upsertRule: async (context, input) => {
       // Finding CR-401, mirrored from the adapter: the merchant the rule
       // points at must belong to the calling household.
