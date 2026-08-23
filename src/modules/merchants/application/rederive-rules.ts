@@ -83,9 +83,15 @@ import type {
 export type RederivePass = "one" | "two";
 
 export type RederiveOutcomeKind =
-  // Pass one.
-  | "namespaced"
-  | "already-namespaced"
+  // Pass one. ONE token covers both the rule this run namespaced and the
+  // rule that already carried the descriptor namespace, and that is forced
+  // rather than sloppy: criterion 12.8 requires the decision report to be
+  // BYTE-IDENTICAL across runs, and on the second run every rule the first
+  // run namespaced is one that already carries the namespace. The report
+  // therefore states the RESULTING STATE; whether this run put the rule in
+  // that state is the `patternsRewritten` counter beside it, which is 0 on a
+  // second run and is what makes "already migrated" visible.
+  | "descriptor-namespaced"
   | "empty-pattern-left-alone"
   // Pass two.
   | "promoted"
@@ -115,17 +121,26 @@ export type RuleCounts = {
   readonly matchedAfter: number;
 };
 
+// A transaction that carried a merchant before the run and does not carry
+// the SAME one after it. The rule id is the one that HELD the assignment,
+// because that is what a person accepts: acceptance is per declaration.
+export type LostAssignment = {
+  readonly transactionId: string;
+  readonly ruleId: string;
+};
+
 export type RederiveReport = {
   readonly decisions: readonly RuleDecision[];
   readonly counts: readonly RuleCounts[];
   readonly rulesBefore: number;
   readonly rulesAfter: number;
   readonly patternsRewritten: number;
+  readonly alreadyNamespaced: number;
   readonly rulesAdded: number;
   readonly broadened: readonly string[];
   readonly conflicts: readonly string[];
   readonly acceptedConflicts: readonly string[];
-  readonly lostAssignments: readonly string[];
+  readonly lostAssignments: readonly LostAssignment[];
   readonly assignmentsBefore: number;
   readonly assignmentsAfter: number;
   readonly exitCode: number;
@@ -166,12 +181,12 @@ const assignmentSet = (
   rows: readonly CountedTransaction[],
   rules: readonly MerchantRuleLike[],
   key: (row: CountedTransaction) => string,
-): ReadonlyMap<string, string> => {
-  const pairs = new Map<string, string>();
+): ReadonlyMap<string, { merchantId: string; ruleId: string }> => {
+  const pairs = new Map<string, { merchantId: string; ruleId: string }>();
   for (const row of rows) {
     const match = matchRules(key(row), rules);
     if (match !== undefined) {
-      pairs.set(row.id, match.merchantId);
+      pairs.set(row.id, { merchantId: match.merchantId, ruleId: match.ruleId });
     }
   }
   return pairs;
@@ -197,6 +212,7 @@ export const rederiveMerchantRules = async (
   const acceptedConflicts: string[] = [];
   const broadened: string[] = [];
   let patternsRewritten = 0;
+  let alreadyNamespaced = 0;
   let rulesAdded = 0;
 
   // A working copy of the rule set, so the two passes see each other's
@@ -223,12 +239,29 @@ export const rederiveMerchantRules = async (
       continue;
     }
     const existingBasis = identityBasisOfKey(rule.pattern);
-    if (existingBasis !== undefined) {
+    // AN ACCOUNT-NAMESPACED PATTERN IS NOT A PASS-ONE CANDIDATE AT ALL and
+    // is not reported as one: pass one moves a pattern INTO the descriptor
+    // namespace, and this pattern is already final. Criterion 12.7 asserts
+    // the routine issues no UPDATE and no DELETE against one, and reporting
+    // a decision here would report a decision that was never available. It
+    // is also what keeps the report byte-identical across runs, since every
+    // rule pass two added on the first run is account-namespaced on the
+    // second.
+    if (existingBasis === "account") {
+      alreadyNamespaced += 1;
+      continue;
+    }
+    if (existingBasis === "descriptor") {
+      // LEFT EXACTLY AS IT IS (hazard H12.25). Namespacing it again would
+      // produce a doubled namespace and kill a CORRECT rule, and the case is
+      // reachable on the FIRST run: the code deploys before this routine
+      // runs, so a naming made in that window already carries a namespace.
+      alreadyNamespaced += 1;
       decisions.push({
         ruleId: rule.id,
         pass: "one",
-        basis: existingBasis,
-        outcome: "already-namespaced",
+        basis: "descriptor",
+        outcome: "descriptor-namespaced",
       });
       continue;
     }
@@ -274,7 +307,7 @@ export const rederiveMerchantRules = async (
       ruleId: rule.id,
       pass: "one",
       basis: "descriptor",
-      outcome: "namespaced",
+      outcome: "descriptor-namespaced",
     });
   }
 
@@ -379,9 +412,12 @@ export const rederiveMerchantRules = async (
   // has changed under it, matches nothing: the row count is preserved while
   // the naming is dead, so counting rows would report that clean.
   const lostAssignments = [...assignmentsBefore.entries()]
-    .filter(([id, merchantId]) => assignmentsAfter.get(id) !== merchantId)
-    .map(([id]) => id)
-    .filter((id) => !accepted.has(id));
+    .filter(
+      ([id, held]) => assignmentsAfter.get(id)?.merchantId !== held.merchantId,
+    )
+    .map(([id, held]) => ({ transactionId: id, ruleId: held.ruleId }))
+    // ACCEPTANCE IS PER RULE ID and clears exactly the ids it names.
+    .filter((lost) => !accepted.has(lost.ruleId));
 
   await deps.recompute(context);
 
@@ -391,6 +427,7 @@ export const rederiveMerchantRules = async (
     rulesBefore: before.length,
     rulesAfter: after.length,
     patternsRewritten,
+    alreadyNamespaced,
     rulesAdded,
     broadened,
     conflicts,

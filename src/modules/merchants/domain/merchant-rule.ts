@@ -11,13 +11,14 @@
 //
 // THE DISPOSITION OF THE THREE KINDS, stated here rather than left to be
 // inferred from the enum (decision D-40). All three are LIVE in this
-// matcher and all three stay in the schema enum. NO PRODUCT SURFACE WRITES
-// PREFIX OR PATTERN TODAY: assignMerchant writes kind EXACT and only EXACT
+// matcher and all three stay in the schema enum.
+// NO PRODUCT SURFACE WRITES PREFIX OR PATTERN today.
+// assignMerchant writes kind EXACT and only EXACT
 // (application/assign-merchant.ts), which is the only writer of a rule in
-// the tree, and the deployed database holds zero rows of either kind. Both
-// are RESERVED for the slice-5 accepted-answer path the pulse-domain
-// skill's section 7 names, where an accepted LLM answer may declare a
-// broader subject than one exact string.
+// the tree, and the deployed database holds zero rows of either kind
+// (measured). Both are RESERVED for the slice-5 accepted-answer path the
+// pulse-domain skill's section 7 names, where an accepted answer may
+// declare a broader subject than one exact key.
 //
 // AND THE ONE RULE THE NEW KEY MAKES NECESSARY: a PREFIX or a PATTERN rule
 // is NEVER applied to an ACCOUNT-basis key. A prefix of an account number

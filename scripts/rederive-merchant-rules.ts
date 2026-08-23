@@ -97,6 +97,7 @@ const main = async (): Promise<number> => {
   console.log(`rules-before ${report.rulesBefore}`);
   console.log(`rules-after ${report.rulesAfter}`);
   console.log(`patterns-rewritten ${report.patternsRewritten}`);
+  console.log(`already-namespaced ${report.alreadyNamespaced}`);
   console.log(`rules-added ${report.rulesAdded}`);
   console.log(`assignments-before ${report.assignmentsBefore}`);
   console.log(`assignments-after ${report.assignmentsAfter}`);
@@ -112,8 +113,10 @@ const main = async (): Promise<number> => {
     console.log(`  accepted-conflict-rule ${ruleId}`);
   }
   console.log(`lost-assignments ${report.lostAssignments.length}`);
-  for (const transactionId of report.lostAssignments) {
-    console.log(`  lost-transaction ${transactionId}`);
+  for (const lost of report.lostAssignments) {
+    console.log(
+      `  lost-transaction ${lost.transactionId} held-by-rule ${lost.ruleId}`,
+    );
   }
   console.log(`exit ${report.exitCode}`);
   return report.exitCode;
