@@ -6182,9 +6182,24 @@ phases:
           the merchants application layer, invoked by a committed one-shot
           script, which reads every MerchantRule row and every transaction of
           the household. It runs in TWO passes and the split is the whole
-          design (decision D-45). PASS ONE, MECHANICAL AND TOTAL: every rule's
-          pattern becomes the descriptor namespace followed by its old
-          pattern. That consults no transaction, has no failure branch, and is
+          design (decision D-45). PASS ONE, MECHANICAL AND TOTAL OVER THE
+          RULES IT APPLIES TO: every rule whose pattern does NOT already begin
+          with a known namespace has its pattern rewritten to the descriptor
+          namespace followed by its old pattern. A rule that ALREADY carries a
+          namespace is left exactly as it is and counted as already-migrated,
+          which is not a hypothetical case but the shape of a naming made
+          inside D-46's window: assignMerchant writes a namespaced subject
+          under criterion 12.18, so a second namespacing would kill a correct
+          rule on the FIRST run, where criterion 12.8 would never see it. A
+          rule whose pattern is the EMPTY string is also left as it is and
+          reported, because the bare namespace is non-empty and a PREFIX rule
+          carrying it would match every descriptor-basis key, where the empty
+          pattern it replaced is inert under
+          src/modules/merchants/domain/merchant-rule.ts:65; assignMerchant
+          guards that at :55 and upsertRule does not
+          (src/modules/merchants/adapters/merchant-repository.ts:72 through
+          :101 verifies only household ownership). Pass one still consults no
+          transaction, still has no failure branch, and is
           meaning-preserving for all three kinds at once, because the
           namespace is a constant prefix on BOTH sides of the comparison: an
           EXACT rule still matches exactly what it matched, and a PREFIX or
@@ -6192,18 +6207,34 @@ phases:
           ("descriptor:" + K).startsWith("descriptor:" + P) holds precisely
           when K.startsWith(P). Nothing can be lost in pass one and criterion
           12.21 asserts it. PASS TWO, PROMOTION, WHICH IS THE ONLY PASS THAT
-          READS FACTS AND THE ONLY ONE THAT CAN BROADEN: a rule is promoted to
-          an account-basis pattern only when every transaction its OLD pattern
-          matched carries a TRUSTED account under step 2's gate and they all
-          carry the SAME one. Promotion is what saves a naming written against
-          a row that has since moved to the account basis, which is the
-          owner's single deployed rule; without it that rule's row survives
-          and its EFFECT is dead, which is why criterion 12.7 measures the
-          assignment set and not the row count. A rule whose matched
-          transactions carry more than one account, or none, or an untrusted
-          one, is NOT promoted: it keeps pass one's safe rewrite, and that is
-          printed and counted rather than treated as a failure. It deletes
-          nothing, ever (decision D-39). It writes only to merchant_rules; the
+          READS FACTS AND THE ONLY ONE THAT CAN BROADEN, AND WHICH IS PURELY
+          ADDITIVE: where every transaction the old pattern matched carries a
+          TRUSTED account under step 2's gate and they all carry the SAME one,
+          the routine ADDS an account-basis rule pointing at the SAME merchant
+          and LEAVES the descriptor rule pass one produced exactly where it
+          is. It never rewrites a descriptor rule into an account rule. That
+          needs no schema change: MerchantRule's unique key is (householdId,
+          kind, pattern) at prisma/schema/merchants.prisma:70 and
+          assignMerchant already attaches several rules to one merchant
+          (src/modules/merchants/application/assign-merchant.ts:58 through
+          :65). The added rule is what saves a naming written against a row
+          that has since moved to the account basis, which is the owner's
+          single deployed rule; without it that rule's row survives and its
+          EFFECT is dead, which is why criterion 12.7 measures the assignment
+          set and not the row count. THE DESCRIPTOR RULE THAT REMAINS IS A
+          LIVE FALLBACK, NOT DEAD WEIGHT, and the plan says so rather than
+          leaving it to be wondered about: it is the only thing that keeps a
+          row of that same counterparty whose account FAILED the trust gate,
+          or which carries no account at all, attached to the merchant the
+          owner named. The two can never both fire on one key, because one
+          begins with the account namespace and the other with the descriptor
+          namespace, so the tie-break at
+          src/modules/merchants/domain/merchant-rule.ts:34 through :42 is
+          never reached between them. Where the matched transactions carry
+          more than one account, or none, or an untrusted one, no rule is
+          added: the descriptor rule stands alone, and that is printed and
+          counted rather than treated as a failure. It deletes nothing, ever
+          (decision D-39). It writes only to merchant_rules; the
           transaction rows are facts and are not touched, and the assignments
           reach the rows afterwards through the existing recompute, which is
           the only thing that writes transactions.merchantId (pulse-domain
@@ -6232,10 +6263,16 @@ phases:
           basis the new pattern has, the number of transactions the old
           pattern matched and the number the new pattern matches, so a
           promotion that BROADENS is a number the owner can read rather than
-          something inferred. It also writes the pre-migration pattern of
-          every rule it rewrote to a timestamped file beside itself, so any
-          run can be undone; that file is DATA, it is never committed, and the
-          work history names it without quoting it.
+          something inferred. REVERSIBILITY IS STRUCTURAL AND RESTS ON NO
+          FILE, which is the correction the delta review earned: pass one's
+          rewrite is invertible by stripping a constant prefix and pass two
+          only ADDS, so a run is undone by deleting the rules it added and
+          stripping the namespace from the rest. An earlier draft rested this
+          on a timestamped file the routine wrote beside itself; that file
+          cannot be kept, because the routine runs against the deployed
+          database from an ephemeral container and the file is DATA that a
+          public repository must never hold, so it was a guarantee in name
+          only and it is gone.
       - text: >-
           Amend the governing document in the same change, because it is
           loaded into every task's context by CLAUDE.md and a stale paragraph
@@ -6277,9 +6314,24 @@ phases:
           THAT ATTACK THE ACCOUNT BASIS, because a fixture built only from
           well-formed accounts cannot fail criterion 12.16: one row whose
           description carries a longer-than-Belgian account written spaced, so
-          the shipped scrape stores a sixteen-character PREFIX of it; one row
-          whose description carries two distinct account-shaped tokens; and
-          one row whose stored account is empty or whitespace only. The
+          the shipped scrape stores a sixteen-character PREFIX of it; and one
+          row whose description carries two distinct account-shaped tokens,
+          for which the generator RECORDS which token it wrote first so
+          criterion 12.16 can pin the first-wins rule rather than be satisfied
+          by writing the intended token first. The EMPTY-OR-WHITESPACE ACCOUNT
+          IS DELIBERATELY NOT IN THE PDF FIXTURE, because the shipped Belfius
+          template cannot produce it: the field is set only inside a
+          successful pattern match, the value goes through compactIban, and
+          the field is omitted entirely when nothing matches
+          (src/modules/import/domain/belfius-current-account-template.ts:90,
+          :266 through :272 and :281). It is covered where criterion 12.16
+          already puts it, as a unit test over invented inputs on the pure
+          identity function, and by a committed CSV fixture row for the
+          whitespace case, which the delimited path CAN produce because
+          src/modules/import/domain/parse-statement.ts:120 guards the empty
+          cell and not the blank one. Asking the PDF generator for a row it
+          cannot emit would leave an implementer to fake it by handing the
+          domain a row directly, which this same step forbids. The
           generator ALSO emits, in the same run that writes the PDF, the
           record of what it generated the fixture FROM: the list of row
           ordinal to invented counterparty ordinal pairs, which is the
@@ -6474,7 +6526,13 @@ phases:
           meaning the superset test above fails. Every other outcome,
           including a rule that could not be promoted, is printed, counted and
           exits 0, because a rule left safely in place is not a reason to
-          block a deploy. THE TWO BLOCKING CONDITIONS HAVE AN ACKNOWLEDGE
+          block a deploy. A test asserts the routine issues no UPDATE and no
+          DELETE against any pattern written under the ACCOUNT namespace and
+          never rewrites a descriptor pattern into an account one, so
+          promotion is additive and the declaration the owner made survives
+          the run verbatim, which is what answers pulse-domain section 2's
+          classification of MerchantRule as a declaration the engine does not
+          rebuild. THE TWO BLOCKING CONDITIONS HAVE AN ACKNOWLEDGE
           PATH, decided deliberately rather than left as an unreachable green:
           the routine accepts a flag naming the specific rule ids whose
           conflict or lost assignment a person has seen and accepted, exits 0
@@ -6485,12 +6543,22 @@ phases:
         criterion: >-
           THE RE-DERIVATION IS IDEMPOTENT, AND IDEMPOTENT MEANS THE SAME
           ANSWER RATHER THAN A QUIET ONE. Running the script a second time
-          rewrites zero patterns and prints the SAME report as the first run,
-          byte for byte, and returns the SAME exit code, asserted by a test
-          that runs it twice against a database seeded to contain at least one
-          rule the routine cannot promote AND at least one merchant-conflict,
-          comparing both the full merchant_rules table and the full printed
-          output between the two runs. Requiring exit 0 on the second run
+          rewrites zero patterns, adds zero rules, and prints the same
+          DECISION REPORT as the first run, byte for byte, that report being
+          the rule id, the pass that touched it, the resulting basis and the
+          outcome for every rule; and it returns the SAME exit code. The
+          matched-count columns criterion 12.7 requires are EXCLUDED from that
+          comparison, and the criterion says why rather than leaving it to be
+          rediscovered: on the second run a rule's old pattern is the pattern
+          the first run wrote, so for any rule whose rows split across the two
+          bases the counts legitimately differ while the decision does not,
+          and comparing them would turn a CORRECT run red and push the
+          implementer toward a seed containing no split rule, which is the
+          dataset-choosing this criterion exists to forbid. The full
+          merchant_rules table is still compared in full. The test runs
+          against a database seeded to contain at least one rule the routine
+          cannot promote, at least one rule whose matched rows split across
+          the two bases, and at least one merchant-conflict. Requiring exit 0 on the second run
           would contradict criterion 12.7 on any database holding a conflict,
           since the routine deletes nothing and the condition therefore
           persists; an implementer who satisfies the two criteria against two
@@ -6596,7 +6664,24 @@ phases:
           SHIPPED importer, the test asserts the stored account is a strict
           PREFIX of the invented source value, and asserts that row takes the
           descriptor basis, so two rows whose sources differ only after the
-          twelfth digit can never share an identity key. Measured on the real
+          twelfth digit can never share an identity key. THE TABLE CLOSES
+          TRUNCATION DETERMINISTICALLY RATHER THAN PROBABILISTICALLY, and the
+          reason is one sentence: truncation can only ever emit a
+          SIXTEEN-CHARACTER value, so it only reaches accounts whose true
+          length exceeds sixteen, and such a value always carries a country
+          code whose table length is not sixteen. mod-97 alone would leave a
+          residual of roughly one in ninety-seven, measured uniform across
+          source lengths, which is why both tests are required and not either.
+          FIFTH CASE, pinning a behaviour rather than a guard: the fixture row
+          whose description carries two distinct account-shaped tokens is
+          asserted end to end, the test stating which token the generator
+          wrote FIRST and asserting the stored account, and therefore the
+          identity key, is that one, so the first-wins rule at
+          src/modules/import/domain/belfius-current-account-template.ts:266
+          through :272 is PINNED rather than incidental. The assertion names
+          the parked item that owns the question, so a later change from
+          first-wins to last-wins or longest-wins is red here before it
+          silently moves 4 of the owner's 39 rows. Measured on the real
           month before this criterion was written, so it is known to cost
           nothing: all 11 stored accounts pass all three tests and the trusted
           distinct count is still 6. Every value used is invented and listed
@@ -6651,13 +6736,33 @@ phases:
           and it names the two documents separately, since the card document
           is in exactly the same position and the earlier draft of this plan
           did not say so. No content is recorded.
+      - id: "12.22"
+        criterion: >-
+          THE TRUST TABLE IS PINNED AND SOURCED, in the shape this codebase
+          already uses one tier down for exactly this kind of object
+          (src/modules/merchants/domain/normalise-counterparty.ts:127 through
+          :132: pin the accepted shapes, never widen, with
+          test/domain/normalise-counterparty.test.ts as the pin that makes an
+          accidental edit red). The country-length table is a committed
+          constant in the merchants domain, each entry carrying a country code
+          and a length, with the ISO 13616 registry named as its source in a
+          comment beside it and populated from that registry rather than from
+          the countries seen so far. A regression test pins its FULL contents,
+          so adding, removing or altering an entry is red rather than silent.
+          A separate test asserts the entry for the country of the committed
+          fixtures resolves to the length those fixtures use, so a wrong entry
+          fails the FAST gate rather than only the work-history measurement in
+          criterion 12.2.
       - id: "12.21"
         criterion: >-
           PASS ONE CANNOT LOSE A RULE'S MEANING, FOR ANY KIND. A property test
           over generated (pattern, key) pairs asserts that for every kind,
           matchRules applied to the namespaced pattern and the namespaced key
           returns exactly what matchRules applied to the bare pattern and the
-          bare key returns: EXACT because equality is preserved under a common
+          bare key returns, and the generator INCLUDES the empty pattern and
+          an already-namespaced pattern among the cases it produces, so pass
+          one's two guards are red rather than unreached: EXACT because
+          equality is preserved under a common
           prefix, PREFIX because
           ("descriptor:" + K).startsWith("descriptor:" + P) holds precisely
           when K.startsWith(P), and PATTERN because the glob is anchored at
@@ -6738,6 +6843,36 @@ phases:
           row-to-counterparty mapping is transcribed from the implementation's
           own output rather than authored from the fixture's intent.
         addressed-by: criterion 12.4
+      - id: H12.25
+        statement: >-
+          Pass one namespaces a pattern that already carries a namespace, so a
+          naming the owner made inside D-46's window is killed on the FIRST
+          run, where a second-run comparison would never see it.
+        addressed-by: criterion 12.21
+      - id: H12.26
+        statement: >-
+          Pass one turns a stored empty pattern, inert today under
+          src/modules/merchants/domain/merchant-rule.ts:65, into a bare
+          namespace that a PREFIX rule matches every descriptor key with.
+        addressed-by: criterion 12.21
+      - id: H12.27
+        statement: >-
+          The idempotence check compares matched counts that legitimately
+          differ between runs, so a CORRECT run goes red and the implementer
+          seeds around it with a database containing no split rule.
+        addressed-by: criterion 12.8
+      - id: H12.28
+        statement: >-
+          The country-length table is edited, trimmed or mistyped and nothing
+          goes red, so a country silently leaves the account basis and every
+          row of that counterparty stops converging.
+        addressed-by: criterion 12.22
+      - id: H12.29
+        statement: >-
+          A later change to the importer's first-wins candidate selection
+          silently moves the identity of 4 of the owner's 39 rows, because the
+          behaviour is parked as a question and pinned by nothing.
+        addressed-by: criterion 12.16
       - id: H12.18
         statement: >-
           A rule survives as a row while its EFFECT dies, because the key
@@ -7884,22 +8019,22 @@ decisions:
       dropped and never left dead. The deployed database holds one MerchantRule
       row and one merchant, measured read-only on 2026-08-23, so exactly one
       naming the owner made is at stake, and the M3-P6 note that the table was
-      empty (src/modules/merchants/domain/normalise-counterparty.ts:74 through
-      :80) no longer holds. An idempotent household-scoped routine reads the
-      rules and the facts, finds for each rule the transactions whose baseline
-      key equals its stored pattern, and rewrites the pattern to the identity
-      those transactions now produce when they produce exactly one. It DELETES
-      NOTHING: a rule with no matching transaction, a rule whose transactions
-      now produce more than one identity, and a rule whose new pattern would
-      collide with a rule pointing at a different merchant are all left exactly
-      as they are and reported by id and reason, with a non-zero exit, so a
-      naming that cannot be carried across stops the deploy rather than
-      disappearing from it. Rejected: dropping the rules and returning the
-      counterparty to unnamed, which discards owner work the owner never
-      agreed to discard; and leaving them dead, which discards the same work
-      while looking like it did not. Facts are untouched throughout: this is a
-      rewrite of DECLARATIONS followed by the existing recompute, which is the
-      only thing that writes transactions.merchantId.
+      empty (src/modules/merchants/domain/normalise-counterparty.ts:72 through
+      :80) no longer holds. An idempotent household-scoped routine carries
+      every existing rule across, and DECISION D-45 IS THE MECHANISM OF
+      RECORD: this decision states only WHAT must be true of the outcome, and
+      the two-pass design that achieves it, along with the exit codes and the
+      acknowledge path, is D-45's, which supersedes the single equality-driven
+      pass this decision first described. What must be true: it DELETES
+      NOTHING and it OVERWRITES no declaration; every rule either keeps its
+      meaning or gains a rule beside it; and any rule whose EFFECT cannot be
+      carried across is reported by id and reason rather than disappearing.
+      Rejected: dropping the rules and returning the counterparty to unnamed,
+      which discards owner work the owner never agreed to discard; and leaving
+      them dead, which discards the same work while looking like it did not.
+      Facts are untouched throughout: this is a change to DECLARATIONS
+      followed by the existing recompute, which is the only thing that writes
+      transactions.merchantId.
   - id: D-40
     statement: >-
       PREFIX and PATTERN stay declared, stay live and gain one refusal. The
@@ -7980,7 +8115,25 @@ decisions:
       DECIDING, so the gate is known to cost nothing: all 11 stored accounts
       on the owner's real month pass all three tests and the trusted distinct
       count is still 6, so the convergence figures in criterion 12.2 are
-      unchanged by the gate. Two invented longer-form values sharing their
+      unchanged by the gate. THAT MEASUREMENT COVERS THE PDF PATH ONLY, and
+      the difference matters. The scrape at
+      src/modules/import/domain/belfius-current-account-template.ts:88 can
+      emit only sixteen characters, so on that path the table's only reachable
+      entries are countries of that length and refusing an unknown code is
+      nearly free. The DELIMITED path stores accounts of any length
+      (src/modules/import/domain/detect-profile.ts:45 admits a two-letter
+      code, two digits and eight to thirty more characters), so on that path a
+      country the table omits sends every row of that counterparty to the
+      descriptor basis, where it never converges: this phase's own defect,
+      reintroduced for that counterparty. The table is therefore populated
+      from the ISO 13616 registry rather than from the countries seen so far,
+      criterion 12.22 pins it, and criterion 12.15's whole-corpus record is
+      where such a loss would surface, as a fixture whose new group count is
+      HIGHER than its baseline count. Refusing an unknown code remains the
+      right default even so, because the asymmetry above does not depend on
+      which path the value arrived by: the refusal produces visible
+      non-convergence and admitting it risks a silent merge. Two invented
+      longer-form values sharing their
       first sixteen characters both scrape to one identical sixteen-character
       value, and that value fails both the length test and the mod-97 test, so
       the gate closes the truncation case rather than merely narrowing it.
@@ -7999,25 +8152,54 @@ decisions:
   - id: D-45
     statement: >-
       THE DECLARATION MIGRATION IS TWO PASSES, AND THE SPLIT IS WHAT MAKES
-      LOSS IMPOSSIBLE IN ONE AND VISIBLE IN THE OTHER. Pass one rewrites every
-      rule's pattern to the descriptor namespace followed by its old pattern.
-      It reads no transaction, has no failure branch, and preserves meaning for
+      LOSS IMPOSSIBLE IN ONE AND VISIBLE IN THE OTHER. Pass one rewrites, to
+      the descriptor namespace followed by its old pattern, every rule whose
+      pattern does not ALREADY begin with a known namespace; one that does is
+      left alone and counted as already-migrated, and one whose pattern is the
+      empty string is left alone and reported. Both guards are load-bearing on
+      the FIRST run rather than only a second: D-46's window means a naming
+      made between the deploy and the migration is written already namespaced
+      by criterion 12.18, and a second namespacing would kill a correct rule;
+      and an empty pattern, inert today under
+      src/modules/merchants/domain/merchant-rule.ts:65 and unguarded by
+      upsertRule, would become a bare namespace that a PREFIX rule matches
+      every descriptor key with. Pass one reads no transaction, has no failure
+      branch, and preserves meaning for
       EXACT, PREFIX and PATTERN alike because a constant prefix on both sides
-      of an equality or a startsWith changes neither. Pass two promotes a rule
-      to an account-basis pattern only when every transaction the OLD pattern
-      matched carries a TRUSTED account and they all carry the same one.
-      Promotion is what saves a naming written against a row that has since
-      moved to the account basis, and it BROADENS: the rewritten rule means
-      everything ever seen from that account. That broadening is DR-0027's
-      decision applied to a declaration the owner already made, which is the
-      point rather than an overreach, but it is not something an engine may do
-      quietly, so three things hold it. The routine prints per rule the old
-      and new matched counts, so a broadening is a number the owner can read.
-      It writes the pre-migration patterns to a timestamped uncommitted file,
-      so any run is reversible. And criterion 12.7 measures EFFECT rather than
-      rows, because a rule left byte-identical survives as a row and matches
-      nothing once the key has changed under it: the count is preserved and
-      the naming is dead. Rejected: a single equality-driven pass, which was
+      of an equality or a startsWith changes neither. PASS TWO IS PURELY
+      ADDITIVE, which is the delta review's correction and a better design
+      than the rewrite this decision first carried: where every transaction
+      the OLD pattern matched carries a TRUSTED account and they all carry the
+      same one, the routine ADDS an account-basis rule pointing at the SAME
+      merchant and leaves the descriptor rule pass one produced exactly where
+      it is. It needs no schema change, because MerchantRule's unique key is
+      (householdId, kind, pattern) at prisma/schema/merchants.prisma:70 and
+      assignMerchant already attaches several rules to one merchant
+      (src/modules/merchants/application/assign-merchant.ts:58 through :65).
+      NOTHING IS DESTROYED AT ANY POINT: pass one's rewrite is invertible by
+      stripping a constant prefix and pass two only adds, so a run is undone
+      by deleting the rules it added and stripping the namespace from the
+      rest, with no external file involved. That also answers rather than
+      manages the objection that made this a finding, which the plan had
+      accepted: pulse-domain section 2 classifies MerchantRule as a
+      declaration the user writes and the engine does not rebuild, and an
+      engine ADDING a rule beside one, on the owner's own decision in DR-0027,
+      leaves what the owner declared exactly where they left it. THE
+      DESCRIPTOR RULE THAT REMAINS IS A LIVE FALLBACK: it is what keeps a row
+      of the same counterparty whose account failed the trust gate, or which
+      carries no account, attached to the merchant the owner named, and the
+      two rules can never both fire on one key because their namespaces
+      differ, so the tie-break at
+      src/modules/merchants/domain/merchant-rule.ts:34 through :42 is never
+      reached between them. The added rule still BROADENS, meaning everything
+      ever seen from that account, which is DR-0027's decision applied to a
+      declaration the owner already made and is the point rather than an
+      overreach; two things keep it honest. The routine prints per rule the
+      old and new matched counts, so a broadening is a number the owner can
+      read. And criterion 12.7 measures EFFECT rather than rows, because a
+      rule left byte-identical survives as a row and matches nothing once the
+      key has changed under it: the count is preserved and the naming is
+      dead. Rejected: a single equality-driven pass, which was
       the amendment's design and which reports no-matching-transaction forever
       for every PREFIX rule, since a prefix pattern is by definition equal to
       no row's key; and a permanently non-zero exit on any unmigratable rule,
@@ -8035,7 +8217,14 @@ decisions:
       pre-migration while the matcher computes namespaced keys, so rules match
       nothing and the affected rows show as unresolved. No total moves, which
       is hazard H3.2's standing guarantee, nothing is lost, and the recompute
-      the routine runs at its end closes the window. package.json gains the
+      the routine runs at its end closes the window. Spelled out because it
+      was checked rather than assumed: a recompute happening INSIDE that
+      window clears the affected merchantId values, since interpretation
+      output is rebuilt wholesale and a null write is how an assignment no
+      rule supports stops applying
+      (src/modules/ledger/application/ports.ts:53 through :56), and the
+      routine's own recompute restores them. Facts untouched, declarations
+      untouched, no total moved. package.json gains the
       script that invokes it, because at the baseline the repository has build,
       start, typecheck, lint, two gates, test, test:e2e, db:reset and
       db:migrate and no deploy or release hook of any kind, so without it the
