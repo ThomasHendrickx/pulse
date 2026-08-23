@@ -398,6 +398,52 @@
 #   DELTA-M0P4-08: data-group-key is masked.
 #   DELTA-M0P4-09: D-34 states the real run matrix and M3-P11's spec
 #   registers under two projects, not three.
+#
+# M0-P5 amendment (merchant identity, 2026-08-23), and the measurement
+# commands behind every count this round added, recorded here so criterion
+# 12.2 can be checked against how the numbers were made rather than against
+# the numbers alone. Every run was IN MEMORY over the real documents in the
+# container, printing counts only; nothing parsed from them was written to
+# disk, and the scripts themselves live in the session scratchpad and are
+# deliberately not committed.
+#   Node for every run: export NVM_DIR=/opt/nvm && . /opt/nvm/nvm.sh
+#   Pipeline, identical in every script and identical to the shipped one:
+#     extractPdfPageItems(bytes) -> reconstructPdfLines(page) per page ->
+#     findTemplateByFingerprint(pages) -> parsePdfStatement(pages, id,
+#     version) -> normaliseCounterparty(counterpartyText(row)) per row.
+#   Run 1, npx tsx <scratchpad>/m0p5/measure.ts <39bada64.pdf> <0f79fa3d.pdf>:
+#     39bada64, template belfius-current-account-nl: rows 39, distinct
+#     descriptions 39, counterpartyName populated 0, counterpartyIban
+#     populated 11 over 6 distinct, DISTINCT MERCHANT KEYS 25, rows without
+#     an account 28 holding 28 distinct descriptions and 14 distinct keys and
+#     6 distinct twenty-character openings, keys that are not fixed points 0.
+#     0f79fa3d, template kbc-mastercard-uitgavenstaat: rows 22, distinct
+#     descriptions 16, counterpartyName 0, counterpartyIban 0, distinct keys
+#     16.
+#   Run 2, npx tsx <scratchpad>/m0p5/measure2.ts <39bada64.pdf>: 6 distinct
+#     accounts, 2 seen once, 4 seen twice or more covering 9 rows, 4 of those
+#     4 groups have disagreeing keys today, 0 keys shared by two different
+#     accounts.
+#   Run 3, npx tsx <scratchpad>/m0p5/measure3.ts <both pdfs>: segments of the
+#     39 rows, with an account 11 rows to 11 keys (lengths 69 to 174), no
+#     account and card-recognised 23 rows to 9 keys (lengths 26 to 39), no
+#     account and not card-recognised 5 rows to 5 keys (lengths 26 to 208,
+#     three of them over 100). Derivation "account else today's key" over the
+#     same 39 rows: 20 distinct.
+#   Run 5, npx tsx <scratchpad>/m0p5/measure5.ts <both pdfs>: the SHIPPED
+#     card-tail predicate, rebuilt from its own source, recognises 23 of the
+#     28 no-account rows of 39bada64 and 0 of the 22 rows of 0f79fa3d.
+#   Deployed database, read-only counts through the Supabase management API
+#     against project ygsarzjqosqmkqibqogk on 2026-08-23: merchant_rules 1
+#     row (EXACT 1, PREFIX 0, PATTERN 0), merchants 1, transactions 39 of
+#     which 1 carries a merchant assignment, counterpartyIban on 11 over 6
+#     distinct, counterpartyName on 0, distinct descriptions 39, flows SPEND
+#     33 INCOME 6 INTERNAL 0 RESERVE 0 UNRESOLVED 0.
+#   NOT VERIFIED, and named rather than left implicit: nothing here was run
+#     against the deployed application, only against its database and against
+#     the documents; and the true counterparty count behind the 5 residue
+#     rows is unknown, which is precisely why decision D-38 refuses to guess
+#     it.
 kind: plan
 status: draft
 baseline-commit: e4ea3ba
@@ -1484,6 +1530,170 @@ report-code-disagreement:
       not translatable copy. So M3-P10 widens the glob to src/platform/ui and
       criterion 10.11 measures the widening with a red witness, and the
       src/app half is parked with that one line as the reason.
+    verified: true
+  - phase: M3-P12
+    claim: >-
+      Dispatch standing-context, the headline number: "Over the owner's real
+      month in the deployed database: 39 transactions, 39 DISTINCT
+      descriptions, and counterpartyName populated on ZERO rows, so the key is
+      always the full description and every row is its own counterparty. A
+      naming therefore matches exactly one transaction and never a second."
+      The first half holds and the conclusion does not. Reproduced by running
+      the SHIPPED pipeline (extractPdfPageItems, reconstructPdfLines,
+      findTemplateByFingerprint, parsePdfStatement, then
+      normaliseCounterparty(counterpartyText(row))) over the real Belfius
+      document in memory: 39 rows, 39 distinct descriptions, counterpartyName
+      populated 0 times, and 25 DISTINCT MERCHANT KEYS, not 39. The M3-P6 card
+      grammar (src/modules/merchants/domain/normalise-counterparty.ts:99
+      through :106) already collapses 39 rows to 25. The defect is real and
+      its shape is different from the dispatch's: the residue is concentrated
+      in the rows the card grammar does not touch, and it is total there.
+    verified: false
+  - phase: M3-P12
+    claim: >-
+      Where the 25 keys sit, measured the same way and the number that
+      actually carries this phase. The 11 rows carrying a counterparty account
+      produce 11 distinct keys over 6 distinct accounts, so that family fails
+      completely; 4 accounts appear on 2 or more rows, covering 9 rows, and
+      all 4 of those groups have disagreeing keys today. The 23 rows with no
+      account whose descriptor the card grammar recognises produce 9 distinct
+      keys. The 5 remaining rows produce 5 distinct keys. ZERO current keys
+      are shared by two different accounts, so keying on the account
+      over-collapses nothing observed. Key lengths tell the same story: 69 to
+      174 characters on the account-carrying rows, 26 to 39 on the card rows.
+      The key those lengths belong to is the one
+      src/modules/merchants/domain/merchant-review.ts:79 builds and
+      src/modules/merchants/domain/merchant-rule.ts:68 compares for equality,
+      so the account-carrying family fails at the point of comparison and not
+      only in appearance.
+    verified: true
+  - phase: M3-P12
+    claim: >-
+      Dispatch standing-context: "MerchantRuleKind declares EXACT, PREFIX and
+      PATTERN (prisma/schema/merchants.prisma:25 through :29) and only EXACT
+      is ever applied (src/modules/merchants/domain/merchant-rule.ts:68), so
+      two of the three kinds are dead." The enum is as described. The rest
+      fails: matchRules APPLIES PREFIX at
+      src/modules/merchants/domain/merchant-rule.ts:74 through :79 and PATTERN
+      at src/modules/merchants/domain/merchant-rule.ts:81 through :88, with a
+      glob compiler at src/modules/merchants/domain/merchant-rule.ts:44
+      through :53, and a test already exercises a PREFIX rule
+      (test/application/resolve-merchants.test.ts:373). What is dead is
+      the WRITE path: src/modules/merchants/application/assign-merchant.ts:63
+      hardcodes EXACT and is the only caller of upsertRule in src. The two
+      kinds are matcher-live and unwritable, which is a different disposition
+      question from the one the dispatch names.
+    verified: false
+  - phase: M3-P12
+    claim: >-
+      Dispatch standing-context: the structured counterparty account "the
+      importer already stores" is never used for merchant identity. Confirmed
+      three ways. The merchant review builder reads only description and
+      counterpartyName (src/modules/merchants/domain/merchant-review.ts:79),
+      the repository read does not even select the account column
+      (src/modules/merchants/adapters/merchant-repository.ts:234 through
+      :241), and the ledger resolves through the same text
+      (src/modules/ledger/application/interpret-window.ts:111). The account IS
+      consulted elsewhere for other purposes: flow classification
+      (src/modules/ledger/domain/classify-flow.ts:63), transfer pairing
+      (src/modules/ledger/domain/pair-transfers.ts:76) and the refund
+      correction's own counterparty key
+      (src/modules/ledger/domain/corrections.ts:209 through :215), which
+      already prefers the account and namespaces its output. That last one is
+      the shape this phase adopts, and it is a SIBLING that must not be
+      unified with it (src/modules/merchants/domain/normalise-counterparty.ts:15
+      through :22).
+    verified: true
+  - phase: M3-P12
+    claim: >-
+      Which import paths populate which counterparty fields, established
+      because the fix depends on what the fact rows carry. The Belfius PDF
+      template scrapes an account out of the description
+      (src/modules/import/domain/belfius-current-account-template.ts:265
+      through :281) and never sets a name. The KBC card template sets
+      neither. The delimited path can set both, by header hint
+      (src/modules/import/domain/detect-profile.ts:324 and :360), and the
+      committed CSV fixtures carry both columns, so on a CSV import
+      counterpartyText is already the NAME and already converges. The failure
+      the owner hit is therefore SPECIFIC TO THE PDF PATH, which is the only
+      path they have ever used.
+    verified: true
+  - phase: M3-P12
+    claim: >-
+      The M3-P6 stability contract's discharge is STALE, and this is the
+      finding that changes what this phase must ship. The comment at
+      src/modules/merchants/domain/normalise-counterparty.ts:74 through :80
+      records that the deployed merchant_rules table held ZERO rows when the
+      card grammar changed the key, so no stored pattern could detach and no
+      re-normalisation migration was needed, and it warns that the next change
+      inherits the obligation and the count may no longer be zero. Measured
+      read-only against the deployed Supabase project on 2026-08-23:
+      merchant_rules holds 1 row, kind EXACT, PREFIX 0, PATTERN 0; merchants
+      holds 1 row; transactions holds 39 rows of which 1 carries a merchant
+      assignment. The owner has made exactly one naming and it is written
+      against the old key. The count is no longer zero, so the migration
+      branch of the contract at
+      src/modules/merchants/domain/normalise-counterparty.ts:54 through :70 is
+      the branch this phase takes.
+    verified: false
+  - phase: M3-P12
+    claim: >-
+      Every row of the owner's month is a COUNTED row, so every one of them is
+      on the review screen. Measured read-only against the deployed project:
+      SPEND 33, INCOME 6, INTERNAL 0, RESERVE 0, UNRESOLVED 0, and 11 of the
+      counted rows carry a counterparty account over 6 distinct values. There
+      is no flow filter standing between the account-carrying rows and the
+      screen the owner was looking at, which is why they saw two rows of one
+      account listed as two counterparties.
+      The filter that would have stood there is
+      src/modules/merchants/adapters/merchant-repository.ts:232, and it admits
+      both counted flows.
+    verified: true
+  - phase: M3-P12
+    claim: >-
+      The dispatch's step 2 premise, that the 28 rows carrying no account need
+      a descriptor grammar "the way M3-P6 answered the card family". Measured
+      by rebuilding the SHIPPED card predicate from its own source and running
+      it over the parsed rows: 23 of those 28 rows are already recognised by
+      it, and the residue is 5 rows over 4 distinct opening tokens with 5
+      distinct keys, of which 3 keys exceed 100 characters and the longest is
+      208. A new descriptor family would therefore be induced from at most one
+      candidate pair on one month of one bank, which is the widening this
+      codebase's own rule forbids
+      (src/modules/merchants/domain/normalise-counterparty.ts:127 through
+      :132: pin the accepted shapes, never widen to a shape nobody has seen).
+      Decision D-38 records what this phase does instead.
+    verified: false
+  - phase: M3-P12
+    claim: >-
+      The card family is NOT coextensive with the card grammar, which matters
+      because a design that gates honesty on family recognition would mislabel
+      a family that works. The shipped card-tail predicate recognises 0 of the
+      22 rows of the real KBC card document, and those 22 rows still converge
+      to 16 distinct keys through the ordinary always-on passes alone
+      (terminal noise, dates, postal code, trailing city), with key lengths of
+      18 to 37 characters and multiplicities 4, 2, 2 and 2. The predicate that
+      does not fire is
+      src/modules/merchants/domain/normalise-counterparty.ts:215, and the
+      passes that carry those rows without it are
+      src/modules/merchants/domain/normalise-counterparty.ts:417 through :423.
+      Descriptor identity works there without any family firing, so basis is a
+      two-valued fact (account or descriptor) and never a confidence claim.
+    verified: false
+  - phase: M3-P13
+    claim: >-
+      What the review screen shows today, read at the baseline. The group row
+      already renders its row count
+      (src/modules/merchants/ui/merchant-review.tsx:38 through :40) and
+      already masks card numbers in the label only
+      (src/modules/merchants/ui/merchant-review.tsx:36). What it does not have
+      is any statement of WHAT the group is grouped on, any label for a group
+      that has no descriptor to show, and any way to see the individual
+      transactions behind a group. The naming form submits the grouping string
+      itself through a hidden input named counterpartyText
+      (src/modules/merchants/ui/merchant-review.tsx:48,
+      src/modules/merchants/ui/actions.ts:26), which is the field that has to
+      carry the identity key instead.
     verified: true
 phases:
   - id: M3-P1
@@ -5722,6 +5932,727 @@ phases:
         - messages/
         - playwright.config.ts
         - test/e2e/
+  - id: M3-P12
+    branch: claude/m3-p12-counterparty-identity
+    intent: >-
+      A merchant naming matches every future transaction from the same
+      counterparty, because what a rule is written against stops being a
+      transaction's free text and becomes the counterparty's IDENTITY: the
+      counterparty account where the row carries one, per DR-0027, and the
+      normalised descriptor where it does not. The derivation is one pure
+      function in the merchants domain, the four places that group or resolve
+      counterparties all call it, the one naming the owner has already made is
+      re-derived rather than dropped, and the proof is a distinct-key count
+      plus a second transaction that resolves with no second naming.
+    grounding: >-
+      DR-0027, decided by the owner on 2026-08-23: the same counterparty
+      account is the same counterparty, always, the free-text communication is
+      dropped from identity, and the owner accepted the stated cost that two
+      purposes paid to one counterparty land in one group and separating them
+      is a tag question. The owner's question that opened it, quoted verbatim
+      in decision D-36. The worked example is the M3-P6 card grammar at
+      src/modules/merchants/domain/normalise-counterparty.ts:99 onward, which
+      answered this same defect for one descriptor family and proved it by
+      counting distinct keys over real rows; this phase is that method applied
+      one family wider, and it deliberately adds no new stripping. The
+      governing document is the pulse-domain skill: section 2 for facts versus
+      interpretation and its three absolute rules, section 7 for merchant
+      resolution, section 9 for the module boundary the MerchantResolver port
+      sits on. The stability contract that binds any change to the key lives
+      at src/modules/merchants/domain/normalise-counterparty.ts:54 through
+      :80, and its zero-rows discharge is stale: see this phase's
+      report-code-disagreement entries.
+    severity: critical
+    verified-root-cause: >-
+      What a merchant rule matches on is the whole normalised counterparty
+      TEXT, and for a PDF-imported row that text is the whole description,
+      because counterpartyText falls back to it
+      (src/modules/merchants/domain/normalise-counterparty.ts:94 through :97)
+      and the Belfius template never populates a counterparty name
+      (src/modules/import/domain/belfius-current-account-template.ts:265
+      through :281). A transfer description embeds a free-text communication
+      and a per-transaction reference, so every such row is its own group.
+      assignMerchant stores that string as an EXACT rule
+      (src/modules/merchants/application/assign-merchant.ts:54 and :63) and
+      matching compares it for equality
+      (src/modules/merchants/domain/merchant-rule.ts:68), so the naming
+      matches the one row it was written from. The structured counterparty
+      account the importer already stores is consulted for flow, for pairing
+      and for the refund correction, and for merchant identity by nothing: the
+      review builder does not read it
+      (src/modules/merchants/domain/merchant-review.ts:79) and the repository
+      does not even select it
+      (src/modules/merchants/adapters/merchant-repository.ts:234 through
+      :241). Measured on the owner's real month through the shipped pipeline:
+      the 11 rows carrying an account produce 11 distinct keys over 6 distinct
+      accounts, and 4 accounts appear on 2 or more rows covering 9 rows with
+      all 4 groups disagreeing. That is the screen's promise failing in front
+      of the owner.
+    steps:
+      - kind: verification-first
+        text: >-
+          Reproduce every count in this phase's report-code-disagreement
+          entries before building on them, and record each with the command
+          that produced it in the phase work history. Against the COMMITTED
+          fixtures first: parse every committed Belfius and KBC fixture and
+          every committed CSV fixture through the shipped path and record, per
+          fixture, the row count, the rows carrying a counterparty account,
+          the rows carrying a counterparty name, and the distinct merchant
+          keys the baseline derivation produces. Against the real documents in
+          the container second, IN MEMORY ONLY, reporting counts and never
+          content, and never writing any parsed string to disk. Confirm in
+          particular the three findings the dispatch did not have: that the
+          baseline produces 25 distinct keys over the 39 real rows and not 39,
+          that the matcher already applies PREFIX and PATTERN while nothing
+          writes them, and that the deployed merchant_rules table is no longer
+          empty. If any of the three fails to reproduce, write down what it
+          actually is and re-derive the affected criterion before building.
+      - text: >-
+          Add the derivation as ONE exported pure function in the merchants
+          domain, counterpartyIdentity, beside the normaliser that the
+          descriptor branch calls, returning a namespaced key and a two-valued
+          basis. Where the row carries a counterparty account the key is
+          "account:" followed by that account uppercased with whitespace
+          removed, and NOTHING else is consulted, not the name, not the
+          description, not the communication (DR-0027, decision D-37). Where
+          it does not, the key is "descriptor:" followed by
+          normaliseCounterparty(counterpartyText(row)), unchanged from the
+          baseline. The namespace is what keeps an account key and a
+          descriptor key from ever colliding, and it is the shape the ledger's
+          own refund key already uses
+          (src/modules/ledger/domain/corrections.ts:209 through :215). That
+          sibling is NOT unified with this one and must not be: the warning at
+          src/modules/merchants/domain/normalise-counterparty.ts:15 through
+          :22 says why, and swapping it would move flow classifications.
+      - text: >-
+          Add NO new stripping and NO new descriptor family, and record why
+          with the measurement (decision D-38). The card grammar and the
+          always-on passes stay byte-for-byte as M3-P6 left them, so the
+          hazard of collapsing two genuinely different counterparties by
+          over-stripping is structurally absent from this phase rather than
+          merely watched, and criterion 12.5 pins it. A row whose descriptor
+          matches no family keeps exactly the key it has today, which is its
+          own full normalised descriptor: it is never given a shorter key that
+          could merge it with something else, and criterion 12.6 is what says
+          so. What changes for those rows is that the screen names their basis
+          and their row count, in M3-P13, so the owner can see that a naming
+          there will reach the transactions it says it reaches and no more.
+      - text: >-
+          Carry the identity through the four places that group or resolve a
+          counterparty, and through nothing else. One: the merchant review
+          builder keys on counterpartyIdentity rather than on the normalised
+          text (src/modules/merchants/domain/merchant-review.ts:79), its
+          CountedRow gains the counterparty account, and the repository read
+          selects it (src/modules/merchants/adapters/merchant-repository.ts:234
+          through :241). Two: the ledger computes the identity for each counted
+          row and passes DISTINCT IDENTITY KEYS through the MerchantResolver
+          port (src/modules/ledger/application/interpret-window.ts:105 through
+          :127), the port member is renamed so a caller cannot pass a raw text
+          to it by accident (src/modules/ledger/application/ports.ts:45), and
+          the resolver stops re-normalising what it is handed
+          (src/modules/merchants/application/resolve-counterparties.ts:36). The
+          port stays exactly one member, which is what keeps interpretation
+          unable to write a declaration
+          (src/modules/ledger/application/ports.ts:31 through :39). Three: the
+          overview's grouped counted read returns the counterparty account
+          beside the counterparty text and groups by it, and the fold keys on
+          the identity (src/modules/overview/adapters/overview-repository.ts:58
+          and :113 through :131,
+          src/modules/overview/domain/month-projection.ts:80 through :83); the
+          SQL fragment is the third sibling of the source rule named at
+          src/modules/merchants/domain/normalise-counterparty.ts:25 through
+          :33 and its pin in test/domain/merchant-review.test.ts is updated
+          with it. Four: assignMerchant stores the identity key as the rule
+          subject and stops normalising the submitted string a second time
+          (src/modules/merchants/application/assign-merchant.ts:54).
+      - text: >-
+          Re-derive the declarations the owner has already made, in the same
+          change, as the stability contract at
+          src/modules/merchants/domain/normalise-counterparty.ts:54 through
+          :70 requires. Add an idempotent, household-scoped re-derivation to
+          the merchants application layer, invoked by a committed one-shot
+          script, which reads every MerchantRule row and every transaction of
+          the household, and for each rule finds the transactions whose
+          BASELINE key equals the stored pattern and computes their identity
+          keys under the new derivation. Exactly one identity key across that
+          set means the pattern is rewritten to it. Zero matching
+          transactions, more than one identity key, or a collision with an
+          existing rule pointing at a DIFFERENT merchant means the rule is
+          left exactly as it is and reported. It deletes nothing, ever
+          (decision D-39). It writes only to merchant_rules; the transaction
+          rows are facts and are not touched, and the assignments reach the
+          rows afterwards through the existing recompute, which is the only
+          thing that writes transactions.merchantId (pulse-domain section 2
+          rule 1 and rule 2).
+      - text: >-
+          Settle the PREFIX and PATTERN kinds rather than leaving the schema
+          advertising them (decision D-40). Both stay in the enum and both
+          stay live in the matcher, because they ARE applied today and
+          removing them would be a Prisma enum migration for no gain, with
+          zero rows of either kind deployed. What is added is the one rule the
+          new key makes necessary: matchRules refuses to apply a PREFIX or a
+          PATTERN rule to an ACCOUNT-basis key, because a prefix of an account
+          number is a different account and matching it would merge two
+          counterparties. Correct the schema comment at
+          prisma/schema/merchants.prisma:57 and the resolver header at
+          src/modules/merchants/domain/merchant-rule.ts:1 through :14 to state
+          that no product surface writes either kind today, that assignMerchant
+          writes EXACT only
+          (src/modules/merchants/application/assign-merchant.ts:63), and that
+          both are reserved for the slice-5 accepted-answer path the
+          pulse-domain skill's section 7 names. No schema change, no migration.
+      - text: >-
+          Build the fixture the convergence criteria are measured on, wholly
+          invented, and generate it through the committed generator
+          (test/fixtures/generate-pdf-fixtures.ts) so it arrives through the
+          shipped importer rather than being handed to the domain directly. It
+          reproduces the SHAPE the real month has and nothing of its content:
+          rows sharing one counterparty account with a different free-text
+          communication on each, rows sharing one counterparty account with a
+          different reference on each, card-descriptor rows carrying their own
+          date and amount, and rows with neither an account nor a card shape
+          whose descriptors differ per row. Every identifier in it is invented
+          and is added to test/fixtures/allowed-identifiers.txt with its
+          provenance in the same change. No string, amount, date, place or
+          counterparty from either real document appears in it, and the file
+          is read back line by line before it is committed.
+      - text: >-
+          Record the whole-corpus effect rather than only the happy fixture.
+          For every committed fixture, record in the phase work history the
+          distinct merchant-group count under the baseline derivation and
+          under the new one, and list every fixture where the new count is
+          HIGHER than the baseline count together with the reason, since a
+          merchant paid through two different accounts now lands in two
+          groups. Recovering from that split is naming both groups with the
+          same merchant name, which attaches a second rule to one merchant
+          (src/modules/merchants/application/assign-merchant.ts:58 through
+          :60); the group LABEL, which M3-P13 renders, is what makes them
+          recognisable, and decision D-41 fixes it as the carried counterparty
+          name where a row has one and the masked account otherwise.
+      - text: >-
+          Run the full gate before calling the slice done, and run it in the
+          worktree with pinned local database credentials per the fleet
+          environment warnings: npm run typecheck, npm run lint, npm test,
+          npm run gate:privacy, then npm run test:e2e.
+    files-to-touch:
+      - src/modules/merchants/domain/normalise-counterparty.ts
+      - src/modules/merchants/domain/merchant-review.ts
+      - src/modules/merchants/domain/merchant-rule.ts
+      - src/modules/merchants/application/assign-merchant.ts
+      - src/modules/merchants/application/resolve-counterparties.ts
+      - src/modules/merchants/application/ports.ts
+      - src/modules/merchants/application/index.ts
+      - src/modules/merchants/adapters/merchant-repository.ts
+      - src/modules/ledger/application/interpret-window.ts
+      - src/modules/ledger/application/ports.ts
+      - src/modules/ledger/application/index.ts
+      - src/modules/overview/adapters/overview-repository.ts
+      - src/modules/overview/domain/month-projection.ts
+      - src/modules/merchants/ui/actions.ts
+      - src/modules/merchants/ui/merchant-review.tsx
+      - prisma/schema/merchants.prisma
+      - scripts/
+      - test/domain/
+      - test/application/
+      - test/fixtures/
+    extras:
+      - scripts/rederive-merchant-rules.ts
+      - test/fixtures/allowed-identifiers.txt
+      - test/fixtures/generate-pdf-fixtures.ts
+    acceptance:
+      - id: "12.1"
+        criterion: >-
+          CONVERGENCE, COUNTED. A test in test/domain/counterparty-identity.test.ts
+          parses test/fixtures/belfius-counterparty-identity.pdf through the
+          shipped path and counts DISTINCT counterpartyIdentity keys over its
+          rows. The fixture carries 24 rows representing 12 invented
+          counterparties, and the test asserts the distinct-key count is
+          exactly 12, printing both 12 and 24, and separately asserts that the
+          BASELINE derivation (normaliseCounterparty(counterpartyText(row)))
+          over the same rows yields 21 or more distinct keys, printing that
+          number too. A test that asserts only that a rule exists, or that
+          asserts a count without printing the row count beside it, does not
+          meet this criterion.
+      - id: "12.2"
+        criterion: >-
+          CONVERGENCE ON THE OWNER'S OWN MONTH, so the fixture cannot be built
+          to pass a bar the real data fails. The phase work history records,
+          with the exact command that produced each number and with no
+          descriptor content, the result of running the SHIPPED pipeline over
+          the real Belfius document in memory: total rows 39, distinct
+          identity keys at most 20 against a recorded baseline of 25, and the
+          11 rows carrying a counterparty account yielding EXACTLY 6 distinct
+          identity keys against a recorded baseline of 11. If any of those
+          numbers differs from the recorded baseline in this plan's
+          report-code-disagreement entries, the work history states the
+          measured number and what changed rather than restating the plan's.
+      - id: "12.3"
+        criterion: >-
+          NAMED ONCE, MATCHED AGAIN. A test in
+          test/application/counterparty-identity-journey.test.ts imports
+          test/fixtures/belfius-counterparty-identity.pdf, asserts that a
+          designated counterparty of that fixture appears as ONE unresolved
+          group whose count is 3, calls assignMerchant EXACTLY ONCE against
+          that group's identity key (asserted by a call counter on the fake
+          merchants port, which must read 1 at the end of the test), runs
+          interpretation, and then asserts that a DIFFERENT transaction of the
+          same counterparty, which the naming was not made from and which
+          differs from it in booking date, in amount and in free-text
+          communication, now carries that merchant id. The test names both
+          transaction ids and the fixture in its assertions. A test that names
+          each transaction separately, or that asserts only the group count,
+          does not meet this criterion.
+      - id: "12.4"
+        criterion: >-
+          DIFFERENT COUNTERPARTIES STAY DIFFERENT, which is criterion 12.1's
+          other half and outranks it. Over the same fixture, a test asserts
+          that no two rows carrying DIFFERENT counterparty accounts share an
+          identity key, that no account-basis key is equal to any
+          descriptor-basis key, and that the 12 identity keys partition the 24
+          rows exactly as the expected row-to-counterparty mapping committed
+          beside the fixture does, row by row, so a merge shows up as a failed
+          row rather than as a count that still happens to be 12.
+      - id: "12.5"
+        criterion: >-
+          THIS PHASE STRIPS NOTHING NEW. For every row of every committed
+          fixture that carries no counterparty account, the descriptor-basis
+          key produced by this branch is BYTE-IDENTICAL to the key the
+          baseline commit produces for the same row, asserted by a test that
+          reads a committed table of baseline keys generated at the baseline
+          commit, and git diff of the baseline against this branch shows no
+          change to CARD_RAIL_PREFIX, CARD_NUMBER_LABEL, CARD_NUMBER_TAIL,
+          CARD_AMOUNT_BEFORE_LABEL, ANGLE_COUNTRY_MARKER,
+          TERMINAL_NOISE_PATTERNS, DATE_FRAGMENT_PATTERNS,
+          POSTAL_CODE_BEFORE_CITY or CITY_TOKENS in
+          src/modules/merchants/domain/normalise-counterparty.ts, and the
+          pinned regression table in
+          test/domain/normalise-counterparty.test.ts is unchanged.
+      - id: "12.6"
+        criterion: >-
+          A ROW MATCHING NO FAMILY IS NOT GUESSED AT. A test asserts that for
+          a row carrying no counterparty account whose descriptor the card
+          predicate does not recognise, the identity key is "descriptor:"
+          followed by exactly normaliseCounterparty(counterpartyText(row)),
+          equal character for character to the baseline key, and that its
+          basis is reported as descriptor. The plan and the code state, and a
+          test asserts, that no truncation, no opening-prefix key and no
+          fallback bucket is ever produced: two such rows share a key only
+          when their full normalised descriptors are equal.
+      - id: "12.7"
+        criterion: >-
+          NO NAMING THE OWNER MADE IS DISCARDED. Against a seeded database
+          holding MerchantRule rows written under the baseline derivation, the
+          re-derivation deletes ZERO rows: SELECT COUNT(*) FROM merchant_rules
+          before and after are equal and both are printed. Every rule whose
+          baseline pattern is reproduced by at least one transaction that
+          yields exactly one identity key has its pattern rewritten to that
+          key and still resolves the same transactions afterwards. Every rule
+          that cannot be re-derived is left byte-identical and printed on its
+          own line naming the rule id and one of three reasons
+          (no-matching-transaction, multiple-identities, merchant-conflict),
+          and the script exits non-zero when that list is non-empty. No
+          criterion in this phase is met by a run that removed a rule row.
+      - id: "12.8"
+        criterion: >-
+          THE RE-DERIVATION IS IDEMPOTENT. Running the script a second time
+          against the same database rewrites zero patterns, prints zero
+          reasons and exits 0, asserted by a test that runs it twice and
+          compares the full merchant_rules table contents between the two
+          runs.
+      - id: "12.9"
+        criterion: >-
+          FACTS ARE NOT REWRITTEN AND THE CHANGE IS A DERIVATION PLUS A
+          RECOMPUTE. A test asserts the re-derivation issues no write against
+          the transactions table at all, and grep over this phase's steps
+          shows no step that updates a transaction fact field. Separately, the
+          pulse-domain section 2 test: a test clears every
+          transactions.merchantId, runs the existing recompute, and asserts
+          the identical assignment set returns, so the naming survives
+          entirely as a declaration plus a derivation.
+      - id: "12.10"
+        criterion: >-
+          PREFIX AND PATTERN ARE SETTLED. A unit test asserts that a PREFIX
+          rule whose pattern is a proper prefix of an ACCOUNT-basis key
+          returns undefined from matchRules, that a PATTERN rule whose glob
+          matches an account-basis key returns undefined, and that both kinds
+          still match a descriptor-basis key as they do today. A test asserts
+          assignMerchant writes kind EXACT and only EXACT. git diff of the
+          baseline shows NO change to the MerchantRuleKind enum in
+          prisma/schema/merchants.prisma, and grep of
+          prisma/schema/merchants.prisma and
+          src/modules/merchants/domain/merchant-rule.ts shows the stated
+          disposition, that no product surface writes either kind today, in
+          both files.
+      - id: "12.11"
+        criterion: >-
+          THE TWO SCREENS AGREE. A test runs the merchant review builder and
+          the overview fold over ONE dataset and asserts the two produce the
+          same set of unresolved group keys and the same row count per key.
+          The SQL pin in test/domain/merchant-review.test.ts is updated to the
+          new fragment and still asserts that fragment appears exactly once in
+          src/modules/overview/adapters/overview-repository.ts and that both
+          reads use it.
+      - id: "12.12"
+        criterion: >-
+          THE MODULE BOUNDARY HOLDS. The MerchantResolver port still has
+          exactly one member, asserted by the existing key-set assertion in
+          test/application/resolve-merchants.test.ts updated to the new member
+          name, so no code path in interpretation can write a MerchantRule.
+          The ledger's own counterpartyKey
+          (src/modules/ledger/domain/corrections.ts:209) is unchanged, asserted
+          by git diff showing no change to
+          src/modules/ledger/domain/corrections.ts, so no flow classification
+          moves.
+      - id: "12.13"
+        criterion: >-
+          NOTHING OF THE OWNER'S DATA REACHES THE REPOSITORY. npm run
+          gate:privacy passes; every identifier in the new fixture is listed
+          in test/fixtures/allowed-identifiers.txt with its provenance; the
+          phase work history reports counts only and quotes no descriptor,
+          counterparty, place, amount or date from either real document; and
+          the branch's commit messages carry no data of any kind.
+      - id: "12.14"
+        criterion: >-
+          THE STANDING GATE. npm run typecheck, npm run lint, npm test and
+          npm run gate:privacy all exit 0, and npm run test:e2e exits 0, each
+          with its captured output in the phase work history.
+      - id: "12.15"
+        criterion: >-
+          THE WHOLE-CORPUS EFFECT IS RECORDED, NOT ONLY THE HAPPY FIXTURE. The
+          phase work history carries one line per committed fixture with the
+          distinct merchant-group count under the baseline derivation and
+          under the new one, produced by a committed script so the numbers can
+          be regenerated. Every fixture whose new count is HIGHER than its
+          baseline count is listed with the reason, and for each such fixture a
+          test asserts that naming both of the split groups with the SAME
+          merchant name lands both under ONE merchant id, so the split is
+          recoverable by the owner rather than permanent.
+    hazard-classes:
+      - id: H12.1
+        statement: >-
+          The key collapses so far that two genuinely different counterparties
+          become one group, which silently merges the owner's money and is
+          worse than today because today's failure is visible and this one is
+          not.
+        addressed-by: criterion 12.4
+      - id: H12.2
+        statement: >-
+          Convergence is proved on a fixture built to converge, so the
+          criterion passes and the owner's own month still does not.
+        addressed-by: criterion 12.2
+      - id: H12.3
+        statement: >-
+          The naming the owner has already made is lost when the key changes,
+          because the stored pattern no longer reproduces and nothing notices.
+        addressed-by: criterion 12.7
+      - id: H12.4
+        statement: >-
+          The key is fixed by rewriting stored transaction rows, breaking the
+          rule that facts are immutable.
+        addressed-by: criterion 12.9
+      - id: H12.5
+        statement: >-
+          Real descriptor content from the owner's statements reaches the
+          plan, a fixture, a commit message or a work history while the shape
+          is being reproduced.
+        addressed-by: criterion 12.13
+      - id: H12.6
+        statement: >-
+          A row whose counterparty cannot be identified is given a shortened
+          or bucketed key that quietly groups it with an unrelated row.
+        addressed-by: criterion 12.6
+      - id: H12.7
+        statement: >-
+          A new descriptor family is induced from one month of one bank and
+          over-fires on a shape nobody has seen, which is the failure
+          src/modules/merchants/domain/normalise-counterparty.ts:127 through
+          :132 already forbids one tier down.
+        addressed-by: criterion 12.5
+      - id: H12.8
+        statement: >-
+          The merchant review and the month view disagree about what a group
+          is, because the rule is written once in TypeScript and once in SQL
+          and only one of them changes.
+        addressed-by: criterion 12.11
+      - id: H12.9
+        statement: >-
+          Moving CSV rows from name-keyed to account-keyed splits a merchant
+          that is paid through two accounts, and the split is discovered by
+          the owner rather than by this phase.
+        addressed-by: criterion 12.15
+      - id: H12.10
+        statement: >-
+          The resolver is handed a raw text somewhere that was missed, and it
+          silently resolves nothing rather than failing, because the port
+          still accepts a string.
+        addressed-by: criterion 12.12
+      - id: H12.11
+        statement: >-
+          The identity change reaches flow classification through the ledger's
+          own counterparty key, so resolution reclassifies instead of only
+          renaming and regrouping.
+        addressed-by: criterion 12.12
+      - id: H12.12
+        statement: >-
+          The re-derivation is run twice, by a redeploy or by hand, and the
+          second run mangles patterns the first run already rewrote.
+        addressed-by: criterion 12.8
+      - id: H12.13
+        statement: >-
+          A PREFIX or PATTERN rule, written by hand or by a later slice,
+          matches an account-basis key on a prefix of an account number and
+          merges two counterparties.
+        addressed-by: criterion 12.10
+    migrations: >-
+      None. The identity is carried in the pattern string's namespace prefix
+      rather than in a new column, so MerchantRule keeps its shape and the
+      MerchantRuleKind enum is unchanged. What this phase ships instead is a
+      one-off re-derivation of DECLARATION rows (merchant_rules patterns),
+      run by a committed idempotent script, followed by the existing
+      recompute. No DDL, no Prisma migration, no schema drift.
+    conflicts-with:
+      - M3-P8
+      - M3-P11
+    parallelizable: false
+    citations:
+      - R-005
+      - R-010a
+      - DR-0027
+  - id: M3-P13
+    branch: claude/m3-p13-identity-on-review
+    intent: >-
+      The review screen says what it is grouping on and how far a naming will
+      reach, now that a group is several transactions rather than one: every
+      unresolved group states its basis in words, states how many
+      transactions the naming will apply to, carries a label a person can
+      recognise when the group has no descriptor to show, and lets the
+      individual transactions behind it be seen, so that two purposes paid to
+      one counterparty read as the thing DR-0027 accepted rather than as a
+      mistake.
+    grounding: >-
+      DR-0027's accepted cost, stated in the decision itself: two different
+      purposes paid to the same counterparty land in ONE group and separating
+      them is a tag question rather than a merchant question. The owner's
+      question that opened it, quoted in decision D-36, is a question about
+      what a naming matches, so the screen has to answer it where the naming
+      is made. The governing document is the pulse-frontend skill: section 5
+      for the states this product must handle and its rule that a screen
+      never hides an unknown
+      (.claude/skills/pulse-frontend/SKILL.md:105), section 7 for the copy
+      rules binding all three languages, section 8 for accessibility. This phase
+      consumes M3-P12's counterpartyIdentity and adds no derivation of its
+      own. Read at the baseline: the group row already renders its count
+      (src/modules/merchants/ui/merchant-review.tsx:38 through :40) and
+      already masks card numbers in the label only
+      (src/modules/merchants/ui/merchant-review.tsx:36), so this phase adds
+      the basis, the account-basis label and the rows behind a group, and
+      nothing that already exists.
+    severity: high
+    verified-root-cause: >-
+      Not a defect phase on its own. It exists because M3-P12 changes what a
+      group IS, and a screen that shows a group of nine transactions under a
+      label taken from one of them, with no statement of what joined them,
+      would answer the owner's question wrongly in the other direction. Two
+      concrete gaps at the baseline: an unresolved group's label IS the
+      normalised descriptor (src/modules/merchants/domain/merchant-review.ts:37
+      through :40), so an account-basis group has no label at all once the key
+      stops being text, and the naming form submits the grouping string
+      through a hidden input named counterpartyText
+      (src/modules/merchants/ui/merchant-review.tsx:48,
+      src/modules/merchants/ui/actions.ts:26), which has to carry the identity
+      key instead or the naming writes a rule against a string nothing
+      matches.
+    steps:
+      - kind: verification-first
+        text: >-
+          Re-read the screen against M3-P12's merged head rather than against
+          this plan, since M3-P12 changes the shape ReviewGroup carries.
+          Record what ReviewGroup actually exposes at that head (key, label,
+          basis, count, the identity key the form submits), what the group row
+          renders today, and whether M3-P8 has merged and therefore whether
+          the row is the two-line phone row or the baseline row. Build on the
+          recorded reading, not on this description of it.
+      - text: >-
+          State the basis on every unresolved group, in words a person reads
+          rather than a code: the group is joined because the transactions
+          share a counterparty account, or because they share a description.
+          The copy is added to messages/en.json first as the source and
+          translated into messages/nl.json and messages/fr.json in the same
+          change, in the neutral register the pulse-frontend skill's section 7
+          requires, and it never implies the reader did anything wrong.
+      - text: >-
+          Give an account-basis group a label a person can recognise, per
+          decision D-41: the counterparty name where any row of the group
+          carries one, and the counterparty account in masked display form
+          otherwise. The mask is applied in the display layer only, beside
+          the existing card-number mask (src/platform/ui/mask-card-number.ts),
+          and never in the key: a masked key would produce a stored rule that
+          can never match a second transaction, which is exactly the hazard
+          src/modules/merchants/domain/normalise-counterparty.ts:84 through
+          :88 already names.
+      - text: >-
+          Say how far the naming reaches, using the count the group already
+          carries: the form states, before it is submitted, how many
+          transactions of this month the naming will apply to right now. That
+          is a fact computed from the rows and never a prediction, and it is
+          the direct answer to the owner's question at the place the question
+          is asked.
+      - text: >-
+          Let the transactions behind a group be seen, so a group holding two
+          purposes reads as two lines the owner can point at rather than as
+          one opaque total. Each line shows that transaction's own booking
+          date, its own amount through the mandatory money rendering the
+          pulse-frontend skill fixes, and its own description. No new client
+          component and no new server action: the rows come from the same read
+          that builds the groups.
+      - text: >-
+          Keep the whole screen on tokens: no literal colour, font size or
+          spacing value is added, and any value that has no token gets one in
+          styles/tokens.css first (CLAUDE.md non-negotiable 4).
+      - text: >-
+          Run the full gate in the worktree with pinned local database
+          credentials per the fleet environment warnings: npm run typecheck,
+          npm run lint, npm test, npm run gate:privacy, then npm run test:e2e.
+    files-to-touch:
+      - src/modules/merchants/ui/merchant-review.tsx
+      - src/modules/merchants/ui/actions.ts
+      - src/modules/merchants/domain/merchant-review.ts
+      - src/modules/merchants/application/merchant-review.ts
+      - src/modules/merchants/adapters/merchant-repository.ts
+      - src/platform/ui/
+      - src/app/globals.css
+      - styles/tokens.css
+      - messages/en.json
+      - messages/nl.json
+      - messages/fr.json
+      - test/e2e/
+      - test/domain/
+    extras: []
+    acceptance:
+      - id: "13.1"
+        criterion: >-
+          npm run test:e2e exits 0 with a spec that loads /merchants for a
+          household imported from test/fixtures/belfius-counterparty-identity.pdf
+          at a 390 by 844 viewport and asserts, by testid, that the group
+          holding 3 transactions of one counterparty renders a count of 3 and
+          a basis line whose text is the catalogue string for the
+          shared-account basis, and that a descriptor-basis group renders the
+          catalogue string for the shared-description basis. Asserting that
+          the strings exist in the catalogue does not meet this criterion; the
+          assertion is on the rendered page.
+      - id: "13.2"
+        criterion: >-
+          THE ACCOUNT NEVER LEAVES THE DISPLAY LAYER UNMASKED AND NEVER ENTERS
+          THE KEY. For an account-basis group whose rows carry no counterparty
+          name, the rendered HTML of /merchants contains the masked form and
+          does NOT contain the unmasked account anywhere, asserted over the
+          full page source; and the hidden field the naming form submits
+          carries the unmasked namespaced identity key, asserted on the same
+          page. A test asserts the same masking function is not called
+          anywhere in src/modules/merchants/domain or
+          src/modules/merchants/application.
+      - id: "13.3"
+        criterion: >-
+          THE ROWS BEHIND A GROUP ARE VISIBLE. The same spec opens the group
+          holding 3 transactions and asserts 3 rows render, each with a
+          distinct description, a distinct booking date and its own amount,
+          and that the three amounts sum to the group total shown on the group
+          row, compared in integer cents.
+      - id: "13.4"
+        criterion: >-
+          THE REACH IS STATED BEFORE THE NAMING. The naming form for that
+          group renders the catalogue string carrying the number 3, and the
+          form for a group of 1 renders the same string carrying 1, asserted
+          on the rendered page in English and, with the locale switched, in
+          Dutch and in French.
+      - id: "13.5"
+        criterion: >-
+          A NAMING STILL MOVES NO TOTAL. The existing hazard H3.2 journey
+          stays green: the spec reads both direction totals before and after a
+          naming and asserts they are byte-identical, so this screen change
+          cannot have moved a cent between income and spend.
+      - id: "13.6"
+        criterion: >-
+          TOKENS ONLY. grep over the files this phase touches finds no literal
+          hex colour, no rgb() or hsl() literal, no px or rem font size and no
+          px or rem spacing value outside styles/tokens.css, and any token
+          added is declared in styles/tokens.css in the same commit.
+      - id: "13.7"
+        criterion: >-
+          THREE LANGUAGES, NO ORPHANS. Every key added to messages/en.json
+          exists in messages/nl.json and messages/fr.json, asserted by the
+          existing copy gate, and no user-facing string is hardcoded in a
+          component, asserted by grep over
+          src/modules/merchants/ui/merchant-review.tsx.
+      - id: "13.8"
+        criterion: >-
+          THE STANDING GATE. npm run typecheck, npm run lint, npm test and
+          npm run gate:privacy all exit 0, and npm run test:e2e exits 0, each
+          with its captured output in the phase work history.
+      - id: "13.9"
+        criterion: >-
+          NOTHING OF THE OWNER'S DATA REACHES THE REPOSITORY. Every string,
+          identifier and amount used in the new spec and in any new fixture is
+          invented, listed in test/fixtures/allowed-identifiers.txt where the
+          privacy gate requires it, and the phase work history quotes no
+          descriptor, counterparty, place, amount or date from either real
+          document. The branch's commit messages carry no data of any kind.
+    hazard-classes:
+      - id: H13.1
+        statement: >-
+          The screen puts the counterparty account, masked or not, into the
+          grouping key or into the stored rule pattern, so a naming can never
+          match a second transaction.
+        addressed-by: criterion 13.2
+      - id: H13.2
+        statement: >-
+          The unmasked account is rendered somewhere on the page and the owner
+          hands a screenshot to someone.
+        addressed-by: criterion 13.2
+      - id: H13.3
+        statement: >-
+          A group holding two purposes reads as a mistake, so the owner
+          distrusts a grouping DR-0027 deliberately chose.
+        addressed-by: criterion 13.3
+      - id: H13.4
+        statement: >-
+          The basis line is written as English text in the component, so the
+          Dutch and French readers see English or see nothing.
+        addressed-by: criterion 13.7
+      - id: H13.5
+        statement: >-
+          The screen change moves a figure, so a naming is no longer safe to
+          make.
+        addressed-by: criterion 13.5
+      - id: H13.6
+        statement: >-
+          The stated reach is a guess rather than the group's actual row
+          count, so the screen makes a second promise it cannot keep.
+        addressed-by: criterion 13.4
+      - id: H13.7
+        statement: >-
+          This phase lands on top of M3-P8's rebuilt phone row and silently
+          reverts it, or is built against the baseline row and does not fit
+          the rebuilt one.
+        addressed-by: >-
+          judgment-property-of-prose: the verification-first step requires the
+          screen to be re-read at M3-P12's merged head and requires M3-P8's
+          merge state to be recorded before any edit, and conflicts-with names
+          M3-P8.
+      - id: H13.8
+        statement: >-
+          A literal colour or spacing value is added because the design needed
+          one and no token existed.
+        addressed-by: criterion 13.6
+    migrations: none
+    conflicts-with:
+      - M3-P8
+      - M3-P11
+    parallelizable: false
+    citations:
+      - R-005
+      - R-010a
+      - DR-0027
 decisions:
   - id: D-1
     statement: >-
@@ -6465,10 +7396,172 @@ decisions:
       unmasked copy of the normalised descriptor
       (src/modules/merchants/domain/merchant-review.ts:80), which M3-P11's
       third step now masks.
+  - id: D-36
+    statement: >-
+      The question this work answers, in the owner's own words, recorded so
+      that a later reader can check the answer against the question rather
+      than against a paraphrase of it. Looking at the deployed merchant review
+      on their phone on 2026-08-23: "if I name a merchant .. what is the thing
+      new transactions will match on? if I look at the first two here ... they
+      are seperate according to pulse, but they are the same bank account. if
+      the full description is used at matching string .. I think pulse has
+      zero ability to deliver on its promise." They were right about the
+      mechanism and about the consequence. The measured shape of it is in this
+      plan's report-code-disagreement entries for M3-P12; the owner's answer
+      to the product question it raised is DR-0027.
+  - id: D-37
+    statement: >-
+      Merchant identity is a NAMESPACED KEY plus a two-valued BASIS, derived
+      by one pure function in the merchants domain. Where the row carries a
+      counterparty account the key is that account, uppercased and
+      whitespace-stripped, under an account namespace, and nothing else is
+      consulted: not the counterparty name, not the description, not the
+      communication (DR-0027). Where it does not, the key is the normalised
+      descriptor under a descriptor namespace, unchanged from the baseline.
+      Chosen over three alternatives. Over account plus communication, which
+      DR-0027 rejected with its cost stated. Over a new column on MerchantRule
+      carrying the basis, because the namespace prefix carries the same
+      information with no schema migration and the unique index on (household,
+      kind, pattern) keeps working unchanged. And over letting the account
+      lose to a carried counterparty name, because a name is display text a
+      bank can change between exports while an account number is the thing the
+      money actually moved to, which is the whole content of DR-0027.
+  - id: D-38
+    statement: >-
+      NO NEW DESCRIPTOR FAMILY IS ADDED, and the refusal is the measurement
+      rather than caution. The dispatch that opened this round expected the
+      rows carrying no counterparty account to need a descriptor grammar the
+      way the card family got one in M3-P6. Measured through the shipped
+      predicate over the real Belfius document: 23 of those 28 rows are
+      ALREADY recognised by the card grammar, and the residue is 5 rows over 4
+      distinct opening tokens producing 5 distinct keys. Inducing a family
+      from at most one candidate pair on one month of one bank is exactly the
+      widening this codebase forbids one tier down
+      (src/modules/merchants/domain/normalise-counterparty.ts:127 through
+      :132: pin the accepted shapes, never widen to a shape nobody has seen),
+      and the cost of getting it wrong is a silent merge of two counterparties,
+      which is worse than the visible non-convergence it would replace. Those
+      5 rows therefore keep exactly the key they have today, so they can never
+      merge with anything, and M3-P13 states their basis and their reach on
+      the screen so the residue is VISIBLE and countable instead of guessed.
+      The second family is added when a second real statement supplies the
+      evidence for it, not before.
+  - id: D-39
+    statement: >-
+      Declarations already written against the old key are RE-DERIVED, never
+      dropped and never left dead. The deployed database holds one MerchantRule
+      row and one merchant, measured read-only on 2026-08-23, so exactly one
+      naming the owner made is at stake, and the M3-P6 note that the table was
+      empty (src/modules/merchants/domain/normalise-counterparty.ts:74 through
+      :80) no longer holds. An idempotent household-scoped routine reads the
+      rules and the facts, finds for each rule the transactions whose baseline
+      key equals its stored pattern, and rewrites the pattern to the identity
+      those transactions now produce when they produce exactly one. It DELETES
+      NOTHING: a rule with no matching transaction, a rule whose transactions
+      now produce more than one identity, and a rule whose new pattern would
+      collide with a rule pointing at a different merchant are all left exactly
+      as they are and reported by id and reason, with a non-zero exit, so a
+      naming that cannot be carried across stops the deploy rather than
+      disappearing from it. Rejected: dropping the rules and returning the
+      counterparty to unnamed, which discards owner work the owner never
+      agreed to discard; and leaving them dead, which discards the same work
+      while looking like it did not. Facts are untouched throughout: this is a
+      rewrite of DECLARATIONS followed by the existing recompute, which is the
+      only thing that writes transactions.merchantId.
+  - id: D-40
+    statement: >-
+      PREFIX and PATTERN stay declared, stay live and gain one refusal. The
+      dispatch recorded them as dead; they are not. The matcher applies PREFIX
+      at src/modules/merchants/domain/merchant-rule.ts:74 and PATTERN at
+      src/modules/merchants/domain/merchant-rule.ts:81, and a test already
+      exercises a PREFIX rule (test/application/resolve-merchants.test.ts:373).
+      What is dead is the WRITE path: assignMerchant hardcodes EXACT
+      (src/modules/merchants/application/assign-merchant.ts:63) and is the only
+      caller of upsertRule in src. Removing the two kinds would be a Prisma
+      enum migration that destroys a working matcher capability for zero
+      deployed rows, and adding a write surface for them would re-open the
+      substring guessing DR-0027 just closed, so neither is done. Instead:
+      both kinds remain, matchRules REFUSES to apply either to an
+      account-basis key, because a prefix of an account number is a different
+      account and matching it would merge two counterparties, and the schema
+      comment and the resolver header are corrected to state plainly that no
+      product surface writes either kind today and that both are reserved for
+      the slice-5 accepted-answer path. Cost: no migration, no schema change.
+  - id: D-41
+    statement: >-
+      An account-basis group is LABELLED by the counterparty name where any of
+      its rows carries one and by the counterparty account in masked display
+      form otherwise. The label is display only and never the key: a masked
+      key would produce a stored rule that can never match a second
+      transaction, which is the hazard
+      src/modules/merchants/domain/normalise-counterparty.ts:84 through :88
+      already names for card numbers. Chosen over labelling the group with one
+      of its rows' descriptors, which would present a per-transaction string
+      as the group's identity and is the exact confusion this work exists to
+      remove. The name is preferred over the account only because it reads
+      better, and it changes nothing about what the group is: the account
+      decides membership either way.
+  - id: D-42
+    statement: >-
+      The identity is computed by the CALLER and passed to the
+      MerchantResolver port as distinct keys, rather than the port growing a
+      row-shaped parameter. The ledger already imports counterpartyText from
+      the merchants module (src/modules/ledger/application/interpret-window.ts:111),
+      so it imports counterpartyIdentity the same way, and the port keeps
+      exactly one member taking distinct strings
+      (src/modules/ledger/application/ports.ts:45). That single member is what
+      makes it structurally impossible for interpretation to write a
+      MerchantRule (src/modules/ledger/application/ports.ts:31 through :39,
+      pulse-domain section 2 rule 3), and it is worth more than the
+      convenience of passing rows. The member is RENAMED in the same change so
+      that a caller still passing a raw description fails to compile instead
+      of silently resolving nothing.
 open-questions:
   - DR-0002
   - DR-0023
 parked:
+  - item: >-
+      Extracting a counterparty NAME from a Belfius PDF description, so that
+      an account-basis group can be labelled without falling back to a masked
+      account number.
+    reason: >-
+      Not needed for identity and not free. The Belfius template populates
+      only the account
+      (src/modules/import/domain/belfius-current-account-template.ts:265
+      through :281) and counterpartyName is populated on zero rows of the
+      owner's month. Adding a name would change what the IMPORTER writes into
+      a FACT column, which is a template version bump and a re-parse of stored
+      raw lines rather than a recompute
+      (src/modules/import/domain/parse-pdf-statement.ts:25 through :30,
+      pulse-domain section 2's one exception). The identity does not depend on
+      it, because the account decides membership, and decision D-41 gives the
+      label a correct fallback. Revisit when the masked account proves
+      unreadable in use.
+  - item: >-
+      The Belgian-length-only counterparty account pattern in the Belfius PDF
+      template, DESCRIPTION_IBAN at
+      src/modules/import/domain/belfius-current-account-template.ts:88, which
+      matches a two-letter country code plus two check digits plus exactly
+      three groups of four and therefore cannot see a foreign counterparty
+      account inside a description.
+    reason: >-
+      Measured before parking it: zero of the 28 rows of the owner's month
+      that carry no extracted account contain any token of IBAN shape at all,
+      permissive pattern included, so widening it would recover nothing today
+      and would be a template change on no evidence. It is recorded here
+      because it is the mechanism by which a future foreign counterparty falls
+      out of the account basis and into the descriptor basis without anything
+      saying so, and because the phase that adds a second bank template will
+      meet it.
+  - item: >-
+      Separating two different purposes paid to the same counterparty, now
+      that DR-0027 puts them in one merchant group.
+    reason: >-
+      The owner decided it and stated the cost: it is a TAG question rather
+      than a merchant question (DR-0027, chosen option). Tags already hang off
+      the merchant (pulse-domain section 7), so nothing in M3-P12 or M3-P13
+      forecloses it. Recorded so a later reader does not read the merged group
+      as a defect and reopen a decided question.
   - item: >-
       Cross-format dedup unification (the same period imported once as CSV
       and once as PDF stores every row twice, because the hash tuple and
