@@ -243,14 +243,26 @@ const sweep = async (page: Page): Promise<readonly Swept[]> => {
   }, CONTROL_SELECTOR);
 };
 
-// EVERY SNAPSHOT IS TAKEN AFTER THE TRANSITION HAS FINISHED. This phase is
-// the first to put a transition on anything, and the consequence measured
-// while building it is that a computed style read the instant after a state
-// is applied returns the value the control is transitioning FROM, not the
-// one it is transitioning to: the first green attempt failed with a contrast
-// ratio of exactly 1.000 on a control whose disabled rule was present and
-// correct. Infinite animations are excluded, because the busy mark's loop
-// never finishes by design.
+// EVERY SNAPSHOT IS TAKEN AFTER THE TRANSITION HAS FINISHED, AND THE RULE IS
+// NOT LOCAL TO THIS FILE. The mechanism is READING A COMPUTED STYLE ACROSS A
+// STATE CHANGE THAT IS TRANSITIONED: the read returns the value the element
+// is transitioning FROM, not the one it is transitioning to. This phase is
+// the first to put a transition on anything in this product, so this file is
+// where the rule was paid for: the first attempt at a green run failed with a
+// contrast ratio of exactly 1.000 on a control whose disabled rule was
+// present and correct, which is a false red, and the same mechanism produces
+// a false GREEN wherever a measurement expects two states to look the same.
+//
+// THE SIBLINGS THAT SHARE IT, so the next reader knows the rule is not local:
+// every existing spec that reads getComputedStyle after changing state or
+// route, which today is test/e2e/month-view.spec.ts, and, next, M3-P10's
+// measurement of the interval between a press and the first DOM change,
+// which reads a style immediately after a press by design and is the phase
+// this trap is most likely to bite. The remedy is the settle() below, not a
+// fixed wait.
+//
+// Infinite animations are excluded from the wait, because the busy mark's
+// loop does not finish by design.
 const settle = async (el: Locator): Promise<void> => {
   await el.evaluate(async (node) => {
     // Force the pending style recalculation, so a transition that has just
