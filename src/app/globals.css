@@ -1330,3 +1330,201 @@
     padding: 0;
   }
 }
+
+/*
+ * ---------------------------------------------------------------------
+ * THE STATE VOCABULARY (M3-P9)
+ *
+ * A control looks pressed while it is being pressed, and looks unusable
+ * while it cannot be used. Built only from the motion and state tokens in
+ * styles/tokens.css; no literal duration, curve, colour or length appears
+ * below, which criterion 9.5(c) checks with a grep the repository's own
+ * token gate cannot see, because that gate matches colours and font sizes
+ * only and a literal "120ms" would pass it unnoticed.
+ *
+ * WHY THE SELECTORS ARE ELEMENTS AND NOT CLASSES. Every button, every
+ * anchor and the one disclosure summary in this product is a control:
+ * the census behind criterion 9.2(a) found nineteen of them across
+ * seventeen source sites and no other button or anchor anywhere. Naming
+ * the elements rather than nineteen class names means a screen added
+ * later inherits the pressed state instead of shipping without one, which
+ * is the failure this phase exists to answer.
+ *
+ * WHAT THIS PHASE DOES NOT DO. Nothing here sets aria-busy, aria-disabled
+ * or data-unconfirmed; no control in the product enters those states until
+ * M3-P10 and M3-P11. This is the vocabulary those phases enter, and
+ * decision D-28 records plainly what measuring it through the DOM proves
+ * and what it does not.
+ *
+ * THE PLATFORM'S OWN TAP HIGHLIGHT STAYS. The webkit property that turns
+ * it off is deliberately not set anywhere: on the reporter's platform that
+ * highlight is the only press feedback the product had before this phase,
+ * and removing it in the same change that adds a pressed state would leave
+ * a touch device with a different cue rather than a better one. The
+ * property's name is spelled out rather than written here, because
+ * criterion 9.2(c) greps these files for it and requires nothing.
+ * ---------------------------------------------------------------------
+ */
+
+/* THE TRANSITION, on the controls themselves, so the reduced-motion block
+ * in styles/tokens.css reaches every one of them by redefining the two
+ * durations at :root. No rule below carries a duration of its own and none
+ * carries a reduced-motion variant of its own. */
+button,
+a,
+summary,
+input[type="submit"],
+input[type="button"],
+[role="button"] {
+  transition:
+    transform var(--duration-press) var(--ease-standard),
+    background-color var(--duration-state) var(--ease-standard),
+    color var(--duration-state) var(--ease-standard),
+    border-color var(--duration-state) var(--ease-standard),
+    opacity var(--duration-state) var(--ease-standard);
+}
+
+/* AN ANCHOR HAS TO BE ABLE TO MOVE. A non-replaced inline box is not
+ * transformable, and the trap measured while building this phase is that
+ * getComputedStyle STILL REPORTS the translation matrix on one: the
+ * computed value says the control moved while its own bounding box did not
+ * change by a pixel. Four of the nineteen controls are bare anchors (the
+ * two auth cross-links and the two links on the import result screens);
+ * the others already declare a flex or inline-flex box of their own and
+ * their own display rule wins over this one on specificity. The spec
+ * asserts the box moves as well as the matrix, so this rule cannot be
+ * dropped silently. */
+a {
+  display: inline-block;
+}
+
+/* THE PRESSED APPEARANCE. It moves AND it changes surface, and it does
+ * both rather than either: the movement is what survives a phone screen in
+ * daylight, and the surface change is what a reader who cannot perceive
+ * the movement gets. */
+button:active,
+a:active,
+summary:active,
+input[type="submit"]:active,
+input[type="button"]:active,
+[role="button"]:active {
+  transform: translateY(var(--press-offset));
+  background-color: var(--color-surface-pressed);
+}
+
+/* Controls whose resting surface is --color-surface-inverse press to the
+ * inverse pressed step instead; the ramp carries nothing darker than the
+ * resting value, so the pressed step is one lighter. */
+.auth-submit:active,
+.import-primary:active,
+.merchant-name-button:active {
+  background-color: var(--color-surface-inverse-pressed);
+}
+
+/* THE DISABLED APPEARANCE, for M3-P10 to enter. :disabled covers the
+ * buttons and inputs; [aria-disabled="true"] covers the links and the
+ * disclosure summary, which have no disabled attribute to set. The cursor
+ * stops being a pointer, which is the only cue the product had before this
+ * phase and the one a phone cannot draw at all. */
+/* THE ELEMENT-QUALIFIED SELECTORS ARE NOT DECORATION. `.spec-editor
+ * summary` declares cursor: pointer at the same specificity as a bare
+ * attribute selector plus one, so without `summary[aria-disabled="true"]`
+ * a disabled disclosure kept the pointer cursor; the spec caught exactly
+ * that. The anchor variant is here for the same reason before a class rule
+ * grows one. */
+button:disabled,
+input:disabled,
+[aria-disabled="true"],
+a[aria-disabled="true"],
+summary[aria-disabled="true"] {
+  background-color: var(--color-surface-disabled);
+  color: var(--color-ink-disabled);
+  border-color: var(--color-surface-disabled);
+  opacity: 0.55;
+  cursor: default;
+  text-decoration: none;
+}
+
+/* A disabled control does not respond to hover either. The four hover
+ * rules this stylesheet already carried, and the bare a:hover in
+ * styles/tokens.css, are all more specific than the disabled rule above,
+ * so without this the colour of a disabled control would come back the
+ * moment a pointer crossed it. It changes nothing about the hover baseline
+ * criterion 9.2 measures against, because it applies only where the
+ * disabled state is present and 9.2 measures controls that carry none. */
+button:disabled:hover,
+input:disabled:hover,
+[aria-disabled="true"]:hover {
+  color: var(--color-ink-disabled);
+  text-decoration: none;
+}
+
+/* A disabled control does not respond to a press. */
+button:disabled:active,
+input:disabled:active,
+[aria-disabled="true"]:active {
+  transform: none;
+  background-color: var(--color-surface-disabled);
+}
+
+/* THE BUSY APPEARANCE. The control keeps its label and gains a mark drawn
+ * as a pseudo-element on the control itself, so M3-P10 adds no markup for
+ * it and no message key in any language. [aria-busy="true"] is what a
+ * button carries; .pulse-busy is the class the link-shaped controls carry,
+ * because a navigation that is under way is not an element whose contents
+ * assistive technology should be told to hold back. */
+[aria-busy="true"],
+a[aria-busy="true"],
+summary[aria-busy="true"],
+.pulse-busy {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+[aria-busy="true"]::after,
+.pulse-busy::after {
+  content: "";
+  display: inline-block;
+  vertical-align: middle;
+  flex: none;
+  width: var(--space-5);
+  height: var(--space-5);
+  margin-left: var(--space-4);
+  border-radius: 50%;
+  background-color: currentColor;
+  animation: pulse-busy-cycle var(--duration-busy-cycle) var(--ease-standard)
+    infinite;
+}
+
+/* THE UNCONFIRMED MARKING, for M3-P11 to enter on a predicted row. It is a
+ * data attribute and NOT aria-busy: aria-busy tells assistive technology
+ * to hold back the changes inside the element, which would suppress the
+ * announcement of the very change the marking exists to describe. */
+[data-unconfirmed] {
+  opacity: 0.72;
+  transition: opacity var(--duration-state) var(--ease-standard);
+}
+
+[data-unconfirmed]::after {
+  content: "";
+  display: inline-block;
+  vertical-align: middle;
+  flex: none;
+  width: var(--space-4);
+  height: var(--space-4);
+  margin-left: var(--space-4);
+  border-radius: 50%;
+  border: var(--border-hairline) solid currentColor;
+}
+
+/* The busy mark's loop. It stands still under reduced motion without a
+ * variant of its own, because --duration-busy-cycle is redefined to zero
+ * at :root there and an animation of zero duration does not run. */
+@keyframes pulse-busy-cycle {
+  from {
+    opacity: 0.25;
+  }
+  to {
+    opacity: 1;
+  }
+}

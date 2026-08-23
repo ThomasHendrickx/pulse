@@ -86,7 +86,12 @@ export default defineConfig({
         hasTouch: true,
         viewport: { width: 390, height: 844 },
       },
-      testMatch: /(month-view|navigation)\.spec\.ts/,
+      // M3-P9 widens this to carry the pressed, disabled and busy
+      // measurement at 390 by 844 as well as at the desk width, under the
+      // touch emulation this project declares: a held press measured
+      // without hasTouch is a desktop measurement at a phone width, which
+      // is the error class this round exists to avoid.
+      testMatch: /(month-view|navigation|pressed-and-disabled)\.spec\.ts/,
     },
   ],
   ...(externalBaseUrl

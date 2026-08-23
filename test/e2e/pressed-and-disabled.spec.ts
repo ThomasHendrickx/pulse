@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { join } from "node:path";
 
 // M3-P9, criteria 9.2, 9.3 and 9.4. THE PRESSED APPEARANCE IS MEASURED BY
@@ -243,6 +243,34 @@ const sweep = async (page: Page): Promise<readonly Swept[]> => {
   }, CONTROL_SELECTOR);
 };
 
+// EVERY SNAPSHOT IS TAKEN AFTER THE TRANSITION HAS FINISHED. This phase is
+// the first to put a transition on anything, and the consequence measured
+// while building it is that a computed style read the instant after a state
+// is applied returns the value the control is transitioning FROM, not the
+// one it is transitioning to: the first green attempt failed with a contrast
+// ratio of exactly 1.000 on a control whose disabled rule was present and
+// correct. Infinite animations are excluded, because the busy mark's loop
+// never finishes by design.
+const settle = async (el: Locator): Promise<void> => {
+  await el.evaluate(async (node) => {
+    // Force the pending style recalculation, so a transition that has just
+    // been triggered exists before it is asked for.
+    void getComputedStyle(node).backgroundColor;
+    const running = node.getAnimations().filter((animation) => {
+      const timing = animation.effect?.getComputedTiming();
+      return animation.playState === "running" && timing?.iterations !== Infinity;
+    });
+    await Promise.all(
+      running.map((animation) =>
+        animation.finished.then(
+          () => undefined,
+          () => undefined,
+        ),
+      ),
+    );
+  });
+};
+
 const measureScreen = async (
   page: Page,
   reduced: boolean,
@@ -261,6 +289,7 @@ const measureScreen = async (
 
     // ---------- at rest, pointer parked away from the control ----------
     await page.mouse.move(PARKING_SPOT.x, PARKING_SPOT.y);
+    await settle(el);
     const rest = (await el.evaluate((n) => window.__m3p9.snapshot(n))) as Snapshot;
 
     // ---------- 9.4(a) and 9.4(b): the motion budget ----------
@@ -282,6 +311,7 @@ const measureScreen = async (
     const disabledAttr =
       control.tag === "button" || control.tag === "input" ? "disabled" : "aria-disabled";
     await el.evaluate((n, attr) => n.setAttribute(attr, attr === "disabled" ? "" : "true"), disabledAttr);
+    await settle(el);
     const disabled = (await el.evaluate((n) => window.__m3p9.snapshot(n))) as Snapshot;
     await el.evaluate((n, attr) => n.removeAttribute(attr), disabledAttr);
     await assertMagnitude(page, rest, disabled, `disabled ${where}`);
@@ -291,6 +321,7 @@ const measureScreen = async (
 
     // ---------- 9.3(b): busy ----------
     await el.evaluate((n) => n.setAttribute("aria-busy", "true"));
+    await settle(el);
     const busy = (await el.evaluate((n) => window.__m3p9.snapshot(n))) as Snapshot;
     await el.evaluate((n) => n.removeAttribute("aria-busy"));
     await assertMagnitude(page, rest, busy, `busy ${where}`);
@@ -299,8 +330,10 @@ const measureScreen = async (
 
     // ---------- 9.2(b): the pressed difference, against the HOVERING state ----------
     await page.mouse.move(centre.x, centre.y);
+    await settle(el);
     const hovering = (await el.evaluate((n) => window.__m3p9.snapshot(n))) as Snapshot;
     await page.mouse.down();
+    await settle(el);
     const held = (await el.evaluate((n) => window.__m3p9.snapshot(n))) as Snapshot;
     await page.mouse.move(PARKING_SPOT.x, PARKING_SPOT.y);
     await page.mouse.up();
@@ -450,8 +483,10 @@ const runJourney = async (page: Page, reduced: boolean): Promise<void> => {
   await page.evaluate(INSTALL_HELPERS);
   const row = page.getByTestId("unresolved-group").first();
   await expect(row).toBeVisible();
+  await settle(row);
   const rowRest = (await row.evaluate((n) => window.__m3p9.snapshot(n))) as Snapshot;
   await row.evaluate((n) => n.setAttribute("data-unconfirmed", ""));
+  await settle(row);
   const rowMarked = (await row.evaluate((n) => window.__m3p9.snapshot(n))) as Snapshot;
   await row.evaluate((n) => n.removeAttribute("data-unconfirmed"));
   await assertMagnitude(page, rowRest, rowMarked, "unconfirmed row");
@@ -474,8 +509,13 @@ const runJourney = async (page: Page, reduced: boolean): Promise<void> => {
   await expect(page.getByTestId("import-failed")).toBeVisible();
   await measure();
 
-  // 9.2(a): the collected set, in BOTH directions.
+  // 9.2(a): the collected set, in BOTH directions. The set is PRINTED as
+  // well as asserted, so a reader of a run can see the denominator the
+  // measurement used rather than taking the count on trust.
   const found = [...collected].sort();
+  console.log(
+    `swept control set (${found.length}):\n  ${found.join("\n  ")}`,
+  );
   const expected = [...ENUMERATION].sort();
   expect(found, "the swept control set is not the enumeration").toEqual(expected);
   expect(found).toHaveLength(19);
