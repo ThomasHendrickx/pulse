@@ -7,7 +7,7 @@
 
 import { statementParser } from "../../src/modules/import/adapters/statement-parser";
 import { interpretForImport } from "../../src/modules/ledger/application/interpret-window";
-import { resolveCounterparties } from "../../src/modules/merchants/application/resolve-counterparties";
+import { resolveIdentities } from "../../src/modules/merchants/application/resolve-identities";
 import type { MerchantRuleLike } from "../../src/modules/merchants/domain/merchant-rule";
 import type {
   MerchantRecord,
@@ -510,6 +510,9 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
           ...(stored.counterpartyName === undefined
             ? {}
             : { counterpartyName: stored.counterpartyName }),
+          ...(stored.counterpartyIban === undefined
+            ? {}
+            : { counterpartyAccount: stored.counterpartyIban }),
           ...(stored.merchantId === undefined
             ? {}
             : { merchantId: stored.merchantId }),
@@ -640,8 +643,8 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
     // interpretation's whole merchants surface is this one read-only
     // function (criterion 3.2).
     merchants: {
-      resolveCounterparties: (context, texts) =>
-        resolveCounterparties(context, { merchants: merchantsPort }, texts),
+      resolveIdentities: (context, identityKeys) =>
+        resolveIdentities(context, { merchants: merchantsPort }, identityKeys),
     },
   };
 

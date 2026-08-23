@@ -7,6 +7,7 @@
 // groups are, which is what the e2e asserts stays fixed across a naming.
 
 import type { Cents } from "@/platform/money";
+import { counterpartyIdentity } from "./counterparty-identity";
 import {
   counterpartyText,
   normaliseCounterparty,
@@ -25,6 +26,12 @@ export type CountedRow = {
   readonly amountCents: Cents;
   readonly description: string;
   readonly counterpartyName?: string;
+  // The counterparty ACCOUNT as the importer stored it, unvalidated. M3-P12:
+  // the review keys on counterpartyIdentity, whose account branch reads this
+  // field, so the repository read must select it. A row that carries none, or
+  // carries one the trust gate refuses, keeps exactly the descriptor key it
+  // had before this phase.
+  readonly counterpartyAccount?: string;
   readonly merchantId?: string;
 };
 
@@ -34,13 +41,16 @@ export type MerchantNameLike = {
 };
 
 export type ReviewGroup = {
-  // Merchant id for resolved groups, normalised counterparty text for
-  // unresolved ones: stable within a household either way.
+  // Merchant id for resolved groups, the namespaced counterparty IDENTITY
+  // key for unresolved ones (M3-P12): stable within a household either way.
   readonly key: string;
   readonly label: string;
   readonly merchantId?: string;
-  // The text the assignment form submits for an unresolved group; absent
-  // on resolved groups.
+  // What the assignment form submits for an unresolved group: the identity
+  // key, which is what assignMerchant stores as the rule subject. Absent on
+  // resolved groups. NAME KEPT rather than renamed to `identityKey`, because
+  // this field is the wire contract of the shipped form and the server action
+  // reads it by this name; the comment is what says it is no longer a text.
   readonly counterpartyText?: string;
   readonly totalCents: Cents;
   readonly count: number;
@@ -76,21 +86,35 @@ const groupDirection = (
   >();
   for (const row of rows) {
     const merchantId = row.merchantId;
-    const normalised = normaliseCounterparty(counterpartyText(row));
-    const key = merchantId ?? normalised;
+    const identity = counterpartyIdentity(row);
+    // THE UNRESOLVED LABEL IS UNCHANGED BY THIS PHASE: it is still the
+    // normalised counterparty text. What changed is that an account-basis
+    // group now holds SEVERAL such texts, so "the label" needs a rule; the
+    // rule is the lexicographically smallest, which is deterministic
+    // whatever order the rows arrive in and is therefore the same on this
+    // screen and on the month view, whose rows come out of SQL in no
+    // guaranteed order. Naming the group properly (the carried counterparty
+    // name, or the masked account) is decision D-41 and belongs to M3-P13
+    // with the basis and the row count; putting a bare account number here
+    // would be that phase's work done badly and early.
+    const unresolvedLabel = normaliseCounterparty(counterpartyText(row));
+    const key = merchantId ?? identity.key;
     const entry = groups.get(key);
     if (entry !== undefined) {
       entry.total += row.amountCents;
       entry.count += 1;
+      if (merchantId === undefined && unresolvedLabel < entry.label) {
+        entry.label = unresolvedLabel;
+      }
       continue;
     }
     groups.set(key, {
       label:
         merchantId === undefined
-          ? normalised
-          : (merchantNames.get(merchantId) ?? normalised),
+          ? unresolvedLabel
+          : (merchantNames.get(merchantId) ?? unresolvedLabel),
       ...(merchantId === undefined
-        ? { counterpartyText: normalised }
+        ? { counterpartyText: identity.key }
         : { merchantId }),
       total: row.amountCents,
       count: 1,

@@ -27,11 +27,12 @@ const GroupRow = async ({
       className={unresolved ? "merchant-row merchant-row-unresolved" : "merchant-row"}
       data-testid={unresolved ? "unresolved-group" : "merchant-group"}
     >
-      {/* The label of an unresolved group IS the normalised descriptor, so a
-          card descriptor rendered the card number here. Masked in the
-          RENDERING only (M3-P6, decision D-12): the hidden counterpartyText
-          field below stays UNMASKED, because that value becomes the EXACT
-          MerchantRule pattern and a masked subject would match nothing. */}
+      {/* The label of an unresolved group is the normalised descriptor for a
+          descriptor-basis group, so a card descriptor rendered the card
+          number here. Masked in the RENDERING only (M3-P6, decision D-12):
+          the hidden counterpartyText field below stays UNMASKED, because
+          that value is the counterparty IDENTITY KEY that becomes the EXACT
+          MerchantRule pattern, and a masked subject would match nothing. */}
       <span className="merchant-row-label" data-testid="group-label">
         {maskCardNumbers(group.label)}
       </span>
@@ -98,19 +99,39 @@ const DirectionSection = async ({
   );
 };
 
+// The refusal statuses the assignment action redirects with, mapped to the
+// message that tells the reader what happened (criterion 12.18). A status
+// this map does not carry renders nothing, so an unknown query string can
+// never put an empty banner on the screen.
+const REFUSAL_MESSAGE: Readonly<Record<string, "nameRefusedStale" | "nameRefusedName" | "nameRefusedAccount">> =
+  {
+    "empty-merchant-name": "nameRefusedName",
+    "empty-counterparty": "nameRefusedStale",
+    "unnamespaced-counterparty": "nameRefusedStale",
+    "untrusted-counterparty-account": "nameRefusedAccount",
+  };
+
 export const MerchantReviewScreen = async ({
   context,
+  status,
 }: {
   readonly context: HouseholdContext;
+  readonly status?: string;
 }) => {
   const [t, review] = await Promise.all([
     getTranslations(),
     listMerchantReview(context),
   ]);
+  const refusal = status === undefined ? undefined : REFUSAL_MESSAGE[status];
   return (
     <section className="merchant-screen">
       <h1>{t("merchants")}</h1>
       <p className="merchant-lead">{t("merchantsBody")}</p>
+      {refusal === undefined ? null : (
+        <p className="merchant-refused" data-testid="naming-refused" role="status">
+          {t(refusal)}
+        </p>
+      )}
       <p className="merchant-note" data-testid="unresolved-count">
         {review.unresolvedCount}{" "}
         {review.unresolvedCount === 1 ? t("unresolvedOne") : t("unresolvedMany")}

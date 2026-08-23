@@ -237,6 +237,11 @@ export const listCountedTransactions = async (
       amountCents: true,
       description: true,
       counterpartyName: true,
+      // M3-P12: the review keys on the counterparty IDENTITY, whose account
+      // branch reads this column. It was not selected before this phase,
+      // which is why the structured account the importer already stored
+      // reached merchant identity through nothing.
+      counterpartyIban: true,
       merchantId: true,
     },
     orderBy: [{ bookingDate: "asc" }, { id: "asc" }],
@@ -256,6 +261,9 @@ export const listCountedTransactions = async (
         ...(row.counterpartyName === null
           ? {}
           : { counterpartyName: row.counterpartyName }),
+        ...(row.counterpartyIban === null
+          ? {}
+          : { counterpartyAccount: row.counterpartyIban }),
         ...(row.merchantId === null ? {} : { merchantId: row.merchantId }),
       },
     ];

@@ -21,7 +21,7 @@ import {
 import {
   listMerchantReview as listMerchantReviewUseCase,
 } from "./merchant-review";
-import { resolveCounterparties as resolveCounterpartiesUseCase } from "./resolve-counterparties";
+import { resolveIdentities as resolveIdentitiesUseCase } from "./resolve-identities";
 import {
   tagMerchant as tagMerchantUseCase,
   type TagMerchantError,
@@ -62,9 +62,23 @@ export type {
 export { matchRules } from "../domain/merchant-rule";
 export { buildMerchantReview, counterpartyText } from "../domain/merchant-review";
 export { normaliseCounterparty } from "../domain/normalise-counterparty";
+export {
+  counterpartyIdentity,
+  identityBasisOfKey,
+  isTrustedCounterpartyAccount,
+  ACCOUNT_NAMESPACE,
+  DESCRIPTOR_NAMESPACE,
+  IDENTITY_NAMESPACES,
+  IBAN_LENGTH_BY_COUNTRY,
+} from "../domain/counterparty-identity";
+export type {
+  CounterpartyIdentity,
+  CounterpartyIdentityBasis,
+  CounterpartyIdentityRow,
+} from "../domain/counterparty-identity";
 export { assignMerchant as assignMerchantWith } from "./assign-merchant";
 export { listMerchantReview as listMerchantReviewWith } from "./merchant-review";
-export { resolveCounterparties as resolveCounterpartiesWith } from "./resolve-counterparties";
+export { resolveIdentities as resolveIdentitiesWith } from "./resolve-identities";
 export { tagMerchant as tagMerchantWith } from "./tag-merchant";
 
 const liveRepository: MerchantRepositoryPort = {
@@ -80,14 +94,14 @@ const liveRepository: MerchantRepositoryPort = {
   listCountedTransactions: repository.listCountedTransactions,
 };
 
-// The RuleResolver behind the ledger's MerchantResolver port: distinct raw
-// strings in, merchant assignments out, rules only (slice 5 adds the LLM
-// step BEHIND this same interface).
-export const resolveCounterparties = (
+// The RuleResolver behind the ledger's MerchantResolver port: distinct
+// counterparty IDENTITY KEYS in, merchant assignments out, rules only
+// (slice 5 adds the LLM step BEHIND this same interface).
+export const resolveIdentities = (
   context: HouseholdContext,
-  texts: readonly string[],
+  identityKeys: readonly string[],
 ): Promise<ReadonlyMap<string, string>> =>
-  resolveCounterpartiesUseCase(context, { merchants: liveRepository }, texts);
+  resolveIdentitiesUseCase(context, { merchants: liveRepository }, identityKeys);
 
 export const assignMerchant = (
   context: HouseholdContext,

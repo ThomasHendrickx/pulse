@@ -39,6 +39,9 @@ export type CountedTransaction = {
   readonly amountCents: Cents;
   readonly description: string;
   readonly counterpartyName?: string;
+  // The stored counterparty account, unvalidated (M3-P12). The identity
+  // derivation's trust gate is what decides whether it is used.
+  readonly counterpartyAccount?: string;
   readonly merchantId?: string;
 };
 
