@@ -346,9 +346,16 @@ export const FIXTURE_A_TOTAL_CENTS = FIXTURE_A_TRANSACTIONS.reduce(
   0,
 );
 
-const bandLineWithBic = `----------------- ${ACCOUNT_IBAN_SPACED} BIC: DEMOBEBB ------------------`;
-const bandLinePlain = `------------------------- ${ACCOUNT_IBAN_SPACED} -------------------------`;
+const bandWithBic = (ibanSpaced: string): string =>
+  `----------------- ${ibanSpaced} BIC: DEMOBEBB ------------------`;
+const bandPlain = (ibanSpaced: string): string =>
+  `------------------------- ${ibanSpaced} -------------------------`;
 
+// `bandIban` is OPTIONAL and defaults to the statement account every
+// fixture before M3-P12 used, so introducing it moves no committed byte
+// (test/domain/pdf-fixtures.test.ts is what says so). M3-P12 needs a second
+// statement account: its fixture must be ingestible beside the others
+// without sharing their account scope.
 const belfiusStatement = (input: {
   readonly pageMarkerFirst: string;
   readonly pageMarkerRest: string;
@@ -358,7 +365,11 @@ const belfiusStatement = (input: {
   readonly pageOneCount: number;
   readonly transactions: readonly FixtureTransaction[];
   readonly annexPage: boolean;
+  readonly bandIban?: string;
 }): PageContent[] => {
+  const bandIban = input.bandIban ?? ACCOUNT_IBAN_SPACED;
+  const bandLineWithBic = bandWithBic(bandIban);
+  const bandLinePlain = bandPlain(bandIban);
   const pageOne = makeBuilder();
   pushHeader(pageOne, input.pageMarkerFirst);
   pageOne.push([{ x: 409.7, text: "DEMO PLUS-REKENING" }]);
@@ -412,7 +423,7 @@ const belfiusStatement = (input: {
     annex.push([{ x: LEFT, text: bandLinePlain }]);
     annex.gap();
     annex.push([{ x: 248.8, text: "BEWIJSSTUK IN EUR" }]);
-    annex.push([{ x: 105.7, text: `INTERESTEN REKENING ${ACCOUNT_IBAN_SPACED}` }]);
+    annex.push([{ x: 105.7, text: `INTERESTEN REKENING ${bandIban}` }]);
     annex.push([{ x: 105.7, text: "VOOR DE PERIODE VAN 01/02/2026 TOT 30/04/2026" }]);
     annex.gap();
     annex.push([{ x: 105.7, text: "INTERESTEN DEBET CREDIT RESULTAAT" }]);
@@ -1206,8 +1217,427 @@ const unknownLayoutPages = (): PageContent[] => {
 };
 
 // ---------------------------------------------------------------------
+// M3-P12 counterparty-identity fixture. It reproduces the SHAPE of the
+// owner's real month and nothing of its content: rows sharing one
+// counterparty account with a different free-text communication on each,
+// rows sharing one counterparty account with a different reference on each,
+// card-descriptor rows carrying their own date and amount, and rows with
+// neither an account nor a card shape whose descriptors differ per row.
+//
+// EVERY VALUE BELOW IS INVENTED. The accounts are hand-built digit runs
+// with the ISO 7064 check digits computed for them so the trust gate has
+// something valid to accept; the card number is the one the earlier Belfius
+// fixtures already carry; the merchant-like words are Dutch nouns with DEMO
+// or VOORBEELD in them; the dates are in March 2026, outside both real
+// documents' ranges and outside every other fixture's. All of it is listed
+// in test/fixtures/allowed-identifiers.txt with its provenance.
+//
+// THE COMPOSITION IS ARITHMETIC, not taste (criterion 12.1). 24 rows must
+// carry 12 counterparties with a BASELINE of 24 distinct keys, at least 8
+// rows on a trusted account over at least 4 distinct accounts, and at least
+// 8 rows on no trusted account. Writing r for rows, k for identity keys, A
+// for trusted-account rows, D for descriptor-basis rows and n for distinct
+// accounts: every descriptor row is its own key (that is what a baseline of
+// 24 means), so k = n + D and r = A + D, giving A - n = 12. D >= 8 forces
+// n <= 4 and n >= 4 forces D <= 8, so n = 4, D = 8 and A = 16 EXACTLY. There
+// is one composition, not a family of them.
+//
+// THE THREE ROWS THAT ATTACK THE ACCOUNT BASIS are rows 8, 13 and 20. Rows 8
+// and 13 carry a longer-than-Belgian account written spaced: the shipped
+// scrape's account shape is the Belgian one, so it stores a SIXTEEN-CHARACTER
+// PREFIX, and these two sources are chosen to differ only after that prefix
+// so both store the IDENTICAL value. That is hazard H12.14 built rather than
+// argued: without the trust gate those two rows would be one counterparty.
+// Row 20 carries TWO distinct account-shaped tokens, and the record below
+// says which one the generator wrote FIRST, so criterion 12.16 pins the
+// importer's first-wins rule instead of being satisfied by writing the
+// intended token first.
+// ---------------------------------------------------------------------
+
+// The statement's own account. A different one from every other fixture, so
+// this fixture can be ingested beside them.
+const IDENTITY_OWN_IBAN_SPACED = "BE31 1111 2222 3333";
+
+// The four trusted counterparty accounts, one per account-basis
+// counterparty, and the fifth that exists only as row 20's SECOND token and
+// must therefore never appear in any identity key.
+const IDENTITY_CP1_IBAN_SPACED = "BE78 2222 3333 4444";
+const IDENTITY_CP2_IBAN_SPACED = "BE28 3333 4444 5555";
+const IDENTITY_CP3_IBAN_SPACED = "BE75 4444 5555 6666";
+const IDENTITY_CP4_IBAN_SPACED = "BE25 5555 6666 7777";
+const IDENTITY_SECOND_TOKEN_IBAN_SPACED = "BE72 6666 7777 8888";
+
+// The two longer-than-Belgian sources. Both are valid under ISO 7064 at
+// their full length, they carry the SAME check digits, and they differ only
+// in their last three digits, so the sixteen-character prefix the shipped
+// scrape stores is byte-identical for both.
+const IDENTITY_LONG_A_SPACED = "FR02 3000 6000 0112 3456 7890 066";
+const IDENTITY_LONG_B_SPACED = "FR02 3000 6000 0112 3456 7890 163";
+
+export const IDENTITY_FIXTURE_LONG_SOURCES = {
+  spacedA: IDENTITY_LONG_A_SPACED,
+  spacedB: IDENTITY_LONG_B_SPACED,
+  // What the shipped Belfius scrape actually stores for BOTH of them.
+  storedPrefix: IDENTITY_LONG_A_SPACED.replace(/\s/g, "").slice(0, 16),
+} as const;
+
+export const IDENTITY_FIXTURE_TWO_TOKEN = {
+  rowOrdinal: 20,
+  firstTokenSpaced: IDENTITY_CP4_IBAN_SPACED,
+  secondTokenSpaced: IDENTITY_SECOND_TOKEN_IBAN_SPACED,
+} as const;
+
+export const IDENTITY_FIXTURE_ACCOUNTS = {
+  own: IDENTITY_OWN_IBAN_SPACED.replace(/\s/g, ""),
+  counterparty1: IDENTITY_CP1_IBAN_SPACED.replace(/\s/g, ""),
+  counterparty2: IDENTITY_CP2_IBAN_SPACED.replace(/\s/g, ""),
+  counterparty3: IDENTITY_CP3_IBAN_SPACED.replace(/\s/g, ""),
+  counterparty4: IDENTITY_CP4_IBAN_SPACED.replace(/\s/g, ""),
+  secondToken: IDENTITY_SECOND_TOKEN_IBAN_SPACED.replace(/\s/g, ""),
+} as const;
+
+// The counterparty criterion 12.3 names. Three SPEND rows, differing in
+// booking date, in amount and in free-text communication.
+export const IDENTITY_FIXTURE_DESIGNATED_COUNTERPARTY = 1;
+export const IDENTITY_FIXTURE_DESIGNATED_ROW_COUNT = 3;
+
+// A row of the fixture, carrying the INVENTED COUNTERPARTY ORDINAL it was
+// generated FROM. That ordinal is the generator's INPUT: the description is
+// written to belong to it, never read back out of it. This is what makes the
+// record below an independent oracle rather than a transcription of
+// counterpartyIdentity's own output (criterion 12.4, hazard H12.17).
+type IdentityFixtureRow = FixtureTransaction & {
+  readonly counterparty: number;
+};
+
+export const IDENTITY_FIXTURE_TRANSACTIONS: readonly IdentityFixtureRow[] = [
+  {
+    counterparty: 1,
+    sequence: "0301",
+    bookingDate: "02-03-2026",
+    valueDate: "02-03-2026",
+    amountText: "- 120,00",
+    amountCents: -12000,
+    description: [
+      `OVERSCHRIJVING NAAR ${IDENTITY_CP1_IBAN_SPACED} DEMO VERZEKERING`,
+      "MEDEDELING: Premie kwartaal een",
+    ],
+  },
+  {
+    counterparty: 7,
+    sequence: "0302",
+    bookingDate: "02-03-2026",
+    valueDate: "02-03-2026",
+    amountText: "- 21,50",
+    amountCents: -2150,
+    description: [
+      "DEBITMASTERCARD-BETALING VIA Google Pay 01/03 Boekhandel",
+      "Zilverblad BE 21,50 EUR KAART NR 5599 2088 7766 5544 -",
+      "Jansen Pieter",
+    ],
+  },
+  {
+    counterparty: 2,
+    sequence: "0303",
+    bookingDate: "03-03-2026",
+    valueDate: "03-03-2026",
+    amountText: "- 60,00",
+    amountCents: -6000,
+    description: [
+      `UW EUROPESE DOMICILIERING ${IDENTITY_CP2_IBAN_SPACED} DEMO ENERGIE`,
+      "REFERTE 9000000101",
+    ],
+  },
+  {
+    counterparty: 3,
+    sequence: "0304",
+    bookingDate: "03-03-2026",
+    valueDate: "03-03-2026",
+    amountText: "+2.100,00",
+    amountCents: 210000,
+    description: [
+      `STORTING VAN ${IDENTITY_CP3_IBAN_SPACED} DEMO WERKGEVER`,
+      "MEDEDELING: Vergoeding deel een",
+    ],
+  },
+  {
+    counterparty: 10,
+    sequence: "0305",
+    bookingDate: "04-03-2026",
+    valueDate: "04-03-2026",
+    amountText: "- 9,50",
+    amountCents: -950,
+    description: ["KOSTEN DEMO REKENINGPAKKET"],
+  },
+  {
+    counterparty: 1,
+    sequence: "0306",
+    bookingDate: "05-03-2026",
+    valueDate: "05-03-2026",
+    amountText: "- 135,50",
+    amountCents: -13550,
+    description: [
+      `OVERSCHRIJVING NAAR ${IDENTITY_CP1_IBAN_SPACED} DEMO VERZEKERING`,
+      "MEDEDELING: Premie kwartaal twee",
+    ],
+  },
+  {
+    counterparty: 2,
+    sequence: "0307",
+    bookingDate: "06-03-2026",
+    valueDate: "06-03-2026",
+    amountText: "- 61,00",
+    amountCents: -6100,
+    description: [
+      `UW EUROPESE DOMICILIERING ${IDENTITY_CP2_IBAN_SPACED} DEMO ENERGIE`,
+      "REFERTE 9000000102",
+    ],
+  },
+  {
+    counterparty: 5,
+    sequence: "0308",
+    bookingDate: "07-03-2026",
+    valueDate: "07-03-2026",
+    amountText: "- 210,00",
+    amountCents: -21000,
+    description: [
+      `OVERSCHRIJVING NAAR ${IDENTITY_LONG_A_SPACED} DEMO ALFA`,
+      "MEDEDELING: Bestelling alfa",
+    ],
+  },
+  {
+    counterparty: 3,
+    sequence: "0309",
+    bookingDate: "08-03-2026",
+    valueDate: "08-03-2026",
+    amountText: "+2.150,00",
+    amountCents: 215000,
+    description: [
+      `STORTING VAN ${IDENTITY_CP3_IBAN_SPACED} DEMO WERKGEVER`,
+      "MEDEDELING: Vergoeding deel twee",
+    ],
+  },
+  {
+    counterparty: 8,
+    sequence: "0310",
+    bookingDate: "09-03-2026",
+    valueDate: "09-03-2026",
+    amountText: "- 32,40",
+    amountCents: -3240,
+    description: [
+      "DEBITMASTERCARD-BETALING VIA Google Pay 08/03 Bloemenhoek",
+      "Voorbeeld BE 32,40 EUR KAART NR 5599 2088 7766 5544 -",
+      "Jansen Pieter",
+    ],
+  },
+  {
+    counterparty: 4,
+    sequence: "0311",
+    bookingDate: "10-03-2026",
+    valueDate: "10-03-2026",
+    amountText: "- 85,00",
+    amountCents: -8500,
+    description: [
+      `OVERSCHRIJVING NAAR ${IDENTITY_CP4_IBAN_SPACED} DEMO SYNDIC`,
+      "MEDEDELING: Afrekening een",
+    ],
+  },
+  {
+    counterparty: 2,
+    sequence: "0312",
+    bookingDate: "11-03-2026",
+    valueDate: "11-03-2026",
+    amountText: "- 62,00",
+    amountCents: -6200,
+    description: [
+      `UW EUROPESE DOMICILIERING ${IDENTITY_CP2_IBAN_SPACED} DEMO ENERGIE`,
+      "REFERTE 9000000103",
+    ],
+  },
+  {
+    counterparty: 6,
+    sequence: "0313",
+    bookingDate: "12-03-2026",
+    valueDate: "12-03-2026",
+    amountText: "- 211,00",
+    amountCents: -21100,
+    description: [
+      `OVERSCHRIJVING NAAR ${IDENTITY_LONG_B_SPACED} DEMO BETA`,
+      "MEDEDELING: Bestelling beta",
+    ],
+  },
+  {
+    counterparty: 3,
+    sequence: "0314",
+    bookingDate: "13-03-2026",
+    valueDate: "13-03-2026",
+    amountText: "+2.200,00",
+    amountCents: 220000,
+    description: [
+      `STORTING VAN ${IDENTITY_CP3_IBAN_SPACED} DEMO WERKGEVER`,
+      "MEDEDELING: Vergoeding deel drie",
+    ],
+  },
+  {
+    counterparty: 11,
+    sequence: "0315",
+    bookingDate: "14-03-2026",
+    valueDate: "14-03-2026",
+    amountText: "- 4,00",
+    amountCents: -400,
+    description: ["BIJDRAGE DEMO VERENIGING JAARLIJKS"],
+  },
+  {
+    counterparty: 1,
+    sequence: "0316",
+    bookingDate: "15-03-2026",
+    valueDate: "15-03-2026",
+    amountText: "- 142,75",
+    amountCents: -14275,
+    description: [
+      `OVERSCHRIJVING NAAR ${IDENTITY_CP1_IBAN_SPACED} DEMO VERZEKERING`,
+      "MEDEDELING: Premie kwartaal drie",
+    ],
+  },
+  {
+    counterparty: 2,
+    sequence: "0317",
+    bookingDate: "16-03-2026",
+    valueDate: "16-03-2026",
+    amountText: "- 63,00",
+    amountCents: -6300,
+    description: [
+      `UW EUROPESE DOMICILIERING ${IDENTITY_CP2_IBAN_SPACED} DEMO ENERGIE`,
+      "REFERTE 9000000104",
+    ],
+  },
+  {
+    counterparty: 9,
+    sequence: "0318",
+    bookingDate: "17-03-2026",
+    valueDate: "17-03-2026",
+    amountText: "- 18,95",
+    amountCents: -1895,
+    description: [
+      "DEBITMASTERCARD-BETALING VIA Google Pay 16/03 Kaaswinkel",
+      "Voorbeelddal BE 18,95 EUR KAART NR 5599 2088 7766 5544 -",
+      "Jansen Pieter",
+    ],
+  },
+  {
+    counterparty: 3,
+    sequence: "0319",
+    bookingDate: "18-03-2026",
+    valueDate: "18-03-2026",
+    amountText: "+2.250,00",
+    amountCents: 225000,
+    description: [
+      `STORTING VAN ${IDENTITY_CP3_IBAN_SPACED} DEMO WERKGEVER`,
+      "MEDEDELING: Vergoeding deel vier",
+    ],
+  },
+  {
+    // ROW 20, the two-token row. The FIRST account-shaped token is
+    // counterparty 4's; the second belongs to nothing else in this fixture.
+    counterparty: 4,
+    sequence: "0320",
+    bookingDate: "19-03-2026",
+    valueDate: "19-03-2026",
+    amountText: "- 86,00",
+    amountCents: -8600,
+    description: [
+      `OVERSCHRIJVING NAAR ${IDENTITY_CP4_IBAN_SPACED} DEMO SYNDIC`,
+      `VIA ${IDENTITY_SECOND_TOKEN_IBAN_SPACED} MEDEDELING: Afrekening twee`,
+    ],
+  },
+  {
+    counterparty: 2,
+    sequence: "0321",
+    bookingDate: "20-03-2026",
+    valueDate: "20-03-2026",
+    amountText: "- 64,00",
+    amountCents: -6400,
+    description: [
+      `UW EUROPESE DOMICILIERING ${IDENTITY_CP2_IBAN_SPACED} DEMO ENERGIE`,
+      "REFERTE 9000000105",
+    ],
+  },
+  {
+    counterparty: 12,
+    sequence: "0322",
+    bookingDate: "21-03-2026",
+    valueDate: "21-03-2026",
+    amountText: "+ 15,00",
+    amountCents: 1500,
+    description: ["TERUGGAVE DEMO WAARBORG VOORBEELD"],
+  },
+  {
+    counterparty: 3,
+    sequence: "0323",
+    bookingDate: "22-03-2026",
+    valueDate: "22-03-2026",
+    amountText: "+2.300,00",
+    amountCents: 230000,
+    description: [
+      `STORTING VAN ${IDENTITY_CP3_IBAN_SPACED} DEMO WERKGEVER`,
+      "MEDEDELING: Vergoeding deel vijf",
+    ],
+  },
+  {
+    counterparty: 4,
+    sequence: "0324",
+    bookingDate: "23-03-2026",
+    valueDate: "23-03-2026",
+    amountText: "- 87,00",
+    amountCents: -8700,
+    description: [
+      `OVERSCHRIJVING NAAR ${IDENTITY_CP4_IBAN_SPACED} DEMO SYNDIC`,
+      "MEDEDELING: Afrekening drie",
+    ],
+  },
+];
+
+export const IDENTITY_FIXTURE_OPENING_CENTS = 25000;
+
+// THE GENERATOR'S OWN INPUT RECORD (criterion 12.4). Row ordinal, one-based
+// in the order the parser returns rows, to the invented counterparty ordinal
+// the row was WRITTEN FOR. Derived from the declarations above and from
+// nothing else: no import of counterpartyIdentity reaches this file.
+export const IDENTITY_FIXTURE_ROW_TO_COUNTERPARTY: readonly {
+  readonly row: number;
+  readonly counterparty: number;
+}[] = IDENTITY_FIXTURE_TRANSACTIONS.map((transaction, index) => ({
+  row: index + 1,
+  counterparty: transaction.counterparty,
+}));
+
+const IDENTITY_FIXTURE_RECORD_BYTES = (): Uint8Array =>
+  new TextEncoder().encode(
+    `${JSON.stringify(
+      {
+        fixture: "belfius-counterparty-identity.pdf",
+        rows: IDENTITY_FIXTURE_TRANSACTIONS.length,
+        counterparties: new Set(
+          IDENTITY_FIXTURE_TRANSACTIONS.map((t) => t.counterparty),
+        ).size,
+        rowToCounterparty: IDENTITY_FIXTURE_ROW_TO_COUNTERPARTY,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+// ---------------------------------------------------------------------
 // Assembly.
 // ---------------------------------------------------------------------
+
+// Non-PDF records the generator emits in the SAME run as the PDFs. Kept
+// separate from buildPdfFixtures because the privacy gate's third rule
+// enumerates tracked PDFs and these are not PDFs.
+export const buildFixtureRecords = (): ReadonlyMap<string, Uint8Array> =>
+  new Map([
+    ["belfius-counterparty-identity-map.json", IDENTITY_FIXTURE_RECORD_BYTES()],
+  ]);
 
 export const buildPdfFixtures = (): ReadonlyMap<string, Uint8Array> => {
   const sumA = FIXTURE_A_TRANSACTIONS.reduce(
@@ -1416,7 +1846,26 @@ export const buildPdfFixtures = (): ReadonlyMap<string, Uint8Array> => {
     }),
   );
 
+  const identitySum = IDENTITY_FIXTURE_TRANSACTIONS.reduce(
+    (sum, transaction) => sum + checkedCents(transaction),
+    0,
+  );
+  const identityFixture = buildPdf(
+    belfiusStatement({
+      pageMarkerFirst: "BLZ. : 9/1",
+      pageMarkerRest: "24-03-2026 9/2",
+      holderDateLine: "VOORBEELDSTRAAT 7 DATUM : 24-03-2026",
+      openingLine: `SALDO OP 28-02-2026 EUR ${formatClosingCents(IDENTITY_FIXTURE_OPENING_CENTS)}`,
+      closingLine: `SALDO OP 24-03-2026 09:15 EUR ${formatClosingCents(IDENTITY_FIXTURE_OPENING_CENTS + identitySum)}`,
+      pageOneCount: 12,
+      transactions: IDENTITY_FIXTURE_TRANSACTIONS,
+      annexPage: false,
+      bandIban: IDENTITY_OWN_IBAN_SPACED,
+    }),
+  );
+
   return new Map([
+    ["belfius-counterparty-identity.pdf", identityFixture],
     ["belfius-statement-a.pdf", fixtureA],
     ["belfius-statement-b-overlap.pdf", fixtureB],
     ["belfius-nonreconciling.pdf", fixtureC],
@@ -1440,7 +1889,11 @@ const isMain = (): boolean => {
 
 if (isMain()) {
   const directory = fileURLToPath(new URL(".", import.meta.url));
-  for (const [name, bytes] of buildPdfFixtures()) {
+  // ONE RUN WRITES BOTH (criterion 12.4): the PDF and the record of what the
+  // PDF was generated FROM. A record written by a second command could be
+  // edited between the two, and a record transcribed from the derivation's
+  // output would certify that derivation against itself.
+  for (const [name, bytes] of [...buildPdfFixtures(), ...buildFixtureRecords()]) {
     writeFileSync(join(directory, name), bytes);
     console.log(`${name}: ${bytes.length} bytes`);
   }
