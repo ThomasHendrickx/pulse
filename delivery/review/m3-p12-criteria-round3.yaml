@@ -149,6 +149,401 @@ verdict: FIX-ROUND-NEEDED
 produced-by: claude-sonnet-5
 framing: acceptance-criteria-walk
 review-contract: criteria
-findings: []
-criteria: []
-deviations-judged: []
+criteria:
+  - id: "12.1"
+    quote: >-
+      CONVERGENCE, COUNTED. A test in test/domain/counterparty-identity.test.ts
+      parses test/fixtures/belfius-counterparty-identity.pdf through the
+      shipped path and counts DISTINCT counterpartyIdentity keys over its
+      rows. The fixture carries 24 rows representing 12 invented
+      counterparties, and the test asserts the distinct-key count is exactly
+      12... at least 8 rows carry a trusted account over at least 4 distinct
+      accounts, and at least 8 rows take the DESCRIPTOR basis... so the
+      at-least-8 threshold and the exactly-8 arithmetic are one requirement
+      and not two.
+    met: true
+    evidence:
+    - "test/domain/counterparty-identity.test.ts, describe block CRITERION 12.1, run myself with `npx vitest run test/domain/counterparty-identity.test.ts --reporter=verbose` against my own local database pulse_r3crit: 26 passed (26), exit 0."
+    - "Captured stdout, my own run: \"fixture rows 24, identity keys 12, baseline keys 24\" and \"account-basis rows 16 over 4 accounts, descriptor-basis rows 8\", satisfying the >=8/>=4 and exactly-8 requirements the current (amended) wording states."
+    - "THIS WORDING IS THE POST-ROUND-2 AMENDED ONE. Round two flagged the composition clause under its OLD wording (\"at least 8 rows carry none\", ambiguous between no-account-field and no-trusted-account) as a plan defect not to count against the implementer, per delivery/plan/pulse-v02.yaml history (round2 crit review quoted a since-superseded plan text). The CURRENT plan text at delivery/plan/pulse-v02.yaml (M3-P12 section, criterion 12.1) already resolves the ambiguity explicitly (\"THE DESCRIPTOR HALF IS COUNTED BY BASIS AND NEVER BY AN ABSENT FIELD\") and the shipped test satisfies that reading cleanly, so I record this criterion as fully MET rather than as one of the two protected-from-penalty items, while still noting per my dispatch that any residual ambiguity in the plan's history is not attributable to this implementer."
+    - "test/domain/counterparty-identity.test.ts:102-104 (composition assertions, confirmed present by reading the file)."
+  - id: "12.2"
+    quote: >-
+      CONVERGENCE ON THE OWNER'S OWN MONTH... total rows 39, distinct identity
+      keys EXACTLY 20 against a recorded baseline of 25, of which the account
+      basis contributes EXACTLY 6 (baseline 11) and the descriptor basis
+      EXACTLY 14 (baseline 14); and the same run over the real KBC card
+      document records 22 rows and EXACTLY 16 identity keys, unchanged from
+      its baseline of 16. BOTH BOUNDS ARE BINDING AND THE LOWER ONE MATTERS
+      MOST.
+    met: true
+    evidence:
+    - "Reproduced myself, in memory only, never writing parsed content to disk: `npx tsx test/fixtures/measure-identity-convergence.ts <path to the real Belfius current-account PDF, 8-hex prefix 39bada64> <path to the real KBC card PDF, 8-hex prefix 0f79fa3d>` (full filenames omitted here per fleet warning 9), exit 0."
+    - "My captured output for 39bada64: rows 39, identity-distinct-keys 20, identity-account-keys 6, identity-descriptor-keys 14, baseline-distinct-keys 25. For 0f79fa3d: rows 22, identity-distinct-keys 16, baseline-distinct-keys 16. Every one of these equals the criterion's pinned numbers exactly, and matches delivery/work-history/m3-p12.yaml:369-379's recorded numbers byte for byte, an independent reproduction rather than a repeated trust of the same figure."
+  - id: "12.3"
+    quote: >-
+      NAMED ONCE, MATCHED AGAIN. A test... asserts that a designated
+      counterparty of that fixture appears as ONE unresolved group whose
+      count is 3, calls assignMerchant EXACTLY ONCE against that group's
+      identity key..., runs interpretation, and then asserts that a DIFFERENT
+      transaction of the same counterparty... now carries that merchant id.
+    met: true
+    evidence:
+    - "test/application/counterparty-identity-journey.test.ts, 1 test, passed in my own `npm test` run (39 files, 554 tests, exit 0)."
+    - "src/modules/ledger/application/interpret-window.ts:114-129: countedKeys is a Set of distinct counterpartyIdentity keys passed to resolveIdentities, and merchantId is looked up per-transaction from the resolved map afterwards, which is the mechanism that lets a second transaction resolve from one naming without a second assignMerchant call."
+  - id: "12.4"
+    quote: >-
+      DIFFERENT COUNTERPARTIES STAY DIFFERENT WHERE THE STORED VALUES DIFFER...
+      the 12 identity keys partition the 24 rows exactly as THE GENERATOR'S OWN
+      INPUT RECORD says... STATED PLAINLY: this criterion is NOT the guard on
+      H12.1... criterion 12.16 is the guard.
+    met: true
+    evidence:
+    - "test/domain/counterparty-identity.test.ts, describe CRITERION 12.4, 3 tests, passed in my own vitest run above (including \"regenerating the fixture reproduces the PDF and the record byte for byte\")."
+    - "test/fixtures/generate-pdf-fixtures.ts's only imports are node:fs, node:path, node:url (confirmed by reading the file's import block), so counterpartyIdentity cannot reach it and the record is a genuine independent oracle, not a transcription of the function's own output."
+  - id: "12.5"
+    quote: >-
+      THIS PHASE STRIPS NOTHING NEW... git diff of the baseline against this
+      branch shows no change to CARD_RAIL_PREFIX, CARD_NUMBER_LABEL,... and the
+      pinned regression table in test/domain/normalise-counterparty.test.ts is
+      unchanged.
+    met: true
+    evidence:
+    - "`git log --oneline -- src/modules/merchants/domain/normalise-counterparty.ts` in this worktree shows the M3-P12 commits touch this file only for comments (verified by reading the file: the exported constants CARD_RAIL_PREFIX etc. are unchanged from their M3-P6 form, and the diff for this phase's commits against them is comment-only)."
+    - "test/domain/counterparty-identity.test.ts, CRITERION 12.5 describe block, 2 tests (uppercase-never-lowercase property, byte-identical descriptor suffix against a committed baseline table), passed in my run."
+  - id: "12.6"
+    quote: >-
+      A ROW MATCHING NO FAMILY IS NOT GUESSED AT... no truncation, no
+      opening-prefix key and no fallback bucket is ever produced: two such
+      rows share a key only when their full normalised descriptors are equal.
+    met: true
+    evidence:
+    - "src/modules/merchants/domain/counterparty-identity.ts:307-319 (counterpartyIdentity's descriptor branch: exactly normaliseCounterparty(counterpartyText(row)), no truncation)."
+    - "src/modules/merchants/domain/merchant-rule.ts:90-113 (matchRules refuses a bare-namespace key and a bare-namespace PREFIX/PATTERN rule, hazard H12.26 guard)."
+    - "test/domain/counterparty-identity.test.ts, CRITERION 12.6 describe block, 7 tests including the bare-namespace floor at three sites (matcher, write boundary language, review surface), all passed in my run."
+  - id: "12.7"
+    quote: >-
+      NO NAMING THE OWNER MADE IS DISCARDED, MEASURED AS EFFECT AND NOT AS
+      ROWS... the after set is a SUPERSET of the before set... A test asserts
+      the routine issues no UPDATE and no DELETE against any pattern written
+      under the ACCOUNT namespace... THE TWO BLOCKING CONDITIONS HAVE AN
+      ACKNOWLEDGE PATH.
+    met: true
+    evidence:
+    - "src/modules/merchants/application/rederive-rules.ts:568-591 (assignmentsAfter computed against the in-memory working copy BEFORE any write, superset test at :573-577, exactly two blocking conditions at :590-591)."
+    - "test/application/rederive-merchant-rules.test.ts, describe CRITERION 12.7, includes: the superset comparison, both blocking conditions each with their own acknowledge test (\"BLOCKING CONDITION ONE... clears ONLY the id it names\" and \"BLOCKING CONDITION TWO... clears ONLY the rule that held it\"), and the same-merchant-twin decision tests I additionally verified myself against a real database (see the progress log above, claim 1 and claim 2)."
+    - "MY OWN WITNESS of the transaction claim (see progress log): a real Postgres constraint violation injected mid-apply via the actual applyRuleWrites function rolled back the whole batch, confirming the superset test's precondition (\"the writes are all-or-nothing\") holds against a live database and not only against the fake."
+    - "ONE FINDING RAISED HERE (see findings, CR3-M3P12-01): the operator-facing message printed on ANY rejection reaching scripts/rederive-merchant-rules.ts's top-level handler (line 249) unconditionally claims \"a failure inside them wrote nothing\", which is false specifically when deps.recompute(context) (rederive-rules.ts:622, outside the transaction) is what throws, since applyRuleWrites (line 618) has by then already committed. This does not change the met verdict on 12.7 itself, which is about the write set's atomicity and is genuinely met; the false claim is a separate, narrower defect in the script's error reporting."
+  - id: "12.8"
+    quote: >-
+      THE RE-DERIVATION IS IDEMPOTENT, AND IDEMPOTENT MEANS THE SAME ANSWER
+      RATHER THAN A QUIET ONE... The matched-count columns criterion 12.7
+      requires are EXCLUDED from that comparison... The test runs against a
+      database seeded to contain at least one rule the routine cannot
+      promote, at least one rule whose matched rows split across the two
+      bases, and at least one merchant-conflict.
+    met: true
+    evidence:
+    - "src/modules/merchants/application/rederive-rules.ts's formatDecisionReport (:649-656) excludes matched counts by construction, printing only ruleId/pass/basis/outcome."
+    - "test/application/rederive-merchant-rules.test.ts:1112-1117 (\"the second run prints the same decision report\" for the same-merchant-twin seed), plus the pre-existing idempotence describe block covering a seed with a conflict, a split-basis rule and an unpromotable rule together (read directly; matches the criterion's required seed composition)."
+    - "src/modules/merchants/application/rederive-rules.ts:397-405 and :379-382 (already-namespaced and empty-pattern rules are left alone and reported with a STABLE outcome token on every run, which is what makes the second run's report byte-identical)."
+  - id: "12.9"
+    quote: >-
+      FACTS ARE NOT REWRITTEN AND THE CHANGE IS A DERIVATION PLUS A RECOMPUTE.
+      A test asserts the re-derivation issues no write against the
+      transactions table at all... a test clears every transactions.merchantId,
+      runs the existing recompute, and asserts the identical assignment set
+      returns.
+    met: true
+    evidence:
+    - "test/application/rederive-merchant-rules.test.ts:611-658, describe CRITERION 12.9, both tests present and passed in my own `npm test` run (fact snapshot unchanged; clear-and-recompute returns the identical assignment set)."
+    - "src/modules/merchants/application/rederive-rules.ts has no import of, or reference to, a transactions-table write anywhere in the file (confirmed by reading it in full); the only writes are deps.merchants.applyRuleWrites (merchant_rules) and deps.recompute (which itself is the existing, unmodified interpretation recompute)."
+  - id: "12.10"
+    quote: >-
+      PREFIX AND PATTERN ARE SETTLED... matchRules... A test asserts
+      assignMerchant writes kind EXACT and only EXACT. git diff of the
+      baseline shows NO change to the MerchantRuleKind enum...
+    met: true
+    evidence:
+    - "src/modules/merchants/domain/merchant-rule.ts:125-127 (isAccountBasis check refuses PREFIX/PATTERN on an account-basis key by returning undefined before either is tried)."
+    - "src/modules/merchants/application/assign-merchant.ts:167-171 (upsertRule is always called with kind: \"EXACT\", a hardcoded literal, not a parameter)."
+    - "prisma/schema/merchants.prisma:24-27 (enum MerchantRuleKind { EXACT PREFIX PATTERN }, unchanged 3-member enum); schema comment at merchants.prisma states the same disposition (no product surface writes PREFIX or PATTERN) as merchant-rule.ts:15-21."
+  - id: "12.11"
+    quote: >-
+      THE TWO SCREENS AGREE WHERE THEY ARE MEANT TO... Three divergences are
+      named as expected exceptions... The SQL pin in
+      test/domain/merchant-review.test.ts is updated to the new fragment and
+      still asserts that fragment appears exactly once...
+    met: true
+    evidence:
+    - "test/domain/merchant-review.test.ts:507, \"the SQL form of the rule appears exactly once, as the shared fragment\" (confirmed present by grep)."
+    - "src/modules/overview/adapters/overview-repository.ts:20 (COUNTERPARTY_TEXT_SQL, module-local, one definition) and :116-117 (used in the countedGroups query, selecting counterpartyText and counterpartyAccount together)."
+    - "src/modules/overview/domain/month-projection.ts:60-100 (foldGroups: cash branches first, tag-regroup only when useTags, unresolved rows key on the injected CountedGroupIdentity function) matches the three named divergences (cash-first, tag-regroup, scope) structurally."
+  - id: "12.12"
+    quote: >-
+      THE MODULE BOUNDARY HOLDS. The MerchantResolver port still has exactly
+      one member... The ledger's own counterpartyKey... is unchanged, asserted
+      by git diff showing no change to src/modules/ledger/domain/corrections.ts.
+    met: true
+    evidence:
+    - "src/modules/ledger/application/ports.ts:40-57 (MerchantResolverPort: exactly one member, resolveIdentities, renamed from resolveCounterparties per the header comment)."
+    - "`git log --oneline -- src/modules/ledger/domain/corrections.ts` shows no M3-P12 commit touching this file (confirmed by reading the file: counterpartyKey still uses its own iban/text shape independent of counterparty-identity.ts, exactly as the header of counterparty-identity.ts itself documents at lines 39-45)."
+  - id: "12.13"
+    quote: >-
+      NOTHING OF THE OWNER'S DATA REACHES THE REPOSITORY. npm run gate:privacy
+      passes; every identifier in the new fixture is listed in
+      test/fixtures/allowed-identifiers.txt with its provenance...
+    met: true
+    evidence:
+    - "`npm run gate:privacy` run myself in this worktree: exit 0, output \"gate:privacy clean\" (captured in the gates block below)."
+    - "test/fixtures/allowed-identifiers.txt, 212 lines, read in full: every invented value carries a provenance comment, including the M3-P12 fix-round entries for the truncation-attack pair and the PAN-shaped view of the same digits."
+    - "Reviewed this document's own progress log and this final document before commit for any real filename, descriptor, amount or date; none present (the two real PDFs are referred to only by their 8-hex prefixes, 39bada64 and 0f79fa3d, per fleet warning 9)."
+  - id: "12.14"
+    quote: >-
+      THE STANDING GATE. npm run typecheck, npm run lint, npm test and npm run
+      gate:privacy all exit 0, and npm run test:e2e exits 0, each with its
+      captured output in the phase work history.
+    met: false
+    evidence:
+    - "The four fast gates are genuinely met: typecheck exit 0, lint exit 0, test exit 0 (39 files, 554 tests), gate:privacy exit 0 (\"gate:privacy clean\"), all run by me in this worktree against my own local database pulse_r3crit. Full output captured in the gates block below."
+    - "npm run test:e2e does NOT exit 0, on the implementer's OWN most recent recorded run and on every one of my three independent attempts. delivery/work-history/m3-p12.yaml's own last gate-evidence entry for test:e2e is explicitly result: red, wrapper-exit-code: 1 (52 passed, 3 failed, including golden-journey.spec.ts:79)."
+    - "MY OWN THREE ATTEMPTS, none clean: (1) full suite, exit 1, 7 passed/48 failed, cascade of ERR_CONNECTION_REFUSED after another worktree's process took over port 3000/3100 mid-run (environmental, not code: golden-journey itself PASSED, 26.0s, before the cascade). (2) golden-journey isolated, exit 1, \"Test timeout of 30000ms exceeded... waiting for getByRole('button', { name: 'Upload' })\" at golden-journey.spec.ts:64, the exact line the implementer's own report names, machine load average 9.44 on 4 cores at the time. (3) golden-journey isolated again immediately after, exit 1, a DIFFERENT failure (\"element(s) not found\" waiting for getByTestId('household-context') after sign-up, golden-journey.spec.ts:91) on the SAME unchanged working tree - two different symptoms from two consecutive runs of one unedited test is itself evidence against a deterministic code defect and for load-induced flakiness."
+    - "MY JUDGEMENT, requested explicitly by my dispatch: the failures are attributable to severe, sustained contention on this fleet's shared container (load average 5.8-9.44 observed across my session on 4 cores, concurrent node/next/playwright processes from at least three other worktrees confirmed via `ps aux`, ports 3000/3100 actively contested), not to this round's code changes. The literal criterion (exit 0) is NOT met on any run I or the implementer produced, so I record met: false honestly rather than excusing it; see finding CR3-M3P12-02 for the concrete consequence and a suggested path, and see my report's answer on the golden-journey question for the full reasoning."
+  - id: "12.15"
+    quote: >-
+      THE WHOLE-CORPUS EFFECT IS RECORDED, NOT ONLY THE HAPPY FIXTURE... Every
+      fixture whose new count is HIGHER than its baseline count is listed with
+      the reason, and for each such fixture a test asserts that naming both of
+      the split groups with the SAME merchant name lands both under ONE
+      merchant id.
+    met: true
+    evidence:
+    - "delivery/work-history/m3-p12.yaml, per-fixture counts recorded via the committed harness (referenced, not reproduced number-by-number here since criterion 12.20's residue figures cross-check them; the real-document numbers I reproduced myself in 12.2 are the two whole-corpus anchors)."
+    - "test/application/counterparty-identity-surfaces.test.ts:175-210, \"CRITERION 12.15: a split is recoverable by the owner\", naming both of two split groups (different counterparty accounts) with the same merchant name and asserting one merchant id, two rules, both groups' rows carrying that id after recompute. Passed in my `npm test` run."
+  - id: "12.16"
+    quote: >-
+      THE ACCOUNT BASIS FAILS CLOSED, AND THIS IS THE GUARD ON H12.1... THE
+      TRUNCATION CASE IS ASSERTED END TO END... FIFTH CASE... the fixture row
+      whose description carries two distinct account-shaped tokens is
+      asserted end to end...
+    met: true
+    evidence:
+    - "src/modules/merchants/domain/counterparty-identity.ts:262-278 (isTrustedCounterpartyAccount: non-empty, shape regex, length-by-country-table, mod-97), all three tests present as documented and self-corrected in the file's own comments (the file explicitly corrects a FALSE claim it used to carry about deterministic truncation closure, per clause R-087's own standard, at lines 212-256 - a good sign of diligence rather than a defect)."
+    - "test/domain/counterparty-identity.test.ts, CRITERION 12.16 describe block, 9 tests including the end-to-end truncation case through the shipped importer and the pinned first-wins case, all passed in my run."
+    - "The known, disclosed residual (a Belgian-prefixed over-long spaced token relies on mod-97 alone, roughly 1-in-97) is documented at counterparty-identity.ts:240-244 and pinned by a counterexample test rather than hidden; this is the SAME residual the plan's own hazard H12.16 names and defers to a later importer-template phase, not a gap in this criterion."
+  - id: "12.17"
+    quote: >-
+      THE RE-DERIVATION HAS ONE NAMED INVOCATION POINT AND ONE STATED ORDER...
+      THE DEPLOYED RUN IS OWED BY M3-P16 AND IS NOT DROPPED HERE... A review
+      evaluating that implementation marks this criterion NOT MET AND NOT YET
+      OWED... Criterion 16.1 carries them.
+    met: true
+    evidence:
+    - "package.json:19, \"rederive:merchant-rules\": \"tsx scripts/rederive-merchant-rules.ts\" (confirmed by grep)."
+    - "test/domain/counterparty-identity-contracts.test.ts:120-134, \"CRITERION 12.17: the re-derivation has ONE named invocation point\", reads package.json and asserts the script entry and that the script's own header states the deploy-after order; passed in my run."
+    - "scripts/rederive-merchant-rules.ts:7-16 states the AFTER-deploy order and D-46's forced reason in the script's own header, where an operator meets it directly."
+    - "PROTECTED CRITERION PER MY DISPATCH: the criterion's own text explicitly scopes itself to the invocation-point half and states the deployed-run half is owed by M3-P16's criterion 16.1, not by this phase. The deployed run cannot be produced from an unmerged, undeployed branch. This is recorded factually; the defect (if any) is the plan's original scope, already corrected by this same criterion's own text, and is not attributed to the implementer."
+  - id: "12.18"
+    quote: >-
+      THE RULE SUBJECT IS VALIDATED AT THE WRITE BOUNDARY. assignMerchant
+      returns a typed error, and writes nothing, for a counterpartyText that
+      does not begin with one of the two known namespaces... an e2e test
+      asserts that submitting a PRE-MIGRATION un-namespaced key... surfaces
+      that error to the reader...
+    met: true
+    evidence:
+    - "src/modules/merchants/application/assign-merchant.ts:97-163 (basis check at :101-104, bare-namespace check at :120-126, account repair-or-refuse and descriptor refuse-if-non-canonical at :142-163 - the last of these was itself a fix-round-two repair for a real bug, finding CR2-M3P12-08, which I read and consider the file stronger for having documented rather than a live defect)."
+    - "test/application/counterparty-identity-surfaces.test.ts:211-230+, CRITERION 12.18 describe block, \"a PRE-MIGRATION un-namespaced key is refused with a typed error and writes NOTHING\", passed in my run."
+    - "test/e2e/merchants.spec.ts:266-339, \"submitting a PRE-MIGRATION un-namespaced subject surfaces the refusal to the reader\", a real browser test editing the stale hidden field and asserting the group set does not change; I ran the full e2e suite myself (see gates block) and this spec passed."
+  - id: "12.19"
+    quote: >-
+      THE GOVERNING DOCUMENT SAYS WHAT THE CODE DOES. pulse-domain section 7's
+      resolution chain is amended... grep of .claude/skills/pulse-domain/SKILL.md
+      shows the account basis inside that chain and shows no remaining
+      sentence saying the key is the normalised counterparty string.
+    met: true
+    evidence:
+    - ".claude/skills/pulse-domain/SKILL.md:129-152, read in full: states the two bases, the trust gate's three tests, the PREFIX/PATTERN account-basis refusal, and assignMerchant's write-boundary validation. The only remaining occurrence of the old phrase \"exact match on normalised counterparty string\" is inside a historical explanation of WHY the chain was wrong (SKILL.md:129), not a live claim."
+    - "`grep -n \"normalised counterparty string\" .claude/skills/pulse-domain/SKILL.md` run myself: one hit, the historical-correction sentence, confirmed by reading its context."
+  - id: "12.20"
+    quote: >-
+      THE RESIDUE IS COUNTED AND NAMED... The phase work history records, for
+      each real document and for the committed corpus, the number of rows
+      whose identity key is shared with no other row after the change and the
+      number of DISTINCT such keys, alongside the same two counts at the
+      baseline.
+    met: true
+    evidence:
+    - "delivery/work-history/m3-p12.yaml:507-527 records the residue for the current-account document (baseline 21/21 rows, after 12/12), the card document (unchanged 12/12 both), the new fixture (24/24 to 8/8), and, added in the fix round per finding CR-M3P12-04, the full committed corpus over 37 parsable fixtures (baseline 176/176 to after 160/160), each stating the command that reproduces it."
+    - "Cross-check against my own independent 12.2 measurement: my run's identity-singleton-rows for 39bada64 was 12, matching the work history's \"after the change 12 keys covering 12 rows\" for the current-account document exactly."
+  - id: "12.21"
+    quote: >-
+      PASS ONE CANNOT LOSE A RULE'S MEANING, FOR ANY KIND. A property test over
+      generated (pattern, key) pairs asserts that for every kind, matchRules
+      applied to the namespaced pattern and the namespaced key returns exactly
+      what matchRules applied to the bare pattern and the bare key returns...
+    met: true
+    evidence:
+    - "test/property/pass-one-preserves-meaning.test.ts, read in full: fast-check property test over 2000 runs across EXACT/PREFIX/PATTERN, the generator explicitly includes the empty pattern and an already-namespaced pattern (lines 43-51), plus two separate witness tests for the two guards (bare-namespace-is-a-prefix, and no PREFIX/PATTERN ever matches an account-basis key). 5 tests, passed in my `npm test` run."
+  - id: "12.22"
+    quote: >-
+      THE TRUST TABLE IS PINNED AND SOURCED... The country-length table is a
+      committed constant in the merchants domain... with the ISO 13616
+      registry named as its source... A regression test pins its FULL
+      contents...
+    met: true
+    evidence:
+    - "src/modules/merchants/domain/counterparty-identity.ts:134-168 (IBAN_LENGTH_BY_COUNTRY, a ReadonlyMap literal, comment names the ISO 13616 registry as source, states the country's length not the countries seen so far)."
+    - "test/domain/counterparty-identity.test.ts, CRITERION 12.22 describe block, 2 tests (full-contents pin, and the fixture-country resolves to the fixture's length), both passed in my run."
+  - id: "12.23"
+    quote: >-
+      THE ROUTINE REFUSES A DATABASE IT WAS NOT TOLD TO WRITE TO, AND THE
+      REFUSAL SHIPS IN THE SAME MERGE AS THE ROUTINE... THE REF IS READ FROM
+      WHICHEVER FIELD CARRIES IT, AND THIS CRITERION FIXES BOTH THE FIELD AND
+      THE EXTRACTION... THE HOST MATCH IS NEVER SUFFICIENT ALONE... THE
+      INTERLOCK HAS NO OVERRIDE FLAG... THIS CRITERION WAS ADDED AFTER THIS
+      PHASE'S IMPLEMENTATION WAS BUILT.
+    met: true
+    evidence:
+    - "src/platform/db/target-guard.ts, read in full. projectRefFromUsername (:83-90) takes everything after the FIRST dot; projectRefFromHost (:100-107) requires >=4 labels and labels[0]===\"db\", taking labels[1]. Both match the criterion's spec exactly, including the dotted-ref-survives-whole case and the four-labels-not-three correction the file's own comment documents finding against itself (db.supabase.co would wrongly yield \"supabase\" under a 3-label reading)."
+    - "test/db/target-guard.test.ts, read in full, 349 lines: both endpoint shapes' extraction pinned with a differs-for-two-refs assertion (not just a single-project match, which is exactly the attack the criterion calls out); every refusal case the criterion enumerates present (no target, empty host, empty ref, absent/empty/unparseable connection, host mismatch per shape, ref mismatch per shape, no-ref-in-either-field); the percent-encoded-username fail-closed case tested explicitly; no-secret-in-output tested over every refusal; no-override tested including that the SIBLING guard's own override env var has no effect; refusal-before-any-repository-call tested via spawnSync against the REAL script with a fake unreachable host. All tests passed in my `npm test` run."
+    - "scripts/rederive-merchant-rules.ts:94-104: assessRederiveTarget is literally the first statement of main(), before --household is read and before rederiveMerchantRules is called; test/db/target-guard.test.ts:332-348 asserts this via source-text ordering, matching the criterion's \"wired as the first statement\" language directly."
+    - "MY OWN ATTACK, per the brief's instructions: hand-traced an IPv6 literal host (WHATWG URL brackets the address, normaliseHost strips the brackets, projectRefFromHost splits on \".\" which an IPv6 address does not contain, so it correctly yields undefined and refuses rather than mis-parsing); a trailing-dot host (extra empty label appended, does not shift the ref's position at labels[1], so extraction is unaffected); a username of exactly \"postgres\" (no dot, correctly undefined, the direct-connection convention); a ref that is itself the literal \"postgres\" (extraction still returns \"postgres\" as the ref value and compares correctly against the operator's own \"postgres\" argument, no collision). Found no bypass in any of these; all four fail safe (refuse) or behave correctly."
+    - "PROTECTED CRITERION PER MY DISPATCH, but found to be genuinely, fully MET rather than merely excused: the criterion states its own history (\"ADDED AFTER THIS PHASE'S IMPLEMENTATION WAS BUILT\") and this round's diff is exactly the next change it calls for, so there is no deviation to record here, only a criterion built clean in the round under review."
+findings:
+  - id: CR3-M3P12-01
+    severity: medium
+    analysis: |-
+      A FALSE CLAIM IN OPERATOR-FACING OUTPUT ON A REACHABLE PATH (clause R-087 shape). scripts/rederive-merchant-rules.ts wraps the WHOLE main() function
+      in one top-level rejection handler (void main().then(...)), and the handler's second console.error line, at :249, unconditionally states: "the
+      rule writes are applied in ONE transaction, so a failure inside them wrote nothing and the table is as this run found it." That sentence is true
+      for a rejection coming from applyRuleWrites itself (I witnessed this: a real Postgres constraint violation injected into that call rolls the whole
+      batch back, see evidence). It is FALSE for a rejection coming from deps.recompute(context), which is awaited immediately afterward, OUTSIDE the
+      transaction, by design (rederive-rules.ts:611-622, and the design is right: recompute writes interpretation output, is idempotent, and holding a
+      transaction open across it would cost a long write lock for no benefit). If applyRuleWrites succeeds and commits, and recompute then throws for any
+      reason (a query timeout, a bug, contention), the SAME error handler fires and prints the SAME sentence, which now asserts the table is unchanged
+      when merchant_rules has, in fact, already been rewritten and/or had rules inserted. The handler has no way to distinguish which of the two awaits
+      threw, so it cannot help but print the wrong claim on this path. The consequence is bounded, not a data-loss hazard: pass one and pass two are both
+      idempotent (already-namespaced and already-present rules are recognised and left alone or not re-inserted on a subsequent run, per criteria 12.8
+      and 12.21), so re-running heals the state and the report's OTHER sentence, "re-running is safe and converges", remains true throughout. But an
+      operator who trusts the specific sentence printed, rather than re-deriving the true state independently, is told something false about a database
+      they were just warned repeatedly (by this same script, by criterion 12.23, by the whole phase) to treat with extreme care. No acceptance criterion
+      in this phase asks about this specific message, which is why this is reported as a defect of the artifact rather than as a criterion miss, in
+      exactly the shape the criteria contract's own instructions describe.
+    evidence:
+    - "scripts/rederive-merchant-rules.ts:224-252, the whole rejection handler; the false sentence is at line 249."
+    - "src/modules/merchants/application/rederive-rules.ts:601-623: applied gate at :601, the transactional write at :618-621, deps.recompute(context) awaited immediately after at :622, OUTSIDE the transaction and with no local try/catch separating the two failure sources from each other or from the outer handler."
+    - "My own witness that applyRuleWrites really is atomic (so the sentence IS true for that source): an uncommitted local script (deleted before any commit, never staged) seeded one household, two merchants and two MerchantRule rows in a database I created for this review (pulse_r3crit, local supabase Postgres at 127.0.0.1:54322), then called applyRuleWrites with a batch of one UPDATE plus one INSERT whose pattern collides with an existing row's (householdId, kind, pattern) unique key. Captured output: \"THREW (expected): PrismaClientKnownRequestError\", the table's patterns identical before and after, \"threw: true table unchanged: true row count before/after: 2 2\"."
+    - "No test in test/application/rederive-merchant-rules.test.ts or scripts/rederive-merchant-rules.ts exercises a recompute-only failure (confirmed by reading the full CR2-M3P12-04 describe block at lines 1207-1260 of the test file, which asserts the handler's WORDING and the existence of the transactional write, but never injects a failure from the recompute dependency specifically to check what the handler then prints)."
+    concrete-fix: >-
+      In scripts/rederive-merchant-rules.ts, wrap the two awaits in rederive-rules.ts's apply block (or the call site in the script) so the two failure
+      sources are distinguishable, and change the top-level handler to print a claim scoped to which one actually failed: something like "the rule writes
+      committed before this failure; merchant_rules may have been rewritten and recompute has not run to completion" when the failure follows a
+      successful applyRuleWrites, versus the current sentence when applyRuleWrites itself is what rejected. A minimal version: have
+      rederiveMerchantRules catch a recompute failure specifically and rethrow a distinguishable error (or attach a flag such as
+      { writesCommitted: true }) that the script's handler branches on before choosing which sentence to print.
+  - id: CR3-M3P12-02
+    severity: low
+    analysis: |-
+      CRITERION 12.14's E2E HALF IS NOT MET ON ANY RUN PRODUCED SO FAR, INCLUDING MINE, AND THE CAUSE IS ENVIRONMENTAL RATHER THAN THIS ROUND'S CODE.
+      This is not a correction of the implementer's own honesty: delivery/work-history/m3-p12.yaml already records its last test:e2e attempt as
+      result: red with a detailed, well-evidenced argument that the three failures (golden-journey.spec.ts:79, import.spec.ts:170,
+      month-view.spec.ts:275) are contention artifacts, not this phase's doing, and names a concurrent fleet lane hitting the same four tests on the
+      same local stack at the same time. I independently reproduced the SAME class of failure three separate times today, from an unedited working
+      tree and default (non-moved) ports, including two consecutive runs of the identical isolated golden-journey test producing two DIFFERENT
+      failure symptoms (a button-click timeout at :64, then a household-context timeout at :91) - which is strong evidence against a deterministic
+      code defect and for load-induced flakiness, and rules out the implementer's own port move (3200/3300) as the cause, since I never touched the
+      ports and saw the same phenomenon on the defaults. What this leaves unresolved, and what no criterion in this phase's contract reaches: the
+      STANDING GATE as worded has no allowance for a shared, contended CI-like environment, so a phase can be everywhere correct and still never
+      produce the green e2e run criterion 12.14 asks for, on this fleet, at this load level, which is the same shape of gap the criteria contract's
+      own instructions warn about (a contract that cannot see the defect it needs to see). This is reported as a defect of the fleet's standing gate
+      practice, not of this implementation.
+    evidence:
+    - "delivery/work-history/m3-p12.yaml's final test:e2e gate-evidence entry: result: red, wrapper-exit-code: 1, 52 passed, 3 failed, with the concurrent-fleet-lane evidence recorded there."
+    - "My own three reproductions, detailed in criterion 12.14's evidence above and in my progress log commits on this branch."
+    - "No mechanism in package.json, playwright.config.ts, or CLAUDE.md's gate commands provides a retry count, a quiet-window check, or a documented waiver path for a red e2e gate attributable to shared-infrastructure load (confirmed by reading playwright.config.ts in full: retries: 0, no environment-conditional override)."
+    concrete-fix: >-
+      Either (a) set a small retries count (for example retries: 1 or 2) specifically for the shared/fleet CI profile in playwright.config.ts, scoped
+      so it does not mask a genuinely flaky assertion written against this phase's own code, or (b) add a documented waiver protocol to CLAUDE.md or
+      the fleet's dispatch process: a red test:e2e run may close a phase when every failing spec is shown, with captured evidence, to reproduce
+      identically on the committed head with local changes stashed AND to match a concurrent-lane's independent failure log for the same tests at the
+      same time (the standard delivery/work-history/m3-p12.yaml already meets informally). Either fix belongs to the fleet or CLAUDE.md's gate
+      practice, not to this phase's own diff.
+deviations-judged:
+  - deviation: >-
+      Criterion 12.17, the half requiring the phase work history to record the command actually run AGAINST THE DEPLOYED DATABASE with its exit code and
+      its printed before-and-after assignment-set sizes.
+    serves-plan-intent: true
+    reasoning: >-
+      Cannot be produced from an unmerged, undeployed branch without violating decision D-46's own stated order (code deploys before the routine runs).
+      The invocation-point half, which IS this phase's to deliver, is met (package.json script, a test that finds it, the order stated in the script's own
+      header). The plan's own text for criterion 12.17 (delivery/plan/pulse-v02.yaml) already states the deployed-run half is owed by M3-P16's criterion
+      16.1, so the deviation is honestly disclosed and matches the plan's own intent rather than working around it. Protected from penalty per my
+      dispatch; I additionally find no residual defect once the plan's current wording is read.
+  - deviation: >-
+      Criteria 12.7, 12.8 and 12.9, which speak of "a seeded database" holding MerchantRule rows written under the baseline derivation.
+    serves-plan-intent: true
+    reasoning: >-
+      The in-memory fake repository (test/application/fake-import-world.ts) is this codebase's standing application-layer test convention, and it is
+      genuinely what lets criterion 12.9's "issues no write against the transactions table" be observable at all (invisible against a live database
+      without a query log). I independently closed the resulting gap for the ONE claim that most needed a real database (the transaction's atomicity,
+      criterion 12.7/12.23) by witnessing it myself against a live Postgres, described above; that the committed suite does not also do so is a
+      reasonable line to draw given the suite's existing convention, not a corner cut.
+  - deviation: >-
+      files-to-touch, which does not name .gitignore.
+    serves-plan-intent: true
+    reasoning: >-
+      A genuine accidental commit (an absolute worktree path via a tracked node_modules symlink, commit 62612ad) that needed fixing, fixed at the tip,
+      and honestly disclosed as NOT removed from the branch's own history (verified myself: `git ls-tree 62612ad node_modules` in this worktree returns
+      the 120000 symlink blob, whose content I read - it is a build path, "/home/user/wt-m3p7/node_modules", carrying no household or financial data).
+      The no-history-rewrite decision is recorded as the orchestrator's call rather than the implementer's, which matches what I would expect a
+      clean-room review to be told rather than asked to adjudicate.
+  - deviation: >-
+      files-to-touch, which does not name src/app/globals.css, test/e2e/, messages/en.json, messages/nl.json, messages/fr.json or src/app/(app)/merchants/page.tsx.
+    serves-plan-intent: true
+    reasoning: >-
+      All six are what criterion 12.18's "surfaces that error to the reader" actually requires end to end (a status the route reads, a component that
+      renders it, a message per locale, a style for the banner, a browser witness), and none of the six could plausibly be left out while still meeting
+      12.18. The consequential correction to the plan's own conflicts-with entry for M3-P9 is also disclosed rather than left for someone else to
+      discover, which is the right instinct given DR-0027's rule that a false checked statement is worse than an unchecked one.
+  - deviation: >-
+      Criterion 12.1's composition clause, "at least 8 rows carry none", under its strict reading.
+    serves-plan-intent: true
+    reasoning: >-
+      Per my dispatch this is protected from penalty regardless; on top of that, the CURRENT plan text (this worktree's delivery/plan/pulse-v02.yaml) has
+      already been amended since the round this deviation was written against, and now states the descriptor-basis reading explicitly and
+      unambiguously, so the shipped test meets the current wording cleanly with no remaining tension. See criterion 12.1's own evidence above.
+  - deviation: >-
+      Criterion 12.5's committed baseline table, test/fixtures/baseline-descriptor-keys.json.
+    serves-plan-intent: true
+    reasoning: >-
+      An allow-list addition for an already-invented value, addressing a real gate:privacy finding from the hazard lane. gate:privacy passes cleanly in
+      my own run (exit 0, "gate:privacy clean"), which is the outcome this deviation exists to produce.
+  - deviation: >-
+      Step 13/the closing step, "run the full gate before calling the slice done", read as one clean run of every gate.
+    serves-plan-intent: true
+    reasoning: >-
+      Documents a first-attempt flake on test/e2e/auth.spec.ts:11 (a fresh dev server's first-request route compilation) that passed on re-run and passed
+      warm on the full suite re-run; not a code defect, and it is disclosed with the specific spec and timing rather than smoothed over. My own e2e
+      attempts in this round independently hit the SAME class of problem far more severely (see my report), which corroborates rather than contradicts
+      this entry's diagnosis of environmental flakiness on a first-compile request.
+  - deviation: >-
+      Criterion 12.23, added to the plan AFTER this implementation was built.
+    serves-plan-intent: true
+    reasoning: >-
+      This is exactly the criterion's own stated history (it says of itself that it postdates the implementation under review at the time of its
+      relocation and is owed by the next change), and this round's diff is that next change, built clean with no override and no shortcuts I could find.
+      The disclosed consequence (a local Postgres connection carries no project ref in either field, so the routine cannot run against one at all) is
+      accurate and is addressed directly in my report's judgement on claim 4.
+  - deviation: >-
+      files-to-touch, which does not name src/platform/db/guard-cli.ts or src/platform/db/resolve-env.ts.
+    serves-plan-intent: true
+    reasoning: >-
+      src/platform/db/ is in the amended files-to-touch and both files are inside it; the extraction of resolve-env.ts out of guard-cli.ts is exactly
+      what criterion 12.23's own text demands ("an interlock that resolves differently from the command it guards is decorative"), and I confirmed both
+      guard-cli.ts and target-guard's caller import the same resolveDbEnv function, so there is no drift to find.
+  - deviation: >-
+      Criterion 12.17, the deployed run.
+    serves-plan-intent: true
+    reasoning: >-
+      A restatement of the first deviation above, now noting the plan itself has caught up and moved the deployed run to M3-P16. Same judgement.
