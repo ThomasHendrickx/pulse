@@ -1972,3 +1972,97 @@ fix-round-criteria-standing:
     with the limit named too: a repository-level assertion is not proof the
     reader sees it, which is exactly the argument that raised 14.16 this
     round and it applies to these four the same way.
+
+environment-finding-the-slow-gate-ran-against-a-foreign-project:
+  status: >-
+    NOT A DEFECT IN THIS BRANCH, and not a decision for this phase. Recorded
+    here because it is the clearest witness this lane produced of a hole the
+    fleet already knows about, and a witness that lives only in a message to
+    the coordinator is not a witness anyone can find later.
+  do-not-build-a-second-guard: >-
+    The interlock for this already exists on another branch and is pending
+    merge: src/platform/db/gate-target.ts on
+    claude/m3-p12-counterparty-identity, imported at module scope by that
+    branch's playwright.config.ts and called before anything starts, with a
+    sibling on the Supabase side called from its auth spec. This lane's
+    pre-flight stays in a scratchpad runner and out of the tree on purpose.
+    Two interlocks for one attack is the defect where one refuses a shape by
+    name and its sibling ignores it. One guard, one place, merged once.
+
+  what-happened: >-
+    The canonical slow gate was run at 18:06 UTC and came back 79 failed, 3
+    passed, exit 1. Every one of the 79 died in shared sign-up setup before
+    reaching its own subject, with the app's own line on the page, and the 3
+    that passed are the 3 that never sign up.
+
+  the-evidence-in-the-order-it-was-gathered:
+    - >-
+      ONE. The local auth container logged ZERO requests across the whole
+      eleven minute window. The only five lines inside it are timestamped
+      after the run ended and are this lane's own probe. A suite making
+      seventy nine sign-up attempts against a local stack cannot leave that
+      trace, so the application was not talking to the local stack at all.
+    - >-
+      TWO. The sign-up action was instrumented once and reverted immediately;
+      the tree is clean and nothing of it is committed. It printed
+      "AuthApiError|401|Invalid API key" together with the URL the server
+      actually used, which was a REMOTE Supabase project on aws eu-north-1,
+      while the key it sent was the LOCAL publishable key from .env.
+    - >-
+      THREE. The container's ambient environment carries DATABASE_URL,
+      DIRECT_URL, NEXT_PUBLIC_SUPABASE_URL and a service-role key for that
+      remote project, and a real environment variable beats a .env file in
+      BOTH Next.js and Prisma. The host and the credential values are
+      deliberately not written down here.
+
+  the-sentence-that-matters: >-
+    PRISMA HAD THE SAME AMBIENT DATABASE_URL FOR THE ENTIRE RUN, so the dev
+    server's queries were pointed at a foreign project for eleven minutes.
+    The 401 on the auth side is the ONLY reason nothing was written there.
+    That is fail-closed BY LUCK, not by design: nothing in the path chose the
+    safe outcome, an unrelated key mismatch happened to stop it first. Had
+    the ambient environment carried a matching key as well as a matching
+    host, seventy nine sign-ups and every write behind them would have landed
+    in somebody else's database.
+
+  the-guard-that-was-there-and-did-not-fire: >-
+    assessDestructiveDbTarget in src/platform/db/guard-cli.ts is a real
+    interlock and it is correct, but it runs only before db:reset and
+    db:migrate. The only check on the e2e path is src/platform/config.ts:122,
+    which returns "present, scheme ok". A remote production connection string
+    passes a scheme check. It printed exactly that, eleven times, during a
+    run pointed at a foreign project.
+
+  the-fourth-family-of-one-error: >-
+    A check that validates the SHAPE of a thing and not its IDENTITY. Named
+    here beside the other three found today because they are one error, not
+    four: matching text ABOUT a process instead of the process; matching an
+    IDIOM instead of the act; asserting a LICENCE instead of a merchant; and
+    validating a SCHEME instead of a destination. All four shipped, all four
+    were green, and all four were found the same way, by pointing the
+    instrument at the thing it forbids.
+
+  witness-red-then-green: |
+    The pre-flight this lane used, on the ambient environment and then on the
+    same environment with .env pinned over it, at the same instant:
+
+      ambient:  FAIL DATABASE_URL is NOT local
+                FAIL DIRECT_URL is NOT local
+                FAIL NEXT_PUBLIC_SUPABASE_URL is NOT local     EXIT=1
+
+      pinned:   OK   DATABASE_URL is local
+                OK   DIRECT_URL is local
+                OK   NEXT_PUBLIC_SUPABASE_URL is local         EXIT=0
+
+  corroboration-for-the-fleet: >-
+    Sibling lanes signed up successfully against 127.0.0.1:3000 between 17:41
+    and 17:48, so shells started BEFORE the container restart were clean. The
+    restart is what re-introduced the ambient credentials. That is a standing
+    fleet warning already; these timestamps are corroboration, not a new
+    claim.
+
+  what-this-does-NOT-change: >-
+    Nothing about this branch's verdicts. The 79 failures are a mis-targeted
+    environment, not a product or test defect: not one of them reached its
+    own assertion. The first run is kept in the record rather than replaced
+    by a better number, because it is the evidence for this finding.
