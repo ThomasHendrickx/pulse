@@ -645,3 +645,257 @@ Prisma's agent guard refuses here. Disk was 4.8G free at the start of run 2 and
    pairs this phase does not touch and could not classify.
 4. **A busy control still accepts a pointer activation.** Named at the
    mechanism's definition in the stylesheet and handed to M3-P10.
+
+---
+
+# ROUND TWO (M3-P9), against the amended plan at 0539657
+
+The escalation this branch handed back was accepted and the plan amended:
+`src/app/layout.tsx` is now in `files-to-touch` as the ONE file matching
+`*.tsx` this phase may print, decision D-61 settles the shape, and criterion
+9.9 is added and is the criterion that fails if the press is invisible. The
+amendment was merged into this branch at `f637f2a`.
+
+## t0 what shipped
+
+`src/app/layout.tsx` gains a module-scope string constant rendered as one
+`<script data-testid="press-feedback">` inside the body. It adds a
+capture-phase `pointerdown` listener on `document` that sets `data-pressed`
+on `event.target.closest(...)` over the control selector, and capture-phase
+`pointerup` and `pointercancel` listeners that clear every `[data-pressed]`
+in the document. No `"use client"`, no import, no hook, no prop, no message
+key, and no interpolation anywhere in the constant.
+
+```
+$ grep -rn '^"use client"' src/
+src/platform/ui/nav-link.tsx:1:"use client";
+   exit 0, one line, the same single line as at the phase base
+$ git diff --name-only a4f1a94 | grep '\.tsx$'
+src/app/layout.tsx
+   exactly one, which criterion 9.7(a) permits and falsifies on a second
+```
+
+## t1 the environment, stated first because it shaped the round
+
+- `node_modules` in this worktree was a SYMLINK to `/home/user/wt-m3p7/node_modules`,
+  and that worktree was removed during the fleet cleanup, so the link
+  dangled and every npm script failed with a module-resolution error that
+  named `@eslint/eslintrc` rather than the missing tree. Repaired with
+  `npm ci` in this worktree; `git status --porcelain -- package.json
+  package-lock.json` is empty afterwards, so criterion 9.7(b) still holds.
+- PORT 3000 AND PORT 3100 WERE HELD BY OTHER WORKTREES for most of this
+  round. The first served document I read had no press listener in it at all,
+  and the reason was that I was reading `wt-m3p14`'s application on port 3000,
+  not mine. Every iteration below therefore ran against a dev server this
+  worktree started on PORT 3005 with `PLAYWRIGHT_BASE_URL` pointed at it, which
+  is a confound and is declared per fleet warning 18: `reuseExistingServer` is
+  deliberately false, so a lane that moves ports introduces its own.
+- THE DISK FILLED TO 97 PERCENT mid-round and the dev server began answering
+  500 with `ENOENT` on its own `.next/routes-manifest.json`. Reclaimed from
+  this session's own scratch directories and the npm cache only; no other
+  worktree was touched.
+- Load average was between 7.1 and 12.96 on four cores throughout, with
+  another worktree running its own e2e suite concurrently.
+
+## t2 criterion 9.9, measured
+
+All five tests this file contributes under the phone project pass. Run
+against a dev server this worktree started on port 3005, after the shared
+local Postgres was re-migrated and re-seeded (the volume had been removed by
+another lane; `npx prisma migrate deploy` exit 0, `npx tsx prisma/seed.ts`
+exit 0).
+
+```
+$ npx playwright test --project=chromium-phone -g "pressed|press a finger|press listener|project with touch"
+  ✓  1 a project with touch collects this spec, and the config still says so
+  ✓  2 the press listener is served in the document, on the shell and on the sign-in screen
+  ✓  3 the press a finger makes › three touch paths deliver input and none of them reaches :active
+  ✓  4 pressed, disabled and busy appearances at full motion › every control ...
+  ✓  5 pressed, disabled and busy appearances under reduced motion › the same appearances survive reduce ...
+  5 passed (2.9m)     S_EXIT=0
+```
+
+PASSED 5, SKIPPED 0 under `chromium-phone`, and the spec itself declares
+`CHROMIUM_PHONE_TEST_COUNT = 5`, so the two numbers are the same number from
+two sources rather than one read off the run.
+
+### (a) the mechanism is served, not injected
+
+```
+config membership: pressed-and-disabled.spec.ts is collected by ["chromium-phone"]
+  with hasTouch, out of projects ["chromium","chromium-prod","chromium-phone"]
+scripts this spec injects: ["INSTALL_HELPERS","INSTALL_RECORDER"]
+```
+
+The raw response body for `/sign-in` AND for the authenticated shell each
+carry `<script data-testid="press-feedback">` with a non-empty body that
+registers a `pointerdown` listener, and the live element's `textContent` is
+byte identical to what the shell's response carried. The config membership
+test has NO skip condition and sits outside the describe block that carries
+the `hasTouch` skip, so it runs and asserts under every project that collects
+this file rather than going silent under the desktop one.
+
+### (b) and (d) the press itself, over the whole set, at both motion settings
+
+Nineteen controls under full motion and the same nineteen under reduce, so
+THIRTY-EIGHT held touch presses of 400ms each, every animation frame sampled:
+
+```
+presses: 38 | any frame missing the marking: 0 | min peak px: 2.000
+           | min frames with a transform: 24
+```
+
+Three of the thirty-eight, verbatim:
+
+```
+touch press (full motion) button.auth-submit|Sign in: 25/25 frames marked, 25 with a transform,
+  peak 2.000px (rect 2.000px), first movement at frame 0 (14.8ms), 20 frames marked AND moved
+touch press (full motion) a|Create household: 24/24 frames marked, 24 with a transform,
+  peak 2.000px (rect 2.000px), first movement at frame 0 (14.7ms), 19 frames marked AND moved
+touch press (reduce) button.auth-submit|Sign in: 24/24 frames marked, 24 with a transform,
+  peak 2.000px (rect 2.000px), first movement at frame 0 (14.3ms), 24 frames marked AND moved
+```
+
+Every half of (b) holds on the WHOLE set, so the scoping clause criterion
+9.9(b) pre-authorises was NOT used and no deviation is recorded against it.
+(i) not one frame in the window lost the marking on any control. (ii) and
+(iii) every control moved, peak 2.000px from its own matrix with the
+scroll-corrected bounding rect agreeing to 0.000px, at or above
+`--press-offset` and the one-pixel floor. (iv) the movement arrived at
+sampled frame 0 on every control, which is the first frame at or after the
+pointerdown. (v) at least seventeen frames per press carried the marking AND
+a translation meeting (iii) simultaneously, so the two tallies are the same
+event. Every press sampled at least 21 frames against a floor of 8.
+
+### (c) :active stays at zero, on paths shown to be alive
+
+```
+touch path "held CDP Input.dispatchTouchEvent touchStart": events ["pointerdown","touchstart",
+  "pointerup","touchend","mousedown","click"], 26 frames during the press, in :active 0,
+  carrying the shipped marking 26; :active frames after the release 4 (the compatibility mouse click, not the touch)
+touch path "Input.synthesizeTapGesture with gestureSourceType "touch"": events ["pointerdown",
+  "touchstart","pointerup","touchend"], 24 frames during the press, in :active 0,
+  carrying the shipped marking 24; :active frames after the release 0
+touch path "page.touchscreen.tap": events ["pointerdown","touchstart","pointerup","touchend",
+  "mousedown","click"], 0 frames during the press, in :active 0, carrying the shipped marking 0;
+  :active frames after the release 0
+```
+
+Each path is shown to have delivered `pointerdown` AND `touchstart` before
+its zero is read. `page.touchscreen.tap` is marked NOT HELD in the spec
+because it dispatches its touchstart and touchend inside one task: no frame
+falls between them, so no mechanism can be observed in a held state under it
+and its zero is a weaker witness than the other two. That is printed rather
+than hidden.
+
+### (e) the press ends when the finger does, five endings, three shapes
+
+Fifteen endings in all, three shapes by five endings, each ending shown to
+have happened before anything was concluded from it:
+
+```
+15 endings, every one reporting "markedAtSecondFrame":0
+ending 5 overlap frames: 11, on all three shapes
+```
+
+- ONE, touch release ON the control, activation refused: `pointerup@control`
+  captured, zero elements marked by the second frame.
+- TWO, touch release AWAY: `pointerup@control` captured (touch has implicit
+  capture), zero marked.
+- THREE, a real scroll the engine took: `pointercancel@control` captured AND
+  the page's own scroll position moved, so the gesture was taken rather than
+  merely attempted.
+- FOUR, a MOUSE press begun on the control and released elsewhere: the
+  pointerup's target is asserted NOT to be the control, which is the whole
+  point of this ending, and the marking is still cleared. A listener bound to
+  the control alone passes endings one through three and fails this one.
+- FIVE, two presses in flight: both controls carried the marking on ELEVEN
+  frames simultaneously before either release, so the overlap is witnessed
+  and not assumed, and zero elements are marked after the last release.
+
+## t3 criterion 9.3(a), the refusal, now measured rather than asserted
+
+The activation is a real hit-tested `page.mouse.click` at the control's
+viewport centre, never `element.dispatchEvent`, and it is observed at the
+capture-phase refusal with the CLICK'S TARGET as the observable. With
+`aria-disabled="true"` present the captured target is an ANCESTOR of the
+control; with the marking removed, the SAME click at the SAME coordinates
+targets the control itself; and the control's bounding rect is asserted
+identical across the two attempts, so a moved page cannot pass for a refusal.
+It runs once per identity over the twelve controls that can only be marked
+that way, the eleven links and the disclosure summary, on both projects and
+at both motion settings.
+
+## t4 four mechanics measured in this round, each written where it acts
+
+1. A REFUSED COMPATIBILITY CLICK LEAVES THE BROWSER'S ACTIVE CHAIN SET. With
+   the capture-phase click refusal installed, a raw touch sequence's
+   synthesised mouse click leaves the control in `:active` for every frame
+   sampled afterwards, so the `:active` half of the pressed rule keeps drawing
+   it pressed after the shipped marking has gone. That is the spec's own
+   instrument: a held touch press reaches `:active` on ZERO frames on every
+   path. The marking is therefore read BEFORE a neutral press and the
+   restoration AFTER it, and the neutral spot is asserted not to be a control.
+2. A touchMove ON A SCREEN THAT SCROLLS IS A SCROLL. Releasing a touch away
+   from a control with a move event produced `pointercancel` instead of
+   `pointerup` and scrolled the page under the next measurement. The release
+   now ends the touch at moved coordinates with no move event at all.
+3. A MOUSE PRESS BEGUN ON AN ANCHOR STARTS A NATIVE DRAG, which the engine
+   ends with `pointercancel` and no `pointerup`, so ending four could not be
+   driven on a link-shaped control. The drag is prevented while activations
+   are refused, and that listener is for `dragstart` only.
+4. BOTH CONTROLS HAVE TO BE ON SCREEN for ending five, or the second touch
+   lands on whatever is at those coordinates. Measured once as exactly that:
+   a pointerdown fired somewhere and the second control was never marked.
+
+## t5 the declared deviation, and it is the only one
+
+CRITERION 9.9(a) SAYS THE SPEC REGISTERS NO page.evaluate LISTENER FOR
+`pointerdown`, `touchstart` OR `mousedown`; CRITERIA 9.9(c) AND 9.9(e)
+REQUIRE THE SPEC TO PROVE THOSE VERY EVENTS WERE DELIVERED before concluding
+anything from a zero or from an absence. Both cannot be obeyed. The spec
+installs a PASSIVE recorder on `document` in the capture phase whose handlers
+do exactly one thing: push a string into an array. It writes no attribute.
+The property the prohibition protects is the one criterion 9.9(a) greps for,
+that nothing the test installs can produce the pressed appearance, and it
+holds: every match of `data-pressed` in this file is a `matches`, a
+`querySelectorAll` or an assertion, and the spec PRINTS the two scripts it
+injects. The two behaviour-changing listeners are the capture-phase click
+refusal, which 9.9(a) permits by name, and the `dragstart` prevention that
+ending four needs, which is declared in point 3 above.
+
+The grep criterion 9.9(a) names, run over the new spec, returns three lines
+and every one of them is read-shaped:
+
+```
+$ grep -nE "data-pressed|dataset\.pressed|toggleAttribute" test/e2e/pressed-and-disabled.spec.ts
+23:// answers [data-pressed] as well and src/app/layout.tsx ships the one
+373:      pressed: els.map((el) => !!el && el.matches("[data-pressed]")),
+379:      markedCount: document.querySelectorAll("[data-pressed]").length,
+```
+
+## t6 criterion 9.7, the diff, and the client boundary that stays shut
+
+```
+$ git diff --name-only a4f1a94
+delivery/work-history/m3-p9-notes.md
+delivery/work-history/m3-p9.yaml
+playwright.config.ts
+src/app/globals.css
+src/app/layout.tsx
+styles/tokens.css
+test/e2e/pressed-and-disabled.spec.ts
+$ git diff --name-only a4f1a94 | grep '\.tsx$' | wc -l
+1
+$ grep -rn '^"use client"' src/
+src/platform/ui/nav-link.tsx:1:"use client";
+$ git diff --stat a4f1a94 -- package.json package-lock.json
+   (nothing)
+```
+
+Exactly one file matching `*.tsx`, and it is `src/app/layout.tsx`. Exactly
+one `"use client"` directive under `src/`, the same single line as at the
+base, counted with the anchor inside the quoting the way criterion 9.7(c)
+writes it. Nothing under `src/modules/`, `src/platform/`, `src/app/(app)/`,
+`messages/`, `prisma/` or `test/fixtures/`. The diff of the root layout adds
+no import, no hook, no prop, no next-intl key and no string a reader sees.

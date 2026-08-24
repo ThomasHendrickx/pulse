@@ -133,6 +133,7 @@ prompt: |
 files-touched:
   - styles/tokens.css
   - src/app/globals.css
+  - src/app/layout.tsx
   - playwright.config.ts
   - test/e2e/pressed-and-disabled.spec.ts
   - delivery/work-history/m3-p9.yaml
@@ -152,6 +153,13 @@ per-step-commits:
     subject: "ui: the pressed appearance no longer rests on :active, and a disabled-looking control stops working"
   - sha: 3c86d13
     subject: "history: the false claims corrected in place, and the em dashes removed"
+  # ROUND TWO, against the amended plan at 0539657
+  - sha: f637f2a
+    subject: "Merge remote-tracking branch 'origin/main' into claude/m3-p9-pressed-and-disabled"
+  - sha: 274a858
+    subject: "ui: the root layout ships the one listener that raises the pressed attribute"
+  - sha: 1cdd3aa
+    subject: "test: the press a finger makes, measured on the shipped document"
 
 key-decisions:
   - decision: >-
@@ -349,6 +357,66 @@ key-decisions:
       submit is in flight, which is what M3-P10 builds, would otherwise leave
       those two looking untouched beside a submit that visibly changed. A form
       field is not pressed, so neither takes the pressed appearance.
+  # ROUND TWO
+  - decision: >-
+      The listener ships as a module-scope string constant in src/app/layout.tsx
+      rendered as ONE script element inside the body, carrying
+      data-testid="press-feedback", and NOT as a client component.
+    why: >-
+      Decision D-61 settles it and it is not the implementer's to re-decide. A
+      "use client" file would open the first React client boundary since
+      src/platform/ui/nav-link.tsx:1, which is M3-P10's job and what hazard
+      H9.5 exists to keep out; and a press listener that does not attach until
+      the React bundle has hydrated is a poor answer to a complaint whose words
+      are that nothing happens when the owner presses. The root layout and not
+      the authenticated shell, because five of the nineteen controls live on
+      the sign-in and sign-up screens, which src/app/(app)/layout.tsx never
+      renders. The constant carries NO interpolation, ever, so it has no
+      injection surface; the product declares no Content-Security-Policy today
+      and src/middleware.ts is where one would land, so the phase that adds one
+      adds a nonce for this script in the same change or turns criterion 9.9
+      red.
+  - decision: >-
+      The clear sweeps the DOCUMENT on pointerup and on pointercancel, with no
+      pointer-id table, and the cost of that is taken deliberately.
+    why: >-
+      A clear that sweeps the document also clears a press ANOTHER FINGER is
+      still holding, so with two touches on two controls the first release
+      un-draws both. That failure is a press that DISAPPEARS, it corrects
+      itself at the next press, and multitouch across two controls is rare on
+      this product. The STICKING failure is the one that matters and criterion
+      9.9(e) measures it, including the two-presses ending that a single-slot
+      clear fails. The pointercancel listener is not optional: a scroll begun
+      on a control IS a pointercancel, and without it the control the reader
+      scrolled from stays drawn pressed until something else is tapped, after
+      which that control answers no further press because it is already in the
+      pressed state.
+  - decision: >-
+      Criterion 9.9(c)'s :active count is taken over the frames BETWEEN the
+      pointerdown and the end of the touch, and the frames after the release
+      are printed beside it rather than counted in it.
+    why: >-
+      MEASURED, not reasoned: with the capture-phase click refusal installed,
+      the compatibility MOUSE click Chromium synthesises after a raw touch
+      sequence leaves the control in :active from about 14ms after touchend
+      onward. Counting those frames would make the criterion assert something
+      about this spec's own instrument. Frames after the touch has ended are by
+      construction not the touch press, so the window is the definition rather
+      than a weakening, and both numbers are printed on every path.
+  - decision: >-
+      The restoration half of criterion 9.9(e) is read AFTER a neutral press
+      that clears the browser's active chain, and the marking half is read
+      BEFORE it.
+    why: >-
+      Same mechanism as the entry above, and it is the one that decides whether
+      ending one can be measured at all: with the activation refused, every one
+      of the twenty frames sampled after the ending had the control in :active,
+      so the :active half of the pressed rule kept drawing it pressed while
+      document.querySelectorAll("[data-pressed]") was already empty. The
+      marking is what this phase ships and a stuck marking is the defect, so
+      that assertion stays on the second frame after the ending, untouched by
+      the neutral press. The neutral spot is asserted not to be a control
+      before it is pressed.
 
 verification-first:
   - finding: >-
@@ -567,6 +635,57 @@ deviations:
       round lands the six lines, or leave them to M3-P10, which opens the
       client boundary anyway. Until one of those happens, a finger reaches the
       pressed appearance only where the engine grants :active to a touch.
+  # ROUND TWO
+  - plan-clause: >-
+      Criterion 9.9(a): "the spec registers no addInitScript and no
+      page.evaluate that adds a listener for pointerdown, touchstart or
+      mousedown, with ONE exception named here and nowhere else, the
+      capture-phase CLICK REFUSAL".
+    why: >-
+      Criteria 9.9(c) and 9.9(e) require the spec to prove pointerdown,
+      touchstart, pointerup and pointercancel were DELIVERED before concluding
+      anything from a zero or from an absence, and there is no way to witness a
+      DOM event without a listener for it. Both clauses cannot be obeyed. The
+      spec installs a PASSIVE recorder on document in the capture phase whose
+      handlers push a string into an array and do nothing else; it writes no
+      attribute, and the grep criterion 9.9(a) names returns three lines over
+      the file, one comment, one el.matches and one document.querySelectorAll.
+      The spec also PRINTS the scripts it injects, which is the check the
+      criterion itself asks for. The property the prohibition protects, that
+      nothing the test installs can produce the pressed appearance, holds.
+  - plan-clause: >-
+      Criterion 9.9(e): "After EACH of the five endings, by the SECOND sampled
+      animation frame following it ... the control's computed transform matrix
+      and bounding rect are back at their resting values".
+    why: >-
+      The transform is a TRANSITIONED property and --duration-press is 90ms, so
+      it is still unwinding at the second frame by construction, on every
+      ending and under any implementation. The marking assertion, which is the
+      one that catches a stuck press, is taken at the second frame exactly as
+      written and passes on all fifteen endings. The transform and rect
+      restoration is read at the end of the sampled tail instead, on a frame
+      the control is not in :active for the reason the key-decision above
+      records, and is 0.000px on all fifteen.
+  - plan-clause: >-
+      Criterion 9.9(e) ending FOUR: "by asserting that the ending's own event
+      was captured on the control, pointerup for endings one, two, four and
+      five".
+    why: >-
+      Ending four exists precisely because a MOUSE pointer has no implicit
+      capture, so its pointerup is NOT delivered to the control. Asserting that
+      it was would assert the opposite of what the ending measures. The spec
+      asserts a pointerup was captured AND that its target was not the control,
+      which is the stronger form of the same check and is the discriminator the
+      criterion's own reasoning describes.
+  - plan-clause: >-
+      Criterion 9.9(e) ending TWO, a touch release AWAY from the control.
+    why: >-
+      Driving it with a touchMove produced a pointercancel rather than a
+      pointerup on both screens the endings run on, because a touchMove on a
+      screen that scrolls is a scroll and a scroll is ending THREE. The release
+      now ends the touch at moved coordinates with no move event, which leaves
+      the control at a different place from where it began, produces the
+      pointerup this ending is, and lets the engine take no gesture.
 
 gate-evidence:
   - gate: typecheck
@@ -943,6 +1062,98 @@ claims:
           and iOS Safari is understood to require a touch listener; neither is
           measurable here and neither is asserted as fact anywhere in this
           phase.
+  # ROUND TWO
+  - id: M3P9-C16
+    kind: remedy
+    statement: >-
+      A FINGER PRESS ON A PHONE NOW PRODUCES A VISIBLE CHANGE IN THE SHIPPED
+      PRODUCT, with nothing installed by the test. Nineteen controls under full
+      motion and the same nineteen under reduce, thirty-eight held touch
+      presses of 400ms, every animation frame sampled: not one frame in the
+      window lost the shipped marking, every control moved, and the peak
+      vertical displacement is 2.000px on every one of them, taken from the
+      control's own transform matrix with the scroll-corrected bounding rect
+      agreeing exactly.
+    settled-by:
+      executed-construction:
+        command: >-
+          cd /home/user/wt-m3p9 && npx playwright test --project=chromium-phone
+          -g "pressed|press a finger|press listener|project with touch"
+        exit-code: 0
+        output: >-
+          "5 passed (2.9m)", zero skipped, which equals the count the spec
+          itself declares for that project. Across the thirty-eight presses:
+          "presses: 38 | any frame missing the marking: 0 | min peak px: 2.000 |
+          min frames with a transform: 24". Verbatim rows: "touch press (full
+          motion) button.auth-submit|Sign in: 25/25 frames marked, 25 with a
+          transform, peak 2.000px (rect 2.000px), first movement at frame 0
+          (14.8ms), 20 frames marked AND moved"; "touch press (reduce)
+          button.auth-submit|Sign in: 24/24 frames marked, 24 with a transform,
+          peak 2.000px (rect 2.000px), first movement at frame 0 (14.3ms), 24
+          frames marked AND moved". The scoping clause criterion 9.9(b)
+          pre-authorises was NOT used: every half was taken on the whole set.
+  - id: M3P9-C17
+    kind: coverage
+    statement: >-
+      The mechanism is SERVED and not injected, and the measurement ran. The
+      raw response body for the sign-in screen and for the authenticated shell
+      each carry a script element with data-testid="press-feedback", a
+      non-empty body and a pointerdown registration, and the live element's
+      text is byte identical to what the response carried.
+    settled-by:
+      executed-construction:
+        command: >-
+          the same run; the spec reads response.text() from the Playwright
+          navigation response rather than the live DOM
+        exit-code: 0
+        output: >-
+          "config membership: pressed-and-disabled.spec.ts is collected by
+          [\"chromium-phone\"] with hasTouch, out of projects
+          [\"chromium\",\"chromium-prod\",\"chromium-phone\"]" and
+          "scripts this spec injects:
+          [\"INSTALL_HELPERS\",\"INSTALL_RECORDER\"]". The config membership
+          test carries NO skip condition and sits outside the describe block
+          that carries the hasTouch skip, so it asserts under every project that
+          collects the file instead of going silent under the desktop one.
+  - id: M3P9-C18
+    kind: coverage
+    statement: >-
+      :active stays at zero on three touch paths each shown to be alive first,
+      and the press ends when the finger does across all five endings on all
+      three control shapes, with the two-press overlap witnessed rather than
+      assumed.
+    settled-by:
+      executed-construction:
+        command: the same run
+        exit-code: 0
+        output: >-
+          Per path: held CDP touchStart, events ["pointerdown","touchstart",
+          "pointerup","touchend","mousedown","click"], 26 frames during the
+          press, in :active 0, carrying the shipped marking 26;
+          synthesizeTapGesture touch, 24 frames, in :active 0, marking 24;
+          page.touchscreen.tap, 0 frames during the press (its down and up land
+          in one task, so no mechanism can be observed held under it), in
+          :active 0. Fifteen endings, three shapes by five, every one reporting
+          "markedAtSecondFrame":0, and ending five reporting 11 frames with
+          BOTH controls marked simultaneously on each of the three shapes.
+          Ending three additionally asserts the page's scroll position moved,
+          and ending four asserts the pointerup's target was NOT the control,
+          which is the discriminator a target-scoped clear fails.
+  - id: M3P9-C19
+    kind: open-question
+    statement: >-
+      A REAL PHONE STILL HAS NOT BEEN PRESSED. Every result above is Chromium
+      emulation under the phone project's device descriptor.
+    settled-by:
+      executed-construction:
+        command: which google-chrome chromium firefox
+        exit-code: 1
+        output: >-
+          Nothing on PATH. What is witnessed is that the shipped document
+          raises pointerdown on every touch path, that the shipped listener
+          answers it, and that the shipped stylesheet moves the control 2.000px
+          and changes its surface for as long as the touch is held. What is not
+          witnessed is a physical device, and iOS is not measurable here at all.
 
 environment-warnings:
   - warning: >-
@@ -1072,3 +1283,47 @@ environment-warnings:
       not navigate" and then failed its own positive control, because the
       unmarked click had already navigated and the marked one had too; the
       500ms wait was shorter than the first compile of /sign-up.
+  # ROUND TWO
+  - warning: >-
+      A DANGLING node_modules SYMLINK REPORTS ITSELF AS A MISSING ESLINT
+      PACKAGE. This worktree's node_modules pointed at another worktree that
+      the fleet cleanup removed, and every npm script then failed with
+      ERR_MODULE_NOT_FOUND naming @eslint/eslintrc rather than naming the
+      missing tree. Check `ls -ld node_modules` before believing a dependency
+      error in a fleet worktree.
+    evidence: >-
+      ls -ld node_modules printed a symlink to /home/user/wt-m3p7/node_modules
+      and that path did not exist; npm ci in this worktree restored it and left
+      package.json and package-lock.json byte unchanged.
+  - warning: >-
+      A DEV SERVER ON PORT 3000 IN THIS CONTAINER MAY NOT BE YOURS. The first
+      served document read in this round carried no press listener at all, and
+      the reason was that port 3000 was held by another worktree's application.
+      Read the page from a port you started yourself before concluding anything
+      about what your own tree serves.
+    evidence: >-
+      readlink /proc/PID/cwd on the process holding port 3000 pointed at
+      /home/user/wt-m3p14; the same request against a dev server this worktree
+      started on port 3005 returned the script element immediately.
+  - warning: >-
+      A HARNESS TIMEOUT KILLS THE SUBSHELL THAT OWNS A BACKGROUNDED RUN. A
+      long e2e run started with a plain trailing ampersand died silently when
+      the foreground command that launched it was terminated at its timeout,
+      and the log simply stopped mid-run with no exit code and no error. Start
+      long runs with setsid nohup and redirect from /dev/null so they outlive
+      the shell that launched them.
+    evidence: >-
+      The run's log stopped for 24 minutes with a 7-minute per-test timeout
+      configured, and pgrep showed no playwright process for this worktree.
+  - warning: >-
+      npx supabase start LEAVES THE TRACKED supabase/config.toml EDITED. Fleet
+      warning 13's workaround sets [edge_runtime] enabled = false in a TRACKED
+      file. It was reverted immediately and the revert was checked rather than
+      asserted: git status --porcelain supabase/config.toml prints nothing and
+      the file reads enabled = true again. The start itself printed a
+      certificate error for a Deno package fetch and still exited 0 with all
+      eleven containers healthy, so that error is noise rather than a failure.
+    evidence: >-
+      SB_EXIT=0, docker ps listing eleven supabase containers healthy, and
+      curl http://127.0.0.1:54321/auth/v1/health returning 200 afterwards.
+
