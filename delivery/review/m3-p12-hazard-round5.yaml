@@ -50,3 +50,43 @@ findings: []
 # CR4-M3P12-02's own concrete-fix offered two paths: default to 5432, OR
 # document the scope limitation explicitly. The shipped fix took neither:
 # it silently admits both. Writing this up next as a HIGH finding.
+
+# WORK LOG round 5, entry 2. FINDING WITNESSED AND WRITTEN UP: the
+# allLost filter's "not lost" exemption for a superseded rule checks only
+# `after !== undefined`, never that `after` is the SAME claimant relationship
+# that did the superseding. Constructed a throwaway vitest file
+# (test/application/ZZZ-scratch-witness-collision.test.ts, written, run,
+# then deleted; git status --short clean afterward) calling the REAL
+# rederiveMerchantRules with a minimal in-memory MerchantRepositoryPort
+# (no fixture import needed). Seed: R1 (EXACT, bare pattern P, merchant M1,
+# the OLD/live declaration); C (EXACT, pattern "descriptor:"+P, merchant M2,
+# a namespaced re-naming made in the D-46 window that supersedes R1); Rz
+# (EXACT, pattern "account:"+compactAccount(A), merchant M3, an UNRELATED
+# pre-existing account-basis declaration, also plausibly made in the D-46
+# window). Two rows both with baseline key P: tx-X carries TRUSTED account A
+# (IDENTITY_FIXTURE_ACCOUNTS.counterparty2, invented, already on the allow
+# list), tx-Y carries a DIFFERENT trusted account B
+# (IDENTITY_FIXTURE_ACCOUNTS.counterparty3) so C's own pass-two promotion
+# is correctly declined ("not-promoted-several-accounts", both rows share
+# baseline P) and cannot collide with Rz, isolating the mechanism under
+# test. CAPTURED REPORT: assignmentsBefore 2, assignmentsAfter 1,
+# lostAssignments [{"transactionId":"tx-Y","ruleId":"R1"}] ONLY. tx-X is
+# ABSENT from lostAssignments, from broadened, from every printed list.
+# tx-X's OWN resolution: held (before) = {merchantId: M1, ruleId: R1}; its
+# identityKey is "account:"+compactAccount(A), which equals Rz's pattern
+# exactly, so assignmentsAfter resolves it to {merchantId: M3, ruleId: Rz}.
+# M3 != M1: tx-X's merchant SILENTLY CHANGED, from a rule the row was never
+# matched by (Rz has nothing to do with R1 or C) to a merchant nobody
+# renamed it to. Confirmed in code: rederive-rules.ts's allLost filter
+# (`if (supersededRuleIds.has(held.ruleId) && after !== undefined) return
+# false`) does not check that `after`'s ruleId is C (the actual claimant)
+# or even that after.merchantId equals C.merchantId; it accepts ANY
+# non-undefined `after`. Writing up as HIGH finding next: this is a
+# violation of criterion 12.7's own explicit second guarantee ("no
+# transaction changes from one merchant to another"), witnessed directly
+# against the shipped function, and it is the "narrowing... reintroduced a
+# false [safe]" the dispatch asked me to look for: round four's fix
+# correctly stopped hiding a row that a superseded rule's claimant could
+# not reach, but the comparison it added does not confirm the thing that
+# DOES cover the row afterward has any relationship to the supersession
+# that excused it.
