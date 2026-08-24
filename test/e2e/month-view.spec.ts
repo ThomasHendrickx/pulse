@@ -398,6 +398,11 @@ const DESK_BASE_HOUSEHOLD_COLOUR = "oklch(0.23 0.008 265)";
 // allowed to grow; it is not allowed to grow by half again, which is what
 // the first round of this phase did unrecorded.
 const DESK_BASE_SPEND_CARD_HEIGHT = 1136;
+// The card M3-P14 adds, bounded on its own. One entry per account with rows
+// in the period, two lines each; the dense fixture has one account. Generous
+// enough for a household with the owner's ten accounts and tight enough that
+// the card cannot become a second month view.
+const DESK_MONTH_ACCOUNTS_MAX_HEIGHT = 900;
 const DESK_CARD_HEIGHT_FACTOR = 1.25;
 // FINDING HZ2-06. The round's own account of the round-0 damage quotes the
 // desk row height and the desk document height, and then bounded neither.
@@ -502,6 +507,14 @@ const typeAndDensity = (page: Page) =>
         need('[data-testid="spend-card"]').getBoundingClientRect().height,
       ),
       documentHeight: document.documentElement.scrollHeight,
+      // THE CARD M3-P14 ADDS, measured on its own so the document-height
+      // bound below can keep protecting exactly what it protected before
+      // (see the note at that assertion).
+      monthAccountsHeight: Math.round(
+        document
+          .querySelector('[data-testid="month-accounts"]')
+          ?.getBoundingClientRect().height ?? 0,
+      ),
     };
   });
 
@@ -1472,8 +1485,29 @@ test("the desk screen keeps the type scale and the density it had at the phase b
     .toBeLessThanOrEqual(
       Math.round(DESK_BASE_ROW_HEIGHT * DESK_CARD_HEIGHT_FACTOR),
     );
+  // THE NEW CARD'S COST IS SUBTRACTED AND BOUNDED SEPARATELY, rather than
+  // the factor being raised (M3-P14). This bound is M3-P7's regression guard
+  // against the month view getting taller through RESTYLING, and M3-P14 adds
+  // a whole card to the page that criterion 14.15 requires: every account
+  // that put rows in the month, with whether those rows were counted or
+  // held. Loosening the factor to absorb it would retire the guard for
+  // everything else it covers, silently, which is the cheap move this
+  // project has recorded going wrong before. So the new card is measured on
+  // its own, held to its own bound, and taken out of the figure the original
+  // assertion compares. Measured at this head with the dense fixture: the
+  // card is 42 pixels, one entry for the one account, and the document is
+  // 1905 against a base bound of 1863.
   expect
-    .soft(desk.documentHeight, "desk document height")
+    .soft(desk.monthAccountsHeight, "desk month-accounts card height")
+    .toBeGreaterThan(0);
+  expect
+    .soft(desk.monthAccountsHeight, "desk month-accounts card height")
+    .toBeLessThanOrEqual(DESK_MONTH_ACCOUNTS_MAX_HEIGHT);
+  expect
+    .soft(
+      desk.documentHeight - desk.monthAccountsHeight,
+      "desk document height, excluding the card M3-P14 adds",
+    )
     .toBeLessThanOrEqual(
       Math.round(DESK_BASE_DOCUMENT_HEIGHT * DESK_CARD_HEIGHT_FACTOR),
     );
