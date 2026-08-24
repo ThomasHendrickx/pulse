@@ -7,7 +7,7 @@ Chromium emulation results under the `chromium-phone` project's device
 descriptor at 390 by 844 with `isMobile` and `hasTouch` set; no physical
 device is reachable from this container.
 
-## 9.1 the six verification-first answers — MET
+## 9.1 the six verification-first answers: MET
 
 All six are in `delivery/work-history/m3-p9.yaml` under `verification-first`,
 each with the command and its captured output. Summary of what each returned:
@@ -21,7 +21,7 @@ each with the command and its captured output. Summary of what each returned:
 | (e) held press under `chromium-phone` | `page.mouse.down` DOES yield `:active` (`matchesActiveMouse: true`); touch emulation was not dropped |
 | (f) real phone browser | none reachable; every phone result is emulation and says so |
 
-## 9.2 the pressed appearance — MET
+## 9.2 the pressed appearance: MET
 
 - **(a) the set, swept not looked up.** The spec runs
   `button, a[href], summary, input[type="submit"], input[type="button"], [role="button"]`
@@ -49,7 +49,7 @@ each with the command and its captured output. Summary of what each returned:
   `grep -rn "tap-highlight" $(git ls-files "*.css")` exits 1. The comment
   explaining the choice spells the property name out in words for that reason.
 
-## 9.3 disabled, busy and unconfirmed — MET
+## 9.3 disabled, busy and unconfirmed: MET
 
 Applied through the DOM (decision D-28): `disabled` on buttons and inputs,
 `aria-disabled="true"` on links and the summary, `aria-busy="true"` for busy,
@@ -67,7 +67,7 @@ Applied through the DOM (decision D-28): `disabled` on buttons and inputs,
 - (c) unconfirmed: `opacity: 0.72` and its own `::after` ring. Not `aria-busy`,
   for the reason the plan and decision D-29 give.
 
-## 9.4 reduced motion — MET
+## 9.4 reduced motion: MET
 
 One `@media (prefers-reduced-motion: reduce)` block in `styles/tokens.css`
 redefines `--duration-press`, `--duration-state` and `--duration-busy-cycle` at
@@ -82,7 +82,7 @@ redefines `--duration-press`, `--duration-state` and `--duration-busy-cycle` at
   magnitudes. The travel is deliberately not zeroed there, which is the half
   that keeps the feedback and drops only the easing.
 
-## 9.5 tokens only — MET
+## 9.5 tokens only: MET
 
 - (a) `grep -rEn "oklch\(|#[0-9a-fA-F]{3,8}|[0-9]+px" src/ --include="*.tsx"` → exit 1.
 - (b) `grep -nE "^[^/*]*[0-9.]+(px|rem)"` over every `*.css` except
@@ -100,7 +100,7 @@ All nine token names are declared in `styles/tokens.css`:
 `--color-ink-disabled: var(--pulse-grey-300)`,
 `--color-surface-disabled: var(--pulse-grey-100)`.
 
-## 9.6 the media-condition budget — MET
+## 9.6 the media-condition budget: MET
 
 `grep -rhoE "@media[^{]+" $(git ls-files "*.css") | tr -s ' ' | sed 's/ $//' | sort -u`
 returns exactly two lines: `@media (min-width: 768px)` and
@@ -108,23 +108,32 @@ returns exactly two lines: `@media (min-width: 768px)` and
 same four files as at base. `--breakpoint-wide: 768px` still matches the one
 min-width condition.
 
-## 9.7 a stylesheet phase — MET
+## 9.7 a stylesheet phase: MET
 
-`git diff --name-only origin/main` prints five paths:
+CORRECTED IN FIX ROUND 1 (finding CR-M3P9-05): this said FIVE paths and then
+listed six. `git diff --name-only origin/main` prints six paths:
 `delivery/work-history/m3-p9.yaml`, `delivery/work-history/m3-p9-notes.md`,
 `playwright.config.ts`, `src/app/globals.css`, `styles/tokens.css` and
 `test/e2e/pressed-and-disabled.spec.ts`. No `*.tsx`, nothing under
 `src/modules/`, `messages/`, `prisma/` or `test/fixtures/`.
 `git diff --stat origin/main -- package.json package-lock.json` prints nothing.
 
-## 9.8 privacy — PARTLY WITNESSED
+## 9.8 privacy: PARTLY WITNESSED
 
 - (a) `npm run gate:privacy` exits 0. The gate is the version at
   `origin/main` a4f1a94; the blob is `ee1cf88b2ea3b6c3993ee96a4a9841106ea8db52`
   and its last-modifying commit is `ac37a63`.
-- (b) **NOT WITNESSED.** The owner's real statements are absent from this
-  container, so the probe set half (b) describes could not be built here. This
-  is recorded as not witnessed rather than green.
+- (b) **WITNESSED IN FIX ROUND 1. THE SENTENCE THAT USED TO STAND HERE WAS
+  FALSE AND IS CORRECTED IN PLACE (clause R-087, finding CR-M3P9-01).** It
+  read: "NOT WITNESSED. The owner's real statements are absent from this
+  container, so the probe set half (b) describes could not be built here."
+  There was no captured `ls`, no captured `find` and no exit code behind that
+  claim, and it is wrong: the uploads are on disk in this container. Three
+  statement PDFs are there, referred to by 8-hex prefix only per fleet warning
+  9. The round that recorded the sentence took the excused branch before
+  trying the branch that owns the work, on the one criterion this fleet has
+  already lost a round to. What the probes actually return is recorded in the
+  fix-round section at the bottom of this file.
 - (c) Every rendered measurement quoted in the work history comes from a
   committed synthetic fixture. The new spec drives
   `test/fixtures/belfius-account-a.csv` (the same fixture

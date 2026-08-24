@@ -190,9 +190,16 @@ key-decisions:
       A non-replaced inline box is not transformable, and the measurement
       recorded below shows Chromium reporting matrix(1, 0, 0, 1, 0, 3) on such
       a box whose getBoundingClientRect().top was 8 both at rest and while
-      held. Four of the nineteen controls are bare anchors, so this was a live
-      hole rather than a hypothetical one; the stylesheet gives anchors a
-      block box and the spec is what stops that rule being dropped silently.
+      held. CORRECTED IN FIX ROUND 1 (clause R-087, finding CR-M3P9-03): this
+      said four of the nineteen controls are bare anchors, so this was a live
+      hole. Four ARE bare anchors, but only TWO of them needed the rule. The
+      two links on the import result screen are direct children of
+      .import-screen, which declares display: flex at src/app/globals.css:299,
+      and a flex item is blockified whatever display it specifies, so those
+      two were already transformable. The two that needed it are the auth
+      cross-links, which sit alone inside a paragraph. The hole was live, at
+      two controls rather than four; the stylesheet gives anchors a block box
+      and the spec is what stops that rule being dropped silently.
   - decision: >-
       Every computed-style read in the spec is taken after the running
       transition has finished, through a settle helper that awaits
@@ -312,8 +319,12 @@ verification-first:
       every screen the new spec reaches and collecting what it found, not by
       copying a list. Command: npx playwright test --project=chromium-phone
       test/e2e/pressed-and-disabled.spec.ts, whose spec prints the collected
-      set. Output, 19 identities: a.month-nav|LEFT-CHEVRON, a.month-nav|
-      RIGHT-CHEVRON, a[data-testid=empty-state-import-link],
+      set. CORRECTED IN FIX ROUND 1 (finding CR-M3P9-06): the first two
+      identities were transliterated into the words LEFT-CHEVRON and
+      RIGHT-CHEVRON, and captured output is not paraphrased. The characters
+      the run printed are restored below and were re-captured in the fix
+      round's own run. Output, 19 identities: "a.month-nav|‹",
+      "a.month-nav|›", a[data-testid=empty-state-import-link],
       a[data-testid=nav-import], a[data-testid=nav-merchants],
       a[data-testid=nav-overview], a[data-testid=unresolved-pill], a|Back to
       import, a|Create household, a|Import another file, a|Sign in,
@@ -450,10 +461,13 @@ deviations:
     why: >-
       src/app/globals.css now declares "a { display: inline-block; }". It is
       inside the phase's declared files, but it is a change to a base element
-      rule rather than to a state rule, so it is called out here: four of the
-      nineteen controls are bare anchors and a non-replaced inline box is not
-      transformable, so without it the pressed rule would leave those four
-      unmoved while the computed style still reported the translation.
+      rule rather than to a state rule, so it is called out here: TWO of the
+      nineteen controls are bare anchors WITH NO FLEX PARENT (the two auth
+      cross-links) and a non-replaced inline box is not transformable, so
+      without it the pressed rule would leave those two unmoved while the
+      computed style still reported the translation. CORRECTED IN FIX ROUND 1
+      (finding CR-M3P9-03): this entry said four, counting the two import
+      result links, which are flex items and were already blockified.
 
 gate-evidence:
   - gate: typecheck
@@ -659,8 +673,9 @@ environment-warnings:
       than asserted.
     evidence: >-
       git diff --stat supabase/config.toml printed nothing after the revert,
-      and git diff --name-only against origin/main lists five paths, none of
-      them supabase/config.toml.
+      and git diff --name-only against origin/main lists six paths (corrected
+      from five in fix round 1, finding CR-M3P9-05), none of them
+      supabase/config.toml.
   - warning: >-
       A COMMENT CAN FAIL A CRITERION'S OWN GREP. Criterion 9.2(c) greps the
       stylesheets for the webkit property that removes the platform tap
