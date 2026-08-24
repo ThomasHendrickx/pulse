@@ -76,6 +76,20 @@ const OUTSIDE_GROUPS = [
   "APOTHEEK LINDEBOOM",
 ];
 
+
+// EVERY SUBMIT WAITS FOR ITS OWN NAVIGATION, and this is a correctness rule
+// rather than a style. A server action here writes a declaration and then
+// runs a FULL RECOMPUTE, so the request takes seconds; clicking and then
+// navigating away immediately races it, and the page that loads shows the
+// state BEFORE the correction while the server goes on to apply it. That
+// failure reads exactly like a broken recompute: the month showed eleven
+// uninterpreted rows and no accounts entry, and the database showed the
+// same rows correctly interpreted a minute later. Two hours went into
+// reading the engine before the race was the answer, so it is written here.
+const submit = async (page: Page, click: Promise<void>): Promise<void> => {
+  await Promise.all([page.waitForURL(/[?&]status=/), click]);
+};
+
 const signUp = async (page: Page, prefix: string): Promise<void> => {
   const unique = `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
   await page.goto("/sign-up");
@@ -124,11 +138,10 @@ const register = async (
   await page.getByTestId("account-bank-field").fill("Demobank");
   await page.getByTestId("account-number").fill(account.number);
   await page.getByTestId("account-ring-field").selectOption(account.ring);
-  await Promise.all([
-    page.waitForURL(/[?&]status=/),
-    page.getByTestId("register-account").click(),
-  ]);
-  await expect(page.getByTestId("accounts-status")).toBeVisible();
+  await submit(page, page.getByTestId("register-account").click());
+  await expect(page.getByTestId("accounts-status")).toBeVisible({
+    timeout: 30_000,
+  });
 };
 
 const registerAll = async (page: Page): Promise<void> => {
@@ -413,7 +426,10 @@ test("THE WRONG ANSWER, WALKED BACK: a savings statement answered as a spending 
   await page.goto("/merchants");
   const group = page.getByTestId("unresolved-group").first();
   await group.locator('input[name="merchantName"]').fill("Not a merchant");
-  await group.getByRole("button", { name: "Name" }).click();
+  await Promise.all([
+    page.waitForURL(/\/merchants/),
+    group.getByRole("button", { name: "Name" }).click(),
+  ]);
 
   // FOLLOW THE LINK THE COPY RENDERS, and correct the ring with the control
   // that copy named.
@@ -433,7 +449,7 @@ test("THE WRONG ANSWER, WALKED BACK: a savings statement answered as a spending 
   await expect(row.getByTestId("ring-change-preview")).toContainText(
     "stop being counted",
   );
-  await row.getByTestId("confirm-ring-change").click();
+  await submit(page, row.getByTestId("confirm-ring-change").click());
 
   // AND THE RULE THAT STOPPED MATCHING IS REPORTED BY NAME AND COUNT.
   await expect(page.getByTestId("accounts-rules-stopped")).toBeVisible();
@@ -473,11 +489,14 @@ test("a row on an account that LEFT the pot stops counting and stops being offer
     .filter({ hasText: "Current account" })
     .getByTestId("correct-ring")
     .click();
-  await page
-    .getByTestId("account-row")
-    .filter({ hasText: "Current account" })
-    .getByTestId("confirm-ring-change")
-    .click();
+  await submit(
+    page,
+    page
+      .getByTestId("account-row")
+      .filter({ hasText: "Current account" })
+      .getByTestId("confirm-ring-change")
+      .click(),
+  );
 
   await page.goto("/?month=2026-08");
   // NONE OF THOSE ROWS APPEARS IN ANY MONTH FIGURE.
@@ -510,11 +529,14 @@ test("a row on an account that LEFT the pot stops counting and stops being offer
     .filter({ hasText: "Current account" })
     .getByTestId("correct-ring")
     .click();
-  await page
-    .getByTestId("account-row")
-    .filter({ hasText: "Current account" })
-    .getByTestId("confirm-ring-change")
-    .click();
+  await submit(
+    page,
+    page
+      .getByTestId("account-row")
+      .filter({ hasText: "Current account" })
+      .getByTestId("confirm-ring-change")
+      .click(),
+  );
   await page.goto("/?month=2026-08");
   const back = page
     .getByTestId("month-account")
