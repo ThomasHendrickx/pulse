@@ -366,6 +366,51 @@ describe("criteria 14.9 and 15.5: interpretation is rebuildable and no fact is r
   });
 });
 
+// THE PATTERNS THE DELETE GUARD USES, and why they are shaped this way.
+//
+// CORRECTED AFTER BEING SHOWN GREEN AGAINST THE STATE IT FORBIDS (R-037a,
+// R-087). The first version was a single line-based regex,
+// /(deleteRule|deleteMany|\bdelete\b)[^\n]*[Rr]ule/, which required the word
+// "delete" to appear BEFORE "Rule" ON THE SAME LINE. The Prisma client puts
+// the MODEL NAME FIRST, so the ordinary delete reads
+// `tx.merchantRule.deleteMany({` and "Rule" is to the LEFT of the verb with
+// nothing matching to its right. Demonstrated rather than argued: with
+// exactly that call added to the interpretation path, the guard passed.
+//
+// This is the ONE guard in either phase that holds an ABSOLUTE rule of the
+// domain rather than a criterion's own assertion (pulse-domain section 2
+// rule 3: recompute may never write to the declarations layer), and decision
+// D-49 rests on it twice. So it now matches the model and the verb in EITHER
+// ORDER, across a line break, and it covers the raw-SQL form too. The test
+// below points it at its own target so it cannot silently rot again.
+// COMMENTS ARE NOT CODE PATHS. The criterion forbids a code path that
+// deletes a rule; this file and its siblings talk about deletion constantly,
+// because "the rule is KEPT and never deleted" is the decision being
+// implemented. Matching prose would make the guard red on correct code, and a
+// guard that is red on correct code gets weakened rather than fixed.
+const stripComments = (text: string): string =>
+  text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+
+const rulesDeletedIn = (text: string): readonly string[] => {
+  const code = stripComments(text);
+  return RULE_DELETE_PATTERNS.filter((pattern) => pattern.test(code)).map(
+    (pattern) => pattern.source,
+  );
+};
+
+const RULE_DELETE_PATTERNS: readonly RegExp[] = [
+  // Prisma client, model first: tx.merchantRule.deleteMany({ ... }
+  // The optional plural matters: a repository-local collection is as likely
+  // to be called merchantRules, and deleting from it is the same act.
+  /merchantRules?\s*\.\s*delete/i,
+  // Verb first, model within a short reach: deleteRule(...), delete({ ... merchantRule
+  /delete[A-Za-z]*\s*\(?[^;]{0,80}merchantRule/i,
+  // The named port method, whatever its receiver.
+  /\bdeleteRule\b/,
+  // Raw SQL against the table, in either case.
+  /delete\s+from\s+"?merchant_rules"?/i,
+];
+
 describe("criteria 14.13 and 15.6: a naming that stops applying is kept, counted and named", () => {
   test("the rule survives, the rows lose their merchant, the count is reported, and correcting back makes it match again with no user action", async () => {
     const world = makeFakeImportWorld();
@@ -491,9 +536,8 @@ describe("criteria 14.13 and 15.6: a naming that stops applying is kept, counted
         if (statSync(full).isDirectory()) {
           walk(full);
         } else if (entry.endsWith(".ts")) {
-          const text = readFileSync(full, "utf8");
-          if (/(deleteRule|deleteMany|\bdelete\b)[^\n]*[Rr]ule/.test(text)) {
-            offenders.push(full);
+          for (const hit of rulesDeletedIn(readFileSync(full, "utf8"))) {
+            offenders.push(`${full} :: ${hit}`);
           }
         }
       }
@@ -502,6 +546,41 @@ describe("criteria 14.13 and 15.6: a naming that stops applying is kept, counted
       walk(join(__dirname, "..", "..", root));
     }
     expect(offenders).toEqual([]);
+  });
+
+  test("the delete guard reddens on the ordinary Prisma form, asserted here rather than assumed", () => {
+    // THE GUARD IS POINTED AT ITS OWN TARGET, in the file, so it can never
+    // again be green against the thing it forbids without this reddening
+    // too. Each string below is a real way to delete a MerchantRule and each
+    // must be caught by at least one pattern; the last two must NOT be, so
+    // the guard is not simply matching everything.
+    const mustCatch = [
+      "await tx.merchantRule.deleteMany({ where: { householdId } });",
+      "await prisma.merchantRule.delete({ where: { id } });",
+      "await tx.merchantRule\n  .deleteMany({\n    where: {},\n  });",
+      'await prisma.$executeRaw`DELETE FROM "merchant_rules" WHERE id = ${id}`;',
+      "await prisma.$executeRawUnsafe('delete from merchant_rules');",
+      "await deps.merchants.deleteRule(context, ruleId);",
+      "await merchantRules.deleteMany();",
+    ];
+    const mustNotCatch = [
+      "await tx.transferLink.deleteMany({ where: { householdId } });",
+      "// the rule is KEPT and is never deleted by any engine path",
+      "/* Merchant rules the change leaves matching nothing. Never deleted.\n   readonly merchantRulesStoppedMatching: number; */",
+      "const merchantRule = await deps.merchants.upsertRule(context, input);",
+    ];
+    for (const sample of mustCatch) {
+      expect(
+        rulesDeletedIn(sample).length,
+        `the delete guard does not catch: ${sample}`,
+      ).toBeGreaterThan(0);
+    }
+    for (const sample of mustNotCatch) {
+      expect(
+        rulesDeletedIn(sample),
+        `the delete guard wrongly catches: ${sample}`,
+      ).toEqual([]);
+    }
   });
 });
 

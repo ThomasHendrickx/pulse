@@ -159,33 +159,166 @@ describe("one definition, enumerated (criterion 14.4)", () => {
     expect(definitions).toEqual([PLATFORM_MODULE]);
   });
 
-  test("no file outside the platform module writes its own uppercase-plus-whitespace-removal of an account-bearing field", () => {
-    // The shape a second copy takes: a replace that removes whitespace or
-    // separators, on a line that also mentions an account-bearing field or
-    // is chained with toUpperCase. Written as an enumeration rather than a
-    // bare grep so a reader can check the list.
-    const PERMITTED: readonly string[] = [];
+  // THE DUPLICATE DETECTOR, and the shapes it must catch.
+  //
+  // CORRECTED AFTER BEING SHOWN GREEN AGAINST THE STATE IT FORBIDS (R-037a,
+  // R-087). The first version tested LINE BY LINE for a dot-prefixed
+  // `.replace(` taking a REGEX LITERAL. A clean-room review proved it green
+  // against a working duplicate written with `.replaceAll`, and it was
+  // additionally green against a copy spread over two lines, a split/join
+  // copy, and the SQL copy that is IN THE TREE at
+  // src/modules/overview/adapters/overview-repository.ts. It caught only the
+  // two shapes the criterion names by name, which is the shape of a guard
+  // built against the examples in its own brief.
+  //
+  // It now matches over the WHOLE FILE with comments stripped, so a copy
+  // spread across lines is reached; it accepts replace and replaceAll and
+  // split/join; and it carries a second detector for the SQL form, because a
+  // SQL copy matches no JavaScript idiom at all.
+  const stripComments = (text: string): string =>
+    text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+
+  // A separator-removing transformation in any of the forms this codebase
+  // could write it in. [\s\S] rather than . so a copy that wraps is reached.
+  const REMOVES_SEPARATORS: readonly RegExp[] = [
+    /\.replace(All)?\(\s*\/\[?[\\s\- ]+\]?[^)]*\/[a-z]*\s*,\s*(""|'')\s*\)/,
+    /\.replace(All)?\(\s*(""|'' |" "|' ')\s*,\s*(""|'')\s*\)/,
+    /\.split\(\s*[^)]{0,20}\)\s*\.\s*join\(\s*(""|'')\s*\)/,
+  ];
+  // The SQL form: a separator strip wrapped in upper(), on any column.
+  const SQL_CANONICALISATION =
+    /upper\s*\(\s*(replace|regexp_replace)\s*\(/i;
+  const ACCOUNT_BEARING = /iban|Iban|IBAN|accountNumber|counterpartyAccount/;
+
+  // PROXIMITY, NOT SAME-FILE. The first widening asked whether the file
+  // mentioned an account anywhere and whether it stripped separators
+  // anywhere, and went red on
+  // src/modules/import/domain/kbc-mastercard-template.ts, where the strip is
+  // the CARD-MASK normaliser and the only account-bearing token is two
+  // hundred lines away in an unrelated function. That is a false positive on
+  // correct code, which is how a guard gets weakened rather than fixed. The
+  // window is wide enough to reach a copy that wraps over several lines and
+  // narrow enough that two unrelated functions in one file do not combine.
+  const WINDOW = 200;
+
+  const canonicalisationsIn = (text: string): readonly string[] => {
+    const code = stripComments(text);
+    const hits: string[] = [];
+    for (const pattern of REMOVES_SEPARATORS) {
+      const global = new RegExp(pattern.source, "g");
+      let match: RegExpExecArray | null;
+      while ((match = global.exec(code)) !== null) {
+        const from = Math.max(0, match.index - WINDOW);
+        const near = code.slice(from, match.index + match[0].length + WINDOW);
+        if (ACCOUNT_BEARING.test(near)) {
+          hits.push(`js:${pattern.source.slice(0, 24)}`);
+          break;
+        }
+      }
+    }
+    if (SQL_CANONICALISATION.test(code)) {
+      hits.push("sql:upper(replace(");
+    }
+    return hits;
+  };
+
+  test("no file outside the platform module writes its own uppercase-plus-separator-removal of an account-bearing field", () => {
+    // THE ONE PERMITTED EXCEPTION, recorded here with its reason, which is
+    // what criterion 14.4's own compactIban clause establishes this list
+    // for. It is listed rather than removed because SQL cannot import
+    // TypeScript: the reserves join and its GROUPING have to express the
+    // transformation in the database or not at all.
+    //
+    // AND IT IS HELD TO THE SAME CHARACTER CLASS. The two copies used to
+    // strip different sets, the TypeScript form removing every whitespace
+    // character and the SQL form removing a literal space and hyphen only.
+    // That is asserted below rather than promised here.
+    const PERMITTED: readonly string[] = [
+      "src/modules/overview/adapters/overview-repository.ts::sql:upper(replace(",
+    ];
     const offenders: string[] = [];
     for (const file of sources) {
       if (file === PLATFORM_MODULE) {
         continue;
       }
-      const text = readFileSync(file, "utf8");
-      for (const [index, line] of text.split("\n").entries()) {
-        const removesSeparators =
-          /\.replace\(\s*\/\[?[\\s -]+\]?[^)]*\/[a-z]*\s*,\s*""\s*\)/.test(line);
-        if (!removesSeparators) {
-          continue;
-        }
-        const accountBearing =
-          /iban|Iban|IBAN|accountNumber|counterpartyAccount/.test(line) ||
-          /toUpperCase\(\)/.test(line);
-        if (accountBearing) {
-          offenders.push(`${file}:${index + 1}`);
+      const relative = file.slice(file.indexOf("src/"));
+      for (const hit of canonicalisationsIn(readFileSync(file, "utf8"))) {
+        const key = `${relative}::${hit}`;
+        if (!PERMITTED.includes(key)) {
+          offenders.push(key);
         }
       }
     }
-    expect(offenders.filter((o) => !PERMITTED.includes(o))).toEqual([]);
+    expect(offenders).toEqual([]);
+  });
+
+  test("the permitted SQL copy strips the SAME character class as the platform form", () => {
+    // WHY THIS MATTERS. If the two disagree, a stored counterparty account
+    // carrying a tab or a non-breaking space canonicalises in TypeScript and
+    // does NOT canonicalise in the reserves join, and the household sees one
+    // savings account listed twice with its money split between the lines.
+    // That is the exact defect the normalised join exists to prevent,
+    // arriving through the half that had no guard.
+    //
+    // THE TYPESCRIPT SIDE IS ASSERTED BY BEHAVIOUR, not by matching its
+    // source text: what matters is which characters it removes, and a test
+    // that greps for a regex literal breaks on the spelling while missing a
+    // change of meaning.
+    const compact = "BE90901100001132";
+    for (const separator of [" ", "\t", "\u00a0", "-", "\n"]) {
+      const spaced = `BE90${separator}9011${separator}0000${separator}1132`;
+      expect(
+        canonicalAccountNumber(spaced),
+        `the platform form does not strip ${JSON.stringify(separator)}`,
+      ).toBe(compact);
+    }
+    // THE SQL SIDE is asserted on its source, because SQL cannot be called
+    // from the fast gate. It must use a CHARACTER CLASS rather than a chain
+    // of literal replaces, which is what it used to do: replace(replace(x,
+    // ' ', ''), '-', '') removes a literal space and a literal hyphen only.
+    // The behavioural cross-check against a real database, that the two
+    // agree on a tab, lives in the database-backed lane
+    // (test/e2e/overview-reads.spec.ts).
+    // Comments stripped, because the corrected comment at that fragment
+    // QUOTES the old chained form in order to say what changed, and a guard
+    // that reads prose would go red on a correct file.
+    const repository = stripComments(
+      readFileSync(
+        join(SRC, "modules", "overview", "adapters", "overview-repository.ts"),
+        "utf8",
+      ),
+    );
+    expect(repository).toContain("regexp_replace");
+    expect(repository).not.toContain("replace(replace(");
+  });
+
+  test("the duplicate detector reddens on every shape a second copy can take, asserted here rather than assumed", () => {
+    // THE GUARD IS POINTED AT ITS OWN TARGET. Each entry is a working second
+    // copy of the transformation; each must be caught. The two at the end
+    // must NOT be, so the guard is not simply matching everything.
+    const mustCatch = [
+      'const c = (iban: string) => iban.replace(/[\\s-]/g, "").toUpperCase();',
+      'const c = (iban: string) => iban.replaceAll(/\\s/g, "").toUpperCase();',
+      'const c = (iban: string) => iban.split(" ").join("").toUpperCase();',
+      'const c = (iban: string) =>\n  iban\n    .replace(/[\\s-]/g, "")\n    .toUpperCase();',
+      'const sql = `upper(replace(replace(t."counterpartyIban", \' \', \'\'), \'-\', \'\'))`;',
+    ];
+    const mustNotCatch = [
+      'const label = raw.replace(/\\s+/g, " ").trim();',
+      'const key = text.toUpperCase().trim();',
+    ];
+    for (const sample of mustCatch) {
+      expect(
+        canonicalisationsIn(sample).length,
+        `the duplicate detector does not catch: ${sample}`,
+      ).toBeGreaterThan(0);
+    }
+    for (const sample of mustNotCatch) {
+      expect(
+        canonicalisationsIn(sample),
+        `the duplicate detector wrongly catches: ${sample}`,
+      ).toEqual([]);
+    }
   });
 
   test("the pinned country-length table has exactly one definition", () => {

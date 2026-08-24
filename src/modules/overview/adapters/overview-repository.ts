@@ -95,7 +95,16 @@ const ACCOUNT_JOIN = Prisma.sql`JOIN "accounts" a
 // account, so a normalised join with a raw GROUP BY shows the household one
 // savings account twice, under the right name both times, with the money
 // split (criterion 14.2, seventh assertion).
-const CANONICAL_COUNTERPARTY_SQL = Prisma.sql`upper(replace(replace(t."counterpartyIban", ' ', ''), '-', ''))`;
+// CORRECTED: THE TWO COPIES STRIPPED DIFFERENT CHARACTER CLASSES. This read
+// `upper(replace(replace(t."counterpartyIban", ' ', ''), '-', ''))`, which
+// removes a literal space and a literal hyphen only, while the TypeScript
+// form removes /[\s -]/, which is EVERY whitespace character including a tab
+// and a non-breaking space. A stored counterparty account carrying one of
+// those canonicalised in TypeScript and did NOT canonicalise here, which is
+// precisely the split-savings-account defect the reserves join exists to
+// prevent, arriving through the half that had no guard. regexp_replace with
+// the same class closes it.
+const CANONICAL_COUNTERPARTY_SQL = Prisma.sql`upper(regexp_replace(t."counterpartyIban", '[\s-]', '', 'g'))`;
 
 const MATCHED_LINK_EXISTS = Prisma.sql`EXISTS (
   SELECT 1 FROM "transfer_links" l
