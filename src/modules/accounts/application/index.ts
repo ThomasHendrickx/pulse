@@ -8,9 +8,51 @@
 
 import type { HouseholdContext } from "@/platform/tenancy";
 import * as repository from "../adapters/account-repository";
-import type { AccountRecord, AccountRepositoryPort, NewAccount } from "./ports";
+import type { Result } from "@/platform/result";
+import type { AccountRole } from "../domain/account-role";
+import {
+  registerAccount as registerAccountUseCase,
+  type RegisterAccountError,
+  type RegisterAccountInput,
+  type RegisterAccountOutcome,
+} from "./register-account";
+import {
+  correctAccountRing as correctRingUseCase,
+  previewAccountRingChange as previewRingUseCase,
+  type CorrectAccountRingError,
+  type CorrectAccountRingOutcome,
+  type RingChangeMovement,
+} from "./correct-account-ring";
+import type {
+  AccountRecord,
+  AccountRepositoryPort,
+  DeclarationChangePreviewPort,
+  NewAccount,
+  RecomputeInterpretation,
+} from "./ports";
 
-export type { AccountRecord, AccountRepositoryPort, NewAccount } from "./ports";
+export type {
+  AccountRecord,
+  AccountRepositoryPort,
+  DeclarationChangePreviewPort,
+  NewAccount,
+  RecomputeInterpretation,
+} from "./ports";
+export type {
+  RegisterAccountError,
+  RegisterAccountInput,
+  RegisterAccountOutcome,
+} from "./register-account";
+export type {
+  CorrectAccountRingError,
+  CorrectAccountRingOutcome,
+  RingChangeMovement,
+} from "./correct-account-ring";
+export { registerAccount as registerAccountWith } from "./register-account";
+export {
+  correctAccountRing as correctAccountRingWith,
+  previewAccountRingChange as previewAccountRingChangeWith,
+} from "./correct-account-ring";
 export type { AccountRole } from "../domain/account-role";
 export { parseAccountRole } from "../domain/account-role";
 
@@ -19,6 +61,7 @@ const liveRepository: AccountRepositoryPort = {
   listAccounts: repository.listAccounts,
   findAccountByIban: repository.findAccountByIban,
   getAccountById: repository.getAccountById,
+  updateAccountRole: repository.updateAccountRole,
 };
 
 // Declaring an account is a pure declaration-layer write: the user names
@@ -46,3 +89,41 @@ export const getAccountById = (
   accountId: string,
 ): Promise<AccountRecord | null> =>
   liveRepository.getAccountById(context, accountId);
+
+// THE TWO USE CASES THIS MODULE PUBLISHES WITH AN ENGINE DEPENDENCY, on the
+// same terms assignMerchant takes its recompute: the ledger's composition
+// root imports THIS module for its declared-set read, so importing the
+// ledger back from here would be a module cycle. The UI action binds both
+// arguments to the ledger's published interface (see the note at the top of
+// src/modules/accounts/ui/actions.ts).
+
+export const registerAccount = (
+  context: HouseholdContext,
+  input: RegisterAccountInput,
+  engine: {
+    readonly preview: DeclarationChangePreviewPort;
+    readonly recompute: RecomputeInterpretation;
+  },
+): Promise<Result<RegisterAccountOutcome, RegisterAccountError>> =>
+  registerAccountUseCase(
+    context,
+    { accounts: liveRepository, ...engine },
+    input,
+  );
+
+export const previewAccountRingChange = (
+  context: HouseholdContext,
+  input: { readonly accountId: string; readonly role: AccountRole },
+  engine: { readonly preview: DeclarationChangePreviewPort },
+): Promise<Result<RingChangeMovement, CorrectAccountRingError>> =>
+  previewRingUseCase(context, { accounts: liveRepository, ...engine }, input);
+
+export const correctAccountRing = (
+  context: HouseholdContext,
+  input: { readonly accountId: string; readonly role: AccountRole },
+  engine: {
+    readonly preview: DeclarationChangePreviewPort;
+    readonly recompute: RecomputeInterpretation;
+  },
+): Promise<Result<CorrectAccountRingOutcome, CorrectAccountRingError>> =>
+  correctRingUseCase(context, { accounts: liveRepository, ...engine }, input);

@@ -83,3 +83,25 @@ export const getAccountById = async (
   });
   return row === null ? null : toRecord(row);
 };
+
+// THE RING CORRECTION, AS A DECLARATION EDIT (M3-P15). ONE declaration
+// column is written and nothing else: no transaction row is touched here or
+// anywhere on the correction path, because a wrong interpretation is
+// repaired by changing the declaration and recomputing, never by rewriting
+// a stored row (pulse-domain section 2 rule 1). The recompute is the
+// caller's, so this function has no engine dependency and cannot acquire
+// one by accident.
+export const updateAccountRole = async (
+  context: HouseholdContext,
+  accountId: string,
+  role: AccountRole,
+): Promise<AccountRecord | null> => {
+  const updated = await prisma.account.updateMany({
+    where: { householdId: context.householdId, id: accountId },
+    data: { role },
+  });
+  if (updated.count === 0) {
+    return null;
+  }
+  return getAccountById(context, accountId);
+};

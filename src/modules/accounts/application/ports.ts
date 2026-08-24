@@ -36,4 +36,43 @@ export type AccountRepositoryPort = {
     context: HouseholdContext,
     accountId: string,
   ) => Promise<AccountRecord | null>;
+  // THE RING CORRECTION (M3-P15). A DECLARATION EDIT and nothing else: it
+  // writes ONE declaration column and the caller then calls the ledger's
+  // published recompute, which is the same shape as naming a merchant. No
+  // path here writes a transaction row, and a correction is never a row
+  // rewrite (pulse-domain section 2 rule 1, hazard H15.1).
+  readonly updateAccountRole: (
+    context: HouseholdContext,
+    accountId: string,
+    role: AccountRole,
+  ) => Promise<AccountRecord | null>;
 };
+
+// The recompute the ledger publishes, injected as an explicit argument the
+// way assignMerchant takes it, so the accounts module never imports the
+// ledger module and no cycle exists.
+export type RecomputeInterpretation = (
+  context: HouseholdContext,
+) => Promise<unknown>;
+
+// The DRY RUN the ledger publishes (decision D-58): what a proposed
+// declaration set would do, computed by the same interpretation the
+// recompute runs, writing nothing.
+export type DeclarationChangePreviewPort = (
+  context: HouseholdContext,
+  input: {
+    readonly proposedAccounts: readonly {
+      readonly id: string;
+      readonly role: AccountRole;
+      readonly iban?: string;
+    }[];
+    readonly subjectAccountId?: string;
+  },
+) => Promise<{
+  readonly rowsOnAccount: number;
+  readonly rowsOnAccountDirection: "stop-counting" | "start-counting" | "none";
+  readonly spendDeltaCents: number;
+  readonly reservesDeltaCents: number;
+  readonly incomeDeltaCents: number;
+  readonly merchantRulesStoppedMatching: number;
+}>;

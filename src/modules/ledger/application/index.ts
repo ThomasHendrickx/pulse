@@ -5,6 +5,7 @@
 // in-memory fakes of the same ports, never this binding.
 
 import type { HouseholdContext } from "@/platform/tenancy";
+import type { DeclaredAccount } from "../domain/ledger-transaction";
 import { listAccounts } from "@/modules/accounts/application";
 import { resolveCounterparties } from "@/modules/merchants/application";
 import * as repository from "../adapters/ledger-repository";
@@ -13,9 +14,15 @@ import {
   recomputeInterpretation as recomputeUseCase,
   type InterpretationSummary,
 } from "./interpret-window";
+import {
+  previewDeclarationChange as previewDeclarationChangeUseCase,
+  type DeclarationChangePreview,
+} from "./preview-declaration-change";
 import type { LedgerDependencies } from "./ports";
 
 export type { InterpretationSummary } from "./interpret-window";
+export type { DeclarationChangePreview } from "./preview-declaration-change";
+export { previewDeclarationChange as previewDeclarationChangeWith } from "./preview-declaration-change";
 export type {
   LedgerAccountsGateway,
   LedgerDependencies,
@@ -82,3 +89,16 @@ export const interpretForImport = (
 export const recomputeInterpretation = (
   context: HouseholdContext,
 ): Promise<InterpretationSummary> => recomputeUseCase(context, liveDependencies);
+
+// WHAT A DECLARATION CHANGE WILL DO, before it is made: a DRY RUN of the
+// same interpretation the recompute runs, over the proposed declaration set,
+// writing nothing (decision D-58). Consumed by the accounts module, which
+// registers accounts and corrects rings and must tell the owner what moves.
+export const previewDeclarationChange = (
+  context: HouseholdContext,
+  input: {
+    readonly proposedAccounts: readonly DeclaredAccount[];
+    readonly subjectAccountId?: string;
+  },
+): Promise<DeclarationChangePreview> =>
+  previewDeclarationChangeUseCase(context, liveDependencies, input);
