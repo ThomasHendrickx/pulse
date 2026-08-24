@@ -1,0 +1,215 @@
+# Adversarial plan review of the M3-P9 amendment, ROUND THREE: a scoped
+# CONFIRMATION PASS, not a re-walk (dispatch M0-P7, worktree
+# /home/user/wt-m0p7-adv, branch claude/m0-p7-plan-review). Round one is
+# delivery/review/m0-p7-plan-review.yaml (ebed878, thirteen findings against
+# amendment bca2a74); round two is
+# delivery/review/m0-p7-plan-review-round2.yaml (eff3c1f, seven findings
+# against revision 75006f8). The revision under review is 0539657, merged at
+# 663482e, 137 insertions and 34 deletions.
+#
+# SCOPE, honoured. Three clauses were read and nothing else, because those
+# three carry criterion text no one but its author has read. Everything else
+# in the diff was read only far enough to confirm it is the text round two
+# asked for, which it is.
+#
+# WHAT WAS CHECKED, and the captured evidence for each:
+#
+# - CLAUSE 1, criterion 9.3(a)'s observable (plan :4912 to :4940). SOUND.
+#   It names the click's TARGET at the refusal listener, which is the one
+#   observable that works, and it rules out both wrong ones with the reason
+#   for each: a listener on the control cannot see the click because the
+#   refusal calls stopPropagation on document and document heads the capture
+#   path, and "a click was captured" is true in both conditions because with
+#   pointer-events none the click still lands on the ancestor behind the
+#   control. The rect pin does exactly what it needs to: the confound is that
+#   the page moved between the two attempts and the coordinates now mean
+#   something else, and a control whose bounding rect is identical across
+#   both attempts still has its centre at those coordinates. Three secondary
+#   checks, all clean. pointer-events is INHERITED, so the control's
+#   descendants are out of hit testing too and the target cannot be a child
+#   dressed up as a miss. The falsifiable form in the sentence is "the
+#   control neither is that target nor contains it", which is robust; the
+#   "is an ANCESTOR" phrasing beside it is descriptive and would only bind
+#   harder. And every way this can go wrong goes RED rather than green: a
+#   refusal not re-installed after a navigation means no target is captured
+#   and the assertion fails; a disabled rule that changed the box would move
+#   the rect and fail the pin.
+#
+# - CLAUSE 2, criterion 9.9(a)'s config membership check (plan :5141 to
+#   :5161). SOUND, and it does close both halves. Walked against the config
+#   as it stands, captured:
+#     $ sed -n '80,92p' playwright.config.ts
+#       :83  name: "chromium-phone"
+#       :86  hasTouch: true
+#       :89  testMatch: /(month-view|navigation)\.spec\.ts/
+#   So a project with a literal hasTouch true and a RegExp testMatch exists,
+#   config.projects reaches both after importing the default export, and
+#   RegExp.test against the basename from test.info().file is a real
+#   assertion. The failure it must catch: a later phase narrows the phone
+#   project's testMatch so this spec is no longer collected there. The
+#   desktop project's membership is testIgnore: /prod-smoke/, a catch-all, so
+#   the file is STILL collected by desktop, the membership test runs there,
+#   finds no hasTouch project matching its own filename, and the suite goes
+#   RED. That is reddening rather than emptying, exactly as the clause
+#   claims, and it is what makes M3-P10's criterion 10.7 an interlock rather
+#   than a statement about a spec that is not there. One residual, named for
+#   honesty and not a finding: if a later phase dropped the spec from EVERY
+#   project the file is never loaded and nothing fails, but that requires
+#   adding it to the desktop project's testIgnore, which is a visible act
+#   rather than a regex narrowing, and 10.7's prose covers it.
+#
+# - CLAUSE 3, criterion 9.9(e)'s ending FIVE (plan :5288 to :5305). SOUND in
+#   its discriminating logic. Walked both implementations by hand. SINGLE
+#   SLOT: touch A down on X sets last = X and marks X; touch B down on Y sets
+#   last = Y and marks Y; A ends, the clear removes the attribute from last,
+#   which is Y; B ends, the clear removes it from Y again. X is still marked,
+#   the assertion after the last ending reads length 1, RED. Caught.
+#   DOCUMENT-WIDE SWEEP: A down marks X, B down marks Y, A ends and the sweep
+#   clears both, B ends and the sweep finds nothing, length 0, GREEN. So the
+#   ending discriminates exactly the pair it was added for. And adding it did
+#   NOT break the alive-before-absent requirement: the new sentence assigns
+#   pointerup to endings one, two, four and five and pointercancel to ending
+#   three, which covers all five with no gap, and the FALSIFIED BY clause
+#   gained "by an ending concluded from without its own event having been
+#   captured".
+#
+# - THE TWO-FINGER COST, R2-07, on which a judgement was asked rather than
+#   agreement: recorded in the step at :4656 to :4667 and measured by
+#   nothing. Judged ACCEPTABLE TO SHIP. See R3-02's analysis for the one
+#   line.
+#
+# WHAT THIS PASS FOUND: two findings, one medium and one low, neither of
+# them in the reasoning of any of the three clauses. Both are one-clause
+# additions and neither blocks the dispatch. This is the first of the three
+# rounds in which the new criterion text carries no high.
+#
+# - validation: --type verdict first, captured at the foot, then
+#   --type finding, as rounds one and two did.
+
+kind: finding
+verdict: approve
+produced-by: claude (Opus 5, claude-opus-5)
+findings:
+  - id: R3-01
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:5288-5300 (criterion 9.9(e), ending
+        FIVE): "A touch begins on one control and, before it ends, a second
+        touch begins on a DIFFERENT control; then the FIRST touch ends, and
+        then the second."
+      - >-
+        delivery/plan/pulse-v02.yaml:5266-5273 (the alive-before-absent
+        sentence added in this revision) proves each ENDING happened, by
+        asserting the ending's own event was captured. Nothing proves the
+        SETUP happened, that two presses were ever in flight at the same
+        moment.
+      - >-
+        If the second touch's pointerdown never reaches the second control,
+        only one press was ever live: the first ending's clear removes the one
+        mark, the assertion after the last ending reads length 0, and the
+        single-slot implementation this ending exists to catch passes.
+      - >-
+        The setup is the fiddly part. /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:779-785
+        drives one touch point, `touchPoints: [{ x, y, id: 1 }]`, and a second
+        concurrent point requires the touchStart to carry BOTH points in the
+        array rather than a fresh single-point start, which the engine can
+        treat as replacing the first.
+      - >-
+        The sampler already reads the state that would witness it:
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:734-735 calls
+        el.matches("[data-pressed]") every frame.
+    analysis: >-
+      This is the alive-before-absent principle one level deeper than the
+      revision applied it. Endings one through four each drive a single press,
+      so the ending's own event is the whole of what needs proving. Ending
+      five is different in kind: its discriminating power comes entirely from
+      the OVERLAP, from the first release happening while the second press is
+      still down, and an overlap that silently did not occur produces exactly
+      the green the correct implementation produces. So the ending added to
+      make the document-wide sweep falsifiable can itself fail to set up the
+      condition it tests, and nothing would say so. The witness is free,
+      because both implementations mark both controls between the second
+      pointerdown and the first ending: the single-slot one marks Y without
+      unmarking X, and the sweeping one marks both. So the positive witness
+      proves the setup and discriminates nothing, which is precisely the role
+      it should have.
+    concrete-edit: >-
+      In criterion 9.9(e) ending FIVE, after "then the FIRST touch ends, and
+      then the second", insert: "THE OVERLAP IS WITNESSED BEFORE ANYTHING IS
+      CONCLUDED FROM IT: at least one sampled frame between the second
+      pointerdown and the first ending carries [data-pressed] on BOTH controls
+      at once. Without that frame the two presses were never in flight
+      together, the ending has not created the condition it exists to test,
+      and its green is the same green the correct implementation produces. The
+      witness discriminates nothing by itself, deliberately: both the sweeping
+      clear and the single-slot clear mark both controls in that window, and
+      what tells them apart is still the length-zero assertion after the last
+      ending." And extend the FALSIFIED BY clause with "by ending five
+      reporting no frame carrying data-pressed on both controls at once".
+  - id: R3-02
+    severity: low
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:5141-5150 (criterion 9.9(a)): the
+        membership check is "carried in a test with NO skip condition that
+        runs under every project the file is collected by".
+      - >-
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:802-803: the
+        touch tests live in `test.describe("the pressed appearance under a
+        touch press", () => { test.skip(({ hasTouch }) => hasTouch !== true,
+        ...); ... })`. A describe-level skip skips every test inside it, and a
+        test placed there has no skip condition OF ITS OWN while still being
+        skipped.
+      - >-
+        The failure that placement produces is the exact one this clause
+        exists to prevent: the guard runs and passes under chromium-phone,
+        skips under desktop, and when a later phase narrows the phone
+        project's testMatch the file is collected only by desktop, where the
+        guard is skipped. Green, and the durability is zero.
+      - >-
+        Criterion 9.9's FALSIFIED BY clause checks the passed count under
+        chromium-phone and says nothing about the desktop project's counts, so
+        nothing else catches it.
+    analysis: >-
+      The clause states the requirement correctly. "Runs under every project
+      the file is collected by" is not satisfied by a test that skips under
+      desktop, so a broken placement violates the criterion as written and a
+      reviewer of the implementation can say so. That is why this is low
+      rather than a blocker. What it lacks is the sentence that names the
+      trap, and the trap is the natural placement: the clause lives inside
+      criterion 9.9(a), which is the touch criterion, and the spec's touch
+      tests sit inside a describe whose first statement is the skip. Naming it
+      costs one clause and removes the only way this repair can be built into
+      nothing.
+    concrete-edit: >-
+      In criterion 9.9(a), after "carried in a test with NO skip condition
+      that runs under every project the file is collected by", insert: "and
+      therefore placed OUTSIDE every describe block carrying a skip, which is
+      where the touch tests live: a test inside such a block has no skip
+      condition of its own and is skipped anyway, so it would pass under the
+      phone project, skip under the desktop project, and be silent in exactly
+      the case this guard exists for, a phone project that no longer collects
+      this spec while the desktop project still does."
+
+# ---------------------------------------------------------------------
+# VALIDATION RECORD, captured rather than asserted.
+#
+# $ export NVM_DIR=/opt/nvm && . /opt/nvm/nvm.sh
+# $ cd /home/user/pulse-fleet && npx tiphys validate --type verdict \
+#     /home/user/wt-m0p7-adv/delivery/review/m0-p7-plan-review-round3.yaml
+# INVALID #/criteria required property criteria is missing
+# INVALID #/deviations-judged required property deviations-judged is missing
+# INVALID #/findings/0/concrete-edit property concrete-edit is not permitted here
+# INVALID #/findings/0/concrete-fix required property concrete-fix is missing
+# ... the same two lines for finding 1 ...
+#
+# Same result and same reason as rounds one and two: the verdict contract is
+# an IMPLEMENTATION verdict, requiring `criteria` and `deviations-judged` and
+# spelling the edit field `concrete-fix`. A plan review judges no criteria
+# and adjudicates no deviations, so the fallback is taken.
+#
+# $ npx tiphys validate --type finding \
+#     /home/user/wt-m0p7-adv/delivery/review/m0-p7-plan-review-round3.yaml
+# (no output) EXIT=0
+# ---------------------------------------------------------------------
