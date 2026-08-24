@@ -415,3 +415,65 @@ findings:
       The raw join and the shipped normalised join select the SAME four labelled reserve
       rows over this phase's own fixture. The assertion criterion 14.2 built to redden on a
       raw join returns identical output under both.
+
+  - id: CRIT-P15-12
+    severity: medium
+    title: "R-087. A comment states that the correction's reported movement is recomputed after the change; it is the preview object, computed before the write and returned unchanged"
+    where: src/modules/accounts/application/correct-account-ring.ts:58 through :60, against :116 and :129
+    evidence: |
+      The comment on CorrectAccountRingOutcome.moved reads: "What ACTUALLY moved,
+      recomputed after the change rather than restated from the preview, so the two can
+      be compared and criterion 15.7's 'byte identical' is a fact rather than a
+      tautology."
+      correctAccountRing at src/modules/accounts/application/correct-account-ring.ts:111
+      calls previewAccountRingChange FIRST, at :116, then updateAccountRole at :121 and
+      deps.recompute at :129, and returns "moved: movement.value" at :130. That is the
+      preview object itself, computed before the declaration was written and never
+      recomputed. It is restated from the preview, which is the thing the comment says
+      it is not, and the comparison it claims to enable is a tautology, which is the
+      thing the comment says it is not.
+      The test at test/application/account-registry.test.ts:551 says so honestly in its
+      own comment ("And the outcome reports the same movement it previewed") and asserts
+      toEqual between them, so nothing in the tree is relying on the false half; the
+      criterion's real assertion at test/application/account-registry.test.ts:539
+      through :548 compares the preview against after-minus-before over the world's own
+      state, which is correct.
+    consequence: |
+      The next person who adds a second rule anywhere in the preview will read this
+      comment and believe the outcome path independently cross-checks it. It does not.
+      This is the exact shape R-087 names: a comment asserting a present-tense fact that
+      nothing keeps true.
+    fix: "Either recompute the movement after the write and compare, or correct the comment to say that the outcome restates the preview and that the dry-run argument (D-58) is what makes that safe."
+    criterion-touched: "15.7"
+
+  - id: CRIT-P15-13
+    severity: medium
+    title: "Criterion 15.7's preview test runs on a fixture that cannot distinguish the dry run from the second query the criterion forbids, and its Playwright half asserts words rather than figures"
+    where: test/application/account-registry.test.ts:509 through :557, and test/e2e/accounts.spec.ts:452 through :461
+    evidence: |
+      Criterion 15.7 requires the application test to run "over a fixture that carries a
+      settlement-matched card debit AND a matched transfer pair as well as ordinary rows,
+      so a preview computed by a second rule diverges rather than agrees".
+      The test imports test/fixtures/ar-current.csv only. That fixture carries eleven
+      rows: one salary credit, three outside debits, three pot-to-pot transfers and four
+      reserve transfers. There is no card import, so the settlement match at
+      src/modules/ledger/domain/classify-flow.ts:93 never fires, and no partner statement
+      is imported, so no transfer_link is ever created and there is no matched pair. On
+      that fixture a naive second query summing rows whose counterparty account matches
+      would return the same numbers the dry run returns.
+      The mechanism itself IS the dry run required by decision D-58: the preview is
+      previewDeclarationChange, which runs interpretLedger over the proposed declaration
+      set (src/modules/ledger/application/preview-declaration-change.ts), and
+      test/application/fake-import-world.ts:784 wires the REAL function rather than a
+      stub. So the finding is about the WITNESS, not the implementation.
+      THE PLAYWRIGHT HALF. Criterion 15.7 asks that "a Playwright test asserts every
+      shown figure is byte identical to the movement the totals make when the change is
+      confirmed, rendered in the reader's own language from all three catalogues". The
+      only browser assertion on the preview is at test/e2e/accounts.spec.ts:455, which
+      asserts the preview element contains the phrase "stop being counted". No figure is
+      compared against any total, and it runs in English only. The three-locale spec at
+      test/e2e/accounts.spec.ts:567 covers the month-accounts states and the reserves
+      heading, not the preview.
+    consequence: "Criterion 15.7 is reported met; its discriminating fixture and its byte-identical browser comparison are both absent, so the guard against decision D-58 being undone later is weaker than the criterion states."
+    fix: "Import test/fixtures/ar-partners.csv alongside ar-current.csv so a matched pair exists, add a card fixture and its paying debit, and assert the rendered preview figures against the rendered totals before and after in all three locales."
+    criterion-touched: "15.7"
