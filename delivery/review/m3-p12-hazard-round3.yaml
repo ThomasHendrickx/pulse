@@ -363,6 +363,47 @@ findings:
       the re-derivation's writes go through applyRuleWrites because they must
       be all or nothing, and that any new caller of this member is writing a
       declaration outside a transaction on purpose.
+  - id: CR3-M3P12-08
+    severity: medium
+    analysis: >-
+      THE INTERLOCK APPROVES A CONNECTION STRING WHOSE AUTHORITY IS RIGHT AND
+      WHOSE ENDPOINT IS SOMEWHERE ELSE. assessRederiveTarget compares exactly
+      two things: new URL(...).hostname against the operator's host, at
+      src/platform/db/target-guard.ts:153, and the ref extracted from the
+      username or the host against the operator's ref, at :172 and :179. The
+      client resolves more of the string than those two fields. A postgres
+      connection string may carry a host QUERY PARAMETER, and the Prisma
+      connector honours it, opening a unix domain socket at that path and
+      ignoring the hostname in the authority entirely. I witnessed both halves:
+      the interlock APPROVES such a string, and the client connects to the path
+      rather than to the host. The same shape, smaller, applies to the database
+      NAME, which the interlock never looks at although the module's own
+      opening sentence says it asks whether the migration is pointed at the ONE
+      database an operator named. Neither is the shipped hazard H12.30
+      describes, because the ambient connection in this fleet is a plain pooler
+      URL with neither trick in it, and that is why this is medium rather than
+      high. It matters because this interlock is fail closed by design and
+      because criterion 12.23 asks it to resolve the connection the command
+      would actually open: a field comparison over a string the client parses
+      more richly is not that, and the gap is invisible to every test in
+      test/db/target-guard.test.ts, all of which use ordinary strings.
+    evidence:
+      - "WITNESSED, part one: assessRederiveTarget with DATABASE_URL carrying an invented pooler authority plus a host query parameter naming a filesystem path, and the matching host and ref on the command line, returned ALLOW. The same call with the same authority and no query parameter also returned ALLOW, and every mismatch case I tried refused, so the approval is the query parameter passing unexamined rather than a gate that approves everything."
+      - "WITNESSED, part two: the same string handed to the shipped client through src/platform/db/client.ts produced Can't reach database server at /tmp/definitely-not-a-socket-dir:54322, so the connector resolved the query parameter and not the hostname the interlock checked."
+      - "WITNESSED, part three: a connection string differing from an approved one only in its DATABASE NAME is also approved, because no code path in src/platform/db/target-guard.ts reads new URL(...).pathname."
+      - src/platform/db/target-guard.ts:153 is the only host comparison, :172 and :179 the only ref comparisons, and src/platform/db/target-guard.ts:4 through :17 is the module's statement of the question it answers.
+    concrete-fix: >-
+      Make the interlock refuse anything in the connection string it does not
+      understand, rather than ignoring it. After parsing at
+      src/platform/db/target-guard.ts:144, refuse when parsed.searchParams has
+      a host key, naming that the endpoint would be a socket path rather than
+      the host given on the command line, and refuse when it carries any other
+      parameter outside a small allow list this codebase actually uses
+      (pgbouncer, sslmode, connection_limit, schema). Add the database name as
+      a third comparison, either against the pathname of a fourth argument or
+      against the literal postgres, since that is the only database this
+      product uses. Add one refusal test per case to
+      test/db/target-guard.test.ts beside the ones already there.
 criteria:
 - id: '12.1'
   quote: CONVERGENCE, COUNTED. A test in test/domain/counterparty-identity.test.ts parses test/fixtures/belfius-counterparty-identity.pdf
@@ -1040,7 +1081,14 @@ hazard-classes-addressed:
       reason. A hand-written PREFIX or PATTERN rule over an account number is therefore inert.
   - class-id: H12.30
     probed: >-
-      Ran the shipped command against a pinned local connection and against the ambient one, read
-      the interlock's extraction for both endpoint shapes, and then tested empirically whether the
-      environment reading the interlock uses is the reading the guarded command uses.
+      Ran the shipped command against a pinned local connection, read the interlock's extraction for
+      both endpoint shapes, and drove assessRederiveTarget over seventeen invented connection
+      strings: both matching shapes, a different project on the same pooler host, a ref in the host
+      that differs, a local connection, a URL with no username, an empty ref after the dot, an
+      uppercase ref against a lowercase argument, a three-label db host, a different database name,
+      a unix-socket host query parameter, a percent-encoded username, a username ref matching while
+      the host ref names another project, both missing arguments, an unparseable URL and an empty
+      one. Then tested empirically whether the environment reading the interlock uses is the reading
+      the guarded command uses, and whether the client resolves more of the string than the
+      interlock compares.
     finding: CR3-M3P12-03
