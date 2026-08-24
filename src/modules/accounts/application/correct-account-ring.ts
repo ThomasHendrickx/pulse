@@ -55,10 +55,31 @@ export type RingChangeMovement = {
 
 export type CorrectAccountRingOutcome = {
   readonly account: AccountRecord;
-  // What ACTUALLY moved, recomputed after the change rather than restated
-  // from the preview, so the two can be compared and criterion 15.7's
-  // "byte identical" is a fact rather than a tautology.
+  // WHAT ACTUALLY MOVED, MEASURED AFTER THE WRITE AND THE RECOMPUTE.
+  //
+  // CORRECTED IN PLACE RATHER THAN QUIETLY REWRITTEN (R-087). This comment
+  // used to make exactly the claim below and the code did NOT do it: the
+  // function returned the PREVIEW object, computed before the declaration
+  // was written and never re-read, so the comparison it advertised was a
+  // tautology. Correct in every single-request run and wrong under a
+  // concurrent write, which is the shape of defect that is invisible
+  // precisely because the comment says otherwise. A clean-room review found
+  // it.
+  //
+  // The code now matches: the movement is derived a SECOND time, from the
+  // declaration set as it stands after the write, against the same rows the
+  // recompute has just re-interpreted. Nothing stands between the first
+  // preview and the write, so if another import or another correction lands
+  // in that window the two differ, and `previewWasStale` says so instead of
+  // the household being shown a figure that was true a moment ago.
   readonly moved: RingChangeMovement;
+  // The movement shown to the owner BEFORE they confirmed. Kept so the two
+  // can be compared, which is the thing the old comment claimed and did not
+  // provide.
+  readonly previewed: RingChangeMovement;
+  // True when the two differ, which can only happen if something else wrote
+  // to this household between the preview and the recompute.
+  readonly previewWasStale: boolean;
 };
 
 export type CorrectAccountRingDependencies = {
@@ -127,5 +148,65 @@ export const correctAccountRing = async (
     return err({ kind: "account-not-found" as const });
   }
   await deps.recompute(context);
-  return ok({ account, moved: movement.value });
+
+  // MEASURED AGAIN, AFTER THE WRITE AND THE RECOMPUTE, and measured as the
+  // INVERSE. Asking the dry run what it would take to reach the ring the
+  // account now HAS answers nothing, because the household is already there.
+  // What it can answer, from the household as it now stands, is what putting
+  // the ring BACK would do; negate that and you have what this correction
+  // did. That is a genuine post-write reading rather than an echo: it loads
+  // the rows the recompute has just re-interpreted, and if another import or
+  // another correction landed between the preview and here, it differs from
+  // the preview and previewWasStale says so.
+  //
+  // It is a read and writes nothing, exactly as the first call does. It costs
+  // one more pass over the household's rows on an action the owner takes by
+  // hand; correctness on a figure that moves money between totals is worth
+  // that.
+  const accounts = await deps.accounts.listAccounts(context);
+  const previousRole = input.role === "POT" ? "RESERVE" : "POT";
+  const undo = await deps.preview(context, {
+    proposedAccounts: proposedSet(accounts, input.accountId, previousRole),
+    subjectAccountId: input.accountId,
+  });
+  const previewed = movement.value;
+  const moved: RingChangeMovement = {
+    // 0 - x rather than -x: unary negation of 0 yields -0, the same guard
+    // the projection and the reconciliation both use.
+    spendDeltaCents: 0 - undo.spendDeltaCents,
+    reservesDeltaCents: 0 - undo.reservesDeltaCents,
+    incomeDeltaCents: 0 - undo.incomeDeltaCents,
+    // NOT SYMMETRIC UNDER THE INVERSE, and this is stated rather than
+    // assumed because assuming it was wrong. The dry run counts rules that
+    // STOP matching; run backwards it counts the rules that would stop on
+    // the way back, which is zero, not the rules that started. The count of
+    // rules this correction retired is a statement about the TRANSITION, and
+    // the pre-write dry run is the only place both sides of that transition
+    // are visible, so this one field is the previewed number and says so.
+    // Measured: with the naive symmetric assumption the count came back 0
+    // where the test required 1.
+    merchantRulesStoppedMatching: previewed.merchantRulesStoppedMatching,
+    // The rows-on-the-account count is symmetric under the inverse too: the
+    // rows that stopped being counted are the rows that would start again.
+    rowsOnAccount: undo.rowsOnAccount,
+    rowsOnAccountDirection:
+      undo.rowsOnAccountDirection === "start-counting"
+        ? "stop-counting"
+        : undo.rowsOnAccountDirection === "stop-counting"
+          ? "start-counting"
+          : "none",
+  };
+  return ok({
+    account,
+    moved,
+    previewed,
+    // Compared over the three MONEY deltas and the row count, which are the
+    // fields measured after the write. The rule count is not compared with
+    // itself.
+    previewWasStale:
+      moved.spendDeltaCents !== previewed.spendDeltaCents ||
+      moved.reservesDeltaCents !== previewed.reservesDeltaCents ||
+      moved.incomeDeltaCents !== previewed.incomeDeltaCents ||
+      moved.rowsOnAccount !== previewed.rowsOnAccount,
+  });
 };

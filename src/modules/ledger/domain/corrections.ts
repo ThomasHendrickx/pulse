@@ -220,6 +220,29 @@ export type CounterpartyRef = Pick<
 // (hazard H6.1, and the sibling note at
 // src/modules/merchants/domain/normalise-counterparty.ts): that is a
 // different rule about a different mechanism.
+//
+// THE ONE BEHAVIOURAL DIFFERENCE THAT SWAP INTRODUCED, NAMED RATHER THAN
+// LEFT TO BE FOUND. The old expression compacted UNCONDITIONALLY. The
+// platform form is SHAPE-GATED: a value that is not shaped like an account
+// number comes back UNCHANGED, case and spacing included. So for a
+// counterparty column holding a non-account-shaped value written two ways,
+// the old key collapsed the two and this one does not.
+//
+// WHAT MAKES THAT SAFE IS AN INVARIANT, AND IT IS AN INVARIANT RATHER THAN
+// AN ACCIDENT ONLY BECAUSE SOMETHING HOLDS IT: every producer of
+// Transaction.counterpartyIban already restricts it to a shape the platform
+// gate accepts. The delimited path assigns the counterparty-account column
+// only when EVERY non-empty value in it matches its own compact pattern
+// (src/modules/import/domain/detect-profile.ts), and the Belfius PDF path
+// lifts it out with a capturing regex that can only yield that shape. The
+// card template sets it at all: that path carries no account number.
+//
+// A FUTURE PRODUCER THAT BREAKS THE INVARIANT WOULD MIS-KEY REFUNDS
+// SILENTLY, so it is pinned by a test rather than by this paragraph:
+// test/domain/counterparty-key-invariant.test.ts asserts that this key and
+// the old unconditional transform agree on every value the known producers
+// can emit, and that they DISAGREE on a value outside the shape, which is
+// what makes the first assertion mean something.
 export const counterpartyKey = (transaction: CounterpartyRef): string => {
   if (transaction.counterpartyIban !== undefined) {
     return `iban:${canonicalAccountNumber(transaction.counterpartyIban)}`;

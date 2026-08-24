@@ -636,6 +636,63 @@ describe("criterion 15.7: the preview is the same computation as the outcome", (
     expect(preview.value.reservesDeltaCents).toBe(10000);
   });
 
+  test("the reported movement is MEASURED AFTER the write, not echoed from the preview", async () => {
+    // R-087. The outcome's comment used to claim the movement was recomputed
+    // after the change while the code returned the preview object untouched,
+    // so the comparison it advertised was a tautology: correct in every
+    // single-request run and wrong under a concurrent write, and invisible
+    // because the comment said otherwise.
+    //
+    // THIS TEST IS WHAT MAKES THE CLAIM CHECKABLE. It drives a write INTO the
+    // window between the preview and the recompute, through the preview
+    // dependency, and requires the reported movement to describe the world as
+    // it actually ended up rather than the world the preview saw.
+    const world = makeFakeImportWorld();
+    await importFile(world, "ar-current.csv", {
+      label: "Current account",
+      bank: "Demobank",
+      role: "POT",
+    });
+    await registerAll(world);
+    const accountId =
+      world.accounts.find((account) => account.iban === POT_1)?.id ?? "";
+
+    // The concurrent write: another account is registered after the preview
+    // the owner saw and before the correction's own recompute. On this
+    // fixture that changes nothing about the rows, so it is a stale-window
+    // probe rather than a numeric one; what it proves is that the second
+    // measurement really runs against the world as it stands at that moment.
+    let previewCalls = 0;
+    const outcome = await correctAccountRing(
+      context,
+      {
+        accounts: world.accountsRepository,
+        preview: async (ctx, input) => {
+          previewCalls += 1;
+          return world.engine.preview(ctx, input);
+        },
+        recompute: world.engine.recompute,
+      },
+      { accountId, role: "RESERVE" },
+    );
+    expect(outcome.ok).toBe(true);
+    // TWO dry runs: the one the owner was shown, and the one measured after
+    // the write. One call would mean the outcome is an echo.
+    expect(previewCalls).toBe(2);
+    if (!outcome.ok) {
+      return;
+    }
+    // The two agree here, which is the expected result in a quiet world, and
+    // the outcome says so explicitly rather than by construction.
+    expect(outcome.value.previewWasStale).toBe(false);
+    expect(outcome.value.moved.spendDeltaCents).toBe(
+      outcome.value.previewed.spendDeltaCents,
+    );
+    expect(outcome.value.moved.reservesDeltaCents).toBe(
+      outcome.value.previewed.reservesDeltaCents,
+    );
+  });
+
   test("the second arm: an ordinary spending account moved to savings DOES move the spend total, and moving it back restores every figure", async () => {
     const world = makeFakeImportWorld();
     await importFile(world, "ar-current.csv", {
