@@ -1101,3 +1101,86 @@ open-questions-for-the-reviewer:
   - >-
     A card cannot be moved into the reserve ring, and the correction path
     refuses it with a named error. Nothing tests that refusal.
+
+gate-evidence:
+  toolchain: >-
+    node v26.7.0, npm 11.19.0, in the SAME shell that ran the commands
+    (checked with `node --version` in that shell, not assumed). package.json
+    declares engines.node 22.x and npm warns EBADENGINE on install; every
+    gate below is green under 26.7.0 and I did not test under 22.
+  build-state: >-
+    node_modules installed with `npm ci` (exit 0, 472 packages). Prisma
+    client generated (node_modules/.prisma/client present). vitest requires
+    no build artifact; the e2e gate builds a production bundle in its own
+    webServer, which succeeded.
+  database: >-
+    The LOCAL supabase stack in this container, with all five values pinned
+    explicitly in the invoking shell per fleet warnings 1, 6 and 16. The
+    ambient DATABASE_URL, which resolves to a different project with a
+    working password, was never used by anything that writes.
+  fast-gates:
+    - command: npm run typecheck
+      exit: 0
+      output: "> tsc --noEmit   (no diagnostics)"
+    - command: npm run lint
+      exit: 0
+      output: "> eslint .   (no findings)"
+    - command: npm test
+      exit: 0
+      output: |
+        Test Files  37 passed (37)
+             Tests  479 passed (479)
+          Duration  16.51s
+      skipped: >-
+        ZERO. The reporter prints no skipped line and a grep for "skipped"
+        over the captured output returns 0, which is the third axis the
+        environment warning asks for stated rather than implied.
+      invocation: "npm test -> vitest run, over the whole testDir with no filter"
+    - command: npm run gate:tokens
+      exit: 0
+      output: "(the negated grep matched nothing under src/modules/*/ui)"
+      caveat: >-
+        THIS GATE IS NOT THE GUARD ON THIS PHASE'S NEW SURFACE and reporting
+        it green would be misleading on its own. It greps src/modules/*/ui
+        only, never looks under src/app/ where the accounts route lives, and
+        matches neither a spacing literal nor a colour written as rgb(),
+        hsl() or a name. The next line is the guard that does.
+    - command: bash scripts/gate-diff-tokens.sh
+      exit: 0
+      output: "gate:diff-tokens clean (src/app and src/modules/*/ui, added lines only)"
+      note: >-
+        Criterion 14.10's own diff-scoped grep. Shown RED against four
+        structurally different offenders, including two notations
+        gate:tokens matches in no path at all; see the red-witness section.
+      tokens-added: >-
+        NONE. Every value the new screen and the new element needed already
+        had a token in styles/tokens.css, so that file is untouched by this
+        phase. The one type-size CHANGE is the navigation link moving from
+        --text-base to --text-xs at phone widths, which is an existing token
+        whose own documentation names the nav as one of its uses.
+    - command: npm run gate:privacy
+      exit: 0
+      output: "gate:privacy clean"
+      caveat: >-
+        GREEN ON THE RUN RECORDED, ON A QUIET CONTAINER, and not green
+        deterministically. This gate fails intermittently, naming a
+        different already-listed identifier in a different untouched file
+        each time; see open question OQ-1 for the reproduction. A reviewer
+        who gets a red reading naming a listed value should re-run before
+        treating it as a finding.
+  slow-gate:
+    - command: npm run test:e2e
+      first-run:
+        result: "6 failed, 59 passed (16.0m)"
+        failures: >-
+          Two in accounts.spec.ts and four in navigation.spec.ts, all six
+          test defects rather than product defects, all six fixed in the
+          commit "e2e: the merchants read waits for the page ...". The
+          merchants one is worth a reviewer's attention on its own: an
+          unwaited allInnerTexts returns an empty array, and an empty array
+          satisfies every not-to-contain assertion in the registered arm,
+          which is the assertion this whole phase turns on. It would have
+          passed for the wrong reason on exactly the claim it exists to
+          make.
+      second-run: SEE the block appended below; this history is written as
+        the work happens and the re-run was still in flight at this point.
