@@ -1,0 +1,341 @@
+kind: finding
+verdict: >-
+  CHANGES REQUESTED. The phase does what it says it does: the derivation is one
+  pure function, the four grouping surfaces call it, no transaction row is
+  written, every new read filters householdId, the reconciliation identity is
+  untouched, and the whole fast gate is green on this head. The hazard contract
+  is not satisfied, and the reason is the direction the phase itself names as
+  the one that matters. Three demonstrated defects open a SILENT merge or a
+  silent write that no screen and no exit code stops, and all three sit exactly
+  where the plan says the danger is: at the account scrape (finding
+  HZ-M3P12-05), at the bare namespace the descriptor branch can now emit
+  (HZ-M3P12-01), and at the migration blocking conditions, which block nothing
+  because they are computed after the writes and after the recompute
+  (HZ-M3P12-03). A fourth, HZ-M3P12-02, ships a documented --dry-run flag that
+  performs the whole migration. None of the four is caught by any acceptance
+  criterion, which is the measurement this contract exists to make.
+  ---
+  GATES, RUN BY THIS REVIEW ON fc5aef4, real output. npm run typecheck exit 0,
+  no output. npm run lint exit 0, no output. npm test exit 0, Test Files 38
+  passed (38), Tests 493 passed (493), duration 8.71s. npm run gate:privacy exit
+  0, printed gate:privacy clean. npm run gate:tokens exit 0, no output. npm run
+  test:e2e exit 1: 1 failed, 53 passed, 10.7m. The failure is
+  test/e2e/import.spec.ts:247, at 390x844 the PDF confirm step shows the
+  declaration with no page-level horizontal scroll, on Error: expect(locator)
+  .toHaveText(expected) failed, Locator: getByTestId('rows-added'), Expected
+  "9", Timeout 5000ms, element(s) not found. That spec is UNCHANGED by this
+  phase, git log 7f4aafb..fc5aef4 -- test/e2e/import.spec.ts is empty, and
+  re-running it alone passed in 10.9s, 1 passed (35.9s). I judge it the same
+  first-request dev-server flake the work history records for a different spec,
+  and I record it rather than dropping it. Ports were moved to 3200 and 3300 for
+  a concurrent reviewer and playwright.config.ts was restored; git diff on it is
+  empty.
+  ---
+  WHAT I PROBED AND DID NOT FIND, which is a result and is written down so the
+  next reviewer does not spend the budget again. No path writes a transaction
+  row: the routine touches merchant_rules only, through updateRulePattern and
+  upsertRule, and the criterion 12.9 test asserts it. No money moves: the
+  overview's added GROUP BY column at
+  src/modules/overview/adapters/overview-repository.ts:117 splits SQL groups
+  more finely and the fold re-aggregates them, the four key spaces in
+  src/modules/overview/domain/month-projection.ts:73 through :112 stay disjoint,
+  and flow classification is not reachable from this change, since
+  interpret-window resolves merchants after the flows are already computed and
+  the ledger's own counterparty key in corrections.ts is untouched. Tenancy
+  holds: updateRulePattern carries householdId in the same where clause at
+  src/modules/merchants/adapters/merchant-repository.ts:123, listCountedTransactions
+  filters it at src/modules/merchants/adapters/merchant-repository.ts:254, and
+  the raw SQL filters it at
+  src/modules/overview/adapters/overview-repository.ts:131. The two screens do
+  agree: both derive the label as the lexicographically smallest normalised
+  text over the same set of texts, so the minimum is the same on both. Pass one
+  is meaning-preserving as claimed, including for a key that normalises to
+  empty, which the property test's generator excludes but which I checked by
+  hand. A descriptor rule and an account rule cannot both fire on one key, since
+  a key carries exactly one namespace and matchRules short-circuits PREFIX and
+  PATTERN for account keys at src/modules/merchants/domain/merchant-rule.ts:102.
+  Two genuinely different accounts cannot collide under compaction, which only
+  uppercases and drops whitespace. I inspected all 89 entries of the country
+  table against the ISO 13616 registry as I know it and found no wrong entry,
+  but I could not fetch the registry to verify it mechanically and say so rather
+  than implying I did. I could not run the re-derivation against the deployed
+  database, which the work history itself records as owed.
+produced-by: claude-opus-5
+findings:
+  - id: HZ-M3P12-01
+    severity: high
+    evidence:
+      - "The descriptor branch emits the BARE namespace whenever the counterparty text normalises to empty. Probe against the shipped derivation, run from the reviewed head: counterpartyIdentity({description:''}) returned {\"key\":\"descriptor:\",\"basis\":\"descriptor\"} and counterpartyIdentity({description:'   '}) returned the same object, so the two keys are equal."
+      - "The suffix is empty because normaliseCounterparty('') returned \"\" and normaliseCounterparty('   ') returned \"\" in the same probe run."
+      - "THE TWO GUARDS THAT USED TO REFUSE THIS ARE BOTH NOW UNREACHABLE. At the matcher, the empty-key short circuit is src/modules/merchants/domain/merchant-rule.ts:87, and the key it tests for can no longer be produced by any caller: the probe recorded BASELINE matchRules('', [EXACT '']) = undefined against NOW matchRules('descriptor:', [EXACT 'descriptor:']) = {\"merchantId\":\"m1\",\"ruleId\":\"r1\"}."
+      - "At the writer, the baseline refusal was normaliseCounterparty(input.counterpartyText) === '' at 7f4aafb, and its replacement is the trim test at src/modules/merchants/application/assign-merchant.ts:79, which a namespaced key always passes. The account branch gets a further emptiness test at src/modules/merchants/application/assign-merchant.ts:88 through :93; the descriptor branch gets none. The probe called the shipped assignMerchant with subject 'descriptor:' and it returned ok, writing [{\"merchantId\":\"m-new\",\"kind\":\"EXACT\",\"pattern\":\"descriptor:\"}]."
+      - "END TO END, on the two shipped surfaces. buildMerchantReview over two unrelated counted rows whose descriptors are '' and '   ' produced ONE unresolved group: key=\"descriptor:\" count=2 total=-8777 submits=\"descriptor:\". Resolving each row against the rule that group's form would write gave row t1 -> {\"merchantId\":\"m1\"} and row t2 -> {\"merchantId\":\"m1\"}; under the baseline derivation both rows keyed on \"\" and resolved to undefined."
+      - "REACHABLE THROUGH THE SHIPPED IMPORTER, not only through the domain. The delimited parser sets description from cellAt with no emptiness guard at src/modules/import/domain/parse-statement.ts:102, while every optional text role IS guarded at src/modules/import/domain/parse-statement.ts:120 through :127. A two-row CSV with an empty and a whitespace-only description cell parsed through parseStatement to description \"\" on both rows, and both derived identity 'descriptor:'."
+      - "A PREFIX rule carrying the bare namespace matches EVERY descriptor key: the probe recorded matchRules(<an unrelated descriptor key>, [PREFIX 'descriptor:']) = {\"merchantId\":\"m2\",\"ruleId\":\"r2\"}. That is precisely hazard H12.26, which the migration's pass one is built to prevent at src/modules/merchants/application/rederive-rules.ts:268 through :276; the product surface can now create the same pattern directly, so the guard protects one door of two."
+      - "A FALSE CLAIM IS ATTACHED TO THIS, clause R-087. The test at test/domain/counterparty-identity.test.ts:262 is named 'an empty or whitespace-only stored account takes the descriptor basis, so no row is ever keyed on a bare namespace', and its body asserts only key !== ACCOUNT_NAMESPACE and !key.startsWith(ACCOUNT_NAMESPACE). The descriptor namespace is never tested, and the universal sentence in the test name is false. The comment at src/modules/merchants/domain/counterparty-identity.ts:217 through :221 carries the same claim in the form 'no fallback bucket', and criterion 12.6 states it as a requirement."
+    concrete-edit: >-
+      Close the bare namespace on the descriptor side the way it is already
+      closed on the account side. In src/modules/merchants/domain/merchant-rule.ts,
+      replace the empty-key short circuit at line 87 with a refusal of any key
+      equal to a bare namespace, so the guard the identity change made
+      unreachable is restored at the same place. In
+      src/modules/merchants/application/assign-merchant.ts, extend the write
+      boundary so that a subject whose remainder AFTER the namespace is empty
+      is refused for BOTH bases, not only for the account basis at lines 88
+      through 93, reusing the existing untrusted-counterparty-account error or
+      adding a sibling kind with its own message in messages/en.json,
+      messages/nl.json and messages/fr.json. Then either rename the test at
+      test/domain/counterparty-identity.test.ts:262 to say what it asserts, or
+      add the descriptor-side assertion its current name promises, and add a
+      case asserting that two rows whose counterparty text normalises to empty
+      cannot be named as one counterparty.
+    analysis: >-
+      The pre-phase behaviour for these rows was the safe one and it was safe by
+      accident of the empty string: the key was "", the matcher refused it and
+      the writer refused it. Namespacing every key made the empty case
+      non-empty, which silently converted a refused bucket into a live,
+      nameable, matchable grouping key. The reach on the owner's own data is
+      probably nil today, since the work history records zero rows reaching the
+      normaliser's floor, but the mechanism is reachable from the shipped
+      delimited importer and the failure is the silent kind: the group carries a
+      blank label, a row count, and no statement anywhere that its members have
+      nothing in common. The non-destructive floor comment at
+      src/modules/merchants/domain/normalise-counterparty.ts:461 through :464
+      states the rule this breaks, in this repository's own words: an empty key
+      would group unrelated rows together.
+  - id: HZ-M3P12-02
+    severity: high
+    evidence:
+      - "The committed usage line at scripts/rederive-merchant-rules.ts:4 advertises a --dry-run flag on a command whose own header, at scripts/rederive-merchant-rules.ts:17 through :25, is a DESTRUCTIVE AUTHORITY statement."
+      - "The flag is read at scripts/rederive-merchant-rules.ts:61 and the ONLY thing it changes is the recompute dependency at scripts/rederive-merchant-rules.ts:79 through :81. The repository is passed unconditionally at scripts/rederive-merchant-rules.ts:78."
+      - "The routine has no dry-run input: RederiveInput carries exactly acceptedRuleIds at src/modules/merchants/application/rederive-rules.ts:157 through :161, and RederiveDependencies carries exactly merchants and recompute at src/modules/merchants/application/rederive-rules.ts:149 through :155."
+      - "DEMONSTRATED. A probe called rederiveMerchantRules with a recording repository and EXACTLY the recompute substitution --dry-run makes. It printed: writes issued under the --dry-run recompute stub: UPDATE merchant_rules id=ruleA, UPDATE merchant_rules id=ruleB, INSERT merchant_rules kind=EXACT merchant=M1."
+      - "Nothing covers the flag. grep -rn 'dry-run|dryRun' over the tree, excluding node_modules, returns exactly three lines, all three inside scripts/rederive-merchant-rules.ts and none in any test."
+    concrete-edit: >-
+      Either make the flag real or delete it. To make it real, add a
+      dryRun boolean to RederiveInput at
+      src/modules/merchants/application/rederive-rules.ts:157 and guard both
+      write calls with it, at src/modules/merchants/application/rederive-rules.ts:291
+      and at src/modules/merchants/application/rederive-rules.ts:378, keeping the
+      in-memory working copy updated so the report is identical to what a real
+      run would produce; the routine already maintains that copy at
+      src/modules/merchants/application/rederive-rules.ts:220. To delete it,
+      remove the token from the usage line at scripts/rederive-merchant-rules.ts:4
+      and make an unrecognised argument exit 2 with a message, so an operator who
+      types it is stopped rather than served. Whichever is chosen, add a test in
+      test/application/rederive-merchant-rules.test.ts asserting the number of
+      repository writes under each mode.
+    analysis: >-
+      This is the one defect on the list an operator meets FIRST, because
+      --dry-run is what a careful person runs before a migration they were told
+      is destructive. The header two lines below the usage line tells them the
+      command rewrites patterns and inserts rows; the flag tells them they can
+      look before they leap; the code does the rewrite and the insert and skips
+      only the recompute, which is the one step that would have made the result
+      visible on the screen. A run that was meant to be a preview therefore
+      leaves the household's rules migrated and its rows NOT recomputed, which
+      is the deploy window of decision D-46 entered by accident and left open.
+  - id: HZ-M3P12-03
+    severity: high
+    evidence:
+      - "The routine names two BLOCKING conditions and returns them as an exit code at src/modules/merchants/application/rederive-rules.ts:441; the script restates them as blocking at scripts/rederive-merchant-rules.ts:27 through :31."
+      - "Both are computed AFTER every write. Pass one's UPDATE is issued at src/modules/merchants/application/rederive-rules.ts:291, pass two's INSERT at src/modules/merchants/application/rederive-rules.ts:378, the lost-assignment set is computed at src/modules/merchants/application/rederive-rules.ts:414, and the recompute runs unconditionally at src/modules/merchants/application/rederive-rules.ts:422, before the report carrying the exit code is returned."
+      - "DEMONSTRATED on a seed where two rules for two merchants promote to one account. The probe printed: recompute calls = 1, exitCode = 1, conflicts = [\"ruleB\"], lostAssignments = [{\"transactionId\":\"t2\",\"ruleId\":\"ruleB\"}]. So a transaction that carried one merchant before the run carries a different one after it, the routine KNOWS, and it has already run the recompute that puts the new merchant on the row."
+      - "The test that covers this condition asserts the exit code and nothing else: test/application/rederive-merchant-rules.test.ts:452 checks lostAssignments.length, the rule id and exitCode, and never asserts that the writes were withheld or that the recompute did not run."
+      - "The acknowledge path cannot be used first. --accept takes rule ids at scripts/rederive-merchant-rules.ts:62, and an operator can only learn which ids to accept from a run that has already applied the loss, because there is no non-writing mode (see finding HZ-M3P12-02)."
+    concrete-edit: >-
+      Split the routine into a decide phase and an apply phase. Compute
+      decisions, counts, conflicts and lostAssignments against the in-memory
+      working copy the routine already builds at
+      src/modules/merchants/application/rederive-rules.ts:220, with no
+      repository call; return early with exit 1 and the full report when
+      conflicts or lostAssignments is non-empty and the offending ids are not
+      accepted; and only then issue the updates, the inserts and the recompute.
+      At minimum, move the recompute at
+      src/modules/merchants/application/rederive-rules.ts:422 behind the
+      exit-code test so a blocking run does not carry the loss onto the
+      transaction rows. Extend test/application/rederive-merchant-rules.test.ts:452
+      to assert the write count and the recompute call count under a blocking
+      run.
+    analysis: >-
+      Hazard H12.19 is written against a migration that blocks forever. The
+      shipped shape is the opposite and is undeclared: it blocks nothing. The
+      exit code is a report about work already done, and the work it reports on
+      is the one thing the phase promised would not happen, a naming the owner
+      made moving to a different merchant. Reversibility is claimed as structural
+      at src/modules/merchants/application/rederive-rules.ts:55 through :61 and
+      that claim survives, since undoing the declarations and recomputing does
+      restore the state; what does not survive is the word blocking.
+  - id: HZ-M3P12-05
+    severity: medium
+    evidence:
+      - "The determinism claim is at src/modules/merchants/domain/counterparty-identity.ts:160 through :166: truncation can only emit a sixteen-character value, so it only reaches accounts whose true length exceeds sixteen, and such a value always carries a country code whose table length is not sixteen. The pinning test at test/domain/counterparty-identity.test.ts:384 asserts only that BE is the sole entry of length sixteen, which does not establish the claim."
+      - "COUNTEREXAMPLE, DEMONSTRATED against the shipped scrape copied verbatim from src/modules/import/domain/belfius-current-account-template.ts:88 and :90. A description carrying an allow-listed invented Belgian account written spaced with ONE EXTRA four-digit group scrapes to a sixteen-character value, and the probe printed for two such sources: source-groups=5 stored-length=16 trusted=true stored-equals-16-char-prefix=true, twice, then two different sources, same stored value: true, trusted: true."
+      - "So two different twenty-character sources reach ONE stored account, that account passes all three tests of the trust gate at src/modules/merchants/domain/counterparty-identity.ts:172 through :188, and the two rows therefore share one account-basis identity key. The length test does not close this case, because the truncation SOURCE is not an IBAN of a longer country; only mod-97 stands, and it stands on the sixteen-character prefix rather than on the source."
+      - "The word-boundary anchor is what makes the case specific: a COMPACT over-long run does not match the scrape at all, because the trailing \\b fails mid-token. It is the SPACED form, which is exactly the form the phase's own fixture uses to witness the truncation hazard, that truncates."
+    concrete-edit: >-
+      Correct the claim and pin what is actually true. Rewrite
+      src/modules/merchants/domain/counterparty-identity.ts:160 through :166 to
+      say that the length table closes truncation of IBANs whose registry length
+      exceeds sixteen, and to state the residual plainly: a spaced token of more
+      than four groups whose first sixteen characters form a valid Belgian
+      account is admitted, and mod-97 is the only test standing in that
+      direction. Then either add the boundary to the scrape, changing
+      DESCRIPTION_IBAN at src/modules/import/domain/belfius-current-account-template.ts:88
+      so a match is refused when the next characters continue the group grammar,
+      which is an importer change and therefore a template version bump and a
+      re-parse, or record the residual on the parked surface beside hazard
+      H12.16 with this counterexample. Replace the test at
+      test/domain/counterparty-identity.test.ts:384, whose name asserts the
+      determinism, with one that asserts the corrected statement and carries the
+      counterexample.
+    analysis: >-
+      The phase reasons about truncation as an operation on IBANs and the
+      reasoning is sound over that domain. The scrape does not operate on IBANs,
+      it operates on free text, and the plan says so itself at hazard H12.1: it
+      is a regex scrape out of free text that nothing validates. Once the source
+      is allowed to be any token in the bank's four-digit-group grammar, the
+      country-code argument no longer covers it, because the country code of the
+      TRUNCATION is the country code of the prefix and not of any real account.
+      I could not measure whether a Belgian statement prints such a token, and
+      say so rather than implying a frequency; what is demonstrated is that the
+      guard the plan calls deterministic is probabilistic in this direction, and
+      that the sentence saying otherwise is in the source, in the plan and in a
+      test name.
+  - id: HZ-M3P12-06
+    severity: medium
+    evidence:
+      - "Pass two promotes on the evidence of however many rows the old pattern matched, and the only floor is that the number is not zero, at src/modules/merchants/application/rederive-rules.ts:327. The same-account test at src/modules/merchants/application/rederive-rules.ts:348 through :351 is vacuous over a single row: a one-element set always has size one."
+      - "The owner's deployed naming is a single EXACT rule written from one row, which is what the plan's own criterion 12.7 is built around, so the one-row case is the expected case rather than a corner."
+      - "The account that a one-row promotion keys on is whatever the first-wins scrape stored for that row, and hazard H12.16 records that behaviour as unanswered on 4 of the owner's 39 rows. The test at test/domain/counterparty-identity.test.ts:396 pins the rule and, in doing so, records that BOTH candidate tokens can be fully valid accounts: it asserts isTrustedCounterpartyAccount is true for the first token AND for the second. The trust gate therefore does not decide this case, and the plan's H12.16 mitigation sentence, which says a wrongly chosen candidate that is not a complete valid account takes the descriptor basis, does not reach it."
+      - "Nothing reports it afterwards. broadened is computed at src/modules/merchants/application/rederive-rules.ts:397 by comparing rows matched at migration time; a one-row rule promoted to a one-row account key reports matchedBefore equal to matchedAfter and appears in no list. Every LATER row of the wrongly identified counterparty then resolves to the owner's merchant with nothing printed and nothing on screen."
+    concrete-edit: >-
+      Make a one-row promotion visible rather than silent. Add an outcome token
+      to RederiveOutcomeKind at src/modules/merchants/application/rederive-rules.ts:85
+      through :103, for example promoted-on-one-row, and emit it from the
+      promotion branch at src/modules/merchants/application/rederive-rules.ts:400
+      when matched.length is 1, so the decision report distinguishes a promotion
+      backed by several agreeing rows from one backed by a single scrape.
+      Alternatively require matched.length to be at least 2 and report
+      not-promoted-single-row otherwise, which costs the owner one re-naming and
+      buys back the visible failure. Add the case to
+      test/application/rederive-merchant-rules.test.ts beside the existing
+      not-promoted outcomes at test/application/rederive-merchant-rules.test.ts:363.
+    analysis: >-
+      This is the amplification the plan does not state. H12.16 is parked as an
+      importer question whose cost is bounded to the rows that carry two tokens.
+      Pass two turns it into a DECLARATION: it takes the row's scraped account
+      and writes a rule that will claim every future row of that account, and it
+      does so on evidence of one row. A parked read defect becomes a permanent
+      write, and the report that is supposed to make broadening a number the
+      owner can read shows nothing, because the broadening happens after the
+      migration rather than during it.
+  - id: HZ-M3P12-04
+    severity: medium
+    evidence:
+      - "The node_modules symlink is untracked in the TREE at the reviewed head but is still in the BRANCH history. git ls-tree d62b63d node_modules returns 120000 blob b620da4711d33e33e2c5c399c0e80e12273c08e4, and git log --all -- node_modules names 62612ad as the commit that added it and fc5aef4 as the commit that removed it."
+      - "The blob's single line is an absolute container path naming a DIFFERENT worktree of this fleet, so the leak is a local filesystem layout rather than financial data. Pushing this branch publishes it in two reachable commits."
+      - "The remediation is described as complete where it is not. The commit message of fc5aef4 says the blob is untracked and the rule is widened, so the next worktree cannot repeat it, and the deviations entry at delivery/work-history/m3-p12.yaml:402 through :411 says the blob is removed with git rm --cached after having said, in the same entry, that 62612ad published an absolute container path into a public repository. Neither sentence says the two commits still carry it."
+      - "The ignore widening itself is correct and I checked it rather than assuming: git check-ignore -v node_modules resolves to .gitignore:2:node_modules, git ls-files piped through grep -i node_modules returns nothing, and git status --porcelain --ignored lists only .env, .next, .next-prod, node_modules, test-results and tsconfig.tsbuildinfo. Nothing that should be tracked became ignored."
+    concrete-edit: >-
+      Before the branch is pushed to a public remote, remove the blob from the
+      history rather than only from the tip: squash 62612ad and d62b63d, or
+      rebase the branch so no commit carries a node_modules entry, and verify
+      with git log --all -- node_modules returning nothing. If the orchestrator
+      decides the exposure is acceptable, then correct the two artifacts instead:
+      amend the deviations entry at delivery/work-history/m3-p12.yaml:402 to say
+      that the tree is clean while commits 62612ad and d62b63d still carry the
+      blob, and record the acceptance, so no reader concludes from the words
+      removed and untracked that the path is gone.
+    analysis: >-
+      This is the handover change I judge least completely done. The second
+      implementer found a real defect in inherited work, fixed the recurrence
+      correctly by widening the ignore rule, fixed the tip correctly with git rm
+      --cached, and then wrote it up as fixed. For a private branch that is
+      fixed; for a branch whose whole point is that the repository is public, the
+      history is the artifact and it still carries the path. The other two
+      handover changes I checked and judge sound: the committed e2e spec at
+      test/e2e/merchants.spec.ts:276 runs green in my own full run and does
+      exercise the real form, the real server action and the real use case, and
+      the work history's counts are recorded against a committed harness rather
+      than a scratchpad, which is what hazard H12.23 asks for.
+  - id: HZ-M3P12-07
+    severity: low
+    evidence:
+      - "IDENTITY_NAMESPACES is declared at src/modules/merchants/domain/counterparty-identity.ts:67 and re-exported at src/modules/merchants/application/index.ts:71."
+      - "Its comment at src/modules/merchants/domain/counterparty-identity.ts:64 through :66 names three callers that need it: assignMerchant's write-boundary guard, the re-derivation's pass one, and matchRules' refusal. None of the three uses it. assignMerchant uses identityBasisOfKey at src/modules/merchants/application/assign-merchant.ts:82, pass one uses identityBasisOfKey at src/modules/merchants/application/rederive-rules.ts:241, and matchRules uses ACCOUNT_NAMESPACE directly at src/modules/merchants/domain/merchant-rule.ts:93."
+      - "grep -rn IDENTITY_NAMESPACES over src and test returns exactly the two lines above, the declaration and the re-export, and no use."
+    concrete-edit: >-
+      Delete the constant at src/modules/merchants/domain/counterparty-identity.ts:67
+      and its re-export at src/modules/merchants/application/index.ts:71, since
+      the three named callers each read the namespace they need through
+      identityBasisOfKey or through the single constant. If it is kept as a
+      published surface for a later slice, rewrite the comment so it stops
+      naming callers that do not use it.
+    analysis: >-
+      Clause R-087's first shape: a comment stating a present-tense fact that
+      nothing keeps true. It was written as the design was being laid out and the
+      design then went a different way, leaving a public export with a
+      description of a role it does not have.
+  - id: HZ-M3P12-08
+    severity: low
+    evidence:
+      - "The commit message of fc5aef4 says of the new e2e spec that it edits the hidden subject in the DOM, submits it, and asserts the refusal reaches the reader and that nothing was written."
+      - "The spec asserts the refusal banner is visible, then asserts getByTestId('merchant-group') has count 0 and that the unresolved-group count is unchanged, at test/e2e/merchants.spec.ts:322 through :327. Those two assertions cannot distinguish a refusal from a rule that WAS written and matches nothing, which is precisely the outcome the criterion exists to prevent: an un-namespaced pattern matches no identity key, so it would also produce zero merchant groups and an unchanged unresolved count."
+      - "The refusal banner assertion does carry the criterion; the second half of the sentence in the commit message does not."
+    concrete-edit: >-
+      Either weaken the sentence in the record, or make the spec observe the
+      thing it claims: add an assertion that reloads /merchants after the refusal
+      and checks the group's hidden subject is unchanged, or move the
+      nothing-was-written half of criterion 12.18 into the application test in
+      test/application/counterparty-identity-journey.test.ts where a fake
+      repository can count upsertRule calls, and say in the commit record which
+      test carries which half.
+    analysis: >-
+      Small, and named because clause R-087 says a false claim in a record is
+      raised as a finding rather than as a note. The spec is a real witness of
+      the visible refusal, which is the harder half; the claim simply reaches
+      further than the assertions do.
+  - id: HZ-M3P12-09
+    severity: low
+    evidence:
+      - "The work history records, twice, that of 27 name-like tokens in the new fixture 5 occur in a real document and all 5 are statement grammar: delivery/work-history/m3-p12.yaml:292 and delivery/work-history/m3-p12.yaml:569."
+      - "I re-ran the judgement independently, in memory, through the shipped PDF extractor, printing counts only. My run reports 58 name-like tokens of length four or more in the fixture, of which 23 also occur in the real corpus. Every one of the 23 is Belfius statement grammar, Dutch banking vocabulary, card-rail vocabulary or the bank's own letterhead; none is a merchant, a place or a person from either document. The CONCLUSION replicates."
+      - "The COUNTS do not, and cannot, because the definition of name-like behind 27 and 5 is not recorded anywhere in the work history or in the tree. The measurement script for this check was not committed, unlike test/fixtures/measure-identity-convergence.ts which the phase did commit for the convergence counts."
+    concrete-edit: >-
+      Record the token definition beside the numbers at
+      delivery/work-history/m3-p12.yaml:569, or commit the check the way this
+      phase committed its convergence harness, as a script under test/fixtures
+      that takes a fixture path and a corpus path, prints counts only, and is
+      documented with the invocation used against the real documents. A privacy
+      judgement that cannot be re-run is the same shape as the M0-P5 scratchpad
+      figures this phase's own verification-first step was written to avoid.
+    analysis: >-
+      Not a false claim, and I say so plainly: I reached the same conclusion by a
+      different route. It is an evidence-reproducibility gap on the ONE check
+      that gate:privacy is documented as unable to make, which is where
+      reproducibility is worth the most.
+  - id: HZ-M3P12-10
+    severity: medium
+    evidence:
+      - "The plan's conflicts-with entry for M3-P9 states, as a fact recorded rather than assumed, that M3-P9's set is styles/tokens.css, src/app/globals.css, playwright.config.ts and test/e2e/, and that this phase touches none of them, and it says decision D-44 rests on it."
+      - "The branch touches two of the four. git diff --stat 7f4aafb..fc5aef4 lists src/app/globals.css with 16 insertions and test/e2e/merchants.spec.ts with 63 insertions."
+      - "M3-P9's own files-to-touch in delivery/plan/pulse-v02.yaml lists styles/tokens.css, src/app/globals.css, playwright.config.ts and test/e2e/, so the overlap is with the plan's own declaration and not with an inferred set."
+      - "M3-P9 is NOT merged: git log --oneline origin/main --grep 'pressed' returns only the three plan commits b045d7d, 432d5f1 and a4f1a94, and the worktree for the phase still exists, so the overlap is live rather than historical."
+      - "Four other paths outside this phase's files-to-touch are also changed with no deviation recorded: src/app/globals.css, test/e2e/merchants.spec.ts, the three files under messages/ and src/app/(app)/merchants/page.tsx. The work history's deviations list carries exactly four entries, whose plan-clauses are criterion 12.17, criteria 12.7 and 12.8 and 12.9, files-to-touch as it concerns .gitignore, and step 13; none names these."
+    concrete-edit: >-
+      Add a deviation entry to delivery/work-history/m3-p12.yaml naming
+      src/app/globals.css, test/e2e/merchants.spec.ts, messages/en.json,
+      messages/nl.json, messages/fr.json and src/app/(app)/merchants/page.tsx as
+      touched outside files-to-touch, with the reason, in the same form as the
+      .gitignore entry already there. Correct the conflicts-with entry for M3-P9
+      in delivery/plan/pulse-v02.yaml so it no longer asserts that this phase
+      touches none of M3-P9's files, and restate what decision D-44 rests on now
+      that two of the four are shared, so whoever schedules M3-P9 next is not
+      reading a checked statement that is false.
+    analysis: >-
+      The refusal banner needed a style and a message, and putting them where
+      they belong is right; the defect is that the plan's own conflict check now
+      says something untrue and nothing on the branch says otherwise. This is the
+      cheapest finding on the list to fix and the one most likely to cost
+      somebody a merge conflict they were told could not happen.
