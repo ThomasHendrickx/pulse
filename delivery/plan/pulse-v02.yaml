@@ -6831,32 +6831,53 @@ phases:
           the resolution src/platform/db/guard-cli.ts already implements and is
           named here because the two readings differ on the empty case and an
           interlock that resolves differently from the command it guards is
-          decorative. THE REF IS READ FROM WHICHEVER FIELD CARRIES IT, and this
-          criterion says where rather than leaving it to an implementer,
-          because the two endpoint shapes put it in different places: on a
-          session pooler the ref is in the USERNAME and the host is regional
-          pooler infrastructure shared by every project in that region, and on
-          a direct connection the ref is inside the host and the username
-          carries none. A resolver that reads only one of the two shapes does
-          not meet this criterion. THE HOST MATCH IS NEVER SUFFICIENT ALONE,
-          and the reason is measured: fleet warning 5 records the pooler as the
-          only endpoint reachable from an IPv4 environment, so on the endpoint
-          this routine must use a matching host proves the REGION and not the
-          project, and an interlock that approves on host alone approves every
-          project the owner has in that region. Refusal is fail closed and
-          total: no target given, target given but empty, connection absent,
-          connection unparseable, host mismatched, project ref mismatched with
-          the ref in the username, project ref mismatched with the ref in the
-          host, and a connection carrying no ref in either field, which refuses
-          as unparseable; unit tests assert every one of them plus one matching
-          case PER ENDPOINT SHAPE that proceeds, and a suite exercising one
-          shape does not meet this criterion. A test asserts the refusal
-          happens BEFORE any repository call, using a fake that records calls
-          and must record none, so a refused run cannot have read or written
-          anything, and refusal exits non-zero. THE INTERLOCK HAS NO OVERRIDE
-          FLAG and a test asserts that no argument makes a mismatch proceed,
-          because an override would be a flag asserting the target is right,
-          which is the assertion being checked; this differs deliberately from
+          decorative. THE EQUIVALENCE HAS ONE EXCEPTION AND IT IS FAIL CLOSED,
+          named so that the refusal is not read as a mystery: the URL parser
+          this resolution uses does not percent-decode a username while the
+          client's own parser does, so a connection string carrying a
+          percent-encoded username is seen here in its encoded form, its
+          extracted ref does not equal the bare ref the operator passed, and it
+          REFUSES a target the client would have opened. That direction is a
+          blocked run and a round trip rather than a migration in the wrong
+          place, which is why it is accepted rather than engineered around. THE
+          REF IS READ FROM WHICHEVER FIELD CARRIES IT, AND THIS CRITERION FIXES
+          BOTH THE FIELD AND THE EXTRACTION, because a field is not a ref and
+          an implementer left to split one will sometimes take the wrong half.
+          On a SESSION POOLER the ref is in the USERNAME, which is the literal
+          word postgres, a dot, and then the ref: the ref is the part AFTER the
+          first dot, and the host is regional pooler infrastructure shared by
+          every project in that region. On a DIRECT CONNECTION the ref is
+          inside the HOST, which is db, a dot, the ref, a dot, and the provider
+          domain: the ref is the second dot-separated label, and the username
+          carries no ref at all, being the same literal word for every project.
+          THE VALUE THE OPERATOR PASSES IS THE BARE REF AND NEVER A DECORATED
+          FIELD, so one argument is correct against either endpoint shape, and
+          a resolver whose extracted value is EQUAL FOR TWO DIFFERENT PROJECTS
+          does not meet this criterion whatever its tests say. A unit test
+          asserts that the extracted value DIFFERS for two invented connection
+          strings of the same shape that differ only in their ref, one such
+          test per shape, which is the assertion that fails a resolver
+          returning the fixed prefix rather than the ref. A resolver that reads
+          only one of the two shapes does not meet this criterion either. THE
+          HOST MATCH IS NEVER SUFFICIENT ALONE, and the reason is measured:
+          fleet warning 5 records the pooler as the only endpoint reachable
+          from an IPv4 environment, so on the endpoint this routine must use a
+          matching host proves the REGION and not the project, and an interlock
+          that approves on host alone approves every project the owner has in
+          that region. Refusal is fail closed and total: no target given,
+          target given but empty, connection absent, connection unparseable,
+          host mismatched, project ref mismatched with the ref in the username,
+          project ref mismatched with the ref in the host, and a connection
+          carrying no ref in either field, which refuses as unparseable; unit
+          tests assert every one of them plus one matching case PER ENDPOINT
+          SHAPE that proceeds, and a suite exercising one shape does not meet
+          this criterion. A test asserts the refusal happens BEFORE any
+          repository call, using a fake that records calls and must record
+          none, so a refused run cannot have read or written anything, and
+          refusal exits non-zero. THE INTERLOCK HAS NO OVERRIDE FLAG and a test
+          asserts that no argument makes a mismatch proceed, because an
+          override would be a flag asserting the target is right, which is the
+          assertion being checked; this differs deliberately from
           src/platform/db/guard.ts, whose escape hatch exists because its
           default posture is local-only. No connection string, password or host
           is printed on any path, asserted over the captured output of every
@@ -6864,7 +6885,17 @@ phases:
           gave rather than anything resolved. THE ROUTINE'S OWN DIFF CARRIES
           ONLY THE WIRING, the import, the two target arguments, the call and
           the refusal exit, with no change to what the routine computes or
-          writes.
+          writes. THIS CRITERION WAS ADDED AFTER THIS PHASE'S IMPLEMENTATION
+          WAS BUILT, and it says so rather than letting a review lane discover
+          it as a defect: the interlock was relocated here from a later phase
+          because a guard arriving one merge after the routine leaves a writing
+          migration unprotected in the trunk in between, and the implementation
+          under review at the time of that relocation was built against this
+          phase without this criterion. A review evaluating that implementation
+          marks this criterion NOT MET AND NOT YET OWED, records that it
+          postdates the work under review, and does not report it as an
+          implementer omission; it is owed by the next change to this phase and
+          by nothing already merged.
     hazard-classes:
       - id: H12.1
         statement: >-
@@ -7489,16 +7520,18 @@ phases:
       - text: >-
           Run the routine ONCE and WITHOUT --accept, through the package.json
           invocation point rather than by hand, WITH THE TARGET NAMED
-          EXPLICITLY ON THE COMMAND as M3-P12's criterion 12.23 requires, and
-          capture the whole of its output verbatim to a file the run wrote
-          rather than to a retyped transcript. If the interlock refuses, that
-          refusal is the answer and not an obstacle to work around: the phase
-          records BLOCKED naming it, and no attempt is made to satisfy the
-          routine by handing it a connection nobody named. The first invocation
-          carries no acknowledge flag and its exit code is recorded before any
-          accepted rerun is even considered: an invocation that accepts a
-          condition nobody has seen reported is how a blocking condition
-          disappears without a decision.
+          EXPLICITLY ON THE COMMAND as M3-P12's criterion 12.23 requires, with
+          the target ref given as the BARE project ref that criterion fixes and
+          never a username, a host or any decorated form of it, and capture the
+          whole of its output verbatim to a file the run wrote rather than to a
+          retyped transcript. If the interlock refuses, that refusal is the
+          answer and not an obstacle to work around: the phase records BLOCKED
+          naming it, and no attempt is made to satisfy the routine by handing
+          it a connection nobody named. The first invocation carries no
+          acknowledge flag and its exit code is recorded before any accepted
+          rerun is even considered: an invocation that accepts a condition
+          nobody has seen reported is how a blocking condition disappears
+          without a decision.
       - text: >-
           Read the exit code and the applied line together. Exit 0 with applied
           yes is the whole outcome for every case except the two criterion 12.7
@@ -9074,6 +9107,22 @@ open-questions:
   - DR-0002
   - DR-0023
 parked:
+  - item: >-
+      Criterion 12.23, the target interlock, against any M3-P12 implementation
+      built before it was added.
+    reason: >-
+      ADDED LATE, and recorded here rather than left for a later reader to find
+      as a contradiction (finding R5-M3P12-02). The interlock was relocated
+      into M3-P12 from a later phase during the plan amendment for criterion
+      12.17, because a guard that arrives one merge after the routine it guards
+      leaves a writing migration in the trunk with a documented invocation
+      point and no target check in between. The relocation is right and the
+      timing is the problem: M3-P12's implementation was built, and was under
+      clean-room re-review, against this phase as it stood WITHOUT criterion
+      12.23. A review evaluating that implementation marks 12.23 NOT MET AND
+      NOT YET OWED and reads this entry rather than reporting an implementer
+      omission, since the implementer was never handed it. Discharged when a
+      work history for this phase records criterion 12.23 met.
   - item: >-
       The deployed run of the re-derivation, where M3-P16 closes BLOCKED rather
       than MET.
