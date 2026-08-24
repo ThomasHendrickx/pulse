@@ -9,12 +9,10 @@
 # origin/main (dc8c505, the gate:privacy fork-refusal fix) so gate runs here
 # are trustworthy. Merge commit noted below once captured.
 #
-# STATUS: reading briefs and source, setting up local DB. Draft below.
-kind: finding
-verdict: DRAFT-IN-PROGRESS
-produced-by: claude
-findings: []
-no-findings-statement: "placeholder, draft in progress"
+# The structured kind/verdict/findings mapping this document validates
+# against lives at the END of this file, after the full incremental
+# progress log. Only ONE YAML mapping appears in this file, at the
+# bottom; everything above it is commentary, in the order it was written.
 #
 # PROGRESS LOG (append-only per clause incremental-output).
 #
@@ -294,3 +292,190 @@ no-findings-statement: "placeholder, draft in progress"
 # three specs exercise is sound; if their failure were a real regression
 # rather than server latency, it is very unlikely to also be invisible to
 # a full head-on probe of the same code paths.
+#
+# ============================================================
+# CLEANUP, before pushing.
+# ============================================================
+# scratch-probe-1416.ts (the live-database probe script) deleted, never
+# committed. src/modules/ledger/domain/corrections.ts's mutation probe
+# (HZ-M3P14-03's witness) reverted with `git checkout --`. .env (pins to
+# this review's own local stack) is gitignored, never committed.
+# playwright.config.ts and supabase/config.toml's port/project_id/
+# edge_runtime changes are reverted below, before the final commit, so
+# the pushed tree is byte-identical to the reviewed tree plus this
+# document. Local Supabase stack (project wt-m3p14-haz, ports
+# 54821-54829) stopped and its containers/volumes removed with
+# `npx supabase stop --no-backup` after the last gate run. DATABASE USED
+# THROUGHOUT: a local Postgres reachable only at
+# postgresql://postgres:postgres@127.0.0.1:54822/postgres, started and
+# torn down entirely by this review, pinned explicitly on every command
+# that could write; the ambient DATABASE_URL (the hemma-dev Supabase
+# project per fleet warning 16) was never targeted by anything in this
+# review.
+#
+# ============================================================
+# VERDICT AND FINDINGS
+# ============================================================
+# FIX-ROUND-NEEDED: two HIGH findings. Neither is a live numeric defect
+# this review could reproduce on the shipped tree -- the reconciliation
+# invariant (criterion 14.16, all four arms) and the silent-wrong-answer
+# recovery path both hold exactly, verified against a real database
+# through the real production code, not only against the in-memory fakes
+# the phase's own tests use. Both HIGH findings are about GUARDS: one
+# mechanically enforced guard (the single-definition pin for the
+# account-number canonicalisation) is demonstrably blind to a duplicate
+# written with .replaceAll instead of .replace, mutation-verified; and
+# one doc comment asserts a freshness guarantee (moved is "recomputed
+# after the change") that the code beside it does not implement (it
+# echoes a pre-write preview), which is false under clause R-087 and
+# borders a real, if narrow, concurrent-write hazard on a money-moving
+# screen figure. Two MEDIUM findings round out what a fix round should
+# also take: a latent, untested invariant behind the account-number
+# module's migration, and the disclosed-but-still-real absence of a
+# Playwright half for the phase's central invariant and the
+# ring-correction preview's byte-comparison.
+findings:
+  - id: HZ-M3P14-04
+    severity: high
+    evidence:
+      - "src/modules/accounts/application/correct-account-ring.ts:60-62 (CorrectAccountRingOutcome.moved's doc comment): \"What ACTUALLY moved, recomputed after the change rather than restated from the preview, so the two can be compared and criterion 15.7's 'byte identical' is a fact rather than a tautology.\""
+      - "The implementation directly below (correct-account-ring.ts:110-130): `const movement = await previewAccountRingChange(context, deps, input);` runs FIRST, before any write. Then `await deps.accounts.updateAccountRole(...)` writes the declaration, then `await deps.recompute(context)` runs the real recompute, and the function returns `ok({ account, moved: movement.value })` -- `movement.value` is the untouched result of the EARLIER preview call, never re-read or re-derived after the write or the recompute."
+      - "The comment's claim is false of the code exactly as written: `moved` is restated from the preview, which is the one thing the comment says it is not."
+      - "test/application/account-registry.test.ts:508-558 (criterion 15.7's own test) does verify, in a single-threaded fake-world test with no concurrent writes, that preview.value equals the independently-measured before/after totals AND that outcome.value.moved equals preview.value -- so the VALUES are correct in every case this review or the test suite exercises. What is false is the MECHANISM the comment describes, not (as far as this review could find) any observed number."
+      - "The gap the false comment hides: nothing stands between the preview call and the write+recompute (no transaction, no lock, no re-check), so a concurrent write landing in that window (another import, another registration, another correction on the same household, all real possibilities on a real deployed server serving one request per action) would make the real post-recompute movement differ from the previewed one, and the household would be shown the STALE previewed figure as if it were freshly measured -- exactly the class of silent wrong figure this review was dispatched to hunt for, and exactly what the false comment claims cannot happen (\"recomputed after the change\")."
+    concrete-edit: >-
+      Either correct the comment to say what the code does ("moved is the
+      previewed movement, computed before the write; it is not re-derived
+      after the recompute, so a concurrent write between preview and
+      recompute can make it stale") and accept the narrow race as a known
+      limitation, or make the code match the comment: re-derive `moved`
+      from a genuine post-recompute measurement (e.g. a second preview call
+      against the now-current declared set, or a direct read of the actual
+      delta) rather than echoing the pre-write preview value, so criterion
+      15.7's "byte identical" claim is checked against a fresh number on
+      every request and not only in the single-threaded test.
+    analysis: >-
+      Filed HIGH under clause R-087, which requires a false present-tense
+      claim to be raised loudly rather than as a nit, and because the
+      specific claim being false is precisely about protection against the
+      silent-wrong-figure hazard this review's dispatch names as the
+      central concern of the phase. The values are correct in every
+      configuration this review could exercise (this review's own live
+      database probe of the ring-correction path, and criterion 15.7's own
+      test, both found preview and actual movement equal), so this is not
+      demonstrated as a live numeric defect; it is a false claim about a
+      guarantee on a code path that moves money between totals, with a
+      real (if narrow, single-request-window) mechanism by which the claim
+      could be violated in production and nothing would catch it.
+
+  - id: HZ-M3P14-03
+    severity: high
+    evidence:
+      - "test/domain/account-number.test.ts:162-189, the criterion 14.4 guard against a second private copy of the account-number canonicalisation transformation reappearing anywhere under src/."
+      - "The duplicate detector's pattern requires the literal substring \".replace(\" (account-number.test.ts:176: /\\.replace\\(\\s*\\/.../), so it is blind to the identical transformation written as `.replaceAll(...)`."
+      - "MUTATION-VERIFIED: appended `export const scratchProbeSecondCopy = (iban: string): string => iban.replaceAll(/\\s/g, \"\").replaceAll(/-/g, \"\").toUpperCase();` to src/modules/ledger/domain/corrections.ts (a live account-bearing field, the exact shape the guard exists to catch) and ran `npx vitest run test/domain/account-number.test.ts`: 15 passed (15), EXIT=0, with the duplicate present. Reverted with `git checkout -- src/modules/ledger/domain/corrections.ts`; `git status` confirmed clean again."
+      - "This is the same failure shape as the two guards the implementer's own work history discloses as having been green against the states they exist to catch (delivery/work-history/m3-p14.yaml red-witnesses section: gate-diff-tokens.sh's stray-space bug and its grep-dialect-mixing bug), and it is not named anywhere in that section or in the overstatement-check."
+      - "The phase's own commit message for bf3e001 states as a design goal: \"Two private second copies of the same transformation are removed rather than tolerated ... A fast-gate test enumerates the definitions and reddens on a third.\" The guard does not redden on a third definition that uses .replaceAll."
+    concrete-edit: >-
+      Broaden test/domain/account-number.test.ts's duplicate-detector regex
+      (or replace it with an AST-free but more general string match) so it
+      catches both `.replace(` and `.replaceAll(` -- e.g. match
+      `\.replace(All)?\(` instead of `\.replace\(` -- and add a regression
+      case that asserts a `.replaceAll`-based duplicate reddens the test,
+      mirroring the existing positive case for `.replace`. Apply the same
+      widening to any other guard in this phase or M3-P12 that walks source
+      text for this specific JS idiom, since the same blind spot likely
+      recurs wherever a hand-rolled pattern was built against one call and
+      never tried against its ES2021 sibling.
+    analysis: >-
+      Filed HIGH rather than MEDIUM because this guard is the ONLY
+      mechanical enforcement of decision D-47/D-57 ("one canonical form,
+      one module, everyone imports it") and the hazard it is meant to catch
+      is exactly the one criterion 14.4 names as costly: a second copy that
+      "agreed with the platform form on the day it was written and was a
+      second copy of one transformation from then on." A reviewer or
+      implementer relying on this guard's green result to conclude no
+      duplicate exists is relying on a guard demonstrated here to admit
+      the dangerous state silently. The dispatch's own framing (two
+      disclosed guard failures of this shape, asking for a third) suggests
+      this class of defect is a known recurring pattern in this project
+      worth a systematic sweep, not only a one-line fix.
+
+  - id: HZ-M3P14-01
+    severity: medium
+    evidence:
+      - "src/platform/account-number.ts's canonicalAccountNumber only normalises (uppercases, strips whitespace/hyphens) a value when the result matches CANONICAL_SHAPE; otherwise it returns the value completely unchanged, including original case and whitespace."
+      - "The old, removed expression at src/modules/ledger/domain/corrections.ts:225 (git show bf3e001) was unconditional: `transaction.counterpartyIban.toUpperCase().replace(/\\s+/g, \"\")`, applied regardless of shape."
+      - "account-number.ts's own header comment documents that the field this function is applied to \"sometimes holds nothing shaped like an account number at all\" -- i.e. the file's own stated premise is that a non-canonical-shaped counterpartyIban is a real possibility for this exact call site."
+      - "Traced every path that can populate Transaction.counterpartyIban and confirmed each one already restricts it to CANONICAL_SHAPE-passing values before it is ever compared: detect-profile.ts:308-330's auto-detection column gate (IBAN regex requires the STRICT SUPERSET-COMPATIBLE shape /^[A-Z]{2}\\d{2}[A-Z0-9]{8,30}$/, no whitespace, no lowercase, applied to every non-empty value in a column before that column is assigned the counterpartyIban role) and belfius-current-account-template.ts's DESCRIPTION_IBAN regex (line 89), which only ever matches already-uppercase, digit-only substrings. The KBC card template sets no counterpartyIban at all."
+      - "No test in the tree exercises counterpartyKey (corrections.ts) or canonicalAccountNumber with a non-canonical-shaped counterpartyIban value (grep for counterpartyKey under test/ returns no hits)."
+    concrete-edit: >-
+      Either (a) add a one-line comment at corrections.ts's counterpartyKey
+      recording the invariant this migration now depends on -- every
+      counterpartyIban reaching this function is already shape-validated
+      upstream by detect-profile.ts or the Belfius PDF template's own
+      regex, so a future non-shape-gated source profile assignment would
+      silently change refund-key correlation for malformed values -- or
+      (b) add a small domain test pinning that canonicalAccountNumber and
+      the old unconditional transform agree on every value the two known
+      producers of counterpartyIban can emit, so a future producer that
+      breaks the invariant reddens a test rather than shipping silently.
+    analysis: >-
+      Not a live defect: every path traced in this review hands the
+      migrated call sites only values that already satisfy
+      CANONICAL_SHAPE, so canonicalAccountNumber and the removed
+      unconditional expression agree byte for byte on everything the
+      shipped tree can produce today (ATTACK 6 in the dispatch, probed and
+      not reached as a defect). Filed MEDIUM because the safety of a
+      behaviour-preserving refactor across the whole tree currently rests
+      on an invariant that is asserted nowhere, contradicted by the
+      module's own comment, and would fail silently (a mis-key, not a
+      crash) if a future change violated it -- exactly the shape of defect
+      this phase's own criterion 14.4 was written to prevent for the
+      canonical-form migration itself.
+
+  - id: HZ-M3P14-02
+    severity: medium
+    evidence:
+      - "delivery/work-history/m3-p14.yaml's overstatement-check states plainly: \"criterion 14.16's four arms have no Playwright half at all\"; what-i-did-not-cover repeats \"CRITERION 14.16's Playwright half, all four arms\" and \"CRITERION 15.7's byte-comparison of the RENDERED preview figure against the moved total.\""
+      - "Criterion 14.16 itself requires: \"ALL FOUR ARMS carry a Playwright half asserting the same totals and the same verdict on the rendered page, so the guarantee is one the reader gets and not only one the repository holds.\" That half does not exist in test/e2e/."
+      - "Independently re-ran all four arms plus the silent-wrong-answer-and-recovery scenario against a real local Postgres through the actual production composition roots (src/modules/*/application/index.ts's liveDependencies), not the in-memory fakes test/application/held-rows.test.ts uses: every figure matched the criterion's pinned values exactly (see the review's progress log above), so the underlying mechanism is verified at the application/SQL layer. What remains genuinely unverified is the BROWSER-rendered path: real sign-up, real navigation, real DOM assertions on the rendered totals."
+    concrete-edit: >-
+      Write the missing Playwright half of criterion 14.16 (all four arms,
+      asserting the rendered totals and verdict on the month view page,
+      not only the application-level figures) and criterion 15.7's
+      byte-comparison of the rendered ring-correction preview against the
+      committed outcome, using the same fixtures the application-level
+      tests already use. This is explicitly named as missing by the
+      implementer's own work history, so the edit is to close a disclosed
+      gap rather than to correct a false claim.
+    analysis: >-
+      Filed MEDIUM rather than HIGH or CRITICAL because this review's own
+      live-database probe (see the progress log) found the underlying
+      reconciliation math and the silent-wrong-answer recovery path to be
+      exactly correct against the real production code, which substantially
+      narrows what the missing Playwright coverage is actually protecting
+      against: rendering and routing defects between the correct server-side
+      figures and the page, not the arithmetic itself. That gap is still
+      real -- a regression introduced in month-view.tsx's rendering of these
+      figures would not be caught by any committed test -- so it is filed
+      rather than waved through under R-087 (the work history's disclosure
+      is accurate, not a false claim, so this is a straightforward coverage
+      finding rather than a "loud" R-087 finding).
+# ============================================================
+# VALIDATION
+# ============================================================
+# npx tiphys validate --type verdict delivery/review/m3-p14-hazard.yaml
+#   -> INVALID, 14 lines (missing phase/framing/review-contract/criteria/
+#   deviations-judged, kind mismatch, concrete-edit vs concrete-fix field
+#   name), exactly as the dispatch anticipated: no verdict schema is
+#   registered for this brief and this document does not claim to be one.
+# npx tiphys validate --type finding delivery/review/m3-p14-hazard.yaml
+#   -> EXIT=0, silent (matching the known-good
+#   delivery/review/m3-p6-hazard.yaml, also silent on EXIT=0).
+# npx tiphys validate --type auto delivery/review/m3-p14-hazard.yaml
+#   -> EXIT=0.
+#
+kind: finding
+verdict: FIX-ROUND-NEEDED
+produced-by: claude (Sonnet 5)
