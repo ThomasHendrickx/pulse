@@ -1,0 +1,834 @@
+# Adversarial plan review of the M3-P9 amendment in
+# delivery/plan/pulse-v02.yaml (dispatch M0-P7, reviewer worktree
+# /home/user/wt-m0p7-adv, branch claude/m0-p7-plan-review, plan head bca2a74
+# off claude/m0-p7-plan-press).
+#
+# WHAT WAS REVIEWED. git diff main HEAD -- delivery/plan/pulse-v02.yaml:
+# 1 file, +271 -29, fifteen hunks. The amendment rewrites criterion 9.7,
+# adds criterion 9.9, adds a step specifying the listener, adds hazard
+# H9.10 and H9.11, amends H9.5, the intent, verified-root-cause, the
+# files-to-touch, the migrations note, the citations and the fill-in, and
+# adds decision D-61. Three hunks land outside M3-P9: the milestone header
+# comment at :329, M3-P12's conflicts-with entry at :7715 and decision
+# D-22 at :10872.
+#
+# work-log (incremental, newest last):
+# - created this file as a beacon before deep reading
+# - read the brief in full, then the diff, then the amended M3-P9 in the
+#   plan as composed
+# - REPO PASS, every claim the amendment makes about the tree checked in
+#   this worktree:
+#   * grep -rn "use client" src/ returns TWO lines, not one:
+#     src/platform/ui/nav-link.tsx:1:"use client";
+#     src/platform/ui/nav-link.tsx:7:// section 1). The reason for "use
+#     client": the active-route marker must
+#     Criterion 9.7(c) demands exactly ONE. Finding ADV-M3P9A-02.
+#   * grep -rn "aria-busy" src/ test/ returns nothing. H9.10's premise
+#     ("nothing in the product enters aria-busy until M3-P10") is TRUE.
+#   * grep -rn "aria-disabled" src/ test/ returns nothing either, which
+#     H9.10 does not say and which is what makes its own argument cut both
+#     ways. Finding ADV-M3P9A-05.
+#   * grep -rn "dangerouslySetInnerHTML" src/ test/ returns nothing. D-61's
+#     claim holds.
+#   * grep -rn "Content-Security\|script-src\|nonce" over src/,
+#     next.config.ts and middleware.ts returns nothing, and there is no
+#     middleware.ts. No CSP exists today, so the inline script is not
+#     blocked now and there is no nonce plumbing for one later.
+#   * grep -rEn "oklch\(|#[0-9a-fA-F]{3,8}|[0-9]+px" src/ --include=*.tsx
+#     exits 1 at base, so criterion 9.5(a) is not endangered by the string
+#     constant the amendment permits.
+#   * src/app/layout.tsx at base is 19 lines, exports metadata only, and
+#     renders <body>{children}</body> at :16 as the amendment says.
+#   * src/app/(app)/layout.tsx never renders the auth screens, so the
+#     amendment's root-layout-not-shell argument is correct.
+# - PRIOR-ROUND PASS, in /home/user/wt-m3p9 (the implementation the
+#   amendment was written against, head 8acd1ae):
+#   * src/app/layout.tsx there is UNCHANGED from base. The listener was
+#     never shipped. H9.11 is an outcome, not a risk, exactly as stated.
+#   * test/e2e/pressed-and-disabled.spec.ts:678-695 installs the handler
+#     FROM THE TEST, and its own comment says so.
+#   * test/e2e/pressed-and-disabled.spec.ts:803 carries
+#     test.skip(({ hasTouch }) => hasTouch !== true, "touch paths need the
+#     phone project"). A skipped test is a green test. Finding
+#     ADV-M3P9A-03.
+#   * the touch path is CDP Input.dispatchTouchEvent through
+#     page.context().newCDPSession(page), and the spec asserts the captured
+#     event list CONTAINS "pointerdown" and "touchstart" BEFORE asserting
+#     zero frames in :active (spec :836-845). Criterion 9.9(c) requires no
+#     such guard, so the criterion is weaker than the code already written
+#     against it. Finding ADV-M3P9A-04.
+#   * the sampler measures displacement as
+#     Math.abs(el.getBoundingClientRect().top - restTop) with restTop taken
+#     once before the press: viewport relative, so any scroll or reflow
+#     during the hold counts as movement. Finding ADV-M3P9A-07.
+#   * the touch test covers TWO probes on ONE screen and already needs
+#     test.setTimeout(120_000) with TOUCH_HOLD_MS = 400. Criterion 9.9(b)
+#     plus (d) demands nineteen controls twice. Finding ADV-M3P9A-11.
+#   * captured numbers, delivery/work-history/m3-p9.yaml:805-816: "carrying
+#     [data-pressed] 28, with a transform 27, peak box displacement
+#     2.000px" on button.auth-submit and "carrying [data-pressed] 26, with
+#     a transform 25, peak box displacement 2.000px" on p.auth-alt a, with
+#     press to first visible change 29.2ms and 31.4ms, over a 400ms hold
+#     that sampled 27 to 29 frames. 27 frames in 400ms is about 68fps: an
+#     UNSTARVED run. Finding ADV-M3P9A-06.
+# - MACHINE PASS: uptime in this container reports load average 11.29,
+#   9.83, 9.15 on nproc 4, above the 5.8 to 9.44 fleet warning 18 records
+#   as the load under which the e2e gate is not reliably green. This is the
+#   box the 100ms floor would be asserted on.
+# - SCOPE PASS: hunks touch the milestone header, M3-P9, M3-P12's
+#   conflicts-with, D-22 and the new D-61. M3-P10 (plan lines 5240 to 5934)
+#   is byte unchanged, so no work moved into or out of it. But grep -n
+#   "app/layout.tsx" over the plan shows M3-P4 declares src/app/layout.tsx
+#   in its own files-to-touch (:2843) with conflicts-with: [] (:2915), and
+#   the report-code-disagreement entry at :1330 says "no phase needs to
+#   edit src/app/layout.tsx" under verified: true. The bookkeeping pass
+#   reached the phase that does NOT share the file and missed the one that
+#   does. Finding ADV-M3P9A-10.
+# - CONSTRUCTION PASS, the thing this role exists for: an implementation
+#   that satisfies every criterion as written and leaves the owner worse
+#   off than today. Found one, ADV-M3P9A-01, and it is the review's
+#   headline. Recorded in that finding's analysis.
+# - validation: npx tiphys validate --type verdict run first, captured in
+#   the comment at the foot of this file, then --type finding, as the
+#   precedent plan reviews in delivery/review do.
+
+kind: finding
+verdict: revise
+produced-by: claude (Opus 5, claude-opus-5)
+findings:
+  - id: ADV-M3P9A-01
+    severity: high
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:5031-5048 (criterion 9.9(b)): the press
+        is sampled "while the touch is held" and is released "AWAY FROM THE
+        CONTROL by moving the touch point off it before the touch ends". No
+        half of 9.9 samples a single frame AFTER the touch ends.
+      - >-
+        delivery/plan/pulse-v02.yaml:4746-4849 (criterion 9.2(b)): the
+        computed snapshot is captured in exactly TWO states, hovering and
+        held, and 9.2 releases away from the control for the same reason. No
+        post-release snapshot exists there either.
+      - >-
+        delivery/plan/pulse-v02.yaml:4627-4653 (the new step): the clear is
+        specified as "capture-phase pointerup and pointercancel listeners
+        that clear every data-pressed in the document", which is correct and
+        is a STEP, not a criterion. Nothing in the acceptance set falsifies
+        its absence.
+      - >-
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:687-693: the
+        prior round's handler clears with
+        document.querySelectorAll("[data-pressed]") on BOTH pointerup and
+        pointercancel, so the correct shape is known and is simply not
+        measured.
+      - >-
+        Pointer Events implicit capture: for pointerType touch the user agent
+        captures the pointer to the pointerdown target, so a touch pointerup
+        fires on the control even when the finger has moved off it. The
+        release-away technique therefore cannot distinguish a document-wide
+        clear from a target-scoped one, and cannot exercise pointercancel at
+        all.
+    analysis: >-
+      THE IMPLEMENTATION THAT PASSES EVERY CRITERION AND LEAVES THE PRODUCT
+      WORSE THAN TODAY. Ship the listener exactly as criterion 9.7(c)
+      describes it: a module-scope string constant, one script element with
+      data-testid="press-feedback", a capture-phase pointerdown that sets
+      data-pressed on the closest matching ancestor. Give it a pointerup
+      listener and no pointercancel listener. Every criterion in the phase is
+      green. 9.9(a) finds the script element in both served documents.
+      9.9(b) counts the attribute on 96 percent of held frames, a transform
+      on 93 percent, 2.000px of peak displacement and 30ms to first movement.
+      9.9(c) reports zero frames in :active. 9.9(d) repeats it under reduce.
+      9.2 and 9.3 and 9.4 never touch the question. Now the owner uses it. He
+      puts a finger on the month view and drags to scroll, which is the most
+      common gesture on the surface this whole round exists for. The browser
+      takes the gesture for scrolling and fires pointercancel, not pointerup.
+      Nothing clears data-pressed. The control he started the scroll on stays
+      drawn pressed, moved by --press-offset and tinted, until he happens to
+      tap something. Every subsequent press of that control produces no
+      change at all, because it is already in the pressed state, so the
+      complaint the phase was dispatched against is not merely unanswered on
+      that control, it is answered backwards. This is H9.11's own class,
+      green and inert, arriving through the END of the press instead of the
+      beginning of it, and the amendment closed one end and left the other
+      open. The release-away trick is what hides it: it was adopted so no
+      measurement submits a form, which is right, and its cost is that the
+      only moment that could witness the clear is the one moment the
+      measurement never reaches.
+    concrete-edit: >-
+      Add a fifth half to criterion 9.9, before the FALSIFIED BY clause:
+      "(e) THE PRESS ENDS WHEN THE FINGER DOES. For at least one control of
+      each of the three shapes in the enumeration, a submit button, a
+      link-shaped control with no background of its own, and the disclosure
+      summary, the spec drives THREE endings and samples frames after each
+      one. First a release ON the control, with the activation refused by a
+      capture-phase click handler the spec installs, which is the one thing
+      the spec may install and is not a mechanism under measurement. Second a
+      release away from the control. Third a POINTERCANCEL, produced by a
+      touch that begins on the control and then moves far enough that the
+      engine takes the gesture, which is what a scroll begun on a control is
+      and is the ending the owner produces most often. After each ending, and
+      within 200 milliseconds of it, document.querySelectorAll('[data-pressed]')
+      has length ZERO and the control's computed transform and bounding rect
+      are back at their resting values. FALSIFIED BY any element still
+      carrying data-pressed after any of the three endings, or by a control
+      that does not return to rest." And add the ending to the step at
+      :4627 in words that name the failure: "the pointercancel listener is
+      not optional and is not a nicety, because a scroll begun on a control
+      IS a pointercancel and there are more of those on this product's month
+      view than there are taps."
+  - id: ADV-M3P9A-02
+    severity: high
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:4972-4979 (criterion 9.7(c)): 'grep -rn
+        "use client" over src/ returns exactly ONE line,
+        src/platform/ui/nav-link.tsx:1, the same single line it returned at
+        this phase's base'.
+      - >-
+        Captured in /home/user/wt-m0p7-adv: `grep -rn "use client" src/`
+        returns TWO lines, exit 0:
+        src/platform/ui/nav-link.tsx:1:"use client";
+        src/platform/ui/nav-link.tsx:7:// section 1). The reason for "use
+        client": the active-route marker must
+        `grep -rn "use client" src/ | wc -l` returns 2.
+      - >-
+        src/platform/ui/nav-link.tsx:7 is a COMMENT explaining the directive,
+        not a second directive, and it was there at the phase base.
+      - >-
+        D-61 (delivery/plan/pulse-v02.yaml:12057-12086) explains the choice
+        in the words 'a "use client" file would make this phase open the
+        first React client boundary', which is the sentence an implementer
+        following this repository's commenting convention will paste into
+        src/app/layout.tsx, adding a THIRD hit.
+    analysis: >-
+      A criterion that cannot pass is the same defect as a criterion that
+      cannot fail, and this one cannot pass as written. The escape routes are
+      both bad. Editing the comment at nav-link.tsx:7 to satisfy the count
+      prints a SECOND file matching *.tsx and falsifies 9.7(a) in the same
+      motion, which is a nice demonstration that the two halves of 9.7 are
+      not independent. Rewriting the criterion mid-round is what the
+      amendment's own preamble says it is trying to stop. And the third hit
+      is not hypothetical: this codebase comments every non-obvious choice
+      and R-087 requires corrections to be annotated rather than erased, so a
+      layout file carrying a six-line script with no explanation would be the
+      unusual outcome. The guard the amendment wants is a count of the
+      DIRECTIVE, and the directive has a shape a grep can pin: it is the
+      first statement of a file and it is a bare string literal.
+    concrete-edit: >-
+      Replace the first sentence of criterion 9.7(c) with: "grep -rn
+      '^\"use client\"' over src/ returns exactly ONE line,
+      src/platform/ui/nav-link.tsx:1, the same single line it returned at
+      this phase's base. The anchored pattern is deliberate and is not a
+      loosening: an unanchored grep for the phrase returns TWO lines at the
+      base, because src/platform/ui/nav-link.tsx:7 is a comment explaining
+      the directive, and a criterion that counts prose cannot be satisfied
+      without editing a file criterion 9.7(a) forbids this phase to print.
+      What is counted is the DIRECTIVE, which is a bare string literal at the
+      head of a file, and src/app/layout.tsx must not gain one."
+  - id: ADV-M3P9A-03
+    severity: high
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:5007-5018 (criterion 9.9): "This
+        criterion runs under the chromium-phone project
+        (playwright.config.ts:53, isMobile and hasTouch) at 390 by 844". No
+        half of 9.9 asserts that its tests EXECUTED rather than skipped.
+      - >-
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:803:
+        `test.skip(({ hasTouch }) => hasTouch !== true, "touch paths need the
+        phone project");` The guard already exists in the code the amendment
+        is written against, and it is required, because the same spec runs
+        under the desktop project where the CDP touch path is not available.
+      - >-
+        delivery/plan/pulse-v02.yaml:4950-4987 (criterion 9.7): "npm run
+        test:e2e exits 0 under every project". Playwright reports a skipped
+        test as not-failed and the run exits 0.
+      - >-
+        /home/user/wt-m3p9/playwright.config.ts:94: the phone project's
+        testMatch is a regex, `/(month-view|navigation|pressed-and-disabled)\.spec\.ts/`,
+        and the spec's filename is what puts it in the phone project at all.
+        A rename, or a later phase widening that regex wrongly, silently
+        removes every touch measurement from the suite.
+    analysis: >-
+      This is H9.11 in its purest form and the amendment did not close it.
+      The phase merged once as a stylesheet nothing raised; it can merge
+      again as a stylesheet plus a listener nothing measured, because the one
+      criterion that measures the listener is guarded by a skip that is
+      correct, necessary, and invisible in an exit code. The amendment took
+      care that the mechanism is served rather than injected and took no care
+      that the measurement is run rather than skipped, and the second is the
+      cheaper failure to reach: it needs no bad intent at all, only a
+      testMatch that stops matching.
+    concrete-edit: >-
+      Add to criterion 9.9(a), after the grep sentence: "AND THE MEASUREMENT
+      RAN. The phase work history records the captured tail of `npx playwright
+      test --project=chromium-phone` naming this spec, and the count of tests
+      that PASSED under that project is not zero and equals the count the
+      spec declares for it. A skipped test satisfies criterion 9.7's exit
+      code and satisfies nothing here: the spec fails rather than skips when
+      no project it can run under matched it, and the work history states the
+      per-project passed and skipped counts side by side. FALSIFIED BY a zero
+      passed count under chromium-phone, or by a work history that records
+      only the suite's exit code."
+  - id: ADV-M3P9A-04
+    severity: high
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:5049-5058 (criterion 9.9(c)): "On every
+        touch input path the spec drives, and it drives at least three of
+        them, the frame count in :active is exactly ZERO. This is an
+        ASSERTION and not an observation, and it is kept deliberately: it
+        pins the measurement to the mechanism that actually ships, so an
+        engine version that later begins granting :active under a synthesized
+        touch turns this suite RED".
+      - >-
+        Nothing in 9.9(c) requires any of the three paths to have delivered
+        an event. A path that dispatches nothing, or a synthetic
+        page.dispatchEvent("touchstart") that produces no compatibility
+        pointerdown, reports a frame count in :active of exactly zero and
+        counts toward "at least three".
+      - >-
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:836-845:
+        the prior round's spec asserts the captured event list
+        `toContain("pointerdown")` and `toContain("touchstart")` on the
+        control BEFORE asserting the zero :active count, with the failure
+        messages "no pointerdown reached ${probe} under a held touch press"
+        and "no touchstart reached ${probe} under a held touch press".
+      - >-
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:654-657: the
+        three paths actually measured are CDP Input.dispatchTouchEvent
+        touchStart, Input.synthesizeTapGesture with gestureSourceType
+        "touch", and page.touchscreen.tap. The criterion names none of them.
+    analysis: >-
+      The criterion states its own purpose out loud and then fails to buy it.
+      A tripwire that reports zero because nothing walked into it is not a
+      tripwire, and the future reader who sees a green 9.9(c) five phases
+      from now will read it as "this engine still does not grant :active
+      under touch" when what it may mean is "this spec no longer drives
+      touch". What makes this finding sharp rather than theoretical is that
+      the implementer ALREADY wrote the guard: the code asserts the path is
+      live before it asserts the state is absent. The plan is therefore
+      weaker than the artifact written against it, which is the direction of
+      drift that costs the most, because the next round has the plan and not
+      the reasoning.
+    concrete-edit: >-
+      Replace the second sentence of criterion 9.9(c) with: "On every touch
+      input path the spec drives, and it drives at least three of them, named
+      here so a dead path cannot be counted as a live one, a held CDP
+      Input.dispatchTouchEvent touchStart, Input.synthesizeTapGesture with
+      gestureSourceType touch, and page.touchscreen.tap: each path is FIRST
+      shown to have delivered input, by asserting that the events captured on
+      the control under test contain both pointerdown and touchstart, and
+      only then is the frame count in :active asserted to be exactly ZERO.
+      The order is the criterion, not a convenience: a zero from a path that
+      delivered nothing is the same number as a zero from an engine that
+      grants no :active, and the whole value of this half is that the two can
+      be told apart. The spec prints the per-path event list beside the
+      per-path frame counts."
+  - id: ADV-M3P9A-05
+    severity: high
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:4686-4694 (the state-vocabulary step):
+        'the rule for [aria-disabled="true"] sets pointer-events to none
+        alongside the surface and ink change, so a control that has been made
+        to look unusable does not navigate when it is pressed'.
+      - >-
+        delivery/plan/pulse-v02.yaml:4850-4891 (criterion 9.3(a)): with
+        aria-disabled="true" applied through the DOM the criterion measures
+        background-color, color, border-color, opacity and cursor. It does
+        not measure pointer-events, and it does not attempt an activation.
+      - >-
+        delivery/plan/pulse-v02.yaml:5159-5174 (hazard H9.10) defers the
+        aria-busy refusal on the ground that "nothing in the product enters
+        aria-busy until M3-P10, a refusal written here would guard a state
+        that cannot occur".
+      - >-
+        Captured in /home/user/wt-m0p7-adv: `grep -rn "aria-busy" src/ test/`
+        returns nothing AND `grep -rn "aria-disabled" src/ test/` returns
+        nothing. Both states are equally unreachable in the product today.
+      - >-
+        /home/user/wt-m3p9/delivery/work-history/m3-p9.yaml:818-822 records a
+        remedy construction M3P9-C11 that DID measure it: "A control marked
+        aria-disabled no longer activates from a pointer, and the same click
+        at the same coordinates does activate it when the marking is
+        removed."
+    analysis: >-
+      My judgement, asked for rather than agreement. The trade is not
+      acceptable, for three reasons that compound. First, the stated reason
+      is a process reason and not a technical one: 9.3 having been through
+      two fix rounds is a fact about the plan's history, and this same
+      amendment reopened criterion 9.7, which had also been through two fix
+      rounds, plus H9.5, D-22, the intent, the root cause and the file set.
+      The scope argument does not survive its own document. Second, the
+      marginal cost is one property name in a snapshot the criterion already
+      takes: 9.3(a) already calls getComputedStyle on exactly those elements
+      with exactly that attribute applied, so adding pointer-events is a word
+      in a list, not a measurement. Third, and this is the part that makes it
+      a defect rather than an omission, the plan asserts a BEHAVIOUR here,
+      "does not navigate when it is pressed", and ships it with no witness at
+      all, which is precisely hazard H9.1's class, a rule the stylesheet
+      carries and the screen never shows. And H9.10's own argument cuts the
+      other way once the tree is checked: nothing enters aria-disabled today
+      either, so the reason given for deferring the busy refusal applies
+      unchanged to the disabled refusal the phase is shipping. Either the
+      unreachable-state argument is good, in which case both go, or it is
+      not, in which case the one being shipped gets measured. The prior round
+      already measured it, so the cost is known to be small.
+    concrete-edit: >-
+      Extend criterion 9.3(a), inside the existing clause and after "AND the
+      computed cursor is not \"pointer\"": "AND, where the state was applied
+      as aria-disabled=\"true\", the computed pointer-events is \"none\" and
+      an activation is REFUSED: a click dispatched at the control's centre
+      does not navigate, does not submit and fires no click on the control,
+      and the SAME click at the SAME coordinates does reach it once the
+      aria-disabled marking is removed, so the refusal is shown to be the
+      marking's doing and not the coordinates'." Extend the FALSIFIED BY
+      clause with "by a control that still computes pointer-events other than
+      none while carrying aria-disabled, or by one that still activates under
+      it". And add one sentence to H9.10 so the asymmetry is recorded rather
+      than left to be noticed: "Nothing in the product enters aria-disabled
+      today either, so what separates the two cases is not reachability but
+      ownership: the refusal on the link-shaped control is the whole of what
+      this phase can give it, and criterion 9.3(a) measures it here rather
+      than trusting it."
+  - id: ADV-M3P9A-06
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:5031-5048 (criterion 9.9(b)): the hold
+        is "at least 150ms"; (i) the attribute is carried by "at least 60
+        percent" of sampled frames; (iv) the time to first moved frame is "at
+        most 100 milliseconds". No minimum frame count is required.
+      - >-
+        /home/user/wt-m3p9/delivery/work-history/m3-p9.yaml:805-816, the
+        measurement the floors were set from: "carrying [data-pressed] 28,
+        with a transform 27, peak box displacement 2.000px" and "press to
+        first visible change" 29.2ms and 31.4ms.
+      - >-
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:759:
+        `const TOUCH_HOLD_MS = 400;`. The 27 to 29 sampled frames were taken
+        over 400ms, which is about 68 frames per second: an UNSTARVED run.
+        The criterion permits a hold of 150ms, which at the same frame rate
+        is 9 frames and under contention is 2 or 3.
+      - >-
+        Captured in this container now: `uptime` reports "load average:
+        11.29, 9.83, 9.15" with `nproc` 4.
+      - >-
+        Fleet environment warning 18: the e2e gate is not reliably green
+        under fleet contention, measured at load 5.8 to 9.44 on the same four
+        cores, with two different failure symptoms on two consecutive
+        isolated runs of one spec.
+    analysis: >-
+      The magnitudes have real margin and the TIMING does not. 2.000px
+      against a 1.0px floor and 96 percent against a 60 percent floor are
+      comfortable as ratios, but the 60 percent floor is fragile in its
+      DENOMINATOR rather than its numerator: the measured runs carry one
+      leading frame without the attribute, which is correct and unavoidable,
+      and one leading frame out of three is 67 percent while one out of two
+      is 50 percent. So the floor tightens as the box gets busier, which is
+      exactly backwards. The 100ms floor is worse because it is a wall clock
+      assertion: 29ms was measured at 68fps, and a single delayed animation
+      frame on a box at load 11 exceeds the whole budget. Neither is set
+      dishonestly; both are set from one healthy run and asserted on a
+      machine warning 18 already says is not healthy. A criterion that
+      reddens for load rather than for code is the thing that gets weakened
+      in the fix round, and the half most likely to be weakened is (iii), the
+      pixel half the criterion calls non-negotiable.
+    concrete-edit: >-
+      In criterion 9.9(b), replace "for at least 150ms" with "for at least
+      400 milliseconds, the hold the first round actually measured, so the
+      sample is not thinned to the point where its own ratio is noise"; add
+      before (i): "the run samples at least EIGHT animation frames during the
+      hold, and a run that samples fewer FAILS as unmeasured rather than
+      passing on a thin sample"; replace (i) with "(i) the control under test
+      carries [data-pressed] on every sampled frame except at most the FIRST,
+      which is the shape the first round measured, 28 of 29 and 26 of 27, and
+      which does not tighten as the sample thins the way a percentage does";
+      and replace (iv) with "(iv) the movement arrives at the FIRST or SECOND
+      sampled frame at or after the pointerdown, and the spec PRINTS the wall
+      clock milliseconds from pointerdown to that frame beside the frame
+      index. The assertion is on the frame index and not on the millisecond
+      count, deliberately: 29.2ms and 31.4ms were measured on an idle
+      container and this fleet's own environment warning 18 records the gate
+      running at load 5.8 to 9.44 on four cores, where one delayed animation
+      frame exceeds any hundred-millisecond budget and would redden this
+      criterion for the machine rather than for the code."
+  - id: ADV-M3P9A-07
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:5031-5048 (criterion 9.9(b)(iii)): "the
+        PEAK VERTICAL DISPLACEMENT of the control's bounding rect from its
+        resting top is at least the computed value of --press-offset and at
+        least 1.0 device-independent pixel".
+      - >-
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:701-744, the
+        sampler this wording describes: `const restTop =
+        el.getBoundingClientRect().top;` is read ONCE before the press, and
+        each frame computes `Math.abs(el.getBoundingClientRect().top -
+        restTop)`. getBoundingClientRect is viewport relative.
+      - >-
+        Criterion 9.9(b) counts (i) attribute frames, (ii) transform frames
+        and (iii) peak displacement as three INDEPENDENT tallies over the
+        sampled set. No sentence requires one frame to satisfy two of them.
+      - >-
+        The gesture under measurement is a touch that is deliberately MOVED
+        off the control before it ends, so the run contains pointer movement
+        by construction.
+    analysis: >-
+      Two holes in the same half. First, a viewport-relative rect makes any
+      scroll or reflow during the hold read as movement, and the criterion's
+      own release-away technique guarantees pointer movement during the run;
+      a page that scrolls one pixel hands every control in the enumeration a
+      free pass on the half the criterion calls non-negotiable. Second, the
+      three tallies float free of each other, so an implementation whose
+      attribute is set by the shipped listener and whose movement comes from
+      somewhere else entirely, a sticky :hover under touch emulation being
+      the obvious candidate on this engine, satisfies all three without the
+      attribute ever having moved anything. Criterion 9.2 catches the hover
+      case at the desk width by comparing against a hovering baseline, which
+      is good design and is why this is medium rather than high, but 9.9 is
+      the criterion that claims to witness the press in the shipped product
+      under a finger, and it should not need a sibling to be sound.
+    concrete-edit: >-
+      Replace criterion 9.9(b)(iii) with: "(iii) the PEAK VERTICAL
+      DISPLACEMENT is at least the computed value of --press-offset and at
+      least 1.0 device-independent pixel, taken from the control's OWN
+      computed transform matrix, the f component of the 2d matrix, and not
+      from the bounding rect alone: a rect read against the viewport moves
+      when the page scrolls, and this measurement deliberately moves the
+      touch point before the touch ends. The bounding rect delta is captured
+      as well and must agree with the matrix to within 0.5 device-independent
+      pixels after correcting for window.scrollY, so a transform that the
+      compositor never draws is still caught." And add a new clause after
+      (iv): "(v) THE THREE TALLIES ARE THE SAME EVENT. At least one sampled
+      frame carries, SIMULTANEOUSLY, [data-pressed] on the control under test
+      and a computed transform whose vertical translation meets (iii). Counts
+      taken separately can be met by two unrelated mechanisms, and the one
+      this phase ships is a single attribute answered by a single rule."
+  - id: ADV-M3P9A-08
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:5019-5030 (criterion 9.9(a)): the spec
+        "asserts that the document served for an authenticated route AND the
+        document served for the sign-in screen each contain a script element
+        carrying data-testid=\"press-feedback\"" and 'grep -n "setAttribute"
+        over the new spec returns no line naming data-pressed'.
+      - >-
+        A script element carrying a test id is a TAG. An empty
+        `<script data-testid="press-feedback"></script>` satisfies the
+        assertion exactly.
+      - >-
+        The grep is a single-line string match on setAttribute. `el.dataset.pressed
+        = ""`, `el.toggleAttribute("data-pressed")`, a name built by
+        concatenation, or the same call split across two lines all pass it,
+        and `page.addInitScript` registers a mutating script the grep never
+        looks at.
+      - >-
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:678-695
+        shows the prior round installing exactly such a handler from the
+        spec, which is the behaviour this half exists to forbid.
+    analysis: >-
+      Answering the brief's question directly: no, "a script element carrying
+      data-testid" is not enough to prove the LISTENER is served, only that a
+      tag is. The half is load-bearing anyway because 9.9(b) needs something
+      to raise the attribute, so an empty tag fails the phase at (b) rather
+      than at (a); what the weak (a) costs is the diagnosis, not the verdict.
+      The anti-injection grep is the softer half and it is soft in the way
+      greps usually are: it forbids one spelling of one API. Both are cheap
+      to harden and the hardening is mechanical rather than judgemental,
+      which is what a criterion wants.
+    concrete-edit: >-
+      Replace the first sentence of criterion 9.9(a) with: "The spec asserts,
+      for the document served for an authenticated route AND the document
+      served for the sign-in screen, that the RAW response body of the
+      navigation, read from the Playwright response rather than from the live
+      DOM, contains a script element carrying data-testid=\"press-feedback\"
+      whose own text is non-empty and registers a pointerdown listener, and
+      that the element's textContent in the live document is byte identical
+      to what the response carried. A tag with a test id and no body
+      satisfies an element assertion and ships no listener." And replace the
+      grep sentence with: "grep -nE
+      \"data-pressed|dataset\\.pressed|toggleAttribute\" over the new spec
+      returns only READ-shaped lines, matches, querySelectorAll and
+      assertions, and no line that writes; the spec registers no
+      addInitScript and no page.evaluate that adds a listener for pointerdown,
+      touchstart or mousedown, with the one exception criterion 9.9(e)
+      names, the capture-phase click refusal that stops a measurement
+      submitting a form. The spec prints the list of scripts it injected so a
+      reader can check the claim rather than trust the grep."
+  - id: ADV-M3P9A-09
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:12057-12086 (D-61), third reason: "And
+        it costs ONE file rather than two, so criterion 9.7 can name the
+        permitted path and falsify on a second, which a criterion permitting
+        any *.tsx could not do."
+      - >-
+        delivery/plan/pulse-v02.yaml:4968-4972 (criterion 9.7(b)) already
+        enumerates SIX forbidden path prefixes in one sentence. A criterion
+        that can name six prefixes can name two permitted paths and falsify
+        on a third.
+      - >-
+        Captured in /home/user/wt-m0p7-adv: `grep -rn "dangerouslySetInnerHTML"
+        src/ test/` returns nothing, and `grep -rn
+        "Content-Security\|script-src\|nonce"` over src/, next.config.ts and
+        middleware.ts returns nothing; there is no middleware.ts. The tree
+        has neither the API nor a policy that would block it.
+      - >-
+        D-61 records the cost as "the handler is a string constant and is not
+        typechecked" and stops there. It sets no standing constraint on the
+        constant, and criterion 9.7(c) constrains only THIS phase's diff.
+    analysis: >-
+      The CONCLUSION is right and one of its three legs is not, and the leg
+      that is not is the one the brief suspected. Reason one is the criterion
+      driving the architecture: it says the shape was chosen so a criterion
+      could be written a particular way, and that is the inversion this whole
+      process exists to prevent, made worse by being false on its own terms
+      since naming two paths is no harder than naming one. Reasons two and
+      three stand on their own and are enough. Reason two is real: the client
+      boundary count is the only thing that keeps H9.5 measurable and the
+      M3-P9 and M3-P10 split meaning anything, and it is a property of the
+      architecture rather than of the criterion. Reason three is the
+      strongest and is a product property, not a process one: a listener that
+      attaches at parse time answers a complaint whose words are that nothing
+      happens when the owner presses, and a listener that waits for the React
+      bundle to hydrate on a phone does not. On safety, the shape is safe as
+      specified: the content is a static module-scope constant with no
+      interpolation, no user input and no request data, so there is no
+      injection surface, and 9.7(c) pins that for this phase. What is missing
+      is that nothing carries the constraint FORWARD: a later phase that
+      wants a duration or a selector list from a token can interpolate into
+      the constant and no gate in this repository would see it, since
+      gate:privacy cannot read intent and the eslint glob does not reach
+      src/app. And no CSP exists today, so nobody has to think about a nonce
+      until someone adds one and the press dies silently.
+    concrete-edit: >-
+      In D-61, strike the third reason entirely, from "And it costs ONE file"
+      to "could not do", and replace it with a recorded standing constraint:
+      "THE COST TAKEN KNOWINGLY, AND WHAT HOLDS IT. The handler is a string
+      constant and is not typechecked, and dangerouslySetInnerHTML appears
+      nowhere else in the tree. Two things bound that. The constant carries
+      NO interpolation, ever: no template expression, no token read, no
+      request value and no locale. A later phase that needs a value inside it
+      does not add one, it moves the listener to a client island and reopens
+      this decision, and criterion 9.7(c) pins the constant's shape for this
+      phase only. And the product declares no Content-Security-Policy today,
+      confirmed by grep over src/, next.config.ts and the absent middleware,
+      so a phase that later adds one adds a nonce for this script in the same
+      change or turns criterion 9.9 red, which is the right place for it to
+      be noticed. The file-count argument is deliberately NOT among the
+      reasons: a criterion can name two paths as easily as one, and choosing
+      an architecture to fit a criterion's shape is the inversion this plan's
+      own process exists to prevent."
+  - id: ADV-M3P9A-10
+    severity: medium
+    evidence:
+      - >-
+        The amendment updated M3-P12's conflicts-with entry
+        (delivery/plan/pulse-v02.yaml:7717-7722) to add src/app/layout.tsx to
+        M3-P9's declared set, noting "this phase's set is unchanged and still
+        does not meet it".
+      - >-
+        delivery/plan/pulse-v02.yaml:2843: M3-P4's files-to-touch DOES
+        declare src/app/layout.tsx, alongside styles/tokens.css,
+        playwright.config.ts and test/e2e/. M3-P4's conflicts-with is `[]`.
+      - >-
+        delivery/plan/pulse-v02.yaml:5202-5204 (M3-P9's conflicts-with):
+        "M3-P8 and M3-P4 (same stylesheet): run this phase first and those
+        after it, never beside it." The parenthetical names the stylesheet
+        and not the root layout, which is now shared.
+      - >-
+        delivery/plan/pulse-v02.yaml:1321-1336, a report-code-disagreement
+        entry carrying `verified: true`, states "and no phase needs to edit
+        src/app/layout.tsx".
+      - >-
+        M3-P10 (delivery/plan/pulse-v02.yaml:5240-5934) is byte unchanged by
+        this amendment, and its criterion 10.7 does not pin src/app/layout.tsx
+        to an empty diff, though its requirement that every pre-existing spec
+        pass under every project does keep M3-P9's press spec alive.
+    analysis: >-
+      Scope, answered: the amendment changed only M3-P9 plus three
+      consistency edits, added only D-61, and moved no work into or out of
+      M3-P10, which is byte unchanged. The bookkeeping pass is the part that
+      is short, and it is short in an odd direction: it reached the phase
+      that does NOT share the newly added file and missed the one that does.
+      M3-P4 declares src/app/layout.tsx today and declares no conflict with
+      anything, so the ordering that protects the listener rests entirely on
+      M3-P9's own one-directional entry, whose stated reason is now the wrong
+      file. And a claim marked verified: true says flatly that no phase needs
+      to edit the file this amendment just told a phase to edit, which is the
+      kind of sentence that gets cited later by someone who did not read the
+      amendment.
+    concrete-edit: >-
+      Three edits, all bookkeeping and none of them optional. First, in
+      M3-P9's conflicts-with, replace "M3-P8 and M3-P4 (same stylesheet)"
+      with "M3-P8 (same stylesheet) and M3-P4 (same stylesheet AND same root
+      layout: M3-P4 declares src/app/layout.tsx too, so the press listener
+      this phase adds is in a file that phase opens)". Second, give M3-P4 the
+      reciprocal entry it does not have, replacing its empty conflicts-with
+      with "M3-P9 (src/app/layout.tsx, styles/tokens.css,
+      playwright.config.ts and test/e2e/): runs strictly AFTER it, never
+      beside it, per decision D-25, and does not remove or relocate the press
+      listener M3-P9 puts in the root layout." Third, correct the claim at
+      :1330 in place rather than deleting it, per R-087: "and at the time
+      this was written no phase needed to edit src/app/layout.tsx. THAT
+      CHANGED on 2026-08-24: M3-P9's amendment puts the press listener in
+      that file and M3-P4 already declared it. The claim this entry settles,
+      that the codebase writes no viewport tag of its own, is unaffected and
+      still holds."
+  - id: ADV-M3P9A-11
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:5031-5048 and :5058-5066 (criterion
+        9.9(b) and 9.9(d)): the held touch press is taken "For each of the
+        nineteen controls criterion 9.2(a) pins" and half (b) "is re-run in
+        full, with every magnitude" under a reduce context. That is 38 held
+        presses under the phone project, across a journey that includes a PDF
+        import and a deliberately rejected import.
+      - >-
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:805-806: the
+        prior round's touch test covers TWO probes on ONE screen and already
+        carries `test.setTimeout(120_000)`.
+      - >-
+        /home/user/wt-m0p7-adv/playwright.config.ts:32-33: `fullyParallel:
+        false`, `workers: 1`, and `reuseExistingServer: false` on both web
+        servers.
+      - >-
+        Captured in this container: `uptime` load average 11.29 on `nproc` 4.
+        Fleet environment warning 18 records the gate not reliably green from
+        load 5.8 upward.
+      - >-
+        No hazard class in M3-P9 names the cost or duration of the
+        measurement itself.
+    analysis: >-
+      The mechanism 9.9 exists to witness is document-global: ONE capture
+      phase listener on document, matched by ONE selector list. If it fires
+      for one control of a given shape it fires for every control of that
+      shape, and the per-control CSS coverage that genuinely needs all
+      nineteen is already bought by criterion 9.2 over the same enumeration
+      at both widths. So 9.9's full sweep duplicates 9.2's denominator at
+      phone-project cost and doubles it again under reduce. That is not
+      wrong, and I am not asking for it to be dropped: a criterion that
+      measures more is better than one that measures less. What I am asking
+      for is that the plan name, IN ADVANCE, which half gets scoped if the
+      measurement does not fit, because the pressure in a fix round falls on
+      whatever is expensive and the expensive half here is the pixel half the
+      criterion itself calls non-negotiable. This plan already has form for
+      pre-authorising a fallback: verification-first step (e) does exactly
+      that, and it is the reason the touch defect was found at all.
+    concrete-edit: >-
+      Add hazard H9.12: "ADDED IN REVIEW. The measurement does not fit. The
+      touch sweep is nineteen held presses under the phone project and
+      nineteen again under reduce, across a journey that drives a PDF import
+      and a rejected import, on a config that runs one worker with no
+      parallelism, on a container this fleet has measured at load 5.8 to 11.3
+      on four cores. The failure is not a red criterion, it is a fix round
+      that quietly narrows the half that costs the most, and the half that
+      costs the most is the pixel half criterion 9.9(b)(iii) calls
+      non-negotiable." Address it by adding to criterion 9.9(b), before the
+      FALSIFIED BY clause: "IF THE SWEEP DOES NOT FIT, THIS IS WHAT GIVES,
+      decided here rather than in the round. The ATTRIBUTE half (i) is taken
+      on all nineteen and is never scoped, because it is cheap and it is what
+      says the listener reaches every shape of control. The FRAME SAMPLED
+      halves (ii) through (v) may be taken on a named subset covering every
+      distinct resting surface in the enumeration, at minimum one opaque
+      control on --color-surface-inverse, one opaque control on the standard
+      surface, one link-shaped control declaring no background, and the
+      disclosure summary, plus at least one of the five conditional controls.
+      The reduced-motion re-run (d) may be taken on that same subset. Any
+      such scoping is recorded as a DEVIATION with the captured timing that
+      forced it, and the criterion text is not rewritten to match what was
+      run."
+  - id: ADV-M3P9A-12
+    severity: low
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:5031 (criterion 9.9(b)): "OVER ALL
+        NINETEEN. For each of the nineteen controls criterion 9.2(a) pins".
+        The number is hardcoded in three places in 9.9.
+      - >-
+        delivery/plan/pulse-v02.yaml:4746-4790 (criterion 9.2(a)): "If the
+        verification-first sweep in step (d) finds a control this plan does
+        not name, the ENUMERATION IS AMENDED to include it and the spec is
+        never narrowed to avoid it."
+      - >-
+        delivery/plan/pulse-v02.yaml:5132-5148 (hazard H9.8) records that the
+        enumeration was already wrong twice, sixteen where the tree carried
+        nineteen.
+    analysis: >-
+      9.2(a) is deliberately amendable and 9.9 hardcodes the number it is
+      amendable from. If the sweep required by step (d) finds a twentieth
+      control, which H9.8 records as having happened twice already, 9.9 reads
+      as satisfied by nineteen of twenty and the amendment mechanism 9.2(a)
+      installs stops one criterion short. Small, and it costs one phrase.
+    concrete-edit: >-
+      In criterion 9.9(b), replace "OVER ALL NINETEEN. For each of the
+      nineteen controls criterion 9.2(a) pins" with "OVER THE WHOLE SET. For
+      each control in the set criterion 9.2(a) pins, at whatever size the
+      verification-first sweep leaves it, which is nineteen at this plan's
+      reading and is amendable upward by that sweep and never downward", and
+      make the same substitution at the two other places 9.9 says nineteen.
+  - id: ADV-M3P9A-13
+    severity: low
+    evidence:
+      - >-
+        The amendment calls the handler "six-line" or "six lines" at EIGHT
+        sites, captured with grep -in "six.line|six lines" over
+        delivery/plan/pulse-v02.yaml: the intent (:4484), the step (:4632),
+        files-to-touch (:4721), H9.5 (:5108), H9.11 (:5187), the migrations
+        note (:5194), D-22 (:10876) and D-61 (:12083).
+      - >-
+        The handler the same step SPECIFIES is a selector list of six
+        matchers, a clear function iterating querySelectorAll, and three
+        capture-phase listeners. Written out in
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:678-695 it
+        is 17 lines, and that version is missing nothing the step asks for.
+    analysis: >-
+      A plan that measures everything else should not carry a size claim its
+      own specification cannot meet. The risk is not the number, it is that
+      an implementer reads six as a budget, golfs the handler onto fewer
+      lines to match, and produces something harder to read than the thing
+      the step describes, or else records a deviation for a number that was
+      never a requirement.
+    concrete-edit: >-
+      Strike "six-line" and "six lines" from all eight sites and say what is
+      actually meant, which is scope and not length: "a single document-level
+      pointer listener with no product vocabulary in it". In the step at
+      :4630 replace "THE LISTENER IS SIX LINES AND IT GOES IN THE ROOT LAYOUT
+      AS AN INLINE SCRIPT" with "THE LISTENER IS ONE DOCUMENT-LEVEL HANDLER
+      AND IT GOES IN THE ROOT LAYOUT AS AN INLINE SCRIPT".
+
+# ---------------------------------------------------------------------
+# VALIDATION RECORD, captured rather than asserted.
+#
+# The brief asks for --type verdict first, with the fallback taken on a
+# captured failure, as the precedent plan reviews in delivery/review do.
+#
+# $ export NVM_DIR=/opt/nvm && . /opt/nvm/nvm.sh
+# $ cd /home/user/pulse-fleet && npx tiphys validate --type verdict \
+#     /home/user/wt-m0p7-adv/delivery/review/m0-p7-plan-review.yaml
+# INVALID # value does not satisfy the requirements its own shape triggers here
+# INVALID #/criteria required property criteria is missing
+# INVALID #/deviations-judged required property deviations-judged is missing
+# INVALID #/findings/0/concrete-edit property concrete-edit is not permitted here
+# INVALID #/findings/0/concrete-fix required property concrete-fix is missing
+# ... the same two lines for findings 1 through 12 ...
+#
+# The verdict contract is the shape an IMPLEMENTATION verdict takes: it
+# requires `criteria` and `deviations-judged` and it spells the edit field
+# `concrete-fix`. A plan review judges no criteria and adjudicates no
+# deviations, and schemas/finding.schema.json is the contract its role
+# brief names under Outputs. So the fallback is taken, as
+# delivery/review/pulse-v02-plan-adversarial.yaml and
+# delivery/review/pulse-v1-plan-adversarial.yaml both did.
+#
+# $ npx tiphys validate --type finding \
+#     /home/user/wt-m0p7-adv/delivery/review/m0-p7-plan-review.yaml
+# (no output) EXIT=0
+# ---------------------------------------------------------------------
