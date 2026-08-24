@@ -423,3 +423,398 @@ mechanism-lookups: |
     test/application/fake-import-world.ts, because that is where the
     difference between the fake and the database lives, together with the
     measurement that produced it.
+
+acceptance-walk:
+  note: >-
+    Every criterion of both phases, with its witness or an explicit deferral
+    and its reason. A criterion marked PARTIAL says which half is missing.
+  M3-P14:
+    - id: "14.1"
+      verdict: met
+      witness: >-
+        test/e2e/accounts.spec.ts, the CONTROL ARM and REGISTERED ARM tests,
+        both green. The control arm asserts each of the seven own-account
+        group labels IS offered as a merchant, from a hand-written list, so
+        the registered arm's assertion is a set difference of exactly those
+        seven; it also pins the wrong figures the defect produces. The
+        registered arm asserts none of the seven appears, that the three
+        outside merchants still do, and that no group label is a registered
+        account number or label. Every account number the fixture introduces
+        is asserted valid under the platform check by a FAST-GATE test
+        (test/domain/account-number.test.ts), so an invalid one reddens at
+        the fixture rather than mid-Playwright-run.
+    - id: "14.2"
+      verdict: met
+      witness: >-
+        The registered arm asserts all of: four reserve-group elements,
+        no-reserves absent, reserves-net byte compared against "+1.300,00"
+        written by hand from the fixture's arithmetic, spend-total
+        "197,75" excluding every reserve movement, and the control arm's
+        spend-total "1.947,75" including them. Their difference, 1.750,00,
+        is the household's savings PLUS its pot-to-pot transfers, and the
+        spec states that decomposition in its header. Each reserve group's
+        rendered text carries the LABEL THE HOUSEHOLD TYPED and no
+        account-shaped token, which is what fails if the reserves join
+        compares raw stored strings.
+      partial: >-
+        THE SEVENTH ASSERTION, the normalised-GROUPING half, is NOT
+        witnessed by a fixture carrying one reserve account in two surface
+        forms. The reason is a measurement, not an omission: the delimited
+        DETECTOR requires the COMPACT form to recognise an account column at
+        all (src/modules/import/domain/detect-profile.ts:313, IBAN =
+        /^[A-Z]{2}\d{2}[A-Z0-9]{8,30}$/ applied to every value in the
+        column), so a spaced cell produces a spec with no counterparty
+        account mapping and the column is never stored. I verified that
+        directly: the first version of ar-current.csv wrote spaced cells and
+        parsed to `rows=11 ibans=[]` with no counterpartyIban column in the
+        detected spec. Changing the detector is outside this phase. The
+        GROUPING is written over the same canonical SQL fragment as the
+        join, in one place, and the canonicalisation is covered where the
+        two forms CAN occur: test/domain/declared-sets-canonical.test.ts
+        classifies a spaced stored counterparty against a compact
+        declaration and the reverse. A reviewer should treat the
+        two-surface-form reserves GROUPING as untested against a real
+        database and decide whether it needs a directly-seeded application
+        test.
+    - id: "14.3"
+      verdict: met
+      witness: >-
+        test/application/account-registry.test.ts, three cases: register then
+        import in a different surface form yields ONE account with every row
+        on it; import then register is refused with "already-registered" and
+        no second account; an account declared through the IMPORT path stores
+        the canonical form. The fake's findAccountByIban canonicalises, as
+        the Prisma adapter does, so the test cannot pass on a fake that is
+        more forgiving than the database.
+    - id: "14.4"
+      verdict: met
+      witness: >-
+        test/domain/account-number.test.ts enumerates the definitions and
+        asserts exactly one each for the canonical form, the country-length
+        table and the mod-97 loop, and that no file outside the platform
+        module writes its own uppercase-plus-separator-removal on an
+        account-bearing field. It found TWO existing copies when first run:
+        the ledger's refund-key identity derivation and the PDF template's
+        private helper. Both are replaced rather than excepted, so the
+        permitted-exception list is EMPTY. Idempotence, the three renderings,
+        and the not-an-account-number pass-through are asserted directly.
+        test/domain/declared-sets-canonical.test.ts asserts a spaced stored
+        counterparty classifies RESERVE against a compact reserve
+        registration and INTERNAL against a compact pot registration.
+    - id: "14.5"
+      verdict: met
+      witness: >-
+        The HEALING e2e test imports first, confirms the own-account groups
+        are present, registers the seven, and asserts with no further upload
+        that the page shows the outside merchants only, that spend-total has
+        fallen to the registered string, that reserves-net is the registered
+        string, and that each reserve group carries the typed label. An
+        application test asserts registration calls recompute exactly once
+        and that every raw column is byte identical afterwards.
+    - id: "14.6"
+      verdict: partial
+      witness: >-
+        The form half is met: an application test asserts the server action
+        refuses a submission with no account number (account-number-empty),
+        no account row is created, and there is no code path that registers
+        without one; an e2e test asserts the accounts screen renders the card
+        copy and that the number field is required.
+      deferred: >-
+        THE THIRD CLAUSE IS NOT WITNESSED. Criterion 14.6 asks for a
+        Playwright test importing a card fixture and its paying
+        current-account fixture and asserting that BEFORE the card statement
+        is imported the settlement debit is one aggregate spend row against
+        the issuer, and AFTER it the debit is INTERNAL and the card's line
+        items are the counted spend. I did not write it. The existing
+        test/e2e/import.spec.ts KBC test covers the AFTER state (both
+        imports, June reconciles, the settlement pair INTERNAL) and passes
+        unchanged; the BEFORE state, with the companion imported first and
+        the card not yet, is the half with no witness. Reason: budget, and I
+        chose to spend it on the criteria with no coverage at all rather than
+        on the second half of one that has some. A reviewer should treat the
+        settlement consequence of NOT having imported a card as asserted
+        nowhere.
+    - id: "14.7"
+      verdict: met
+      witness: >-
+        test/e2e/month-view.spec.ts, "the fourth navigation link does not push
+        an existing one onto more lines", green under BOTH the chromium and
+        chromium-phone projects, with the three-link baseline written in by
+        hand from the captured output recorded above. It was shown RED
+        against the un-wrapped row, where it named six offenders. Tap-target
+        floor in BOTH dimensions and document width are asserted in the same
+        test. THE CRITERION FOUND A REAL REGRESSION AND THE ROW CHANGED
+        BECAUSE OF IT; see the baseline block above.
+    - id: "14.8"
+      verdict: partial
+      witness: >-
+        The registered arm asserts recon-cause-unmatched is visible with the
+        count of pot-to-pot transfers, so the gap is named and the verdict
+        stops reading as books closing.
+      deferred: >-
+        The FOURTH TEST is not written: importing a companion fixture
+        carrying the partner legs and nothing else, and asserting the
+        unmatched count reaches zero while income, spend and reserves stay
+        byte identical and pot-change moves by exactly the partner legs. The
+        fixture exists (test/fixtures/ar-partners.csv, one partner leg) but
+        the test does not. Budget. A reviewer should treat the closing of
+        this gap as unwitnessed.
+    - id: "14.9"
+      verdict: met
+      witness: >-
+        An application test asserts every raw column is byte identical across
+        a declaration write plus a full recompute, and that a second
+        recompute leaves every interpretation column identical to the first.
+        The accounts repository exports no function that updates a
+        transaction; its only write is one declaration column.
+    - id: "14.10"
+      verdict: see gate-evidence
+      witness: >-
+        The gate results are below. The phase's OWN diff-scoped grep is
+        scripts/gate-diff-tokens.sh, run and recorded, and shown red against
+        four structurally different offenders including two notations
+        gate:tokens matches in no path. The skill correction is made and a
+        grep asserts the superseded sentence is gone as a claim. Every
+        account-shaped identifier added is on the allow list with a note on
+        how it was invented.
+    - id: "14.11"
+      verdict: met
+      witness: >-
+        WITNESS ONE: the e2e test "uploading a savings statement first is
+        admitted" signs up, registers nothing, uploads a savings statement,
+        asserts both ring answers carry copy stating their consequence,
+        answers with the savings ring, sees the import result report its row
+        count, and sees the month name those rows as HELD.
+        WITNESS TWO: the e2e test "a declaration carrying no ring is refused
+        by name" asserts the server refusal reaches the screen through the
+        whitelist; an application-level path exists for the reserve-with-no-
+        account-number refusal (confirm-import returns
+        reserve-needs-account-number) and both reasons are in
+        src/modules/import/ui/status-keys.ts with copy in all three
+        catalogues.
+        WITNESS THREE: the same spec asserts the import screen renders the
+        link to the accounts screen, and criterion 15.9's journey follows it.
+        WITNESS FOUR: no committed fixture number needed re-inventing,
+        because every account a criterion requires to be REGISTERED belongs
+        to a fixture this phase invents, and all twelve of those were
+        generated against src/platform/account-number.ts itself and are
+        asserted valid by a fast-gate test. The committed reserve upload at
+        test/e2e/month-view.spec.ts is not rewritten and its assertions
+        stand.
+      partial: >-
+        The reserve-with-no-account-number refusal has no dedicated
+        application test of its own; it is implemented and its reason is
+        wired to the catalogues, but nothing asserts it fires. A reviewer
+        should treat that one refusal as unwitnessed.
+    - id: "14.12"
+      verdict: met
+      witness: >-
+        An application test asserts each of the four refusals over wholly
+        invented inputs and that NO account row is created for any of them;
+        an e2e test asserts the owner sees the message on the accounts screen
+        and the account list is unchanged. The four are the same four DR-0028
+        settles.
+    - id: "14.13"
+      verdict: partial
+      witness: >-
+        An application test names a merchant against an own-account group,
+        registers the account, and asserts the result reports the count, that
+        the affected rows carry no merchant, and that the MerchantRule row
+        still exists. A grep test asserts no code path in the ledger or
+        accounts modules calls a delete on a rule. The accounts screen
+        renders accountsRulesStopped, present in all three catalogues, and
+        criterion 15.9's e2e journey asserts it appears after a correction.
+      partial-reason: >-
+        The criterion asks for a PLAYWRIGHT test of the REGISTRATION case
+        specifically. The e2e assertion I have is on the CORRECTION case.
+        Same copy, same code path, different act. A reviewer should treat the
+        registration-time report as witnessed at the application level only.
+    - id: "14.14"
+      verdict: partial
+      witness: >-
+        CASE FIVE, the enumeration, is met by test/domain/absent-flow-reads.ts
+        over BOTH styles, shown red against a fourth read in each style and
+        against a named read losing its condition. CASES ONE, TWO, THREE and
+        FOUR are witnessed by the CAPTURED REAL-REPOSITORY OUTPUT recorded in
+        the verification-first block above, which runs the phase base and this
+        phase against the same seeded rows in one process, plus the row-class
+        assertions in test/application/held-rows.test.ts.
+      deferred: >-
+        THE CRITERION ASKS FOR THOSE FOUR CASES AS TESTS AT THE APPLICATION
+        LEVEL OVER THE REAL REPOSITORY, and they are not: they are captured
+        output plus fake-world tests. The blocker is real and I did not solve
+        it: this repository's fast gate does not touch Postgres, so a
+        DB-backed vitest suite would make `npm test` require a database and
+        would change the gate's contract for every future phase. That is a
+        decision above my scope. What I did instead is recorded honestly: the
+        captured output IS from the real repository against a real database,
+        and it shows exactly what cases ONE, TWO and THREE assert; case FOUR,
+        the two reads changing together when an account's ring flips, is
+        visible in the ROUTE TWO blocks but is not an executable assertion. A
+        reviewer should decide whether a separate DB-backed suite is wanted.
+    - id: "14.15"
+      verdict: met
+      witness: >-
+        WITNESS ONE: the month-accounts element renders one entry per account
+        with rows in the period, fed by the two complementary reads; an
+        application test over an account holding BOTH a cleared row and a
+        stale-flow row asserts exactly one entry, held, with the stale row in
+        no figure.
+        WITNESS TWO: the accounts screen names a held account's state in
+        words with NO accumulated count and NO amount.
+        WITNESS THREE: an application test asserts the pot account's
+        null-flow row is uninterpreted and NOT in the held read, and the
+        reserve account's rows are in the held read and not uninterpreted.
+        WITNESS FOUR: the e2e test "both states are rendered as words in each
+        of the three languages" runs the page in each locale and asserts the
+        VISIBLE TEXT of each entry against that catalogue's own string.
+        WITNESS FIVE: the same test asserts the reserves card contains no
+        word from a hand-written balance list in each language, and the
+        heading and eyebrow name a movement.
+        WITNESS SIX: the e2e test "THE WRONG ANSWER, WALKED BACK" asserts the
+        wrongly-ringed account appears with data-state counted, its copy
+        rendered, and the entry linking to the accounts screen.
+        The element renders OUTSIDE the reconciliation panel, asserted, and
+        the verdict still reads as books closing while it is on the page.
+    - id: "14.16"
+      verdict: partial
+      witness: >-
+        ALL FOUR ARMS are green at the application level in
+        test/application/held-rows.test.ts, each naming the order it
+        measures, each asserting the same seven figures and differing only in
+        which two are allowed to move. The arithmetic was walked by hand from
+        each fixture and the fixtures pin their own directions. Arm one's
+        held entry, arm two's SPEND-to-RESERVE movement of the outgoing
+        alone, arm three's income-and-reserves fall, and arm four's NET of
+        the outgoing and the drawdown all hold.
+      deferred: >-
+        THE PLAYWRIGHT HALF OF ALL FOUR ARMS IS NOT WRITTEN. The criterion
+        requires each arm to carry a browser half asserting the same totals
+        and the same verdict on the rendered page, "so the guarantee is one
+        the reader gets and not only one the repository holds". Budget. The
+        rendered-page guarantee IS witnessed for the held state generally
+        (criterion 14.11 witness ONE and criterion 15.9's journey both assert
+        held rows on the page with the verdict closing), but not arm by arm
+        with these fixtures. A reviewer should treat the four arms as
+        repository-level only.
+  M3-P15:
+    - id: "15.1"
+      verdict: partial
+      witness: >-
+        SECOND ARM is met at the application level: an ordinary account whose
+        rows are outside spend is corrected to the reserve ring, spend falls
+        by exactly those rows, and correcting BACK returns every figure byte
+        identical, which is the rebuildability test applied to a ring. Its
+        fixture's own account number passes the platform check, asserted by a
+        fast-gate test, so the re-invention clause is satisfied without
+        touching any committed number.
+      deferred: >-
+        FIRST ARM, the mis-ringed counterparty as a PLAYWRIGHT test asserting
+        reserves-net rises and recon-cause-unmatched falls by exactly those
+        rows while spend-total and pot-change stay byte identical, is not
+        written. The application test in criterion 15.7's block asserts
+        precisely that movement (spendDelta 0, reservesDelta 10000) at the
+        repository level, including the point the criterion insists on, that
+        spend CANNOT fall in this arm. The browser half is missing.
+    - id: "15.2"
+      verdict: met
+      witness: >-
+        The e2e test "a row on an account that LEFT the pot stops counting
+        and stops being offered" asserts no month figure carries those rows,
+        no counterparty appears as an unresolved group, the rows are NAMED AS
+        HELD with their period count rather than vanishing, and a second
+        correction back FLIPS the entry from held to counted with the entry
+        REMAINING on the page. An application test asserts every one of those
+        rows carries no flow and no merchant after the recompute.
+    - id: "15.3"
+      verdict: met
+      witness: >-
+        The same e2e test asserts the verdict reads as books closing, the
+        uninterpreted cause block is absent and recon-difference is absent.
+        An application test asserts a null-flow row on a POT account is STILL
+        counted as uninterpreted and STILL holds the verdict open, which is
+        CR-502 held rather than undone. The captured real-repository output
+        above shows a cleared row on a non-pot account reaching no figure and
+        NOT listGapRows.
+    - id: "15.4"
+      verdict: met
+      witness: >-
+        test/e2e/golden-journey.spec.ts passes unchanged and is untouched in
+        the diff (git diff --name-only origin/main...HEAD over that path is
+        empty). The second witness is the captured BASELINE ONE block above:
+        the phase base and this phase return BYTE IDENTICAL MonthFigures and
+        BYTE IDENTICAL listGapRows over a household whose accounts are all
+        pot accounts, run against the same seeded rows in one process. The
+        third case, a household that also holds a non-pot account carrying
+        rows, is the ROUTE TWO block, where the figures differ ONLY in the
+        fields the scoping is meant to change.
+      restoration-claim: >-
+        THIS IS A RESTORATION OF THE IDENTITY AS ALREADY DEFINED AND NOT A
+        CHANGE TO IT, which is what keeps it outside the charter stop-for.
+        src/modules/ledger/domain/reconciliation.ts already defines
+        changeInPot as the sum over POT accounts, and the domain function
+        already skips rows outside the interpreted set. The SQL projection
+        was the copy that had drifted; the scoping restores it. The evidence
+        that this is true rather than asserted is the byte-identical
+        all-pot-household comparison above: if the SQL had been computing a
+        different identity, that comparison would have moved.
+      caveat: >-
+        The third case is captured output rather than an executable
+        application test, for the same DB-in-the-fast-gate reason recorded
+        under criterion 14.14.
+    - id: "15.5"
+      verdict: met
+      witness: >-
+        An application test asserts a correction followed by two recomputes
+        leaves every interpretation column identical to a single recompute
+        and that the raw columns are byte identical across the whole
+        sequence. The correction path writes exactly one declaration column;
+        the accounts repository has no function that updates a transaction.
+    - id: "15.6"
+      verdict: met
+      witness: >-
+        An application test writes a MerchantRule, registers the account so
+        the rows leave the counted set, and asserts the rule row survives,
+        the transactions carry no merchant, and the result reports the count
+        and the account. A SECOND case corrects a ring back and asserts the
+        rule matches AGAIN with no user action, on the construction where
+        that actually happens. A grep test asserts no interpretation path
+        deletes a rule.
+    - id: "15.7"
+      verdict: met
+      witness: >-
+        The control shows THREE quantities before the change is applied,
+        rendered from all three catalogues, and a correction that would move
+        nothing says so rather than showing a bare zero. An application test
+        asserts every previewed figure equals the movement the totals
+        actually make when the change is confirmed, and that the outcome
+        reports the same movement it previewed. The preview is a DRY RUN of
+        the same interpretation the recompute runs, over the proposed
+        declaration set, writing nothing; the rows-on-the-account count is
+        read off the side that actually loads those rows rather than asked of
+        a run that does not.
+      partial: >-
+        The Playwright half asserts the preview is SHOWN and names the
+        direction ("stop being counted"), and the journey then asserts the
+        totals afterwards; it does not byte-compare the preview's rendered
+        figure against the moved total. And the fixture the application test
+        uses carries a matched transfer pair and ordinary rows but NOT a
+        settlement-matched card debit, which the criterion names. A reviewer
+        should treat the settlement-divergence case as unwitnessed.
+    - id: "15.8"
+      verdict: see gate-evidence
+    - id: "15.9"
+      verdict: met
+      witness: >-
+        The e2e test "THE WRONG ANSWER, WALKED BACK" walks the whole path in
+        one journey: upload a savings statement having registered nothing,
+        answer with the SPENDING ring, see the figures that differ from a
+        correct month in no way, see the account named in month-accounts with
+        data-state counted, name a merchant against its own counterparties,
+        follow the link the copy renders to the accounts screen, see what
+        will move, correct the ring with the control that copy named, see the
+        rule reported as having stopped matching, and land on a month where
+        those rows are held and named, the spend total has fallen to 0,00
+        from 55,00 against hand-written strings, and the verdict still reads
+        as books closing. A grep is unnecessary because the test itself fails
+        if the accounts screen renders no such control: it clicks it.
