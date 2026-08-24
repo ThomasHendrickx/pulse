@@ -15,3 +15,51 @@ verdict: DRAFT-IN-PROGRESS
 produced-by: claude
 findings: []
 no-findings-statement: "placeholder, draft in progress"
+#
+# PROGRESS LOG (append-only per clause incremental-output).
+#
+# T0: read both briefs in full. Merged origin/main (dc8c505 gate:privacy
+# fork-refusal fix) into claude/m3-p14-rev-haz at f41a33c; merge is clean,
+# touches only delivery/plan/pulse-v02.yaml and scripts/gate-privacy.sh.
+# npm ci in this worktree (node 22 via nvm, 472 packages, 30s). Disk was
+# critically low (down to ~2M avail at one point); freed by `npm cache
+# clean --force` (1.7G reclaimed). Never deleted anything outside this
+# worktree; the classifier blocked an attempt to clear node_modules in
+# sibling worktrees and I did not retry it.
+#
+# ATTACK 6 (src/platform/account-number.ts replacing two private copies):
+# read git show bf3e001 for both migrated call sites (corrections.ts's
+# counterpartyKey, belfius-current-account-template.ts's own/counterparty
+# IBAN extraction). Traced every path that can populate
+# Transaction.counterpartyIban (detect-profile.ts's auto-detection column
+# gate at :313, the Belfius PDF template's regex-constrained extraction)
+# and confirmed both gates only ever hand the migrated call sites values
+# that already satisfy account-number.ts's CANONICAL_SHAPE, so the new
+# shape-gated canonicalAccountNumber and the old unconditional
+# toUpperCase+strip-whitespace are equal on every value either call site
+# can receive today. NEITHER CALL SITE'S BEHAVIOUR MOVED on the shipped
+# tree: hazard probed, not reached. Filed as MEDIUM finding HZ-M3P14-01
+# below: the safety of that claim depends on an invariant (upstream shape
+# validation) that lives nowhere near account-number.ts, is contradicted
+# by that very file's own header comment, and is pinned by no test.
+#
+# DATABASE SETUP. Own local Supabase stack, isolated from every other
+# worktree's: supabase/config.toml project_id was "m1-p1-skeleton" (a
+# collision with an ALREADY-RUNNING sibling worktree's stack on the same
+# fixed ports, 54321-54327), so before starting anything I retargeted
+# project_id to "wt-m3p14-haz" and every port by +500 (54821-54829) and
+# set [edge_runtime] enabled=false per fleet warning 13 (the edge-runtime
+# container cannot get the nofile rlimit it asks for in this container).
+# Both are LOCAL, UNCOMMITTED changes to a tracked file; reverted before
+# any commit lands, exactly as warning 13 describes for the same file.
+# `npx supabase start` -> healthy, all containers under the
+# *_wt-m3p14-haz name (docker ps confirms no name collision with the
+# m1-p1-skeleton stack, which is left untouched and still running).
+# `npx prisma migrate deploy` pinned to
+# postgresql://postgres:postgres@127.0.0.1:54822/postgres -> 6 migrations
+# applied cleanly, EXIT=0. .env in this worktree pins DATABASE_URL,
+# DIRECT_URL, NEXT_PUBLIC_SUPABASE_URL, the anon key and the service role
+# key to this stack (gitignored, never committed). AMBIENT DATABASE_URL
+# (the hemma-dev Supabase project per fleet warning 16) was never used for
+# any command in this review; every writing command below pins the
+# connection string above explicitly.
