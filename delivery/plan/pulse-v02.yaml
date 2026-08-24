@@ -4650,13 +4650,38 @@ phases:
           INLINE SCRIPT, not
           as a client component. A module-scope string constant in
           src/app/layout.tsx, rendered as one script element inside the body
-          (src/app/layout.tsx:16) and carrying data-testid="press-feedback" so
-          criterion 9.9 can find it in the served document, adds a
+          (src/app/layout.tsx:16) and carrying the bare attribute
+          data-press-feedback so criterion 9.9 can find it in the served
+          document, adds a
           capture-phase pointerdown listener on document that sets data-pressed on the
           nearest ancestor matching button, a[href], summary,
           input[type=submit], input[type=button] and [role=button], plus
           capture-phase pointerup and pointercancel listeners that clear every
-          data-pressed in the document. WHAT THE DOCUMENT-WIDE SWEEP COSTS,
+          data-pressed in the document. THE MARKER IS data-press-feedback AND
+          NOT data-testid, RENAMED IN THIS AMENDMENT on the implementer's
+          escalation under R-034 rather than worked around, and the evidence
+          was taken one attribute apart on the same head against the same
+          server: with data-testid="press-feedback" the pre-existing spec
+          test/e2e/month-view.spec.ts reported 1 failed with the diff naming
+          press-feedback, and with that single attribute removed and nothing
+          else changed it reported 1 passed. The cause is that the helper
+          collectTestids at test/e2e/month-view.spec.ts:650 runs
+          document.querySelectorAll("[data-testid]") over the WHOLE document
+          and then requires every element it collects to have a bounding rect
+          wider and taller than zero, while a script element computes display
+          none and reports 0 by 0, so the requirement written here made a
+          pre-existing spec red while criterion 9.7 requires every
+          pre-existing spec to pass. Nothing else in the tree sweeps that
+          attribute: grep -rn '\[data-testid\]' test/e2e/ returns exactly one line, test/e2e/month-view.spec.ts:652, and exits 0.
+          THE ALTERNATIVE IS REJECTED HERE RATHER THAN LEFT IMPLIED. Scoping
+          collectTestids to main, which is the scope criterion 7.6 uses in its
+          own hiding sentence and the scope its collecting sentence omits,
+          would mean editing a SECOND file under test/e2e/, and criterion 9.7
+          pins this phase to exactly one new file there and to no other
+          printed path. That scoping is a real defect in the pre-existing
+          spec, it belongs to whichever phase next owns that file rather than
+          to this one, and it is recorded in this plan's parked register so a
+          later reader finds it. WHAT THE DOCUMENT-WIDE SWEEP COSTS,
           recorded here (finding R2-07) so a later round does not rediscover
           it and rebuild the listener around a pointer-id table to chase it: a
           clear that sweeps the document also clears a press ANOTHER FINGER IS
@@ -5068,8 +5093,11 @@ phases:
           one. The diff of
           src/app/layout.tsx introduces no "use client" in any position, no
           import, no hook, no prop and no next-intl key, only a module-scope
-          string constant and one script element carrying
-          data-testid="press-feedback". (d) THE PERMITTED FILE ADDS NO COPY. The diff of
+          string constant and one script element carrying the bare attribute
+          data-press-feedback, which is the marker criterion 9.9(a) reads out
+          of the raw response body and which is deliberately NOT a data-testid,
+          for the reason step 5 and criterion 9.9(a) both record. (d) THE
+          PERMITTED FILE ADDS NO COPY. The diff of
           src/app/layout.tsx renders no string a reader sees, which is why it
           needs no message key and why messages/ is unchanged under (b).
           FALSIFIED BY any other printed path, by a second printed file
@@ -5116,12 +5144,27 @@ phases:
           authenticated route AND the document served for the sign-in screen,
           that the RAW RESPONSE BODY of the navigation, read from the
           Playwright response and not from the live DOM, carries a script
-          element with data-testid="press-feedback" whose own text is
+          element that carries the bare attribute data-press-feedback whose
+          own text is
           NON-EMPTY and registers a pointerdown listener, and that the same
           element's textContent in the live document is byte identical to what
-          the response carried. A tag with a test id and no body satisfies an
-          element assertion and ships no listener, which is why the body is
-          read (finding ADV-M3P9A-08). Serving it on the sign-in screen as
+          the response carried. A tag with that attribute and no body
+          satisfies an element assertion and ships no listener, which is why
+          the body is read (finding ADV-M3P9A-08). THE ATTRIBUTE IS
+          data-press-feedback AND DELIBERATELY NOT data-testid, RENAMED IN
+          THIS AMENDMENT, and this half is the reason the rename costs
+          nothing: what this half reads is the RAW RESPONSE BODY, matched as
+          text, so the marker never has to be a Playwright locator and any
+          stable attribute serves the purpose exactly as well. It may not be a
+          data-testid, because the pre-existing helper collectTestids at
+          test/e2e/month-view.spec.ts:650 sweeps
+          document.querySelectorAll("[data-testid]") over the whole document
+          and requires a non-zero bounding rect from everything it collects,
+          while a script element computes display none at 0 by 0; criterion
+          9.7 requires every pre-existing spec to pass, so a script element
+          carrying a data-testid and that criterion could not both hold. Step
+          5 carries the captured one-attribute-apart evidence and the reason
+          the other repair, scoping that helper to main, is not taken here. Serving it on the sign-in screen as
           well as inside the shell is what says the listener is in the ROOT
           layout: five of the controls criterion 9.2(a) enumerates live on the
           sign-in and sign-up screens, which src/app/(app)/layout.tsx never
@@ -5304,7 +5347,7 @@ phases:
           are back at their resting values; for ending five the assertion is
           taken after the LAST of the two endings. Frames and not
           milliseconds, for the reason (b)(iv) gives. FALSIFIED BY the script
-          element missing
+          element carrying data-press-feedback missing
           from either served response or carrying no listener text, by a zero
           passed count under chromium-phone, by any injected script that
           writes data-pressed, by one control failing any of (b)(i) through
@@ -12409,6 +12452,27 @@ open-questions:
   - DR-0002
   - DR-0023
 parked:
+  - item: >-
+      The collectTestids helper at test/e2e/month-view.spec.ts:650 sweeps the
+      whole document instead of main.
+    reason: >-
+      RAISED BY M3-P9's implementer under R-034 and recorded here rather than
+      fixed there, because fixing it means editing a second file under
+      test/e2e/ and criterion 9.7 pins M3-P9 to exactly one new file there.
+      The helper runs document.querySelectorAll("[data-testid]") over the
+      whole document (test/e2e/month-view.spec.ts:652) and the assertion it
+      feeds requires every collected element to have a bounding rect wider and
+      taller than zero, so any element that carries a data-testid and is not
+      rendered, a script element being the case that surfaced it, fails a
+      criterion about layout. Criterion 7.6 scopes its hiding sentence to
+      elements inside main and leaves its collecting sentence unscoped, and
+      the helper follows the unscoped reading. M3-P9 routes around it by
+      marking its inline listener with data-press-feedback rather than a
+      data-testid, which is a rename and not a repair: the helper still fails
+      the next element of that shape. Discharged when whichever phase next
+      owns test/e2e/month-view.spec.ts scopes the collection to main, or
+      exempts elements whose computed display is none, and a work history
+      records the spec passing after the change.
   - item: >-
       Criterion 12.23, the target interlock, against any M3-P12 implementation
       built before it was added.
