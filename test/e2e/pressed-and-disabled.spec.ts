@@ -19,6 +19,13 @@ import { join } from "node:path";
 // proves is that the shipped stylesheet renders a visibly different control
 // when the state is present; what it does not prove is that anything ever
 // sets the state, which is M3-P10's job and is measured there.
+//
+// FIX ROUND 1, FINDING HZ-M3P9-01. Everything above this line presses with
+// page.mouse.down. A mouse press under a phone device descriptor is a mouse
+// measurement at a phone width, and the report this phase answers came from
+// a finger. The touch measurement lives at the bottom of this file, under
+// the chromium-phone project only, and it is the one that decides whether
+// the pressed appearance is reachable from the input the owner uses.
 
 const CSV_FIXTURE = join(__dirname, "..", "fixtures", "belfius-account-a.csv");
 const REJECTED_FIXTURE = join(__dirname, "..", "fixtures", "unknown-layout.pdf");
@@ -87,6 +94,15 @@ type Snapshot = {
   readonly rectTop: number;
   readonly afterContent: string;
   readonly afterWidth: string;
+  // THE ONLY ANIMATION THIS PHASE SHIPS IS ON A PSEUDO-ELEMENT, and the two
+  // control-level animation fields above are "none" and "0s" on every
+  // control at both motion settings whether the reduced-motion block exists
+  // or not. Reading them and calling that a reduced-motion check is a
+  // vacuous assertion, which is finding HZ-M3P9-03. These two are read from
+  // getComputedStyle(node, "::after"), where the loop actually lives.
+  readonly afterAnimationName: string;
+  readonly afterAnimationDuration: string;
+  readonly pointerEvents: string;
 };
 
 type Swept = { readonly index: number; readonly identity: string; readonly tag: string };
@@ -190,6 +206,9 @@ window.__m3p9 = (() => {
       rectTop: rect.top,
       afterContent: after.content,
       afterWidth: after.width,
+      afterAnimationName: after.animationName,
+      afterAnimationDuration: after.animationDuration,
+      pointerEvents: cs.pointerEvents,
     };
   };
   return { parse, composite, ratio, identify, snapshot };
@@ -331,14 +350,89 @@ const measureScreen = async (
       "pointer",
     );
 
+    // A CONTROL THAT LOOKS DISABLED MUST NOT STILL WORK (fix round 1,
+    // finding HZ-M3P9-02). aria-disabled is the ONLY way eight of these
+    // nineteen controls can be marked, because a link and a summary have no
+    // disabled attribute; before this round the aria branch dressed a
+    // control in the full disabled appearance including cursor: default and
+    // removed nothing, so a disabled-looking link still navigated, a
+    // disabled-looking submit still posted and a disabled-looking
+    // disclosure still toggled. This pass sets aria-disabled on EVERY
+    // control whatever its tag, so the summary and the buttons are covered
+    // by the same assertion as the links; the real activation refusal is
+    // measured on two structurally different shapes in its own test below.
+    await el.evaluate((n) => n.setAttribute("aria-disabled", "true"));
+    const ariaDisabled = (await el.evaluate((n) => window.__m3p9.snapshot(n))) as Snapshot;
+    await el.evaluate((n) => n.removeAttribute("aria-disabled"));
+    expect(
+      ariaDisabled.pointerEvents,
+      `an aria-disabled control still accepts pointer input: ${where}`,
+    ).toBe("none");
+
     // ---------- 9.3(b): busy ----------
     await el.evaluate((n) => n.setAttribute("aria-busy", "true"));
     await settle(el);
     const busy = (await el.evaluate((n) => window.__m3p9.snapshot(n))) as Snapshot;
+    const busyAnimations = await el.evaluate((n) =>
+      n
+        .getAnimations({ subtree: true })
+        .filter((a) => a.playState === "running")
+        .map((a) => String(a.effect?.getComputedTiming().duration ?? "")),
+    );
     await el.evaluate((n) => n.removeAttribute("aria-busy"));
     await assertMagnitude(page, rest, busy, `busy ${where}`);
     expect(busy.afterContent, `busy mark has no content on ${where}`).not.toBe("none");
     expect(parseFloat(busy.afterWidth), `busy mark has zero width on ${where}`).toBeGreaterThan(0);
+
+    // 9.4(a), THE ANIMATION HALF, READ WHERE THE ANIMATION ACTUALLY IS
+    // (fix round 1, finding HZ-M3P9-03). The loop is declared on
+    // [aria-busy="true"]::after, so the control's own animation-name is
+    // "none" at both motion settings and asserting on it proves nothing:
+    // deleting --duration-busy-cycle from the reduced-motion block would
+    // leave the mark spinning under reduce and the old assertion stayed
+    // green. Both halves below redden on exactly that removal: the computed
+    // duration of the pseudo-element's animation, and the running-animation
+    // enumeration, which is the one a constant field cannot satisfy.
+    if (reduced) {
+      const afterAnimated =
+        busy.afterAnimationName !== "none" &&
+        busy.afterAnimationDuration.split(",").some((d) => parseFloat(d) > 0);
+      expect(
+        afterAnimated,
+        `the busy mark still animates under reduce on ${where}` +
+          ` (name ${busy.afterAnimationName}, duration ${busy.afterAnimationDuration})`,
+      ).toBe(false);
+      expect(
+        busyAnimations,
+        `a running animation under reduce while busy on ${where}`,
+      ).toEqual([]);
+    } else {
+      expect(
+        busy.afterAnimationName,
+        `the busy mark declares no animation under no-preference on ${where}`,
+      ).not.toBe("none");
+      expect(
+        busy.afterAnimationDuration.split(",").some((d) => parseFloat(d) > 0),
+        `the busy mark's loop has zero duration under no-preference on ${where}`,
+      ).toBe(true);
+    }
+
+    // .pulse-busy IS SHIPPED, SO .pulse-busy IS MEASURED (fix round 1,
+    // finding HZ-M3P9-04). It is the class M3-P10 is told to put on a
+    // link-shaped control, and before this round nothing in the suite
+    // touched it: the selectors could have been deleted or misspelled and
+    // every criterion stayed green. It carries the same magnitude and the
+    // same mark as the attribute branch, so it is asserted the same way.
+    await el.evaluate((n) => n.classList.add("pulse-busy"));
+    await settle(el);
+    const classBusy = (await el.evaluate((n) => window.__m3p9.snapshot(n))) as Snapshot;
+    await el.evaluate((n) => n.classList.remove("pulse-busy"));
+    await assertMagnitude(page, rest, classBusy, `class-busy ${where}`);
+    expect(classBusy.afterContent, `.pulse-busy mark has no content on ${where}`).not.toBe("none");
+    expect(
+      parseFloat(classBusy.afterWidth),
+      `.pulse-busy mark has zero width on ${where}`,
+    ).toBeGreaterThan(0);
 
     // ---------- 9.2(b): the pressed difference, against the HOVERING state ----------
     await page.mouse.move(centre.x, centre.y);
@@ -503,6 +597,14 @@ const runJourney = async (page: Page, reduced: boolean): Promise<void> => {
   await row.evaluate((n) => n.removeAttribute("data-unconfirmed"));
   await assertMagnitude(page, rowRest, rowMarked, "unconfirmed row");
   expect(rowMarked.afterContent, "unconfirmed row carries no mark").not.toBe("none");
+  // Criterion 9.3's zero-width falsification binds the unconfirmed mark as
+  // well as the busy one, and before this round only the content half was
+  // asserted here (fix round 1, finding CR-M3P9-02): a later phase could
+  // have zeroed the mark's width without turning the suite red.
+  expect(
+    parseFloat(rowMarked.afterWidth),
+    "unconfirmed mark has zero width",
+  ).toBeGreaterThan(0);
 
   // A CLOSED MONTH THAT HAS A LATER ONE, reached by the month view's own
   // query parameter rather than by whatever month the clock lands on, so the
@@ -539,6 +641,351 @@ const runJourney = async (page: Page, reduced: boolean): Promise<void> => {
     ).toBe(true);
   }
 };
+
+// =====================================================================
+// THE TOUCH PRESS (fix round 1, finding HZ-M3P9-01)
+//
+// THE MECHANISM, named rather than the instance: A PRESSED APPEARANCE
+// REACHED ONLY THROUGH :active IS REACHED ONLY THROUGH THE INPUT PATHS THE
+// ENGINE GRANTS :active TO. Everything above this line drives
+// page.mouse.down, and a mouse press inside a context that merely DECLARES
+// touch is still a mouse press. Measured in this container, under the
+// chromium-phone project's own device options, on the shipped sign-in
+// submit and on a bare div outside the product alike: a held CDP
+// Input.dispatchTouchEvent touchStart, Input.synthesizeTapGesture with
+// gestureSourceType "touch" and page.touchscreen.tap each fire pointerdown
+// and touchstart on the control and produce ZERO frames in :active and zero
+// frames with a transform, while a held page.mouse.down in the same context
+// produces both. The bare-div control is what says this is the engine's
+// gesture pipeline and not the product's stylesheet.
+//
+// So the vocabulary does not rest on :active alone. src/app/globals.css
+// gives the pressed appearance to [data-pressed] as well, which is the
+// selector the plan's verification-first step (e) pre-authorises for
+// exactly this condition, and pointerdown FIRES on every touch path above.
+// The handler below is the six lines that set it; this phase ships no
+// client script (criterion 9.7 prints only two stylesheets, the Playwright
+// config and this spec), so the handler is installed by this measurement
+// and the product's own copy of it is M3-P10's, which already opens a
+// client boundary. What this test therefore witnesses is that the SHIPPED
+// STYLESHEET produces a pressed appearance from an event that fires under
+// touch; what it does not witness is a shipped handler setting it, and
+// that gap is stated in the phase work history rather than papered over.
+// =====================================================================
+
+// The handler M3-P10 ships, verbatim. Capture phase on the document, so one
+// listener covers every control and no component gains a prop.
+const POINTER_PRESS_HANDLER = `
+(() => {
+  const CONTROL =
+    'button, a[href], summary, input[type="submit"], input[type="button"], [role="button"]';
+  const clear = () => {
+    for (const el of document.querySelectorAll("[data-pressed]")) {
+      el.removeAttribute("data-pressed");
+    }
+  };
+  document.addEventListener("pointerdown", (event) => {
+    const node = event.target;
+    const control = node && node.closest ? node.closest(CONTROL) : null;
+    if (control) control.setAttribute("data-pressed", "");
+  }, true);
+  document.addEventListener("pointerup", clear, true);
+  document.addEventListener("pointercancel", clear, true);
+})();
+`;
+
+// EVERY ANIMATION FRAME IS SAMPLED, not one reading after the fact: a
+// pressed appearance that exists for no frame and a pressed appearance that
+// exists for twenty are the same single after-the-fact reading, and the
+// first is the defect this phase is about.
+const INSTALL_TRACE = `
+window.__m3p9trace = (probe) => {
+  const el = document.querySelector(probe);
+  const restTop = el.getBoundingClientRect().top;
+  const state = {
+    frames: 0,
+    framesActive: 0,
+    framesPressed: 0,
+    framesWithTransform: 0,
+    peakDisplacementPx: 0,
+    events: [],
+    pressAt: null,
+    firstChangeAt: null,
+    sampling: true,
+  };
+  window.__m3p9traceState = state;
+  const inControl = (node) => node === el || (node && el.contains(node));
+  for (const type of [
+    "pointerdown", "touchstart", "pointerup", "touchend",
+    "pointercancel", "mousedown", "click",
+  ]) {
+    document.addEventListener(type, (event) => {
+      if (!inControl(event.target)) return;
+      state.events.push(type);
+      if (type === "pointerdown" && state.pressAt === null) {
+        state.pressAt = performance.now();
+      }
+    }, true);
+  }
+  const tick = (now) => {
+    if (!state.sampling) return;
+    const cs = getComputedStyle(el);
+    state.frames += 1;
+    if (el.matches(":active")) state.framesActive += 1;
+    if (el.matches("[data-pressed]")) state.framesPressed += 1;
+    if (cs.transform !== "none" && cs.transform !== "matrix(1, 0, 0, 1, 0, 0)") {
+      state.framesWithTransform += 1;
+      if (state.firstChangeAt === null) state.firstChangeAt = now;
+    }
+    const travelled = Math.abs(el.getBoundingClientRect().top - restTop);
+    if (travelled > state.peakDisplacementPx) state.peakDisplacementPx = travelled;
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+};
+`;
+
+type TouchTrace = {
+  readonly frames: number;
+  readonly framesActive: number;
+  readonly framesPressed: number;
+  readonly framesWithTransform: number;
+  readonly peakDisplacementPx: number;
+  readonly events: readonly string[];
+  readonly pressAt: number | null;
+  readonly firstChangeAt: number | null;
+};
+
+const TOUCH_HOLD_MS = 400;
+
+const holdTouch = async (
+  page: Page,
+  cdp: { send(method: string, params?: unknown): Promise<unknown> },
+  probe: string,
+): Promise<{ readonly trace: TouchTrace; readonly held: Snapshot }> => {
+  const el = page.locator(probe);
+  await el.scrollIntoViewIfNeeded();
+  const box = await el.boundingBox();
+  expect(box, `no box for ${probe}`).not.toBeNull();
+  const centre = {
+    x: (box?.x ?? 0) + (box?.width ?? 0) / 2,
+    y: (box?.y ?? 0) + (box?.height ?? 0) / 2,
+  };
+  await page.evaluate(INSTALL_TRACE);
+  await page.evaluate(
+    (p) => (window as unknown as { __m3p9trace: (p: string) => void }).__m3p9trace(p),
+    probe,
+  );
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ x: centre.x, y: centre.y, id: 1 }],
+  });
+  await page.waitForTimeout(TOUCH_HOLD_MS);
+  const held = (await el.evaluate((n) => window.__m3p9.snapshot(n))) as Snapshot;
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  const trace = (await page.evaluate(() => {
+    const s = (window as unknown as { __m3p9traceState: TouchTrace & { sampling: boolean } })
+      .__m3p9traceState;
+    s.sampling = false;
+    return s;
+  })) as TouchTrace;
+  return { trace, held };
+};
+
+const describeTrace = (label: string, trace: TouchTrace): string =>
+  `${label}: frames ${trace.frames}, in :active ${trace.framesActive},` +
+  ` carrying [data-pressed] ${trace.framesPressed},` +
+  ` with a transform ${trace.framesWithTransform},` +
+  ` peak box displacement ${trace.peakDisplacementPx.toFixed(3)}px,` +
+  ` events ${JSON.stringify(trace.events)}`;
+
+test.describe("the pressed appearance under a touch press", () => {
+  test.skip(({ hasTouch }) => hasTouch !== true, "touch paths need the phone project");
+
+  test("a held touch press moves the control and changes its surface", async ({ page }) => {
+    test.setTimeout(120_000);
+    const cdp = await page.context().newCDPSession(page);
+    await page.goto("/sign-in");
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
+    await page.evaluate(INSTALL_HELPERS);
+    // A held touch that ends where it started is a tap, and a tap on this
+    // screen submits a form or follows a link. The activation is refused
+    // here and nowhere else; the pressed appearance is what is measured.
+    await page.evaluate(() => {
+      document.addEventListener(
+        "click",
+        (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        },
+        true,
+      );
+    });
+
+    // An opaque control on the inverse surface, and a bare anchor with no
+    // background of its own: the two shapes the pressed rules treat
+    // differently, so one passing tells nothing about the other.
+    const probes = ["button.auth-submit", "p.auth-alt a"] as const;
+
+    for (const probe of probes) {
+      // ---- THE RED WITNESS, recorded as an assertion rather than a note.
+      // No handler installed, so :active is the only route to the pressed
+      // appearance, which is what the phase shipped before this round.
+      const before = await holdTouch(page, cdp, probe);
+      console.log(describeTrace(`touch press, :active only, ${probe}`, before.trace));
+      expect(
+        before.trace.events,
+        `no pointerdown reached ${probe} under a held touch press`,
+      ).toContain("pointerdown");
+      expect(
+        before.trace.events,
+        `no touchstart reached ${probe} under a held touch press`,
+      ).toContain("touchstart");
+      expect(
+        before.trace.framesActive,
+        `THIS ASSERTION IS A RECORDED MEASUREMENT, NOT A REQUIREMENT.` +
+          ` It locks in what this engine does today: a held touch press puts` +
+          ` ${probe} into :active for no frame at all, which is why the pressed` +
+          ` appearance is not built on :active alone. If it reddens because` +
+          ` :active now applies to a touch press, that is good news: re-measure,` +
+          ` update this number and say so in the work history.`,
+      ).toBe(0);
+      expect(
+        before.trace.framesWithTransform,
+        `${probe} moved under a held touch press with no handler installed,` +
+          ` which contradicts the :active measurement above`,
+      ).toBe(0);
+    }
+
+    // ---- THE GREEN WITNESS. pointerdown fired on every touch path above,
+    // so the pressed appearance is driven from it.
+    await page.evaluate(POINTER_PRESS_HANDLER);
+
+    for (const probe of probes) {
+      const el = page.locator(probe);
+      await el.scrollIntoViewIfNeeded();
+      await settle(el);
+      const rest = (await el.evaluate((n) => window.__m3p9.snapshot(n))) as Snapshot;
+      const after = await holdTouch(page, cdp, probe);
+      console.log(describeTrace(`touch press, [data-pressed], ${probe}`, after.trace));
+
+      expect(
+        after.trace.framesPressed,
+        `${probe} never carried [data-pressed] under a held touch press`,
+      ).toBeGreaterThan(0);
+      expect(
+        after.trace.framesWithTransform,
+        `${probe} never carried a transform under a held touch press`,
+      ).toBeGreaterThan(0);
+
+      const offset = parseFloat(after.held.pressOffset);
+      expect(
+        after.trace.peakDisplacementPx,
+        `${probe} did not move on screen under a held touch press` +
+          ` (peak ${after.trace.peakDisplacementPx.toFixed(3)}px,` +
+          ` --press-offset ${offset}px)`,
+      ).toBeGreaterThanOrEqual(Math.min(offset, MIN_PRESS_TRAVEL_PX) - 0.01);
+
+      const bgRatio = await compositedRatio(page, rest, after.held, "backgroundColor");
+      const inkRatio = await compositedRatio(page, rest, after.held, "color");
+      expect(
+        Math.max(bgRatio, inkRatio),
+        `the touch-pressed surface is too close to the resting surface for ${probe}` +
+          ` (background ${bgRatio.toFixed(3)}, colour ${inkRatio.toFixed(3)})`,
+      ).toBeGreaterThanOrEqual(MIN_CONTRAST_RATIO);
+      if ((await alphaOf(page, rest.backgroundColor)) === 0) {
+        expect(
+          await alphaOf(page, after.held.backgroundColor),
+          `touch-pressed tint below the alpha floor on a transparent control: ${probe}`,
+        ).toBeGreaterThanOrEqual(0.08);
+      }
+
+      // PRESS TO FIRST VISIBLE CHANGE, under touch. This is the first half
+      // of the owner's report only; the dead interval between the release
+      // and the server's answer is M3-P10's and is not measured here.
+      const { pressAt, firstChangeAt } = after.trace;
+      expect(pressAt, `no pointerdown timestamp for ${probe}`).not.toBeNull();
+      expect(firstChangeAt, `no visible change ever for ${probe}`).not.toBeNull();
+      const latency = (firstChangeAt ?? 0) - (pressAt ?? 0);
+      console.log(
+        `press to first visible change under touch on ${probe}: ${latency.toFixed(1)}ms`,
+      );
+      expect(
+        latency,
+        `${probe} took ${latency.toFixed(1)}ms from pointerdown to the first frame` +
+          ` carrying a transform, which is more than three animation frames`,
+      ).toBeLessThan(50);
+    }
+  });
+});
+
+test.describe("an aria-disabled control refuses activation", () => {
+  // FIX ROUND 1, FINDING HZ-M3P9-02. Eight of the nineteen controls have no
+  // disabled attribute to set, so aria-disabled is the only marking they
+  // can carry, and before this round the aria branch gave them the whole
+  // disabled appearance including cursor: default and took nothing away: a
+  // disabled-looking link still navigated and a disabled-looking submit
+  // still posted. BOTH DIRECTIONS ARE ASSERTED HERE, because "the link did
+  // not navigate" is also what a click that missed looks like.
+  test("a marked link does not navigate and a marked submit does not post", async ({ page }) => {
+    test.setTimeout(120_000);
+    let posts = 0;
+    page.on("request", (request) => {
+      if (request.method() === "POST") posts += 1;
+    });
+
+    await page.goto("/sign-in");
+    const link = page.locator("p.auth-alt a");
+    await expect(link).toBeVisible();
+    const linkBox = await link.boundingBox();
+    expect(linkBox, "no box for the sign-up cross-link").not.toBeNull();
+    const linkCentre = {
+      x: (linkBox?.x ?? 0) + (linkBox?.width ?? 0) / 2,
+      y: (linkBox?.y ?? 0) + (linkBox?.height ?? 0) / 2,
+    };
+
+    await link.evaluate((n) => n.setAttribute("aria-disabled", "true"));
+    await page.mouse.click(linkCentre.x, linkCentre.y);
+    await page.waitForTimeout(500);
+    expect(
+      new URL(page.url()).pathname,
+      "a link wearing the full disabled appearance still navigated",
+    ).toBe("/sign-in");
+
+    // The positive control: the same click, at the same coordinates, with
+    // the marking removed. Without this the assertion above is satisfied by
+    // a click that never reached the link.
+    await link.evaluate((n) => n.removeAttribute("aria-disabled"));
+    await page.mouse.click(linkCentre.x, linkCentre.y);
+    await expect(page).toHaveURL(/\/sign-up$/);
+
+    await page.goto("/sign-in");
+    await page.getByLabel("Email").fill("aria-disabled@pulse-e2e.test");
+    await page.getByLabel("Password").fill("aria-disabled-probe");
+    const submit = page.locator("button.auth-submit");
+    const submitBox = await submit.boundingBox();
+    expect(submitBox, "no box for the sign-in submit").not.toBeNull();
+    const submitCentre = {
+      x: (submitBox?.x ?? 0) + (submitBox?.width ?? 0) / 2,
+      y: (submitBox?.y ?? 0) + (submitBox?.height ?? 0) / 2,
+    };
+
+    await submit.evaluate((n) => n.setAttribute("aria-disabled", "true"));
+    posts = 0;
+    await page.mouse.click(submitCentre.x, submitCentre.y);
+    await page.waitForTimeout(1_000);
+    expect(posts, "a submit wearing the full disabled appearance still posted").toBe(0);
+
+    await submit.evaluate((n) => n.removeAttribute("aria-disabled"));
+    posts = 0;
+    await page.mouse.click(submitCentre.x, submitCentre.y);
+    await page.waitForTimeout(2_000);
+    expect(
+      posts,
+      "the unmarked submit posted nothing either, so the refusal above proves nothing",
+    ).toBeGreaterThan(0);
+  });
+});
 
 test.describe("pressed, disabled and busy appearances at full motion", () => {
   test.use({ contextOptions: { reducedMotion: "no-preference" } });

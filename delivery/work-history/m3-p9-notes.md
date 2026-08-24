@@ -131,3 +131,39 @@ min-width condition.
   `test/e2e/merchants.spec.ts` drives) and `test/fixtures/unknown-layout.pdf`
   (already committed and already exercised by
   `test/application/pdf-upload.test.ts`), and adds no fixture of its own.
+
+---
+
+# FIX ROUND 1 (M3-P9), beacon log
+
+Appended as the work happened, per the dispatch contract's
+`incremental-output` clause. Both clean-room lanes returned
+FIX-ROUND-NEEDED at 88dbaac: `delivery/review/m3-p9-hazard.yaml` on
+`claude/m3-p9-rev-haz2` (HZ-M3P9-01 high, 02/03/04 medium, 05/06 low) and
+`delivery/review/m3-p9-criteria.yaml` on `claude/m3-p9-rev-crit`
+(CR-M3P9-01 medium, 04 medium, 02/03/05/06/07/08 low, criterion 9.8 NOT MET).
+
+## t0 environment
+
+```
+$ df -h / | tail -1
+/dev/vda        252G   32G  5.3G  86% /
+$ node -v ; npm -v
+v26.7.0
+11.19.0
+$ docker ps --format '{{.Names}}' | wc -l
+11        (the local supabase stack is up)
+```
+
+## t1 CR-M3P9-01: the uploads ARE in this container
+
+```
+$ ls -la /root/.claude/uploads/e8dfc624-.../ | sed -E 's/[0-9]{4,}/NNNN/g'
+-rw------- 1 root root NNNN Aug 17 07:33 0f79fa3d-NNNN.pdf
+-rw------- 1 root root NNNN Aug 17 07:33 39bada64-BENNNN_NNNN_NNNN.pdf
+   (plus a third statement PDF and several PNGs)
+```
+
+The reviewer is right and the previous round's sentence at what was
+`m3-p9-notes.md:125` was FALSE for this container. Corrected below under
+9.8; the probes are built and run in this round.
