@@ -67,11 +67,19 @@ type Mutant = {
   readonly what: string;
   readonly shipped: string;
   readonly edits: readonly (readonly [string, string])[];
+  // WHAT THIS MUTANT IS FOR. Every wrong predicate expects "caught": an
+  // assertion fired in a named property. ONE entry expects "dies", and it is
+  // not a wrong predicate at all: it is the harness checking its own
+  // discriminator, which is the thing CR6-M3P12-01 found missing. Without it
+  // the crash-versus-catch distinction is code nothing exercises, which is how
+  // this file got the defect in the first place.
+  readonly expect: "caught" | "dies";
 };
 
 const mutants: readonly Mutant[] = [
   {
     id: "M1",
+    expect: "caught",
     what: "reports every change",
     shipped: "round two",
     // The DECLARATION of the claimant stays, because removing it too would
@@ -85,6 +93,7 @@ const mutants: readonly Mutant[] = [
   },
   {
     id: "M2",
+    expect: "caught",
     what: "excludes a superseded rule's whole claim from the before set",
     shipped: "round three",
     edits: [
@@ -96,6 +105,7 @@ const mutants: readonly Mutant[] = [
   },
   {
     id: "M3",
+    expect: "caught",
     what: "asks only whether the row is covered by ANYTHING after the run",
     shipped: "round four",
     edits: [
@@ -109,7 +119,22 @@ const mutants: readonly Mutant[] = [
     ],
   },
   {
+    id: "M6",
+    expect: "caught",
+    what: "consults the IDENTITY space before the pre-phase space in the before set",
+    shipped: "never, but a comment in the source claimed the property could not catch it",
+    edits: [
+      [
+        `        ? matchRules(baselineKey(row), rules.filter((r) => keyForRule(r) === baselineKey)) ??
+          matchRules(identityKey(row), rules.filter((r) => keyForRule(r) === identityKey))`,
+        `        ? matchRules(identityKey(row), rules.filter((r) => keyForRule(r) === identityKey)) ??
+          matchRules(baselineKey(row), rules.filter((r) => keyForRule(r) === baselineKey))`,
+      ],
+    ],
+  },
+  {
     id: "M5",
+    expect: "caught",
     what: "takes a rule of ANY kind for a claimant, not one of the same kind",
     shipped: "never, and that is the point: it is the one dimension no seed could reach",
     edits: [
@@ -124,6 +149,7 @@ const mutants: readonly Mutant[] = [
   },
   {
     id: "M4",
+    expect: "caught",
     what: "publishes one promotion pair whose holder and source name DIFFERENT merchants",
     shipped: "the forged lineage",
     edits: [
@@ -134,6 +160,24 @@ const mutants: readonly Mutant[] = [
     ],
   },
 ];
+
+// THE HARNESS'S OWN SELF-CHECK. It breaks the module so the property file
+// cannot run at all, and the harness must score that as DIED rather than as
+// caught. Before fix round eight it scored exactly this as "counted as CAUGHT"
+// and exited 0, because the only thing it read was vitest's exit code and a
+// file that dies exits non-zero as readily as one whose assertion fired.
+const selfCheck: Mutant = {
+  id: "SELF",
+  what: "breaks the module so the property file DIES without any assertion firing",
+  shipped: "never: this is the harness testing its own discriminator",
+  expect: "dies",
+  edits: [
+    [
+      "  const decisions: RuleDecision[] = [];",
+      "  const decisions: RuleDecision[] = [];\n  thisIdentifierDoesNotExist();",
+    ],
+  ],
+};
 
 const original = readFileSync(target, "utf-8");
 const digest = (text: string): string =>
@@ -161,7 +205,24 @@ const SECOND = "every published claimant pair and every published promotion pair
 // every test's title on a pass as well as a failure, so a substring search
 // over the report says both properties caught every mutant, which is the
 // opposite of the thing this harness exists to establish.
-const summarise = (report: string): { properties: string[]; message: string } => {
+// A CRASH IS NOT A CATCH (fix round eight, CRITERIA finding CR6-M3P12-01).
+// This file's own comment on M1 already stated the principle, that a mutant
+// which crashes proves nothing about the properties, and then left it as
+// prose: the only thing that decided a catch was vitest exiting non-zero, and
+// a file that DIES exits non-zero exactly as readily as one whose assertion
+// fired. A compile error, an import failure, a timeout or a throw inside
+// runOnce all satisfied it, and the harness reported "counted as CAUGHT" and
+// exited 0.
+//
+// THAT IS THE SHAPE-NOT-IDENTITY ERROR, in the instrument built to defend
+// against it: the check matched the SHAPE of a failure, a FAIL line bearing
+// the right title, rather than its IDENTITY, an assertion raised by the
+// property. So the identity is what is now required. A catch needs an
+// AssertionError; a non-zero exit without one is a HARNESS failure, counted
+// and reported as the mutant having died rather than having been caught.
+const summarise = (
+  report: string,
+): { properties: string[]; message: string; assertionFired: boolean } => {
   const failed = report
     .split("\n")
     .filter((line) => line.trimStart().startsWith("FAIL"))
@@ -173,18 +234,21 @@ const summarise = (report: string): { properties: string[]; message: string } =>
   if (failed.some((line) => line.includes(SECOND))) {
     properties.push("SECOND, the lineage check");
   }
-  const line =
-    report
-      .split("\n")
-      .map((l) => l.trim())
-      .find((l) => l.includes("AssertionError:"))
-      ?.replace(/^Caused by: /, "") ?? "(no assertion line found)";
-  return { properties, message: line };
+  const assertion = report
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.includes("AssertionError:"))
+    ?.replace(/^Caused by: /, "");
+  return {
+    properties,
+    message: assertion ?? "(no assertion line found)",
+    assertionFired: assertion !== undefined,
+  };
 };
 
 let failures = 0;
 try {
-  for (const mutant of mutants) {
+  for (const mutant of [...mutants, selfCheck]) {
     let mutated = original;
     for (const [from, to] of mutant.edits) {
       if (mutated.split(from).length - 1 !== 1) {
@@ -196,17 +260,41 @@ try {
     }
     writeFileSync(target, mutated);
     const { failed, report } = runProperty();
-    const { properties, message } = summarise(report);
+    const { properties, message, assertionFired } = summarise(report);
     console.log(`--- ${mutant.id}: ${mutant.what} (${mutant.shipped}) ---`);
-    if (!failed) {
+    const outcome = !failed
+      ? "green"
+      : !assertionFired
+        ? "dies"
+        : properties.length === 0
+          ? "unattributed"
+          : "caught";
+    if (outcome !== mutant.expect) {
       failures += 1;
-      console.log(
-        "  EVERY PROPERTY STAYED GREEN. That is a defect in the properties, not a passing mutant.",
-      );
-      continue;
     }
-    console.log(`  red on: ${properties.join(" and ") || "(unattributed)"}`);
-    console.log(`  ${message}`);
+    switch (outcome) {
+      case "green":
+        console.log(
+          "  EVERY PROPERTY STAYED GREEN. That is a defect in the properties, not a passing mutant.",
+        );
+        break;
+      case "dies":
+        console.log(
+          mutant.expect === "dies"
+            ? "  DIED, as this entry expects: the property file exited non-zero with NO AssertionError, and the harness scored that as died rather than as caught. That is the discriminator working."
+            : "  THE MUTANT DIED RATHER THAN BEING CAUGHT: the property file exited non-zero with no AssertionError, so nothing in the properties discriminated anything. Repair the mutant until it fails an assertion.",
+        );
+        break;
+      case "unattributed":
+        console.log(
+          "  AN ASSERTION FIRED BUT NEITHER PROPERTY OWNS IT: the failure could not be attributed to a named property, so the record would say nothing about which check caught this.",
+        );
+        break;
+      case "caught":
+        console.log(`  red on: ${properties.join(" and ")}`);
+        console.log(`  ${message}`);
+        break;
+    }
   }
 } finally {
   writeFileSync(target, original);
@@ -216,6 +304,8 @@ try {
 }
 
 if (failures > 0) {
-  console.log(`\n${failures} mutant(s) left every property green.`);
+  console.log(
+    `\n${failures} mutant(s) were not CAUGHT by an assertion: left green, died, or unattributed.`,
+  );
   process.exitCode = 1;
 }

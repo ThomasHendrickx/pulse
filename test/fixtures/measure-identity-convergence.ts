@@ -41,10 +41,39 @@ import {
 
 const FIXTURE_DIRECTORY = resolve(fileURLToPath(new URL(".", import.meta.url)));
 
-// A label that can never carry an identifier out of a real document.
+// A LABEL THAT CANNOT CARRY AN IDENTIFIER OUT OF A REAL DOCUMENT, and in fix
+// round eight that is enforced rather than asserted (CRITERIA finding
+// CR6-M3P12-02, clause R-087).
+//
+// WHAT THIS COMMENT USED TO SAY, and it was a bare claim with nothing checking
+// it: "A label that can never carry an identifier out of a real document." The
+// implementation returned the basename for a path under test/fixtures and the
+// FIRST EIGHT CHARACTERS of the basename for anything else. Eight characters
+// is safe only for a file carrying this fleet's renaming convention, an
+// eight-hex handle followed by a hyphen. It is NOT safe for a real bank export,
+// whose file name embeds an account number that LEADS the basename: handed one
+// of those, this function emitted the country code, the check digits and the
+// first four digits of the account. In a repository whose privacy gate exists
+// because two real merchant descriptors already reached it, a false privacy
+// claim is worse than no claim.
+//
+// SO THE CLAIM IS MADE TRUE. A committed fixture is labelled by its basename,
+// which is invented by construction and reviewable in the tree. ANY OTHER PATH
+// is labelled by its leading eight characters ONLY IF those are eight hex
+// digits, which is the fleet handle and nothing else; otherwise the label is a
+// fixed placeholder that identifies nothing. A caller measuring a real upload
+// still gets a stable label per file when the fleet renamed it, and gets
+// silence when it did not.
+const FLEET_HANDLE = /^[0-9a-f]{8}$/;
+export const UNLABELLED = "unlabelled";
+
 export const measurementLabel = (path: string): string => {
   const name = basename(path);
-  return resolve(path).startsWith(`${FIXTURE_DIRECTORY}/`) ? name : name.slice(0, 8);
+  if (resolve(path).startsWith(`${FIXTURE_DIRECTORY}/`)) {
+    return name;
+  }
+  const leading = name.slice(0, 8);
+  return FLEET_HANDLE.test(leading) ? leading : UNLABELLED;
 };
 
 export type IdentityMeasurement = {

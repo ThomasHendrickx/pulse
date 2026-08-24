@@ -329,7 +329,7 @@ describe("CRITERION 12.18: the rule subject is validated at the write boundary",
 });
 
 describe("the measurement harness is covered by the fast gate (plan step 1)", () => {
-  test("it runs over the committed fixtures and prints counts, and its label can never carry an identifier out of a real document", () => {
+  test("it runs over the committed fixtures and prints counts, and every line is a label or a count", () => {
     const output = execFileSync(
       "npx",
       [
@@ -352,18 +352,44 @@ describe("the measurement harness is covered by the fast gate (plan step 1)", ()
     expect(output).toMatch(/\n {2}baseline-distinct-keys 24\n/);
   });
 
-  test("a path OUTSIDE test/fixtures is labelled by its first eight characters only, which is what keeps a real upload's file name out of any record", async () => {
-    const { measurementLabel } = await import(
+  // CORRECTED AND MADE FALSIFIABLE IN FIX ROUND EIGHT, CRITERIA finding
+  // CR6-M3P12-02. The title of this test used to say the label keeps "a real
+  // upload's file name out of any record", and the only outside path it handed
+  // the guard already carried the fleet's eight-hex handle, so it matched the
+  // SHAPE of a renamed upload and never asked what the leading eight characters
+  // ARE. Handed a bank-shaped basename, where the account number LEADS the
+  // name, the guard emitted eight characters of that account number. The case
+  // below is that basename, wholly invented, and it is the one the old test
+  // could not have contained.
+  test("a path OUTSIDE test/fixtures survives only as a fleet handle, and a bank-shaped name is refused outright", async () => {
+    const { measurementLabel, UNLABELLED } = await import(
       "../fixtures/measure-identity-convergence"
     );
     expect(measurementLabel("test/fixtures/belfius-statement-a.pdf")).toBe(
       "belfius-statement-a.pdf",
     );
-    // A real upload's name embeds an account number and a document
-    // reference; only its eight-character prefix survives.
+    // A fleet-renamed upload: the eight-hex handle identifies the FILE and
+    // nothing in it, and it survives so a measurement can name its source.
     expect(
       measurementLabel("/somewhere/else/abcd1234-a-name-with-identifiers.pdf"),
     ).toBe("abcd1234");
+    // THE CASE THE CLAIM WAS FALSE FOR. An invented bank-shaped basename whose
+    // leading characters are an account number rather than a handle. Before
+    // this round the label was "BE68 5390" without the space, which is a
+    // country code, two check digits and four digits of the account.
+    const bankShaped = "/uploads/BE68539007547034-2026-06-statement.pdf";
+    expect(measurementLabel(bankShaped)).toBe(UNLABELLED);
+    expect(measurementLabel(bankShaped)).not.toContain("BE68");
+    expect(measurementLabel(bankShaped)).not.toContain("5390");
+    // And the rule is on the SHAPE OF THE LEADING EIGHT being hex, not on the
+    // string being bank-shaped, so anything that is not a handle is refused.
+    for (const other of [
+      "/uploads/Statement June 2026.pdf",
+      "/uploads/ABCD1234-upper-case-is-not-the-handle.pdf",
+      "/uploads/abcdefg-too-short.pdf",
+    ]) {
+      expect(measurementLabel(other)).toBe(UNLABELLED);
+    }
   });
 });
 
@@ -405,14 +431,20 @@ describe("the fixture token-overlap check is committed and covered (HZ-M3P12-09)
     // The corpus text is joined into one string, `corpusHaystack`, and that
     // string is only ever an argument to `includes`. Nothing logs it, and no
     // parsed description or counterparty name is logged either. What the
-    // harness DOES print from a corpus path is the eight-character label
-    // fleet warning 9 requires and a row count.
+    // harness DOES print from a corpus path is a label and a row count, and
+    // since fix round eight (CRITERIA finding CR6-M3P12-02) that label is
+    // derived by the SAME guarded function the convergence harness uses, not
+    // by a bare eight-character truncation: a truncation is safe only for a
+    // file already carrying the fleet's hex handle, and a real bank export
+    // leads its name with an account number.
     expect(source).not.toMatch(/console\.log\([^)]*corpusHaystack[^)]*\)/);
     expect(source).not.toMatch(/console\.log\([^)]*row\.description[^)]*\)/);
     expect(source).not.toMatch(/console\.log\([^)]*counterpartyName[^)]*\)/);
     expect(source).toMatch(/NEVER printed/);
-    // And the label really is truncated.
-    expect(source).toMatch(/basename\(path\)\.slice\(0, 8\)/);
+    // And the label really goes through the guard, in every place it is
+    // printed, rather than being truncated here.
+    expect(source).toMatch(/measurementLabel\(path\)/);
+    expect(source).not.toMatch(/basename\(path\)\.slice/);
   });
 });
 

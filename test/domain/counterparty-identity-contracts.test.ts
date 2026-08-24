@@ -164,20 +164,28 @@ describe("CRITERION 12.19: the governing document says what the code does", () =
   // correct and must stay; a REINTRODUCTION phrased the same way would also
   // have passed. So the check is scoped to the merchant-resolution section
   // and refuses the phrase anywhere it is not explicitly historical.
-  test("no sentence of the resolution chain says the key is the normalised counterparty string", () => {
+  // THE QUALIFIER WAS THE DOOR (fix round eight, CRITERIA finding
+  // CR6-M3P12-05). Scoping to the section narrowed the hole; exempting any
+  // line carrying "used to" reopened it, because that is exactly how an R-087
+  // correction is written, so a reintroduction of the form "the key is the
+  // normalised counterparty string, as it used to be" passed. The exemption is
+  // gone. What replaces it is an identity rather than a shape: the phrase must
+  // occur EXACTLY ONCE in the section, and that one occurrence must be the
+  // known historical sentence, pinned by its full text. A reintroduction makes
+  // the count two whatever words it carries, and an edit to the historical
+  // sentence itself makes the pinned text stop matching, which is a change
+  // somebody should have to look at.
+  const HISTORICAL_SENTENCE =
+    'This is the whole point of the chain and it used to be wrong here: the first step said "exact match on normalised counterparty string", and for a transfer row that string is the whole description, communication and per-transaction reference included, so a naming matched the one row it was written from and never the next one.';
+
+  test("the resolution chain carries the forbidden phrase EXACTLY ONCE, in the sentence that negates it", () => {
     const section = skill.slice(skill.indexOf("## 7. Merchant resolution"));
     const body = section.slice(0, section.indexOf("\n## ", 1));
-    const offending = body
-      .split("\n")
-      .filter(
-        (line) =>
-          /normalised counterparty string/i.test(line) &&
-          !/used to|it used to be wrong|no longer/i.test(line),
-      );
-    expect(offending).toEqual([]);
-    // And the section really was read: the historical sentence IS there, so
-    // an empty result cannot come from having sliced the wrong text.
-    expect(body).toMatch(/normalised counterparty string/i);
+    // The section really was read, so nothing below can pass by having sliced
+    // the wrong text.
     expect(body.length).toBeGreaterThan(500);
+    const occurrences = body.match(/normalised counterparty string/gi) ?? [];
+    expect(occurrences).toHaveLength(1);
+    expect(body).toContain(HISTORICAL_SENTENCE);
   });
 });

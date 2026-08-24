@@ -1389,10 +1389,24 @@ describe("CR2-M3P12-03: the write set is applied ALL OR NOTHING", () => {
       ),
       "utf8",
     );
-    expect(adapter).toContain("prisma.$transaction(async (tx)");
+    // SCOPED TO THE FUNCTION, not searched over the file (fix round eight,
+    // CRITERIA finding CR6-M3P12-03). This asserted the transaction against
+    // the WHOLE adapter, and that exact string occurs three times in it, in
+    // three different functions, only one of which is this one. So the pin
+    // held even if applyRuleWrites lost its transaction entirely: it matched
+    // the SHAPE of the file containing the words rather than the IDENTITY of
+    // the function using the construct. The next two lines already knew how to
+    // scope; this was the one of the three left unscoped.
+    const start = adapter.indexOf("export const applyRuleWrites");
+    expect(start).toBeGreaterThan(-1);
+    const nextExport = adapter.indexOf("\nexport const ", start + 1);
+    const block = adapter.slice(
+      start,
+      nextExport === -1 ? adapter.length : nextExport,
+    );
+    expect(block).toContain("prisma.$transaction(async (tx)");
     // Every statement in it still carries the household id: the update's
     // where clause and the insert's data both name it.
-    const block = adapter.slice(adapter.indexOf("export const applyRuleWrites"));
     expect(block).toContain("where: { id: update.ruleId, householdId: context.householdId }");
     expect(block).toContain("householdId: context.householdId,");
   });

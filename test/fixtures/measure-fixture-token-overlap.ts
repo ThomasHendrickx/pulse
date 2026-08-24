@@ -20,6 +20,18 @@
 // parsed in memory through the shipped path and nothing parsed from them is
 // printed or written to disk.
 //
+// EXCEPT THAT IT ALSO PRINTS A LABEL PER CORPUS FILE, and until fix round
+// eight that label was `measurementLabel(path)`, which is the same defect
+// CRITERIA finding CR6-M3P12-02 found in the convergence harness one file
+// over: eight characters is safe only for a file carrying this fleet's
+// eight-hex renaming handle, and a real bank export's file name LEADS with an
+// account number, so those eight characters were eight characters of it. The
+// sentence above says nothing parsed from a corpus is printed, and it was true
+// of the CONTENTS and false of the NAME. Both harnesses now derive the label
+// through one function, measurementLabel, which emits the basename only for a
+// committed fixture, the handle only when the leading eight characters really
+// are hex, and a fixed placeholder otherwise.
+//
 // WHAT "NAME-LIKE" MEANS HERE, which is the thing that was missing:
 //
 //   THE POPULATION is every whitespace-and-punctuation-separated ALPHABETIC
@@ -39,10 +51,11 @@
 // read. This file narrows the reading; it does not do it.
 
 import { readFileSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { statementParser } from "../../src/modules/import/adapters/statement-parser";
 import { IDENTITY_FIXTURE_TRANSACTIONS } from "./generate-pdf-fixtures";
+import { measurementLabel } from "./measure-identity-convergence";
 
 // The bank's own transaction grammar, the card rail's vocabulary and the
 // bank's letterhead: words a fixture MUST carry to parse. Subtracted from
@@ -87,12 +100,12 @@ const corpusText = async (paths: readonly string[]): Promise<string> => {
     const bytes = new Uint8Array(readFileSync(path));
     const detected = await statementParser.detect(bytes);
     if (!detected.ok) {
-      console.log(`corpus ${basename(path).slice(0, 8)}: unparsed (detect)`);
+      console.log(`corpus ${measurementLabel(path)}: unparsed (detect)`);
       continue;
     }
     const parsed = await statementParser.parse(bytes, detected.value);
     if (!parsed.ok) {
-      console.log(`corpus ${basename(path).slice(0, 8)}: unparsed (parse)`);
+      console.log(`corpus ${measurementLabel(path)}: unparsed (parse)`);
       continue;
     }
     for (const row of parsed.value.rows) {
@@ -101,7 +114,7 @@ const corpusText = async (paths: readonly string[]): Promise<string> => {
         chunks.push(row.counterpartyName.toUpperCase());
       }
     }
-    console.log(`corpus ${basename(path).slice(0, 8)}: rows ${parsed.value.rows.length}`);
+    console.log(`corpus ${measurementLabel(path)}: rows ${parsed.value.rows.length}`);
   }
   return chunks.join("\n");
 };

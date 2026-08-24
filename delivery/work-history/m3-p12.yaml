@@ -171,6 +171,8 @@ files-touched:
   - test/domain/counterparty-identity-contracts.test.ts
   - test/property/mutants.mts
   - package.json
+  - test/fixtures/measure-fixture-token-overlap.ts
+  - test/application/counterparty-identity-surfaces.test.ts
 per-step-commits:
   - sha: 502da43
     subject: >-
@@ -935,6 +937,61 @@ key-decisions:
       remembered to run it, and the harness already exits non-zero when a
       mutant is left green, so a checklist item or a CI job can now stand where
       remembering used to.
+  - decision: >-
+      The mutant harness requires the IDENTITY of an assertion, not the shape
+      of a failure, and it checks its own discriminator with a mutant that is
+      MEANT to die.
+    why: >-
+      CRITERIA finding CR6-M3P12-01, and it is the twelfth instance of the same
+      family in this project: the harness decided a catch from vitest exiting
+      non-zero, and a property file that DIES exits non-zero exactly as readily
+      as one whose assertion fired. A compile error, an import failure, a
+      timeout or a throw inside the runner all counted as catches, and the
+      harness exited 0 saying so. The file's own header already stated the
+      principle, that a mutant which crashes proves nothing about the
+      properties, and left it as prose after M1 died of a ReferenceError.
+      THREE OUTCOMES ARE NOW DISTINGUISHED and each is a failure of the harness
+      unless it is the one that entry expects: every property green, the file
+      died with no AssertionError, and an assertion that no named property
+      owns. AND THE DISCRIMINATOR IS ITSELF EXERCISED on every run, by a SELF
+      entry that breaks the module so the file cannot run and declares that it
+      expects to die. Without it the crash-versus-catch code would be a branch
+      nothing takes, which is how this defect arrived.
+  - decision: >-
+      The measurement label refuses to emit anything but a fleet handle or a
+      committed fixture's basename, and both harnesses go through it.
+    why: >-
+      CRITERIA finding CR6-M3P12-02, and this is the one that mattered most,
+      because it is a PRIVACY claim that was false in a repository whose
+      privacy gate exists because two real merchant descriptors already reached
+      it. The comment said the label "can never carry an identifier out of a
+      real document" and the implementation returned the first eight characters
+      of the basename for any path outside test/fixtures. Eight characters is
+      safe only for a file carrying this fleet's eight-hex renaming handle; a
+      real bank export leads its file name with an ACCOUNT NUMBER, so for such
+      a file those eight characters are eight characters of it. The claim is
+      now enforced: a committed fixture is labelled by its basename, any other
+      path is labelled by its leading eight characters ONLY IF they are eight
+      hex digits, and otherwise by a fixed placeholder that identifies nothing.
+      AND THE SAME DEFECT EXISTED ONE FILE OVER, found by checking rather than
+      assumed absent: test/fixtures/measure-fixture-token-overlap.ts printed
+      basename(path).slice(0, 8) at four call sites under a header promising
+      that nothing from a corpus is printed, which was true of the CONTENTS and
+      false of the NAME. Both harnesses now derive the label through the one
+      guarded function.
+  - decision: >-
+      The 12.19 pin asserts an IDENTITY, that the phrase occurs exactly once
+      and that the occurrence is the known historical sentence.
+    why: >-
+      CRITERIA finding CR6-M3P12-05. Scoping to the section narrowed the hole
+      and exempting any line carrying "used to" reopened it, because that is
+      exactly how an R-087 correction is written: a reintroduction of the form
+      "the key is the normalised counterparty string, as it used to be" passed.
+      A count of one plus the full text of the one legitimate occurrence closes
+      it in both directions, since a reintroduction makes the count two
+      whatever words it carries, and an edit to the historical sentence makes
+      the pinned text stop matching, which is a change somebody should have to
+      look at.
 
 verification-first:
   - finding: >-
@@ -1543,6 +1600,63 @@ verification-first:
       uuid AND against the schema file itself, so the correction is pinned
       against the schema rather than against a second belief about it.
     contradicts-plan: false
+  - finding: >-
+      (nn) A CRASHING MUTANT IS NOW SCORED AS UNCAUGHT, witnessed by flipping
+      the SELF entry's own expectation. With the crashing mutant declaring it
+      expects to be CAUGHT, the harness printed "THE MUTANT DIED RATHER THAN
+      BEING CAUGHT: the property file exited non-zero with no AssertionError,
+      so nothing in the properties discriminated anything", counted it and
+      exited 1: "1 mutant(s) were not CAUGHT by an assertion: left green, died,
+      or unattributed." With the expectation as shipped it prints "DIED, as
+      this entry expects ... That is the discriminator working" and exits 0.
+      Before this round the same crash was reported as a catch and the harness
+      exited 0. Source restored on both runs, 33f7f7fee0ddf710 both ways.
+    contradicts-plan: false
+  - finding: >-
+      (oo) THE LABEL EMITS EIGHT CHARACTERS OF AN ACCOUNT NUMBER, red and
+      green, on a WHOLLY INVENTED bank-shaped basename and no real one. RED,
+      with the label restored to its pre-round-eight behaviour: "AssertionError:
+      expected 'BE685390' to be 'unlabelled'", which is a country code, two
+      check digits and four digits of the account. GREEN, with the guard: the
+      label is the placeholder, and three further shapes that are not the fleet
+      handle, an ordinary sentence-cased name, an UPPERCASE hex-looking prefix
+      and a too-short one, are refused as well, so the rule is on the leading
+      eight being hex rather than on the name looking like a bank's.
+    contradicts-plan: false
+  - finding: >-
+      (pp) THE TRANSACTION PIN NOW FAILS WHEN THE FUNCTION LOSES ITS
+      TRANSACTION. The assertion was a substring search over the whole adapter,
+      and that exact string occurs three times in three functions, only one of
+      which is applyRuleWrites. Witnessed: with applyRuleWrites' own
+      transaction broken and the other two left intact, the unscoped assertion
+      PASSED; scoped to the function's own text it fails with "AssertionError:
+      expected 'export const applyRuleWrites = async ...' to contain
+      'prisma.$transaction(async (tx)'".
+    contradicts-plan: false
+  - finding: >-
+      (qq) THE SIXTH MUTANT, and the false claim it replaces. A comment headed
+      "MEASURED, NOT ARGUED" stated that the loss property stays GREEN when the
+      two key spaces are consulted in the wrong order. It goes RED, on the
+      FIRST biconditional, with "AssertionError: expected { row:
+      'descriptorRow', lost: true } to deeply equal { row: 'descriptorRow',
+      lost: false }". THE STATED REASON WAS FALSE TOO: the property's two sides
+      are not both computed in assignmentSet. Since the amended criterion the
+      property derives the before merchant, the after merchant and the
+      claimant's merchant in the test file, so a flip in the routine moves one
+      side and not both. The sentence was written before that rewrite and never
+      re-measured after it, which is the lesson: a comment that boasts about
+      being measured is the one most worth re-measuring. M6 is now the
+      permanent guard, and all six mutants plus the self-check pass.
+    contradicts-plan: false
+  - finding: >-
+      (rr) THE QUALIFIER ESCAPE, closed and witnessed. A reintroduction of the
+      forbidden phrase carrying the words "used to" passed the 12.19 pin,
+      because the exemption was written for exactly the shape an R-087
+      correction takes. With the escape used as the review described it, the
+      new pin fails with "AssertionError: expected [ ...(2) ] to have a length
+      of 1 but got 2". The document was restored from a saved copy and git
+      status confirmed clean.
+    contradicts-plan: false
 
 deviations:
   - plan-clause: >-
@@ -2118,6 +2232,22 @@ gate-evidence:
       restored the source with matching checksums. Every one exited 0. The test
       count is unchanged at 648 on purpose: this round adds a generator
       DIMENSION and a mutant, not a shape or a count.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 648
+    passed: 648
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: >-
+      FIX ROUND EIGHT, all five fast gates plus the mutant harness. npm run
+      typecheck (tsc --noEmit, no output), npm run lint (eslint ., no output),
+      npm test (vitest run, 42 test files, 648 tests), npm run gate:privacy
+      (printed "gate:privacy clean"), npm run gate:tokens (no output), and npm
+      run test:mutants, which now carries SIX wrong predicates and a self-check
+      that is meant to die, and scored all seven as their entries expect while
+      restoring the source with matching checksums. Every one exited 0.
     result: green
     wrapper-exit-code: 0
     discovered: 648
