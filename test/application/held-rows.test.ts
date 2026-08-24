@@ -9,6 +9,12 @@ import {
 import { confirmImport } from "../../src/modules/import/application/confirm-import";
 import { uploadStatement } from "../../src/modules/import/application/upload-statement";
 import { registerAccount } from "../../src/modules/accounts/application/register-account";
+import { cents } from "../../src/platform/money";
+import {
+  deriveMonthFigures,
+  type MonthFigures,
+  type RawMonthFigures,
+} from "../../src/modules/overview/domain/month-projection";
 import { makeFakeImportWorld, type FakeImportWorld } from "./fake-import-world";
 
 // CRITERION 14.16: the held row changes nothing, and the declaration changes
@@ -65,17 +71,35 @@ const importFile = async (
   }
 };
 
-// THE SEVEN FIGURES ALL FOUR ARMS ASSERT. Every arm asserts the same seven
-// and they differ only in which two are allowed to move.
-type Figures = {
-  incomeCents: number;
-  spendCents: number;
-  netToReservesCents: number;
-  changeInPotCents: number;
-  differenceCents: number;
-  uninterpretedCount: number;
-  rowCount: number;
-  reconciles: boolean;
+// THE SEVEN FIGURES ALL FOUR ARMS ASSERT, DERIVED BY THE SHIPPED CODE.
+//
+// CORRECTED AFTER A CLEAN-ROOM REVIEW (CRIT-P14-04). This used to be a local
+// function that walked the fake world's rows and RE-DERIVED income, spend,
+// netToReserves, changeInPot, the difference, the counts and the verdict in
+// TypeScript, spelling out the very ring predicates the arms are meant to be
+// testing. Two things were wrong with that and both are worth stating.
+//
+// FIRST, a test that re-implements its own subject certifies the test. If
+// the shipped held read lost its inverse ring predicate, or the month
+// aggregate lost its POT_ROW, every arm stayed green.
+//
+// SECOND, the re-implementation had ALREADY DIVERGED: it computed the
+// verdict as difference and uninterpreted and unmatched all zero, while the
+// shipped verdict at month-projection.ts also requires unresolvedCount and
+// inTransitCount to be zero. The two agreed on these fixtures by luck of the
+// fixtures rather than by construction, which is precisely the drift a
+// re-implementation invites.
+//
+// WHAT IT DOES NOW. It builds the RawMonthFigures the SQL would return, and
+// hands them to the SHIPPED deriveMonthFigures, so the identity, the verdict
+// and every display magnitude come from src/modules/overview/domain. The
+// aggregation over rows is still local, because the fast gate has no
+// database and the fake world is where these fixtures live; THE SQL ITSELF
+// is executed against a real database in test/e2e/overview-reads.spec.ts,
+// which is where the ring predicates are guarded. This file's job is the
+// four arms' ARITHMETIC across a declaration change, and it now shares the
+// shipped derivation for every figure it reports.
+type Figures = MonthFigures & {
   heldEntries: { label: string; rowCount: number }[];
 };
 
@@ -84,13 +108,16 @@ const figuresOf = (world: FakeImportWorld): Figures => {
     world.accounts.filter((a) => a.role === "POT").map((a) => a.id),
   );
   const byId = new Map(world.accounts.map((a) => [a.id, a]));
-  let income = 0;
-  let spend = 0;
-  let reserve = 0;
+  let incomeSigned = 0;
+  let spendSigned = 0;
+  let reserveSigned = 0;
   let changeInPot = 0;
   let rowCount = 0;
   let uninterpreted = 0;
-  let internalUnmatched = 0;
+  let unresolvedSigned = 0;
+  let unresolvedCount = 0;
+  let unmatchedSigned = 0;
+  let unmatchedCount = 0;
   const held = new Map<string, number>();
   for (const row of world.transactions) {
     if (!potIds.has(row.accountId)) {
@@ -101,17 +128,19 @@ const figuresOf = (world: FakeImportWorld): Figures => {
       }
       continue;
     }
-    // Every figure below carries the ring predicate AND its own flow
-    // condition, exactly as the scoped SQL reads do.
     if (row.flow === undefined) {
       uninterpreted += 1;
       continue;
     }
     rowCount += 1;
     changeInPot += row.amountCents;
-    if (row.flow === "INCOME") income += row.amountCents;
-    if (row.flow === "SPEND") spend += row.amountCents;
-    if (row.flow === "RESERVE") reserve += row.amountCents;
+    if (row.flow === "INCOME") incomeSigned += row.amountCents;
+    if (row.flow === "SPEND") spendSigned += row.amountCents;
+    if (row.flow === "RESERVE") reserveSigned += row.amountCents;
+    if (row.flow === "UNRESOLVED") {
+      unresolvedSigned += row.amountCents;
+      unresolvedCount += 1;
+    }
     if (row.flow === "INTERNAL") {
       const linked = world.links.some(
         (link) =>
@@ -120,25 +149,29 @@ const figuresOf = (world: FakeImportWorld): Figures => {
           link.incomingTransactionId === row.id,
       );
       if (!linked) {
-        internalUnmatched += 1;
+        unmatchedSigned += row.amountCents;
+        unmatchedCount += 1;
       }
     }
   }
-  const incomeCents = income;
-  const spendCents = 0 - spend;
-  const netToReservesCents = 0 - reserve;
-  const differenceCents =
-    changeInPot - (incomeCents - spendCents - netToReservesCents);
-  return {
-    incomeCents,
-    spendCents,
-    netToReservesCents,
-    changeInPotCents: changeInPot,
-    differenceCents,
+  // THE SHIPPED DERIVATION. Every figure below, including the verdict, comes
+  // from src/modules/overview/domain/month-projection.ts.
+  const raw: RawMonthFigures = {
+    incomeSignedCents: cents(incomeSigned),
+    spendSignedCents: cents(spendSigned),
+    reserveSignedCents: cents(reserveSigned),
+    changeInPotCents: cents(changeInPot),
+    unresolvedCents: cents(unresolvedSigned),
+    unresolvedCount,
+    unmatchedInternalCents: cents(unmatchedSigned),
+    unmatchedInternalCount: unmatchedCount,
+    inTransitCents: cents(0),
+    inTransitCount: 0,
     uninterpretedCount: uninterpreted,
     rowCount,
-    reconciles:
-      differenceCents === 0 && uninterpreted === 0 && internalUnmatched === 0,
+  };
+  return {
+    ...deriveMonthFigures(raw),
     heldEntries: [...held.entries()].map(([label, count]) => ({
       label,
       rowCount: count,

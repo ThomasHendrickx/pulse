@@ -109,9 +109,24 @@ const uploadFile = async (
   await page.goto("/import");
   await page.getByLabel("Bank export file").setInputFiles(join(FIXTURES, file));
   await page.getByRole("button", { name: "Upload" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Confirm the detected format" }),
-  ).toBeVisible();
+  // AN ALREADY-REGISTERED ACCOUNT IS ADOPTED AND INGESTS IMMEDIATELY, with no
+  // confirm step and no question, which is criterion 14.3's whole mechanism
+  // working. The helper used to require the confirm heading unconditionally
+  // and failed the first test that registered an account before uploading its
+  // statement, which is exactly the order criterion 14.16 arm ONE is about.
+  const confirmHeading = page.getByRole("heading", {
+    name: "Confirm the detected format",
+  });
+  const result = page.getByTestId("import-result");
+  await expect(confirmHeading.or(result).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  if ((await result.count()) > 0) {
+    if (expectedAdded !== "") {
+      await expect(page.getByTestId("rows-added")).toHaveText(expectedAdded);
+    }
+    return;
+  }
   await page.getByLabel("Format name").fill(`Demobank ${label}`);
   const declaration = page.getByTestId("account-declaration");
   if (await declaration.isVisible()) {
@@ -662,4 +677,153 @@ test("both states are rendered as words in each of the three languages, and the 
     ).toHaveCount(0);
     await expect(page.getByTestId("recon-cause-uninterpreted")).toHaveCount(0);
   }
+});
+
+// ---------------------------------------------------------------------
+// CRITERION 14.16, THE PLAYWRIGHT HALF OF ALL FOUR ARMS. "ALL FOUR ARMS
+// carry a Playwright half asserting the same totals and the same verdict on
+// the rendered page, so the guarantee is one the reader gets and not only one
+// the repository holds."
+//
+// The application half lives in test/application/held-rows.test.ts and
+// carries the arithmetic; these are the same four fixtures and the same
+// movements, read off the month view. Every string below is written by hand
+// from the fixture's own arithmetic, in the header comment of the
+// application half, and is never read back from the implementation.
+// ---------------------------------------------------------------------
+
+const monthFiguresOnPage = async (
+  page: Page,
+): Promise<Record<string, string>> => {
+  await page.goto("/?month=2026-08");
+  const read = async (testId: string): Promise<string> =>
+    (await page.getByTestId(testId).count()) === 0
+      ? "(absent)"
+      : (await page.getByTestId(testId).innerText()).trim();
+  return {
+    income: await read("income-total"),
+    spend: await read("spend-total"),
+    reserves: await read("reserves-net"),
+    potChange: await read("pot-change"),
+    difference: await read("recon-difference"),
+    uninterpreted: (await page.getByTestId("recon-cause-uninterpreted").count())
+      .toString(),
+    verdict: await read("recon-verdict"),
+    rows: await read("month-meta"),
+  };
+};
+
+test("14.16 arm ONE on the rendered page: the reserve account is REGISTERED first, so the held statement moves nothing", async ({
+  page,
+}) => {
+  await signUp(page, "arm-one");
+  await register(page, {
+    number: "BE24902200001138",
+    ring: "RESERVE",
+    label: "Buffer",
+  });
+  await uploadFile(page, "ar-pot-outgoing.csv", "Current account", "POT", "3");
+  const before = await monthFiguresOnPage(page);
+  // The declaration set is identical before and after the act being measured,
+  // which is what makes this arm about the HELD ROWS.
+  await uploadFile(page, "ar-reserve-own.csv", "Buffer", null, "2");
+  const after = await monthFiguresOnPage(page);
+
+  // EVERY FIGURE THE READER SEES IS BYTE IDENTICAL.
+  expect(after).toEqual(before);
+  // Hand-written from the fixture: 2.000,00 salary, 40,00 outside spend,
+  // 300,00 to a registered savings account.
+  expect(before.income).toBe("2.000,00");
+  expect(before.spend).toBe("40,00");
+  expect(before.reserves).toBe("+300,00");
+  expect(before.difference).toBe("(absent)");
+  // And the month-accounts element has gained a HELD entry for that account.
+  const held = page.getByTestId("month-account").filter({ hasText: "Buffer" });
+  await expect(held).toHaveCount(1);
+  await expect(held).toHaveAttribute("data-state", "held");
+  await expect(held).toContainText("2 rows");
+});
+
+test("14.16 arm TWO on the rendered page: the reserve import DECLARES the account, and spend falls while reserves rise by the same string", async ({
+  page,
+}) => {
+  await signUp(page, "arm-two");
+  // Nothing registered: the order every household is actually in.
+  await uploadFile(page, "ar-pot-outgoing.csv", "Current account", "POT", "3");
+  const before = await monthFiguresOnPage(page);
+  // Before the declaration the transfer misses both declared-set arms and
+  // falls to the sign rule: 40,00 + 300,00.
+  expect(before.spend).toBe("340,00");
+  expect(before.reserves).toBe("0,00");
+
+  await uploadFile(page, "ar-reserve-own.csv", "Buffer", "RESERVE", "2");
+  const after = await monthFiguresOnPage(page);
+
+  // THE MOVEMENT, ON THE PAGE, against hand-written strings.
+  expect(after.spend).toBe("40,00");
+  expect(after.reserves).toBe("+300,00");
+  // And the five that must not move.
+  expect(after.income).toBe(before.income);
+  expect(after.potChange).toBe(before.potChange);
+  expect(after.difference).toBe(before.difference);
+  expect(after.uninterpreted).toBe(before.uninterpreted);
+  expect(after.rows).toBe(before.rows);
+  expect(after.verdict).toBe(before.verdict);
+});
+
+test("14.16 arm THREE on the rendered page: the drawdown, where income and reserves BOTH fall", async ({
+  page,
+}) => {
+  await signUp(page, "arm-three");
+  await uploadFile(
+    page,
+    "ar-pot-drawdown-only.csv",
+    "Current account",
+    "POT",
+    "3",
+  );
+  const before = await monthFiguresOnPage(page);
+  // No prior outgoing to that counterparty, so the refund correction does not
+  // fire and the drawdown is INCOME: 2.000,00 + 120,00.
+  expect(before.income).toBe("2.120,00");
+  expect(before.reserves).toBe("0,00");
+
+  await uploadFile(page, "ar-reserve-own.csv", "Buffer", "RESERVE", "2");
+  const after = await monthFiguresOnPage(page);
+
+  expect(after.income).toBe("2.000,00");
+  expect(after.reserves).toBe("-120,00");
+  expect(after.spend).toBe(before.spend);
+  expect(after.potChange).toBe(before.potChange);
+  expect(after.difference).toBe(before.difference);
+  expect(after.rows).toBe(before.rows);
+  expect(after.verdict).toBe(before.verdict);
+});
+
+test("14.16 arm FOUR on the rendered page: paid into AND drawn from, so the movement is the NET", async ({
+  page,
+}) => {
+  await signUp(page, "arm-four");
+  await uploadFile(page, "ar-pot-both-ways.csv", "Current account", "POT", "4");
+  const before = await monthFiguresOnPage(page);
+  // The refund correction fires on the drawdown, so it is SPEND with a
+  // positive amount: 40,00 + 300,00 - 120,00.
+  expect(before.spend).toBe("220,00");
+  expect(before.reserves).toBe("0,00");
+
+  await uploadFile(page, "ar-reserve-own.csv", "Buffer", "RESERVE", "2");
+  const after = await monthFiguresOnPage(page);
+
+  // THE NET of the outgoing transfers and the drawdown, 300,00 - 120,00, and
+  // NOT the outgoing alone.
+  expect(before.spend).toBe("220,00");
+  expect(after.spend).toBe("40,00");
+  expect(after.reserves).toBe("+180,00");
+  expect(after.income).toBe(before.income);
+  expect(after.potChange).toBe(before.potChange);
+  expect(after.difference).toBe(before.difference);
+  expect(after.rows).toBe(before.rows);
+  expect(after.verdict).toBe(before.verdict);
+  const held = page.getByTestId("month-account").filter({ hasText: "Buffer" });
+  await expect(held).toHaveAttribute("data-state", "held");
 });
