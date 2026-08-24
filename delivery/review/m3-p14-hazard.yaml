@@ -147,3 +147,73 @@ no-findings-statement: "placeholder, draft in progress"
 #     guard on the new src/app surface) -> "gate:diff-tokens clean (src/app
 #     and src/modules/*/ui, added lines only)", EXIT=0
 # npm run test:e2e is logged separately below (heavier, run in isolation).
+#
+# ATTACK 3/4 (three null-flow reads; held vs uninterpreted). Grep for every
+# occurrence of an absent-flow test in a database query under src/
+# (`flow"\s+is\s+null` case-insensitive for raw SQL, `flow\s*:\s*null` in
+# adapters/ for the Prisma client form) finds occurrences in EXACTLY the
+# three reads the plan names: the uninterpreted count inline in
+# monthFigures, listGapRows, and accountRowCounts (serving both
+# listCountedAccountRows and listHeldAccountRows via a ring parameter). No
+# fourth read exists in the shipped tree. Traced the two TypeScript-only
+# absent-flow tests the criterion deliberately excludes
+# (interpret-window.ts's isCounted check and reconciliation.ts's flow ===
+# undefined skip) and confirmed neither is a database query. Role is a
+# required two-value enum (POT/RESERVE, prisma/schema/accounts.prisma:5-8)
+# with no third state and no nullable column, so POT_ROW/NON_POT_ROW
+# genuinely partition every account including cards (a card account is
+# role=POT with iban=null, confirmed at
+# src/modules/ledger/domain/ledger-transaction.ts:83-89) -- "an account
+# with no resolvable ring" is not a reachable state.
+#
+# ITEM 4, held vs a genuine gap on a reserve account: probed and NOT
+# reached. Held is "no flow, on a non-pot account" by construction, and
+# interpretation never attempts to classify a non-pot account's rows at
+# all (interpret-window.ts's `heldRows` path unconditionally nulls them;
+# `interpretLedger` is only ever given pot+card transactions). Since no
+# mechanism in the shipped tree can leave a reserve-account row with a
+# flow OR with a flow-classification attempt that failed, there is no
+# state left for "held" to be confused with; the ring-derived rule cannot
+# hide a gap that the interpreter never tries to detect in the first
+# place. This is a hard invariant of the design (every null-flow row on a
+# non-pot account is, by construction, exactly the held state) rather than
+# a soft rule a code path could violate. Recorded as a probed hazard, not
+# a defect.
+#
+# ATTACK 6, closing the loop: `replaceInterpretation`
+# (src/modules/ledger/adapters/ledger-repository.ts:158-198) writes flows,
+# merchants and links inside ONE `prisma.$transaction`, so a mid-write
+# failure cannot leave a row half-cleared and mistakenly readable as
+# either "held" or "uninterpreted" by accident of a partial commit.
+#
+# ============================================================
+# THE THIRD GUARD (dispatch: "the implementer flagged two guards it wrote
+# were green against the states they exist to catch ... find the third").
+# ============================================================
+# MUTATION-VERIFIED, HIGH severity, filed as HZ-M3P14-03 below.
+# test/domain/account-number.test.ts's "one definition, enumerated"
+# test (criterion 14.4) is the guard against a second private copy of the
+# account-number canonicalisation reappearing anywhere under src/. Its
+# duplicate-detector (account-number.test.ts:162-189) matches a SECOND
+# COPY only when it is written as `.replace(...)` on a line that also
+# mentions an account-bearing field name or `.toUpperCase()`. Added, ran,
+# and reverted a scratch function in src/modules/ledger/domain/
+# corrections.ts (never committed):
+#   export const scratchProbeSecondCopy = (iban: string): string =>
+#     iban.replaceAll(/\s/g, "").replaceAll(/-/g, "").toUpperCase();
+# `npx vitest run test/domain/account-number.test.ts` -> 15 passed (15),
+# EXIT=0, WITH THE DUPLICATE PRESENT. The regex requires the literal
+# substring ".replace(" immediately followed by "("; ".replaceAll(" fails
+# that literal match (the seventh character after "replace" is "A", not
+# "("), so a second copy of exactly the transformation this phase's own
+# commit message says it eliminated ("Two private second copies of the
+# same transformation are removed rather than tolerated") can be
+# reintroduced, verbatim in spirit, and the phase's own criterion-14.4
+# guard reports the tree clean. Reverted with `git checkout --
+# src/modules/ledger/domain/corrections.ts`; tree confirmed clean again.
+# THIS IS THE SAME SHAPE AS THE TWO DISCLOSED BUGS (a pattern built for one
+# syntactic rendering of a JS/TS idiom, silently blind to a sibling
+# rendering): the gate-diff-tokens space bug and grep-dialect-mixing bug
+# were both about a literal-vs-semantic mismatch in a hand-rolled pattern,
+# and this is the same failure mode a third time, in a guard the work
+# history's overstatement-check and red-witnesses section does not name.
