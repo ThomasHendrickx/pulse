@@ -816,7 +816,7 @@ ending 5 overlap frames: 11, on all three shapes
 ## t3 criterion 9.3(a), the refusal, now measured rather than asserted
 
 The activation is a real hit-tested `page.mouse.click` at the control's
-viewport centre, never `element.dispatchEvent`, and it is observed at the
+viewport centre, and not `element.dispatchEvent`, and it is observed at the
 capture-phase refusal with the CLICK'S TARGET as the observable. With
 `aria-disabled="true"` present the captured target is an ANCESTOR of the
 control; with the marking removed, the SAME click at the SAME coordinates
@@ -853,7 +853,8 @@ at both motion settings.
 CRITERION 9.9(a) SAYS THE SPEC REGISTERS NO page.evaluate LISTENER FOR
 `pointerdown`, `touchstart` OR `mousedown`; CRITERIA 9.9(c) AND 9.9(e)
 REQUIRE THE SPEC TO PROVE THOSE VERY EVENTS WERE DELIVERED before concluding
-anything from a zero or from an absence. Both cannot be obeyed. The spec
+anything from a zero or from an absence. I found no way to obey both, and no
+way to witness a DOM event without registering a listener for it. The spec
 installs a PASSIVE recorder on `document` in the capture phase whose handlers
 do exactly one thing: push a string into an array. It writes no attribute.
 The property the prohibition protects is the one criterion 9.9(a) greps for,
@@ -899,3 +900,99 @@ base, counted with the anchor inside the quoting the way criterion 9.7(c)
 writes it. Nothing under `src/modules/`, `src/platform/`, `src/app/(app)/`,
 `messages/`, `prisma/` or `test/fixtures/`. The diff of the root layout adds
 no import, no hook, no prop, no next-intl key and no string a reader sees.
+
+## t7 the gates, and ONE RED THAT IS THIS PHASE'S AND NOT THE MACHINE'S
+
+| Gate | Exit | Summary |
+|---|---|---|
+| `npm run typecheck` | 0 | `> tsc --noEmit`, no output |
+| `npm run lint` | 0 | `> eslint .`, no output |
+| `npm test` | 0 | `Test Files 32 passed (32)`, `Tests 431 passed (431)`, 0 skipped |
+| `npm run gate:privacy` | 0 | `gate:privacy clean` |
+| `npm run gate:tokens` | 0 | no output |
+| `npm run test:e2e` | 1 | `3 failed`, `1 skipped`, `59 passed (17.8m)` |
+
+The suite is 62 tests now. The 1 skipped is the touch-path test skipping
+itself under the `chromium` project, where `hasTouch` is not set; it runs and
+passes under `chromium-phone`. Load average was 2.46 to 6.5 during the run
+and 3.7G was free, so this run is NOT the contention shape fleet warning 18
+describes.
+
+THREE RED, AND THEY ARE NOT THE SAME KIND OF RED.
+
+1 and 2. `test/e2e/month-view.spec.ts:1034`, under BOTH projects, identically.
+**THIS ONE IS MINE.** It is not flake and it is not the machine:
+
+```
+Error: expect(received).toEqual(expected) // deep equality
+    - Array []
+    + Array [
+    +   "press-feedback",
+    + ]
+  1055 |     phone.filter((entry) => entry.width <= 0 || entry.height <= 0).map((e) => e.testId),
+```
+
+3. `test/e2e/navigation.spec.ts:195` under `chromium-phone`, failing at
+`signUp` with `getByTestId('household-context')` not found, which is the
+sign-up-failed shape this container has produced all round and which the
+coordinator's own notice attributes to the shared stack.
+
+### the conflict, isolated to one attribute, measured both ways
+
+`collectTestids` at `test/e2e/month-view.spec.ts:650` runs
+`document.querySelectorAll("[data-testid]")` over the WHOLE document and
+`month-view.spec.ts:1055` asserts that every element it returns has a
+non-zero box. A `<script>` element is `display: none` in the UA stylesheet,
+so `getBoundingClientRect()` returns 0 by 0.
+
+The plan requires that script to carry `data-testid="press-feedback"`, in
+three separate places: step 5 (`carrying data-testid="press-feedback" so
+criterion 9.9 can find it in the served document`), criterion 9.9(a) (the raw
+response body `carries a script element with data-testid="press-feedback"`),
+and criterion 9.7(c) (`one script element carrying
+data-testid="press-feedback"`). Criterion 9.7 ALSO requires every pre-existing
+spec to pass, and pins this phase to exactly ONE new file under `test/e2e/`,
+so criterion 9.7 forbids editing the spec that fails inside this phase.
+
+RED AND GREEN, one attribute apart, same test, same server, same head:
+
+```
+$ npx playwright test --project=chromium -g "the dense month says exactly the same things"
+  (with data-testid="press-feedback" on the script)
+  + Array [ +   "press-feedback", ]
+  1 failed        D_EXIT=1
+
+  (with that ONE attribute removed and nothing else changed)
+  1 passed (20.4s)  D_EXIT=0
+
+$ git status --porcelain src/app/layout.tsx
+  (empty: the attribute is restored, the branch keeps what the plan requires)
+```
+
+### what I did about it, and what I did not
+
+I did NOT drop the attribute. Dropping it would falsify criterion 9.9(a) and
+criterion 9.7(c) on my own initiative, and it is the plan's chosen handle for
+finding the listener in the served document. I did NOT edit
+`test/e2e/month-view.spec.ts`, because printing a second file under
+`test/e2e/` falsifies criterion 9.7's one-new-file clause. Clause R-034 says
+stop that thread and escalate rather than improvise a different fix, so the
+branch carries what the plan asked for and this entry carries the conflict.
+
+TWO WAYS OUT, for whoever holds the plan, with what each costs.
+
+- **A, and it is the smaller one.** Mark the script with an attribute no
+  pre-existing spec scans, `data-press-feedback` or an `id`, and change the
+  name in the three places above. The purpose of the marker, that criterion
+  9.9(a) can find the script in the raw response body, is untouched: the
+  spec's regex reads the served HTML, so any stable attribute serves. No test
+  file changes and criterion 9.7 stays exactly as written.
+- **B.** Permit this phase, or the next one, to print
+  `test/e2e/month-view.spec.ts` and scope `collectTestids` to `main` rather
+  than `document`, which is what criterion 7.6's own sentence is about
+  ("every element inside main"). One word in that spec, but it prints a
+  second file under `test/e2e/` and criterion 9.7 forbids that today.
+
+I recommend A. It is one word in the plan, it changes no test, and it leaves
+criterion 7.6's census meaning what it says: every element the reader can see
+has a box.
