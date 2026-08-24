@@ -1,0 +1,292 @@
+# Clean-room review, HAZARD contract, phase M3-P12 (counterparty identity by
+# account-or-descriptor namespace, DR-0027, severity critical).
+#
+# ROUND 7 CONFIRMATION VERDICT. Head reviewed: a679405 on
+# claude/m3-p12-rev7-haz (origin/claude/m3-p12-counterparty-identity),
+# worktree /home/user/wt-m3p12-h7. This lane found every serious defect in
+# this phase across rounds one through five and called the churn
+# substantially over at round six, with one gap left (a same-kind conjunct
+# the generator could never exercise), which a sibling lane closed and this
+# lane's own reading here confirms is closed (test/property/mutants.mts
+# entry M5, generator kind dimension in test/fixtures/generate-pdf-fixtures.ts
+# per commit f57a048). Per the dispatch instruction for this round, this
+# document does NOT re-walk the whole phase; it attacks the five specific
+# changes named for this round and reports what was probed and not found
+# alongside what was found.
+#
+# HEADER DISCLOSURES.
+# Review contract: hazard. Start from the hazard classes (what could pass
+# this round's changes and still leak a real identifier, or still let a
+# broken self-check pass, or still reach a foreign database), not from a
+# checklist of the acceptance criteria.
+# Produced by: Claude (model claude-sonnet-5), a different model identity
+# from the sibling criteria lane at /home/user/wt-m3p12-c7, per the dispatch.
+# That sibling document was not opened before this one was written.
+#
+# GATES RUN IN THIS WORKTREE (node v26.7.0, npm install run first: the tree
+# had no node_modules):
+#   npm run typecheck   -> EXIT=0
+#   npm run lint         -> EXIT=0
+#   npm test              -> 42 files, 648 tests passed (648), EXIT=0
+#   npm run gate:privacy -> "gate:privacy clean", EXIT=0
+#   npm run gate:tokens  -> no match (negated grep), EXIT=0
+#   npm run test:mutants -> all 7 entries (M1-M6, SELF) scored exactly as
+#     their `expect` field states, restored checksum equals original
+#     checksum (5970de574e530bc7), EXIT=0. Transcript quoted in finding
+#     CR7-M3P12-01's evidence.
+# test:e2e was NOT run in this lane, per the dispatch's instruction that at
+# most one of the two sibling lanes runs it this round and disk is at 79
+# percent; the slow gate is recorded at a679405 as having run clean (55
+# passed, exit 0) with its target proven before the run, which this review
+# read from the code path (playwright.config.ts, src/platform/db/gate-target.ts)
+# rather than trusting the log alone, see CR7-M3P12-02.
+#
+# SAFETY. This review opened no database of its own: every check below is
+# static reading of the committed tree, a witness script run and deleted
+# (git status verified clean before and after), or the gates listed above,
+# which is why `npm run test:e2e` was skipped rather than pinned. The
+# container's ambient environment was never read for a value and never
+# printed.
+#
+# ============================================================
+# ATTACK 1: THE SELF-CHECK IS A DISCRIMINATOR GUARDING A DISCRIMINATOR
+# ============================================================
+# test/property/mutants.mts scores four outcomes (green, dies, unattributed,
+# caught) from two facts: whether `npx vitest run` on the property file
+# exited non-zero, and whether its captured stdout+stderr contains an
+# "AssertionError:" line. A crash with no assertion scores "dies"; an
+# assertion that fires but cannot be attributed to either named property
+# scores "unattributed"; only a FAIL line naming one of the two properties
+# plus a firing assertion scores "caught".
+# THE SELF ENTRY breaks rederive-rules.ts with `thisIdentifierDoesNotExist();`
+# inserted into assignmentSet, expects "dies", and this lane's own run of
+# `npm run test:mutants` (transcript above) shows it scored exactly "dies":
+# "DIED, as this entry expects: the property file exited non-zero with NO
+# AssertionError, and the harness scored that as died rather than as caught."
+# I checked directly whether the self-check could pass while what it guards
+# is broken, by reasoning about a full revert of the discriminator (scoring
+# any non-zero exit as "caught", the pre-round-eight behaviour the header
+# comment describes): under that revert SELF would score "caught" against an
+# expectation of "dies" and the harness would fail loudly, so a full
+# regression is caught. I looked for a narrower regression that would still
+# pass SELF while breaking a case SELF does not itself exercise (for example
+# a crash report whose text spuriously contains "AssertionError:") and did
+# not find one: the six real mutants (M1-M5, M6) each print their own
+# firing assertion's message in this run's transcript, none of which
+# resembles a self-check crash report, and the outcome computation has no
+# branch SELF's construction leaves unreached except the "unattributed"
+# branch and the "green" branch, both of which are exercised only by the six
+# real mutants, not by SELF. THAT IS A REAL GAP: SELF exercises exactly one
+# of the four named outcomes (dies) and exercises it correctly, but nothing
+# in this file is a self-check for the "unattributed" branch of the same
+# discriminator, so a regression that mis-scores an attributable assertion
+# as unattributed, or vice versa, has no dedicated guard the way crash-vs-
+# catch now has one. I looked for this and did not find an instance of it in
+# the current code (the six real mutants all land correctly attributed in
+# this run), so I record it as a residual gap rather than a live defect: see
+# finding CR7-M3P12-03 (low).
+# IS THERE A FIFTH OUTCOME THE FOUR DO NOT NAME? One code path is genuinely a
+# fifth shape: the anchor-staleness throw (`mutant.id: its anchor no longer
+# matches the source exactly once`) is not scored as any of the four
+# outcomes at all. It propagates out of the try block, past the switch,
+# through the `finally` (which still restores the file and prints the
+# checksum line), and crashes the Node process with an uncaught exception,
+# which exits non-zero. I traced this rather than asserting it: the throw
+# statement at the anchor check runs before `writeFileSync(target, mutated)`
+# for that mutant, so the file is never mutated for a stale anchor, and the
+# `finally` block's restore is a no-op restoring the file to itself. This is
+# not a circular-pass hazard, because an uncaught exception is a loud
+# process-level failure (exit code 1, a stack trace on stderr), not a
+# silent green; I probed it and record it as a genuine fifth CODE PATH that
+# is nonetheless not a hidden pass, so no finding is raised for it.
+#
+# ============================================================
+# ATTACK 2: THE INTERLOCK'S UNAIDED RUN
+# ============================================================
+# Traced from the code, not the log. `npm run test:e2e` is literally
+# `playwright test` (package.json), with no pretest script and no
+# globalSetup entry in playwright.config.ts or playwright.deploy.config.ts
+# (grepped for `globalSetup` and `pretest:e2e`, zero hits). Playwright's
+# first action on that command is to load and evaluate playwright.config.ts.
+# That file's module body is, in order: two imports (`@playwright/test`,
+# `./src/platform/db/gate-target`, neither of which does any I/O at import
+# time: gate-target.ts's own imports, ./connection-string, ./guard,
+# ./resolve-env, are all pure-function modules, read and confirmed by
+# grepping for a top-level `fetch(`, `PrismaClient`, `readFileSync` etc. at
+# module scope in the three and finding none outside function bodies); a
+# read of PLAYWRIGHT_BASE_URL; then, as literally the next executable
+# statement, `const gateDb = externalBaseUrl === undefined ?
+# enforceGateDbTarget() : undefined;`. enforceGateDbTarget throws
+# GateDbTargetRefused on any candidate that is not a local host (checked via
+# assessGateDbTarget / localVerdict / LOCAL_DB_HOSTS) and otherwise ASSIGNS
+# the five pinned names into process.env in place, deleting any name the
+# winning source did not carry. Only after this line does the config build
+# `prodEnv` (an Object.fromEntries over process.env, so it necessarily
+# reflects the post-assignment state) and the `webServer[]` array, whose two
+# entries spread `...prodEnv`/`...process.env` THEN `...gateDb` last, so the
+# pinned values win the object-spread merge regardless of what the shell
+# carried. I confirmed the winning value cannot be shadowed later: the
+# `env:` objects passed to Playwright's webServer are the only thing that
+# reaches the spawned `npm run dev` / `npm run build && next start`
+# processes, and both objects are fully built inside this same module
+# evaluation, after the assignment. I looked for a reader that runs before
+# this line and did not find one: there is no globalSetup, no pretest hook,
+# and gate-target.ts's own dependencies are pure functions with no top-level
+# side effect. PROBED, NOT FOUND: nothing in the Playwright startup path can
+# reach a foreign target before gate-target.ts resolves and assigns, for the
+# ordinary `npm run test:e2e` entry point. (db:reset / db:migrate use a
+# DIFFERENT, pre-existing guard, src/platform/db/guard-cli.ts, over the
+# ambient DATABASE_URL directly; that guard is unchanged this round and is
+# out of this round's attack surface.)
+#
+# ============================================================
+# ATTACK 3 / ATTACK 5: measurementLabel STILL MATCHES SHAPE, NOT IDENTITY
+#   -- HIGH FINDING CR7-M3P12-01, and the sixteenth instance
+# ============================================================
+# See finding CR7-M3P12-01 below. Witnessed live against the shipped
+# function.
+#
+# ============================================================
+# ATTACK 4: DOES THE IDENTITY STILL MERGE WHAT DIFFERS OR SPLIT WHAT IS THE
+# SAME, AND IS THERE A SEVENTH CONSUMER, THIS ROUND
+# ============================================================
+# This round's only src/ change (3051f08..a679405) is
+# src/modules/merchants/application/rederive-rules.ts, and it is comments
+# plus the ClaimantMerchantReport type and recordPromotion helper carried
+# from round six, not a new query or a new consumer. I re-read
+# applyRuleWrites in src/modules/merchants/adapters/merchant-repository.ts
+# (the one write path this round's changed test re-pins) end to end: every
+# statement inside the $transaction names householdId, both in the update's
+# `where` and the insert's `data`, and the insert half separately verifies
+# the target Merchant row belongs to the household before writing (lines
+# 125-209). I grepped src/ for every remaining consumer of
+# normaliseCounterparty / counterpartyText and found the same four call
+# sites this phase's prior rounds already settled (assign-merchant.ts,
+# resolve-identities.ts, merchant-review.ts, overview-repository.ts /
+# month-projection.ts) plus normalise-counterparty.ts and
+# counterparty-identity.ts themselves and mask-card-number.ts (card display
+# masking, unrelated to counterparty identity). PROBED, NOT FOUND: no
+# seventh consumer and no new householdId gap in this round's diff. This is
+# NOT a full re-walk of the phase's four-consumer wiring from scratch,
+# consistent with the round's confirmation scope; rounds one through six
+# already walked that wiring and this round did not touch it.
+#
+# ============================================================
+# WHY THE VERDICT COULD NOT BE `verdict` TYPE
+# ============================================================
+# `npx tiphys validate --type verdict` was attempted first per instruction.
+# It requires (schema-level, additionalProperties:false) a `criteria[]`
+# array (minItems 1, one entry expected per REDIVE-P12 acceptance
+# criterion for full Kind-B completeness) and, because review-contract is
+# hazard, a non-empty `hazard-classes-addressed[]` naming this phase's
+# declared hazard-class ids. A confirmation round scoped to five named
+# changes cannot honestly produce either array at full-phase completeness
+# without re-walking the whole phase, which the dispatch for this round
+# explicitly says not to do. Producing a `criteria[]`/`hazard-classes-
+# addressed[]` pair that is schema-valid but not actually complete would
+# pass the schema while being the exact false-completeness shape R-087
+# exists to catch. This document is therefore `kind: finding`, matching the
+# precedent this repository already set for a hazard-contract delta review
+# (delivery/review/m3-p6-hazard.yaml, round 2, is also `kind: finding`), and
+# it says so here rather than silently filling the stronger schema's arrays
+# with placeholder content.
+#
+# CAPTURED: `npx tiphys validate --type verdict delivery/review/m3-p12-hazard-round7.yaml`
+# -> INVALID #/criteria required property criteria is missing
+#    INVALID #/deviations-judged required property deviations-judged is missing
+#    INVALID #/findings/0/concrete-edit property concrete-edit is not permitted here
+#    INVALID #/findings/0/concrete-fix required property concrete-fix is missing
+#    INVALID #/findings/1/concrete-edit property concrete-edit is not permitted here
+#    INVALID #/findings/1/concrete-fix required property concrete-fix is missing
+#    INVALID #/framing required property framing is missing
+#    INVALID #/kind value "finding" does not equal the required constant "verdict"
+#    INVALID #/phase required property phase is missing
+#    INVALID #/review-contract required property review-contract is missing
+#    EXIT=1
+# `npx tiphys validate --type finding delivery/review/m3-p12-hazard-round7.yaml`
+# -> (no output) EXIT=0
+
+kind: finding
+verdict: FIX-ROUND-NEEDED
+produced-by: claude
+findings:
+  - id: CR7-M3P12-01
+    severity: high
+    evidence:
+      - "test/fixtures/measure-identity-convergence.ts:67 defines FLEET_HANDLE = /^[0-9a-f]{8}$/ (lowercase-only hex class, no anchor on what follows the eighth character)"
+      - "test/fixtures/measure-identity-convergence.ts:70-77 measurementLabel: for a path outside test/fixtures, returns name.slice(0,8) verbatim whenever FLEET_HANDLE matches it, else UNLABELLED"
+      - "Live witness run in the worktree (file written, executed with npx tsx, then deleted; git status --porcelain empty before and after): measurementLabel(\"/uploads/BE68539007547034-2026-06-statement.pdf\") === \"unlabelled\" (true, the committed regression test's own case, uppercase); measurementLabel(\"/uploads/be68539007547034-2026-06-statement.pdf\") === \"be685390\" (the SAME invented account digits, lowercased only) -- the guard returns the country code, both IBAN check digits and four digits of the account instead of refusing"
+      - "test/application/counterparty-identity-surfaces.test.ts:364-390 (test title: 'a path OUTSIDE test/fixtures survives only as a fleet handle, and a bank-shaped name is refused outright') pins only the uppercase form of the bank-shaped basename as refused; no lowercase, mixed-case, or other-hex-adjacent variant is asserted anywhere in the suite (grepped the whole file for the string, one occurrence)"
+      - "test/fixtures/measure-identity-convergence.ts:52-56 states the guard's own intended contract: eight characters is safe only for a file carrying 'this fleet's renaming convention, an eight-hex handle followed by a hyphen' -- the implementation checks the eight hex characters but never checks that a hyphen follows, so it accepts the shape of a fleet handle without checking the one thing (actual fleet provenance) that would make it an identity check rather than a shape check"
+    concrete-edit: >-
+      measurementLabel must not infer fleet-handle provenance from the shape
+      of the leading eight characters, because that shape is not unique to a
+      fleet-assigned handle: Belgium's own IBAN country code (BE) lowercases
+      into the hex alphabet, and this phase's owner banks with Belgian
+      institutions whose real export filenames lead with the account number
+      (the file's own header comment says so). Replace the regex-shape check
+      with a real identity check: either require the caller (the CLI
+      entrypoint invoked against a real upload) to pass an explicit,
+      out-of-band label rather than deriving one from the path at all, or
+      maintain a committed allowlist of the fleet's actually-issued handles
+      and test membership in it, or at minimum also require the character
+      immediately after the eight leading characters to be exactly a hyphen
+      AND (since a bank-shaped name can also happen to carry a hyphen at
+      that position, as the committed test's own fixture
+      "BE68539007547034-2026-06-statement.pdf" demonstrates) treat any match
+      as provisional and refuse it whenever the same eight characters, read
+      as an IBAN prefix, pass the ISO 7064 mod-97 check the phase's own
+      counterparty-identity trust gate already implements (src/modules/merch
+      ants/domain/counterparty-identity.ts) -- i.e. ask "is this NOT a
+      plausible account prefix" rather than "does this look like hex", since
+      the former is the actual identity distinction this file needs and the
+      latter is exactly the shape-not-identity error this round's own commit
+      message (14360e2) already names as the class of bug being fixed
+      elsewhere in the same file.
+    analysis: >-
+      This is a live regression of the exact defect fix round eight's commit
+      14360e2 states it closed ("Eight characters is safe only for a file
+      carrying this fleet's hex renaming handle; a real bank export leads
+      its name with an account number... The claim is now enforced rather
+      than asserted"). It is not enforced: it is enforced for one specific
+      case (uppercase-led bank filenames) and silently open for a case one
+      case-fold away, which is realistic rather than contrived, because
+      lowercase-normalised filenames are common (many download and upload
+      pipelines lowercase names) and the Belgian country code is exactly
+      within the accepting alphabet. This is the shape-versus-identity
+      pattern named explicitly in the dispatch for this round: FLEET_HANDLE
+      tests whether a string LOOKS LIKE eight hex digits (a shape any bank
+      account number partially shares, for a subset of real country codes)
+      rather than testing whether the string IS the fleet's own assigned
+      handle (an identity the code has no way to check because it discards
+      everything about the file except its leading eight characters). The
+      module's own committed regression test only proves the uppercase case
+      is refused and never states or tests the lowercase one, so this gap
+      shipped past its own dedicated coverage.
+
+  - id: CR7-M3P12-03
+    severity: low
+    evidence:
+      - "test/property/mutants.mts: the outcome computation in the main loop has four branches (green / dies / unattributed / caught, lines ~230-244); the SELF entry (expect: dies) exercises only the 'dies' branch of that computation, by construction (it crashes with no assertion firing)"
+      - "No entry in `mutants` or `selfCheck` is constructed to make an assertion fire that neither FIRST nor SECOND owns, so the 'unattributed' branch is reached only incidentally if a real mutant's shipped bug happens to produce one, never by a dedicated self-check the way crash-vs-catch now has one"
+      - "npm run test:mutants transcript in this run: M1-M4 and M6 all scored 'caught' attributed to a named property, M5 scored caught on both properties; none exercised 'unattributed' in this run, consistent with there being no dedicated case for it"
+    concrete-edit: >-
+      Add a second self-check entry (SELF2 or similar) that throws an
+      assertion from inside the property file's own harness code, outside
+      both named property blocks (for example, an assertion in a shared
+      setup helper both properties call), with expect: "unattributed", the
+      same way SELF now exercises "dies" for the crash branch. This closes
+      the one remaining outcome the discriminator's own self-check does not
+      yet cover, following the same reasoning fix round eight already used
+      for the dies/caught confusion: an outcome nothing exercises is code
+      nothing takes, which is how that defect arrived in the first place.
+    analysis: >-
+      Not a live defect: reading the outcome computation, I could not
+      construct a plausible regression that mis-scores an attributable
+      assertion as unattributed or vice versa without also breaking one of
+      the six real mutants' correctly-attributed scoring in this run's own
+      transcript. Recorded as a residual gap in the self-check's own
+      coverage, the same category of gap the self-check itself exists to
+      close for the crash-vs-catch distinction, and worth closing for
+      the same stated reason rather than waiting for a seventh round to find
+      it the hard way.
