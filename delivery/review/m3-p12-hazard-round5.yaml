@@ -90,3 +90,44 @@ findings: []
 # not reach, but the comparison it added does not confirm the thing that
 # DOES cover the row afterward has any relationship to the supersession
 # that excused it.
+
+# WORK LOG round 5, entry 3. GATES. Local db pulse_r5haz created against the
+# already-running shared local supabase Postgres (127.0.0.1:54322; SELECT
+# datname before creating showed only sibling lanes' own dbs, e.g.
+# pulse_r5crit, pulse_review_m3p14crit, never the ambient hemma-dev
+# project). Never touched the shared stack itself (no supabase start/stop
+# run by me at all). `DATABASE_URL=...pulse_r5haz DIRECT_URL=...pulse_r5haz
+# npx prisma migrate deploy`: 6 migrations applied cleanly.
+#   npm run typecheck   exit 0
+#   npm run lint        exit 0
+#   npm test            exit 0   Test Files 41 passed (41), Tests 624
+#                                 passed (624), 15.15s
+#   npm run gate:privacy exit 0  "gate:privacy clean"
+#   npm run gate:tokens  exit 0  (grep found nothing, `!` inverted to success)
+# Next: attack surface 3 (tenancy on inserts) read and confirmed repaired
+# (merchant-repository.ts's applyRuleWrites now runs the same distinct-
+# merchantId household check on the insert half, inside the same
+# transaction; e2e spec submits an insert ALONE against a foreign merchant).
+# No further gap found in that function or its siblings (setMerchantTag,
+# upsertRule) in this file; all three now check ownership inside their own
+# transaction before writing.
+# Verified the two claims the dispatch named:
+#  (a) transferLink.createMany / transaction.createMany unreachable claim:
+#      traced every id. ledger-repository.ts's replaceInterpretation
+#      receives `merchants` from interpret-window.ts:127-135, sourced
+#      entirely from deps.merchants.resolveIdentities(context, ...), a
+#      household-scoped call; `links`' transaction ids come from
+#      interpretation.transferPairs/settlements, derived purely from
+#      `transactions` loaded via deps.ledger.listPotTransactions(context,
+#      ...), also household-scoped. import-repository.ts's ingestRows
+#      writes `accountId` into every created transaction row unchecked
+#      too (same class of gap, not named by the dispatch); traced its two
+#      callers (upload-statement.ts, confirm-import.ts) and confirmed
+#      accountId is always either newly created under context.householdId
+#      or read via a household-scoped account/profile lookup. CONFIRMED:
+#      unreachable today by the same structural argument warning 23 gives,
+#      generalised one field wider (accountId) than the warning states.
+#  (b) app-unguarded-by-design claim: found the exact citation, work-history
+#      C-M3P12-12 ("still-open-because: ...deployed app must open a
+#      deployed database, so a local-only refusal would be wrong").
+#      TESTED RATHER THAN ACCEPTED next.
