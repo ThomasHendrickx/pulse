@@ -133,4 +133,228 @@ probes:
     result: |
       It emitted the first eight characters of the account number. See
       finding CR6-M3P12-02.
-findings: []
+findings:
+  - id: CR6-M3P12-01
+    severity: medium
+    title: >-
+      The mutant harness scores a mutant that CRASHES as a mutant that was
+      CAUGHT, and npm run test:mutants stays green while doing it.
+    evidence:
+      - >-
+        test/property/mutants.mts:164, summarise() decides which property
+        caught a mutant by reading lines that start with the word FAIL and
+        asking whether the property's title appears in one. A vitest FAIL line
+        is emitted for a file that DIED as readily as for a file whose
+        assertion fired, so the two are the same observation to this function.
+      - >-
+        test/property/mutants.mts:201, the only thing that increments the
+        failure counter is `if (!failed)`, that is, vitest exiting 0. Any
+        non-zero exit is counted as a catch, and the harness exits 0.
+      - >-
+        WITNESS, run by this review with a self-restoring probe (source
+        checksum 33f7f7fee0ddf710 before and after, git status clean). I
+        inserted a call to an identifier that does not exist immediately after
+        rederive-rules.ts:934, so the property file dies rather than failing an
+        assertion. The harness's own attribution logic then reported:
+        "harness would attribute: FIRST and SECOND", "HARNESS VERDICT: counted
+        as CAUGHT", "FAIL lines seen: 2". No assertion fired and nothing in the
+        properties discriminated anything.
+      - >-
+        The harness already computes the evidence that would separate the two
+        and then discards it: test/property/mutants.mts:181 falls back to the
+        string "(no assertion line found)" and nothing reads that value. The
+        file's own comment for M1 states the principle it does not enforce:
+        "A mutant that crashes proves nothing about the properties."
+      - >-
+        THIS IS THE SHAPE-NOT-IDENTITY ERROR, in its twelfth instance in this
+        project: the check matches the SHAPE of a failure, a FAIL line bearing
+        the right title, rather than its IDENTITY, an assertion raised by the
+        property. A compile error, an import failure, a timeout, or a throw
+        inside runOnce all satisfy it.
+      - >-
+        NOT A LIVE DEFECT TODAY, and this review says so rather than
+        overstating: I ran npm run test:mutants myself and all five mutants
+        produce a real AssertionError, each quoted in the gates block above. The
+        defect is in the instrument's durability, on the one mechanism this
+        phase has had to rewrite four times.
+    concrete-fix: >-
+      In test/property/mutants.mts, have summarise() return whether an
+      AssertionError line was found, and treat a non-zero vitest exit with no
+      AssertionError as a FAILURE of the harness rather than as a catch:
+      increment `failures` and print that the mutant died instead of being
+      caught. The value is already computed at test/property/mutants.mts:181.
+  - id: CR6-M3P12-02
+    severity: medium
+    title: >-
+      A comment and a test both assert that the measurement harness's file
+      label "can never carry an identifier out of a real document". It can, and
+      the test that pins the claim cannot falsify it.
+    evidence:
+      - >-
+        test/fixtures/measure-identity-convergence.ts:44 states as a
+        present-tense fact, with nothing checking it: "A label that can never
+        carry an identifier out of a real document." The implementation at
+        test/fixtures/measure-identity-convergence.ts:45 returns the full
+        basename for a path under test/fixtures and the FIRST EIGHT CHARACTERS
+        of the basename for anything else.
+      - >-
+        Eight characters is safe only for a file carrying this fleet's own
+        renaming convention, an eight-hex handle followed by a hyphen. Fleet
+        warning 9 says the opposite about the documents themselves: the real
+        statement uploads' FILE NAMES embed an account number, and in a bank
+        export that account number LEADS the basename. For such a file the
+        first eight characters are the first eight characters of the account
+        number.
+      - >-
+        WITNESS, run by this review against a WHOLLY INVENTED path in that
+        shape, with no real value used: the label returned was the country
+        code, the two check digits and the first four digits of the account
+        number. A fleet-prefixed path returned the eight-hex handle, and a path
+        under test/fixtures returned its basename, both as intended.
+      - >-
+        THE TEST CERTIFIES THE CLAIM WITHOUT BEING ABLE TO REFUTE IT.
+        test/application/counterparty-identity-surfaces.test.ts:355 is the test
+        of this guard, and the only outside path it hands the guard is
+        "/somewhere/else/abcd1234-a-name-with-identifiers.pdf", which already
+        carries the eight-hex handle. It asserts the handle survives and calls
+        that "what keeps a real upload's file name out of any record". The test
+        matches the SHAPE of a fleet-renamed upload and never the IDENTITY of
+        what the leading eight characters are, which is the same error as
+        CR6-M3P12-01 and the same error this project has now found twelve times.
+      - >-
+        The title of the neighbouring test at
+        test/application/counterparty-identity-surfaces.test.ts:332 carries the
+        same false clause, "its label can never carry an identifier out of a
+        real document", and that test only ever runs the harness over committed
+        fixtures, where the label is a basename by design.
+      - >-
+        NOTHING HAS LEAKED. The work-history figures for criterion 12.2 were
+        produced against the fleet-renamed uploads and record the eight-hex
+        handles, and npm run gate:privacy exits 0. This is a false claim and an
+        open path, not a leak.
+    concrete-fix: >-
+      Either narrow the claim to what is true, that the label is the basename
+      inside test/fixtures and its first eight characters otherwise, and delete
+      the words "can never carry an identifier" from
+      test/fixtures/measure-identity-convergence.ts:44 and from the two test
+      titles; or make the claim true by refusing to emit any label whose first
+      eight characters are not hex, and add a case to
+      test/application/counterparty-identity-surfaces.test.ts:355 that hands the
+      guard an invented bank-shaped basename and asserts the account fragment
+      does not survive.
+  - id: CR6-M3P12-03
+    severity: medium
+    title: >-
+      The pin that applyRuleWrites is atomic is a substring search over the
+      WHOLE adapter file, and the same substring occurs twice more in two other
+      functions, so the pin holds even if applyRuleWrites loses its transaction.
+    evidence:
+      - >-
+        test/application/rederive-merchant-rules.test.ts:1392 asserts
+        expect(adapter).toContain("prisma.$transaction(async (tx)") against the
+        entire text of src/modules/merchants/adapters/merchant-repository.ts.
+      - >-
+        That exact string occurs THREE times in that file, at
+        src/modules/merchants/adapters/merchant-repository.ts:84,
+        src/modules/merchants/adapters/merchant-repository.ts:148 and
+        src/modules/merchants/adapters/merchant-repository.ts:257. Only line 148
+        is inside applyRuleWrites, which begins at
+        src/modules/merchants/adapters/merchant-repository.ts:125. Line 84 is a
+        different function entirely, so the assertion is satisfied by a
+        function the test is not about.
+      - >-
+        The test already knows how to scope an assertion and does it correctly
+        on the next two lines: it slices `block` from "export const
+        applyRuleWrites" and asserts the household clauses against that. The
+        transaction assertion is the one of the three that was left unscoped.
+      - >-
+        WHAT ELSE WOULD HAVE CAUGHT IT: test/e2e/merchant-rule-write.spec.ts:76,
+        "applyRuleWrites is atomic, stays within the household, and rolls back
+        the whole batch on any rejection", which exercises the real adapter
+        against a real database. That spec runs under npm run test:e2e, which
+        criterion 12.14 records as OWED and which this round does not witness,
+        so for this round the atomicity of the declaration write path rests on a
+        substring that three functions can satisfy.
+      - >-
+        Again the shape and not the identity: the check asks whether the FILE
+        contains the words, not whether the FUNCTION uses the construct.
+    concrete-fix: >-
+      Move the `const block = adapter.slice(adapter.indexOf("export const
+      applyRuleWrites"))` line above the transaction assertion at
+      test/application/rederive-merchant-rules.test.ts:1392 and assert
+      expect(block).toContain("prisma.$transaction(async (tx)") instead of
+      asserting it against the whole file.
+  - id: CR6-M3P12-04
+    severity: medium
+    title: >-
+      A comment states, as a measured fact, that the loss property stays GREEN
+      when the two key spaces are consulted in the wrong order. It goes RED.
+      (clause R-087)
+    evidence:
+      - >-
+        src/modules/merchants/application/rederive-rules.ts:436 says, under a
+        heading that begins "MEASURED, NOT ARGUED": "The property's own
+        biconditional stays GREEN under the flip, because both of its sides are
+        computed here and move together, which is the same shape of blind spot a
+        forged lineage pair has."
+      - >-
+        WITNESS, run by this review as a sixth wrong predicate none of the five
+        committed mutants represents. I swapped the two arms of the ?? at
+        src/modules/merchants/application/rederive-rules.ts:441, so the identity
+        space is consulted before the pre-phase space, which is the order
+        criterion 12.7 explicitly fixes. The property file went RED, on the
+        FIRST biconditional: "AssertionError: expected { row: 'descriptorRow',
+        lost: true } to deeply equal { row: 'descriptorRow', lost: false }". The
+        file was restored, checksum 33f7f7fee0ddf710 before and after, git
+        status clean.
+      - >-
+        The stated REASON is false as well as the conclusion. Both sides of the
+        property are NOT computed in assignmentSet. The property computes the
+        before merchant, the after merchant and the claimant's merchant in the
+        test file, from the seed and the issued write batch, using holderBefore
+        at test/property/rederive-loss-reporting.test.ts:124 and its own model
+        of the two spaces. That is the whole design of the amended criterion, and
+        the file says so in its own header. Only the REPORTED side comes from
+        the routine, so a flip in the routine moves one side and not both.
+      - >-
+        This errs in the safe direction, which is why it is medium and not high:
+        the tests are stronger than the comment claims. The cost is a future
+        reader concluding that the ordering is undefended, either dropping the
+        property's independence or declining to add a mutant for a predicate that
+        a mutant would in fact catch.
+    concrete-fix: >-
+      Replace the sentence at
+      src/modules/merchants/application/rederive-rules.ts:436 with what was
+      measured: the property goes red on the FIRST biconditional under the flip,
+      because the property computes its before merchant itself from the seed
+      with the pre-phase space first, and only the reported side comes from
+      here. If the flip is worth a permanent guard, add it to
+      test/property/mutants.mts as a sixth mutant, whose anchor is the ?? at
+      src/modules/merchants/application/rederive-rules.ts:441.
+  - id: CR6-M3P12-05
+    severity: low
+    title: >-
+      The criterion 12.19 grep exempts a line from the forbidden phrase whenever
+      the words "used to" appear anywhere on it, so a reintroduction carrying
+      those words passes.
+    evidence:
+      - >-
+        test/domain/counterparty-identity-contracts.test.ts:175 filters
+        offending lines with `!/used to|it used to be wrong|no longer/i.test
+        (line)`, applied to the whole line rather than to the relation between
+        the phrase and the qualifier.
+      - >-
+        A reintroduced sentence of the form "the key is the normalised
+        counterparty string, as it used to be" satisfies the exemption and the
+        test stays green, which is the same escape the test's own comment claims
+        to have closed: "a REINTRODUCTION phrased the same way would also have
+        passed". Scoping to the section narrowed the hole; it did not close it,
+        and the qualifier is now the door.
+      - >-
+        The test does two things well and this review records them rather than
+        only the gap: it scopes to section 7, and it asserts the section really
+        was read, so an empty result cannot come from slicing the wrong text.
+    concrete-fix: >-
+      Assert the phrase occurs exactly once in the section and that the one
+      occurrence is the known historical sentence, pinned by its full text,
+      rather than exempting any line carrying a qualifier.
