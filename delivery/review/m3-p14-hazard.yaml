@@ -231,3 +231,66 @@ no-findings-statement: "placeholder, draft in progress"
 # re-derived from a post-recompute read; it is the preview value, echoed.
 # The comment's claim is false of the code exactly as written. Filed as
 # HZ-M3P14-04, HIGH, below.
+#
+# ============================================================
+# npm run test:e2e, ONE FULL RUN, quoted honestly.
+# ============================================================
+# Ports 3000/3100 were already held by a sibling worktree's Playwright run
+# when first attempted (Error: http://127.0.0.1:3100 is already used).
+# Retargeted this worktree's own playwright.config.ts LOCALLY (baseURL
+# 3050, prodBaseURL 3150, PORT env added to both webServer entries) so
+# this run would not contend for or interfere with another worktree's
+# ports; reverted before commit (see below), same discipline as the
+# supabase config.toml port/project_id change.
+#
+# RESULT: 57 passed, 8 failed, 26.3 minutes, all three projects
+# (chromium, chromium-prod, chromium-phone), pinned to the local stack.
+# THE SUITE IS NOT GREEN. Quoted honestly per the dispatch's own
+# instruction, and NOT root-caused as a code defect, per the same
+# instruction and fleet warning 18 (load average measured 10.5-14.3 on
+# this box during the run, with at least three other worktrees' node,
+# next and playwright processes concurrent, matching the disclosed
+# pattern exactly).
+#
+# EVERY ONE OF THE 8 FAILURES IS THE SAME SHAPE, checked individually in
+# test-results/*/error-context.md: a Playwright assertion timing out
+# (5000ms default, one at the spec's own 30000ms) waiting for an element
+# that appears only after a server round trip -- "waiting for
+# getByTestId('household-context')" right after a sign-up submit,
+# "waiting for getByRole('heading', { name: 'Confirm the detected
+# format' })" right after a file upload, "waiting for
+# getByTestId('import-result')" right after a confirm-and-import click.
+# NOT ONE of the 8 is a mismatched VALUE (a wrong count, a wrong figure,
+# wrong text) -- every one is "element(s) not found" within the timeout,
+# which is the signature of a slow server response under contention, not
+# of wrong application behaviour.
+# CORROBORATING EVIDENCE, not merely asserted: five of the eight failing
+# scenarios have a DIRECT sibling in this same run that exercises
+# materially the same code path and PASSED --
+#   accounts.spec.ts:173 (CONTROL ARM) failed under chromium; the fixture
+#     and control-arm mechanism it shares with the REGISTERED ARM,
+#     HEALING and WRONG-ANSWER tests (#8, #9, #10) all passed.
+#   month-view.spec.ts:211 (transfer in transit) failed under chromium
+#     (#24) and PASSED outright under chromium-phone three tests later
+#     (#47) in the SAME run.
+#   month-view.spec.ts:275 (EN/NL/FR truncation) PASSED under chromium
+#     (#26) and failed under chromium-phone (#49) in the SAME run.
+#   golden-journey and import.spec.ts:13 both failed waiting on
+#     import-result/Confirm-the-detected-format, the identical shape as
+#     the sign-up timeout, on specs that predate this phase entirely.
+# A test that fails on one project and passes on the identical or a
+# harder variant of the same scenario elsewhere in the SAME run is not
+# evidence of a deterministic defect in the code under review.
+# THE ACCOUNTS/AUTH-SPECIFIC FAILURES ARE THE ONES THIS PHASE ADDS
+# (accounts.spec.ts:173, :200, :379; auth.spec.ts:11), so this review
+# does not claim certainty they are purely environmental; they are
+# reported with their exact evidence above so a re-run under less
+# contention (or the criteria lane's own run) can confirm or contradict
+# this reading. This review's own LIVE DATABASE PROBE of the same
+# scenarios these specs cover (criterion 14.16's four arms, the silent
+# wrong answer, adoption) -- run directly against the production code
+# and a real Postgres, with no browser and no HTTP round trip -- found no
+# defect, which is independent evidence the underlying mechanism these
+# three specs exercise is sound; if their failure were a real regression
+# rather than server latency, it is very unlikely to also be invisible to
+# a full head-on probe of the same code paths.
