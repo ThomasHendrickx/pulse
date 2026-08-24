@@ -142,7 +142,161 @@
 #   the time: 9.44 on a 4-core box (checked via `uptime`), while several
 #   other worktrees' dev/prod servers and Playwright workers were
 #   independently running (checked via `ps aux`: wt-m3p7, wt-m3p9, wt-m3p14
-#   all had live node/next/playwright processes). RUN 2 in progress.
+#   all had live node/next/playwright processes). RUN 2, same command,
+#   immediately after: ALSO FAILED, exit 1, but with a DIFFERENT symptom -
+#   "element(s) not found" waiting for getByTestId('household-context')
+#   after sign-up, at golden-journey.spec.ts:91, load average 9.44+. Two
+#   different failure symptoms from two consecutive runs of one UNEDITED
+#   test on one UNCHANGED working tree is itself evidence against a
+#   deterministic code defect. Stopping further e2e attempts here: this
+#   shared container cannot spare more load for a fourth attempt and the
+#   pattern is now clear and reproducible. Wrote up 12.14 as met: false
+#   (honest, the literal exit-0 bar is not met on any run, mine or the
+#   implementer's) plus finding CR3-M3P12-02 naming the gap between the
+#   fleet's shared-load reality and a gate criterion with no allowance for
+#   it. Full criteria array, both findings and all ten deviations written.
+# - FIVE FAST GATES RE-RUN CLEAN, ONE FINAL TIME, for the header summary:
+#   typecheck exit 0, lint exit 0 (both no output), test exit 0 (39 files,
+#   554 tests, 20.22s), gate:privacy exit 0 ("gate:privacy clean"),
+#   gate:tokens exit 0 (no output). All against pulse_r3crit.
+#
+# ============================================================================
+# FINAL SUMMARY
+# ============================================================================
+#
+# GATES, quoted, all run by me against my own local database pulse_r3crit
+# (postgresql://postgres:postgres@127.0.0.1:54322/pulse_r3crit):
+#   npm run typecheck   exit 0   "tsc --noEmit", no output.
+#   npm run lint        exit 0   "eslint .", no output.
+#   npm test            exit 0   Test Files 39 passed (39); Tests 554 passed
+#                                 (554); Duration ~20-34s across my several runs.
+#   npm run gate:privacy exit 0  "gate:privacy clean".
+#   npm run gate:tokens  exit 0  no output (the negated grep found nothing).
+#   npm run test:e2e     exit 1  on all three of my attempts, and on the
+#                                 implementer's own last recorded run. See the
+#                                 progress log above and criterion 12.14 for
+#                                 the full account; my conclusion is that this
+#                                 is fleet-load contention, not a defect in
+#                                 this round's code, detailed below.
+#
+# CRITERIA: 21 of 22 met (12.1 through 12.13, 12.15 through 12.23 all met;
+# 12.14 NOT MET on its e2e half, four fast gates within it are genuinely
+# green). This is a statement about THIS contract, not a terminal green: see
+# "WHAT THIS WALK DID NOT REACH" below.
+#
+# THE FOUR CLAIMS.
+#   1. Same-merchant twin no longer crashes the migration, and a
+#      different-merchant collision still blocks: YES to both. Verified by
+#      reading src/modules/merchants/application/rederive-rules.ts:352-436 in
+#      full and by the tests at test/application/rederive-merchant-rules.test.ts:1010-1117.
+#      Attacked the "genuinely redundant" reasoning directly: the twin
+#      scenario is reachable ONLY between two EXACT rules of the SAME kind
+#      and pattern (assignMerchant writes EXACT only, criterion 12.10;
+#      PREFIX/PATTERN never enter this path), so "two rules already say the
+#      same thing" is not an assumption, it is what the unique key
+#      (householdId, kind, pattern) forces once both patterns are byte-
+#      identical. The superset test (assignmentsAfter, rederive-rules.ts:568)
+#      is computed over the WHOLE working set uniformly under identityKey,
+#      including the un-rewritten source rule, so the twin's coverage is what
+#      is actually checked, not assumed; I found no shape where a same-kind,
+#      same-pattern, same-merchant twin fails to cover what the source rule
+#      covered. No shape where skipping the rewrite loses something.
+#   2. All-or-nothing via one transaction, recompute deliberately outside it:
+#      YES, witnessed against a real database, not modelled. I seeded a fresh
+#      local database (pulse_r3crit) and called the real applyRuleWrites with
+#      a genuine Postgres constraint violation injected in the SAME batch as
+#      a legitimate update (not before it): the whole batch rolled back,
+#      table unchanged, row counts identical before and after. The
+#      recompute-outside-transaction design is safe (recompute is idempotent,
+#      re-running heals any partial state) and IS stated at the definition a
+#      reader meets (rederive-rules.ts:611-617) and in the script's header
+#      (rederive-merchant-rules.ts:41-55) - but I found ONE place where the
+#      consequence is stated WRONG: the script's top-level error handler
+#      (line 249) prints "wrote nothing" unconditionally on ANY rejection,
+#      which is false specifically when recompute is what throws AFTER
+#      applyRuleWrites has committed. Finding CR3-M3P12-01, medium.
+#   3. Criterion 12.23's target guard, both endpoint shapes: MET. Read
+#      src/platform/db/target-guard.ts and test/db/target-guard.test.ts (349
+#      lines) in full. projectRefFromUsername takes everything after the
+#      FIRST dot (dotted ref survives whole); projectRefFromHost requires
+#      >=4 labels with labels[0]==="db" and takes labels[1] (the file's own
+#      comment documents catching a 3-label false positive, db.supabase.co,
+#      against itself, which is a good sign). I additionally hand-attacked
+#      cases beyond the committed suite: an IPv6 literal host (fails safe,
+#      correctly refuses, since an IPv6 address contains no dots for either
+#      extractor to split on), a trailing-dot host (extra empty label, ref
+#      position at labels[1] unaffected), a username of exactly "postgres"
+#      (correctly yields no ref, the direct-connection convention), and a ref
+#      that is itself the literal word "postgres" (extracts and compares
+#      correctly, no collision). Found no bypass in any of these.
+#   4. THE CONSEQUENCE: a local connection carries no project ref in either
+#      field (127.0.0.1 splits to 4 numeric labels but labels[0] is "127" not
+#      "db"; "postgres" alone has no dot), so the guard refuses it
+#      categorically and the script CANNOT run against a local database at
+#      all. MY JUDGEMENT, explicit: this is the RIGHT outcome, not a defect.
+#      The routine is a one-off migration whose entire hazard (H12.30) is
+#      hitting the WRONG REAL database; a check that also had to recognise a
+#      third "local" shape would either need its own override flag (which
+#      12.23 explicitly forbids, for exactly the reason an override would
+#      assert the very thing being checked) or would have to admit an
+#      under-specified carve-out, which reintroduces the laxity the interlock
+#      exists to remove. This does NOT mean the routine is unrehearsable: its
+#      DECISION LOGIC is exercised by 350+ committed tests against fakes and,
+#      as of this review, against a real database by my own witness above;
+#      what cannot be rehearsed is the exact CLI BINARY (argument parsing,
+#      the guard's wiring, the printed report) end to end against live data,
+#      and that gap is narrowed, not left open, by the spawnSync tests that
+#      run the REAL script end to end against a fake unreachable host and
+#      confirm the wiring, the refusal, and the no-secrets-printed property.
+#      A routine that can only ever be exercised for real against the
+#      deployed database is an acceptable, deliberate cost for a migration
+#      whose one and only failure mode this criterion exists to close is
+#      hitting the wrong deployed database; it is not evidence that "nobody
+#      can rehearse the migration before it matters" in any sense that
+#      leaves the operator flying blind on the day it runs.
+#
+# THE GOLDEN-JOURNEY QUESTION, tested rather than accepted. My conclusion:
+# LOAD AND CONTENTION, not this round's code and not the moved-ports
+# artifact specifically. Evidence: I ran golden-journey (and the full suite)
+# using the UNEDITED playwright.config.ts and its DEFAULT ports (I never
+# moved anything, unlike the implementer's own 3200/3300 workaround), and
+# still hit severe contention: a full-suite run cascaded into
+# ERR_CONNECTION_REFUSED after another worktree's process retook port 3000
+# mid-run; two immediately consecutive isolated runs of golden-journey alone
+# produced two DIFFERENT failure symptoms (a 30s button-click timeout, then a
+# 5s household-context-not-found) with nothing in the working tree changed
+# between them. A genuine code defect in this round would be expected to
+# fail the SAME way each time; two different symptoms on one unchanged
+# tree is the signature of a resource-starved environment, not a logic bug.
+# Machine load average measured directly (`uptime`) at 5.8 to 9.44 on a
+# 4-core box throughout my session, with concurrently running node/next/
+# playwright processes from at least three other worktrees confirmed via
+# `ps aux`. golden-journey DID pass cleanly once, in my first full-suite
+# attempt (26.0s), before the port-takeover cascade began, which is a fourth
+# independent data point that the test itself is sound against this branch's
+# code. The moved-ports confound the implementer's own method introduced is
+# real in principle but is NOT what I reproduced: I saw the same class of
+# failure on default ports, so contention, not the port move, is the
+# operative cause.
+#
+# WHAT THIS WALK DID NOT REACH, said plainly rather than left to the
+# completeness claim: this is a CRITERIA walk, and a criteria walk answers
+# "does the artifact satisfy the contract" and never "is the contract
+# complete." I did not independently re-derive every whole-corpus number in
+# criterion 12.15/12.20 (I cross-checked one anchor and trust the committed,
+# re-runnable harness for the rest, which is the harness's whole point per
+# criterion 12.2's own reasoning). I did not exercise the target guard
+# against a REAL Supabase project of either shape, pooler or direct, because
+# doing so would require credentials to the pulse project itself (which the
+# safety instruction correctly withholds from an open review branch) or the
+# owner's real foreign project (which I must never write to); the guard's
+# refusal logic is fully unit-tested and I hand-attacked its extraction
+# function, but its SUCCESS path against a live pooler/direct connection is
+# something no clean-room review of an unmerged branch can witness, by
+# construction, and criterion 16.1 is what will. I did not attempt a fourth
+# e2e run once the pattern was clear, to avoid spending more of this
+# contended machine's shared resources chasing a result I already have
+# strong, reproducible evidence for.
 kind: verdict
 phase: M3-P12
 verdict: FIX-ROUND-NEEDED
