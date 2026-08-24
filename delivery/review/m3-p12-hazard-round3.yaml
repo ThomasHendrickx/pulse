@@ -134,6 +134,7 @@ findings:
       - scripts/rederive-merchant-rules.ts:248 through :250 is the unconditional claim printed on every rejection.
       - scripts/rederive-merchant-rules.ts:41 through :49 is the header claim that a failure anywhere rolls back every write that preceded it.
       - src/modules/merchants/application/rederive-rules.ts:618 is applyRuleWrites and src/modules/merchants/application/rederive-rules.ts:622 is the recompute outside it.
+      - "THE FALSE SENTENCE IS PINNED BY THE FAST GATE. test/application/rederive-merchant-rules.test.ts:1236, named 'the contract now answers the FAILED run as well as the blocked one', asserts at test/application/rederive-merchant-rules.test.ts:1242 that the script's source contains the string 'rolls back every write that preceded it'. So correcting the claim turns the gate red, which is the second shape clause R-087 names: a test whose name asserts a property and whose body greps for a sentence."
     concrete-fix: >-
       Make the routine tell the caller which side failed rather than making
       the script assert one answer for both. Wrap only the recompute call at
@@ -148,7 +149,10 @@ findings:
       as unresolved until a recompute completes, and the fix is to re-run
       this command rather than to roll the code back. Correct the header at
       scripts/rederive-merchant-rules.ts:46 so it does not say a failure
-      anywhere rolls back every write.
+      anywhere rolls back every write, and change the assertion at
+      test/application/rederive-merchant-rules.test.ts:1242 to pin the
+      CORRECTED pair of sentences rather than the present one, so the gate
+      keeps guarding the contract instead of guarding the wrong wording.
   - id: CR3-M3P12-03
     severity: medium
     analysis: >-
@@ -211,6 +215,8 @@ findings:
       is why this is medium and not high; it is reachable the moment any
       other caller uses this port member, and the port member is exported.
     evidence:
+      - "WITNESSED against my own pinned local database pulse_r3haz through the real adapter. Call one, a valid update plus an insert that violates the unique key: THREW kind PrismaClientKnownRequestError code P2002, and the update was rolled back, so the transaction itself works. Call two, an update naming a rule id that is not the household's plus one valid insert: GUARD THREW: applyRuleWrites: one or more rules did not belong to the household, AND the inserted rule was still present in merchant_rules afterwards. So the all-or-nothing contract holds for a database rejection and BREAKS on exactly the path this guard exists for."
+      - "THE NEW WRITE PATH HAS NO REAL-DATABASE COVERAGE AT ALL. grep for applyRuleWrites over test returns only the fake in test/application/fake-import-world.ts and source-string assertions in test/application/rederive-merchant-rules.test.ts; the Playwright spec that DOES drive the adapter against a real database, test/e2e/merchant-rule-write.spec.ts:32, exercises updateRulePattern, which the routine no longer calls. The one mechanism the fix round shipped is asserted in the fast gate by a string match on the source at test/application/rederive-merchant-rules.test.ts:1142."
       - src/modules/merchants/adapters/merchant-repository.ts:167 opens the transaction and src/modules/merchants/adapters/merchant-repository.ts:184 closes it.
       - src/modules/merchants/adapters/merchant-repository.ts:185 through :192 is the household check, after the await, therefore after the commit.
       - "The tenancy rule it enforces is CLAUDE.md non-negotiable 6, and the sibling write in the same file does it correctly INSIDE the transaction: src/modules/merchants/adapters/merchant-repository.ts:84 through :91."
@@ -221,7 +227,11 @@ findings:
       updateMany with the household in its where clause, and throw from
       inside the callback the moment a count comes back zero, so the
       rollback is the database's and the caller's "nothing was written"
-      contract is true on this path as well.
+      contract is true on this path as well. And point the existing
+      real-database spec at the member that is actually used: extend
+      test/e2e/merchant-rule-write.spec.ts:32 to drive applyRuleWrites with a
+      mixed update and insert set whose second statement is refused, and
+      assert the first statement did not survive.
   - id: CR3-M3P12-05
     severity: medium
     analysis: >-
@@ -336,7 +346,8 @@ findings:
       pointing at the routine is what would make a future author believe that
       call site is the sanctioned one.
     evidence:
-      - "grep over src and scripts for updateRulePattern returns only its declaration at src/modules/merchants/application/ports.ts:80, its binding at src/modules/merchants/application/index.ts:90, its implementation at src/modules/merchants/adapters/merchant-repository.ts:121 and the unused dependency Pick at src/modules/merchants/application/rederive-rules.ts:222. There is no call."
+      - "grep over src and scripts for updateRulePattern returns only its declaration at src/modules/merchants/application/ports.ts:80, its binding at src/modules/merchants/application/index.ts:90, its implementation at src/modules/merchants/adapters/merchant-repository.ts:121 and the unused dependency Pick at src/modules/merchants/application/rederive-rules.ts:222. There is no call in src or scripts. The only callers left are tests using it as a hand-migration helper, at test/application/rederive-merchant-rules.test.ts:1196 and inside the fake at test/application/fake-import-world.ts:436."
+      - "The Playwright spec added in fix round one to cover the adapter's write path against a real database, test/e2e/merchant-rule-write.spec.ts:32, covers THIS member and not applyRuleWrites, so the real-database coverage points at the path the routine abandoned."
       - src/modules/merchants/adapters/merchant-repository.ts:125 issues updateManyAndReturn directly, outside any prisma.$transaction.
       - src/modules/merchants/application/ports.ts:75 through :79 is the false claim.
     concrete-fix: >-
