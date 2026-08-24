@@ -4656,7 +4656,18 @@ phases:
           nearest ancestor matching button, a[href], summary,
           input[type=submit], input[type=button] and [role=button], plus
           capture-phase pointerup and pointercancel listeners that clear every
-          data-pressed in the document. THE POINTERCANCEL LISTENER IS NOT
+          data-pressed in the document. WHAT THE DOCUMENT-WIDE SWEEP COSTS,
+          recorded here (finding R2-07) so a later round does not rediscover
+          it and rebuild the listener around a pointer-id table to chase it: a
+          clear that sweeps the document also clears a press ANOTHER FINGER IS
+          STILL HOLDING, so with two touches on two controls the first release
+          un-draws both. The failure that produces is a press that DISAPPEARS
+          rather than one that sticks, it corrects itself at the next press,
+          and multitouch across two controls is rare on this product; it is
+          the price of one handler with no pointer-id table and the trade is
+          taken deliberately. The STICKING failure is the one that matters and
+          criterion 9.9(e) measures it, ending five included. THE
+          POINTERCANCEL LISTENER IS NOT
           OPTIONAL AND IS NOT A NICETY, and it is written out here because the
           first version of this step let it read as one: a scroll begun on a
           control IS a pointercancel, on this product's month view a finger
@@ -4664,7 +4675,7 @@ phases:
           listener without it leaves the control the owner scrolled from drawn
           pressed until he happens to tap something, after which that control
           answers no further press at all because it is already pressed.
-          Criterion 9.9(e) witnesses all four endings, including the mouse
+          Criterion 9.9(e) witnesses all five endings, including the mouse
           ending that is the only one able to tell a document-wide clear from
           a target-scoped one. WHY A SCRIPT AND NOT A CLIENT ISLAND,
           which decision D-61 records and which is not left to the
@@ -4901,15 +4912,32 @@ phases:
           with the same alpha floor on a transparent resting background, or
           in opacity by at least 0.15, AND the computed cursor is not
           "pointer", AND, where the state was applied as aria-disabled="true",
-          the computed pointer-events is "none" and AN ACTIVATION IS REFUSED:
-          a click dispatched at the control's centre fires no click event on
-          the control, and the SAME click at the SAME coordinates does fire
-          one once the aria-disabled marking is removed, so the refusal is
-          shown to be the marking's doing and not the coordinates'. The
-          activation itself is stopped by the capture-phase click refusal
-          criterion 9.9(a) permits the spec to install, so no measurement
-          navigates or submits. That last clause was ADDED IN THE REVIEW OF
-          THE 2026-08-24 AMENDMENT (finding ADV-M3P9A-05), which found that
+          the computed pointer-events is "none" and AN ACTIVATION IS REFUSED.
+          The activation is a REAL HIT-TESTED CLICK at the control's viewport
+          centre, page.mouse.click at raw coordinates and never
+          element.dispatchEvent, which bypasses hit testing and would fire
+          whatever pointer-events says; it is kept from navigating or
+          submitting by the capture-phase click refusal criterion 9.9(a)
+          permits the spec to install. IT IS OBSERVED AT THAT REFUSAL AND
+          NOWHERE ELSE, AND THE OBSERVABLE IS THE CLICK'S TARGET. Both halves
+          of that sentence were ADDED IN ROUND TWO (finding R2-02) and neither
+          is decoration. A listener on the control cannot be the observable,
+          because the refusal calls stopPropagation on document and document
+          heads the capture path, so a listener below it runs in NEITHER
+          condition and the experiment passes vacuously in one direction while
+          failing in the other. Asserting merely that a click was CAPTURED
+          cannot be the observable either, because with pointer-events none
+          the click still lands on the ancestor behind the control and is
+          still captured, in both conditions. THE TARGET IS WHAT MOVES: with
+          the marking present the captured target is an ANCESTOR of the
+          control, and the control neither is that target nor contains it;
+          with the marking removed, and with the control's bounding rect
+          IDENTICAL across the two attempts, the SAME click at the SAME
+          coordinates targets the control. The unchanged rect is what makes
+          the second click the same click, so the difference is the marking's
+          doing and not the coordinates'. The clause exists at all because of
+          the REVIEW OF THE 2026-08-24 AMENDMENT (finding ADV-M3P9A-05), which
+          found that
           amendment asserting a BEHAVIOUR in a step, that a control made to
           look unusable does not navigate, and shipping it with no witness at
           all, which is hazard H9.1's own class; the marginal cost is one
@@ -5016,18 +5044,28 @@ phases:
           no file under test/fixtures/ is printed, and package.json and
           package-lock.json are byte unchanged. (c) THE REACT CLIENT BOUNDARY
           STAYS SHUT, which is the half that keeps hazard H9.5 measurable now
-          that a component file is permitted at all: grep -rn ^"use client"
-          over src/, THE PATTERN ANCHORED at the start of the line, returns
-          exactly ONE line, src/platform/ui/nav-link.tsx:1, the same single
-          line it returned at this phase's base. The anchor was ADDED IN
-          REVIEW (finding ADV-M3P9A-02) and is not a loosening: an UNANCHORED
-          grep for the phrase returns TWO lines at the base, because
+          that a component file is permitted at all: the command is grep -rn
+          '^"use client"' src/ and ITS SINGLE QUOTES ARE LOAD-BEARING, part of
+          the criterion and not typography. Run exactly as written it returns
+          exactly ONE line, src/platform/ui/nav-link.tsx:1:"use client"; and
+          exits 0, the same single line it returned at this phase's base. THIS
+          CLAUSE HAS NOW BEEN WRONG TWICE AND THE COMMAND IS WRITTEN HERE IN
+          RUNNABLE FORM FOR THAT REASON. Round one (finding ADV-M3P9A-02)
+          found the first version counting an UNANCHORED grep for the phrase,
+          which returns TWO lines at the base because
           src/platform/ui/nav-link.tsx:7 is a COMMENT explaining the
           directive, so a criterion counting prose could be satisfied only by
-          editing a file half (a) forbids this phase to print, and the two
-          halves of this criterion would contradict each other. What is
-          counted is the DIRECTIVE, which is a bare string literal at the head
-          of a file, and src/app/layout.tsx must not gain one. The diff of
+          editing a file half (a) forbids this phase to print and the two
+          halves of this criterion would contradict each other. Round two
+          (finding R2-01) found the repair written with the anchor OUTSIDE the
+          quoting, grep -rn ^"use client" src/, which a shell strips to the
+          pattern ^use client and which returns NOTHING and exits 1 against a
+          line whose first character is a double quote: a criterion demanding
+          one line from a command that returns zero, and an invitation to the
+          next reader to delete the anchor and put the original defect
+          straight back. What is counted is the DIRECTIVE, a bare string
+          literal at the head of a file, and src/app/layout.tsx must not gain
+          one. The diff of
           src/app/layout.tsx introduces no "use client" in any position, no
           import, no hook, no prop and no next-intl key, only a module-scope
           string constant and one script element carrying
@@ -5103,9 +5141,24 @@ phases:
           the captured tail of npx playwright test --project=chromium-phone
           naming this spec, with that project's PASSED and SKIPPED counts side
           by side; the passed count is NOT ZERO and equals the count the spec
-          declares for that project, and the spec FAILS rather than skips when
-          no project it can run under matched it, so a testMatch that stops
-          matching reddens the suite instead of silently emptying it. (b) THE
+          declares for that project. AND THE SPEC CHECKS ITS OWN MEMBERSHIP,
+          REWRITTEN IN ROUND TWO (finding R2-03), because the first version
+          said the spec FAILS rather than skips when no project matched it and
+          a file no project matches is never LOADED by Playwright, so nothing
+          in it can fail and only the work-history record bound, which binds
+          one round. The durable half is therefore a claim about the CONFIG,
+          carried in a test with NO skip condition that runs under every
+          project the file is collected by: it reads playwright.config.ts, by
+          import or from disk, and asserts that a project exists whose use
+          options carry hasTouch true and whose testMatch matches this spec's
+          own filename, taken from test.info().file. A later phase that widens
+          or narrows testMatch, and playwright.config.ts is a file M3-P10's
+          criterion 10.7 expressly permits it to touch, then REDDENS this spec
+          under the projects that still collect it instead of silently
+          emptying the phone project. That is what turns M3-P10's requirement
+          that every pre-existing spec pass under every project into a real
+          interlock rather than a requirement about a spec that is no longer
+          there. (b) THE
           PRESS IS SAMPLED EVERY FRAME, OVER THE WHOLE SET. For each control
           in the set criterion 9.2(a) pins, at whatever size the
           verification-first sweep leaves it, which is nineteen at this plan's
@@ -5117,7 +5170,22 @@ phases:
           or follows a link and the sign-out control can be measured in place.
           The run SAMPLES AT LEAST EIGHT animation frames during the hold, and
           a run that samples fewer FAILS as unmeasured rather than passing on
-          a thin sample. Over the frames sampled while the touch is held: (i)
+          a thin sample; a run that fails that floor is a MACHINE result, is
+          recorded as one and retaken with the load captured beside it, and is
+          NEVER repaired by lowering the floor, because the floor is what
+          separates a thin sample from a measurement. Over the frames sampled
+          AT OR AFTER THE RECORDED POINTERDOWN TIMESTAMP and before the touch
+          ends, which is the window and not merely the hold: the sampler
+          starts before the press is dispatched, so frames tick before the
+          pointerdown arrives and their number is a function of how busy the
+          machine is, which is the one thing no floor here may depend on. This
+          anchor was ADDED IN ROUND TWO (finding R2-05), which found the
+          round-one rule below stated over an undefined window and therefore
+          MORE load-fragile than the percentage it replaced: the frames it
+          cannot tolerate were the pre-press ones, and a busy box makes more
+          of them. Anchored, the rule is both stricter and load-robust,
+          because the handler runs synchronously inside event dispatch and no
+          animation frame can interleave with it. (i)
           the control under test carries [data-pressed] on EVERY sampled frame
           except at most the FIRST, which is the shape the first round
           measured, 28 of 29 and 26 of 27, and which does not tighten as the
@@ -5194,8 +5262,16 @@ phases:
           finger begins more scrolls on a control than it completes taps. For
           at least one control of each of the three shapes in the enumeration,
           a submit button, a link-shaped control declaring no background of
-          its own, and the disclosure summary, the spec drives FOUR endings
-          and keeps sampling frames after each one. ONE, a touch release ON
+          its own, and the disclosure summary, the spec drives FIVE endings
+          and keeps sampling frames after each one. EVERY ending is FIRST
+          shown to have HAPPENED before anything is concluded from it, the way
+          half (c) requires, by asserting that the ending's own event was
+          captured on the control, pointerup for endings one, two, four and
+          five and pointercancel for ending three. That was ADDED IN ROUND TWO
+          (finding R2-06) and the reason is the one half (c) already gives:
+          every ending here concludes from an ABSENCE, that nothing carries
+          data-pressed, and an absence is exactly what an ending that never
+          happened also produces. ONE, a touch release ON
           the control, its activation refused by the capture-phase click
           handler half (a) permits. TWO, a touch release AWAY from the
           control. THREE, a POINTERCANCEL, produced by a touch that begins on
@@ -5209,20 +5285,35 @@ phases:
           implicit capture to its pointerdown target, so a touch pointerup
           fires on the control however far the finger has travelled, and a
           listener bound to the control alone would pass endings one through
-          three while leaving every other element in the document stuck. After
-          EACH of the four endings, by the SECOND sampled animation frame
+          three while leaving every other element in the document stuck. FIVE,
+          TWO PRESSES IN FLIGHT. A touch begins on one control and, before it
+          ends, a second touch begins on a DIFFERENT control; then the FIRST
+          touch ends, and then the second. ADDED IN ROUND TWO (finding R2-04),
+          because the four endings above drive one press at a time and
+          therefore cannot see the most natural wrong implementation: a clear
+          that remembers the pressed element in a SINGLE SLOT passes endings
+          one through four, and under two presses overwrites the slot and
+          leaves the first control drawn pressed with nothing left that will
+          ever clear it, which is round one's stuck-pressed defect surviving
+          the criterion written to catch it. The clear this phase specifies
+          sweeps the DOCUMENT, and this ending is what makes that
+          specification falsifiable rather than merely written down. After
+          EACH of the five endings, by the SECOND sampled animation frame
           following it, document.querySelectorAll("[data-pressed]") has length
           ZERO and the control's computed transform matrix and bounding rect
-          are back at their resting values. Frames and not milliseconds, for
-          the reason (b)(iv) gives. FALSIFIED BY the script element missing
+          are back at their resting values; for ending five the assertion is
+          taken after the LAST of the two endings. Frames and not
+          milliseconds, for the reason (b)(iv) gives. FALSIFIED BY the script
+          element missing
           from either served response or carrying no listener text, by a zero
           passed count under chromium-phone, by any injected script that
           writes data-pressed, by one control failing any of (b)(i) through
           (b)(v) at either the full-motion or the reduced-motion run, by a
           NON-ZERO :active frame count on any touch path, by a path reporting
           zero without having been shown to deliver pointerdown and
-          touchstart, or by ANY element still carrying data-pressed after ANY
-          of half (e)'s four endings.
+          touchstart, by an ending concluded from without its own event having
+          been captured, or by ANY element still carrying data-pressed after ANY
+          of half (e)'s five endings.
     hazard-classes:
       - id: H9.1
         statement: >-
@@ -5385,7 +5476,19 @@ phases:
     conflicts-with:
       - >-
         M3-P10 (this phase defines the state vocabulary that phase enters):
-        runs strictly before it, never beside it.
+        runs strictly before it, never beside it. M3-P10 IS DELIBERATELY NOT
+        REOPENED BY THE 2026-08-24 AMENDMENT OR ITS REVIEW ROUNDS, and the
+        judgement is recorded rather than left implicit (finding R2-03). Its
+        criterion 10.7 permits it to touch playwright.config.ts and does not
+        pin src/app/layout.tsx to an empty diff, but 10.7 bites where it
+        matters: it requires every pre-existing spec to pass under every
+        project, so a client-island refactor that moved the press listener
+        into a useEffect would emit no script element and criterion 9.9(a)'s
+        raw-response-body assertion would go red, which is exactly the
+        property D-61's second reason rests on. The one thing 10.7 cannot
+        catch is a phone project that no longer collects this phase's spec,
+        and criterion 9.9(a)'s config membership check closes that from inside
+        the spec rather than by adding anything here.
       - >-
         M3-P8 (same stylesheet) and M3-P4 (same stylesheet AND SAME ROOT
         LAYOUT: M3-P4 declares src/app/layout.tsx in its own files-to-touch,
