@@ -540,21 +540,90 @@ here whatever they show.
   `hasTouch` is not set; it runs and passes under `chromium-phone`. The suite
   is 61 tests now rather than 57: the touch measurement and the aria-disabled
   refusal each appear under both projects.
-- RUN 2, against the committed tree of this round, is quoted below.
+- RUN 2, at the committed head `1db37b3`: `4 failed`, `1 skipped`,
+  `56 passed (20.6m)`, `E2E2_EXIT=1`. **This is reported before the green one
+  and not instead of it.** All four are PRE-EXISTING specs, all four under the
+  `chromium` project, all four inside the first twelve tests of the run, and
+  none of them is the new spec:
+  `test/e2e/auth.spec.ts:11` ("element(s) not found" on
+  `getByTestId('household-context')`, the first test of the run, which is the
+  same test and the same signature the clean-room reviewer recorded at
+  `88dbaac`); `test/e2e/golden-journey.spec.ts:79` (30s test timeout with
+  "Protocol error (Runtime.callFunctionOn): Internal server error, session
+  closed", which is the CR-903 renderer-crash signature the Playwright config's
+  own comment documents and attributes to disk pressure);
+  `test/e2e/import.spec.ts:170` ("element(s) not found" on
+  `getByTestId('import-result')`); and `test/e2e/month-view.spec.ts:120` (30s
+  test timeout).
+- THE ISOLATED RETRY at the same head, `npx playwright test --project=chromium
+  test/e2e/auth.spec.ts test/e2e/golden-journey.spec.ts test/e2e/import.spec.ts
+  test/e2e/month-view.spec.ts`: `22 passed (6.6m)`, exit 0. All four failing
+  tests pass in isolation.
+- RUN 3, at the same committed head `1db37b3` with `test-results` cleared and
+  6.4G free: `2 failed`, `1 skipped`, `58 passed (20.7m)`, `E2E3_EXIT=1`. Both
+  are pre-existing specs under `chromium`, both are timeouts waiting for a
+  server action rather than an assertion about a value:
+  `test/e2e/import.spec.ts:170` (5s timeout on `getByTestId('import-result')`,
+  this time at line 224 where run 2 failed at line 205, so it is not one fixed
+  assertion) and `test/e2e/merchants.spec.ts:18` (30s test timeout).
+- THE ISOLATED RETRY of those two files at the same head: `6 passed (2.4m)`,
+  exit 0, including `import.spec.ts:170` itself.
+
+**THE E2E GATE IS NOT REPRODUCIBLY GREEN IN THIS CONTAINER AND I DID NOT
+ROOT-CAUSE IT.** Three full runs at essentially one tree: green, then four red,
+then two red. Every red test is a pre-existing spec, every one of them passes
+on an isolated retry at the same head, and the new spec passed all four of its
+runs in all three. That is the same pattern the clean-room reviewer recorded at
+`88dbaac` before this round existed. What I can add to it, as facts rather than
+as a verdict:
+
+- Nothing in the product enters any state this round adds.
+  `grep -rn "aria-disabled\|aria-busy\|data-unconfirmed\|data-pressed\|pulse-busy\|disabled="`
+  over `src/` restricted to `*.tsx` and `*.ts` exits 1, so the `pointer-events`
+  rule and the `[data-pressed]` rules are inert in the running application.
+- The full-run duration grew 18.6m, 20.6m, 20.7m across the three, and the
+  local Postgres accumulates households and imported rows across every run.
+  `npm run db:reset` was NOT run: Prisma's agent consent guard refuses it, and
+  the stack is shared with other worktrees in this container, so resetting it
+  would reach outside this phase.
+- Two of run 2's four carried the "Protocol error (Runtime.callFunctionOn):
+  Internal server error, session closed" and 30s-timeout signatures the
+  Playwright config's own comment documents as CR-903 and attributes to disk
+  pressure. Free space was 4.8G, 6.4G and 6.5G across the three runs.
+
+I am not asserting that this round did not cause it. What I am asserting is
+what I measured: the new spec is green in every run and in every project, the
+red tests are pre-existing and green in isolation, and the same shape predates
+this round.
+
+WHAT I CAN AND CANNOT SAY ABOUT RUN 2. The gate is not reproducibly green in
+this container: run 1 green, run 2 red on four pre-existing specs, the four
+green on retry. I did not root-cause it and I am not claiming the phase did
+not cause it on the strength of "they are pre-existing specs" alone. What
+points away from this round: the four are the first, fourth, seventh and
+twelfth tests of the run and the new spec is the thirty-second, so nothing it
+does can precede them; two of the four carry the renderer-crash signature the
+config already documents; and run 1, on a tree carrying every behaviour change
+of this round, was green over the same 61 tests. What points at this round,
+and is stated rather than buried: the new spec is the slowest single spec in
+the suite and lengthens the window a documented flake can land in, and the
+suite grew from 57 tests to 61 without a `db:reset` between runs, which
+Prisma's agent guard refuses here. Disk was 4.8G free at the start of run 2 and
+6.4G at the start of run 3.
 
 ## t9 one line per finding
 
 | Finding | What changed |
 |---|---|
-| HZ-M3P9-01 (high) | The pressed rules gained `[data-pressed]` beside `:active`, with twins on the three inverse-surface controls and on both disabled overrides. A new spec drives a held CDP touch press on `chromium-phone` and samples every animation frame: red before (0 frames with a transform, 0.000px) and green after (27 and 25 frames, 2.000px) on an opaque submit and on a bare anchor. The handler that sets the attribute is NOT shipped and cannot be inside criterion 9.7's diff; it is written out verbatim in the spec and escalated. |
-| HZ-M3P9-02 (medium) | `[aria-disabled="true"]` gained `pointer-events: none` in a rule of its own. A new test drives a real pointer activation and asserts both directions; the in-journey loop now asserts the computed `pointer-events` on all nineteen controls whatever their tag, which is how the disclosure summary is covered. |
+| HZ-M3P9-01 (high) | The pressed rules gained `[data-pressed]` beside `:active`, with twins on the three inverse-surface controls and on both disabled overrides. A new spec drives a held CDP touch press on `chromium-phone` and samples every animation frame: red before (0 frames with a transform, 0.000px) and green after (27 and 25 frames, 2.000px) on an opaque submit and on a bare anchor. The handler that sets the attribute is NOT shipped: I found no host for it inside the six paths criterion 9.7 prints. It is written out verbatim in the spec, and the gap is escalated rather than closed. |
+| HZ-M3P9-02 (medium) | `[aria-disabled="true"]` gained `pointer-events: none` in a rule of its own. A new test drives a real pointer activation and asserts both directions; the in-journey loop now asserts the computed `pointer-events` on all nineteen controls whatever their tag, which is how the disclosure summary is reached without driving the whole import journey a second time. |
 | HZ-M3P9-03 (medium) | The Snapshot now reads `animationName` and `animationDuration` from `getComputedStyle(node, "::after")`, and the busy block enumerates `getAnimations({subtree: true})`. Both redden on deleting `--duration-busy-cycle` from the reduced-motion block; the old control-level check passed on that same mutation, which is the measurement that shows it was vacuous. |
 | HZ-M3P9-04 (medium) | `.pulse-busy` is now applied to every one of the nineteen controls and put through the same magnitude and mark assertions as the attribute branch. The comment above the rule is corrected in place: the attribute branch covers buttons, links and the summary alike, and the class is a second equivalent route rather than the link-shaped controls' own. |
 | HZ-M3P9-05 (low) | The file header no longer claims no length literal below it. The five literals are named where the claim was, with why they are outside criterion 9.5 and CLAUDE.md non-negotiable 4, and CR-M3P9-08 is pointed at as M3-P10's. |
 | HZ-M3P9-06 (low) | Eight em dashes replaced with colons in the notes headings. A grep for the character returns 0 over all six touched paths and over every commit message on the branch. |
 | CR-M3P9-01 (medium) | The false "absent from this container" sentence is corrected in place. All five probe families built here; zero hits over the six touched files and over every commit message; 19 pairs over the whole tracked tree, all pre-existing, handed on as an open question because I could not read the probe strings to classify them. |
 | CR-M3P9-02 (low) | The unconfirmed mark's width is asserted. Reddened by zeroing width AND border, and the reason width alone is not enough is measured and recorded. |
-| CR-M3P9-03 (low) | The count is corrected to two in the CSS comment and in the deviation entry, naming the import-screen flex context as why the other two never needed the rule. |
+| CR-M3P9-03 (low) | The count is corrected to two in the CSS comment and in the deviation entry, naming the import-screen flex context as the reason the other two did not need the rule. |
 | CR-M3P9-04 (medium) | Same as HZ-M3P9-01. The touch question is now measured rather than carried as an aside. |
 | CR-M3P9-05 (low) | Five paths corrected to six in both places. |
 | CR-M3P9-06 (low) | The two chevron characters restored in the captured output block. |
