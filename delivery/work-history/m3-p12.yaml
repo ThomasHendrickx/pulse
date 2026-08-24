@@ -170,6 +170,7 @@ files-touched:
   - test/e2e/auth.spec.ts
   - test/domain/counterparty-identity-contracts.test.ts
   - test/property/mutants.mts
+  - package.json
 per-step-commits:
   - sha: 502da43
     subject: >-
@@ -890,6 +891,50 @@ key-decisions:
       under one name does not meet the criterion, so it has its own report
       field, its own console lines carrying the rule that held the row and the
       rule that holds it now, and its own conjunct in the second biconditional.
+  - decision: >-
+      The generated worlds vary RULE KIND, and a cross-kind pattern collision
+      is reachable.
+    why: >-
+      HAZARD finding HZ6-M3P12-01, high. The routine's claimant lookup
+      restricts candidates to the SAME KIND as the source rule, which is what
+      criterion 12.7 requires the lineage check to verify, and no seed anywhere
+      in the tree could build a world where that conjunct mattered: every rule
+      in every generated world was EXACT. The schema's unique key is
+      (householdId, kind, pattern), so an EXACT rule and a PREFIX rule may hold
+      the identical pattern string, which is exactly the world the conjunct
+      exists for. The lane removed the conjunct and every property and all
+      example tests stayed green. Not a live defect, since only EXACT rules are
+      ever written today, and that is precisely why it was worth closing: it
+      was a proven blind spot in the safety net this phase built BECAUSE the
+      mechanism had been wrong three times running, on the one dimension the
+      criterion's own prose calls out as the reason the exception is restricted
+      to EXACT at all.
+      IT IS A GENERATOR DIMENSION AND NOT A SEVENTH SHAPE, which is what the
+      lane said and what the fix respects: the scenario adds no count, because
+      the row outcomes it produces are ones already counted. What it adds is a
+      world in which the same-kind assertions can be falsified.
+  - decision: >-
+      The property models the matcher's tie-break itself rather than importing
+      it, now that more than one kind can appear.
+    why: >-
+      Criterion 12.7 defines the before set as read "with the matcher's own
+      tie-break applied within each space", and this file must decide that for
+      itself or it certifies the function against itself. It is short enough to
+      state: EXACT on equality, then the longest matching PREFIX and only where
+      the key is not account-basis, which is decision D-40. PATTERN is
+      deliberately NOT modelled, because the generator does not build one and a
+      kind the generator cannot build is a kind this resolver must not pretend
+      to judge.
+  - decision: >-
+      The mutant harness is wired into npm as test:mutants.
+    why: >-
+      HAZARD finding HZ6-M3P12-03. It was invoked by hand and nothing referred
+      to it, so an anchor drifting or a mutant becoming unreachable would be
+      silent. Both defects this harness has already had, an unreachable mutant
+      and one that died of a ReferenceError, were found only because somebody
+      remembered to run it, and the harness already exits non-zero when a
+      mutant is left green, so a checklist item or a CI job can now stand where
+      remembering used to.
 
 verification-first:
   - finding: >-
@@ -1461,6 +1506,43 @@ verification-first:
       claimant at all, so a generator that never builds one satisfies them
       while leaving the licence conjunct unexercised.
     contradicts-plan: false
+  - finding: >-
+      (ll) THE FIFTH MUTANT, and the blind spot it proves was there. M5 deletes
+      the same-kind conjunct from the routine's claimant lookup, so a rule of
+      ANY kind can be taken for a claimant.
+      RED, against this round's tree: "red on: FIRST biconditional and SECOND,
+      the lineage check", "AssertionError: expected { row: 'descriptorRow',
+      lost: false } to deeply equal { row: 'descriptorRow', lost: true }". The
+      first is the one that matters: a PREFIX rule holding the pattern a
+      same-kind claimant would hold is taken for the claimant, the dead rule is
+      left in place instead of being rewritten, and the row silently changes
+      merchant.
+      GREEN, with the SAME mutant and the new generator dimension removed,
+      which is the state the review found: "Tests 2 passed (2)" on the
+      properties and "Tests 59 passed (59)" on the example file. The mutant was
+      not caught; it was unreachable. That pair is the whole argument for
+      counting a missing generator dimension as a defect.
+      All five mutants now redden a property, each with its own assertion, and
+      the harness restored the source on every run: original 33f7f7fee0ddf710,
+      on disk 33f7f7fee0ddf710.
+    contradicts-plan: false
+  - finding: >-
+      (mm) THE ID SCHEME, corrected in place under clause R-087. The
+      placeholder separation test asserted as present-tense fact that "the
+      schema's ids are cuids: a lowercase letter followed by alphanumerics,
+      with no hyphen anywhere", and rested on a regex for that scheme. BOTH
+      HALVES ARE FALSE: every id in prisma/schema is @default(uuid())
+      @db.Uuid, and the canonical uuid form CONTAINS hyphens, so "carries a
+      hyphen" was never a separation argument. Nothing else in the tree rested
+      on the cuid claim: grep for "cuid" over ts, tsx, prisma, md and yaml
+      found that one comment and nothing else, and the two other places that
+      mention a database id make no claim about its scheme. The separation
+      still holds, for the real reason: a uuid is exactly 36 characters in five
+      lowercase-hex groups of 8-4-4-4-12, which `pending-<n>` fails on its
+      first character. The test now asserts both directions against a canonical
+      uuid AND against the schema file itself, so the correction is pinned
+      against the schema rather than against a second belief about it.
+    contradicts-plan: false
 
 deviations:
   - plan-clause: >-
@@ -2019,6 +2101,23 @@ gate-evidence:
       biconditionals rather than one, four tests were added for the before
       set's two clauses and the published lineage's two statements, and the
       acknowledge-path tests were reworked onto the pair granularity.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 648
+    passed: 648
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: >-
+      FIX ROUND SEVEN, all five fast gates plus the mutant harness. npm run
+      typecheck (tsc --noEmit, no output), npm run lint (eslint ., no output),
+      npm test (vitest run, 42 test files, 648 tests), npm run gate:privacy
+      (printed "gate:privacy clean"), npm run gate:tokens (no output), and npm
+      run test:mutants, newly wired, which reddened all FIVE mutants and
+      restored the source with matching checksums. Every one exited 0. The test
+      count is unchanged at 648 on purpose: this round adds a generator
+      DIMENSION and a mutant, not a shape or a count.
     result: green
     wrapper-exit-code: 0
     discovered: 648

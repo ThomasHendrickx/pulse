@@ -1750,16 +1750,42 @@ describe("CR3-M3P12-07: there is ONE write path for a declaration", () => {
 // in fix round six.
 describe("the published lineage: its placeholder form and its place outside the decision report", () => {
   test("a promotion placeholder is a form NO database id of this schema can take", () => {
-    // The schema's ids are cuids: a lowercase letter followed by
-    // alphanumerics, with no hyphen anywhere. `pending-<n>` carries one, so
-    // the two spaces cannot collide, which is the same argument criterion 12.5
-    // makes for the two key namespaces.
+    // CORRECTED IN PLACE, fix round seven, hazard finding HZ6-M3P12-02
+    // (clause R-087). This said: "The schema's ids are cuids: a lowercase
+    // letter followed by alphanumerics, with no hyphen anywhere. `pending-<n>`
+    // carries one, so the two spaces cannot collide." BOTH HALVES WERE FALSE.
+    // Every id in prisma/schema is `@default(uuid()) @db.Uuid`, not a cuid,
+    // and the canonical uuid form CONTAINS hyphens, so "carries a hyphen" was
+    // never a separation argument at all. The regex it rested on was applied
+    // only to the three invented placeholder strings and never to anything
+    // shaped like a real id, which is why nothing caught it.
+    //
+    // WHAT ACTUALLY SEPARATES THEM: a uuid is exactly 36 characters, five
+    // lowercase-hex groups of 8-4-4-4-12 with hyphens at fixed positions.
+    // `pending-<n>` fails that on its first character, and a uuid fails the
+    // placeholder form on its own. Both directions are asserted, and a real
+    // canonical uuid is put through both so the claim is checked against the
+    // id scheme the schema actually uses rather than a different one.
     const placeholder = /^pending-[1-9][0-9]*$/;
-    const databaseId = /^[a-z][a-z0-9]*$/;
+    const databaseId =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
     for (const candidate of ["pending-1", "pending-2", "pending-17"]) {
       expect(placeholder.test(candidate)).toBe(true);
       expect(databaseId.test(candidate)).toBe(false);
     }
+    // An invented uuid of the canonical shape, in both directions.
+    const invented = "550e8400-e29b-41d4-a716-446655440000";
+    expect(invented).toHaveLength(36);
+    expect(databaseId.test(invented)).toBe(true);
+    expect(placeholder.test(invented)).toBe(false);
+    // AND THE SCHEMA REALLY DOES DECLARE IT THAT WAY, so the correction is
+    // pinned against the schema and not against a second belief about it.
+    const schema = readFileSync(
+      join(repositoryRoot, "prisma", "schema", "merchants.prisma"),
+      "utf8",
+    );
+    expect(schema).toMatch(/id\s+String\s+@id @default\(uuid\(\)\) @db\.Uuid/);
+    expect(schema).not.toContain("cuid(");
     // And the routine's own source builds it that way, so the pin is on the
     // construction and not only on three strings.
     const source = readFileSync(

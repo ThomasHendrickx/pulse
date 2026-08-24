@@ -9,9 +9,16 @@
 // once believed, not an invented one.
 //
 // It is deliberately NOT a vitest file: it edits the module under test, so it
-// must never run inside the suite it is measuring. Run it directly:
+// must never run inside the suite it is measuring. It is wired into npm so it
+// cannot bit-rot unnoticed (fix round seven, hazard finding HZ6-M3P12-03),
+// because an anchor drifting or a mutant becoming unreachable is silent, and
+// both defects this harness has already had were found only because somebody
+// remembered to run it:
 //
-//   npx tsx test/property/mutants.mts
+//   npm run test:mutants
+//
+// It exits non-zero when any mutant is left green, so a checklist item or a CI
+// job can stand where remembering used to.
 //
 // It restores the file from a saved copy on every exit path, including a
 // throw, and prints the restored file's checksum beside the original's so a
@@ -98,6 +105,20 @@ const mutants: readonly Mutant[] = [
       lineageRoot(after.ruleId) === claimantOfHeld`,
         `      claimantOfHeld !== undefined &&
       after !== undefined`,
+      ],
+    ],
+  },
+  {
+    id: "M5",
+    what: "takes a rule of ANY kind for a claimant, not one of the same kind",
+    shipped: "never, and that is the point: it is the one dimension no seed could reach",
+    edits: [
+      [
+        `        rule.id !== exceptRuleId &&
+        rule.kind === kind &&
+        rule.pattern === pattern,`,
+        `        rule.id !== exceptRuleId &&
+        rule.pattern === pattern,`,
       ],
     ],
   },

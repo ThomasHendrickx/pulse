@@ -87,6 +87,36 @@ const identityKey = (row: CountedTransaction): string =>
     ? `${ACCOUNT_NS}${row.counterpartyAccount}`
     : `${DESCRIPTOR_NS}${row.description}`;
 
+// THE MATCHER'S OWN TIE-BREAK, modelled here rather than imported, because the
+// criterion's before set is defined as "with the matcher's own tie-break
+// applied within each space" and this file must decide that for itself. It is
+// short enough to state: EXACT wins on equality; then, and ONLY where the key
+// is not account-basis, the longest matching PREFIX wins (decision D-40 refuses
+// a prefix against an account key, because an account namespace plus a prefix
+// of an account number is a different account). PATTERN is not modelled because
+// the generator does not build one, and a kind the generator cannot build is a
+// kind this resolver must not pretend to judge.
+const resolve = (
+  key: string,
+  rules: readonly MerchantRuleLike[],
+): MerchantRuleLike | undefined => {
+  const exact = rules.filter(
+    (rule) => rule.kind === "EXACT" && rule.pattern === key,
+  );
+  if (exact.length > 0) {
+    return [...exact].sort((a, b) => (a.id < b.id ? -1 : 1))[0];
+  }
+  if (key.startsWith(ACCOUNT_NS)) {
+    return undefined;
+  }
+  const prefixes = rules.filter(
+    (rule) => rule.kind === "PREFIX" && key.startsWith(rule.pattern),
+  );
+  return [...prefixes].sort(
+    (a, b) => b.pattern.length - a.pattern.length || (a.id < b.id ? -1 : 1),
+  )[0];
+};
+
 // THE PRE-PHASE SPACE IS CONSULTED FIRST, the identity space only for a row no
 // un-namespaced rule reaches. The order is the criterion's and it is what
 // decides whether a row claimed in BOTH spaces carries the superseded rule's
@@ -95,14 +125,19 @@ const holderBefore = (
   row: CountedTransaction,
   rules: readonly MerchantRuleLike[],
 ): MerchantRuleLike | undefined =>
-  rules.find((rule) => !isNamespaced(rule.pattern) && rule.pattern === prePhaseKey(row)) ??
-  rules.find((rule) => isNamespaced(rule.pattern) && rule.pattern === identityKey(row));
+  resolve(
+    prePhaseKey(row),
+    rules.filter((rule) => !isNamespaced(rule.pattern)),
+  ) ??
+  resolve(
+    identityKey(row),
+    rules.filter((rule) => isNamespaced(rule.pattern)),
+  );
 
 const holderAfter = (
   row: CountedTransaction,
   rules: readonly MerchantRuleLike[],
-): MerchantRuleLike | undefined =>
-  rules.find((rule) => rule.pattern === identityKey(row));
+): MerchantRuleLike | undefined => resolve(identityKey(row), rules);
 
 // THE CLAIMANT, FOUND IN THE SEED AND NOT IN THE REPORT. Pinned uniquely by
 // the table's unique key over (household, kind, pattern). EXACT only: the
@@ -173,6 +208,20 @@ const scenarios = [
   // Without such a world a run that forges a promotion pair has nowhere to
   // forge one, and the mutant looks caught when it was merely unreachable.
   "promotion-collides-with-third-merchant",
+  // THE KIND DIMENSION (fix round seven, hazard finding HZ6-M3P12-01). Until
+  // this scenario every rule in every generated world was EXACT, so the
+  // "same kind" conjunct in the routine's claimant lookup, and the same-kind
+  // assertions in the lineage check below, could not be falsified by anything
+  // the generator could build. The schema's unique key is
+  // (householdId, kind, pattern), so an EXACT rule and a PREFIX rule may hold
+  // the IDENTICAL pattern string, and the pattern planted here is exactly the
+  // namespaced form a same-kind claimant would hold. With the conjunct in
+  // place there is no claimant, the dead rule is rewritten and the row keeps
+  // its merchant; without it the PREFIX rule is taken for a claimant, the dead
+  // rule is left in place, and the row silently changes merchant. It is a
+  // missing GENERATOR DIMENSION rather than a seventh row outcome, so it adds
+  // no count: the shapes it produces are ones already counted.
+  "cross-kind-pattern-collision",
 ] as const;
 
 const seedArbitrary = fc
@@ -263,6 +312,15 @@ const seedArbitrary = fc
           claimant();
           rows.push(makeRow("accountRow", SHARED, account));
           unrelatedAccountRule(thirdMerchant);
+          break;
+        case "cross-kind-pattern-collision":
+          rules.push({
+            id: "prefixHolder",
+            merchantId: claimantMerchant,
+            kind: "PREFIX",
+            pattern: `${DESCRIPTOR_NS}${SHARED}`,
+          });
+          rows.push(makeRow("descriptorRow", SHARED));
           break;
       }
       if (second !== undefined) {
