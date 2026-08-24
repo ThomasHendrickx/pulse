@@ -199,6 +199,101 @@ findings:
 #    (the silently-dropped rows are never in the decide phase's candidate
 #    set at all, on any run).
 
+# 7. ATTACK SURFACE 3, THE GUARD. Read src/platform/db/target-guard.ts (250
+#    lines) and src/platform/db/resolve-env.ts (68 lines) in full.
+#    Confirmed the resolver split is correctly wired: scripts/rederive-
+#    merchant-rules.ts:104,231 imports and calls resolveClientDbUrl()
+#    (process.env only, matching new PrismaClient()'s own reading, verified
+#    against src/platform/db/client.ts:36 which constructs a bare
+#    `new PrismaClient()` with no datasource override), while guard-cli.ts:2,14
+#    still uses resolveDbEnv (shell-then-.env, matching the Prisma CLI). No
+#    caller wires the wrong resolver to the wrong guard.
+#    Confirmed CR3-M3P12-08's fix is real: `host` query param refused,
+#    unknown params refused against a 4-entry allow list, database name
+#    checked against the literal "postgres". Probed for what is STILL
+#    unchecked, empirically, via a throwaway vitest file (deleted after,
+#    git status --short clean): six probes against assessRederiveTarget with
+#    a fixed --expect-host/--expect-ref pair.
+#      - PORT IS NEVER COMPARED. Three otherwise-identical connection
+#        strings differing only in port (5432, 6543, and an arbitrary 9999)
+#        were ALL approved with the identical reason string. Neither
+#        RederiveTargetEnv nor RederiveTargetExpectation carries a port
+#        field, and assessRederiveTarget never reads parsed.port.
+#      - schema=<anything> is approved unconditionally: the allow-list only
+#        checks the PARAMETER NAME, never validates the value, so
+#        schema=hemma_dev (the name of the OTHER project fleet warning 16
+#        names) passes.
+#      - Multi-host libpq-style strings, path-traversal in the database
+#        segment, an uppercase host and a trailing-dot FQDN all failed to
+#        parse or were correctly refused; no bypass found on those axes.
+#    CONCLUSION: this round's fix closes the two gaps its own finding named
+#    (host= param, database name) but does not close a third field the real
+#    client also resolves: port. Written up as CR4-M3P12-02 below, medium
+#    (not high: within Supabase's documented topology the ref lives in the
+#    username/host and is still checked, so a port-only mismatch cannot
+#    reach a DIFFERENT PROJECT the way H12.30 describes; the consequence is
+#    a same-project pooling-mode mismatch, which is real but narrower than
+#    the cross-project hazard this interlock exists for).
+
+findings:
+  - id: CR4-M3P12-02
+    severity: medium
+    analysis: >-
+      THE GUARD STILL APPROVES A CONNECTION THAT OPENS ON A DIFFERENT PORT
+      THAN THE ONE THE OPERATOR NAMED, BECAUSE NEITHER SIDE EVER NAMES ONE.
+      Criterion 12.23's own reasoning for round three's fix was "THE GUARD
+      MUST READ WHAT THE CLIENT WILL USE," stated as the rule the whole
+      criterion rests on, and applied to two fields the client resolves that
+      the interlock had not been checking: a host= query parameter and the
+      database name. Port is a third field the client resolves that the
+      interlock still does not read at all: RederiveTargetEnv and
+      RederiveTargetExpectation carry no port, and assessRederiveTarget never
+      inspects parsed.port. Fleet warning 5 records that the session pooler
+      this routine must use exposes SESSION MODE specifically, on port 5432,
+      and Supabase's pooler infrastructure (Supavisor/PgBouncer-compatible)
+      exposes the SAME project's database through more than one pooling mode
+      on different ports, most commonly 6543 for transaction-mode pooling.
+      Because the guard's approval turns entirely on host, project ref and
+      database name, a DATABASE_URL that is correct in every field this
+      guard checks but wrong in port is approved exactly the same as one
+      that is correct in every field including port. The consequence is not
+      the cross-project hazard H12.30 names, because the ref is still
+      pinned to the project the operator named; it is that this routine's
+      OWN correctness guarantee, criterion 12.7's all-or-nothing write set
+      via applyRuleWrites's prisma.$transaction (the interactive transaction
+      attack surface 4 asks about directly), depends on the connection
+      preserving session state across statements within one transaction,
+      which is exactly what transaction-mode pooling is documented not to
+      guarantee for arbitrary interactive transactions. An operator (or an
+      environment) that resolves DATABASE_URL to the transaction-mode
+      endpoint instead of the session-mode one passes this guard silently.
+      I COULD NOT WITNESS THE POOLING-MODE BEHAVIOUR ITSELF: this sandboxed
+      container has no reachable Supabase transaction-mode pooler to run
+      applyRuleWrites against, so the transactional-degradation consequence
+      is a documented risk I am citing rather than a defect I reproduced
+      end to end. What I DID witness directly is that the port is unchecked.
+    evidence:
+      - "WITNESSED via a throwaway vitest file (test/db/ZZZ-scratch-guard.test.ts, written, run, then deleted; git status --short clean afterward), calling assessRederiveTarget with a fixed expectation {host: aws-0-eu-central-1.pooler.supabase.com, projectRef: abcdefghijklmnop (invented)} against three connection strings identical except for port: :5432, :6543 and :9999. All three printed the SAME result: {\"allowed\":true,\"reason\":\"target confirmed against the host and project ref given on the command line (ref abcdefghijklmnop)\"}."
+      - "src/platform/db/target-guard.ts:89-103 (RederiveTargetEnv, RederiveTargetExpectation) carries no port field; grep for `.port` over src/platform/db/target-guard.ts returns nothing."
+      - "src/platform/db/target-guard.ts:76-81 (UNDERSTOOD_PARAMETERS) checks only that a query parameter's NAME is on the allow list, never its value: the same probe with ?schema=hemma_dev (the name of the foreign project named in fleet warning 16 and Environment warning 16 in this brief) was approved with the identical reason string."
+      - "Fleet warning 5 (this session's brief, Environment warnings section): \"the SESSION POOLER (aws-0-eu-central-1.pooler.supabase.com:5432, project ref in the username) is the only IPv4 endpoint\" states port 5432 specifically for the session pooler, distinguishing it from other pooling modes Supabase's infrastructure exposes on other ports for the same project."
+    concrete-fix: >-
+      Add a port to both RederiveTargetEnv's implicit surface (nothing to
+      add there, it is derived from the URL) and RederiveTargetExpectation
+      as an optional --expect-port, defaulting to 5432 (the session pooler's
+      documented port per fleet warning 5) when not given, and compare
+      parsed.port (or the scheme default when parsed.port is empty) against
+      it the same way host is compared, before the ref checks. Add one test
+      per port-mismatch case to test/db/target-guard.test.ts alongside the
+      host= and schema-name cases already there, and one matching-port case
+      per endpoint shape so the refusal is proven to be about the field and
+      not about refusing everything. If the team judges port out of scope
+      for this criterion (since fleet warning 5 only ever documents ONE
+      port for the one endpoint this routine can reach), say so explicitly
+      in the routine's own header the way CR3-M3P12-05's fix stated the
+      local-database limitation, rather than leaving the gap undocumented
+      the way it is today.
+
 criteria: []
 deviations-judged: []
 hazard-classes-addressed: []
