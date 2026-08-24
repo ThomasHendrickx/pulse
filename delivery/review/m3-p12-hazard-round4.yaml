@@ -294,6 +294,122 @@ findings:
       local-database limitation, rather than leaving the gap undocumented
       the way it is today.
 
+# 8. ATTACK SURFACE 4, THE INTERACTIVE TRANSACTION. Read
+#    src/modules/merchants/adapters/merchant-repository.ts:125-168
+#    (applyRuleWrites) in full, then test/e2e/merchant-rule-write.spec.ts (the
+#    only real-Postgres coverage of this function) and the fake at
+#    test/application/fake-import-world.ts:379-459.
+#    Confirmed CR3-M3P12-04's fix is real: the UPDATE loop's tenancy check
+#    (updateMany where {id, householdId}, throw on count 0) is now INSIDE
+#    prisma.$transaction's callback, so a foreign rule id throws before
+#    anything commits. Confirmed CR3-M3P12-07's fix is real too:
+#    updateRulePattern is gone from the port, the adapter and the fakes; the
+#    comment at merchant-repository.ts:120-124 records its removal.
+#    FOUND A GAP IN THE SAME FUNCTION THE FIX JUST REPAIRED: the INSERT loop,
+#    three lines below the fixed update loop, never checks that
+#    insert.merchantId belongs to context.householdId. It writes
+#    { householdId: context.householdId, merchantId: insert.merchantId, ... }
+#    unconditionally. prisma/schema/merchants.prisma:85 declares the
+#    merchantId relation against Merchant.id with no household component in
+#    the foreign key, so the database does not catch this either: a
+#    MerchantRule row with householdId A and merchantId pointing at a
+#    merchant belonging to household B is representable and would be
+#    written. This is exactly the check upsertRule makes explicitly two
+#    functions above it (merchant-repository.ts:80-84, "the merchant the
+#    rule points at is verified to belong to THIS household... A foreign
+#    merchantId indicates a bug or an attack, so it throws"), and the check
+#    CR3-M3P12-04 itself just added to the UPDATE half of this very
+#    function. The INSERT half has never had it.
+#    THE FAKE HIDES THIS COMPLETELY, which is the sharper part of the
+#    finding: test/application/fake-import-world.ts:442-459's
+#    applyRuleWrites DELEGATES its insert loop to `merchantsPort.upsertRule`
+#    (line ~453), which DOES carry the ownership check. So the fake is
+#    STRONGER than the real adapter here, the exact inversion of the warning
+#    the fake's own comment states two functions away ("a fake that is
+#    weaker than its subject reports safe by construction",
+#    test/application/fake-import-world.ts:396-400): every fast-gate test
+#    that exercises applyRuleWrites through the fake would refuse a foreign
+#    merchantId on insert and report the guarantee held, while the real
+#    adapter the fake stands in for does not enforce it at all.
+#    Read test/e2e/merchant-rule-write.spec.ts, the one real-Postgres cover
+#    of this function, end to end: its one foreign-household case
+#    (line 124-134) submits an UPDATE and an INSERT together under the wrong
+#    context, so the update's own household check throws first and the whole
+#    transaction rolls back before the insert's lack of a check is ever
+#    exercised on its own. No case in that spec submits an INSERT ALONE
+#    under a context whose householdId differs from the target merchant's
+#    household, which is the one case that would show the gap.
+#    NOT YET WITNESSED against a real Postgres: static analysis plus the
+#    schema and the two comparison points above are strong, but I have not
+#    yet run this against a live local database with an actual cross-
+#    household insert. Doing that next as part of setting up the local
+#    stack the gates need anyway.
+
+findings:
+  - id: CR4-M3P12-03
+    severity: medium
+    analysis: >-
+      THE INSERT HALF OF applyRuleWrites NEVER VERIFIES THE MERCHANT IT
+      POINTS AT BELONGS TO THE CALLING HOUSEHOLD, THE EXACT CHECK ITS OWN
+      UPDATE HALF JUST GAINED THREE LINES ABOVE IT. Fix round three's repair
+      of CR3-M3P12-04 moved the tenancy check for the UPDATE loop inside the
+      interactive transaction so it throws before the commit. The INSERT
+      loop, in the same function and the same transaction, writes
+      { householdId: context.householdId, merchantId: insert.merchantId }
+      with no check at all that insert.merchantId is a merchant belonging to
+      context.householdId. prisma/schema/merchants.prisma's foreign key on
+      MerchantRule.merchantId references Merchant.id only, with no household
+      component, so nothing in the schema catches this either: a row can be
+      created whose declaration (household A) points at a merchant owned by
+      a different household (B), which is a tenancy violation in the sense
+      CLAUDE.md non-negotiable 6 exists to prevent, even though the ROW
+      itself carries the correct householdId column and every read query
+      that filters on householdId would still find it. upsertRule, two
+      functions above applyRuleWrites in the same file, makes exactly this
+      check explicitly and calls a foreign merchantId a sign of "a bug or an
+      attack". applyRuleWrites' insert path has never had it, not before
+      this round and not after it. This is not reachable through the
+      shipped rederiveMerchantRules caller today, because every merchantId
+      it ever inserts is copied from a rule already read via the
+      household-scoped listRules(context), which is why this is medium and
+      not high: the same shape CR3-M3P12-07 named for updateRulePattern
+      ("the hazard is not what it does today, it is that... one call site
+      away from being lost again") applies here to a different guarantee.
+      What makes it sharper than an ordinary latent gap is that the FAKE
+      repository used by every fast-gate test of this function delegates
+      its insert path to upsertRule, which DOES check ownership, so the fast
+      gate would refuse a foreign merchantId that the real adapter accepts:
+      the fake is stronger than its subject, which is precisely the failure
+      mode the fake's own comment two members away warns against, realized
+      one function later. The one real-Postgres spec covering this function
+      never isolates the insert path from the update path, so it cannot see
+      the gap either.
+    evidence:
+      - "src/modules/merchants/adapters/merchant-repository.ts:151-160 is the insert loop: `tx.merchantRule.create({ data: { householdId: context.householdId, merchantId: insert.merchantId, kind: insert.kind, pattern: insert.pattern } })`, no lookup or filter on insert.merchantId anywhere before it."
+      - "src/modules/merchants/adapters/merchant-repository.ts:80-91 (upsertRule) makes the comparison finding explicit: it looks up `tx.merchant.findFirst({ where: { id: input.merchantId, householdId: context.householdId } })` and throws \"upsertRule: merchant does not belong to the household\" when it is null, before writing anything."
+      - "prisma/schema/merchants.prisma:85: `merchant Merchant @relation(fields: [merchantId], references: [id])` carries no householdId component, so the database's own foreign key permits a cross-household merchantId."
+      - "test/application/fake-import-world.ts:442-459: the fake's applyRuleWrites inserts by calling `merchantsPort.upsertRule(context, insert)` for each insert (line ~453), which runs the SAME ownership check upsertRule makes for real. Every fast-gate assertion made against this fake for applyRuleWrites is therefore made against a stand-in that is stricter than the adapter it stands in for."
+      - "test/e2e/merchant-rule-write.spec.ts:124-134, the one real-Postgres case naming a foreign household, submits an update AND an insert together; the update's own household check (the loop that runs first) throws before the insert statement is ever reached, so this case cannot distinguish 'the insert was refused' from 'the whole batch never got there'. No case in the file submits inserts only."
+    concrete-fix: >-
+      Add the same lookup upsertRule already makes, inside the SAME
+      transaction, before the insert loop (or per insert, mirroring the
+      per-update check): collect the distinct merchantIds in input.inserts,
+      run `tx.merchant.findMany({ where: { id: { in: [...] }, householdId:
+      context.householdId }, select: { id: true } })`, and throw the same
+      wording pattern the update loop uses ("applyRuleWrites: one or more
+      inserted rules point at a merchant that does not belong to the
+      household") when the returned set is smaller than the distinct id
+      set, before any tx.merchantRule.create call runs. Add a real-Postgres
+      case to test/e2e/merchant-rule-write.spec.ts that submits an INSERT
+      ALONE (no update in the same call) whose merchantId belongs to a
+      household different from the calling context's, and assert it throws
+      and that no row with that pattern exists afterward, so the two write
+      paths are proven independently rather than only together. Then correct
+      the fake or, better, delete its separate upsertRule delegation and
+      have it perform the SAME narrower ownership check applyRuleWrites
+      itself will now make, so the fake's strength cannot again exceed the
+      adapter's for this member.
+
 criteria: []
 deviations-judged: []
 hazard-classes-addressed: []
