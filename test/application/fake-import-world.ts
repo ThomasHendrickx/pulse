@@ -423,6 +423,37 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
     },
   };
 
+  // THE FAKE REJECTS AN ACCOUNT ID THAT DOES NOT EXIST, exactly as the real
+  // database does (M3-P14 fix). Prisma types Account.id as a uuid column, so
+  // a synthetic placeholder id reaches Postgres as
+  // "Inconsistent column data: Error creating UUID" and the request 500s.
+  // The fake used to accept any string and return nothing, so a caller
+  // asking for an account that does not exist was GREEN here and RED in the
+  // browser, which is precisely the gap that let the registration preview
+  // ship a 500 into an e2e run.
+  //
+  // THE MECHANISM, not the instance: "a repository read asked for an
+  // identifier that was never issued". The rule belongs at the fake's own
+  // boundary because that is where the difference between the fake and the
+  // database lives.
+  const requireRealAccountIds = (
+    context: HouseholdContext,
+    accountIds: readonly string[],
+    where: string,
+  ): void => {
+    const known = new Set(
+      accounts
+        .filter((account) => account.householdId === context.householdId)
+        .map((account) => account.id),
+    );
+    const unknown = accountIds.filter((accountId) => !known.has(accountId));
+    if (unknown.length > 0) {
+      throw new Error(
+        `${where}: asked for account ids that do not exist: ${unknown.join(", ")}. The real database rejects this rather than returning nothing.`,
+      );
+    }
+  };
+
   // The ledger side of the fake world: the same stores, seen through the
   // ledger module's ports, so the import pipeline's interpret stage runs
   // the REAL interpretation use case over the fake persistence.
@@ -606,8 +637,9 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
           })),
     },
     ledger: {
-      listPotTransactions: async (context, input) =>
-        transactions
+      listPotTransactions: async (context, input) => {
+        requireRealAccountIds(context, input.accountIds, "listPotTransactions");
+        return transactions
           .filter(
             (stored) =>
               stored.householdId === context.householdId &&
@@ -615,7 +647,8 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
               (input.from === undefined || stored.bookingDate >= input.from) &&
               (input.to === undefined || stored.bookingDate <= input.to),
           )
-          .map(toLedgerTransaction),
+          .map(toLedgerTransaction);
+      },
       listOutgoingCounterpartyRefs: async (context, input) =>
         transactions
           .filter(

@@ -28,22 +28,36 @@ export default async function AccountsPage({
     return typeof value === "string" ? value : undefined;
   };
   const accounts = await listAccountsWithImportState(context);
-  // WHAT EACH CORRECTION WOULD MOVE, computed before the owner confirms
-  // (criterion 15.7) by the dry run the ledger publishes. Sequential rather
-  // than parallel: each is a whole-household read, and a household has a
-  // handful of accounts, not thousands.
+  // WHAT THE CORRECTION WOULD MOVE, computed before the owner confirms
+  // (criterion 15.7) by the DRY RUN the ledger publishes, and computed for
+  // ONE account: the one whose control the owner has just asked about.
+  //
+  // ONE AND NOT ALL, and the reason is measured rather than aesthetic. A
+  // preview is a dry run of the whole interpretation over the whole
+  // household, so a preview per row costs one full interpretation per
+  // account on every render of this page. Measured in dev while building
+  // this: 1.9 seconds with one account and 3.7 with five, growing with each
+  // registration, against a household that is going to register ten. The
+  // guarantee is unchanged; only the moment it is computed moved.
+  const previewFor = (() => {
+    const requested = single("preview");
+    return requested === undefined ? null : requested;
+  })();
   const rows: AccountsScreenData["accounts"][number][] = [];
   for (const account of accounts) {
     const target = account.role === "POT" ? "RESERVE" : "POT";
-    const preview = await previewAccountRingChange(
-      context,
-      { accountId: account.id, role: target },
-      { preview: previewDeclarationChange },
-    );
+    const preview =
+      account.id === previewFor
+        ? await previewAccountRingChange(
+            context,
+            { accountId: account.id, role: target },
+            { preview: previewDeclarationChange },
+          )
+        : null;
     rows.push({
       account,
       hasImport: account.hasImport,
-      preview: preview.ok ? preview.value : null,
+      preview: preview !== null && preview.ok ? preview.value : null,
     });
   }
   const status = single("status");

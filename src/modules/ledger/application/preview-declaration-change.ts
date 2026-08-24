@@ -135,6 +135,21 @@ export const previewDeclarationChange = async (
   // The union of both sides' pot accounts, plus the subject, so that every
   // row either side would classify is loaded ONCE and both sides see the
   // same facts. Unbounded, exactly like the recompute this previews.
+  //
+  // NARROWED TO ACCOUNTS THAT ACTUALLY EXIST, and this is a correctness
+  // requirement rather than an optimisation. A REGISTRATION previews a
+  // declaration set containing an account that HAS NOT BEEN CREATED YET, so
+  // that set carries a placeholder id; passing that id to the repository
+  // asks the database for rows on an account that does not exist, and
+  // Postgres rejects a non-uuid outright rather than returning nothing.
+  // Measured: the registration action returned a 500 with
+  // "Inconsistent column data: Error creating UUID" until this filter
+  // existed, and the in-memory fake could not see it because it does not
+  // validate ids. An account that does not exist has no rows by definition,
+  // so intersecting with the real set changes no figure.
+  const realAccountIds = new Set(
+    currentAccounts.map((account) => account.id),
+  );
   const loadIds = [
     ...new Set([
       ...currentSets.potAccountIds,
@@ -143,7 +158,7 @@ export const previewDeclarationChange = async (
         ? []
         : [input.subjectAccountId]),
     ]),
-  ];
+  ].filter((accountId) => realAccountIds.has(accountId));
   const transactions =
     loadIds.length === 0
       ? []
@@ -151,7 +166,7 @@ export const previewDeclarationChange = async (
 
   const cardAccountIds = [
     ...new Set([...currentSets.cardAccountIds, ...proposedSets.cardAccountIds]),
-  ];
+  ].filter((accountId) => realAccountIds.has(accountId));
   const statementTotals =
     cardAccountIds.length === 0
       ? []

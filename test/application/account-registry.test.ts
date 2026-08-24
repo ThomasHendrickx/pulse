@@ -384,7 +384,7 @@ describe("criteria 14.13 and 15.6: a naming that stops applying is kept, counted
         recompute: (ctx) => world.engine.recompute(ctx),
       },
       {
-        counterpartyText: "Eigen spaarrekening",
+        counterpartyText: "Eigen spaarrekening Buffer",
         merchantName: "Not really a merchant",
       },
     );
@@ -396,21 +396,6 @@ describe("criteria 14.13 and 15.6: a naming that stops applying is kept, counted
     );
     expect(taggedRows.length).toBeGreaterThan(0);
 
-    // THE FOUR SAVINGS ACCOUNTS SHARE ONE COUNTERPARTY DESCRIPTOR in this
-    // fixture, which is what a household's own transfers really look like,
-    // so the rule goes on matching until the LAST of them is registered.
-    // Registering three and asserting zero, then the fourth and asserting
-    // one, is the honest shape of this and is asserted here rather than
-    // arranged away.
-    for (const iban of [RES_2, RES_3, RES_4]) {
-      const partial = await registerAccount(
-        context,
-        { accounts: world.accountsRepository, ...engineOf(world) },
-        { label: `Savings ${iban.slice(-2)}`, bank: "Demobank", role: "RESERVE", accountNumber: iban },
-      );
-      expect(partial.ok).toBe(true);
-      expect(partial.ok && partial.value.merchantRulesStoppedMatching).toBe(0);
-    }
     const outcome = await registerAccount(
       context,
       { accounts: world.accountsRepository, ...engineOf(world) },

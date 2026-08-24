@@ -78,8 +78,15 @@ const StatusLine = async ({
 // counterparty rows on the household's OTHER pot accounts. Every figure here
 // comes from a DRY RUN of the same interpretation the recompute runs, over
 // the proposed declaration set, writing nothing (decision D-58).
-const RingPreview = async ({ preview }: { readonly preview: RingChangeMovement }) => {
+const RingPreview = async ({
+  preview,
+}: {
+  readonly preview: RingChangeMovement | null;
+}) => {
   const t = await getTranslations();
+  if (preview === null) {
+    return null;
+  }
   const lines: string[] = [];
   if (preview.rowsOnAccountDirection === "stop-counting") {
     lines.push(t("accountsCorrectRowsStop", { count: preview.rowsOnAccount }));
@@ -182,6 +189,7 @@ export const AccountsScreen = async ({
             {data.accounts.map(({ account, hasImport, preview }) => {
               const held = account.role === "RESERVE";
               const other = held ? "POT" : "RESERVE";
+              const previewing = preview !== null;
               return (
                 <li
                   key={account.id}
@@ -214,33 +222,60 @@ export const AccountsScreen = async ({
                   <span className="month-row-meta" data-testid="account-ring">
                     {held ? t("accountsRingReserve") : t("accountsRingPot")}
                   </span>
-                  {preview === null ? null : <RingPreview preview={preview} />}
-                  {/* THE RING CORRECTION CONTROL (M3-P15, criterion 15.9).
-                      M3-P14's import copy names this control as the remedy
-                      for a ring answered the wrong way, and a release in
-                      which that copy pointed at nothing would be worse than
-                      no copy. It is a declaration edit followed by a
-                      recompute; it writes no transaction row. */}
-                  <form
-                    action={correctAccountRingAction}
-                    className="account-ring-form"
-                  >
-                    <input type="hidden" name="accountId" value={account.id} />
-                    <input type="hidden" name="ring" value={other} />
-                    <button
-                      type="submit"
-                      data-testid="correct-ring"
-                      data-account-id={account.id}
-                      data-target-ring={other}
-                    >
-                      {t("accountsCorrectSubmit", {
-                        ring:
-                          other === "RESERVE"
-                            ? t("accountsRingReserve")
-                            : t("accountsRingPot"),
-                      })}
-                    </button>
-                  </form>
+                  {/* THE RING CORRECTION CONTROL (M3-P15, criteria 15.7
+                      and 15.9). M3-P14's import copy names this control as
+                      the remedy for a ring answered the wrong way, and a
+                      release in which that copy pointed at nothing would be
+                      worse than no copy.
+                      TWO STEPS, AND THE FIRST ONE IS THE POINT: asking to
+                      change the ring shows what will move, and only then is
+                      there something to confirm. That is criterion 15.7's
+                      "before they confirm" read literally.
+                      IT IS ALSO WHY THE PREVIEW IS COMPUTED ON DEMAND. Each
+                      preview is a DRY RUN of the whole interpretation over
+                      the whole household (decision D-58), so rendering one
+                      per row made the page cost one full interpretation per
+                      account and measurably slowed with each registration:
+                      1.9 seconds at one account and 3.7 at five, in dev,
+                      with the owner's ten still to come. One preview for the
+                      account the owner is acting on is the same guarantee
+                      at a constant cost. */}
+                  {previewing ? (
+                    <>
+                      <RingPreview preview={preview} />
+                      <form
+                        action={correctAccountRingAction}
+                        className="account-ring-form"
+                      >
+                        <input type="hidden" name="accountId" value={account.id} />
+                        <input type="hidden" name="ring" value={other} />
+                        <button
+                          type="submit"
+                          data-testid="confirm-ring-change"
+                          data-account-id={account.id}
+                          data-target-ring={other}
+                        >
+                          {t("accountsCorrectSubmit", {
+                            ring:
+                              other === "RESERVE"
+                                ? t("accountsRingReserve")
+                                : t("accountsRingPot"),
+                          })}
+                        </button>
+                      </form>
+                    </>
+                  ) : (
+                    <p className="account-ring-form">
+                      <Link
+                        href={`/accounts?preview=${account.id}`}
+                        data-testid="correct-ring"
+                        data-account-id={account.id}
+                        data-target-ring={other}
+                      >
+                        {t("accountsCorrectTitle")}
+                      </Link>
+                    </p>
+                  )}
                 </li>
               );
             })}
