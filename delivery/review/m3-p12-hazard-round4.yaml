@@ -510,6 +510,109 @@ findings:
 #     Next: one npm run test:e2e run, pinning all five values per fleet
 #     warning 6, then the specific CR3-M3P12-09 wording-alignment spec the
 #     dispatch names.
+#
+# 11. RAN npm run test:e2e ONCE, pinning DATABASE_URL, DIRECT_URL,
+#     NEXT_PUBLIC_SUPABASE_URL, the publishable key and the secret key to
+#     the local stack in the invoking shell (fleet warning 6), against the
+#     shared local supabase Postgres's own "postgres" database (the one
+#     Supabase Auth is wired to; my custom pulse_r4haz database was used
+#     only for the migration-deploy and tenancy checks above, never for
+#     e2e, since e2e's auth flow needs the auth-linked database). RESULT:
+#     55 discovered, 48 passed, 7 failed, 19.7m, 1 worker. Quoted honestly.
+#     THE SPEC THE DISPATCH NAMED SPECIFICALLY, test/e2e/merchant-rule-write.spec.ts:41,
+#     PASSED: "[chromium] merchant-rule-write.spec.ts:41:5 applyRuleWrites
+#     is atomic, stays within the household, and rolls back the whole batch
+#     on any rejection (370ms)". I read this spec in full during attack
+#     surface 4 (it is the same spec whose "did not belong"/"does not
+#     belong" wording round three aligned) and traced exactly what its
+#     assertions do and do not cover; see finding CR4-M3P12-03, which is
+#     the real defect this "aligned" spec still cannot see, because its one
+#     foreign-household case always submits an update together with an
+#     insert and the update's own check fires first. THE ALIGNMENT ITSELF
+#     IS NOT A DEFECT: the adapter's actual thrown text is "did not belong
+#     to the household" (merchant-repository.ts:157, read directly), so the
+#     spec's regex matches the real message; correcting a text match is not
+#     the same act as weakening what is being tested, and I confirmed the
+#     spec's OTHER assertions (rollback atomicity, tenancy on the update
+#     path) are unweakened by comparing the full diff of the spec against
+#     the round-3-reviewed head. THE PHASE'S OWN TWO OTHER E2E SPECS ALSO
+#     PASSED: golden-journey.spec.ts:79 (27.1s, the settled pre-existing
+#     spec, unrelated to this phase and green for me too) and
+#     merchants.spec.ts:276 (18.3s, the stale-page refusal witness for
+#     criterion 12.18).
+#     THE 7 FAILURES ARE ALL PRE-EXISTING SPECS THIS PHASE DID NOT TOUCH:
+#     import.spec.ts:170, month-view.spec.ts:120 (chromium AND
+#     chromium-phone), month-view.spec.ts:1371, navigation.spec.ts:117,
+#     month-view.spec.ts:211, month-view.spec.ts:275. Every captured error
+#     is a timeout or a mid-run protocol failure, never a wrong value: three
+#     separate "Timeout: 5000ms" / "Test timeout of 30000ms exceeded" waits
+#     for an element that should already be on the page, one
+#     "toHaveURL" mismatch after a click that should have navigated, and one
+#     "Protocol error (Runtime.callFunctionOn): Internal server error,
+#     session closed", which is the exact signature fleet warning 18 names.
+#     `uptime` immediately after the run showed load average 12.19, 13.84,
+#     11.27 on this 4-core box (worse than the 5.8-9.44 fleet warning 18
+#     itself measured), and `df -h /` showed 2.4G free (94% used), with `ps`
+#     confirming at least one other worktree's own dev server and
+#     playwright workers running concurrently throughout my run. I did not
+#     re-run the suite a second time to isolate load from a real defect
+#     (fleet warning 18 explicitly asks reviewers not to dispatch two lanes
+#     that both run test:e2e at once, and re-running myself competes with
+#     whatever else is on this box); I am reporting the run and its
+#     symptoms honestly rather than declaring it clean.
+
+  - id: CR4-M3P12-04
+    severity: low
+    analysis: >-
+      THE PLAYWRIGHT GATE DOES NOT EXIT 0 ON THIS HEAD, AND I DO NOT
+      ATTRIBUTE THE FAILURES TO THIS ROUND'S CHANGE. Criterion 12.14 asks
+      for exit 0; my own run recorded 48 passed, 7 failed, exit non-zero.
+      None of the seven failing specs belongs to this phase (import.spec.ts,
+      month-view.spec.ts three times over two projects, navigation.spec.ts):
+      none touches merchant rules, the target guard, the overview fold's
+      unnameable-group rendering, or anything else this round's diff
+      changed. All three of this phase's OWN specs passed, including the
+      one specifically worth checking per this round's dispatch: the
+      wording-alignment spec test/e2e/merchant-rule-write.spec.ts:41,
+      whose assertion round three changed from matching "does not belong"
+      to matching "did not belong" to track the adapter's real wording. I
+      read that spec end to end during attack surface 4 and confirmed the
+      alignment corrects a text match rather than weakening a guarantee:
+      the adapter genuinely throws "did not belong to the household"
+      (merchant-repository.ts:157), and the spec's other assertions
+      (atomic rollback on any rejection, the update path's tenancy check)
+      are unchanged in strength. What that same reading DID find is a real
+      gap the spec still cannot see (finding CR4-M3P12-03): its one
+      foreign-household case always pairs an insert with an update, so the
+      update's own check fires first and the insert path's missing
+      ownership check is never exercised alone. So the dispatch's warning
+      that a test aligned to the code it tests is where a real defect hides
+      was correct here, and the defect it points at is CR4-M3P12-03, not a
+      problem with the alignment itself. Every one of the 7 failures'
+      captured errors is a timeout or a mid-run protocol failure rather
+      than a wrong assertion, and one is the exact "Protocol error
+      (Runtime.callFunctionOn): Internal server error, session closed"
+      signature fleet warning 18 names. Load average immediately after my
+      run (12.19, 13.84, 11.27 on 4 cores) was WORSE than what fleet
+      warning 18 itself measured (5.8-9.44), and disk was at 94% used.
+    evidence:
+      - "My own run: npm run test:e2e, all five values pinned per fleet warning 6, 1 worker: 55 discovered, 48 passed, 7 failed, 19.7m."
+      - "[chromium] test/e2e/merchant-rule-write.spec.ts:41:5, applyRuleWrites is atomic, stays within the household, and rolls back the whole batch on any rejection, PASSED in 370ms."
+      - "[chromium] test/e2e/golden-journey.spec.ts:79:5 PASSED in 27.1s; [chromium] test/e2e/merchants.spec.ts:276:5 PASSED in 18.3s. Both are this phase's own coverage and both are green."
+      - "7 failed: [chromium] import.spec.ts:170, [chromium] month-view.spec.ts:120, [chromium] month-view.spec.ts:1371, [chromium] navigation.spec.ts:117, [chromium-phone] month-view.spec.ts:120, [chromium-phone] month-view.spec.ts:211, [chromium-phone] month-view.spec.ts:275. None is a file this round's diff (f3bfd66..0d41c3b) touches."
+      - "Captured errors, verbatim shapes: 'Timeout: 5000ms ... waiting for getByTestId(\"import-result\")'; 'Expect \"toHaveURL\" with timeout 5000ms ... Received string: http://127.0.0.1:3000/import' where /merchants was expected; 'Test timeout of 30000ms exceeded ... Protocol error (Runtime.callFunctionOn): Internal server error, session closed.'"
+      - "uptime immediately after the run: 'load average: 12.19, 13.84, 11.27' on a 4-core box (nproc reported 4). df -h /: 2.4G available, 94% used. ps aux showed at least one other worktree's next dev server and playwright worker processes running throughout."
+    concrete-fix: >-
+      Do not touch a test on the strength of this run alone. Re-run npm run
+      test:e2e once on a quiet machine (no concurrent fleet lane driving
+      Playwright, disk below the 90 percent threshold fleet warning 10
+      names) on the committed ports, and record the exit code in the phase
+      work history under criterion 12.14. If it exits 0 there the criterion
+      is met and this finding closes with it. If failures recur on a quiet
+      machine, they are then a real signal and the next reviewer should
+      start from the shared shape (a 5000ms/30000ms default timeout against
+      a route or a network idle wait) rather than from this finding's
+      conclusion that it is fleet contention.
 
 criteria:
   - id: '12.1'
@@ -582,8 +685,8 @@ criteria:
   - id: '12.14'
     quote: "THE STANDING GATE. npm run typecheck, npm run lint, npm test and npm run gate:privacy all exit 0, and npm run test:e2e exits 0"
     evidence:
-      - "My own run this round: typecheck exit 0, lint exit 0, test exit 0 (579/579), gate:privacy exit 0, gate:tokens exit 0. test:e2e result recorded separately below once my own run completes; quoted honestly whatever it says, per the dispatch's instruction, including any red."
-    met: PENDING_E2E
+      - "My own run this round: typecheck exit 0, lint exit 0, test exit 0 (579/579), gate:privacy exit 0, gate:tokens exit 0. npm run test:e2e: 55 discovered, 48 passed, 7 failed, 19.7m, non-zero exit. Quoted honestly rather than summarised away. See finding CR4-M3P12-04 for the full account of which specs failed and why I do not attribute the failures to this round's change."
+    met: false
   - id: '12.15'
     quote: "THE WHOLE-CORPUS EFFECT IS RECORDED, NOT ONLY THE HAPPY FIXTURE"
     evidence:
@@ -1007,3 +1110,37 @@ hazard-classes-addressed:
       path-traversal database name, an unvalidated schema= value, host
       case, a trailing-dot FQDN).
     finding: CR4-M3P12-02
+
+# 12. VALIDATION, both readings quoted.
+#     (a) npx tiphys validate --type verdict delivery/review/m3-p12-hazard-round4.yaml
+#     (no --context): exit 1 initially with one boolean-type error at
+#     #/criteria/13/met, from a placeholder I had left while waiting on the
+#     e2e run; fixed once the run completed. With the placeholder fixed:
+#     four SKIPPED lines (dual-review-decorrelation, verdict-criteria-complete,
+#     verdict-deviations-judged, verdict-hazard-classes-addressed), all "no
+#     context", and no INVALID line, i.e. schema-clean.
+#     (b) With a context directory carrying charter.yaml (copied from this
+#     worktree), plan.yaml (copied from delivery/plan/pulse-v02.yaml),
+#     work-history.yaml (copied from delivery/work-history/m3-p12.yaml),
+#     assurance-modes.yaml and gate-registry.yaml (both copied from
+#     node_modules/@tiphys/kernel, since the kernel package carries them
+#     and this worktree does not track separate copies), and delivery/
+#     symlinked to this worktree's: exit 1 with exactly ONE INVALID line,
+#     "only 1 verdict document(s) exist under delivery/review for phase
+#     M3-P12, and a delegated grant requires two independent clean-room
+#     reviews of the exact head (check: dual-review-decorrelation)". The
+#     other three Kind B completeness checks (verdict-criteria-complete,
+#     verdict-deviations-judged, verdict-hazard-classes-addressed) all
+#     PASSED silently, meaning my criteria array covers every one of the
+#     23 acceptance criteria the plan declares for this phase, my
+#     deviations-judged array covers every one of the 12 declared
+#     deviations, and my hazard-classes-addressed array covers every one
+#     of the 30 declared hazard classes. The one remaining INVALID line is
+#     a fact about the ROUND (the sibling criteria lane's verdict is not on
+#     this branch), not about this document, exactly as round three's own
+#     review recorded for the same check.
+# 13. Dropped my local database (pulse_r4haz) and removed every temporary
+#     file: `psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -c "DROP
+#     DATABASE pulse_r4haz;"`, and confirmed with `git status --short`
+#     showing a clean tree in the worktree before every commit in this
+#     document's own history.
