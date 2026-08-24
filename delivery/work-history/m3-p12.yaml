@@ -361,6 +361,105 @@ key-decisions:
       subject that is already a key is not a repair and could change what the
       owner named; a descriptor subject that is not a fixed point of the
       normaliser did not come from a rendered group, so it is refused.
+  - decision: >-
+      FIX ROUND THREE. A pass-one claimant means the source rule is SUPERSEDED,
+      whichever merchant the claimant carries. The different-merchant case is
+      no longer a merchant conflict and no longer blocks.
+    why: >-
+      The claimant is always a rule that existed BEFORE the run and already
+      carried the namespace, because the table's unique key forbids two rules
+      of one kind sharing a bare pattern, so no rule pass one rewrote earlier
+      in the same run can be holding this rule's target pattern. That makes
+      the source rule DEAD rather than contested: the shipped matcher can
+      never apply an un-namespaced pattern again, so the namespaced rule has
+      been the live declaration since the code deployed, whatever merchant it
+      points at, and the owner chose that merchant on the screen. Calling it a
+      conflict blocked the entire migration, withheld every other rule's
+      rewrite and every promotion, and reported a LOST assignment for a row
+      that in production carries the owner's current merchant and never
+      carried the old one. Decision D-39 forbids deleting the dead row, so the
+      condition never cleared on its own and --accept became a thing an
+      operator learns to type at a real signal.
+  - decision: >-
+      FIX ROUND THREE. The before-set is computed AFTER pass one and excludes
+      superseded rule ids, and excludes nothing else.
+    why: >-
+      The residue is the half the skip left behind: a permanently dead
+      un-namespaced pattern that keyForRule still routed to the baseline key,
+      so the routine credited it with rows the deployed resolver never gave
+      it. Excluding un-namespaced rules in general would have been wrong in
+      the opposite direction: on a FIRST run every rule is un-namespaced and
+      the before-set is the whole point of criterion 12.7. Only ids pass one
+      has just declared superseded are dropped, which is why the computation
+      moved after that pass rather than gaining a filter.
+  - decision: >-
+      FIX ROUND THREE. A recompute failure throws its own error type carrying
+      the report and the fact that the writes committed, and the command exits
+      4 for it rather than 1.
+    why: >-
+      The two failure surfaces leave the database in opposite states and the
+      rejection handler could not tell them apart, so it printed, for both,
+      that the table is as the run found it. After a recompute failure that is
+      false in both halves, and the action a false "nothing happened" invites
+      is rolling the code deploy back, which is the one action that turns
+      every migrated pattern into a rule that matches nothing under the
+      pre-deploy derivation. A distinct exit code and a distinct message are
+      what let an operator act correctly; carrying the report on the error is
+      what gives them the record of what was written, which the old shape
+      printed only after a successful return.
+  - decision: >-
+      FIX ROUND THREE. The interlock refuses a `host` query parameter, refuses
+      any parameter it does not understand, and compares the database name.
+    why: >-
+      A connection string is a document rather than two fields, and the
+      connector resolves more of it than the authority: `?host=` names a unix
+      socket directory and the client opens THAT, ignoring the hostname the
+      interlock was comparing. A guard that reads a different field from the
+      one the client connects through is the decorative guard criterion 12.23
+      exists to prevent, one level down. The rule the fix applies is that the
+      guard must refuse anything it cannot fully account for, which is why an
+      unknown parameter refuses rather than being ignored, and why the
+      database name is now a third comparison instead of an unread field.
+  - decision: >-
+      FIX ROUND THREE. The interlock resolves DATABASE_URL the way the CLIENT
+      does, process.env only, and the shared resolver keeps the CLI reading
+      for the guard that guards the CLI.
+    why: >-
+      Criterion 12.23 requires the interlock to resolve the connection the way
+      the command it guards resolves it and calls an interlock that does not
+      decorative. The command it guards is a tsx entry point whose connection
+      is opened by new PrismaClient(), which reads process.env and nothing
+      else: nothing in this tree loads dotenv. The extracted resolver
+      implemented the PRISMA CLI's reading, which is right for guard-cli.ts
+      and wrong here, so the interlock could approve a target read out of .env
+      while the routine opened a different connection or none. Two readings,
+      each named, each used where it belongs.
+  - decision: >-
+      FIX ROUND THREE. updateRulePattern is REMOVED from the port, the
+      binding, the adapter and the fake rather than kept with a corrected
+      comment, and the real-database spec is repointed at applyRuleWrites.
+    why: >-
+      The one thing fix round two bought is that a declaration rewrite is all
+      or nothing. Leaving a second, untransactional write path on the
+      published interface is how that guarantee gets lost, and its comment
+      still pointed at the routine as the sanctioned caller, which is exactly
+      what would make a future author believe that call site is the right one.
+      The behaviour the fake needed for hand-migration in tests is kept as a
+      fake-local helper rather than as a port member. The Playwright spec was
+      covering the path the routine had abandoned; it now drives the one that
+      is used and asserts the two things a fake cannot, that the household
+      filter lives in the statement and that a rejection leaves nothing.
+  - decision: >-
+      FIX ROUND THREE. The overview fold marks a bare-namespace group rather
+      than dropping it, and the month view renders the merchant review's copy.
+    why: >-
+      The floor is a refusal at the matcher and the write boundary, because
+      resolving there merges money. On a display surface the same refusal
+      would DELETE a group whose money must stay in the month, which is a
+      worse answer than a blank label. So the fold keeps the group and marks
+      it, and the screen says the same sentence its sibling says about the
+      same rows. The predicate is injected the way the identity already is, so
+      the overview module still imports nothing from merchants.
 verification-first:
   - finding: >-
       (a) THE CONVERGENCE NUMBERS ON THE REAL DOCUMENTS, reproduced against
@@ -575,6 +674,56 @@ verification-first:
       every declaration the owner has would be promoted on one row of
       evidence, 1 of 1.
     contradicts-plan: false
+  - finding: >-
+      (n) FIX ROUND THREE, THE TWIN RESIDUE, reproduced on a real database
+      before it was fixed and after. Database: pulse_r3impl, created for this
+      round on the local Postgres at 127.0.0.1:54322, migrated with prisma
+      migrate deploy, pinned explicitly on every invocation and dropped
+      afterwards. Seed, all invented: one household, one counted row, an
+      un-namespaced EXACT rule and a namespaced EXACT rule on the same
+      descriptor. RED, calling the routine through the real repository: with
+      the twin on the SAME merchant, outcome already-held-by-same-merchant-twin,
+      exit 0, applied true, conflicts 0, lost 0; with the twin on a DIFFERENT
+      merchant, which is one form submission on the shipped screen, outcome
+      merchant-conflict, exit 1, applied false, conflicts 1, LOST 1. GREEN,
+      same seeds after the fix: the same first line, and outcome
+      superseded-by-namespaced-rule, exit 0, applied true, conflicts 0, lost 0.
+    contradicts-plan: false
+  - finding: >-
+      (o) FIX ROUND THREE, THE FALSE "WROTE NOTHING", reproduced on the same
+      database. RED: the routine called through the real repository with a
+      throwing recompute printed THREW: Error: RECOMPUTE FAILED (simulated),
+      and the rule's pattern had been rewritten and COMMITTED, while the
+      command's rejection handler printed unconditionally that the table is as
+      the run found it. GREEN: THREW: RederiveRecomputeError: the rule writes
+      committed and the recompute then failed, the error carries the report,
+      and the command now exits 4 with three sentences saying the writes
+      committed, the interpretation output is stale, and the fix is to re-run
+      rather than to roll the deploy back.
+    contradicts-plan: false
+  - finding: >-
+      (p) FIX ROUND THREE, THE INTERLOCK BYPASS, reproduced with counts and
+      verdicts only. RED, four probes against the shipped assessor with a
+      correct host and ref on the command line: a plain correct string
+      ALLOWED, a string carrying a host query parameter naming a filesystem
+      path ALLOWED, a string naming a different database ALLOWED, a string
+      carrying an unknown parameter ALLOWED. GREEN, the same four: ALLOWED,
+      refused, refused, refused. The field the guard now reads is the WHOLE
+      parsed connection: it refuses a host parameter by name, refuses any
+      parameter outside the four this codebase uses, compares the database
+      name, and only then compares host and project ref.
+    contradicts-plan: false
+  - finding: >-
+      (q) FIX ROUND THREE, THE TENANCY GUARD THAT FIRED AFTER COMMIT,
+      reproduced on the same database through the real adapter. A call naming
+      a rule id belonging to another household, with a valid insert travelling
+      beside it, threw "applyRuleWrites: one or more rules did not belong to
+      the household". RED, before the fix, the review lane recorded the
+      insert surviving. GREEN, after it: insert that travelled with it
+      SURVIVED false, source rule pattern unchanged true. The check now runs
+      inside an interactive transaction and throws from inside the callback,
+      so the rollback is the database's.
+    contradicts-plan: false
 deviations:
   - plan-clause: >-
       Criterion 12.17, the half requiring the phase work history to record the
@@ -721,6 +870,38 @@ deviations:
       the deployed run to M3-P16. The invocation point half is met and is now
       met with a target interlock in front of it, which is the part this phase
       owed.
+  - plan-clause: >-
+      Criterion 12.23's consequence: the routine cannot be rehearsed against
+      any database an operator can create.
+    why: >-
+      RECORDED AS A DEVIATION RATHER THAN ENGINEERED AROUND, on the
+      orchestrator's instruction and the criteria lane's reasoning: the
+      alternatives are an override flag criterion 12.23 forbids, or an
+      under-specified carve-out for local hosts. The interlock refuses a
+      connection carrying no project ref in either field, and a local
+      connection carries one in neither, so the first execution of the write
+      path through this command is necessarily the deploy-time run. What
+      changed in fix round three is WHERE that is said: it was in this
+      document only, and it is now the last paragraph of the command's own
+      header, where the person who runs it at deploy time will meet it
+      (finding CR3-M3P12-05). The rehearsal lives in the application-level
+      tests and in the Playwright spec that drives the adapter against a real
+      database, which fix round three repointed onto the member the routine
+      actually uses.
+  - plan-clause: >-
+      files-to-touch, which does not name src/modules/overview/.
+    why: >-
+      Finding CR3-M3P12-06, the fifth consumer. The overview fold is a place
+      that takes a counterparty identity and applied no floor to it, so two
+      rows carrying no counterparty information at all merged into one
+      month-view group with an empty label. The plan's own hazard H12.15
+      describes that outcome, and fix round two repaired the sibling screen
+      and not this one, which is the definition of a rule applied in one place
+      and not another. The change is the minimum that closes it: the fold
+      marks the group, the screen renders the sentence that already existed in
+      all three languages, and the predicate is injected the way the identity
+      already was, so the overview module still imports nothing from
+      merchants. The group's money stays in the month.
 gate-evidence:
   - gate: >-
       npm run typecheck (tsc --noEmit; Node 26.7.0 via nvm; worktree
@@ -868,6 +1049,62 @@ gate-evidence:
     discovered: 55
     passed: 52
     failed: 3
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: >-
+      FIX ROUND THREE, all five fast gates on the fix-round-three head. npm
+      run typecheck (tsc --noEmit, no output), npm run lint (eslint ., no
+      output), npm test (vitest run, 39 test files, 19.64s), npm run
+      gate:privacy (printed "gate:privacy clean"), npm run gate:tokens (no
+      output). Every one exited 0.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 579
+    passed: 579
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: >-
+      FIX ROUND THREE, npm run test:e2e (playwright test; three projects, 55
+      tests; retries 0; the local supabase stack with all five values pinned
+      in the invoking shell; 13.7m). RED, exit 1, 53 passed and 2 failed, and
+      both failures are named rather than summarised. ONE WAS THIS ROUND'S
+      OWN AND IS FIXED: test/e2e/merchant-rule-write.spec.ts, whose foreign
+      household assertion matched the throw text on "does not belong to the
+      household" while the adapter this round rewrote throws "did not belong
+      to the household". The gate therefore caught a real divergence, in the
+      test rather than in the subject: the interlock fired exactly as
+      intended and the spec failed to recognise its own sentence. The
+      assertion now matches the adapter, the fake in
+      test/application/fake-import-world.ts was throwing the third wording
+      and now throws the adapter's, and the spec re-run alone is green (1
+      passed, 1.3s, exit 0), recorded as the entry below. THE OTHER IS THE
+      SETTLED PRE-EXISTING ONE: test/e2e/golden-journey.spec.ts:79, which the
+      orchestrator has ruled is not this phase's to root-cause and which fix
+      round two evidenced failing with this round's changes stashed.
+    result: red
+    wrapper-exit-code: 1
+    discovered: 55
+    passed: 53
+    failed: 2
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: >-
+      FIX ROUND THREE, the repaired spec re-run on its own: npx playwright
+      test test/e2e/merchant-rule-write.spec.ts --project=chromium against
+      the same local stack. PLAYWRIGHT_BASE_URL was set so the config starts
+      no web server, because a concurrent fleet lane held port 3100 and
+      fleet discipline forbids freeing it; this spec drives no browser and
+      needs no server, it is a database contract test. Not a substitute for
+      the full run above, which is reported as red.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
     skipped: 0
     todo: 0
     did-not-run: 0
@@ -1224,6 +1461,74 @@ fix-round:
       guard's own sentence from DESTRUCTIVE to WRITING, which the criteria
       lane asked for, is not done here because it would change the posture of
       a guard this phase does not own.
+  - mechanism: >-
+      A GUARD, A REPORT AND A SKIP ARE WORTH EXACTLY WHAT THEY READ. Fix round
+      three's findings are three instances of one shape. The target interlock
+      parsed the connection string's authority and compared the project ref it
+      found there, and ignored everything else the string carried, so a string
+      whose hostname and username were byte-identical to an approved one but
+      which carried a host parameter redirecting the client to a different
+      socket passed a comparison that was, on the fields it read, correct. The
+      command's failure message told the operator the run wrote nothing on a
+      path where the rule writes had already committed and only the recompute
+      had failed. And the routine's twin skip was a decision about the RUN,
+      not about the TABLE: it declined to write the row and left the old
+      un-namespaced rule sitting there, dead but present, described by neither
+      the report nor the console. The rule the three share is that a check
+      must read the whole of what its subject will use and refuse whatever it
+      cannot account for, and that a report must describe the table as the run
+      left it on every exit path, including a throw after a commit.
+    derivation:
+      command: >-
+        grep -rn "RederiveRecomputeError\|superseded-by-namespaced-rule\|resolveClientDbUrl\|UNDERSTOOD_PARAMETERS\|isBareKey"
+        src/ scripts/ --include=*.ts --include=*.tsx
+      output: |
+        src/modules/overview/application/month-overview.ts:99:    isBareKey: deps.isBareIdentityKey,
+        src/modules/overview/domain/month-projection.ts:92:    readonly isBareKey: CountedGroupBareKey;
+        src/modules/overview/domain/month-projection.ts:140:      unnameableReason = options.isBareKey(identity.key)
+        src/modules/merchants/application/index.ts:105:  RederiveRecomputeError,
+        src/modules/merchants/application/rederive-rules.ts:117:export class RederiveRecomputeError extends Error {
+        src/modules/merchants/application/rederive-rules.ts:171:  | "superseded-by-namespaced-rule"
+        src/modules/merchants/application/rederive-rules.ts:482:          : "superseded-by-namespaced-rule",
+        src/modules/merchants/application/rederive-rules.ts:724:      throw new RederiveRecomputeError(buildReport(true), cause);
+        src/platform/db/target-guard.ts:76:const UNDERSTOOD_PARAMETERS: ReadonlySet<string> = new Set([
+        src/platform/db/target-guard.ts:192:    if (!UNDERSTOOD_PARAMETERS.has(name)) {
+        src/platform/db/resolve-env.ts:65:export const resolveClientDbUrl = (): string | undefined => {
+        scripts/rederive-merchant-rules.ts:104:import { resolveClientDbUrl } from "@/platform/db/resolve-env";
+        scripts/rederive-merchant-rules.ts:231:    { DATABASE_URL: resolveClientDbUrl() },
+        scripts/rederive-merchant-rules.ts:277:    if (!(error instanceof RederiveRecomputeError)) {
+        ONE FIELD FOR THE GUARD, and it is the field the client constructor
+        reads: resolveClientDbUrl returns process.env DATABASE_URL and nothing
+        else, where the sibling CLI guard keeps the Prisma CLI's shell then
+        .env order because that is what the Prisma CLI does. ONE TREATMENT FOR
+        A COLLIDING RULE, two outcome tokens, and the superseded row now
+        appears in the report and on the console by id. ONE DISTINGUISHABLE
+        ERROR for the post-commit failure, carrying the report of what did
+        land, and exit 4 rather than exit 1. AND THE FIFTH CONSUMER of the
+        bare-key predicate, injected through the overview's port so the module
+        boundary the plan draws is not crossed.
+    not-covered: >-
+      THE SUPERSEDED ROW IS NOT DELETED, and nothing in this phase deletes a
+      declaration: decision D-39 says the routine deletes nothing, ever. What
+      changed is that the row is now correctly CLASSIFIED and REPORTED as dead
+      rather than treated as a conflict that blocks the whole migration. It is
+      dead in a specific and checkable sense: every identity key carries a
+      lowercase namespace, the normaliser emits no lowercase letter, so an
+      un-namespaced pattern can never match a key again under either EXACT or
+      PREFIX. Cleaning such rows up is an owner-facing decision with no
+      criterion behind it. THE POST-COMMIT FAILURE STILL LEAVES WORK UNDONE:
+      the distinguishable error and exit 4 tell the operator to re-run rather
+      than to roll back, and the re-run is safe because the second pass finds
+      the patterns already migrated, but nothing here makes the recompute
+      transactional with the rule writes and nothing should, since the
+      recompute rewrites every derived row for the household. THE INTERLOCK'S
+      PARAMETER ALLOW LIST IS A LIST, so a future Prisma parameter this phase
+      has not heard of is REFUSED rather than accepted; that is the intended
+      direction of failure and it means the list is a thing to maintain. AND
+      THE BARE-KEY GROUP STILL SHOWS ITS MONEY: the month view marks it
+      unnameable rather than dropping it, because dropping it would take the
+      amount out of a month that must reconcile.
+
 environment-warnings:
   - warning: >-
       TWO FLEET LANES CANNOT RUN THE PLAYWRIGHT GATE AT ONCE ON THE DEFAULT

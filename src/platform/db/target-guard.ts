@@ -57,6 +57,35 @@
 // database that is not Pulse's, and a refusal reason is exactly the kind of
 // string that gets pasted into a note.
 
+// THE QUERY PARAMETERS THIS INTERLOCK UNDERSTANDS, and it refuses every
+// other one (fix round three, finding CR3-M3P12-08). The rule this closes is
+// the one the whole criterion rests on: THE GUARD MUST READ WHAT THE CLIENT
+// WILL USE. A connection string is not two fields, it is a document, and the
+// connector resolves more of it than a hostname and a username:
+//
+//   `?host=` NAMES A UNIX SOCKET DIRECTORY and the connector opens THAT,
+//   ignoring the authority's hostname entirely. Witnessed: a string carrying
+//   a correct pooler authority plus a host parameter naming a filesystem path
+//   was APPROVED by the field comparison, and the shipped client then tried
+//   to reach the path. That is the decorative guard criterion 12.23 exists to
+//   prevent, one level down, so it is refused by name.
+//
+//   ANY OTHER UNKNOWN PARAMETER is refused too, rather than ignored, because
+//   the interlock cannot say what it does. The four below are the ones this
+//   codebase's own connection strings use.
+const UNDERSTOOD_PARAMETERS: ReadonlySet<string> = new Set([
+  "pgbouncer",
+  "sslmode",
+  "connection_limit",
+  "schema",
+]);
+
+// The only database this product uses. Checked because the module's own
+// question is whether the migration is pointed at the ONE database an
+// operator named, and a string differing only in its database name was
+// approved before this (finding CR3-M3P12-08).
+const EXPECTED_DATABASE = "postgres";
+
 export type RederiveTargetEnv = {
   // The connection the ROUTINE ITSELF would use. DIRECT_URL is deliberately
   // not checked: it is the migration endpoint and this routine runs no
@@ -147,6 +176,35 @@ export const assessRederiveTarget = (
       allowed: false,
       reason:
         "DATABASE_URL did not parse as a connection URL, so its target cannot be established. Refusing.",
+    };
+  }
+
+  // REFUSE WHAT THE INTERLOCK CANNOT ACCOUNT FOR, before comparing anything,
+  // because a parameter can move the endpoint out from under the comparison.
+  if (parsed.searchParams.has("host")) {
+    return {
+      allowed: false,
+      reason:
+        "the resolved connection carries a host query parameter, which makes the endpoint a socket path rather than the host given on the command line. Refusing: this interlock compares the host, and a connection that does not use it cannot be checked that way.",
+    };
+  }
+  for (const [name] of parsed.searchParams) {
+    if (!UNDERSTOOD_PARAMETERS.has(name)) {
+      return {
+        allowed: false,
+        reason:
+          "the resolved connection carries a query parameter this interlock does not understand, so it cannot account for what the client would do with it. Refusing. The parameter name is deliberately not printed here.",
+      };
+    }
+  }
+
+  // THE DATABASE NAME, which is the third thing that decides which data a
+  // write lands on and was not compared at all before this round.
+  const database = parsed.pathname.replace(/^\//, "");
+  if (database !== EXPECTED_DATABASE) {
+    return {
+      allowed: false,
+      reason: `the resolved connection names a database other than "${EXPECTED_DATABASE}", which is the only database this product uses. Refusing.`,
     };
   }
 

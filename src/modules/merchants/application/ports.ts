@@ -72,18 +72,6 @@ export type MerchantRepositoryPort = {
       readonly pattern: string;
     },
   ) => Promise<MerchantRuleLike>;
-  // M3-P12: pass one of the re-derivation rewrites a pattern IN PLACE, which
-  // upsertRule cannot express: its key IS the pattern, so writing a new one
-  // creates a second row rather than moving the existing declaration. This
-  // member exists only for that routine. It never deletes and it never
-  // changes a rule's merchant.
-  readonly updateRulePattern: (
-    context: HouseholdContext,
-    input: {
-      readonly ruleId: string;
-      readonly pattern: string;
-    },
-  ) => Promise<MerchantRuleLike>;
   // M3-P12 fix round two, finding CR2-M3P12-03. THE RE-DERIVATION'S WHOLE
   // WRITE SET, APPLIED ALL OR NOTHING. The routine used to issue its updates
   // and inserts one await at a time with nothing around them, so a failure

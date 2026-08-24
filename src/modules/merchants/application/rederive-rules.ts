@@ -99,6 +99,32 @@ import type {
   RecomputeInterpretation,
 } from "./ports";
 
+// THE ERROR A RECOMPUTE FAILURE THROWS, and why it is its own type (fix
+// round three, findings CR3-M3P12-02 and CR3-M3P12-01 of the criteria lane).
+// The rule writes go through one port member the adapter runs in a database
+// transaction; the recompute runs AFTER it and outside it, deliberately. So
+// there are two failure sources with two opposite answers to the only
+// question an operator has, and the command's rejection handler could not
+// tell them apart: it printed, for both, that the table is as the run found
+// it. After a recompute failure that sentence is false in both halves, and
+// the action a false "nothing happened" invites is rolling the code deploy
+// back, which is the one action that turns every migrated pattern into a rule
+// that matches nothing under the pre-deploy derivation.
+//
+// The error therefore carries the fact that the writes COMMITTED and the
+// report describing exactly what was written, so the operator gets the record
+// rather than an exit code and a false sentence.
+export class RederiveRecomputeError extends Error {
+  readonly writesCommitted = true;
+  readonly report: RederiveReport;
+
+  constructor(report: RederiveReport, cause: unknown) {
+    super("the rule writes committed and the recompute then failed", { cause });
+    this.name = "RederiveRecomputeError";
+    this.report = report;
+  }
+}
+
 export type RederivePass = "one" | "two";
 
 export type RederiveOutcomeKind =
@@ -131,6 +157,18 @@ export type RederiveOutcomeKind =
   // findMerchantByName reuses the merchant, and a namespaced EXACT rule lands
   // beside the old un-namespaced one for the same merchant.
   | "already-held-by-same-merchant-twin"
+  // The same structural fact with a DIFFERENT merchant on the claiming rule
+  // (fix round three, finding CR3-M3P12-01). It is NOT a conflict a person
+  // must settle. A rule whose pattern carries no namespace can never be
+  // applied again by the shipped matcher, because every key it is handed
+  // carries a lowercase namespace and normaliseCounterparty emits no
+  // lowercase letter: the namespaced rule is what the deployed resolver has
+  // been applying since the code deployed, whatever merchant it points at,
+  // and the un-namespaced one is already dead. Calling that a conflict
+  // blocked the whole migration on a decision the owner had already made on
+  // the screen, and reported a LOST assignment for a row that in production
+  // carries the owner's current merchant and never carried the old one.
+  | "superseded-by-namespaced-rule"
   // Pass two.
   | "promoted"
   // A promotion whose whole evidence is ONE row (fix round, finding
@@ -204,6 +242,10 @@ export type RederiveReport = {
   // Rules pass one left alone because a same-merchant twin already holds the
   // pattern they would have been rewritten to (fix round two).
   readonly alreadyHeldBySameMerchantTwin: readonly string[];
+  // Rules pass one left alone because a namespaced rule of the same kind for
+  // a DIFFERENT merchant already holds the pattern they would have been
+  // rewritten to (fix round three). Printed and counted, never blocking.
+  readonly supersededByNamespacedRule: readonly string[];
   // Whether the writes this report describes were ISSUED. False on a dry run
   // and false on a blocked run, which are the only two ways a report can
   // describe work that did not happen.
@@ -219,7 +261,6 @@ export type RederiveDependencies = {
     | "listRules"
     | "listCountedTransactions"
     | "upsertRule"
-    | "updateRulePattern"
     | "applyRuleWrites"
   >;
   readonly recompute: RecomputeInterpretation;
@@ -307,11 +348,10 @@ export const rederiveMerchantRules = async (
   // resolves a merchant for INCOME and SPEND rows and for nothing else, so a
   // counted row is the only kind a rule can ever reach. Widening this read
   // would change no decision and would count rows no assignment can land on.
-  // THE BEFORE-SET READS EACH STORED RULE UNDER THE KEY IT IS WRITTEN
-  // AGAINST (fix round two, finding HZ-M3P12-R2-03), so a table that is
-  // already migrated, or half migrated, produces the assignment set it really
-  // holds rather than an empty one.
-  const assignmentsBefore = assignmentSet(rows, before);
+  // Rules pass one finds already superseded by a namespaced rule of the same
+  // kind. Filled during pass one and read when the before-set is computed
+  // AFTER it, which is why the before-set is not computed here.
+  const supersededRuleIds = new Set<string>();
 
   const decisions: RuleDecision[] = [];
   const counts: RuleCounts[] = [];
@@ -320,6 +360,7 @@ export const rederiveMerchantRules = async (
   const broadened: string[] = [];
   const promotedOnOneRow: string[] = [];
   const alreadyHeldBySameMerchantTwin: string[] = [];
+  const supersededByNamespacedRule: string[] = [];
   let patternsRewritten = 0;
   let alreadyNamespaced = 0;
   let rulesAdded = 0;
@@ -405,32 +446,40 @@ export const rederiveMerchantRules = async (
     }
     const newPattern = `${DESCRIPTOR_NAMESPACE}${rule.pattern}`;
     const collision = claimant(rule.kind, newPattern, rule.id);
-    if (collision !== undefined && collision.merchantId !== rule.merchantId) {
-      const isAccepted = accepted.has(rule.id);
-      (isAccepted ? acceptedConflicts : conflicts).push(rule.id);
-      decisions.push({
-        ruleId: rule.id,
-        pass: "one",
-        basis: "descriptor",
-        outcome: isAccepted ? "merchant-conflict-accepted" : "merchant-conflict",
-      });
-      continue;
-    }
-    // THE SAME-MERCHANT TWIN, DECIDED RATHER THAN FALLEN THROUGH (fix round
-    // two). This used to drop past both branches and queue an update onto a
-    // pattern another rule of the same kind already held, which the unique
-    // key refuses: the decide phase reported the run clean and the apply
-    // phase threw, which is the one thing the decide-then-apply shape exists
-    // to make impossible. The working copy models rule identity, kind and
-    // pattern, and it now acts on the constraint the real table enforces over
-    // exactly those three fields.
+    // A CLAIMANT MEANS THIS RULE IS ALREADY SUPERSEDED, WHICHEVER MERCHANT
+    // THE CLAIMANT CARRIES (fix round two for the same-merchant half, fix
+    // round three for the rest, finding CR3-M3P12-01).
+    //
+    // WHY THE CLAIMANT IS ALWAYS A PRE-EXISTING NAMESPACED RULE, which is
+    // what makes one treatment correct for both cases: the table's unique key
+    // is (householdId, kind, pattern), so no two rules of one kind share a
+    // bare pattern, so no rule pass one rewrote EARLIER in this same run can
+    // be holding this rule's target pattern. The claimant existed before the
+    // run, already namespaced, which is the shape decision D-46's deploy
+    // window produces when the owner names a group again.
+    //
+    // SO THE SOURCE RULE IS DEAD, not contested. The shipped matcher can
+    // never apply an un-namespaced pattern again: every key carries a
+    // lowercase namespace, EXACT is equality, and PREFIX and PATTERN would
+    // need a pattern that is a strict prefix of a lowercase namespace, which
+    // the uppercasing normaliser cannot emit. Rewriting it is impossible, the
+    // unique key refuses it; blocking on it is wrong, because the namespaced
+    // rule has been the live declaration since the code deployed and the
+    // owner chose its merchant on the screen. It is recorded, counted, and
+    // left in place, because decision D-39 forbids deleting a declaration.
     if (collision !== undefined) {
-      alreadyHeldBySameMerchantTwin.push(rule.id);
+      const sameMerchant = collision.merchantId === rule.merchantId;
+      supersededRuleIds.add(rule.id);
+      (sameMerchant ? alreadyHeldBySameMerchantTwin : supersededByNamespacedRule).push(
+        rule.id,
+      );
       decisions.push({
         ruleId: rule.id,
         pass: "one",
         basis: "descriptor",
-        outcome: "already-held-by-same-merchant-twin",
+        outcome: sameMerchant
+          ? "already-held-by-same-merchant-twin"
+          : "superseded-by-namespaced-rule",
       });
       continue;
     }
@@ -561,6 +610,24 @@ export const rederiveMerchantRules = async (
     });
   }
 
+  // THE BEFORE-SET IS COMPUTED AFTER PASS ONE, and that ordering is the fix
+  // for finding CR3-M3P12-01 rather than a tidy-up. It reads each stored rule
+  // under the key it is actually written against (fix round two, finding
+  // HZ-M3P12-R2-03), so a migrated or half-migrated table produces the
+  // assignment set it really holds. What it must NOT do is credit a rule the
+  // deployed matcher can no longer apply: a pattern superseded by a
+  // namespaced rule of the same kind is dead in production, and counting it
+  // as a live assignment made the next ordinary re-naming report a LOST
+  // assignment for a row whose merchant the owner had themselves changed, and
+  // block the whole migration on it, permanently, since decision D-39 forbids
+  // deleting the dead row.
+  //
+  // ONLY SUPERSEDED IDS ARE EXCLUDED, never un-namespaced rules in general:
+  // on a first run every rule is un-namespaced and the before-set is the
+  // whole point of criterion 12.7.
+  const liveBefore = before.filter((rule) => !supersededRuleIds.has(rule.id));
+  const assignmentsBefore = assignmentSet(rows, liveBefore);
+
   // THE AFTER STATE IS THE WORKING COPY, not a re-read. Nothing has been
   // written yet, so there is nothing to read back; `working` IS the state
   // the pending writes would produce, and computing the superset test
@@ -599,6 +666,31 @@ export const rederiveMerchantRules = async (
   // and decides. The recompute is inside the same gate, so a blocked run
   // never carries a lost assignment onto a transaction row.
   const applied = exitCode === 0 && input.dryRun !== true;
+
+  // ONE PLACE THAT SHAPES THE REPORT, so the value a recompute failure
+  // carries is the same value a clean run returns, with `applied` the only
+  // difference.
+  const buildReport = (didApply: boolean): RederiveReport => ({
+    decisions,
+    counts,
+    rulesBefore: before.length,
+    rulesAfter: working.length,
+    patternsRewritten,
+    alreadyNamespaced,
+    rulesAdded,
+    broadened,
+    promotedOnOneRow,
+    alreadyHeldBySameMerchantTwin,
+    supersededByNamespacedRule,
+    conflicts,
+    acceptedConflicts,
+    lostAssignments,
+    acceptedLostAssignments,
+    assignmentsBefore: assignmentsBefore.size,
+    assignmentsAfter: assignmentsAfter.size,
+    exitCode,
+    applied: didApply,
+  });
   if (applied) {
     // ONE CALL, ONE TRANSACTION (fix round two, finding CR2-M3P12-03). The
     // whole write set goes through a single port member the adapter runs
@@ -619,29 +711,21 @@ export const rederiveMerchantRules = async (
       updates: pendingUpdates,
       inserts: pendingInserts,
     });
-    await deps.recompute(context);
+    // THE RECOMPUTE'S FAILURE IS A DIFFERENT EVENT FROM THE WRITE SET'S, and
+    // is thrown as one (fix round three, finding CR3-M3P12-02). Everything
+    // above this line is inside one transaction and rolls back together; by
+    // the time this runs, the rule writes are committed. The caller needs to
+    // know which side failed, because the two have opposite answers to what
+    // the table now holds, and it needs the report so it can say WHAT was
+    // written rather than only that something was.
+    try {
+      await deps.recompute(context);
+    } catch (cause) {
+      throw new RederiveRecomputeError(buildReport(true), cause);
+    }
   }
 
-  return {
-    decisions,
-    counts,
-    rulesBefore: before.length,
-    rulesAfter: working.length,
-    patternsRewritten,
-    alreadyNamespaced,
-    rulesAdded,
-    broadened,
-    promotedOnOneRow,
-    alreadyHeldBySameMerchantTwin,
-    conflicts,
-    acceptedConflicts,
-    lostAssignments,
-    acceptedLostAssignments,
-    assignmentsBefore: assignmentsBefore.size,
-    assignmentsAfter: assignmentsAfter.size,
-    exitCode,
-    applied,
-  };
+  return buildReport(applied);
 };
 
 // The DECISION REPORT, byte-comparable across runs (criterion 12.8). The

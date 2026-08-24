@@ -10,6 +10,7 @@ import { listMerchantReview } from "../../src/modules/merchants/application/merc
 import { counterpartyText } from "../../src/modules/merchants/domain/merchant-review";
 import {
   counterpartyIdentity,
+  isBareIdentityKey,
   identityBasisOfKey,
 } from "../../src/modules/merchants/domain/counterparty-identity";
 import { normaliseCounterparty } from "../../src/modules/merchants/domain/normalise-counterparty";
@@ -373,6 +374,7 @@ describe("criterion 6.3: no card number in a key, in a rendered label, or on eit
     const folded = foldGroups(rows, {
       useTags: false,
       identity: counterpartyIdentity,
+      isBareKey: isBareIdentityKey,
       normalise: normaliseCounterparty,
     });
     const carryingMonth: string[] = [];

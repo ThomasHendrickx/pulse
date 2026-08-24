@@ -369,6 +369,53 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
   // and setMerchantTag's atomic demote-then-promote so at most one primary
   // exists per merchant. Every DECLARATION write bumps the counter the
   // criterion 3.2 test reads.
+  // THE IN-PLACE PATTERN REWRITE, kept as a module-local helper rather than
+  // as a port member (fix round three, finding CR3-M3P12-07). The port no
+  // longer carries updateRulePattern: the routine writes only through
+  // applyRuleWrites, which is atomic, and leaving a second untransactional
+  // write path on the published interface is how that guarantee gets lost.
+  // The fake still needs the per-row behaviour, including the unique key,
+  // so applyRuleWrites below uses this.
+  const rewritePattern = async (
+    context: HouseholdContext,
+    input: { readonly ruleId: string; readonly pattern: string },
+  ): Promise<void> => {
+    const existing = rules.find(
+      (rule) =>
+        rule.householdId === context.householdId && rule.id === input.ruleId,
+    );
+    if (existing === undefined) {
+      // THE SAME SENTENCE THE ADAPTER THROWS (fix round three). The fake and
+      // src/modules/merchants/adapters/merchant-repository.ts must refuse a
+      // foreign rule with one wording, or a caller that matches on the text
+      // passes against one and fails against the other.
+      throw new Error(
+        "applyRuleWrites: one or more rules did not belong to the household",
+      );
+    }
+    // THE UNIQUE KEY THE SCHEMA DECLARES, enforced here (M3-P12 fix round
+    // two, finding CR2-M3P12-02 / HZ-M3P12-R2-01). prisma/schema/merchants.prisma
+    // carries @@unique([householdId, kind, pattern]); this fake used to
+    // model rule identity, kind and pattern and NOT the one constraint the
+    // real table enforces on exactly those three fields, so a routine could
+    // decide a run clean here and throw against Postgres. A fake that is
+    // weaker than its subject reports safe by construction.
+    const clash = rules.find(
+      (rule) =>
+        rule.householdId === context.householdId &&
+        rule.id !== existing.id &&
+        rule.kind === existing.kind &&
+        rule.pattern === input.pattern,
+    );
+    if (clash !== undefined) {
+      throw new Error(
+        "Unique constraint failed on the fields: (householdId,kind,pattern)",
+      );
+    }
+    declarationWriteCount += 1;
+    rules[rules.indexOf(existing)] = { ...existing, pattern: input.pattern };
+  };
+
   const merchantsPort: MerchantRepositoryPort = {
     listRules: async (context) =>
       rules.filter((rule) => rule.householdId === context.householdId),
@@ -387,42 +434,6 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       merchants.push(merchant);
       return merchant;
     },
-    // M3-P12: pass one of the re-derivation rewrites a pattern in place.
-    // Household ownership is checked here the same way the adapter checks it.
-    updateRulePattern: async (context, input) => {
-      const existing = rules.find(
-        (rule) =>
-          rule.householdId === context.householdId && rule.id === input.ruleId,
-      );
-      if (existing === undefined) {
-        throw new Error(
-          "updateRulePattern: rule does not belong to the household",
-        );
-      }
-      // THE UNIQUE KEY THE SCHEMA DECLARES, enforced here (M3-P12 fix round
-      // two, finding CR2-M3P12-02 / HZ-M3P12-R2-01). prisma/schema/merchants.prisma
-      // carries @@unique([householdId, kind, pattern]); this fake used to
-      // model rule identity, kind and pattern and NOT the one constraint the
-      // real table enforces on exactly those three fields, so a routine could
-      // decide a run clean here and throw against Postgres. A fake that is
-      // weaker than its subject reports safe by construction.
-      const clash = rules.find(
-        (rule) =>
-          rule.householdId === context.householdId &&
-          rule.id !== existing.id &&
-          rule.kind === existing.kind &&
-          rule.pattern === input.pattern,
-      );
-      if (clash !== undefined) {
-        throw new Error(
-          "Unique constraint failed on the fields: (householdId,kind,pattern)",
-        );
-      }
-      declarationWriteCount += 1;
-      const updated = { ...existing, pattern: input.pattern };
-      rules[rules.indexOf(existing)] = updated;
-      return updated;
-    },
     // M3-P12 fix round two. The routine's whole write set, applied ALL OR
     // NOTHING, mirroring the adapter's transaction. It DELEGATES to the two
     // members below rather than reimplementing them, so a spy bound to
@@ -433,7 +444,7 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       const writesBefore = declarationWriteCount;
       try {
         for (const update of input.updates) {
-          await merchantsPort.updateRulePattern(context, update);
+          await rewritePattern(context, update);
         }
         for (const insert of input.inserts) {
           await merchantsPort.upsertRule(context, insert);

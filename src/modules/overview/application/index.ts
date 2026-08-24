@@ -8,6 +8,7 @@ import type { HouseholdContext } from "@/platform/tenancy";
 import { appClock } from "@/platform/clock";
 import {
   counterpartyIdentity,
+  isBareIdentityKey,
   normaliseCounterparty,
 } from "@/modules/merchants/application";
 import * as repository from "../adapters/overview-repository";
@@ -59,6 +60,7 @@ const liveDependencies: OverviewDependencies = {
   // the read at request time.
   clock: { now: () => appClock().now() },
   counterpartyIdentity,
+  isBareIdentityKey,
   normaliseCounterparty,
 };
 

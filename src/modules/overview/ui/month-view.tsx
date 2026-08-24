@@ -95,7 +95,18 @@ const GroupLabel = async ({ group }: { readonly group: OverviewGroup }) => {
       }
       data-testid="group-label"
     >
-      {group.kind === "cash" ? t("cash") : maskCardNumbers(group.label)}
+      {/* A GROUP THAT CANNOT BE NAMED STILL NEEDS A NAME ON THE SCREEN (fix
+          round three, finding CR3-M3P12-06, THE FIFTH CONSUMER). Its label is
+          the normalised counterparty text, and for rows that carry none there
+          is none, so the month view rendered a row with an amount, a row
+          count and nothing to read. The merchant review was repaired in fix
+          round two and this, its sibling screen, was not. Same copy, same
+          reason, so the two screens say the same thing about the same rows. */}
+      {group.kind === "cash"
+        ? t("cash")
+        : group.unnameableReason === undefined
+          ? maskCardNumbers(group.label)
+          : t("unnameableLabel")}
     </span>
   );
 };

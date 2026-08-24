@@ -96,6 +96,7 @@ export const getMonthOverview = async (
 
   const foldOptions = {
     identity: deps.counterpartyIdentity,
+    isBareKey: deps.isBareIdentityKey,
     normalise: deps.normaliseCounterparty,
   };
   let incomeGroups = foldGroups(incomeRows, { ...foldOptions, useTags: false });

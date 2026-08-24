@@ -39,20 +39,47 @@
 // did NOT happen.
 //
 // AND WHAT A FAILED RUN LEAVES BEHIND, which is a different question with the
-// same exit code and used to have a different answer (fix round two, finding
-// CR2-M3P12-03). Exit 1 is also what the rejection handler sets, and the
-// apply block used to be separate awaits with nothing around them, so a
-// rejection partway through left some patterns rewritten, nothing inserted,
-// no recompute run and no report printed at all. The whole write set now goes
-// through ONE port member that the adapter runs inside a database
-// transaction, so a failure anywhere rolls back every write that preceded it
-// and the sentence above is true of a failed run as well. The recompute is
-// deliberately outside that transaction: it writes interpretation output, it
-// is idempotent, and re-running it alone is safe. That is what makes --accept usable: an operator runs,
-// is blocked, reads the rule ids off a report of unapplied work, decides, and
-// re-runs. The FIRST shape of this routine did the opposite, applying every
+// same exit code and has TWO answers, not one (fix round two finding
+// CR2-M3P12-03 for the first, fix round three finding CR3-M3P12-02 for the
+// correction). This command has two failure surfaces and they leave the
+// database in opposite states, so it reports them separately and exits with
+// different codes.
+//
+//   EXIT 1, A FAILURE INSIDE THE RULE WRITES. The whole write set goes
+//   through ONE port member the adapter runs inside a database transaction,
+//   so a rejection there rolls back every write that preceded it and the
+//   table is exactly as this run found it.
+//
+//   EXIT 4, A FAILURE AFTER THEM, WHICH MEANS THE RECOMPUTE. The rule writes
+//   are COMMITTED and the table is NOT as this run found it: the declarations
+//   are migrated and the interpretation output is stale, so the affected rows
+//   show as unresolved until a recompute completes. The decision report is
+//   printed before the failure is reported, so there is a record of what was
+//   rewritten. THE FIX IS TO RE-RUN THIS COMMAND, never to roll the code
+//   deploy back: a rolled-back deploy turns every migrated pattern into a
+//   rule that matches nothing under the pre-deploy derivation.
+//
+// AN EARLIER SHAPE OF THIS FILE PRINTED THE FIRST SENTENCE FOR BOTH, which
+// was false on the second path and invited exactly the rollback above.
+//
+// The recompute is outside the transaction deliberately: it writes
+// interpretation output, it is idempotent, and re-running it alone is safe.
+// A BLOCKED run, which is a different thing again, writes nothing at all:
+// that is what makes --accept usable, since an operator runs, is blocked,
+// reads the rule ids off a report of unapplied work, decides, and re-runs.
+// The FIRST shape of this routine did the opposite, applying every
 // non-blocking write and the full recompute before returning exit 1, so the
 // report was about work already done.
+//
+// THIS COMMAND CANNOT BE POINTED AT A LOCAL DATABASE (fix round three,
+// finding CR3-M3P12-05). The interlock below requires a project ref, and a
+// local connection carries one in neither its username nor its host, so it is
+// refused as unparseable. That is deliberate and criterion 12.23 buys it; the
+// consequence to know before running this is that the write path's FIRST
+// execution through this command is the deploy-time run itself. Its rehearsal
+// lives in the application-level tests and in the Playwright spec that drives
+// the adapter against a real database, not in a local invocation of this
+// script.
 //
 // THE TARGET INTERLOCK (criterion 12.23, hazard H12.30). Before this command
 // reads or writes ANYTHING it requires --expect-host AND --expect-ref, and it
@@ -74,14 +101,16 @@
 // from a real statement's text.
 
 import { householdId, userId, type HouseholdContext } from "@/platform/tenancy";
-import { resolveDbEnv } from "@/platform/db/resolve-env";
+import { resolveClientDbUrl } from "@/platform/db/resolve-env";
 import { assessRederiveTarget } from "@/platform/db/target-guard";
 import { recomputeInterpretation } from "@/modules/ledger/application";
 import {
+  RederiveRecomputeError,
   formatDecisionReport,
   merchantRepository,
   rederiveMerchantRules,
 } from "@/modules/merchants/application";
+import type { RederiveReport } from "@/modules/merchants/application";
 
 const argument = (name: string): string | undefined => {
   const index = process.argv.indexOf(`--${name}`);
@@ -91,54 +120,12 @@ const argument = (name: string): string | undefined => {
   return process.argv[index + 1];
 };
 
-const main = async (): Promise<number> => {
-  // THE INTERLOCK RUNS FIRST, before the household argument is even read and before
-  // any repository call. A refused run has read nothing and written nothing.
-  const target = assessRederiveTarget(
-    { DATABASE_URL: resolveDbEnv("DATABASE_URL") },
-    { host: argument("expect-host"), projectRef: argument("expect-ref") },
-  );
-  if (!target.allowed) {
-    console.error(`rederive-merchant-rules: ${target.reason}`);
-    return 3;
-  }
-  console.log(`target guard: ${target.reason}`);
-
-  const household = argument("household");
-  if (household === undefined || household.trim() === "") {
-    console.error(
-      "rederive-merchant-rules: --household <id> is required. Every table carries a household id and every query filters on it.",
-    );
-    return 2;
-  }
-  const dryRun = process.argv.includes("--dry-run");
-  const accepted = (argument("accept") ?? "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter((value) => value !== "");
-
-  const context: HouseholdContext = {
-    householdId: householdId(household),
-    // The routine writes declarations, not user-attributed records; the
-    // context's user id is required by the type and is not read by any write
-    // this routine makes.
-    userId: userId("rederive-merchant-rules"),
-  };
-
-  // THE FLAG IS THREADED INTO THE ROUTINE, which is the only place that can
-  // honour it (fix round, finding HZ-M3P12-02). It used to be handled HERE,
-  // by substituting a no-op recompute, while the real repository was passed
-  // unconditionally: --dry-run rewrote the patterns, inserted the rules and
-  // skipped only the step that would have made the result visible.
-  const report = await rederiveMerchantRules(
-    context,
-    {
-      merchants: merchantRepository,
-      recompute: (ctx) => recomputeInterpretation(ctx),
-    },
-    { acceptedRuleIds: accepted, dryRun },
-  );
-
+// THE REPORT, PRINTED FROM ONE PLACE, so the recompute-failure path shows
+// the same record a clean run shows (fix round three, finding
+// CR3-M3P12-02). Before this the report was printed only after the routine
+// RETURNED, so a failure left the operator an exit code and no record of
+// which patterns had been rewritten.
+const printReport = (report: RederiveReport): void => {
   console.log("--- decision report ---");
   console.log(formatDecisionReport(report));
   console.log("--- matched counts (excluded from the idempotence comparison) ---");
@@ -159,6 +146,21 @@ const main = async (): Promise<number> => {
   );
   for (const ruleId of report.alreadyHeldBySameMerchantTwin) {
     console.log(`  twin-holds-pattern-rule ${ruleId}`);
+  }
+  // SUPERSEDED DECLARATIONS (fix round three, finding CR3-M3P12-01). A rule
+  // whose pattern carries no namespace can never be applied again by the
+  // shipped matcher, and a namespaced rule of the same kind for a DIFFERENT
+  // merchant already holds the pattern it would have been rewritten to. It is
+  // dead rather than contested: the owner chose the other merchant on the
+  // screen, and the deployed resolver has been applying that choice since the
+  // code deployed. It is left in place, because decision D-39 forbids
+  // deleting a declaration, and it is printed here so the operator can see
+  // which declarations are now inert.
+  console.log(
+    `superseded-by-namespaced-rule ${report.supersededByNamespacedRule.length}`,
+  );
+  for (const ruleId of report.supersededByNamespacedRule) {
+    console.log(`  superseded-rule ${ruleId}`);
   }
   console.log(`rules-added ${report.rulesAdded}`);
   console.log(`assignments-before ${report.assignmentsBefore}`);
@@ -217,6 +219,82 @@ const main = async (): Promise<number> => {
         : "  nothing was written: the run is blocked, and the database is exactly as it was found",
     );
   }
+};
+
+const main = async (): Promise<number> => {
+  // THE INTERLOCK RUNS FIRST, before the household argument is even read and before
+  // any repository call. A refused run has read nothing and written nothing.
+  const target = assessRederiveTarget(
+    // THE STRING THE CLIENT WILL OPEN, not the one the Prisma CLI would
+    // resolve (fix round three, finding CR3-M3P12-03). new PrismaClient()
+    // reads process.env only, so the interlock reads process.env only.
+    { DATABASE_URL: resolveClientDbUrl() },
+    { host: argument("expect-host"), projectRef: argument("expect-ref") },
+  );
+  if (!target.allowed) {
+    console.error(`rederive-merchant-rules: ${target.reason}`);
+    return 3;
+  }
+  console.log(`target guard: ${target.reason}`);
+
+  const household = argument("household");
+  if (household === undefined || household.trim() === "") {
+    console.error(
+      "rederive-merchant-rules: --household <id> is required. Every table carries a household id and every query filters on it.",
+    );
+    return 2;
+  }
+  const dryRun = process.argv.includes("--dry-run");
+  const accepted = (argument("accept") ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value !== "");
+
+  const context: HouseholdContext = {
+    householdId: householdId(household),
+    // The routine writes declarations, not user-attributed records; the
+    // context's user id is required by the type and is not read by any write
+    // this routine makes.
+    userId: userId("rederive-merchant-rules"),
+  };
+
+  // THE FLAG IS THREADED INTO THE ROUTINE, which is the only place that can
+  // honour it (fix round, finding HZ-M3P12-02). It used to be handled HERE,
+  // by substituting a no-op recompute, while the real repository was passed
+  // unconditionally: --dry-run rewrote the patterns, inserted the rules and
+  // skipped only the step that would have made the result visible.
+  let report: RederiveReport;
+  try {
+    report = await rederiveMerchantRules(
+      context,
+      {
+        merchants: merchantRepository,
+        recompute: (ctx) => recomputeInterpretation(ctx),
+      },
+      { acceptedRuleIds: accepted, dryRun },
+    );
+  } catch (error: unknown) {
+    if (!(error instanceof RederiveRecomputeError)) {
+      throw error;
+    }
+    // THE RULE WRITES COMMITTED AND THE RECOMPUTE THEN FAILED (fix round
+    // three, finding CR3-M3P12-02). The operator gets the record of what was
+    // written, then the truth about the state, then the one action that is
+    // correct. Nothing here prints a pattern or a database message.
+    printReport(error.report);
+    console.error(
+      "rederive-merchant-rules: the rule writes COMMITTED and the recompute then failed.",
+    );
+    console.error(
+      "  the table is NOT as this run found it: the declarations above are migrated and the interpretation output is stale, so the affected rows show as unresolved until a recompute completes.",
+    );
+    console.error(
+      "  RE-RUN THIS COMMAND. Do not roll the code deploy back: under the pre-deploy derivation every migrated pattern matches nothing. Re-running is safe and converges, because a rule an earlier attempt namespaced is left alone by the next.",
+    );
+    return 4;
+  }
+
+  printReport(report);
   console.log(`exit ${report.exitCode}`);
   return report.exitCode;
 };
@@ -245,8 +323,13 @@ void main().then(
     console.error(
       `rederive-merchant-rules: the run failed. error kind ${kind}, code ${code}. The message is deliberately not printed: a database error can quote the failing row, and a stored pattern is derived from a real statement. Read the database log for the detail.`,
     );
+    // THIS PATH IS EVERYTHING EXCEPT A RECOMPUTE FAILURE, which main() catches
+    // and reports separately with exit 4 (fix round three, finding
+    // CR3-M3P12-02). Every failure that reaches here happened before or
+    // inside the rule writes, and the rule writes are one transaction, so the
+    // sentence below is true here and only here.
     console.error(
-      "  the rule writes are applied in ONE transaction, so a failure inside them wrote nothing and the table is as this run found it. Re-running is safe and converges: a rule an earlier attempt namespaced is left alone by the next.",
+      "  the failure was before or inside the rule writes. Those are applied in ONE transaction, so nothing was written and the table is as this run found it. Re-running is safe and converges: a rule an earlier attempt namespaced is left alone by the next.",
     );
     process.exitCode = 1;
   },

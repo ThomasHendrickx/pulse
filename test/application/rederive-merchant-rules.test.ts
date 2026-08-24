@@ -11,6 +11,7 @@ import { uploadStatement } from "../../src/modules/import/application/upload-sta
 import { statementParser } from "../../src/modules/import/adapters/statement-parser";
 import { recomputeInterpretation } from "../../src/modules/ledger/application/interpret-window";
 import {
+  RederiveRecomputeError,
   formatDecisionReport,
   rederiveMerchantRules,
 } from "../../src/modules/merchants/application/rederive-rules";
@@ -118,6 +119,8 @@ type Seed = {
     readonly alreadyNamespaced: string;
     readonly conflicting: string;
     readonly emptyPattern: string;
+    readonly accountSquatter: string;
+    readonly promotableIntoConflict: string;
   };
 };
 
@@ -188,6 +191,32 @@ const seedWorld = async (): Promise<Seed> => {
     pattern: "GEEN ENKELE RIJ DEMO",
   });
 
+  // (9) and (10) A PASS-TWO MERCHANT CONFLICT, which is where the blocking
+  // condition lives since fix round three moved pass one's collision from a
+  // conflict to a supersede (finding CR3-M3P12-01). An EXACT rule already
+  // holding an ACCOUNT pattern for merchant B, and a descriptor rule for
+  // merchant A whose rows carry that same account: pass two promotes A's rule
+  // to that account pattern, finds B's rule holding it, and blocks. This is a
+  // genuine ambiguity a person must settle, unlike the pass-one case, because
+  // both rules are live under the new key.
+  // AN ACCOUNT-BASIS RULE ALREADY IN THE TABLE, which is what a naming made
+  // inside decision D-46's deploy window looks like: assignMerchant writes a
+  // namespaced subject from the moment the code deploys. It points at
+  // merchant B and holds the account pass two is about to promote merchant
+  // A's rule onto, so pass two blocks. It matches its rows immediately, which
+  // is why the superset test below no longer starts from an empty observed
+  // set: the window suspends the UN-NAMESPACED rules, not this one.
+  const accountSquatter = await world.merchantsPort.upsertRule(context, {
+    merchantId: merchantB.id,
+    kind: "EXACT",
+    pattern: `${ACCOUNT_NAMESPACE}${IDENTITY_FIXTURE_ACCOUNTS.counterparty2}`,
+  });
+  const promotableIntoConflict = await world.merchantsPort.upsertRule(context, {
+    merchantId: merchantA.id,
+    kind: "EXACT",
+    pattern: await baselineKeyOfRow(world, (d) => d.includes("REFERTE 9000000101")),
+  });
+
   // (8) EMPTY PATTERN: inert under the matcher today. Namespacing it would
   // make the bare namespace a live PREFIX matching every descriptor key.
   const emptyPattern = await world.merchantsPort.upsertRule(context, {
@@ -208,6 +237,8 @@ const seedWorld = async (): Promise<Seed> => {
       alreadyNamespaced: alreadyNamespaced.id,
       conflicting: conflicting.id,
       emptyPattern: emptyPattern.id,
+      accountSquatter: accountSquatter.id,
+      promotableIntoConflict: promotableIntoConflict.id,
     },
   };
 };
@@ -239,7 +270,6 @@ const deps = (world: World) => ({
     | "listRules"
     | "listCountedTransactions"
     | "upsertRule"
-    | "updateRulePattern"
     | "applyRuleWrites"
   >,
   recompute: (ctx: HouseholdContext) =>
@@ -275,7 +305,7 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
     const observedBefore = assignmentPairs(world);
 
     const report = await rederiveMerchantRules(context, deps(world), {
-      acceptedRuleIds: [ruleIds.conflicting],
+      acceptedRuleIds: [ruleIds.promotableIntoConflict],
     });
     await recomputeInterpretation(context, world.ledgerDeps);
     const observedAfter = assignmentPairs(world);
@@ -300,7 +330,12 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
     // dead naming as clean.
     expect(world.rules.length).toBeGreaterThanOrEqual(rulesBefore);
     // And the window closes: the rows the deploy left unresolved come back.
-    expect(observedBefore.size).toBe(0);
+    // FIX ROUND THREE: the seed now also holds an account-basis rule written
+    // inside the deploy window, and that one resolves its rows immediately,
+    // so the observed set does not start empty. What the window suspends is
+    // the un-namespaced rules, and the assertion that they come back is that
+    // the observed set GROWS to the routine's own after-count.
+    expect(observedBefore.size).toBeLessThan(observedAfter.size);
     expect(observedAfter.size).toBe(report.assignmentsAfter);
   });
 
@@ -311,28 +346,18 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
     const patternsBefore = new Map(
       world.rules.map((rule) => [rule.id, rule.pattern]),
     );
+    // FIX ROUND TWO: the routine issues its write set through ONE member, so
+    // the spy sits there. FIX ROUND THREE: updateRulePattern is gone from the
+    // port entirely (finding CR3-M3P12-07), so this is the only write path to
+    // watch, which is the point of removing it.
     const spied = {
       ...world.merchantsPort,
-      updateRulePattern: async (
-        ctx: HouseholdContext,
-        input: { readonly ruleId: string; readonly pattern: string },
-      ) => {
-        updates.push({ ...input });
-        return world.merchantsPort.updateRulePattern(ctx, input);
-      },
-      // FIX ROUND TWO: the routine issues its write set through one member
-      // now, so the spy on the individual write has to be reached through it.
       applyRuleWrites: async (
         ctx: HouseholdContext,
         input: Parameters<World["merchantsPort"]["applyRuleWrites"]>[1],
       ) => {
-        for (const update of input.updates) {
-          updates.push({ ...update });
-          await world.merchantsPort.updateRulePattern(ctx, update);
-        }
-        for (const insert of input.inserts) {
-          await world.merchantsPort.upsertRule(ctx, insert);
-        }
+        updates.push(...input.updates.map((update) => ({ ...update })));
+        return world.merchantsPort.applyRuleWrites(ctx, input);
       },
     };
     // The port carries no delete at all, which is the structural half of
@@ -350,7 +375,7 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
       // actually issued. Since the fix round a blocked run writes nothing at
       // all (finding HZ-M3P12-03), so without this the assertions below
       // would pass over an empty list and measure nothing.
-      { acceptedRuleIds: [ruleIds.conflicting] },
+      { acceptedRuleIds: [ruleIds.promotableIntoConflict] },
     );
     expect(deletes).toEqual([]);
     expect(updates.length).toBeGreaterThan(0);
@@ -373,7 +398,7 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
   test("the promotion ADDS a rule beside the naming and the naming survives verbatim, and the broadening is a printed number", async () => {
     const { world, ruleIds } = await seedWorld();
     const report = await rederiveMerchantRules(context, deps(world), {
-      acceptedRuleIds: [ruleIds.conflicting],
+      acceptedRuleIds: [ruleIds.promotableIntoConflict],
     });
     const promotable = world.rules.find(
       (rule) => rule.id === ruleIds.promotable,
@@ -407,7 +432,7 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
   test("a rule that could not be promoted, for either reason, is printed, counted and does NOT block", async () => {
     const { world, ruleIds } = await seedWorld();
     const report = await rederiveMerchantRules(context, deps(world), {
-      acceptedRuleIds: [ruleIds.conflicting],
+      acceptedRuleIds: [ruleIds.promotableIntoConflict],
     });
     const outcomes = new Map(
       report.decisions
@@ -436,7 +461,7 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
     const { world, ruleIds } = await seedWorld();
     const before = new Map(world.rules.map((rule) => [rule.id, rule.pattern]));
     const report = await rederiveMerchantRules(context, deps(world), {
-      acceptedRuleIds: [ruleIds.conflicting],
+      acceptedRuleIds: [ruleIds.promotableIntoConflict],
     });
     const after = new Map(world.rules.map((rule) => [rule.id, rule.pattern]));
     expect(after.get(ruleIds.alreadyNamespaced)).toBe(
@@ -466,7 +491,7 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
     console.log(
       `unaccepted run: conflicts ${blocked.conflicts.length}, lost ${blocked.lostAssignments.length}, exit ${blocked.exitCode}`,
     );
-    expect(blocked.conflicts).toEqual([unaccepted.ruleIds.conflicting]);
+    expect(blocked.conflicts).toEqual([unaccepted.ruleIds.promotableIntoConflict]);
     expect(blocked.exitCode).toBe(1);
 
     // Accepting a DIFFERENT rule id clears nothing.
@@ -476,7 +501,7 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
       deps(wrongId.world),
       { acceptedRuleIds: [wrongId.ruleIds.promotable] },
     );
-    expect(stillBlocked.conflicts).toEqual([wrongId.ruleIds.conflicting]);
+    expect(stillBlocked.conflicts).toEqual([wrongId.ruleIds.promotableIntoConflict]);
     expect(stillBlocked.exitCode).toBe(1);
 
     // Accepting the named id clears exactly that one.
@@ -484,11 +509,11 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
     const cleared = await rederiveMerchantRules(
       context,
       deps(acceptedRun.world),
-      { acceptedRuleIds: [acceptedRun.ruleIds.conflicting] },
+      { acceptedRuleIds: [acceptedRun.ruleIds.promotableIntoConflict] },
     );
     expect(cleared.conflicts).toEqual([]);
     expect(cleared.acceptedConflicts).toEqual([
-      acceptedRun.ruleIds.conflicting,
+      acceptedRun.ruleIds.promotableIntoConflict,
     ]);
     expect(cleared.exitCode).toBe(0);
   });
@@ -537,7 +562,7 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
 describe("CRITERION 12.8: the re-derivation is idempotent, and idempotent means the same ANSWER", () => {
   test("a second run rewrites zero patterns, adds zero rules, prints the same decision report byte for byte and returns the same exit code", async () => {
     const { world, ruleIds } = await seedWorld();
-    const accepted = { acceptedRuleIds: [ruleIds.conflicting] };
+    const accepted = { acceptedRuleIds: [ruleIds.promotableIntoConflict] };
 
     const first = await rederiveMerchantRules(context, deps(world), accepted);
     const tableAfterFirst = world.rules
@@ -587,7 +612,7 @@ describe("CRITERION 12.8: the re-derivation is idempotent, and idempotent means 
       splitCounts?.matchedAfter ?? 0,
     );
     // A merchant conflict.
-    expect(report.conflicts).toContain(ruleIds.conflicting);
+    expect(report.conflicts).toContain(ruleIds.promotableIntoConflict);
     // And the two pass-one guards, REACHED rather than merely present.
     const passOne = new Map(
       report.decisions
@@ -633,7 +658,7 @@ describe("CRITERION 12.9: facts are not rewritten; the change is a derivation pl
       // ACCEPTED so the run APPLIES its writes: since the fix round a blocked
       // run issues none, and "no transaction was written" is only worth
       // asserting over a run that wrote everything it was going to write.
-      { acceptedRuleIds: [ruleIds.conflicting] },
+      { acceptedRuleIds: [ruleIds.promotableIntoConflict] },
     );
     expect(factSnapshot()).toBe(before);
   });
@@ -641,7 +666,7 @@ describe("CRITERION 12.9: facts are not rewritten; the change is a derivation pl
   test("clearing every merchant id and recomputing returns the IDENTICAL assignment set, so the naming survives as a declaration plus a derivation", async () => {
     const { world, ruleIds } = await seedWorld();
     await rederiveMerchantRules(context, deps(world), {
-      acceptedRuleIds: [ruleIds.conflicting],
+      acceptedRuleIds: [ruleIds.promotableIntoConflict],
     });
     await recomputeInterpretation(context, world.ledgerDeps);
     const before = assignmentPairs(world);
@@ -678,13 +703,6 @@ const countingDeps = (world: World): { deps: ReturnType<typeof deps>; log: Write
   const log: WriteLog = { updates: [], inserts: [], recomputes: { count: 0 } };
   const merchants = {
     ...world.merchantsPort,
-    updateRulePattern: async (
-      ctx: HouseholdContext,
-      input: { readonly ruleId: string; readonly pattern: string },
-    ) => {
-      log.updates.push(input.ruleId);
-      return world.merchantsPort.updateRulePattern(ctx, input);
-    },
     upsertRule: async (
       ctx: HouseholdContext,
       input: Parameters<World["merchantsPort"]["upsertRule"]>[1],
@@ -705,12 +723,9 @@ const countingDeps = (world: World): { deps: ReturnType<typeof deps>; log: Write
       ctx: HouseholdContext,
       input: Parameters<World["merchantsPort"]["applyRuleWrites"]>[1],
     ) => {
-      for (const update of input.updates) {
-        await merchants.updateRulePattern(ctx, update);
-      }
-      for (const insert of input.inserts) {
-        await merchants.upsertRule(ctx, insert);
-      }
+      log.updates.push(...input.updates.map((update) => update.ruleId));
+      log.inserts.push(...input.inserts.map((insert) => insert.kind));
+      return world.merchantsPort.applyRuleWrites(ctx, input);
     },
   };
   return {
@@ -720,7 +735,6 @@ const countingDeps = (world: World): { deps: ReturnType<typeof deps>; log: Write
         | "listRules"
         | "listCountedTransactions"
         | "upsertRule"
-        | "updateRulePattern"
         | "applyRuleWrites"
       >,
       recompute: async (ctx: HouseholdContext) => {
@@ -740,7 +754,7 @@ describe("HZ-M3P12-02: --dry-run writes NOTHING", () => {
       .map((rule) => `${rule.id}|${rule.pattern}`)
       .sort();
     const previewed = await rederiveMerchantRules(context, dryRun.deps, {
-      acceptedRuleIds: [dry.ruleIds.conflicting],
+      acceptedRuleIds: [dry.ruleIds.promotableIntoConflict],
       dryRun: true,
     });
 
@@ -761,7 +775,7 @@ describe("HZ-M3P12-02: --dry-run writes NOTHING", () => {
     const wet = await seedWorld();
     const realRun = countingDeps(wet.world);
     const applied = await rederiveMerchantRules(context, realRun.deps, {
-      acceptedRuleIds: [wet.ruleIds.conflicting],
+      acceptedRuleIds: [wet.ruleIds.promotableIntoConflict],
     });
     console.log(
       `real run: updates ${realRun.log.updates.length}, inserts ${realRun.log.inserts.length}, recomputes ${realRun.log.recomputes.count}, applied ${String(applied.applied)}`,
@@ -847,7 +861,7 @@ describe("HZ-M3P12-03: a blocking condition blocks BEFORE any write", () => {
     });
     expect(counting.log.updates).toEqual([]);
     expect(counting.log.inserts).toEqual([]);
-    expect(blocked.conflicts).toEqual([seed.ruleIds.conflicting]);
+    expect(blocked.conflicts).toEqual([seed.ruleIds.promotableIntoConflict]);
 
     // And accepting exactly those ids on the SAME world then applies.
     const cleared = await rederiveMerchantRules(context, counting.deps, {
@@ -880,12 +894,13 @@ describe("CR-M3P12-01: an accepted loss is printed, counted and named", () => {
       expect(lost.transactionId).not.toBe("");
     }
     // A run with nothing to lose carries an empty list, so the field is a
-    // measurement rather than a constant.
-    const clean = await seedWorld();
-    const cleanReport = await rederiveMerchantRules(context, deps(clean.world), {
-      acceptedRuleIds: [clean.ruleIds.conflicting],
-    });
+    // measurement rather than a constant. The deploy-window seed is the clean
+    // one: one merchant, one superseded rule, nothing contested.
+    const clean = await seedDeployWindowWorld();
+    const cleanReport = await rederiveMerchantRules(context, deps(clean.world), {});
+    expect(cleanReport.exitCode).toBe(0);
     expect(cleanReport.acceptedLostAssignments).toEqual([]);
+    expect(cleanReport.lostAssignments).toEqual([]);
   });
 
   test("the script prints the accepted losses, so the report a person reads carries them", () => {
@@ -902,7 +917,7 @@ describe("HZ-M3P12-06: a promotion backed by ONE row says so", () => {
   test("a one-row promotion carries its own outcome token and is listed, and a many-row promotion is not", async () => {
     const seed = await seedWorld();
     const report = await rederiveMerchantRules(context, deps(seed.world), {
-      acceptedRuleIds: [seed.ruleIds.conflicting],
+      acceptedRuleIds: [seed.ruleIds.promotableIntoConflict],
     });
     const outcomes = new Map(
       report.decisions
@@ -925,7 +940,7 @@ describe("HZ-M3P12-06: a promotion backed by ONE row says so", () => {
     // the whole decision report: matchedBefore is counted under the OLD key,
     // so a second run reaches the same answer.
     const second = await rederiveMerchantRules(context, deps(seed.world), {
-      acceptedRuleIds: [seed.ruleIds.conflicting],
+      acceptedRuleIds: [seed.ruleIds.promotableIntoConflict],
     });
     expect(formatDecisionReport(second)).toBe(formatDecisionReport(report));
   });
@@ -933,7 +948,9 @@ describe("HZ-M3P12-06: a promotion backed by ONE row says so", () => {
   test("the plain promoted token still exists, so the one-row token is a distinction and not a rename", async () => {
     const seed = await seedWorld();
     // A PREFIX over a counterparty NO other seeded rule points at, whose
-    // rows all carry the same trusted account. It matches several rows under
+    // rows all carry the same trusted account. It must not be the
+    // counterparty the seed's pass-two conflict uses, or it joins that
+    // conflict instead of promoting. It matches several rows under
     // the old key, so its promotion is backed by several agreeing rows.
     const merchant = await seed.world.merchantsPort.createMerchant(
       context,
@@ -942,10 +959,10 @@ describe("HZ-M3P12-06: a promotion backed by ONE row says so", () => {
     const many = await seed.world.merchantsPort.upsertRule(context, {
       merchantId: merchant.id,
       kind: "PREFIX",
-      pattern: "UW EUROPESE DOMICILIERING",
+      pattern: "STORTING VAN",
     });
     const report = await rederiveMerchantRules(context, deps(seed.world), {
-      acceptedRuleIds: [seed.ruleIds.conflicting],
+      acceptedRuleIds: [seed.ruleIds.promotableIntoConflict],
     });
     const decision = report.decisions.find(
       (d) => d.ruleId === many.id && d.pass === "two",
@@ -1072,30 +1089,71 @@ describe("CR2-M3P12-02 and HZ-M3P12-R2-01: a same-merchant collision is DECIDED,
     expect(counting.log.recomputes.count).toBe(1);
   });
 
-  test("A DIFFERENT-MERCHANT collision still BLOCKS, so this is a distinction and not a blanket permission", async () => {
+  // FIX ROUND THREE, finding CR3-M3P12-01. A pass-one claimant carrying a
+  // DIFFERENT merchant is not a conflict either. It used to be, and that made
+  // the next ordinary re-naming a permanent block: the un-namespaced rule the
+  // shipped matcher can never apply again was reported as a merchant conflict
+  // AND as a lost assignment for a row whose merchant the owner had just
+  // changed on the screen, and decision D-39 forbids deleting the dead row,
+  // so the condition never cleared on its own.
+  test("A PASS-ONE claimant carrying a DIFFERENT merchant SUPERSEDES rather than blocking, and reports no loss", async () => {
     const seed = await seedDeployWindowWorld();
+    // The owner re-names the group to a DIFFERENT merchant, which upsertRule
+    // applies by moving the namespaced rule's merchantId. One form submission.
     const rival = await seed.world.merchantsPort.createMerchant(context, "Gamma");
-    const bare = await baselineKeyOfRow(seed.world, (d) =>
-      d.includes("Afrekening een"),
-    );
+    const twin = seed.world.rules.find((rule) => rule.id === seed.twinRuleId);
+    expect(twin).toBeDefined();
     await seed.world.merchantsPort.upsertRule(context, {
       merchantId: rival.id,
       kind: "EXACT",
-      pattern: `${DESCRIPTOR_NAMESPACE}${bare}`,
-    });
-    const contender = await seed.world.merchantsPort.upsertRule(context, {
-      merchantId: seed.merchantId,
-      kind: "EXACT",
-      pattern: bare,
+      pattern: twin?.pattern ?? "",
     });
     const counting = countingDeps(seed.world);
 
     const report = await rederiveMerchantRules(context, counting.deps, {});
 
-    expect(report.conflicts).toContain(contender.id);
+    console.log(
+      `pass-one different merchant: exit ${report.exitCode}, conflicts ${report.conflicts.length}, lost ${report.lostAssignments.length}, superseded ${report.supersededByNamespacedRule.length}`,
+    );
+    expect(report.exitCode).toBe(0);
+    expect(report.applied).toBe(true);
+    expect(report.conflicts).toEqual([]);
+    // THE LOSS THAT NEVER HAPPENED. In production the row carries the rival's
+    // merchant both before and after, because a bare pattern cannot match a
+    // namespaced key; the old merchant existed only in the routine's own
+    // before-set, which now excludes superseded rules.
+    expect(report.lostAssignments).toEqual([]);
+    expect(report.supersededByNamespacedRule).toContain(seed.oldRuleId);
+    const outcome = report.decisions.find(
+      (decision) => decision.ruleId === seed.oldRuleId,
+    )?.outcome;
+    expect(outcome).toBe("superseded-by-namespaced-rule");
+    // The dead rule is neither rewritten nor deleted: D-39.
+    expect(counting.log.updates).not.toContain(seed.oldRuleId);
+    expect(
+      seed.world.rules.some((rule) => rule.id === seed.oldRuleId),
+    ).toBe(true);
+  });
+
+  test("A PASS-TWO collision between DIFFERENT merchants still BLOCKS, so the blocking condition is a distinction and not gone", async () => {
+    const seed = await seedWorld();
+    const counting = countingDeps(seed.world);
+
+    const report = await rederiveMerchantRules(context, counting.deps, {});
+
+    console.log(
+      `pass-two conflict: exit ${report.exitCode}, conflicts ${report.conflicts.length}, updates ${counting.log.updates.length}`,
+    );
+    expect(report.conflicts).toContain(seed.ruleIds.promotableIntoConflict);
     expect(report.exitCode).toBe(1);
     expect(report.applied).toBe(false);
     expect(counting.log.updates).toEqual([]);
+    const outcome = report.decisions.find(
+      (decision) =>
+        decision.ruleId === seed.ruleIds.promotableIntoConflict &&
+        decision.pass === "two",
+    )?.outcome;
+    expect(outcome).toBe("merchant-conflict");
   });
 
   test("THE FAKE ENFORCES THE UNIQUE KEY, so these tests can see what the schema refuses", async () => {
@@ -1103,9 +1161,9 @@ describe("CR2-M3P12-02 and HZ-M3P12-R2-01: a same-merchant collision is DECIDED,
     const twin = seed.world.rules.find((rule) => rule.id === seed.twinRuleId);
     expect(twin).toBeDefined();
     await expect(
-      seed.world.merchantsPort.updateRulePattern(context, {
-        ruleId: seed.oldRuleId,
-        pattern: twin?.pattern ?? "",
+      seed.world.merchantsPort.applyRuleWrites(context, {
+        updates: [{ ruleId: seed.oldRuleId, pattern: twin?.pattern ?? "" }],
+        inserts: [],
       }),
     ).rejects.toThrow(/Unique constraint failed/);
   });
@@ -1139,7 +1197,7 @@ describe("CR2-M3P12-03: the write set is applied ALL OR NOTHING", () => {
       ),
       "utf8",
     );
-    expect(adapter).toContain("prisma.$transaction([");
+    expect(adapter).toContain("prisma.$transaction(async (tx)");
     // Every statement in it still carries the household id: the update's
     // where clause and the insert's data both name it.
     const block = adapter.slice(adapter.indexOf("export const applyRuleWrites"));
@@ -1174,7 +1232,7 @@ describe("CR2-M3P12-03: the write set is applied ALL OR NOTHING", () => {
 describe("HZ-M3P12-R2-03: the superset guard is alive on every run, not only the first", () => {
   test("the SECOND run's before-set equals the FIRST run's after-set, rather than reading 0", async () => {
     const { world, ruleIds } = await seedWorld();
-    const accepted = { acceptedRuleIds: [ruleIds.conflicting] };
+    const accepted = { acceptedRuleIds: [ruleIds.promotableIntoConflict] };
     const first = await rederiveMerchantRules(context, deps(world), accepted);
     const second = await rederiveMerchantRules(context, deps(world), accepted);
     console.log(
@@ -1193,12 +1251,17 @@ describe("HZ-M3P12-R2-03: the superset guard is alive on every run, not only the
     // Migrate exactly one rule by hand, leaving the rest pre-migration.
     const target = world.rules.find((rule) => rule.id === ruleIds.unpromotable);
     expect(target).toBeDefined();
-    await world.merchantsPort.updateRulePattern(context, {
-      ruleId: ruleIds.unpromotable,
-      pattern: `${DESCRIPTOR_NAMESPACE}${target?.pattern ?? ""}`,
+    await world.merchantsPort.applyRuleWrites(context, {
+      updates: [
+        {
+          ruleId: ruleIds.unpromotable,
+          pattern: `${DESCRIPTOR_NAMESPACE}${target?.pattern ?? ""}`,
+        },
+      ],
+      inserts: [],
     });
     const report = await rederiveMerchantRules(context, deps(world), {
-      acceptedRuleIds: [ruleIds.conflicting],
+      acceptedRuleIds: [ruleIds.promotableIntoConflict],
       dryRun: true,
     });
     console.log(
@@ -1256,5 +1319,191 @@ describe("CR2-M3P12-04: a database error is never printed raw", () => {
     expect(script).toContain("already-held-by-same-merchant-twin");
     expect(script).toContain("twin-holds-pattern-rule");
     expect(script).toContain("promoted on the evidence of ONE transaction");
+  });
+});
+
+// FIX ROUND THREE, finding CR3-M3P12-01. The twin skip left a permanently
+// dead un-namespaced pattern that the routine's own before-set still read as
+// live, so the next ordinary re-naming became a permanent block on a loss
+// that never happened, escapable only by a person passing --accept for that
+// rule id on every future run.
+describe("CR3-M3P12-01: a superseded rule is not counted as a live assignment", () => {
+  test("the before-set excludes it, so no loss is reported for a row whose merchant the owner changed", async () => {
+    const seed = await seedDeployWindowWorld();
+    const rival = await seed.world.merchantsPort.createMerchant(context, "Gamma");
+    const twin = seed.world.rules.find((rule) => rule.id === seed.twinRuleId);
+    await seed.world.merchantsPort.upsertRule(context, {
+      merchantId: rival.id,
+      kind: "EXACT",
+      pattern: twin?.pattern ?? "",
+    });
+    const report = await rederiveMerchantRules(context, deps(seed.world), {});
+    console.log(
+      `superseded: before ${report.assignmentsBefore}, after ${report.assignmentsAfter}, lost ${report.lostAssignments.length}`,
+    );
+    expect(report.lostAssignments).toEqual([]);
+    expect(report.exitCode).toBe(0);
+    // The rows are held by the NAMESPACED rule both before and after, which
+    // is what production sees, so nothing is lost and the after-set is a
+    // superset. Before this round the before-set also credited the DEAD
+    // un-namespaced rule, and the difference was reported as a loss.
+    expect(report.assignmentsAfter).toBeGreaterThanOrEqual(
+      report.assignmentsBefore,
+    );
+  });
+
+  test("ONLY superseded ids are excluded: on a FIRST run every rule is un-namespaced and the before-set is the whole point of criterion 12.7", async () => {
+    const seed = await seedWorld();
+    const report = await rederiveMerchantRules(context, deps(seed.world), {
+      acceptedRuleIds: [seed.ruleIds.promotableIntoConflict],
+      dryRun: true,
+    });
+    // The seed's un-namespaced rules DO hold rows under the baseline key, and
+    // they are counted. A blanket exclusion of un-namespaced patterns would
+    // have made this zero and the superset test vacuous.
+    expect(report.assignmentsBefore).toBeGreaterThan(0);
+  });
+
+  test("the superseded rule is neither rewritten nor deleted, and the second run says the same thing", async () => {
+    const seed = await seedDeployWindowWorld();
+    const first = await rederiveMerchantRules(context, deps(seed.world), {});
+    const second = await rederiveMerchantRules(context, deps(seed.world), {});
+    expect(formatDecisionReport(second)).toBe(formatDecisionReport(first));
+    expect(second.exitCode).toBe(first.exitCode);
+    expect(seed.world.rules.some((rule) => rule.id === seed.oldRuleId)).toBe(true);
+  });
+
+  test("the script prints the superseded rules, so the operator sees the dead declarations", () => {
+    const script = readFileSync(
+      join(repositoryRoot, "scripts", "rederive-merchant-rules.ts"),
+      "utf8",
+    );
+    expect(script).toContain("superseded-by-namespaced-rule");
+  });
+});
+
+// FIX ROUND THREE, finding CR3-M3P12-02. The command told the operator that
+// nothing was written on a path where the whole write set is committed.
+describe("CR3-M3P12-02: a recompute failure is reported as what it is", () => {
+  test("the routine throws a DISTINGUISHABLE error carrying the report and the fact that the writes committed", async () => {
+    const seed = await seedDeployWindowWorld();
+    const patternsBefore = seed.world.rules
+      .map((rule) => `${rule.id}|${rule.pattern}`)
+      .sort();
+    let caught: unknown;
+    try {
+      await rederiveMerchantRules(
+        context,
+        {
+          merchants: seed.world.merchantsPort,
+          recompute: async () => {
+            throw new Error("recompute failed");
+          },
+        },
+        {},
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(RederiveRecomputeError);
+    if (!(caught instanceof RederiveRecomputeError)) {
+      return;
+    }
+    expect(caught.writesCommitted).toBe(true);
+    // THE RECORD OF WHAT WAS WRITTEN travels with the failure, because before
+    // this the report was printed only after the routine RETURNED, so a
+    // failure left the operator an exit code and nothing else.
+    expect(caught.report.applied).toBe(true);
+    expect(formatDecisionReport(caught.report).length).toBeGreaterThan(0);
+    // And the writes really did commit, which is why the old sentence was
+    // false: the table is NOT as the run found it.
+    expect(
+      seed.world.rules.map((rule) => `${rule.id}|${rule.pattern}`).sort(),
+    ).not.toEqual(patternsBefore);
+  });
+
+  test("a failure INSIDE the write set is not that error, and leaves the table as it found it", async () => {
+    const seed = await seedWorld();
+    const patternsBefore = seed.world.rules
+      .map((rule) => `${rule.id}|${rule.pattern}`)
+      .sort();
+    let caught: unknown;
+    try {
+      await rederiveMerchantRules(
+        context,
+        {
+          merchants: {
+            ...seed.world.merchantsPort,
+            applyRuleWrites: async () => {
+              throw new Error("write set refused");
+            },
+          },
+          recompute: async () => undefined,
+        },
+        { acceptedRuleIds: [seed.ruleIds.promotableIntoConflict] },
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught).not.toBeInstanceOf(RederiveRecomputeError);
+    expect(
+      seed.world.rules.map((rule) => `${rule.id}|${rule.pattern}`).sort(),
+    ).toEqual(patternsBefore);
+  });
+
+  test("the script branches on it: the report is printed, the state is named, and re-running is the instruction", () => {
+    const script = readFileSync(
+      join(repositoryRoot, "scripts", "rederive-merchant-rules.ts"),
+      "utf8",
+    );
+    expect(script).toContain("RederiveRecomputeError");
+    expect(script).toContain("the rule writes COMMITTED and the recompute then failed");
+    expect(script).toContain("RE-RUN THIS COMMAND");
+    expect(script).toContain("Do not roll the code deploy back");
+    // The header no longer claims a failure ANYWHERE rolls everything back.
+    expect(script).not.toContain("so a failure anywhere rolls back every write");
+    expect(script).toContain("EXIT 4, A FAILURE AFTER THEM");
+    // And the top-level handler's sentence is now scoped to the path it can
+    // actually see.
+    expect(script).toContain("the failure was before or inside the rule writes");
+  });
+
+  test("the command states that it cannot be pointed at a local database (CR3-M3P12-05)", () => {
+    const script = readFileSync(
+      join(repositoryRoot, "scripts", "rederive-merchant-rules.ts"),
+      "utf8",
+    );
+    expect(script).toContain("CANNOT BE POINTED AT A LOCAL DATABASE");
+  });
+});
+
+// FIX ROUND THREE, finding CR3-M3P12-07. A declaration rewrite outside a
+// transaction is the thing fix round two bought; leaving a second write path
+// on the published port is how that guarantee gets lost.
+describe("CR3-M3P12-07: there is ONE write path for a declaration", () => {
+  test("updateRulePattern is gone from the port, the binding and the adapter", () => {
+    for (const path of [
+      "src/modules/merchants/application/ports.ts",
+      "src/modules/merchants/application/index.ts",
+      "src/modules/merchants/adapters/merchant-repository.ts",
+      "src/modules/merchants/application/rederive-rules.ts",
+    ]) {
+      const source = readFileSync(join(repositoryRoot, path), "utf8");
+      const code = source
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("//"))
+        .join("\n");
+      expect(code, path).not.toContain("updateRulePattern");
+    }
+  });
+
+  test("the only remaining declaration write on the port is the atomic one", () => {
+    const ports = readFileSync(
+      join(repositoryRoot, "src/modules/merchants/application/ports.ts"),
+      "utf8",
+    );
+    expect(ports).toContain("applyRuleWrites");
+    expect(ports).not.toMatch(/readonly deleteRule/);
   });
 });

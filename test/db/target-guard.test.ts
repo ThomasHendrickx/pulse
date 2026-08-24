@@ -347,3 +347,110 @@ describe("CRITERION 12.23: a refused run has read and written nothing, and exits
     expect(source).not.toMatch(/expect-host[\s\S]{0,200}\|\|\s*["']/);
   });
 });
+
+// FIX ROUND THREE, finding CR3-M3P12-08. THE GUARD MUST READ WHAT THE CLIENT
+// WILL USE. A connection string is a document, not two fields, and the
+// connector resolves more of it than the authority: a `host` query parameter
+// names a unix socket directory and the client opens THAT, ignoring the
+// hostname the interlock was comparing. A guard that reads a different field
+// from the one the client connects through is the decorative guard criterion
+// 12.23 exists to prevent, one level down.
+describe("CRITERION 12.23: the endpoint is the whole string, not the authority", () => {
+  const HOST = "aws-0-eu-central-1.pooler.supabase.com";
+  const REF = "aaaabbbbccccddddeeee";
+  const correct = `postgresql://postgres.${REF}:pw@${HOST}:5432/postgres`;
+  const check = (url: string) =>
+    assessRederiveTarget({ DATABASE_URL: url }, { host: HOST, projectRef: REF });
+
+  test("the control: a plain correct string is ALLOWED, so the refusals below are refusals", () => {
+    expect(check(correct).allowed).toBe(true);
+  });
+
+  // THE ASSERTION THAT FAILS A RESOLVER READING THE HOSTNAME WHILE THE CLIENT
+  // OPENS A SOCKET. Both strings carry the same authority, the same username
+  // and the same ref, so every field comparison this interlock made before
+  // this round returns the same answer for both. Only a guard that reads the
+  // query the client reads can tell them apart.
+  test("a host QUERY PARAMETER is refused, though its authority is byte-identical to an approved string", () => {
+    const socketPath = `${correct}?host=/tmp/not-a-socket-dir`;
+    const parsedApproved = new URL(correct);
+    const parsedAttack = new URL(socketPath);
+    expect(parsedAttack.hostname).toBe(parsedApproved.hostname);
+    expect(parsedAttack.username).toBe(parsedApproved.username);
+    expect(check(correct).allowed).toBe(true);
+    expect(check(socketPath).allowed).toBe(false);
+  });
+
+  test("a DIFFERENT DATABASE NAME is refused, though host and ref both match", () => {
+    expect(check(`postgresql://postgres.${REF}:pw@${HOST}:5432/some_other_db`).allowed).toBe(
+      false,
+    );
+    expect(check(`postgresql://postgres.${REF}:pw@${HOST}:5432/postgres`).allowed).toBe(true);
+  });
+
+  test("a query parameter this interlock does not understand is refused rather than ignored", () => {
+    expect(check(`${correct}?options=-c%20search_path%3Dsomething`).allowed).toBe(false);
+    expect(check(`${correct}?whatever=1`).allowed).toBe(false);
+  });
+
+  test("the parameters this codebase actually uses are still ALLOWED, so the refusal is not a blanket one", () => {
+    expect(check(`${correct}?pgbouncer=true`).allowed).toBe(true);
+    expect(check(`${correct}?sslmode=require&connection_limit=1`).allowed).toBe(true);
+    expect(check(`${correct}?schema=public`).allowed).toBe(true);
+  });
+
+  test("no refusal on these paths prints the connection string or anything inside it", () => {
+    const secret = "s3cr3tpassw0rd";
+    const url = `postgresql://postgres.${REF}:${secret}@${HOST}:5432/other?host=/tmp/x&options=y`;
+    const verdict = assessRederiveTarget(
+      { DATABASE_URL: url },
+      { host: HOST, projectRef: REF },
+    );
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.reason).not.toContain(secret);
+    expect(verdict.reason).not.toContain("/tmp/x");
+    expect(verdict.reason).not.toContain("options");
+    expect(verdict.reason).not.toContain("postgresql://");
+  });
+});
+
+// FIX ROUND THREE, finding CR3-M3P12-03. The interlock resolves the string
+// the CLIENT will open, not the one the Prisma CLI would.
+describe("CRITERION 12.23: the interlock resolves what the client resolves", () => {
+  test("resolveClientDbUrl reads process.env only, which is what new PrismaClient() reads", async () => {
+    const { resolveClientDbUrl } = await import("../../src/platform/db/resolve-env");
+    const previous = process.env["DATABASE_URL"];
+    try {
+      process.env["DATABASE_URL"] = "postgresql://u:p@h:5432/postgres";
+      expect(resolveClientDbUrl()).toBe("postgresql://u:p@h:5432/postgres");
+      process.env["DATABASE_URL"] = "";
+      expect(resolveClientDbUrl()).toBeUndefined();
+      delete process.env["DATABASE_URL"];
+      expect(resolveClientDbUrl()).toBeUndefined();
+    } finally {
+      if (previous === undefined) {
+        delete process.env["DATABASE_URL"];
+      } else {
+        process.env["DATABASE_URL"] = previous;
+      }
+    }
+  });
+
+  test("the script hands the interlock the CLIENT's reading, not the CLI's", () => {
+    const source = readFileSync(
+      join(__dirname, "..", "..", "scripts", "rederive-merchant-rules.ts"),
+      "utf8",
+    );
+    expect(source).toContain("resolveClientDbUrl()");
+    expect(source).not.toContain('resolveDbEnv("DATABASE_URL")');
+  });
+
+  test("nothing in the tree loads dotenv, which is why the client's reading is process.env only", () => {
+    const client = readFileSync(
+      join(__dirname, "..", "..", "src", "platform", "db", "client.ts"),
+      "utf8",
+    );
+    expect(client).not.toContain("dotenv");
+    expect(client).not.toContain("loadEnvFile");
+  });
+});

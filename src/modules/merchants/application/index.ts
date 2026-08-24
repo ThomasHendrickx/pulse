@@ -87,7 +87,6 @@ const liveRepository: MerchantRepositoryPort = {
   findMerchantByName: repository.findMerchantByName,
   createMerchant: repository.createMerchant,
   upsertRule: repository.upsertRule,
-  updateRulePattern: repository.updateRulePattern,
   applyRuleWrites: repository.applyRuleWrites,
   findTagByName: repository.findTagByName,
   createTag: repository.createTag,
@@ -103,6 +102,7 @@ const liveRepository: MerchantRepositoryPort = {
 export const merchantRepository: MerchantRepositoryPort = liveRepository;
 
 export {
+  RederiveRecomputeError,
   rederiveMerchantRules,
   formatDecisionReport,
 } from "./rederive-rules";

@@ -7,6 +7,7 @@ import { plainDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
 import {
   counterpartyIdentity,
+  isBareIdentityKey,
   normaliseCounterparty,
 } from "@/modules/merchants/application";
 import { getMonthOverviewWith } from "@/modules/overview/application";
@@ -71,6 +72,7 @@ const fakeWorld = (byMonth: Record<string, MonthData>) => {
     overview,
     clock: fixedClock(new Date("2026-09-15T12:00:00Z")),
     counterpartyIdentity,
+    isBareIdentityKey,
     normaliseCounterparty,
   };
   return { deps, reads };

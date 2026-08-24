@@ -18,6 +18,7 @@ import {
   ACCOUNT_NAMESPACE,
   DESCRIPTOR_NAMESPACE,
   counterpartyIdentity,
+  isBareIdentityKey,
   isTrustedCounterpartyAccount,
 } from "../../src/modules/merchants/domain/counterparty-identity";
 import { matchRules } from "../../src/modules/merchants/domain/merchant-rule";
@@ -100,7 +101,7 @@ describe("CRITERION 12.11: the two screens agree where they are meant to", () =>
     }));
     const folded = foldGroups(
       rows.filter((row) => !row.isCash),
-      { useTags: false, identity: counterpartyIdentity, normalise: normaliseCounterparty },
+      { useTags: false, identity: counterpartyIdentity, isBareKey: isBareIdentityKey, normalise: normaliseCounterparty },
     );
     const foldKeys = new Map<string, number>();
     for (const group of folded) {
