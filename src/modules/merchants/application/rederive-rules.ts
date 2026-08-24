@@ -358,6 +358,11 @@ const keyForRule = (rule: MerchantRuleLike): ((row: CountedTransaction) => strin
 // half-migrated-table cases (finding HZ-M3P12-R2-03); what the property tests
 // is the exemption, which is the part that has been rewritten three times.
 export const identityKeyOfRow = identityKey;
+// The OLD key, exported for the same reason (fix round six): verifying a
+// published promotion pair against the seed means asking which rows the
+// source rule reached when the owner wrote it, and that question is asked
+// with this key.
+export const baselineKeyOfRow = baselineKey;
 
 export const assignmentSet = (
   rows: readonly CountedTransaction[],
@@ -431,6 +436,33 @@ export const rederiveMerchantRules = async (
   // superseded rule used to claim, which is exactly why one link is not
   // enough and the exemption has to follow a chain.
   const promotionSource = new Map<string, string>();
+  // WHAT A PROMOTION PAIR MAY BE, checked at the point of recording rather
+  // than left true by construction (fix round six, review of the amended
+  // criterion 12.7). The exemption follows this link, so a pair that does not
+  // mean what the exemption assumes it means licenses a row to change
+  // merchant, which is hazard H12.31 verbatim.
+  //
+  // A PROMOTION IS THE SOURCE RULE'S OWN NAMING, expressed in the account key
+  // space. That is the whole content of the link, and it has one consequence
+  // that can be checked here: the holder must carry the SAME merchant as the
+  // source. It holds on both branches below by construction, an inserted
+  // promotion copies rule.merchantId and an absorbed one is only reached when
+  // the existing holder's merchant already equals it, and that is exactly why
+  // it is worth asserting: the two branches are three hundred lines from the
+  // comparison that trusts them, and the last three rounds of this mechanism
+  // were each locally correct too. A future edit that lets them diverge fails
+  // here, loudly, instead of quietly licensing a reassignment.
+  const recordPromotion = (
+    holder: { readonly id: string; readonly merchantId: string },
+    source: { readonly id: string; readonly merchantId: string },
+  ): void => {
+    if (holder.merchantId !== source.merchantId) {
+      throw new Error(
+        "rederiveMerchantRules: refusing to record a promotion whose holder and source name different merchants. A promotion is the source rule's own naming in the account key space; a pair that is not that would license a row to change merchant unreported.",
+      );
+    }
+    promotionSource.set(holder.id, source.id);
+  };
   // The rule a row's coverage ultimately descends from: itself, unless it is
   // carrying somebody's promotion.
   const lineageRoot = (ruleId: string): string =>
@@ -723,7 +755,10 @@ export const rederiveMerchantRules = async (
         kind: "EXACT",
         pattern: accountPattern,
       });
-      promotionSource.set(promotedRuleId, rule.id);
+      recordPromotion(
+        { id: promotedRuleId, merchantId: rule.merchantId },
+        rule,
+      );
       rulesAdded += 1;
     } else {
       // NO INSERT, BUT STILL THIS RULE'S PROMOTION. Control only reaches here
@@ -743,7 +778,7 @@ export const rederiveMerchantRules = async (
       // not recorded stops licensing its own dead rule's rows, and those rows
       // are then REPORTED as changes rather than dismissed. That is the safe
       // direction and it is the direction this predicate must fail in.
-      promotionSource.set(collision.id, rule.id);
+      recordPromotion(collision, rule);
     }
     const matchedAfter = matchedBy(
       { id: rule.id, merchantId: rule.merchantId, kind: "EXACT", pattern: accountPattern },

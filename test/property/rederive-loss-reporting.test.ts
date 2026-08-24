@@ -6,10 +6,16 @@ import type { CountedTransaction } from "../../src/modules/merchants/application
 import type { MerchantRuleLike } from "../../src/modules/merchants/domain/merchant-rule";
 import {
   assignmentSet,
+  baselineKeyOfRow,
   identityKeyOfRow,
   rederiveMerchantRules,
   type RederiveDependencies,
 } from "../../src/modules/merchants/application/rederive-rules";
+import { matchRules } from "../../src/modules/merchants/domain/merchant-rule";
+import {
+  compactAccount,
+  isTrustedCounterpartyAccount,
+} from "../../src/modules/merchants/domain/counterparty-identity";
 import {
   ACCOUNT_NAMESPACE,
   DESCRIPTOR_NAMESPACE,
@@ -220,6 +226,7 @@ const runOnce = async (seed: Seed) => {
 
   return {
     report,
+    rulesAfter,
     before: assignmentSet(seed.rows, seed.rules),
     after: assignmentSet(seed.rows, rulesAfter, identityKeyOfRow),
   };
@@ -319,7 +326,7 @@ describe("HAZ5-1: the loss report is exactly the set of unlicensed merchant chan
   test("EVERY PUBLISHED SUPERSEDE IS A REAL ONE", async () => {
     await fc.assert(
       fc.asyncProperty(seedArbitrary, async (seed) => {
-        const { report } = await runOnce(seed);
+        const { report, rulesAfter } = await runOnce(seed);
         const byId = new Map(seed.rules.map((rule) => [rule.id, rule]));
         for (const link of report.supersededBy) {
           const dead = byId.get(link.ruleId);
@@ -331,11 +338,58 @@ describe("HAZ5-1: the loss report is exactly the set of unlicensed merchant chan
             `${DESCRIPTOR_NAMESPACE}${dead?.pattern ?? ""}`,
           );
         }
-        // And a promotion is always attributed to a rule that exists and was
-        // itself a candidate for promotion, never to a phantom.
-        const promotableIds = new Set(seed.rules.map((rule) => rule.id));
+        // AND EVERY PUBLISHED PROMOTION IS A REAL ONE, checked against the
+        // seed the way a supersede is (fix round six, review of the amended
+        // criterion 12.7). This used to be one line asserting that the source
+        // id named SOME rule in the seed, and that is the half nothing
+        // verified: lineageRoot consults exactly this map, so a run
+        // publishing one bad pair licenses a row moving to a third merchant
+        // and exits 0, which is hazard H12.31 verbatim, reached through the
+        // branch that carries the second link.
+        //
+        // FOUR THINGS MAKE A PAIR REAL, and the last is what ties the holder
+        // to THAT source rather than to any account rule that happens to
+        // exist: the promotion keys on the ONE trusted account of the rows
+        // the source reached under the OLD key, which is the question pass
+        // two asks and which is re-derived here from the seed.
+        const afterById = new Map(rulesAfter.map((rule) => [rule.id, rule]));
         for (const link of report.promotedFrom) {
-          expect(promotableIds.has(link.sourceRuleId)).toBe(true);
+          const holder = afterById.get(link.ruleId);
+          const source = afterById.get(link.sourceRuleId);
+          expect(holder).toBeDefined();
+          expect(source).toBeDefined();
+          if (holder === undefined || source === undefined) {
+            continue;
+          }
+          // A promotion is made FROM a descriptor rule INTO an account rule.
+          expect(source.pattern.startsWith(DESCRIPTOR_NAMESPACE)).toBe(true);
+          expect(holder.kind).toBe("EXACT");
+          expect(holder.pattern.startsWith(ACCOUNT_NAMESPACE)).toBe(true);
+          // It is the source's OWN naming, so it carries the same merchant.
+          // A pair failing this is the one that licenses a reassignment.
+          expect(holder.merchantId).toBe(source.merchantId);
+          // And it keys on the single trusted account of the rows the source
+          // reached under the key it was written against.
+          const bare = {
+            ...source,
+            pattern: source.pattern.slice(DESCRIPTOR_NAMESPACE.length),
+          };
+          const reached = seed.rows.filter(
+            (row) => matchRules(baselineKeyOfRow(row), [bare]) !== undefined,
+          );
+          expect(reached.length).toBeGreaterThan(0);
+          expect(
+            reached.every((row) =>
+              isTrustedCounterpartyAccount(row.counterpartyAccount),
+            ),
+          ).toBe(true);
+          const accounts = new Set(
+            reached.map((row) => compactAccount(row.counterpartyAccount ?? "")),
+          );
+          expect(accounts.size).toBe(1);
+          expect(holder.pattern).toBe(
+            `${ACCOUNT_NAMESPACE}${[...accounts][0] ?? ""}`,
+          );
         }
       }),
       { numRuns: 200 },
