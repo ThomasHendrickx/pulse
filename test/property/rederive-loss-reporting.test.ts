@@ -226,7 +226,29 @@ const runOnce = async (seed: Seed) => {
 };
 
 describe("HAZ5-1: the loss report is exactly the set of unlicensed merchant changes", () => {
-  test("THE BICONDITIONAL, over generated worlds", async () => {
+  test("THE BICONDITIONAL, over generated worlds, and every shape is reached", async () => {
+    // HOW MANY WORLDS REACHED EACH SHAPE. A property that cannot construct a
+    // situation passes vacuously about it, and this generator has been edited
+    // once already; if it drifts so that, say, no world ever strands a row,
+    // the biconditional stays green while covering two shapes instead of
+    // three. So the shapes are COUNTED and every count is asserted non-zero
+    // after the run. The counts are of situations the run must judge
+    // correctly, not of bugs: a correct implementation reaches all three and
+    // reports the right answer in each.
+    //
+    //   licensedChange: the row's merchant changed AND the change descends
+    //   from the claimant, so it must NOT be reported. This is where a FALSE
+    //   LOSS would show.
+    //
+    //   vanished: the row was held before and nothing holds it after, so it
+    //   must be reported. This is the HIDDEN REAL LOSS shape.
+    //
+    //   reassigned: the row is held after by a rule outside the claimant's
+    //   lineage and carrying a different merchant, so it must be reported.
+    //   This is the HIDDEN REASSIGNMENT shape, the one that got through three
+    //   rewrites of this predicate.
+    const shapes = { licensedChange: 0, vanished: 0, reassigned: 0 };
+
     await fc.assert(
       fc.asyncProperty(seedArbitrary, async (seed) => {
         const { report, before, after } = await runOnce(seed);
@@ -262,6 +284,14 @@ describe("HAZ5-1: the loss report is exactly the set of unlicensed merchant chan
             nowHeldBy !== undefined &&
             (sourceOf.get(nowHeldBy.ruleId) ?? nowHeldBy.ruleId) === claimant;
 
+          if (changed && licensed) {
+            shapes.licensedChange += 1;
+          } else if (changed && nowHeldBy === undefined) {
+            shapes.vanished += 1;
+          } else if (changed) {
+            shapes.reassigned += 1;
+          }
+
           expect({
             row: row.id,
             reported: reported.has(row.id),
@@ -270,6 +300,15 @@ describe("HAZ5-1: the loss report is exactly the set of unlicensed merchant chan
       }),
       { numRuns: 400 },
     );
+
+    // EVERY SHAPE WAS ACTUALLY REACHED. Printed as well as asserted, because
+    // a count of one is technically green and worth seeing.
+    console.log(
+      `shapes reached: licensedChange ${shapes.licensedChange}, vanished ${shapes.vanished}, reassigned ${shapes.reassigned}`,
+    );
+    expect(shapes.licensedChange).toBeGreaterThan(0);
+    expect(shapes.vanished).toBeGreaterThan(0);
+    expect(shapes.reassigned).toBeGreaterThan(0);
   });
 
   // THE LINEAGE IS NOT TAKEN ON TRUST. The property above reads the run's own
