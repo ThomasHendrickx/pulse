@@ -42,4 +42,79 @@ gates-run-by-this-lane:
     exit: 0
     output: "gate:work-history clean (every delivery yaml parses)"
 
-findings: []
+findings:
+  - id: CRIT2-01
+    severity: high
+    title: >-
+      The rebuilt ring-predicate guard is still self-passing, in three distinct
+      ways, and its own comment states two things about itself that are false
+    criteria: ["14.14", "14.15", "14.16"]
+    hazards: ["H14.10", "H14.14", "H14.19", "H14.21"]
+    where: >-
+      test/domain/absent-flow-reads.test.ts:271 through :330, the test named
+      EVERY ONE OF THE THREE READS CARRIES A RING PREDICATE IN ITS OWN WHERE
+      CLAUSE, against src/modules/overview/adapters/overview-repository.ts:257,
+      :337 and :435.
+    what-the-guard-claims: >-
+      Its comment at test/domain/absent-flow-reads.test.ts:271 records that the
+      previous version was shown green against the state it forbids and says it
+      "now reads each read's OWN body and requires the predicate to be inside
+      it". Its last three lines claim the counted and held arms "share one body,
+      selected by a ternary, so BOTH ARMS are asserted rather than only the one
+      the enumeration names". Both sentences are false, demonstrated below.
+    red-witnesses-derived-by-this-lane: >-
+      Each edit below was applied to the worktree, the guard was run, the whole
+      fast gate was run, and the edit was reverted. In all three the guard
+      reported 9 passed of 9 and the fast gate reported Test Files 38 passed
+      (38) / Tests 489 passed (489), exit 0.
+      ONE, THE COUNTED ARM LOSES ITS RING RESTRICTION ENTIRELY, which is hazard
+      H14.21 verbatim. Replace overview-repository.ts:454, AND
+      ${ring === "counted" ? POT_ROW : NON_POT_ROW}, with
+      ${ring === "counted" ? Prisma.empty : Prisma.sql`AND ${NON_POT_ROW}`}.
+      The counted read now reports every flow-carrying row in the household
+      regardless of ring, so a stale flow on an account that left the pot is
+      rendered to the household as counted money on the one screen state built
+      to tell counted from held. The guard stays green because POT_ROW is a
+      SUBSTRING of NON_POT_ROW, so expect(shared).toContain("POT_ROW") is
+      satisfied by the held arm's own predicate. The claim that both arms are
+      asserted is therefore false for every possible edit to the counted arm.
+      TWO, THE GAP LISTING LOSES ITS RING PREDICATE, which is hazard H14.19
+      verbatim. Delete AND ${POT_ROW} from the WHERE of listGapRows at
+      overview-repository.ts:366 and leave the token behind on a SQL comment
+      line, for example "-- the ring scoping used to read AND ${POT_ROW} here".
+      Postgres comments the interpolated fragment out, so the listing now hands
+      the reconciliation panel held rows under a verdict that says the books
+      close. The guard has no comment-stripping pass, which is the exact error
+      fleet environment warning 27 names as the sixth instance in one session.
+      THREE, THE UNINTERPRETED COUNT LOSES ITS RING PREDICATE, which is hazard
+      H14.10 and H14.14. Delete AND ${POT_ROW} from the WHERE of monthFigures
+      at overview-repository.ts:297 and add it inside an existing aggregate
+      filter in the SELECT list, for example
+      COUNT(*) FILTER (WHERE t."flow" IS NOT NULL AND ${POT_ROW}). The
+      uninterpreted count now counts a reserve account's held rows and the
+      month never closes again. The guard stays green because it locates the
+      WHERE clause with body.search(/\bWHERE\b/), and the FIRST match in
+      monthFigures is the FILTER (WHERE ...) at overview-repository.ts:281,
+      inside the SELECT list: the slice it calls "the WHERE" begins at the top
+      of the projection, so "inside the WHERE" degenerates to "anywhere in the
+      query".
+    why-it-matters: >-
+      This is the guard the fix round rebuilt precisely because round one found
+      it asserting that the predicates were DEFINED rather than USED. It is
+      still not a guard on the act. Two of the three states above are the two
+      hazards criterion 14.14 exists to address, and the third is criterion
+      14.15's own hazard H14.21. test/e2e/overview-reads.spec.ts does catch
+      states ONE and THREE when it runs, so the product defect is not
+      undetected; what is wrong is that the fast gate's dedicated structural
+      guard reports clean over all three, and its comment tells the next reader
+      it has checked something it has not.
+    fix: >-
+      Assert the counted arm by its own token rather than by a substring, for
+      example by requiring the body to match /\bPOT_ROW\b/ on a line that does
+      not also carry NON_POT_ROW, or better by asserting the ternary shape
+      itself. Strip line comments before matching, both // and SQL --. Locate
+      the WHERE clause by the LAST top-level WHERE in the body, or by the WHERE
+      that follows the FROM, rather than by the first occurrence of the word.
+    evidence-command: >-
+      npx vitest run test/domain/absent-flow-reads.test.ts, and npm test, run
+      by this lane after each of the three edits above.
