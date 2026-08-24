@@ -456,11 +456,13 @@ criteria:
       THE STANDING GATE. npm run typecheck, npm run lint, npm test and npm run
       gate:privacy all exit 0, and npm run test:e2e exits 0, each with its
       captured output in the phase work history.
-    met: true
+    met: false
     evidence:
-      - "Run by this lane, every invocation pinned to its own local database. npm run typecheck: exit 0, tsc --noEmit, no output. npm run lint: exit 0, eslint ., no output. npm test: exit 0, \"Test Files 41 passed (41)\", \"Tests 624 passed (624)\", duration 21.52s. npm run gate:privacy: exit 0, printed \"gate:privacy clean\". npm run gate:tokens: exit 0, no match."
-      - "E2E_RESULT_PLACEHOLDER"
-      - "The implementer's own recorded run is at delivery/work-history/m3-p12.yaml:1300 onward: 55 passed, 0 failed, exit 0, 12.1m, load average 4.25 4.62 5.16 on four cores, disk at 91 percent with 3.6G free, golden journey passing in 28.1s after failing in three earlier windows under load."
+      - "THE FIVE FAST GATES ARE MET. Run by this lane, every invocation pinned to its own local database. npm run typecheck: exit 0, tsc --noEmit, no output. npm run lint: exit 0, eslint ., no output. npm test: exit 0, \"Test Files 41 passed (41)\", \"Tests 624 passed (624)\", duration 21.52s. npm run gate:privacy: exit 0, printed \"gate:privacy clean\". npm run gate:tokens: exit 0, no match."
+      - "THE E2E HALF IS NOT WITNESSED BY THIS LANE, and it is recorded as not witnessed rather than as red or as met. This lane made two attempts. The first was refused in seconds by Playwright itself: \"http://127.0.0.1:3100 is already used\", because a sibling lane held the committed ports; this lane did not free them and did not move its own, because reuseExistingServer is deliberately false and moving ports introduces a confound the run would then have to carry. It waited through 36 thirty-second polls."
+      - "The second attempt started 2026-08-24 17:23:29 UTC once the ports were released, at load average 3.20 5.40 5.16 on four cores with 1.8G free of 252G, on the committed ports, with no filter and no retries. It got through 13 of 55 tests with 13 passed and 0 failed, INCLUDING the two that matter most here: test/e2e/golden-journey.spec.ts:79 green in 23.0s, and test/e2e/merchant-rule-write.spec.ts:76, this phase's database contract spec, green. The process was then killed by an infrastructure fault in this lane's own session, not by a test, not by a timeout and not by the suite: the log ends mid-suite with no failure line and no exit code."
+      - "So this lane has no exit code to report for npm run test:e2e and does not report one. What it can report is that nothing had failed at the point it stopped, and that no failure of any kind was observed in this window. Fleet warning 18 asks what the load was before what the code did; the load was 3.20 and the contention was three lanes on two ports, which the orchestrator has confirmed is its own."
+      - "The implementer's own recorded run is at delivery/work-history/m3-p12.yaml onward in the gate-evidence section: 55 passed, 0 failed, exit 0, 12.1m, load average 4.25 4.62 5.16 on four cores, disk at 91 percent with 3.6G free, golden journey passing in 28.1s after failing in three earlier windows under load. This lane's partial run is consistent with it and contradicts it nowhere, but a partial run is not an independent confirmation and is not counted as one. The criterion is marked NOT MET for want of a witness, not for a failure."
   - id: "12.15"
     quote: >-
       THE WHOLE-CORPUS EFFECT IS RECORDED, NOT ONLY THE HAPPY FIXTURE ... Every
@@ -824,3 +826,54 @@ deviations-judged:
 # If the config's assignment reaches both web servers AND the Playwright
 # worker, every row lands in the named database and none in the ambient one.
 # Row-insert counters were snapshotted in both databases before the run.
+
+# ===========================================================================
+# THE CLAIM-1 WITNESS, TAKEN AND COMPLETE. This is the one thing this lane's
+# partial e2e run DID settle, and it settles it better than a green exit code
+# would have, because it was set up as a discriminating experiment rather than
+# as a pass.
+#
+# THE SETUP. The invoking shell carried an ambient DATABASE_URL and DIRECT_URL
+# naming the shared local `postgres` database. That value is LOCAL, so
+# assertGateDbTargetIsLocal at src/platform/db/gate-target.ts:219 would accept
+# it, and every spec would have passed against it. It was simply not the
+# database anyone NAMED for this run. The PULSE_GATE_* variables named this
+# lane's own database, which had zero inserts on every table.
+#
+# THE SNAPSHOT BEFORE, captured from pg_stat_user_tables:
+#   pulse_r5crit households ins=0 del=0
+#   pulse_r5crit merchants  ins=0 del=0
+#   pulse_r5crit merchant_rules ins=0 del=0
+#   pulse_r5crit transactions ins=0 del=0
+#
+# THE SNAPSHOT AFTER 13 of the 55 specs:
+#   pulse_r5crit households ins=13 del=2
+#   pulse_r5crit merchants  ins=3  del=2
+#   pulse_r5crit merchant_rules ins=5 del=3
+#   pulse_r5crit transactions ins=88 del=0
+#
+# WHAT EACH HALF PROVES. The households and transactions inserts can only come
+# from the two WEB SERVERS, which sign users up and import statements: they
+# opened the named string and not the ambient one, so playwright.config.ts's
+# assignment reaches a spawned child process through both spreads.
+#
+# The merchants and merchant_rules counters prove the harder half, the one the
+# implementer's own probe could not reach. The DELETES are the tell. Nothing
+# in this suite deletes a merchant or a merchant rule except
+# test/e2e/merchant-rule-write.spec.ts, which creates two households, a
+# merchant, a foreign merchant and several rules and then deletes them at
+# test/e2e/merchant-rule-write.spec.ts:229 to :236. That spec opens a client
+# of its own with `new PrismaClient()` at :64, INSIDE THE PLAYWRIGHT WORKER,
+# reading process.env and nothing else. Those rows landed in the named
+# database. So the assignment made at src/platform/db/gate-target.ts:210
+# survives into the worker process, which is exactly the attack the dispatch
+# asked to be made and it holds.
+#
+# AND THE COUNTS MATCH THE SPEC. merchants ins=3 del=2 is the merchant, the
+# foreign merchant and one merchant created by the naming spec; merchant_rules
+# ins=5 del=3 is the seeded rule plus the four the spec writes, minus the
+# batch that rolled back. A run that had fallen through to the ambient value
+# would have left this database at zero on every row.
+#
+# ANSWER TO CLAIM 1: YES, with the one gap raised as CR5-M3P12-03.
+# ===========================================================================
