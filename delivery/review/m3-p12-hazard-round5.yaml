@@ -193,6 +193,40 @@ review-contract: hazard
 # .gitignore:9) and re-ran with the ambient foreign values explicitly
 # unset in the invoking shell. Result recorded after the findings/criteria
 # blocks below.
+#
+# entry 7. E2E RESULT. 55 discovered, 52 passed, 3 failed, exit 1, 15.2m, 1
+# worker, on the committed ports (3000/3100). Failures: [chromium]
+# test/e2e/import.spec.ts:170 ("Timeout: 5000ms... waiting for
+# getByTestId('import-result')"), [chromium] test/e2e/merchants.spec.ts:276
+# ("Timeout: 5000ms... waiting for getByTestId('naming-refused')"),
+# [chromium] test/e2e/month-view.spec.ts:120 ("expect(locator).toHaveText
+# ... Locator: getByTestId('household-context')", inside the shared signUp
+# helper). All three captured errors are the same shape: a fixed 5000ms
+# wait for an element that should already be on the page, never a wrong
+# value or a wrong assertion. `uptime` immediately after the run: load
+# average 7.57, 8.25, 6.78 on this 4-core box (nproc 4), matching and partly
+# exceeding fleet warning 18's own documented bad range (5.8-9.44). `df -h /`:
+# 1.7G available, 96% used. `ps aux` confirmed wt-m3p9's own `next dev`
+# process (a DIFFERENT worktree) running throughout my run, competing for
+# port 3000 with my own dev server (playwright's own webServer log printed
+# "Port 3000 is in use by an unknown process, using available port 3001
+# instead" early in the run). import.spec.ts:170 and month-view.spec.ts:120
+# are the SAME two specs round4's own CR4-M3P12-04 finding recorded failing
+# under load on that round's run; merchants.spec.ts:276 (this phase's OWN
+# criterion-12.18 coverage) is new to my run and I read it closely because
+# of that: its failure is a 5000ms wait for a redirect-driven banner after a
+# full sign-up-plus-import flow, the exact shape fleet warning 18 names
+# (a first-request/compilation-slowness timeout), not a missing element
+# for a structural reason (the banner's own text, translation key and
+# rendering path are unchanged by this round's diff, confirmed by grep of
+# git diff --stat 0d41c3b 606e3ee for merchants.spec.ts, messages/*.json and
+# merchant-review.tsx, all absent from this round's file list). I did NOT
+# re-run the suite a second time to isolate load from a real defect: fleet
+# warning 18 explicitly asks reviewers not to dispatch a run that competes
+# with another lane's own test:e2e, and by the time this run finished
+# another lane's dev server was still live on this same box. Reporting the
+# run and its symptoms honestly rather than declaring it clean; written up
+# as HAZ5-5 below.
 
 findings:
   - id: HAZ5-1
@@ -453,6 +487,48 @@ findings:
       level documentation fix, not a code fix; naming it here so the next
       reviewer does not lose the same few minutes rediscovering the
       workaround from the refusal message.
+  - id: HAZ5-5
+    severity: low
+    analysis: >-
+      THE PLAYWRIGHT GATE DOES NOT EXIT 0 ON THIS HEAD, AND I DO NOT
+      ATTRIBUTE THE THREE FAILURES TO THIS ROUND'S CHANGE. Criterion 12.14
+      asks for exit 0; my own run recorded 52 passed, 3 failed, exit
+      non-zero, matching the shape round4's own hazard finding CR4-M3P12-04
+      recorded for the prior round's run under the same fleet-contention
+      conditions. Two of the three failing specs (import.spec.ts:170,
+      month-view.spec.ts:120) are the exact same specs round4 reported
+      failing; the third (merchants.spec.ts:276, this phase's OWN e2e
+      coverage for criterion 12.18) is new to my run, and I read its
+      failure closely for exactly that reason: the captured error is a
+      fixed 5000ms wait for a redirect-driven banner after a full sign-up-
+      plus-import flow timing out, the same shape as the other two
+      failures and as the load-driven signature fleet warning 18 names,
+      not a wrong value or an assertion that used to pass and now asserts
+      something different. Load average during my run (7.57, 8.25, 6.78 on
+      4 cores) was within, and partly above, the bad range fleet warning 18
+      itself measured (5.8-9.44), disk was at 96 percent, and a DIFFERENT
+      worktree's own dev server was confirmed running throughout via `ps
+      aux`, printing its own port conflict with mine early in the run.
+    evidence:
+      - "My own run: npm run test:e2e (via a gitignored .env, see HAZ5-4), 1 worker: 55 discovered, 52 passed, 3 failed, 15.2m, exit 1."
+      - "[chromium] test/e2e/import.spec.ts:170:5 FAILED: \"Timeout: 5000ms ... waiting for getByTestId(\\\"import-result\\\")\", element(s) not found."
+      - "[chromium] test/e2e/merchants.spec.ts:276:5 FAILED (criterion 12.18's own coverage): \"Timeout: 5000ms ... waiting for getByTestId(\\\"naming-refused\\\")\", element(s) not found."
+      - "[chromium] test/e2e/month-view.spec.ts:120:5 FAILED: \"expect(locator).toHaveText(expected) failed ... Locator: getByTestId(\\\"household-context\\\")\", inside the shared signUp() helper used by every spec's setup."
+      - "`uptime` immediately after the run: \"load average: 7.57, 8.25, 6.78\" on a 4-core box (nproc reported 4). `df -h /`: 1.7G available, 96% used. `ps aux` showed wt-m3p9's own `next dev` process running throughout, and the webServer's own startup log printed \"Port 3000 is in use by an unknown process, using available port 3001 instead\" early in the run."
+      - "Round4 hazard finding CR4-M3P12-04 (origin/claude/m3-p12-rev4-haz), recording the same two of these three specs failing under a comparably loaded run (load average 12.19, 13.84, 11.27), with the same conclusion (fleet contention, not a code defect)."
+    concrete-fix: >-
+      Do not touch a test on the strength of this run alone. Re-run npm run
+      test:e2e once on a quiet machine (no concurrent fleet lane driving
+      Playwright, disk below the 90 percent threshold fleet warning 10
+      names) on the committed ports, and record the exit code in the phase
+      work history under criterion 12.14. If it exits 0 there the criterion
+      is met and this finding closes with it. This is the third round
+      running a Playwright run under fleet contention has produced a
+      non-zero exit on this phase (round4's own run and mine); if a fourth
+      quiet-machine run still cannot be obtained, the orchestrator should
+      treat that as its own signal about dispatch scheduling (fleet warning
+      18's own remedy: stagger lanes that both run test:e2e) rather than
+      keep asking reviewers to report the same contention-shaped result.
 
 criteria:
   - id: "12.1"
@@ -524,7 +600,7 @@ criteria:
   - id: "12.14"
     quote: "THE STANDING GATE. npm run typecheck, npm run lint, npm test and npm run gate:privacy all exit 0, and npm run test:e2e exits 0"
     evidence:
-      - "My own run this round: typecheck exit 0, lint exit 0, test exit 0 (624/624), gate:privacy exit 0, gate:tokens exit 0. npm run test:e2e result is recorded after this criteria block, quoted honestly with exit code and load conditions."
+      - "My own run this round: typecheck exit 0, lint exit 0, test exit 0 (624/624), gate:privacy exit 0, gate:tokens exit 0. npm run test:e2e: 55 discovered, 52 passed, 3 failed, exit 1, 15.2m. See finding HAZ5-5 for the full account of which specs failed, their captured errors, and why I do not attribute the failures to this round's code (fleet contention: load average 7.57-8.25 on a 4-core box, matching fleet warning 18's own documented bad range, with a sibling worktree's dev server confirmed running throughout)."
     met: false
   - id: "12.15"
     quote: "THE WHOLE-CORPUS EFFECT IS RECORDED, NOT ONLY THE HAPPY FIXTURE"
