@@ -996,3 +996,104 @@ TWO WAYS OUT, for whoever holds the plan, with what each costs.
 I recommend A. It is one word in the plan, it changes no test, and it leaves
 criterion 7.6's census meaning what it says: every element the reader can see
 has a box.
+
+---
+
+# ROUND THREE (M3-P9): the marker rename, plan amended at 497ec49
+
+The escalation in t7 was accepted. The marker is now the BARE ATTRIBUTE
+`data-press-feedback` and deliberately not a `data-testid`. It stays in the
+`data-*` family the vocabulary already uses for `data-pressed`, and unlike an
+`id` it cannot collide with a CSS `#id` selector or a URL fragment target.
+
+## the four requirement sites, checked against the plan rather than counted
+
+Renamed in the plan at four sites, not three: step 5 (the handler
+specification), criterion 9.7(c), criterion 9.9(a) TWICE (the assertion
+sentence and the "a tag with that attribute and no body" sentence), and
+criterion 9.9's falsifying clause. All four were read at 497ec49 and matched
+against this branch. One occurrence of the old string survives in step 5 by
+design, as the historical record of what the old attribute was and what it
+broke; it is not a requirement and was not renamed.
+
+```
+$ grep -rn 'data-testid="press-feedback"' src/ test/ styles/ playwright.config.ts
+GREP_EXIT=1        (nothing: no requirement site carries the old attribute)
+
+$ grep -rn "data-press-feedback" src/ test/
+src/app/layout.tsx:110:          data-press-feedback=""
+test/e2e/pressed-and-disabled.spec.ts:1563:const SCRIPT_TAG = /<script data-press-feedback[^>]*>([\s\S]*?)<\/script>/;
+test/e2e/pressed-and-disabled.spec.ts:1590:        ` the bare attribute data-press-feedback. A pressed rule nothing raises` +
+test/e2e/pressed-and-disabled.spec.ts:1609:    () => document.querySelector("script[data-press-feedback]")?.textContent ?? "",
+```
+
+Served, and matched by the spec's own regex against the raw body:
+
+```
+$ curl -s http://127.0.0.1:3005/sign-in | grep -o '<script data-press-feedback[^>]*>'
+<script data-press-feedback="">
+   matched by the spec regex: True | body length: 727 | registers pointerdown: True
+   occurrences of the old attribute in the served page: 0
+```
+
+## the assertion the rename exists for
+
+```
+$ npx playwright test -g "the dense month says exactly the same things"
+  ✘  1 [chromium]       month-view.spec.ts:1034   (sign-up failed in seedDense, see below)
+  ✓  2 [chromium-phone] month-view.spec.ts:1034
+  press-feedback mentions anywhere in the log: 0
+
+$ npx playwright test --project=chromium -g "the dense month says exactly the same things"
+  ✓  1 [chromium] month-view.spec.ts:1034
+  1 passed (16.6s)   D_EXIT=0
+  press-feedback mentions anywhere in the log: 0
+```
+
+GREEN UNDER BOTH PROJECTS WITH THE ATTRIBUTE PRESENT, which is the whole
+point of the change. The one red in the first of those two runs is a
+different failure entirely: `getByTestId('household-context')` not found
+inside `seedDense`, the sign-up-failed shape this container has produced all
+round, and it fires before the assertion under test is reached. The string
+`press-feedback` appears zero times in either log, so the list that used to
+carry it is empty.
+
+## one thing the rename disturbed, and it was my instrument rather than the plan
+
+Re-running this phase's five tests after the rename turned up ONE `:active`
+frame on the `Input.synthesizeTapGesture` path, where every earlier run had
+zero. It is not the marker and not the engine: the path BEFORE it ends with a
+compatibility mouse click that this spec refuses, and a refused click leaves
+Chromium's active chain set on the control until the next input, so a single
+frame at the head of the next path's window carried `:active` from the
+previous path rather than from the touch under test. That is the same residue
+the endings already clear, and the fix is the same one: the active chain is
+cleared between paths.
+
+```
+  (before) touch path "Input.synthesizeTapGesture ...": 25 frames during the press, in :active 1
+           Error: ... put the control into :active for 1 frames during the press
+  (after)  touch path "held CDP Input.dispatchTouchEvent touchStart": 25 frames, in :active 0, marking 25
+           touch path "Input.synthesizeTapGesture ...":               24 frames, in :active 0, marking 24
+           touch path "page.touchscreen.tap":                          0 frames, in :active 0, marking 0
+  1 passed (5.1s)   S_EXIT=0
+```
+
+## what did not move
+
+The press measurements stand and were not re-taken: 38 held touch presses
+over 19 controls at full motion and under reduce, not one frame losing the
+marking, peak 2.000px on every control, first movement at sampled frame 0,
+and 15 endings all clearing by the second frame with ending five showing 11
+frames of both controls marked simultaneously. The rename touches only how
+the script is FOUND in the served body; the listener's text is byte
+identical.
+
+## the underlying defect, recorded and not fixed here
+
+`collectTestids` at `test/e2e/month-view.spec.ts:650` sweeps the WHOLE
+document while criterion 7.6's own sentence scopes it to `main`. The rename
+is a route-around and not a repair. It is the plan's parked register's first
+entry now, naming the file, both line numbers and a discharge condition for
+whichever phase next owns that file. Criterion 9.7 pins this phase to one new
+file under `test/e2e/`, so repairing it here would print a second.

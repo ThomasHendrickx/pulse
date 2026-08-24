@@ -1555,7 +1555,12 @@ test("a project with touch collects this spec, and the config still says so", as
 // =====================================================================
 // CRITERION 9.9(a): THE MECHANISM IS SERVED, IT IS NOT INJECTED.
 // =====================================================================
-const SCRIPT_TAG = /<script data-testid="press-feedback"[^>]*>([\s\S]*?)<\/script>/;
+// The marker is the bare attribute data-press-feedback and deliberately
+// not a data-testid: a pre-existing helper sweeps every data-testid in the
+// document and requires a non-zero bounding rect, which a script element
+// cannot have. What this reads is the RAW RESPONSE BODY, matched as text,
+// so the marker never has to be a Playwright locator.
+const SCRIPT_TAG = /<script data-press-feedback[^>]*>([\s\S]*?)<\/script>/;
 
 test("the press listener is served in the document, on the shell and on the sign-in screen", async ({
   page,
@@ -1582,7 +1587,8 @@ test("the press listener is served in the document, on the shell and on the sign
     expect(
       match,
       `the raw response body for ${route} carries no script element with` +
-        ` data-testid="press-feedback". A pressed rule nothing raises is an inert stylesheet.`,
+        ` the bare attribute data-press-feedback. A pressed rule nothing raises` +
+        ` is an inert stylesheet.`,
     ).not.toBeNull();
     const served = match?.[1] ?? "";
     expect(
@@ -1600,7 +1606,7 @@ test("the press listener is served in the document, on the shell and on the sign
   // measurement is of the served document and not of something a client
   // bundle replaced.
   const live = await page.evaluate(
-    () => document.querySelector('script[data-testid="press-feedback"]')?.textContent ?? "",
+    () => document.querySelector("script[data-press-feedback]")?.textContent ?? "",
   );
   expect(
     live,
@@ -1677,6 +1683,15 @@ test.describe("the press a finger makes", () => {
     ];
 
     for (const [name, held, drive] of paths) {
+      // CLEAR THE BROWSER'S ACTIVE CHAIN BETWEEN PATHS. The path before this
+      // one ends with a compatibility mouse click that this spec refuses, and
+      // a refused click leaves Chromium's active chain set on the control
+      // until the next input, so ONE frame of the next path's window can
+      // still carry :active from the previous path rather than from the touch
+      // under test. Measured as exactly that: a single :active frame on the
+      // second path, with zero on the same path in isolation. This is the
+      // same residue the endings clear, for the same reason.
+      await clearActiveChain(page);
       await page.evaluate((s) => window.__m3p9press.begin([s]), probe);
       await drive();
       await page.waitForTimeout(60);

@@ -39,6 +39,22 @@ export const metadata: Metadata = {
 // src/middleware.ts is where one would land, and the phase that adds it adds
 // a nonce for this script in the same change or turns criterion 9.9 red.
 //
+// THE MARKER IS data-press-feedback AND DELIBERATELY NOT data-testid. The
+// rename landed in the plan amendment of 2026-08-24 on this phase's own
+// escalation, and the reason is measured rather than stylistic: the
+// pre-existing helper collectTestids at test/e2e/month-view.spec.ts:650
+// sweeps every data-testid in the WHOLE document and then requires a
+// non-zero bounding rect from everything it collects, while a script
+// element computes display none and reports 0 by 0. Taken one attribute
+// apart on the same head against the same server, that spec reported 1
+// failed with the diff naming press-feedback and 1 passed with the
+// attribute removed. Criterion 9.9(a) reads this marker out of the RAW
+// RESPONSE BODY as text rather than through a Playwright locator, so any
+// stable attribute serves it exactly as well and the rename costs nothing.
+// The underlying defect in that helper is recorded in the plan's parked
+// register for whichever phase next owns that file; criterion 9.7 pins
+// this phase to one new file under test/e2e/, so it is not repaired here.
+//
 // WHAT THE DOCUMENT-WIDE CLEAR COSTS, taken deliberately (plan finding
 // R2-07). A clear that sweeps the document also clears a press another finger
 // is still holding, so with two touches on two controls the first release
@@ -91,7 +107,7 @@ export default async function RootLayout({
       <body>
         {children}
         <script
-          data-testid="press-feedback"
+          data-press-feedback=""
           dangerouslySetInnerHTML={{ __html: PRESS_FEEDBACK }}
         />
       </body>
