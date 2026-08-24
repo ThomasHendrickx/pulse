@@ -260,6 +260,97 @@ findings:
       residual in the phase work history beside the deployed-run deviation,
       so the person who runs it at deploy time knows the write path's first
       execution through this command is that run.
+  - id: CR3-M3P12-06
+    severity: medium
+    analysis: >-
+      THE FIFTH CONSUMER. Round two put the bare-namespace refusal at the
+      matcher, the write boundary and the review surface, and the derivation
+      names exactly those three at
+      src/modules/merchants/domain/counterparty-identity.ts:83 through :85.
+      The overview fold is a fourth place that takes a counterparty identity
+      and it passes no guard at all: at
+      src/modules/overview/domain/month-projection.ts:99 it computes the
+      identity for every unresolved row and keys the display group on it, so
+      two rows that carry no counterparty information whatever land in ONE
+      group under the bare namespace, with their money summed, and the label
+      the month view renders for that group is the EMPTY STRING, because the
+      label is still the normalised counterparty text at
+      src/modules/overview/domain/month-projection.ts:113 and that text is
+      empty for exactly these rows. The reader gets a group row with no name,
+      an amount and a row count, counted into the unresolved pill computed at
+      src/modules/overview/application/month-overview.ts:135 and rendered
+      through src/modules/overview/ui/month-view.tsx:98. That is the same
+      defect fix round two repaired on the SIBLING screen, where a group with
+      no counterparty text now carries a name and the reason it cannot be
+      named (src/modules/merchants/domain/merchant-review.ts:143 through
+      :146). It was repaired on one screen and not on the other, and hazard
+      H12.15's own words, collapsing unrelated rows into one group, describe
+      what the month view still does. I am NOT calling this a regression: the
+      pre-phase fold keyed the same rows on the same empty text and merged
+      them the same way, and nothing here can be named or resolved onto a
+      merchant, which is why it is medium rather than high. It is the
+      unguarded consumer the brief asked me to look for, and it is where the
+      phase's own rule, that a bare namespace is not an identity, is not
+      applied.
+    evidence:
+      - "Witnessed: foldGroups called with the shipped counterpartyIdentity and normaliseCounterparty over two rows, one carrying whitespace-only counterparty text and no account, one carrying empty text and a whitespace-only account, returned exactly one group: {key text:descriptor:, kind unresolved, label empty string, totalCents -3500, rowCount 2}."
+      - src/modules/overview/domain/month-projection.ts:99 computes the identity and src/modules/overview/domain/month-projection.ts:105 makes it the group key, with no isBareIdentityKey test anywhere in the file.
+      - src/modules/merchants/domain/counterparty-identity.ts:83 through :85 lists the three places the refusal is enforced, and the overview is not among them.
+      - src/modules/merchants/domain/merchant-review.ts:143 through :146 is the sibling screen's repaired behaviour, and messages/en.json carries the copy it renders.
+    concrete-fix: >-
+      Give the fold the same two-line treatment the review builder got. Import
+      nothing from merchants: the identity already arrives structurally
+      through CountedGroupIdentity at
+      src/modules/overview/domain/month-projection.ts:32, so widen that
+      injected shape to carry the basis it already returns plus a boolean the
+      application layer fills from isBareIdentityKey, or inject the predicate
+      beside the identity the same way normalise is injected. Then at
+      src/modules/overview/domain/month-projection.ts:105 keep the grouping
+      as it is, and mark the group so the UI can render the same sentence the
+      merchant review renders instead of an empty label. Do not silently drop
+      the group: its money must stay in the month, which is why refusing it
+      the way the matcher refuses is wrong here.
+  - id: CR3-M3P12-07
+    severity: medium
+    analysis: >-
+      A SECOND, UNTRANSACTIONAL WRITE PATH IS STILL ON THE PORT, AND ITS
+      COMMENT SAYS IT EXISTS FOR A ROUTINE THAT NO LONGER CALLS IT. The fix
+      round moved the whole write set onto applyRuleWrites, which the adapter
+      runs inside one database transaction. updateRulePattern survived:
+      it is still declared on MerchantRepositoryPort at
+      src/modules/merchants/application/ports.ts:80, still exported from the
+      merchants module's published application interface at
+      src/modules/merchants/application/index.ts:90, still implemented at
+      src/modules/merchants/adapters/merchant-repository.ts:121 as a bare
+      updateManyAndReturn with no transaction around it, and still named in
+      the re-derivation's own dependency Pick at
+      src/modules/merchants/application/rederive-rules.ts:222 although the
+      routine has no call to it. The comment above it at
+      src/modules/merchants/application/ports.ts:75 through :79 states as a
+      present-tense fact that pass one of the re-derivation rewrites a
+      pattern through this member and that the member exists only for that
+      routine. Both halves are now false, which clause R-087 makes a finding
+      rather than a nit. The hazard is not what it does today, it is that the
+      one thing the fix round bought, that a declaration rewrite is all or
+      nothing, is one call site away from being lost again, and the comment
+      pointing at the routine is what would make a future author believe that
+      call site is the sanctioned one.
+    evidence:
+      - "grep over src and scripts for updateRulePattern returns only its declaration at src/modules/merchants/application/ports.ts:80, its binding at src/modules/merchants/application/index.ts:90, its implementation at src/modules/merchants/adapters/merchant-repository.ts:121 and the unused dependency Pick at src/modules/merchants/application/rederive-rules.ts:222. There is no call."
+      - src/modules/merchants/adapters/merchant-repository.ts:125 issues updateManyAndReturn directly, outside any prisma.$transaction.
+      - src/modules/merchants/application/ports.ts:75 through :79 is the false claim.
+    concrete-fix: >-
+      Remove updateRulePattern from the port at
+      src/modules/merchants/application/ports.ts:80, from the binding at
+      src/modules/merchants/application/index.ts:90, from the adapter at
+      src/modules/merchants/adapters/merchant-repository.ts:121 and from the
+      dependency Pick at src/modules/merchants/application/rederive-rules.ts:222,
+      and delete the corresponding member from the fakes in
+      test/application. If it is kept for a caller this phase cannot see,
+      correct its comment to say that the re-derivation does NOT use it, that
+      the re-derivation's writes go through applyRuleWrites because they must
+      be all or nothing, and that any new caller of this member is writing a
+      declaration outside a transaction on purpose.
 criteria: []
 deviations-judged: []
 hazard-classes-addressed:
