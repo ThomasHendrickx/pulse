@@ -31,13 +31,27 @@ export const metadata: Metadata = {
 // authenticated shell because five of the nineteen controls live on the
 // sign-in and sign-up screens, which src/app/(app)/layout.tsx never renders.
 //
-// NO INTERPOLATION, EVER (D-61's standing constraint). This constant carries
-// no template expression, no token, no request value, no locale and no user
-// input, so it has no injection surface. A later phase that needs a value
-// inside it does not add one: it moves the listener to a client island and
-// reopens D-61. The product declares no Content-Security-Policy today;
-// src/middleware.ts is where one would land, and the phase that adds it adds
-// a nonce for this script in the same change or turns criterion 9.9 red.
+// NO INTERPOLATION (D-61's standing constraint), AND IT IS ENFORCED RATHER
+// THAN ASKED FOR. This constant carries no template expression, no token, no
+// request value, no locale and no user input, so it has no injection surface.
+// A later phase that needs a value inside it does not add one: it moves the
+// listener to a client island and reopens D-61.
+//
+// WHAT ENFORCES IT, added in round three (finding R2H-02). The clean-room
+// hazard lane found the constraint true and backed by nothing: no lint rule,
+// no test, and no Content-Security-Policy to make a violation visible, so
+// "EVER" read as a standing property when it was an unenforced convention.
+// The check now exists and is mechanical: the test named "the press listener
+// constant carries no interpolation" in test/e2e/pressed-and-disabled.spec.ts
+// reads THIS FILE from disk, extracts this constant, and fails if it contains
+// a template expression. It carries no skip condition, so it runs under every
+// project that collects that spec. It is in the spec rather than in the fast
+// gate because criterion 9.7 pins this phase to one new file under test/e2e/
+// and a unit test would print an eighth path.
+//
+// The product declares no Content-Security-Policy today; src/middleware.ts is
+// where one would land, and the phase that adds it adds a nonce for this
+// script in the same change or turns criterion 9.9 red.
 //
 // THE MARKER IS data-press-feedback AND DELIBERATELY NOT data-testid. The
 // rename landed in the plan amendment of 2026-08-24 on this phase's own

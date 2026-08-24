@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page, type CDPSession } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
 // M3-P9. THE PRESSED APPEARANCE IS MEASURED BY PRESSING, the disabled, busy
@@ -95,7 +96,7 @@ const MIN_SAMPLED_FRAMES = 8;
 // phone project, so the work history can put the run's PASSED count beside a
 // number the spec itself declares rather than beside a number read off the
 // run. Kept next to the tests it counts.
-const CHROMIUM_PHONE_TEST_COUNT = 5;
+const CHROMIUM_PHONE_TEST_COUNT = 6;
 
 type Snapshot = {
   readonly backgroundColor: string;
@@ -804,13 +805,24 @@ const analyseEnding = (record: PressRecord, endingType: string): EndingResult =>
   };
 };
 
-const assertCleared = (result: EndingResult, label: string, endingType: string): void => {
-  // The ending is shown to have HAPPENED first. An absence is exactly what an
-  // ending that never happened also produces.
+const assertCleared = (
+  result: EndingResult,
+  label: string,
+  endingType: string,
+  deliveredTo: "@control" | "@other",
+): void => {
+  // The ending is shown to have HAPPENED first, AND to have been delivered
+  // where this ending says it is delivered. An absence is exactly what an
+  // ending that never happened also produces, and a prefix match on the event
+  // NAME accepts an ending delivered to any element in the document, which is
+  // the shape-not-identity hole finding CR2-M3P9-10 names: the label carries
+  // the delivery target as a suffix and the old check threw it away. Ending
+  // four is the one where "@other" is the correct answer, and it is the whole
+  // reason that ending exists.
   expect(
-    result.endingEvents.some((e) => e.startsWith(endingType)),
-    `${label}: no ${endingType} was captured at all, so nothing can be concluded from the` +
-      ` absence of a marking. Events: ${JSON.stringify(result.endingEvents)}`,
+    result.endingEvents.some((e) => e === `${endingType}${deliveredTo}`),
+    `${label}: no ${endingType} was captured on ${deliveredTo}, so nothing can be concluded` +
+      ` from the absence of a marking. Events: ${JSON.stringify(result.endingEvents)}`,
   ).toBe(true);
   expect(
     result.framesAfter,
@@ -880,7 +892,7 @@ const runEndings = async (
   await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   const one = analyseEnding(await tail(), "pointerup");
   console.log(`ending 1 (touch release on the control), ${shape}: ${JSON.stringify(one)}`);
-  assertCleared(one, `ending 1, touch release on ${shape}`, "pointerup");
+  assertCleared(one, `ending 1, touch release on ${shape}`, "pointerup", "@control");
   expect(
     one.upTargetWasControl,
     `ending 1, ${shape}: the pointerup was not delivered to the control itself`,
@@ -899,7 +911,7 @@ const runEndings = async (
   });
   const two = analyseEnding(await tail(), "pointerup");
   console.log(`ending 2 (touch release away), ${shape}: ${JSON.stringify(two)}`);
-  assertCleared(two, `ending 2, touch release away from ${shape}`, "pointerup");
+  assertCleared(two, `ending 2, touch release away from ${shape}`, "pointerup", "@control");
 
   // THREE: a POINTERCANCEL, produced by a touch that begins on the control
   // and then moves far enough that the engine takes the gesture, which is
@@ -954,7 +966,7 @@ const runEndings = async (
     `ending 3, ${shape}: the page did not scroll, so the engine did not take the gesture and` +
       ` this ending is not the one it claims to be`,
   ).not.toBe(scrollBefore);
-  assertCleared(three, `ending 3, scroll begun on ${shape}`, "pointercancel");
+  assertCleared(three, `ending 3, scroll begun on ${shape}`, "pointercancel", "@control");
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(150);
 
@@ -974,7 +986,7 @@ const runEndings = async (
   await page.mouse.up();
   const four = analyseEnding(await tail(), "pointerup");
   console.log(`ending 4 (mouse press released elsewhere), ${shape}: ${JSON.stringify(four)}`);
-  assertCleared(four, `ending 4, mouse press begun on ${shape} and released elsewhere`, "pointerup");
+  assertCleared(four, `ending 4, mouse press begun on ${shape} and released elsewhere`, "pointerup", "@other");
   expect(
     four.upTargetWasControl,
     `ending 4, ${shape}: the pointerup DID reach the control, so this run did not exercise the` +
@@ -1046,7 +1058,7 @@ const runEndings = async (
       ` two presses were never in flight together and this ending measured one press twice.` +
       ` Events: ${JSON.stringify(five.endingEvents)}`,
   ).toBeGreaterThan(0);
-  assertCleared(five, `ending 5, two presses in flight from ${shape}`, "pointerup");
+  assertCleared(five, `ending 5, two presses in flight from ${shape}`, "pointerup", "@control");
 
   await page.evaluate(() => window.__m3p9press.allowClicks());
 };
@@ -1068,6 +1080,22 @@ const assertMagnitude = async (
     `${label}: background ${bgRatio.toFixed(3)}, colour ${inkRatio.toFixed(3)},` +
       ` border ${borderRatio.toFixed(3)}, opacity delta ${opacityDelta.toFixed(3)}`,
   ).toBe(true);
+  // WHY THE SECOND CONDITION IS HERE, and why removing it would be wrong
+  // (finding CR2-M3P9-09, raised against this line and REFUTED with the
+  // stylesheet rather than adopted; fleet warning 15, a review's
+  // concrete-edit is a proposal and not a patch). Criterion 9.2(b)(ii)'s
+  // alpha floor exists for a state that CHANGES THE BACKGROUND: it stops a
+  // pressed tint clearing the contrast bar only by being nearly opaque.
+  // Criterion 9.3's states are not all of that kind. The busy rule sets
+  // opacity and cursor and NO background at all (src/app/globals.css,
+  // [aria-busy="true"] and .pulse-busy), so on a control whose resting
+  // background is transparent, the entered background is transparent too;
+  // an unconditional floor would demand an alpha of 0.08 from a background
+  // the state never touched and redden a magnitude that legitimately passes
+  // on an opacity delta of 0.30 against a bar of 0.15. The floor therefore
+  // applies where the BACKGROUND COMPARISON is the branch being relied on,
+  // which is what this condition says. The criterion's sentence is the half
+  // that should carry the qualification; that is recorded for the plan.
   const restAlpha = await alphaOf(page, rest.backgroundColor);
   if (restAlpha === 0 && bgRatio >= MIN_CONTRAST_RATIO) {
     expect(
@@ -1553,6 +1581,46 @@ test("a project with touch collects this spec, and the config still says so", as
 });
 
 // =====================================================================
+// DECISION D-61's STANDING CONSTRAINT, GIVEN A MECHANISM (finding R2H-02).
+// The listener is a string constant and is therefore not typechecked, and
+// D-61 permits that only because the constant carries NO INTERPOLATION,
+// ever: no template expression, no token, no request value, no locale and
+// no user input, so it has no injection surface at all. The clean-room
+// hazard lane found that constraint true and enforced by NOTHING, which
+// makes "ever" a hope rather than a property. This is the check.
+//
+// It has NO SKIP CONDITION, deliberately, for the same reason the config
+// membership test has none: a guard that only runs where touch is declared
+// is silent in half the runs. It reads the shipped file from disk rather
+// than importing it, because importing a server component into a test
+// proves nothing about the text that reaches the browser.
+// =====================================================================
+test("the press listener constant carries no interpolation", async () => {
+  const layout = readFileSync(join(__dirname, "..", "..", "src", "app", "layout.tsx"), "utf8");
+  const constant = layout.match(/const PRESS_FEEDBACK = `([\s\S]*?)`;/);
+  expect(
+    constant,
+    "src/app/layout.tsx no longer declares a module-scope PRESS_FEEDBACK template constant." +
+      " If the listener moved to a client island, decision D-61 has been reopened and this" +
+      " check, criterion 9.9(a) and hazard H9.5 all need re-reading before it lands.",
+  ).not.toBeNull();
+  const body = constant?.[1] ?? "";
+  expect(body.length, "the PRESS_FEEDBACK constant is empty").toBeGreaterThan(0);
+  // A template expression is the only way a value can reach this string.
+  const interpolations = body.match(/\$\{/g) ?? [];
+  expect(
+    interpolations,
+    `the PRESS_FEEDBACK constant carries ${interpolations.length} template expression(s).` +
+      ` Decision D-61 permits an unchecked inline script ONLY because nothing can be` +
+      ` interpolated into it. A phase that needs a value inside it does not add one here:` +
+      ` it moves the listener to a client island and reopens D-61.`,
+  ).toEqual([]);
+  console.log(
+    `PRESS_FEEDBACK: ${body.length} characters, ${interpolations.length} template expressions`,
+  );
+});
+
+// =====================================================================
 // CRITERION 9.9(a): THE MECHANISM IS SERVED, IT IS NOT INJECTED.
 // =====================================================================
 // The marker is the bare attribute data-press-feedback and deliberately
@@ -1639,6 +1707,9 @@ test.describe("the press a finger makes", () => {
 
     const probe = "button.auth-submit";
     const at = await centreOf(page.locator(probe));
+    // How many of the three paths measured their :active zero over at least
+    // one sampled animation frame. Asserted at the end of the loop.
+    let sampledPaths = 0;
 
     // The third path is marked NOT HELD deliberately. page.touchscreen.tap
     // dispatches its touchstart and its touchend inside one task, so no
@@ -1715,9 +1786,22 @@ test.describe("the press a finger makes", () => {
       const activeFrames = duringPress.filter((f) => f.active[0]).length;
       const activeAfterRelease = record.frames.filter((f) => f.t > endedAt && f.active[0]).length;
       const pressedFrames = duringPress.filter((f) => f.pressed[0]).length;
+      // WHAT THIS PATH'S ZERO IS WORTH, printed rather than left to be
+      // inferred (finding CR2-M3P9-13). A zero counted over an EMPTY window
+      // is numerically identical to a zero counted over 24 frames, and
+      // page.touchscreen.tap dispatches its touchstart and its touchend
+      // inside one task, so no animation frame can fall between them and no
+      // mechanism, this product's or any other, can be observed held under
+      // it. Its liveness clause proves DELIVERY and not SAMPLING, so its zero
+      // is recorded as VACUOUS and the two held paths are what the zero binds
+      // on. The count of paths whose zero was measured over a non-empty
+      // window is asserted below, so this can never quietly become zero.
+      const verdictOfZero = duringPress.length > 0 ? "LOAD-BEARING" : "VACUOUS, sampled no frame";
+      if (duringPress.length > 0) sampledPaths += 1;
       console.log(
         `touch path "${name}": events ${JSON.stringify(events)},` +
-          ` ${duringPress.length} frames during the press, in :active ${activeFrames},` +
+          ` ${duringPress.length} frames during the press, in :active ${activeFrames}` +
+          ` (${verdictOfZero}),` +
           ` carrying the shipped marking ${pressedFrames};` +
           ` :active frames after the release ${activeAfterRelease}` +
           ` (the compatibility mouse click, not the touch)`,
@@ -1752,6 +1836,19 @@ test.describe("the press a finger makes", () => {
           ` number and say so in the work history.`,
       ).toBe(0);
     }
+
+    // THE ZERO HAS TO HAVE BEEN LOOKED FOR SOMEWHERE. Criterion 9.9(c)'s own
+    // reason for its liveness clause is that "a zero from a path that
+    // delivered nothing is the same number as a zero from an engine that
+    // grants no :active"; the same argument applies one level down, to a
+    // zero from a path that SAMPLED nothing. Two of the three paths hold the
+    // touch open and carry the measurement; the third cannot, by
+    // construction, and its zero is printed as vacuous rather than counted.
+    expect(
+      sampledPaths,
+      `only ${sampledPaths} of the three touch paths measured their :active zero over a` +
+        ` non-empty window of animation frames. A zero nothing looked at is not a measurement.`,
+    ).toBeGreaterThanOrEqual(2);
     await page.evaluate(() => window.__m3p9press.allowClicks());
   });
 });
