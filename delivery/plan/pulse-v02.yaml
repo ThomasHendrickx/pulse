@@ -8710,40 +8710,39 @@ phases:
           reviewer's own, so the number is written down to be reproduced rather
           than trusted.
       - text: >-
-          Give an account number ONE canonical form and put it where every
-          consumer may reach it. The ledger domain imports nothing from other
-          modules by rule (.claude/skills/pulse-domain/SKILL.md:168, and the
-          note recording that choice at
-          src/modules/ledger/domain/ledger-transaction.ts:25 through :27), so
-          the form lives beside the other shared value types in src/platform,
-          as decision D-47 records, and is a pure function with its own unit
-          test. Registration normalises what the owner typed BEFORE storing
-          it, because Account.iban is a declaration and normalising a
-          declaration on the way in is allowed; every COMPARISON against a
-          transaction's counterparty account normalises both sides at
-          comparison time, because that column is a fact and is never
-          rewritten (.claude/skills/pulse-domain/SKILL.md:39). That includes
-          the declared-set derivation
-          and the reserves SQL join at
-          src/modules/overview/adapters/overview-repository.ts:175 through
-          :176. Pin the single definition with a test the way the merchants
-          module pins its own normaliser, so a second copy cannot appear. The
-          same platform module carries the DETERMINISTIC validity test DR-0028
-          settles, the pinned country-length table and the ISO 7064 mod-97
-          check, because a canonical form that cannot say whether a string is
-          an account number can only be applied blindly, and because the owner
-          types seven of these by hand from paper documents on a phone-first
-          product, where a transposed pair of digits is expected rather than
-          unlikely. Decision D-57 records that M3-P14 owns that module and that
-          M3-P12 imports it rather than expressing the same transformation a
-          second time. And the import path's own declaration at
-          src/modules/import/application/confirm-import.ts:93 through :99
-          stores the canonical form too, so Account.iban holds ONE form
-          tree-wide and the per-household uniqueness constraint at
-          prisma/schema/accounts.prisma:28 is a real backstop rather than a
-          nominal one; the stored FACT column on the transaction is untouched,
-          because that is a fact and every comparison normalises both sides at
-          comparison time.
+          Give an account number ONE canonical form and put it where every consumer
+          may reach it. The ledger domain imports nothing from other modules by rule
+          (.claude/skills/pulse-domain/SKILL.md:168, and the note recording that
+          choice at src/modules/ledger/domain/ledger-transaction.ts:25 through :27),
+          so the form lives beside the other shared value types in src/platform, as
+          decision D-47 records, and is a pure function with its own unit test.
+          Registration normalises what the owner typed BEFORE storing it, because
+          Account.iban is a declaration and normalising a declaration on the way in is
+          allowed; every COMPARISON against a transaction's counterparty account
+          normalises both sides at comparison time, because that column is a fact and
+          is never rewritten (.claude/skills/pulse-domain/SKILL.md:39). That includes
+          the declared-set derivation and BOTH halves of the reserves SQL read, the
+          join predicate at src/modules/overview/adapters/overview-repository.ts:175
+          through :176 and the grouping key at overview-repository.ts:182, which
+          groups by ordinal over the SELECT list at overview-repository.ts:170 and
+          :171 and is therefore normalised by normalising that SELECT expression;
+          criterion 14.2 is red on either half left raw. Pin the single definition
+          with a test the way the merchants module pins its own normaliser, so a
+          second copy cannot appear. The same platform module carries the
+          DETERMINISTIC validity test DR-0028 settles, the pinned country-length table
+          and the ISO 7064 mod-97 check, because a canonical form that cannot say
+          whether a string is an account number can only be applied blindly, and
+          because the owner types seven of these by hand from paper documents on a
+          phone-first product, where a transposed pair of digits is expected rather
+          than unlikely. Decision D-57 records that M3-P14 owns that module and that
+          M3-P12 imports it rather than expressing the same transformation a second
+          time. And the import path's own declaration at
+          src/modules/import/application/confirm-import.ts:93 through :99 stores the
+          canonical form too, so Account.iban holds ONE form tree-wide and the
+          per-household uniqueness constraint at prisma/schema/accounts.prisma:28 is a
+          real backstop rather than a nominal one; the stored FACT column on the
+          transaction is untouched, because that is a fact and every comparison
+          normalises both sides at comparison time.
       - text: >-
           Build the registration surface. A route under the authenticated
           shell that lists every account the household has registered with its
@@ -9096,29 +9095,44 @@ phases:
           mechanism ever offered for how the mixed state would arise. What was wrong
           was never the protection, which is real and is kept below in full; what was
           wrong was asserting that the discriminating state could be reached through
-          the product. A SEVENTH assertion therefore keeps the protection and changes
-          the witness. It separates a normalised join from a normalised GROUPING,
-          which is the other half of the same SQL statement: the reserves read joins
-          on the raw stored column
+          the product. The first six assertions address hazard class H14.1; the
+          seventh below addresses H14.22 from the read side, and that is recorded in
+          the hazard table so that trimming this criterion again cannot silently drop
+          a hazard class's only guard. A SEVENTH assertion therefore keeps the
+          protection and changes the witness. It separates a normalised join from a
+          normalised GROUPING, which is the other half of the same SQL statement: the
+          reserves read joins on the raw stored column
           (src/modules/overview/adapters/overview-repository.ts:175 through :176) and
           groups on that same raw column (overview-repository.ts:182). THE
           DISCRIMINATING STATE IS SEEDED STRAIGHT INTO THE COLUMN, BELOW THE IMPORTER,
           and the shipped read is EXECUTED AGAINST A REAL DATABASE with no browser in
-          the way. The test creates a household holding one reserve account whose
-          stored account number is the canonical form of the number the household
-          would type and whose label is that typed label, and writes TWO transaction
-          rows directly to the transactions table, both carrying flow RESERVE, both
-          dated inside the asserted period, both naming the SAME reserve account in
-          the counterparty account column, one in the canonical compact form and one
-          spaced in groups of four. It then calls the shipped reserves read directly
-          and asserts that exactly ONE reserve movement group comes back, that its
-          label is byte identical to the household's typed label and carries no
-          account-shaped token, and that its parked total is the sum of both rows,
-          compared against a string written by hand in the test from the seed's own
-          arithmetic and never read back from the implementation. The test runs in
-          whichever gate has a live Postgres, which is the slow gate and not the fast
-          gate; this criterion asks for no database in the fast gate. Every account
-          number the seed introduces is invented and is listed in
+          the way. The test creates a household holding TWO reserve accounts with
+          DIFFERENT account numbers and DIFFERENT typed labels, each stored in the
+          canonical form of the number the household would type, AND a POT current
+          account, and writes THREE transaction rows directly to the transactions
+          table. EVERY SEEDED ROW SITS ON THE POT ACCOUNT, because the reserves read
+          joins the row's OWN account and this phase's ring scoping excludes a row
+          seeded on the reserve account itself before the join predicate is ever
+          reached; a seed that comes back empty because of the ring predicate is red
+          for a reason that has nothing to do with normalisation, and both reds this
+          assertion claims are reds of the JOIN and of the GROUPING. Two of the three
+          rows name the FIRST reserve account in the counterparty account column, one
+          in the canonical compact form and one spaced in groups of four, and the
+          third names the second reserve account; all three carry flow RESERVE and are
+          dated inside the asserted period. The test then calls the shipped reserves
+          read directly and asserts that exactly TWO reserve movement groups come
+          back, one per reserve account; that each group's label is byte identical to
+          that account's typed label and carries no account-shaped token; that each
+          group's OWN counterparty-account field is byte identical to the canonical
+          form of that account's number, which is what pins the GROUPING KEY ITSELF
+          rather than a property that merely happens to be one-to-one with it in a
+          thinner seed; and that the first group's parked total is the sum of its two
+          rows while the second group's is its single row, each compared against a
+          string written by hand in the test from the seed's own arithmetic and never
+          read back from the implementation. The test runs in whichever gate has a
+          live Postgres, which is the slow gate and not the fast gate; this criterion
+          asks for no database in the fast gate. Every account number the seed
+          introduces is invented and is listed in
           test/fixtures/allowed-identifiers.txt with a written provenance note, on the
           same terms criterion 14.10 sets for every other identifier this phase adds.
           THAT SINGLE ASSERTION IS RED TWICE OVER, and that is the whole reason for
@@ -9130,18 +9144,57 @@ phases:
           overview-repository.ts:182 groups on the stored column, so two surface forms
           are two groups even when both resolve to the right label, and the owner then
           sees one savings account twice, under the right name both times, with the
-          money split. Only a read that normalises BOTH the join predicate and the
-          grouping key returns one group. This is strictly more protection than the
-          deleted fixture clause could ever have delivered: a fixture-level assertion
-          could have caught the join and never the grouping, since a fixture uniform
-          in one surface form passes a normalised join with a raw grouping, and a
-          fixture in two forms cannot be imported at all. AND THE PLAN SAYS PLAINLY
-          WHAT THIS TEST IS: a state that is UNREACHABLE THROUGH THE PRODUCT today,
-          tested anyway, on purpose, with the reason written down rather than left for
-          the next reader to rediscover as a puzzle. The surface form of a stored fact
-          column is a property of the SCHEMA and of the READS over it, and not a
-          property of today's importer. Nothing in Postgres constrains what goes into
-          that column; the reads at overview-repository.ts:175 through :182 are
+          money split. AND IT IS RED A THIRD WAY, which is why the seed carries two
+          reserve accounts and not one: a read that normalises the join and then
+          GROUPS ON THE JOINED ACCOUNT'S OWN COLUMN, or on the joined label alone,
+          returns one group per account over a one-account seed and satisfies a
+          thinner assertion completely while it has not normalised the grouping key at
+          all. Grouping on the joined column collapses every reserve row whose
+          counterparty matches no registered account into a single group whose key and
+          label are both null, against a key the read declares as a string
+          (src/modules/overview/adapters/overview-repository.ts:186); grouping on the
+          label merges two reserve accounts a household happened to give the SAME
+          typed label into one line with their money summed. Over one account, one
+          label and one number every candidate key is one-to-one with every other and
+          the assertion cannot tell them apart, which is why the group's own key is
+          asserted and why a second account with a distinct label is in the seed. Only
+          a read that normalises BOTH the join predicate and the grouping key returns
+          the two groups under the two canonical keys this assertion names. The join
+          predicate compares column to column (overview-repository.ts:176), so that
+          transformation is expressed in SQL inside that file and cannot import the
+          platform function. THIS CRITERION THEREFORE CREATES A SECOND COPY OF THE
+          CANONICAL FORM OUTSIDE THE PLATFORM MODULE, which criterion 14.4's
+          enumeration otherwise forbids, and criterion 14.4 is amended in the same
+          commit to carry that copy as a named, permitted and pinned entry rather than
+          to be widened in silence by whoever meets this criterion first. The copy is
+          held to the platform form's BEHAVIOUR and not only to its character class: a
+          test asserts the two agree over an enumerated corpus carrying at least one
+          value that is NOT account shaped, because criterion 14.4 requires the
+          platform form to return such a string unchanged rather than mangled while an
+          unguarded SQL expression upper-cases it and strips its separators, which
+          merges two descriptors differing only in case or spacing into one group and
+          mangles the value the read hands back; either the SQL copy carries the same
+          shape guard, or that test records, with its reason, the input class on which
+          the two are allowed to differ. AND THE CLAUSE THIS REPLACES HAD NO
+          DISCRIMINATING POWER AT ALL, which the first amendment understated by
+          calling it half: the only fixture the delimited path can import is uniform
+          and compact, and against a uniform compact fixture a fully raw read passes
+          the join and the grouping alike, so the deleted clause could not have caught
+          either half. AND THE TEST SAYS PLAINLY WHAT IT IS, IN ITS OWN HEADER COMMENT
+          AND NOT ONLY HERE, because the reader who would delete it is reading the
+          test and has no reason to open a delivery artifact. That header states four
+          things: that the seeded state is UNREACHABLE THROUGH THE PRODUCT today; the
+          two citations that make it unreachable,
+          src/modules/import/domain/detect-profile.ts:45 and the values.every guard at
+          detect-profile.ts:313; that the state is seeded below the importer on
+          purpose; and the NAME of the write-path enumeration test that holds the
+          unreachability claim, so that deleting either test leaves a dangling
+          reference in the other. A test carrying this argument only by reference to
+          the plan does not meet this clause. The reason is written down rather than
+          left for the next reader to rediscover as a puzzle: The surface form of a
+          stored fact column is a property of the SCHEMA and of the READS over it, and
+          not a property of today's importer. Nothing in Postgres constrains what goes
+          into that column; the reads at overview-repository.ts:175 through :182 are
           correct today only because a detector two modules away happens to reject
           everything but the compact form, and a read whose correctness lives in
           another module is a read that breaks in silence when that module is edited.
@@ -9152,82 +9205,133 @@ phases:
           the stored counterparty account column and asserts that the reachable set is
           upper-case, compact and account-shaped, so on the day an importer change
           makes the seeded state reachable, something goes red on its own rather than
-          waiting for a household to notice its savings account listed twice. That may
-          be the same enumeration criterion 14.4 already requires, and this criterion
-          asks for no second artifact, only that a claim this criterion itself makes
-          is not left standing on prose alone. The spec carries in its own header
-          comment, and this criterion carries in its text, the reason no existing test
-          catches any of this: the reconciliation identity is invariant under the
-          error, because src/modules/ledger/domain/reconciliation.ts:70 through :74
-          add a row to spendSigned or to reserveSigned and reconciliation.ts:79
-          through :81 subtract both from income with the same sign, so differenceCents
-          is bit for bit identical whether a savings transfer is called SPEND or
-          RESERVE; test/property/reconciliation.test.ts goes on passing and the month
-          view goes on saying the books close.
+          waiting for a household to notice its savings account listed twice. THAT
+          TEST IS A NAMED ARTIFACT THIS CRITERION REQUIRES, and it is NOT criterion
+          14.4's enumeration, which pins the canonical form's call sites and the
+          validity predicate's definitions and says nothing whatever about which
+          values can reach the column. It DISCOVERS the writers of that column by
+          walking src/ rather than by naming files; it fails when a writer appears
+          that no shape gate covers; and it carries a red-witness note recording the
+          state it was shown red against. A test that NAMES its producers instead of
+          discovering them does not meet this clause, because exactly that test was
+          written in this phase, was shown GREEN against a producer a clean-room lane
+          added to src/modules/import/domain/parse-statement.ts, and had to be
+          corrected under R-087 afterwards. A load-bearing sentence that requires
+          nothing is the museum piece this paragraph argues against. The spec carries
+          in its own header comment, and this criterion carries in its text, the
+          reason no existing test catches any of this: the reconciliation identity is
+          invariant under the error, because
+          src/modules/ledger/domain/reconciliation.ts:70 through :74 add a row to
+          spendSigned or to reserveSigned and reconciliation.ts:79 through :81
+          subtract both from income with the same sign, so differenceCents is bit for
+          bit identical whether a savings transfer is called SPEND or RESERVE;
+          test/property/reconciliation.test.ts goes on passing and the month view goes
+          on saying the books close.
       - id: "14.3"
         criterion: >-
           ADOPTION, NOT DUPLICATION. A test at the application level over the
-          in-memory fakes registers an account by account number with no
-          import, then runs the upload and confirm path for a file whose own
-          account number is that account written in a DIFFERENT surface form
-          (spaced against compact, and a lower-case country code), and asserts
-          that the household holds exactly one account afterwards, that the
-          ingested rows carry that account's id, and that declareAccount was
-          not called. A second case asserts the reverse order, import first
-          then a registration attempt for the same account number, is refused
-          with a named error rather than creating a second account, and that
-          the screen tells the owner the account is already registered. A
-          third case asserts that an account declared through the IMPORT path
-          stores its account number in the canonical form, so that a subsequent
-          registration of the same account in any surface form is refused by
-          the application check AND would collide on the per-household
-          uniqueness constraint at prisma/schema/accounts.prisma:28, which is
-          what makes that constraint a real backstop rather than a nominal one.
-          Any criterion or code path that creates a second account for an
-          account number already registered fails this phase.
+          in-memory fakes registers an account by account number with no import, then
+          runs the upload and confirm path for a file whose own account number is that
+          account in the ONLY surface form the detector can admit, upper case and
+          compact, while the REGISTRATION side carries the varied form, spaced and
+          with a lower-case country code. CORRECTED IN PLACE AND LOUDLY (clause
+          R-087), NOT QUIETLY REWRITTEN, and carried here from criterion 14.2 rather
+          than left standing one criterion away from its own refutation. This case
+          used to ask for "a file whose own account number is that account written in
+          a DIFFERENT surface form (spaced against compact, and a lower-case country
+          code)", and THAT FILE IS UNBUILDABLE. The own-account column is assigned by
+          the SAME loop and the SAME guard as the counterparty column:
+          src/modules/import/domain/detect-profile.ts:313 gates the whole body, which
+          assigns the counterparty column at detect-profile.ts:324 and :328 and the
+          own-account column at detect-profile.ts:326, against the anchored,
+          whitespace-free, upper-case-only pattern at detect-profile.ts:45. So a
+          spaced cell or a lower-case country code leaves that column unassigned, the
+          parsed row carries no own account number, the file's account-number list is
+          empty (src/modules/import/domain/parse-statement.ts:150 and :165 through
+          :166) and the confirm path reads no file account number at all
+          (src/modules/import/application/confirm-import.ts:84), so the case would
+          measure the empty-identifier branch rather than adoption. Registration is
+          the side a household types and is the only side of this comparison a shipped
+          path can vary, which is why it is the side that carries the varied form. The
+          test's own comments state which side carries which form, because a comment
+          claiming the FILE is spaced is a claim the detector refutes, and a comment
+          of exactly that kind has already been written in this phase against a
+          fixture whose own-account cell is in fact compact. The case then asserts
+          that the household holds exactly one account afterwards, that the ingested
+          rows carry that account's id, and that declareAccount was not called. A
+          second case asserts the reverse order, import first then a registration
+          attempt for the same account number, is refused with a named error rather
+          than creating a second account, and that the screen tells the owner the
+          account is already registered. A third case asserts that an account declared
+          through the IMPORT path stores its account number in the canonical form, so
+          that a subsequent registration of the same account in any surface form is
+          refused by the application check AND would collide on the per-household
+          uniqueness constraint at prisma/schema/accounts.prisma:28, which is what
+          makes that constraint a real backstop rather than a nominal one. Any
+          criterion or code path that creates a second account for an account number
+          already registered fails this phase.
       - id: "14.4"
         criterion: >-
-          ONE CANONICAL FORM, WITNESSED WHERE IT MATTERS. A grep over src
-          shows exactly one definition of the canonical account-number
-          function and every consumer imports it: a unit test enumerates the
-          call sites and fails on a second definition, in the manner the
-          merchants module already pins its normaliser. A domain test asserts
-          the function is idempotent, that the spaced, compact and mixed-case
-          renderings of one account number produce one identical result, and
-          that a string that is not an account number is returned unchanged
-          rather than mangled. A ledger domain test asserts that a transaction
-          whose stored counterparty account is written spaced classifies as
-          RESERVE against a reserve account registered in compact form, and as
-          INTERNAL against a pot account registered in compact form. This
-          criterion exists because it was measured rather than supposed: every
-          one of the 26 account-shaped tokens in the owner's own
-          current-account document is written spaced, and the delimited parse
-          stores such a cell verbatim
-          (src/modules/import/domain/parse-statement.ts:114 through :123)
-          while the PDF path compacts it
+          ONE CANONICAL FORM, WITNESSED WHERE IT MATTERS. A grep over src shows
+          exactly one definition of the canonical account-number function and every
+          consumer imports it: a unit test enumerates the call sites and fails on a
+          second definition, in the manner the merchants module already pins its
+          normaliser. A domain test asserts the function is idempotent, that the
+          spaced, compact and mixed-case renderings of one account number produce one
+          identical result, and that a string that is not an account number is
+          returned unchanged rather than mangled. A ledger domain test asserts that a
+          transaction whose stored counterparty account is written spaced classifies
+          as RESERVE against a reserve account registered in compact form, and as
+          INTERNAL against a pot account registered in compact form. This criterion
+          exists because it was measured rather than supposed: every one of the 26
+          account-shaped tokens in the owner's own current-account document is written
+          spaced, and the PDF path is where those spaced tokens actually enter, lifted
+          by pattern and compacted before they are stored
           (src/modules/import/domain/belfius-current-account-template.ts:90).
-          The unit test that enumerates the call sites is written so that a
-          SECOND implementation of the same transformation reddens it wherever
-          it lives, including one written inline inside another module's
-          identity derivation: it asserts that no file under src/ other than
-          the platform module contains an uppercase plus whitespace-removal
-          expression applied to an account-bearing field. That is what stops
-          M3-P12's counterpartyIdentity, which lands after this pin has already
-          gone green, from growing a private copy that agrees on the day it is
-          written and is edited by a different phase afterwards. The same
-          enumeration test pins the VALIDITY PREDICATE and not only the
-          canonical form, because a second copy of the country-length table or
-          of the ISO 7064 loop matches no whitespace-and-uppercase grep: it
-          asserts that the pinned country-length table and the mod-97
-          implementation each have exactly one definition under src/, in the
-          platform module, and that every consumer imports it. And the
-          whitespace-removal helper that ALREADY exists outside the platform
-          module, compactIban at
-          src/modules/import/domain/belfius-current-account-template.ts:90,
-          used at :169 and :267, is NAMED by this phase and is either replaced
-          by the platform form or recorded in the test as the one permitted
-          exception with its reason, so the enumeration is a list a reader can
-          check rather than a grep that passes by accident.
+          CORRECTED IN PLACE AND LOUDLY (clause R-087), NOT QUIETLY REWRITTEN, and
+          carried here from criterion 14.2. This sentence used to read "and the
+          delimited parse stores such a cell verbatim
+          (src/modules/import/domain/parse-statement.ts:114 through :123) while the
+          PDF path compacts it", and THE DELIMITED PATH CANNOT STORE A SPACED CELL,
+          for the reason criterion 14.2 records in full: parse-statement.ts:114
+          through :123 writes verbatim only what
+          src/modules/import/domain/detect-profile.ts:313 has already accepted against
+          the anchored, whitespace-free pattern at detect-profile.ts:45. Until this
+          correction two criteria in one phase read the same three lines in opposite
+          directions, and the plan is the document a reviewer holds against the tree.
+          What this criterion's canonical form defends is therefore the PDF path and a
+          FUTURE importer change, not a delimited cell that exists today, and the
+          ledger domain test above asserts over a CONSTRUCTED transaction rather than
+          an imported one for exactly that reason. The unit test that enumerates the
+          call sites is written so that a SECOND implementation of the same
+          transformation reddens it wherever it lives, including one written inline
+          inside another module's identity derivation: it asserts that no file under
+          src/ other than the platform module contains an uppercase plus
+          whitespace-removal expression applied to an account-bearing field. That is
+          what stops M3-P12's counterpartyIdentity, which lands after this pin has
+          already gone green, from growing a private copy that agrees on the day it is
+          written and is edited by a different phase afterwards. The same enumeration
+          test pins the VALIDITY PREDICATE and not only the canonical form, because a
+          second copy of the country-length table or of the ISO 7064 loop matches no
+          whitespace-and-uppercase grep: it asserts that the pinned country-length
+          table and the mod-97 implementation each have exactly one definition under
+          src/, in the platform module, and that every consumer imports it. And the
+          whitespace-removal helper that ALREADY exists outside the platform module,
+          compactIban at
+          src/modules/import/domain/belfius-current-account-template.ts:90, used at
+          :169 and :267, is NAMED by this phase and is either replaced by the platform
+          form or recorded in the test as a permitted exception with its reason. THE
+          PERMITTED LIST IS CLOSED BY THIS CRITERION AND NOT BY WHOEVER MEETS IT
+          FIRST. Every entry on it is named here and it carries exactly two: the SQL
+          copy of the canonical form that criterion 14.2's normalising reserves join
+          and grouping key require inside
+          src/modules/overview/adapters/overview-repository.ts, which that criterion
+          makes mandatory and which cannot import the platform function because the
+          join compares column to column; and compactIban, if it survives. An entry
+          appearing on that list which this criterion does not name FAILS this
+          criterion, because a list that grows in silence when another criterion is
+          met is a grep that passes by accident with extra steps. That is what keeps
+          the enumeration a list a reader can check.
       - id: "14.5"
         criterion: >-
           REGISTRATION HEALS ROWS THAT ARE ALREADY THERE. A third test in the
@@ -9911,6 +10015,14 @@ phases:
           reported to the household as counted money on the one screen state
           built to tell counted from held.
         addressed-by: criterion 14.15
+      - id: H14.22
+        statement: >-
+          The reserves read compares and groups the stored counterparty account raw,
+          so on the day a value reaches that column in any form but the canonical one
+          the household sees one savings account listed twice, under the right name
+          both times, with its money split, and the reconciliation identity is
+          unchanged throughout.
+        addressed-by: criterion 14.2
     migrations: >-
       none. The Account model already carries label, bank, role and an
       optional account number with a per-household uniqueness constraint
