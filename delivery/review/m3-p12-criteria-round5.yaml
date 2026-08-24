@@ -41,7 +41,7 @@ review-contract: criteria
 
 findings:
   - id: CR5-M3P12-01
-    severity: medium
+    severity: high
     evidence:
       - "The routine dismisses a superseded rule's claim on a row at src/modules/merchants/application/rederive-rules.ts:738, and the condition is that the row is covered by ANYTHING after the run, not that it is covered by the claimant."
       - "The check immediately above it, at src/modules/merchants/application/rederive-rules.ts:721, has already returned false when the merchant is unchanged, so every row that reaches line 738 is a row whose merchant HAS changed."
@@ -61,15 +61,48 @@ findings:
       the row, which the comment's own justification, that a later naming the
       owner made on the screen simply won, does not cover.
     analysis: >-
-      This is not a mistake in the repair; the repair is sound and its
-      argument holds. It is a contract gap. Round three introduced the
-      exception, round four narrowed it correctly and wrote the argument down
-      at src/modules/merchants/application/rederive-rules.ts:669 to :706, and
+      TWO THINGS, and the SEVERITY IS CARRIED BY THE SECOND. First, a contract
+      gap: round three introduced the exception, round four narrowed it and
+      wrote the argument down at
+      src/modules/merchants/application/rederive-rules.ts:669 to :706, and
       neither round routed it into criterion 12.7, which still reads as an
-      absolute. A criteria reviewer walking 12.7 literally against this code
-      would mark it not met; a reviewer reading the comment would mark it met.
-      That ambiguity is the finding. The residual in the condition itself is
-      narrow but real and costs one field to close.
+      absolute. Second, and this is what makes it high: the code's condition
+      is WIDER than the comment's argument. The comment justifies the
+      dismissal by saying a later naming the owner made on the screen simply
+      won, which is true of THE CLAIMANT and of nothing else, because the
+      claimant's pattern is by construction the row's own rewritten identity.
+      The code accepts ANY coverage. So a row held before the run by a
+      superseded rule of merchant M1, which moves to the ACCOUNT basis and
+      which the descriptor-namespaced claimant therefore can never match
+      (decision D-40), can be picked up afterwards by an unrelated
+      pre-existing account rule of a third merchant M3 and be dropped from
+      allLost unconditionally. That is criterion 12.7's SECOND half, "no
+      transaction changes from one merchant to another", failing while the
+      one instrument that exists to catch it reports clean and exits 0. It is
+      not against the grain of the domain: an already-namespaced descriptor
+      rule and an already-namespaced account rule over the same stale bare
+      pattern are exactly what decision D-46's deploy window produces when the
+      owner names two unresolved groups that used to be one declaration.
+      ---
+      HOW THIS LANE GOT HERE, recorded because the severity moved. This lane
+      reached the gap independently, by reading
+      src/modules/merchants/application/rederive-rules.ts:738 and noticing
+      that the dismissal keys on the SUPERSEDED rule rather than on the
+      COVERER, and wrote it up at MEDIUM. The reason it wrote medium was an
+      argument this lane made and did not test: that a superseded EXACT rule
+      is already dead in the deployed reality, so every claim it held was
+      already gone before the routine ran, coverer or no coverer. That
+      argument is wrong on the code's own terms, and the code says so: if it
+      held, the routine would not need to report the UNCOVERED account-basis
+      rows as losses either, and it does report them. The code's rule is
+      coverage, not deadness, and under the code's own rule an unrelated
+      coverer is a silent merchant change. The sibling hazard lane REPRODUCED
+      that shape against a constructed seed rather than reasoning about it,
+      which is stronger evidence than this lane produced, and this lane raises
+      its own finding to high on that evidence. The finding is this lane's,
+      reached before the sibling document was opened; the severity is
+      corrected, and the miss was this lane substituting an argument for a
+      construction on the one finding where it mattered.
 
   - id: CR5-M3P12-02
     severity: medium
@@ -985,3 +1018,104 @@ deviations-judged:
 # 3100 with a Playwright suite, which came from diagnosing an occupied port
 # and which fleet warning 18 makes this lane's business. This lane did not
 # free those ports, did not move its own, and waited.
+
+# ===========================================================================
+# THE TRAJECTORY CALL. Asked for explicitly, answered explicitly, and answered
+# from counts this lane took rather than from an impression.
+#
+# THE COUNTS. Severity histograms of the four previous CRITERIA-lane verdicts,
+# read out of the branches themselves:
+#   round 1  0 high  5 medium  4 low
+#   round 2  2 high  4 medium  3 low
+#   round 3  0 high  1 medium  1 low
+#   round 4  1 high  2 medium  2 low
+#   round 5  1 high  5 medium  5 low   (this document)
+# And the four previous HAZARD-lane verdicts, same source:
+#   round 1  3 high  4 medium  3 low
+#   round 2  1 high  3 medium  3 low
+#   round 3  2 high  6 medium  1 low
+#   round 4  1 high  2 medium  1 low
+#
+# THE HONEST READING, which is not the flattering one. Combined highs per
+# round run 3, 3, 2, 2, and at least 1 again this round. That is not a phase
+# converging; that is a phase producing a high every round for five rounds.
+# The raw finding count did not fall either: this lane found more, not fewer,
+# than round three or round four. A low count in one round is not evidence of
+# anything, and round three is the proof: it produced two findings total and
+# the round after it found a HIGH that round three's own repair had created.
+#
+# CONVERGING OR CHURNING: CHURNING, AND ON ONE MECHANISM. Every high this
+# phase has produced since round two lands on the same few hundred lines,
+# src/modules/merchants/application/rederive-rules.ts's collision, supersede
+# and loss-detection logic, and each one was CREATED BY THE PREVIOUS ROUND'S
+# REPAIR OF THE ONE BEFORE IT. The chain is in the artifact and can be read
+# without trusting this lane: round two blocked on a same-merchant collision;
+# round three stopped that by excluding the whole superseded rule from the
+# before-set and thereby HID a real loss; round four stopped that by filtering
+# at the comparison and thereby introduced the unrelated-coverer gap this
+# document raises as CR5-M3P12-01. Three rewrites, three trades. Everything
+# else this lane attacked came back clean: the derivation, the trust gate, the
+# four consumers, the port, the module boundary, the two interlocks, the
+# privacy surface, the fixtures and their oracle.
+#
+# WHAT IS STRUCTURALLY WRONG, named rather than gestured at. THE RULE BEING
+# REPAIRED IS NOT WRITTEN DOWN ANYWHERE THE REPAIR CAN BE CHECKED AGAINST.
+# Criterion 12.7 says the after-set is a superset of the before-set with no
+# exception. The code has carried an exception since round three. Because the
+# exception lives only in a comment, every round has had to RE-DERIVE what a
+# supersede means from first principles, and has got it slightly differently
+# each time. A repair with no specification to check against is a repair that
+# can only be checked against the last reviewer's objection, which is exactly
+# the oscillation the counts show. The same shape, one tier down, explains the
+# fake-versus-adapter seam that has now produced a finding in three
+# consecutive rounds in alternating directions (CR5-M3P12-04): there is no
+# mechanism keeping the two in agreement, only successive reviewers noticing.
+#
+# SO A FOURTH PATCH TO THE PREDICATE IS THE WRONG MOVE, and this lane says so
+# independently of anyone else's dispatch. The predicate has been narrowed
+# three times and each narrowing was locally correct and globally wrong. What
+# is missing is not a better condition, it is LINEAGE: the routine already
+# knows which rule superseded which, and throws that away, keeping only a Set
+# of superseded ids. Carry the claimant's id beside the superseded id and the
+# question "was this row's coverage the thing that superseded its old rule"
+# becomes an identity comparison instead of a judgement call, and there is
+# nothing left to re-derive next round.
+#
+# WHAT IS LEFT BEFORE THIS PHASE CAN MERGE, in order and short:
+#   1. CR5-M3P12-01, the high. Replace the exemption predicate with the
+#      claimant-id comparison, and AMEND CRITERION 12.7 to state the exception
+#      in the plan rather than in a comment. The amendment is the half that
+#      stops the oscillation; the code change alone would not.
+#   2. CR5-M3P12-02, the two test names that describe a mechanism the code no
+#      longer has. Ten minutes, and leaving them makes the next repair harder.
+#   3. One full npm run test:e2e on a machine where no other lane holds ports
+#      3000 and 3100, producing an exit code. Neither this lane nor, per the
+#      orchestrator, the M3-P14 lane could get one in this window. That is an
+#      orchestrator problem, not an implementer one, and it is the only thing
+#      keeping criterion 12.14 from met.
+#   4. Everything else here is carryable. CR5-M3P12-05 and CR5-M3P12-06 belong
+#      to phases that own those files, not to M3-P12.
+#
+# AND THE PREDICTION, stated so it can be checked against next round rather
+# than admired. If round six changes the predicate and does NOT amend
+# criterion 12.7, this phase produces another high on the same lines in round
+# seven. If it does both, the next round's findings should be off this
+# mechanism entirely, and that, not a low count, is what convergence will look
+# like.
+#
+# WHERE THIS LANE AGREES AND DISAGREES WITH THE SIBLING. Read only after this
+# document was written. AGREEMENT, independently reached: the sibling's single
+# high is the same defect as CR5-M3P12-01's second half, and its concrete fix
+# is the same repair, threading the claimant id and comparing after?.ruleId.
+# Two lanes on different models, different contracts and no contact landing on
+# one line of code and one repair is the strongest signal this round produced.
+# Its trajectory call, that the phase churns on exactly this mechanism and
+# that everything else came back clean, is also this lane's, reached from
+# round-by-round severity counts rather than from the code.
+# THE DISAGREEMENT IS ABOUT THIS LANE, NOT ABOUT THAT ONE. The sibling rated
+# it high on a reproduction; this lane rated it medium on an argument, and the
+# argument was wrong. That is recorded in the finding itself rather than
+# quietly corrected, because the failure is worth more than the fix: on the
+# one finding where it mattered, this lane substituted reasoning for a
+# construction, and reasoning is what produced the wrong severity.
+# ===========================================================================
