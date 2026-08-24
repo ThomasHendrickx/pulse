@@ -1413,7 +1413,12 @@ describe("CR2-M3P12-04: a database error is never printed raw", () => {
 // that never happened, escapable only by a person passing --accept for that
 // rule id on every future run.
 describe("CR3-M3P12-01: a superseded rule is not counted as a live assignment", () => {
-  test("the before-set excludes it, so no loss is reported for a row whose merchant the owner changed", async () => {
+  // NAME CORRECTED IN PLACE, fix round five, CRITERIA finding CR5-M3P12-02
+  // (clause R-087). It used to say "the before-set excludes it", which was
+  // true of round three and stopped being true in round four when the
+  // dismissal moved to the comparison. The assertions did not change and
+  // that is exactly why nothing caught the drift.
+  test("the superseded rule's claim is dismissed at the comparison, so no loss is reported for a row whose merchant the owner changed", async () => {
     const seed = await seedDeployWindowWorld();
     const rival = await seed.world.merchantsPort.createMerchant(context, "Gamma");
     const twin = seed.world.rules.find((rule) => rule.id === seed.twinRuleId);
@@ -1430,14 +1435,18 @@ describe("CR3-M3P12-01: a superseded rule is not counted as a live assignment", 
     expect(report.exitCode).toBe(0);
     // The rows are held by the NAMESPACED rule both before and after, which
     // is what production sees, so nothing is lost and the after-set is a
-    // superset. Before this round the before-set also credited the DEAD
-    // un-namespaced rule, and the difference was reported as a loss.
+    // superset. In ROUND TWO the dead un-namespaced rule's claim was compared
+    // with no exemption at all and the difference was reported as a loss;
+    // since round five the claim is dismissed only where the row's coverage
+    // descends from the claimant, which here it does.
     expect(report.assignmentsAfter).toBeGreaterThanOrEqual(
       report.assignmentsBefore,
     );
   });
 
-  test("ONLY superseded ids are excluded: on a FIRST run every rule is un-namespaced and the before-set is the whole point of criterion 12.7", async () => {
+  // NAME CORRECTED IN PLACE for the same reason (CRITERIA finding
+  // CR5-M3P12-02): nothing is excluded from the before-set any more.
+  test("NOTHING is excluded from the before-set: on a FIRST run every rule is un-namespaced and the before-set is the whole point of criterion 12.7", async () => {
     const seed = await seedWorld();
     const report = await rederiveMerchantRules(context, deps(seed.world), {
       acceptedRuleIds: [seed.ruleIds.promotableIntoConflict],
@@ -1717,6 +1726,59 @@ describe("CR4-M3P12-01 (hazard): the superseded exclusion is narrowed to the row
       report.acceptedLostAssignments.map((lost) => lost.transactionId).sort(),
     ).toEqual(["accountRowB", "accountRowC"]);
     expect(report.exitCode).toBe(0);
+  });
+
+  // THE HAZARD LANE'S OWN ROUND-FIVE WITNESS, kept as a named regression
+  // beside the property that generalises it (HAZ5-1). A row claimed by the
+  // superseded rule moves to the account basis, the claimant cannot reach it,
+  // and a THIRD rule with no relationship to either picks it up. Round four's
+  // exemption asked only whether something covered the row and so reported
+  // exit 0 with an empty loss set while the row silently changed merchant.
+  test("A ROW TAKEN OVER BY AN UNRELATED RULE IS A REPORTED CHANGE, not a silent reassignment", async () => {
+    const unrelated = {
+      id: "unrelated",
+      merchantId: "gamma",
+      kind: "EXACT" as const,
+      pattern: `${ACCOUNT_NAMESPACE}${IDENTITY_FIXTURE_ACCOUNTS.counterparty2}`,
+    };
+    const rows = [
+      row("accountRowB", IDENTITY_FIXTURE_ACCOUNTS.counterparty2),
+      row("accountRowC", IDENTITY_FIXTURE_ACCOUNTS.counterparty3),
+    ];
+    const base = world(rows);
+    const withUnrelated = {
+      ...base,
+      merchants: {
+        ...base.merchants,
+        listRules: async () => [
+          { id: "dead", merchantId: "alpha", kind: "EXACT" as const, pattern: SHARED },
+          {
+            id: "claimant",
+            merchantId: "beta",
+            kind: "EXACT" as const,
+            pattern: `${DESCRIPTOR_NAMESPACE}${SHARED}`,
+          },
+          unrelated,
+        ],
+      },
+    } as unknown as Parameters<typeof rederiveMerchantRules>[1];
+
+    const report = await rederiveMerchantRules(context, withUnrelated, {});
+
+    console.log(
+      `HAZ5-1: exit ${report.exitCode}, lost ${report.lostAssignments.length}`,
+    );
+    // The row an unrelated declaration took over is reported, and so is the
+    // one nothing covers. Neither may be silent.
+    expect(report.lostAssignments.map((lost) => lost.transactionId).sort()).toEqual([
+      "accountRowB",
+      "accountRowC",
+    ]);
+    expect(report.exitCode).toBe(1);
+    // AND THE LINEAGE IS PUBLISHED, which is what the exemption now reads.
+    expect(report.supersededBy).toEqual([
+      { ruleId: "dead", claimantRuleId: "claimant" },
+    ]);
   });
 
   // AND WHERE THE PROMOTION *DOES* COVER THE ROW there is no loss to report,

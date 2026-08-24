@@ -416,16 +416,51 @@ describe("CRITERION 12.23: the endpoint is the whole string, not the authority",
   // only in port were all approved with the SAME reason text before this
   // round: the interlock never read parsed.port and the expectation had no
   // field for it.
-  test("AN UNKNOWN PORT is refused, and the two this product uses are not", () => {
-    expect(check(`postgresql://postgres.${REF}:pw@${HOST}:9999/postgres`).allowed).toBe(
-      false,
-    );
+  // DECIDED IN FIX ROUND FIVE, hazard finding HAZ5-2. This test used to
+  // assert that BOTH 5432 and 6543 pass unnamed, which pinned the very
+  // ambiguity the port check was raised to close: an operator running the
+  // migration exactly as documented, with the two required arguments, got a
+  // transaction-pooled connection with no signal. Unnamed now means 5432.
+  test("AN UNNAMED PORT MUST BE 5432, and every other port is refused including the transaction pooler", () => {
     expect(check(`postgresql://postgres.${REF}:pw@${HOST}:5432/postgres`).allowed).toBe(
       true,
     );
     expect(check(`postgresql://postgres.${REF}:pw@${HOST}:6543/postgres`).allowed).toBe(
-      true,
+      false,
     );
+    expect(check(`postgresql://postgres.${REF}:pw@${HOST}:9999/postgres`).allowed).toBe(
+      false,
+    );
+  });
+
+  // CRITERIA finding CR5-M3P12-09. A portless string was refused with advice
+  // that could not work: --expect-port compared against an empty string and
+  // refused again, so the shape was unapprovable and the sentence was false
+  // about the program printing it.
+  test("AN ABSENT PORT is the connector's default, and --expect-port can still name it", () => {
+    const portless = `postgresql://postgres.${REF}:pw@${HOST}/postgres`;
+    expect(check(portless).allowed).toBe(true);
+    expect(
+      assessRederiveTarget(
+        { DATABASE_URL: portless },
+        { host: HOST, projectRef: REF, port: "5432" },
+      ).allowed,
+    ).toBe(true);
+    expect(
+      assessRederiveTarget(
+        { DATABASE_URL: portless },
+        { host: HOST, projectRef: REF, port: "6543" },
+      ).allowed,
+    ).toBe(false);
+  });
+
+  test("the transaction pooler is reachable by NAMING it, which is the whole point of the flag", () => {
+    expect(
+      assessRederiveTarget(
+        { DATABASE_URL: `postgresql://postgres.${REF}:pw@${HOST}:6543/postgres` },
+        { host: HOST, projectRef: REF, port: "6543" },
+      ).allowed,
+    ).toBe(true);
   });
 
   test("a NAMED port is compared exactly, so a pooling-mode mismatch is refused too", () => {

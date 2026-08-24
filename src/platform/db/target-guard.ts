@@ -57,63 +57,43 @@
 // database that is not Pulse's, and a refusal reason is exactly the kind of
 // string that gets pasted into a note.
 
-// THE QUERY PARAMETERS THIS INTERLOCK UNDERSTANDS, and it refuses every
-// other one (fix round three, finding CR3-M3P12-08). The rule this closes is
-// the one the whole criterion rests on: THE GUARD MUST READ WHAT THE CLIENT
-// WILL USE. A connection string is not two fields, it is a document, and the
-// connector resolves more of it than a hostname and a username:
-//
-//   `?host=` NAMES A UNIX SOCKET DIRECTORY and the connector opens THAT,
-//   ignoring the authority's hostname entirely. Witnessed: a string carrying
-//   a correct pooler authority plus a host parameter naming a filesystem path
-//   was APPROVED by the field comparison, and the shipped client then tried
-//   to reach the path. That is the decorative guard criterion 12.23 exists to
-//   prevent, one level down, so it is refused by name.
-//
-//   ANY OTHER UNKNOWN PARAMETER is refused too, rather than ignored, because
-//   the interlock cannot say what it does. The four below are the ones this
-//   codebase's own connection strings use.
-//
-// A NAME IS NOT ENOUGH WHERE THE VALUE MOVES THE WRITE (fix round four,
-// CRITERIA finding CR4-M3P12-04). This set was checked by NAME alone, and one
-// of the four names decides which data a write lands on: the Postgres
-// connector's `schema` parameter selects the search path, so an approved
-// project, an approved host and an approved database can still be entered at
-// a schema nobody named. That is the same reason the database name is
-// compared below, one field further in, so the two are now treated alike.
-// `pgbouncer`, `sslmode` and `connection_limit` change HOW the connection is
-// made and not WHERE it lands, so their values are deliberately not
-// constrained; that distinction is the point of the split below.
-const UNDERSTOOD_PARAMETERS: ReadonlySet<string> = new Set([
-  "pgbouncer",
-  "sslmode",
-  "connection_limit",
-  "schema",
-]);
-
-// The one admitted parameter whose value decides which data a write lands on.
-// Absent or the literal default; anything else is refused.
-const EXPECTED_SCHEMA = "public";
+// THE QUERY THIS INTERLOCK REFUSES lives in ./connection-string and is
+// shared with the gate interlock (fix round five, CRITERIA finding
+// CR5-M3P12-03). It used to live here, and the gate guard added in fix round
+// four did not have it, so two guards in one tree disagreed about the same
+// attack. Nothing about the rules changed in the move.
 
 // The only database this product uses. Checked because the module's own
 // question is whether the migration is pointed at the ONE database an
 // operator named, and a string differing only in its database name was
 // approved before this (finding CR3-M3P12-08).
+import { assessConnectionQuery } from "./connection-string";
+
 const EXPECTED_DATABASE = "postgres";
 
-// THE PORTS THIS PRODUCT'S OWN CONNECTION STRINGS USE (fix round four,
-// hazard finding CR4-M3P12-02). 5432 is the direct and session-pooler
-// endpoint, 6543 the transaction pooler; .env.example names both and the
-// architecture rule about which one migrations use is written there. The
-// interlock never compared the port at all, so three otherwise identical
-// strings on 5432, 6543 and an arbitrary 9999 were approved identically,
-// with the same reason text. A port is the last field of the endpoint the
-// client resolves, and the whole rule this module is built on is that the
-// guard must account for every part of the connection that decides where it
-// lands. An unknown port is therefore REFUSED rather than ignored, and an
-// operator who wants the stricter thing can name the exact port on the
-// command line and have it compared.
-const KNOWN_PORTS: ReadonlySet<string> = new Set(["5432", "6543"]);
+// THE PORT THIS INTERLOCK ADMITS WITHOUT BEING TOLD (fix round four, hazard
+// finding CR4-M3P12-02; DECIDED in fix round five, hazard finding HAZ5-2).
+//
+// Round four added a port comparison and then admitted BOTH 5432 and 6543
+// when the operator named neither, which left untouched the exact ambiguity
+// the finding was raised to force a decision on. This is the decision.
+//
+// UNNAMED, THE PORT MUST BE 5432. That is the session-pooler and direct
+// endpoint: one client connection is one server connection for as long as the
+// client holds it. This routine's write path is an interactive multi
+// statement transaction issued through applyRuleWrites, and criterion 12.7's
+// whole guarantee, that a blocked or failed run leaves the table as it found
+// it, rests on that transaction being atomic.
+//
+// 6543 IS REACHABLE, BY NAMING IT. `.env.example` documents 6543 as this
+// product's own deployed DATABASE_URL, so a deployment where that is the
+// right endpoint is expected rather than hypothetical, and an operator who
+// means to migrate over the transaction pooler passes --expect-port 6543 and
+// gets it. What they no longer get is that connection SILENTLY, from an
+// invocation that named only the two required arguments. The whole module is
+// built on refusing what it cannot account for, and "which pooling mode am I
+// in" is not something a host and a project ref can answer.
+const DEFAULT_PORT = "5432";
 
 export type RederiveTargetEnv = {
   // The connection the ROUTINE ITSELF would use. DIRECT_URL is deliberately
@@ -218,25 +198,19 @@ export const assessRederiveTarget = (
 
   // REFUSE WHAT THE INTERLOCK CANNOT ACCOUNT FOR, before comparing anything,
   // because a parameter can move the endpoint out from under the comparison.
-  if (parsed.searchParams.has("host")) {
-    return {
-      allowed: false,
-      reason:
-        "the resolved connection carries a host query parameter, which makes the endpoint a socket path rather than the host given on the command line. Refusing: this interlock compares the host, and a connection that does not use it cannot be checked that way.",
-    };
-  }
-  for (const [name] of parsed.searchParams) {
-    if (!UNDERSTOOD_PARAMETERS.has(name)) {
-      return {
-        allowed: false,
-        reason:
-          "the resolved connection carries a query parameter this interlock does not understand, so it cannot account for what the client would do with it. Refusing. The parameter name is deliberately not printed here.",
-      };
-    }
+  const query = assessConnectionQuery(parsed);
+  if (!query.allowed) {
+    return { allowed: false, reason: query.reason };
   }
 
-  // THE PORT, the last field of the endpoint the client resolves.
-  const port = parsed.port;
+  // THE PORT, the last field of the endpoint the client resolves. An ABSENT
+  // port is the connector's own default and is read as that (fix round five,
+  // CRITERIA finding CR5-M3P12-09): before this, a portless string was
+  // unapprovable and the refusal told the operator to pass --expect-port,
+  // which then refused again because the exact comparison could not match an
+  // empty string. A refusal that advises something that cannot work is worse
+  // than a refusal that says the shape is not allowed.
+  const port = parsed.port === "" ? DEFAULT_PORT : parsed.port;
   if (expectation.port !== undefined && expectation.port !== "") {
     if (port !== expectation.port) {
       return {
@@ -245,27 +219,10 @@ export const assessRederiveTarget = (
           "the resolved connection's port is not the port given on the command line. Refusing. The resolved value is deliberately not printed here.",
       };
     }
-  } else if (!KNOWN_PORTS.has(port)) {
+  } else if (port !== DEFAULT_PORT) {
     return {
       allowed: false,
-      reason:
-        "the resolved connection uses a port this product's own connection strings never use, and none was given on the command line, so the interlock cannot account for what is listening there. Refusing. Pass --expect-port to name it deliberately.",
-    };
-  }
-
-  // THE SCHEMA, which is the fourth thing that decides which data a write
-  // lands on. Absent is the ordinary case and means the connector's default.
-  // EVERY occurrence is checked, not the first: a duplicated parameter is
-  // resolved by the connector and not by this interlock, and reading one of
-  // two values is how a comparison gets walked past.
-  if (
-    parsed.searchParams
-      .getAll("schema")
-      .some((value) => value !== EXPECTED_SCHEMA)
-  ) {
-    return {
-      allowed: false,
-      reason: `the resolved connection names a schema other than "${EXPECTED_SCHEMA}", which is where this product's tables live. Refusing: an approved project, host and database can still be entered at a schema nobody named.`,
+      reason: `the resolved connection is not on port ${DEFAULT_PORT}, and no port was given on the command line. Refusing: ${DEFAULT_PORT} is the endpoint where one client connection is one server connection, which is what this routine's single interactive transaction depends on. Pass --expect-port to name a different one deliberately.`,
     };
   }
 

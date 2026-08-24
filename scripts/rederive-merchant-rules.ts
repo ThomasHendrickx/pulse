@@ -195,8 +195,18 @@ const printReport = (report: RederiveReport): void => {
   console.log(
     `superseded-by-namespaced-rule ${report.supersededByNamespacedRule.length}`,
   );
+  // THE CLAIMANT IS NAMED BESIDE THE DEAD RULE (fix round five, hazard
+  // finding HAZ5-1). The list used to print an id and leave the operator to
+  // guess which declaration replaced it, and the same relationship is what
+  // licenses the routine to dismiss a change of merchant as not a loss, so
+  // it belongs where the operator can check it. Ids only, as everywhere here.
+  const claimantOf = new Map(
+    report.supersededBy.map((link) => [link.ruleId, link.claimantRuleId]),
+  );
   for (const ruleId of report.supersededByNamespacedRule) {
-    console.log(`  superseded-rule ${ruleId}`);
+    console.log(
+      `  superseded-rule ${ruleId} superseded-by ${claimantOf.get(ruleId) ?? "unknown"}`,
+    );
   }
   console.log(`rules-added ${report.rulesAdded}`);
   console.log(`assignments-before ${report.assignmentsBefore}`);

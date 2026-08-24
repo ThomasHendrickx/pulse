@@ -170,6 +170,19 @@ export type RederiveOutcomeKind =
   // carries the owner's current merchant and never carried the old one.
   | "superseded-by-namespaced-rule"
   // Pass two.
+  //
+  // WHAT "promoted" MEANS, said because a reviewer read it as "a rule was
+  // inserted on this run" and that is not what it says (fix round five,
+  // CRITERIA finding CR5-M3P12-11, and see the deviation this phase records
+  // against that finding). It means: after this run, this rule's naming is
+  // expressed in the account key space. Sometimes that took an insert and
+  // sometimes the pattern was already held by a rule of the same merchant and
+  // nothing needed writing. THE TWO CANNOT BE DISTINGUISHED IN THIS TOKEN
+  // without breaking criterion 12.8, whose whole content is that a second run
+  // prints the report of the first BYTE FOR BYTE: run two always finds the
+  // rule run one inserted, so a token that separated the cases would differ
+  // between the two runs by construction. HOW MANY RULES A RUN ACTUALLY ADDED
+  // is reported, on its own line, as rules-added.
   | "promoted"
   // A promotion whose whole evidence is ONE row (fix round, finding
   // HZ-M3P12-06). It is still a promotion, and the reason it is not refused
@@ -249,6 +262,27 @@ export type RederiveReport = {
   // a rule is dead is an argument about EQUALITY, and a colliding PREFIX or
   // PATTERN rule of another merchant blocks as a conflict instead.
   readonly supersededByNamespacedRule: readonly string[];
+  // THE LINEAGE THE LOSS EXEMPTION RESTS ON, published rather than kept
+  // private (fix round five, hazard finding HAZ5-1). Ids only, never a
+  // pattern. Two relations, and between them they say why any dismissed
+  // claim was dismissed:
+  //
+  //   supersededBy: the dead rule, and the namespaced rule that already held
+  //   the pattern it would have been rewritten to.
+  //
+  //   promotedFrom: a rule that now carries an account-basis promotion, and
+  //   the descriptor rule the promotion was made from. For a promotion this
+  //   run INSERTED, ruleId is the placeholder `pending-<n>`, where n is the
+  //   one-based index of that insert in the batch handed to applyRuleWrites,
+  //   in that order. It is not a database id and must not be used as one.
+  readonly supersededBy: readonly {
+    readonly ruleId: string;
+    readonly claimantRuleId: string;
+  }[];
+  readonly promotedFrom: readonly {
+    readonly ruleId: string;
+    readonly sourceRuleId: string;
+  }[];
   // Whether the writes this report describes were ISSUED. False on a dry run
   // and false on a blocked run, which are the only two ways a report can
   // describe work that did not happen.
@@ -315,7 +349,17 @@ const matchedBy = (
 const keyForRule = (rule: MerchantRuleLike): ((row: CountedTransaction) => string) =>
   identityBasisOfKey(rule.pattern) === undefined ? baselineKey : identityKey;
 
-const assignmentSet = (
+// EXPORTED FOR THE PROPERTY TEST (fix round five, hazard finding HAZ5-1),
+// with the identity key beside it. The property that keeps the loss
+// exemption honest has to ask, of a generated world, which merchant each row
+// carried before the run and which it carries after, and it must ask that
+// question the way the routine asks it or the two are not comparing the same
+// thing. This function's own correctness is pinned separately by the
+// half-migrated-table cases (finding HZ-M3P12-R2-03); what the property tests
+// is the exemption, which is the part that has been rewritten three times.
+export const identityKeyOfRow = identityKey;
+
+export const assignmentSet = (
   rows: readonly CountedTransaction[],
   rules: readonly MerchantRuleLike[],
   key?: (row: CountedTransaction) => string,
@@ -351,10 +395,46 @@ export const rederiveMerchantRules = async (
   // resolves a merchant for INCOME and SPEND rows and for nothing else, so a
   // counted row is the only kind a rule can ever reach. Widening this read
   // would change no decision and would count rows no assignment can land on.
-  // Rules pass one finds already superseded by a namespaced rule of the same
-  // kind. Filled during pass one and read when the before-set is computed
-  // AFTER it, which is why the before-set is not computed here.
-  const supersededRuleIds = new Set<string>();
+  // ---- LINEAGE --------------------------------------------------------
+  // WHICH RULE SUPERSEDED WHICH, AND WHICH RULE CARRIES WHOSE PROMOTION.
+  //
+  // These two maps replace a bare Set of superseded ids (fix round five,
+  // hazard finding HAZ5-1), and the replacement is the point rather than a
+  // refactor. The loss exemption has been rewritten three times, each time as
+  // a boolean short-circuit reacting to the last counterexample: round two
+  // reported false losses, round three hid real ones by dropping the rule
+  // from the before-set, round four asked only "is the row covered by
+  // ANYTHING afterwards" and thereby hid a silent REASSIGNMENT to a merchant
+  // no one in the relationship names. A predicate phrased as "is there any
+  // subsequent coverage" cannot be right, because the supersede argument is
+  // not about coverage in general: it is about ONE relationship, between the
+  // dead rule and the namespaced rule that took its pattern.
+  //
+  // So the relationship itself is recorded where it is known, and the
+  // exemption asks whether the row's eventual coverage DESCENDS FROM IT. That
+  // is decidable from the lineage alone and needs no case analysis, which is
+  // what makes it correct by construction rather than correct against three
+  // witnesses.
+  //
+  // supersededByClaimant: the dead rule's id, to the id of the namespaced
+  // rule of the same kind that already held the pattern it would have been
+  // rewritten to. Filled in pass one, which is the only place a claimant is
+  // identified, and read when the before-set is compared AFTER pass two.
+  const supersededByClaimant = new Map<string, string>();
+  // promotionSource: the id of a rule that now carries an account-basis
+  // promotion, to the id of the descriptor rule the promotion was made FROM.
+  // Both outcomes are recorded, because both are the source rule's naming
+  // expressed in the account key space: a promotion this run INSERTS, and a
+  // pre-existing rule of the same merchant that already held the pattern and
+  // therefore made the insert unnecessary. Pass two matches under the OLD
+  // key, so a promotion made from a claimant can and does cover rows the
+  // superseded rule used to claim, which is exactly why one link is not
+  // enough and the exemption has to follow a chain.
+  const promotionSource = new Map<string, string>();
+  // The rule a row's coverage ultimately descends from: itself, unless it is
+  // carrying somebody's promotion.
+  const lineageRoot = (ruleId: string): string =>
+    promotionSource.get(ruleId) ?? ruleId;
 
   const decisions: RuleDecision[] = [];
   const counts: RuleCounts[] = [];
@@ -507,7 +587,7 @@ export const rederiveMerchantRules = async (
         // Safe for every kind: the claimant carries the same merchant, so
         // whether the source rule is dead or live, no row can change hands.
         if (rule.kind === "EXACT") {
-          supersededRuleIds.add(rule.id);
+          supersededByClaimant.set(rule.id, collision.id);
         }
         alreadyHeldBySameMerchantTwin.push(rule.id);
         decisions.push({
@@ -519,7 +599,7 @@ export const rederiveMerchantRules = async (
         continue;
       }
       if (rule.kind === "EXACT") {
-        supersededRuleIds.add(rule.id);
+        supersededByClaimant.set(rule.id, collision.id);
         supersededByNamespacedRule.push(rule.id);
         decisions.push({
           ruleId: rule.id,
@@ -630,16 +710,40 @@ export const rederiveMerchantRules = async (
         pattern: accountPattern,
       });
       // The id is a placeholder because the real one is only known once the
-      // insert is issued, and nothing downstream reads it: `working` uses it
-      // to exclude a rule from its own collision test, and the decision
-      // report is keyed on the SOURCE rule's id, never on an added rule's.
+      // insert is issued. It is NOT private any more: assignmentsAfter is
+      // keyed on it, the lineage below names it, and the report publishes it,
+      // so the correspondence is part of the contract. It is
+      // `pending-<n>` where n is the ONE-BASED index of the insert in the
+      // batch handed to applyRuleWrites, in that same order. Nothing may
+      // treat it as a database id.
+      const promotedRuleId = `pending-${pendingInserts.length}`;
       working.push({
-        id: `pending-${pendingInserts.length}`,
+        id: promotedRuleId,
         merchantId: rule.merchantId,
         kind: "EXACT",
         pattern: accountPattern,
       });
+      promotionSource.set(promotedRuleId, rule.id);
       rulesAdded += 1;
+    } else {
+      // NO INSERT, BUT STILL THIS RULE'S PROMOTION. Control only reaches here
+      // when the existing holder carries the SAME merchant, because a
+      // different one took the conflict branch above. That existing rule is
+      // the source rule's naming already recorded in the account key space,
+      // which is precisely why the insert is unnecessary, so it belongs to
+      // the source rule's lineage exactly as an inserted one would. Leaving
+      // it out would make the exemption depend on whether the owner happened
+      // to have named the account group already.
+      //
+      // TWO SOURCES CAN LAND ON ONE HOLDER, and the last one written wins.
+      // Checked rather than left to chance: it happens when two descriptor
+      // rules of the SAME merchant promote onto one account pattern, so the
+      // holder expresses both namings and either attribution is true of it.
+      // The only consequence is for the exemption, where the source that is
+      // not recorded stops licensing its own dead rule's rows, and those rows
+      // are then REPORTED as changes rather than dismissed. That is the safe
+      // direction and it is the direction this predicate must fail in.
+      promotionSource.set(collision.id, rule.id);
     }
     const matchedAfter = matchedBy(
       { id: rule.id, merchantId: rule.merchantId, kind: "EXACT", pattern: accountPattern },
@@ -721,21 +825,36 @@ export const rederiveMerchantRules = async (
       if (after?.merchantId === held.merchantId) {
         return false;
       }
-      // THE ONE ARTIFACT THAT IS NOT A LOSS, and the narrowest statement of
-      // it (fix round four, HAZARD finding CR4-M3P12-01). A SUPERSEDED claim
-      // on a row is a claim the deployed matcher stopped honouring the moment
-      // the code deployed, because its pattern carries no namespace. If the
-      // row is still covered AFTER this run, by the claimant or by anything
-      // else, then no naming has been discarded: a later naming the owner
-      // made on the screen simply won, which is what a supersede IS, and
-      // reporting it as a loss blocks the migration permanently because
-      // decision D-39 forbids deleting the dead row.
+      // THE ONE ARTIFACT THAT IS NOT A LOSS, stated as the lineage it rests on
+      // (fix round five, hazard finding HAZ5-1). A superseded rule's claim on
+      // a row is a claim the deployed matcher stopped honouring the moment the
+      // code deployed, because its pattern carries no namespace. What licenses
+      // dismissing that claim is not that SOMETHING covers the row now. It is
+      // that the specific namespaced rule which took the dead rule's pattern
+      // covers it, because that rule is the owner's own later naming of the
+      // same group, made on the screen inside decision D-46's deploy window.
       //
-      // IF THE ROW IS COVERED BY NOTHING AFTERWARDS, it is a REAL loss and it
-      // is reported, whatever rule claimed it before. That is the case round
-      // three hid: an account-basis row whose claimant cannot reach it and
-      // whose promotion did not happen.
-      if (supersededRuleIds.has(held.ruleId) && after !== undefined) {
+      // SO THE TEST IS DESCENT, NOT COVERAGE: the rule holding the row after
+      // the run must BE the claimant, or must be carrying the claimant's own
+      // promotion into the account key space. Anything else covering the row
+      // is an unrelated declaration, and a row moving to it has changed
+      // merchant by something nobody in this relationship named. Criterion
+      // 12.7 guarantees two things, that no transaction loses its merchant
+      // AND that none changes from one merchant to another, and round four's
+      // "covered by anything" reading silently gave up the second.
+      //
+      // THE ERROR THIS CAN STILL MAKE IS THE SAFE ONE. A row that ends up at
+      // the claimant's merchant through an unrelated rule is reported as a
+      // change, which blocks with an acknowledge path rather than passing in
+      // silence. After three rounds of this predicate hiding things, over
+      // reporting is the direction to err in, and it is the direction a
+      // person can clear in one flag.
+      const claimantOfHeld = supersededByClaimant.get(held.ruleId);
+      if (
+        claimantOfHeld !== undefined &&
+        after !== undefined &&
+        lineageRoot(after.ruleId) === claimantOfHeld
+      ) {
         return false;
       }
       return true;
@@ -781,6 +900,14 @@ export const rederiveMerchantRules = async (
     promotedOnOneRow,
     alreadyHeldBySameMerchantTwin,
     supersededByNamespacedRule,
+    supersededBy: [...supersededByClaimant].map(([ruleId, claimantRuleId]) => ({
+      ruleId,
+      claimantRuleId,
+    })),
+    promotedFrom: [...promotionSource].map(([ruleId, sourceRuleId]) => ({
+      ruleId,
+      sourceRuleId,
+    })),
     conflicts,
     acceptedConflicts,
     lostAssignments,

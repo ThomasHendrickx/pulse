@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
+import { assertGateApiTargetIsLocal } from "@/platform/db/gate-target";
 
 // Criterion 0.3: signs up with email and password, signs out, signs in
 // again, and asserts an authenticated household context renders. Runs in the
@@ -74,6 +75,15 @@ test("an auth user without a household link recovers to sign-in instead of loopi
     !supabaseUrl || !serviceRoleKey,
     "needs the local service role key to construct the orphan auth user",
   );
+
+  // THIS SPEC OPENS A PROJECT WITH A SERVICE ROLE KEY, SO IT SAYS WHICH ONE
+  // (M3-P12 fix round five, CRITERIA finding CR5-M3P12-08). A service-role
+  // key against a project API creates users and writes rows exactly as a
+  // connection string does, and this was the one such construction in the
+  // tree with nothing in front of it. The gate's config already pins the
+  // target; this refuses for itself, which is what covers the spec being run
+  // by something other than `playwright test`.
+  assertGateApiTargetIsLocal();
 
   const admin = createClient(supabaseUrl ?? "", serviceRoleKey ?? "", {
     auth: { autoRefreshToken: false, persistSession: false },

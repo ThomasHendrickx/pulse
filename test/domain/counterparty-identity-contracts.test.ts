@@ -156,13 +156,28 @@ describe("CRITERION 12.19: the governing document says what the code does", () =
     );
   });
 
-  test("no sentence remains saying the key is the normalised counterparty string", () => {
-    // The exact sentence this phase replaced.
-    expect(skill).not.toMatch(
-      /Exact match on normalised counterparty string, from MerchantRule/,
-    );
-    expect(skill).not.toMatch(
-      /[Ee]xact match on the normalised counterparty string/,
-    );
+  // THE CLAIM, NOT TWO SPELLINGS OF IT (fix round five, CRITERIA finding
+  // CR5-M3P12-10). The two regexes this replaces pinned two exact wordings,
+  // and the phrase criterion 12.19 asks be gone still occurs once in the
+  // document, differing from both by a single word, inside a quotation of
+  // what the section USED TO say and immediately negated. That occurrence is
+  // correct and must stay; a REINTRODUCTION phrased the same way would also
+  // have passed. So the check is scoped to the merchant-resolution section
+  // and refuses the phrase anywhere it is not explicitly historical.
+  test("no sentence of the resolution chain says the key is the normalised counterparty string", () => {
+    const section = skill.slice(skill.indexOf("## 7. Merchant resolution"));
+    const body = section.slice(0, section.indexOf("\n## ", 1));
+    const offending = body
+      .split("\n")
+      .filter(
+        (line) =>
+          /normalised counterparty string/i.test(line) &&
+          !/used to|it used to be wrong|no longer/i.test(line),
+      );
+    expect(offending).toEqual([]);
+    // And the section really was read: the historical sentence IS there, so
+    // an empty result cannot come from having sliced the wrong text.
+    expect(body).toMatch(/normalised counterparty string/i);
+    expect(body.length).toBeGreaterThan(500);
   });
 });

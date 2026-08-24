@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
@@ -109,6 +109,54 @@ describe("the gate's target must be named, and must be local", () => {
     ).toBe(false);
   });
 
+  // CRITERIA finding CR5-M3P12-03. The sibling interlock has refused a host
+  // query parameter by name since fix round three, with a witness recorded
+  // above it, and this one read the hostname and nothing else. A string whose
+  // authority is the local stack and whose query redirects the connector was
+  // approved here and refused one module over.
+  test("A HOST QUERY PARAMETER is refused, though the authority IS the local stack", () => {
+    const redirected = `${LOCAL}?host=/tmp/not-a-socket-dir`;
+    expect(new URL(redirected).hostname).toBe(new URL(LOCAL).hostname);
+    expect(
+      assessGateDbTarget([named("a shell", { ...localValues, DATABASE_URL: LOCAL })])
+        .allowed,
+    ).toBe(true);
+    expect(
+      assessGateDbTarget([
+        named("a shell", { ...localValues, DATABASE_URL: redirected }),
+      ]).allowed,
+    ).toBe(false);
+  });
+
+  test("the SAME parameter rules apply to DIRECT_URL, and to nothing that is not a connection string", () => {
+    expect(
+      assessGateDbTarget([
+        named("a shell", { ...localValues, DIRECT_URL: `${LOCAL}?options=-c` }),
+      ]).allowed,
+    ).toBe(false);
+    expect(
+      assessGateDbTarget([
+        named("a shell", { ...localValues, DATABASE_URL: `${LOCAL}?schema=someone_else` }),
+      ]).allowed,
+    ).toBe(false);
+    // The Supabase API URL is an http URL: a connector's parameters mean
+    // nothing there, so its query is not policed and its host still is.
+    expect(
+      assessGateDbTarget([
+        named("a shell", {
+          ...localValues,
+          NEXT_PUBLIC_SUPABASE_URL: `${LOCAL_API}?anything=1`,
+        }),
+      ]).allowed,
+    ).toBe(true);
+  });
+
+  test("the spec-facing assertion refuses the same redirect", () => {
+    expect(() =>
+      assertGateDbTargetIsLocal({ DATABASE_URL: `${LOCAL}?host=/tmp/x` }),
+    ).toThrow(GateDbTargetRefused);
+  });
+
   test("an unparseable value refuses rather than being read as a host", () => {
     expect(
       assessGateDbTarget([
@@ -145,6 +193,23 @@ describe("the gate's target must be named, and must be local", () => {
     if (verdict.allowed) {
       expect(verdict.source).toBe("the .env file");
     }
+  });
+
+  // CRITERIA finding CR5-M3P12-07. The keys travelled only where the naming
+  // source carried them, so a PULSE_GATE_* pin naming the three endpoints
+  // left an ambient, possibly foreign, key beside them, which is the mixture
+  // the module's own comment says it prevents.
+  test("A NAME THE SOURCE DOES NOT CARRY IS REMOVED, not left ambient", () => {
+    const env: Record<string, string | undefined> = {
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "an-ambient-key-from-somewhere-else",
+      SUPABASE_SERVICE_ROLE_KEY: "an-ambient-service-key",
+      PULSE_GATE_DATABASE_URL: LOCAL,
+      PULSE_GATE_SUPABASE_URL: LOCAL_API,
+    };
+    enforceGateDbTarget(env);
+    expect(env["DATABASE_URL"]).toBe(LOCAL);
+    expect(env["NEXT_PUBLIC_SUPABASE_ANON_KEY"]).toBeUndefined();
+    expect(env["SUPABASE_SERVICE_ROLE_KEY"]).toBeUndefined();
   });
 
   test("NO VALUE IS EVER PRINTED: this repository is public", () => {
@@ -268,14 +333,78 @@ describe("the mechanism is actually installed", () => {
     expect(spec).toContain("test.skip(");
   });
 
-  // THE STANDING ANSWER to "can anything still reach a database nobody
-  // named". Every direct client construction outside src/ must be in a file
-  // that guards itself.
-  test("no test constructs a Prisma client without a guard beside it", () => {
+  test("the one spec that opens a Prisma client guards before it writes", () => {
     const spec = read("test", "e2e", "merchant-rule-write.spec.ts");
     expect(spec).toContain("new PrismaClient()");
     expect(
       spec.indexOf("assertGateDbTargetIsLocal") < spec.indexOf("prisma.household.create"),
     ).toBe(true);
+  });
+
+  // THE STANDING ANSWER to "can anything still reach a database nobody
+  // named", and it now SCANS instead of naming one file (fix round five,
+  // CRITERIA finding CR5-M3P12-08). The assertion above states a universal
+  // and checked a single hard-coded path, so a second spec opening a client
+  // would not have reddened it, and a Supabase admin client was not covered
+  // at all though one exists and writes. This walks every file under test/
+  // and scripts/ and requires each door to be guarded by the interlock that
+  // matches it.
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        return entry.name === "node_modules" ? [] : walk(full);
+      }
+      return entry.isFile() && /\.(ts|tsx)$/.test(entry.name) ? [full] : [];
+    });
+
+  test("EVERY door in test/ and scripts/ is guarded, whatever kind of client opens it", () => {
+    const files = [
+      ...walk(join(projectRoot, "test")),
+      ...walk(join(projectRoot, "scripts")),
+    ];
+    // The scan is only worth what it covers, so it says how much it read.
+    expect(files.length).toBeGreaterThan(30);
+
+    // PROSE IS NOT A DOOR. This tree talks about `new PrismaClient()` in
+    // comments and in test titles more often than it calls it, so the scan
+    // reads CODE: line comments are dropped and quoted spans are blanked
+    // before the patterns are applied. Without this the scanner reports the
+    // sentence explaining the guard as a violation of it.
+    const codeOnly = (source: string): string =>
+      source
+        .split("\n")
+        .map((line) => line.replace(/\/\/.*$/, ""))
+        .join("\n")
+        .replace(/"[^"\n]*"|'[^'\n]*'|`[^`]*`/g, '""');
+
+    const unguardedPrisma: string[] = [];
+    const unguardedAdmin: string[] = [];
+    for (const file of files) {
+      const raw = readFileSync(file, "utf-8");
+      const source = codeOnly(raw);
+      // This file NAMES both interlocks in order to test them, and the
+      // scanner would otherwise read itself as a door.
+      if (file.endsWith(join("test", "db", "gate-target.test.ts"))) {
+        continue;
+      }
+      if (
+        /new\s+PrismaClient\s*\(/.test(source) &&
+        !raw.includes("assertGateDbTargetIsLocal")
+      ) {
+        unguardedPrisma.push(file);
+      }
+      if (
+        /SUPABASE_SERVICE_ROLE_KEY/.test(source) &&
+        /createClient\s*\(/.test(source) &&
+        !raw.includes("assertGateApiTargetIsLocal")
+      ) {
+        unguardedAdmin.push(file);
+      }
+    }
+    expect({ unguardedPrisma, unguardedAdmin }).toEqual({
+      unguardedPrisma: [],
+      unguardedAdmin: [],
+    });
   });
 });

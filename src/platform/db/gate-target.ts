@@ -48,9 +48,29 @@
 // it gets the .env target instead, and the console says which source was
 // used. That is a different LOCAL database, not a stranger's.
 //
+// WHAT AN OPERATOR MUST ACTUALLY PROVIDE, said plainly here because this
+// changed a standing instruction (fix round five, hazard finding HAZ5-4).
+// Exporting DATABASE_URL, DIRECT_URL and the SUPABASE_* values in the
+// invoking shell, which is how this gate was run for every round before this
+// one, NO LONGER WORKS: those names are exactly the ambient ones this file
+// refuses to treat as a target, so the run stops with GateDbTargetRefused
+// before a single test executes. It fails loud and closed, which is the right
+// direction, but it is a real change and rediscovering it from the error
+// message costs whoever hits it. Do ONE of these instead:
+//
+//   a .env file at the package root carrying DATABASE_URL, DIRECT_URL,
+//   NEXT_PUBLIC_SUPABASE_URL and the two keys, all pointing at the local
+//   stack. This is the ordinary case and what `npm run test:e2e` expects.
+//
+//   or export PULSE_GATE_DATABASE_URL, PULSE_GATE_DIRECT_URL,
+//   PULSE_GATE_SUPABASE_URL, PULSE_GATE_SUPABASE_ANON_KEY and
+//   PULSE_GATE_SUPABASE_SERVICE_ROLE_KEY. These names exist for nothing else,
+//   which is why a value under one of them is taken as deliberate.
+//
 // NO VALUE IS EVER PRINTED by anything here. A connection string carries a
 // host and a project ref, and this repository is public.
 
+import { assessConnectionQuery } from "./connection-string";
 import { LOCAL_DB_HOSTS } from "./guard";
 import { readDotEnvValue } from "./resolve-env";
 
@@ -98,14 +118,42 @@ export type GateDbVerdict =
 const present = (value: string | undefined): value is string =>
   value !== undefined && value.trim() !== "";
 
-const isLocal = (value: string): boolean => {
-  let hostname: string;
+// A LOCAL STACK IS NOT A HOSTNAME (fix round five, CRITERIA finding
+// CR5-M3P12-03). This used to read the hostname and nothing else, while its
+// sibling interlock in target-guard.ts refused a host query parameter BY NAME
+// with a witness written above it: a string carrying an approved authority
+// plus `?host=` makes the connector open a socket path and ignore the
+// authority entirely. So a connection string naming 127.0.0.1 and redirecting
+// through a parameter was approved here and refused one module over. Both now
+// ask ./connection-string the same question.
+//
+// isConnection says whether the value is a POSTGRES connection string, which
+// the two database endpoints are and the Supabase API URL is not: the query
+// rules are about a connector's own parameters and mean nothing for an http
+// URL, so they are applied only where they apply.
+const isLocalHost = (parsed: URL): boolean =>
+  LOCAL_DB_HOSTS.has(parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase());
+
+const localVerdict = (
+  value: string,
+  isConnection: boolean,
+): { readonly ok: true } | { readonly ok: false; readonly why: string } => {
+  let parsed: URL;
   try {
-    hostname = new URL(value).hostname;
+    parsed = new URL(value);
   } catch {
-    return false;
+    return { ok: false, why: "did not parse as a URL" };
   }
-  return LOCAL_DB_HOSTS.has(hostname.replace(/^\[|\]$/g, "").toLowerCase());
+  if (!isLocalHost(parsed)) {
+    return { ok: false, why: "is not a local stack" };
+  }
+  if (isConnection) {
+    const query = assessConnectionQuery(parsed);
+    if (!query.allowed) {
+      return { ok: false, why: query.reason };
+    }
+  }
+  return { ok: true };
 };
 
 // PURE. The candidates are resolved elsewhere so this can be tested without
@@ -136,10 +184,11 @@ export const assessGateDbTarget = (
         reason: `${naming.source} named a database but did not name the ${name} that goes with it (PULSE_GATE_DIRECT_URL and PULSE_GATE_SUPABASE_URL are the names for that source). A half-named target is refused: the missing value would be taken from the ambient environment, which is the mixture this interlock exists to prevent.`,
       };
     }
-    if (!isLocal(value)) {
+    const verdict = localVerdict(value, name !== "NEXT_PUBLIC_SUPABASE_URL");
+    if (!verdict.ok) {
       return {
         allowed: false,
-        reason: `${naming.source} named a ${name} that is not a local stack. This gate creates households, imports statements and writes merchant rules, and it may only do that against a database on this machine. There is no override. The resolved value is deliberately not printed: this repository is public.`,
+        reason: `${naming.source} named a ${name} that ${verdict.why}. This gate creates households, imports statements and writes merchant rules, and it may only do that against a database on this machine that it can fully account for. There is no override. The resolved value is deliberately not printed: this repository is public.`,
       };
     }
   }
@@ -206,10 +255,40 @@ export const enforceGateDbTarget = (
   if (!verdict.allowed) {
     throw new GateDbTargetRefused(verdict.reason);
   }
-  for (const [name, value] of Object.entries(verdict.pinned)) {
-    env[name] = value;
+  // EVERY PINNED NAME IS ASSIGNED OR DELETED, never left as it was (fix round
+  // five, CRITERIA finding CR5-M3P12-07). The comment above says the two keys
+  // travel with the pin because a key issued by one project is meaningless
+  // against another; they only travelled where the naming source happened to
+  // carry them, so a PULSE_GATE_* pin naming the three endpoints left an
+  // ambient, possibly foreign, anon key and service role key sitting in the
+  // environment beside them, which is the mixture the comment claims to
+  // prevent. test/e2e/auth.spec.ts builds a service-role admin client out of
+  // exactly those two. Now the naming source decides all five: what it does
+  // not name is removed.
+  for (const name of GATE_PINNED_VARIABLES) {
+    const value = verdict.pinned[name];
+    if (value === undefined) {
+      delete env[name];
+    } else {
+      env[name] = value;
+    }
   }
   return verdict.pinned;
+};
+
+// WHAT A TEST THAT OPENS A SUPABASE ADMIN CLIENT MUST CALL (fix round five,
+// CRITERIA finding CR5-M3P12-08). A service-role key against a project API is
+// a door to a database exactly as a connection string is, and the sign-up
+// spec opens one. The API URL is an http URL, so only its host is checked.
+export const assertGateApiTargetIsLocal = (
+  env: Record<string, string | undefined> = process.env,
+): void => {
+  const value = env["NEXT_PUBLIC_SUPABASE_URL"];
+  if (!present(value) || !localVerdict(value, false).ok) {
+    throw new GateDbTargetRefused(
+      "this test opens a Supabase admin client of its own, and NEXT_PUBLIC_SUPABASE_URL is absent or is not a local stack. Refusing to write to a project nobody named. The resolved value is deliberately not printed: this repository is public.",
+    );
+  }
 };
 
 // WHAT A TEST THAT OPENS A CLIENT ITSELF MUST CALL. The config's enforcement
@@ -220,7 +299,7 @@ export const assertGateDbTargetIsLocal = (
   env: Record<string, string | undefined> = process.env,
 ): void => {
   const value = env["DATABASE_URL"];
-  if (!present(value) || !isLocal(value)) {
+  if (!present(value) || !localVerdict(value, true).ok) {
     throw new GateDbTargetRefused(
       "this test opens a database client of its own, and DATABASE_URL is absent or is not a local stack. Refusing to write to a database nobody named. The resolved value is deliberately not printed: this repository is public.",
     );

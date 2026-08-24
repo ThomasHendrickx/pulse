@@ -164,6 +164,11 @@ files-touched:
   - test/db/gate-target.test.ts
   - test/db/db-guard.test.ts
   - test/application/rederive-script-exit-codes.test.ts
+  - src/platform/db/client.ts
+  - test/property/rederive-loss-reporting.test.ts
+  - src/platform/db/connection-string.ts
+  - test/e2e/auth.spec.ts
+  - test/domain/counterparty-identity-contracts.test.ts
 per-step-commits:
   - sha: 502da43
     subject: >-
@@ -603,6 +608,183 @@ key-decisions:
       use, so the arbitrary port is refused either way, and making it a third
       required argument would change the invocation criterion 12.23 documents
       for a field that cannot reach a different project on its own.
+  - decision: >-
+      The loss exemption is decided by TRACEABLE LINEAGE, not by asking
+      whether the row is covered afterwards, and the lineage is published in
+      the report.
+    why: >-
+      HAZARD finding HAZ5-1, high, and the lane's trajectory call is what
+      shaped the answer: this predicate had been rewritten three times, each
+      version a boolean short-circuit reacting to the last counterexample, and
+      each trading one bug for another. Round two reported losses that had not
+      happened. Round three hid real ones by dropping the rule from the
+      before-set. Round four asked "is the row covered by ANYTHING afterwards"
+      and thereby hid a silent REASSIGNMENT: a row moving from the dead rule's
+      merchant to a third merchant named by a declaration with no relationship
+      to either, which is criterion 12.7's second half failing while the tool
+      built to catch it reported clean. A fourth patch aimed at that witness
+      would have been the same mistake again. So the relationship itself is
+      recorded where it is known, in two maps: which namespaced rule
+      superseded which dead rule, and which rule carries whose account-basis
+      promotion. The exemption asks one question of them, whether the row's
+      coverage DESCENDS FROM the specific claimant, which is decidable from
+      the lineage without case analysis. Both relations are published in the
+      report as ids, so the operator can check the reasoning and the property
+      test can read it rather than reimplement it.
+  - decision: >-
+      Both outcomes of a pass-two promotion are recorded as lineage, including
+      the one where no insert happens.
+    why: >-
+      Pass two matches under the OLD key, so a promotion made from a claimant
+      genuinely covers rows the superseded rule used to claim, and the
+      exemption has to follow that second link or it would report a loss on
+      every ordinary deploy-window migration. When the promoted pattern is
+      already held by a rule of the SAME merchant, pass two writes nothing,
+      and that existing rule IS the source rule's naming already recorded in
+      the account key space. Leaving it out of the lineage would have made the
+      exemption depend on whether the owner happened to have named the account
+      group already, which is not a distinction anything else in this routine
+      draws.
+  - decision: >-
+      A row that ends at the claimant's merchant through an UNRELATED rule is
+      still reported as a change.
+    why: >-
+      Stated because it is the one place the new predicate is deliberately
+      wider than the old one, and it is the direction to err in. Nothing in
+      the supersede relationship explains that row, so the run says so, and a
+      person clears it with the acknowledge flag that already exists. After
+      three rounds of this predicate hiding things, over reporting costs a
+      flag and under reporting costs a naming the owner cannot get back.
+  - decision: >-
+      The re-derivation's target interlock admits ONLY port 5432 when the
+      operator names no port.
+    why: >-
+      HAZARD finding HAZ5-2. Round four added the port comparison and then
+      admitted both 5432 and 6543 unnamed, which left the exact ambiguity the
+      finding was raised to force a decision on. This is the decision. 5432 is
+      where one client connection is one server connection, which is what this
+      routine's single interactive transaction depends on, and the atomicity
+      criterion 12.7 rests on is not something a host and a project ref can
+      establish. The transaction pooler stays reachable by naming it, so a
+      deployment that needs 6543 is one flag away; what it is no longer is
+      silent.
+  - decision: >-
+      A DEVELOPMENT server refuses a non-local database, and NOTHING else
+      changes: production, tests and scripts are untouched.
+    why: >-
+      HAZARD finding HAZ5-3, and the lane is right that the previous round's
+      open question conflated two commands. `next start` must open a deployed
+      database and is left exactly as it was. `next dev` never serves real
+      traffic, and in a fleet container the ambient DATABASE_URL is a deployed
+      project with a working password, so a developer starting the dev server
+      without pinning anything had a local looking app writing to it. The
+      predicate is NODE_ENV exactly "development" rather than "not
+      production", and that narrowing is load bearing in two directions: the
+      wider form catches NODE_ENV=test, and the fast gate imports this module
+      transitively, so it would have made `npm test` refuse in any container
+      with a remote ambient value; and it catches NODE_ENV unset, which is
+      what a tsx entry point has, including the one command criterion 12.23
+      exists for, whose whole purpose is to open a deployed database.
+  - decision: >-
+      The two interlocks ask ONE shared question about a connection string's
+      query, in src/platform/db/connection-string.ts.
+    why: >-
+      CRITERIA finding CR5-M3P12-03. Fix round three established with a
+      witness that a connection string is a document rather than two fields,
+      and taught the re-derivation's interlock to refuse a host query
+      parameter by name. Fix round four then added a SECOND interlock, for the
+      Playwright gate, which decided "is this a local stack" from the hostname
+      alone. So a string whose authority was the local stack and whose query
+      redirected the connector was approved by one guard and refused by the
+      other, in the same tree, in the same directory, one round apart. Two
+      guards disagreeing about one attack is worse than either being wrong
+      alone, because the tree looks defended. The rules are EXTRACTED rather
+      than copied, which is the move LOCAL_DB_HOSTS already made, and they are
+      applied only to the two POSTGRES endpoints: a connector's parameters
+      mean nothing for the Supabase API URL, whose host is still checked.
+  - decision: >-
+      A pinned variable the naming source does not carry is DELETED from the
+      environment, not left as it was.
+    why: >-
+      CRITERIA finding CR5-M3P12-07. The module's own comment said the two
+      Supabase keys travel with the pin because a key issued by one project is
+      meaningless against another; they travelled only where the source
+      happened to carry them, so a PULSE_GATE_* pin naming the three endpoints
+      left an ambient, possibly foreign, anon key and service role key beside
+      them. test/e2e/auth.spec.ts builds a service-role admin client out of
+      exactly those two. The naming source now decides all five.
+  - decision: >-
+      The standing answer to "can anything reach a database nobody named" is a
+      SCAN of test/ and scripts/, and it covers Supabase admin clients too.
+    why: >-
+      CRITERIA finding CR5-M3P12-08. The assertion stated a universal and read
+      one hard-coded path, so a second spec opening a client would not have
+      reddened it, and a service-role Supabase client, which creates users and
+      writes rows, was not covered at all though one exists. The scan reads
+      CODE rather than prose, because this tree discusses `new PrismaClient()`
+      in comments and test titles more often than it calls it; without that it
+      reported the sentence explaining the guard as a violation of it. A new
+      assertion, assertGateApiTargetIsLocal, covers the API door, and the
+      sign-up spec calls it.
+  - decision: >-
+      The fake's insert path models a CREATE, including the unique key, rather
+      than delegating to an upsert.
+    why: >-
+      CRITERIA finding CR5-M3P12-04, and it is the THIRD finding on this one
+      seam in alternating directions: the fake was weaker than the adapter on
+      the unique key in round two, stricter on tenancy in round four, and
+      weaker on the unique key one method along now. The adapter issues
+      tx.merchantRule.create, which the schema's unique key rejects on a
+      submission upsertRule would quietly repoint. Latent rather than live,
+      because pass two consults the working copy before queueing an insert,
+      but three findings on one seam is a structural signal and the modelling
+      is now written out where it can be read.
+  - decision: >-
+      An ABSENT port is read as the connector's default rather than refused.
+    why: >-
+      CRITERIA finding CR5-M3P12-09. A portless connection string was
+      unapprovable and the refusal advised passing --expect-port, which then
+      refused again because the exact comparison could not match an empty
+      string. A refusal that advises something that cannot work is worse than
+      one that says the shape is not allowed.
+  - decision: >-
+      Criterion 12.19's pin asserts the CLAIM, scoped to the section, instead
+      of two exact spellings.
+    why: >-
+      CRITERIA finding CR5-M3P12-10. The two regexes pinned two wordings, and
+      the phrase the criterion asks be gone still occurs once in the document,
+      differing from both by one word, inside a quotation of what the section
+      used to say. That occurrence is correct and stays; a reintroduction
+      phrased the same way would have passed. The check now reads the
+      merchant-resolution section and refuses the phrase on any line that is
+      not explicitly historical, and it asserts it really read that section so
+      an empty result cannot come from slicing the wrong text.
+  - decision: >-
+      The lineage predicate is written toward criterion 12.7's amendment, and
+      where the two could differ is named rather than assumed away.
+    why: >-
+      The orchestrator has dispatched an amendment to criterion 12.7 stating
+      the exception the code has carried in a comment since fix round three:
+      a row's merchant may change only where the new resolution traces back
+      through the SPECIFIC claimant that superseded the rule it previously
+      resolved through, coverage by any other rule is a reported and blocking
+      loss, and the check is by IDENTITY rather than by re-derivation. That is
+      what this round builds, term for term: supersededByClaimant records
+      which rule superseded which, the comparison is an equality on rule ids,
+      and coverage by anything else is reported and blocks. It was not
+      available while building, so the mapping is written here to be checked
+      against the amendment when it lands.
+      ONE PLACE THEY COULD DIFFER, named because a reader should not have to
+      find it: this implementation treats a rule carrying the CLAIMANT'S OWN
+      PASS-TWO PROMOTION as tracing through the claimant. That second link is
+      not optional. Pass two matches under the OLD key, so a promotion made
+      from a claimant genuinely covers rows the superseded rule used to claim,
+      and without the link every ordinary deploy-window migration would report
+      a loss on every account-basis row. If the amendment's wording does not
+      cover it, the wording needs the link rather than the code losing it, and
+      that is a question for the plan rather than something to bend here.
+      A new hazard class H12.31 now names the shape that got through three
+      rewrites, which is the same statement read from the other side.
 
 verification-first:
   - finding: >-
@@ -969,6 +1151,75 @@ verification-first:
       "port 6543: ALLOWED", "port 9999: REFUSED", "port 6543 with
       --expect-port 5432: REFUSED".
     contradicts-plan: false
+  - finding: >-
+      (y) THE HIDDEN REASSIGNMENT, and THREE HISTORICAL PREDICATES CAUGHT BY
+      ONE PROPERTY. test/property/rederive-loss-reporting.test.ts states the
+      guarantee as a biconditional over generated worlds: a row is in the loss
+      set IF AND ONLY IF its merchant changed and the change is not licensed
+      by the published supersede lineage. The exemption was then replaced, in
+      turn, by each of the three shapes this predicate has actually had, and
+      the property caught every one with its own minimal counterexample.
+      ROUND TWO'S (no exemption at all): "expected { row: 'row-0', reported:
+      true } to deeply equal { row: 'row-0', reported: false }", a loss
+      reported that had not happened. ROUND THREE'S (a superseded rule's rows
+      never compared): "expected { row: 'row-1', reported: false } to deeply
+      equal { row: 'row-1', reported: true }" on an account-basis row, a real
+      loss hidden. ROUND FOUR'S (covered by anything): "expected { row:
+      'row-0', reported: false } to deeply equal { row: 'row-0', reported:
+      true }", a hidden reassignment. GREEN against the lineage predicate: 2
+      passed, 400 and 200 generated worlds. The round-four counterexample is
+      worth naming: the property found a DIFFERENT instance of that shape than
+      the hazard lane's own witness, an unrelated descriptor rule whose
+      pass-two promotion takes the row, rather than a pre-existing account
+      rule. Nobody constructed it.
+    contradicts-plan: false
+  - finding: >-
+      (z) THE DEV SERVER'S TARGET, RED AND GREEN, with no connection opened at
+      any point: constructing a client does not connect, and the probe issues
+      no query. It imports the app's own client module exactly as a route
+      does and prints a host CLASS. RED, with client.ts restored from the
+      previous commit and NODE_ENV=development: "DATABASE_URL is NOT-LOCAL (a
+      deployed endpoint)", "the dev server's client module LOADED: nothing
+      refused". GREEN, same environment, this round's client: "REFUSED:
+      Error". GREEN with a local target: "LOADED: nothing refused". GREEN with
+      NODE_ENV=production and the same non-local value: "LOADED: nothing
+      refused", which is the half that had to keep working.
+    contradicts-plan: false
+  - finding: >-
+      (aa) THE PORT DECISION, executed. The same four probes as round four,
+      against the decided default: an unnamed 5432 is ALLOWED, an unnamed 6543
+      is now REFUSED where round four allowed it, an unnamed 9999 is REFUSED,
+      and 6543 with --expect-port 6543 is ALLOWED. The middle one is the
+      change and it is pinned by a test that would fail under round four's
+      shipped behaviour.
+    contradicts-plan: false
+  - finding: >-
+      (bb) THE TWO GUARDS DISAGREEING, red and green on the shipped
+      predicates. Against the head under review, assessGateDbTarget ALLOWED a
+      connection string whose authority is the local stack and whose query
+      carries a host parameter, while assessRederiveTarget REFUSED the same
+      shape by name. Against this round's tree both refuse it, and the gate's
+      own spec-facing assertion refuses it too. The Supabase API URL is
+      deliberately exempt from the parameter rules and its host is still
+      checked, which is asserted rather than left implied.
+    contradicts-plan: false
+  - finding: >-
+      (cc) THE SCANNER DISCRIMINATES, checked rather than assumed. A file
+      containing a bare `new PrismaClient()` and no guard was written into
+      test/, the scan reported it by path and the suite went red; the file was
+      deleted and the suite went green. Without the code-versus-prose split
+      the same scan reported four files that only MENTION the constructor, its
+      own included, which is why the split exists.
+    contradicts-plan: false
+  - finding: >-
+      (dd) THE 12.19 PIN DISCRIMINATES. The phrase criterion 12.19 asks be
+      gone was reintroduced into the merchant-resolution section as a
+      present-tense sentence: the new check went red naming the line, and the
+      document was restored from a saved copy with git status clean
+      afterwards. The historical occurrence, inside the quotation of what the
+      section used to say, keeps passing, which is the case the two regexes it
+      replaces could not tell apart from a reintroduction.
+    contradicts-plan: false
 
 deviations:
   - plan-clause: >-
@@ -1175,6 +1426,46 @@ deviations:
       only direction a fail-closed interlock may err in. The implementation is
       unchanged; what changed is that the comment states what is true and a
       test pins it. Amending the criterion's wording is the orchestrator's.
+  - plan-clause: >-
+      CRITERIA finding CR5-M3P12-11, which asks that a pass-two promotion
+      adding no rule get its own outcome token.
+    why: >-
+      BUILT, WITNESSED TO CONFLICT WITH CRITERION 12.8, AND REVERTED. The
+      finding states that "criterion 12.8's byte-for-byte report comparison is
+      unaffected, since the token is stable across runs". It is not, and the
+      reason is structural rather than an implementation detail: run one
+      INSERTS the account rule, run two finds that same rule already held by
+      the same merchant, so a token separating the two cases differs between
+      the two runs by construction. With the token added, four tests failed,
+      all of them idempotence tests, including criterion 12.8's own "a second
+      run prints the same decision report byte for byte" and the second-run
+      halves of the round-two and round-three regressions. Criterion 12.8's
+      content is that idempotence means the same ANSWER, and the distinction
+      the finding wants is exactly the distinction that criterion forbids.
+      WHAT WAS KEPT is the honest half: the token's own definition now says
+      what "promoted" means, that it is a statement about the state after the
+      run and not about whether a row was inserted, that the two cases cannot
+      be separated here without breaking 12.8, and that rules-added is where a
+      run says how many rules it actually wrote.
+  - plan-clause: >-
+      CRITERIA finding CR5-M3P12-05 and the dispatch that accepted it, both of
+      which describe the development-server refusal as gated on isProduction()
+      being false.
+    why: >-
+      BUILT NARROWER, DELIBERATELY, AND THE DIFFERENCE IS SAID HERE RATHER
+      THAN GLOSSED. The refusal is gated on NODE_ENV being exactly
+      "development". The wider predicate is not implementable without two
+      carve-outs that amount to the same thing: vitest sets NODE_ENV=test and
+      the fast gate imports this module transitively, so "not production"
+      made `npm test` refuse to run in any container whose ambient
+      DATABASE_URL is remote, which changes what the fast gate requires of
+      every contributor in order to guard a server the fast gate never starts;
+      and a tsx entry point carries no NODE_ENV at all, including the
+      re-derivation command, whose entire purpose is to open a DEPLOYED
+      database and which carries the stricter interlock criterion 12.23 asked
+      for. Both consequences were observed, not predicted. So the positive
+      form is the honest one: this guards the dev server, which is the gap
+      both lanes named, and nothing else.
 
 gate-evidence:
   - gate: >-
@@ -1433,6 +1724,50 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
+  - gate: >-
+      FIX ROUND FIVE, all five fast gates on the fix-round-five head. npm run
+      typecheck (tsc --noEmit, no output), npm run lint (eslint ., no output),
+      npm test (vitest run, 42 test files), npm run gate:privacy (printed
+      "gate:privacy clean"), npm run gate:tokens (no output). Every one exited
+      0. The count rose from 624 to 642: 2 property cases over 600 generated
+      worlds for the loss report, 8 for the development-server target, 3 for
+      the port decision including the portless shape, 1 named regression for
+      the reassignment the hazard lane witnessed, and 5 for the gate
+      interlock's shared query rules, its removal of an unnamed pinned
+      variable, and the tree-wide scan for unguarded clients.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 642
+    passed: 642
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: >-
+      FIX ROUND FIVE, npm run test:e2e. NOT RUN TO COMPLETION IN THIS ROUND,
+      and reported as that rather than as anything else. A full run was
+      started on the committed ports at 17:38:49 and I KILLED IT MYSELF at
+      test 50 of 55, all 50 passing, for two reasons: the criteria lane's
+      findings had landed and I was editing the tree the run was testing, so
+      its result would have described a head that no longer existed; and the
+      orchestrator had given another lane the exclusive slow-gate window.
+      That kill left an orphaned production server holding port 3100, which
+      Playwright does not reap on an interrupted run; it was found by sweeping
+      /proc/<pid>/cwd for this worktree rather than by command line, because
+      next-server rewrites its own argv to a string carrying neither the path
+      nor the command, and it and four siblings were stopped. Both ports are
+      free and no process has a cwd in this worktree. THE ROUND'S SLOW GATE IS
+      THEREFORE OWED and is held pending the orchestrator's window; criterion
+      12.14 rests on it, and CRITERIA finding CR5-M3P12-12 asks for exactly
+      one clean run on a machine where no other lane holds the ports.
+    result: red
+    wrapper-exit-code: 137
+    discovered: 55
+    passed: 50
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 5
 
 claims:
   - id: C-M3P12-01
@@ -1698,14 +2033,22 @@ claims:
       is settled for tests, gates and scripts, and deliberately NOT settled
       for the application itself.
     still-open-because: >-
-      `npm run dev` and `npx next start` resolve DATABASE_URL from the ambient
-      environment with no refusal, and in this fleet's containers that reaches
-      a deployed project. That is not a hole this mechanism may close: the
-      deployed app must open a deployed database, so a local-only refusal
-      would be wrong, and requiring the app to be told its target is a product
-      decision with a deployment change behind it and no criterion covering
-      it. Named here so the next reader does not take "the gate is guarded" to
-      mean "everything is".
+      NARROWED IN FIX ROUND FIVE, hazard finding HAZ5-3, because the sentence
+      that stood here conflated two commands and the lane was right about it.
+      It said: "`npm run dev` and `npx next start` resolve DATABASE_URL from
+      the ambient environment with no refusal... That is not a hole this
+      mechanism may close: the deployed app must open a deployed database, so
+      a local-only refusal would be wrong." That argument is true of `next
+      start` and FALSE of `next dev`, which never serves real traffic, and
+      resting the whole question on it left the live gap open. `next dev` is
+      now guarded: a development server refuses a non-local DATABASE_URL, with
+      one documented escape hatch. WHAT REMAINS OPEN is `next start`, which is
+      untouched and must be, since the deployed app opens the deployed
+      database; and a bare tsx entry point with no NODE_ENV, which this guard
+      deliberately does not catch because the one such command that WRITES
+      carries the stricter interlock built for it and exists to open a
+      deployed database. Named here so the next reader does not take "the gate
+      is guarded" to mean "everything is".
 
 fix-round:
   - mechanism: >-
@@ -1997,23 +2340,101 @@ fix-round:
       schema's foreign key still carries no household component, so a future
       write path that bypasses applyRuleWrites would have the same gap, and
       closing it in the schema is a migration this phase does not own. AND THE
-      SAME SHAPE EXISTS OUTSIDE THIS MODULE, checked rather than assumed away
-      while answering whether a cross-household row can still be written: the
-      ledger's transferLink.createMany writes householdId but does not verify
-      that the transaction and import ids it links belong to that household,
-      and the importer's transaction.createMany does not verify its accountId
-      (its importId IS verified, by the household-filtered claim immediately
-      above it). Both derive their ids from household-scoped reads today, which
-      is the same "one call site away" position applyRuleWrites was in, and
-      both are in modules this phase does not touch. Named here so the answer
-      to "can a cross-household row be written" is not read as a blanket no.
+      SAME SHAPE EXISTS OUTSIDE THIS MODULE, and the list below is CORRECTED
+      in fix round five under CRITERIA finding CR5-M3P12-06: the version this
+      phase disclosed in round four named two sites and got one of their
+      references wrong, and it had been written into a fleet warning on that
+      word. THERE ARE THREE, each with a different unverified reference.
+      src/modules/ledger/adapters/ledger-repository.ts, transaction.updateMany
+      with a householdId filter in its WHERE and data { merchantId }: the
+      MERCHANT ID is unverified, and that is the interpretation column this
+      whole phase moves, written by the recompute the re-derivation itself
+      invokes. src/modules/ledger/adapters/ledger-repository.ts,
+      transferLink.createMany: both transaction ids and the settlement import
+      id are unverified. src/modules/import/adapters/import-repository.ts,
+      transaction.createMany: the ACCOUNT ID is unverified, and the importId
+      is NOT, because the claim updateMany immediately above it is filtered on
+      householdId and its count must be exactly 1. All three derive their ids
+      from household-scoped reads in the same call, so none is reachable
+      today, which is the same "one call site away" position applyRuleWrites
+      was in; all three are in modules this phase does not touch. Each closes
+      the way applyRuleWrites was closed, with one household-filtered findMany
+      over the distinct referenced ids inside the same transaction before the
+      write, and none needs a migration. Named accurately here because the
+      next reader will act on this list.
       AND THE
       PORT CHECK REFUSES AN UNKNOWN PORT RATHER THAN PROVING A KNOWN ONE
       CORRECT: 5432 and 6543 are both admitted when the operator names
       neither, so a session-versus-transaction pooling mismatch still passes
       unless --expect-port is given.
+  - mechanism: >-
+      PATCHING A PREDICATE AGAINST THE LAST COUNTEREXAMPLE, and why three
+      correct-looking repairs in a row is a signal about the FORM of the
+      predicate rather than about the care taken on any one of them. The
+      re-derivation's loss exemption was rewritten in three consecutive fix
+      rounds. Each rewrite was correct against the witness in front of it and
+      wrong about a shape nobody had built yet: false losses, then hidden real
+      losses, then a hidden reassignment to a merchant no one in the
+      relationship names. Every version had the same form, a boolean
+      short-circuit over "is there subsequent coverage", and that form cannot
+      be right, because the thing being decided is not about coverage in
+      general but about ONE relationship, between a dead rule and the rule
+      that took its pattern. The mechanism's rule as it now reads: when a
+      predicate has been patched twice, stop patching and ask what RELATION it
+      is really about, record that relation where it is known, and decide from
+      it; and test the guarantee as a property over generated inputs rather
+      than adding a third example, because the next counterexample is the one
+      nobody has thought of.
+    derivation:
+      command: >-
+        grep -n "supersededByClaimant\|promotionSource\|lineageRoot"
+        src/modules/merchants/application/rederive-rules.ts
+      output: |
+        Two maps and one function. supersededByClaimant is filled in pass one,
+        which is the only place a claimant is identified. promotionSource is
+        filled in pass two on BOTH outcomes, the inserted promotion and the
+        pre-existing same-merchant rule that made the insert unnecessary.
+        lineageRoot follows one link. The exemption is a single equality
+        between the claimant of the rule making the claim and the root of the
+        rule holding the row afterwards.
+        AND THE PROPERTY IS WHAT KEEPS IT HONEST: replacing the predicate with
+        each of its three historical forms in turn makes
+        test/property/rederive-loss-reporting.test.ts fail, each with its own
+        minimal counterexample, and one of those counterexamples is an
+        instance of the shape the reviewer found that the reviewer did not
+        construct.
+    not-covered: >-
+      THE PROPERTY READS THE RUN'S OWN PUBLISHED LINEAGE to decide what is
+      licensed, so a run that invented a relationship could in principle
+      license itself. That is closed as far as it can be from outside: a
+      second property checks every published supersede against the seed, so
+      the claimant must exist, be of the same kind, and hold exactly the
+      namespaced form of the dead rule's pattern. What is NOT checked
+      independently is the promotion link, whose source rule is only asserted
+      to exist. THE GENERATED WORLDS ARE SMALL by construction, at most four
+      rules over two counterparty texts and three invented accounts, so the
+      property covers the interactions this mechanism has, not arbitrary
+      tables. AND THE EXEMPTION IS DELIBERATELY WIDER IN ONE DIRECTION than
+      the last version: a row that ends at the claimant's own merchant through
+      an unrelated declaration is now reported as a change. That is a report
+      an operator clears with a flag, and it is the error this predicate
+      should make.
 
 environment-warnings:
+  - warning: >-
+      A PLAIN SHELL EXPORT OF THE FIVE LOCAL VALUES NO LONGER RUNS THE E2E
+      GATE, as of this phase's fourth fix round (recorded here in the fifth,
+      hazard finding HAZ5-4). The gate resolves its own database target and
+      deliberately does not treat ambient DATABASE_URL, DIRECT_URL or
+      NEXT_PUBLIC_SUPABASE_URL as a source, so exporting them and running
+      `npm run test:e2e` stops with GateDbTargetRefused before a single test
+      executes. It fails loud and closed, which is the right direction, but
+      it contradicts the standing instruction every reviewer has followed.
+      WHAT WORKS: a .env file at the package root carrying the five values,
+      which is the ordinary local case; or the PULSE_GATE_* variables, which
+      exist for nothing else. The same two options are now written into
+      src/platform/db/gate-target.ts's own header, so the next person meets
+      them at the mechanism rather than in an error message.
   - warning: >-
       TWO FLEET LANES CANNOT RUN THE PLAYWRIGHT GATE AT ONCE ON THE DEFAULT
       PORTS. The config starts its own servers on 3000 and 3100 with

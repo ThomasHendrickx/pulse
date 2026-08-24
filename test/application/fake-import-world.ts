@@ -456,7 +456,50 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
         // differ deliberately, because the adapter's check is over a BATCH
         // and names that; both say "does not belong to the household".
         for (const insert of input.inserts) {
-          await merchantsPort.upsertRule(context, insert);
+          // THE ADAPTER ISSUES A CREATE, NOT AN UPSERT (fix round five,
+          // CRITERIA finding CR5-M3P12-04). Routing an insert through
+          // upsertRule made this fake WEAKER than its subject on exactly the
+          // constraint the update path above models and explains: the adapter
+          // calls tx.merchantRule.create, which under
+          // @@unique([householdId, kind, pattern]) rejects a submission that
+          // upsertRule would quietly repoint. So the collision is modelled
+          // here, with the same message the update path throws, and the
+          // ownership check the adapter's insert loop gained in fix round
+          // four is made first, in the same order.
+          //
+          // THIRD FINDING ON THIS ONE SEAM, which is why the modelling is now
+          // written out rather than delegated: the fake was weaker on the
+          // unique key (CR2-M3P12-02), then stricter on tenancy
+          // (CR4-M3P12-03), now weaker on the unique key one method along.
+          const owned = merchants.some(
+            (merchant) =>
+              merchant.householdId === context.householdId &&
+              merchant.id === insert.merchantId,
+          );
+          if (!owned) {
+            throw new Error(
+              "applyRuleWrites: one or more inserted rules point at a merchant that does not belong to the household",
+            );
+          }
+          const clash = rules.find(
+            (rule) =>
+              rule.householdId === context.householdId &&
+              rule.kind === insert.kind &&
+              rule.pattern === insert.pattern,
+          );
+          if (clash !== undefined) {
+            throw new Error(
+              "Unique constraint failed on the fields: (householdId,kind,pattern)",
+            );
+          }
+          declarationWriteCount += 1;
+          rules.push({
+            id: id("rule"),
+            householdId: context.householdId,
+            merchantId: insert.merchantId,
+            kind: insert.kind,
+            pattern: insert.pattern,
+          });
         }
       } catch (error) {
         rules.length = 0;
