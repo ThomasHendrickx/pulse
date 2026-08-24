@@ -400,8 +400,14 @@ test("THE WRONG ANSWER, WALKED BACK: a savings statement answered as a spending 
   await expect(entry).toHaveCount(1);
   await expect(entry).toHaveAttribute("data-state", "counted");
   await expect(entry).toContainText("counted in this month's income and spend");
-  const spendBefore = await page.getByTestId("spend-total").innerText();
-  expect(spendBefore).toBe("55,00");
+  // THE FIXTURE'S OWN ARITHMETIC, by hand. Answered as a SPENDING account,
+  // the savings statement's three rows are classified like any other pot
+  // account's: the +250,00 deposit is INCOME, the -55,00 transfer out is
+  // SPEND, the +1,37 interest is INCOME. So spend is 55,00 and income is
+  // 251,37, and nothing about either figure says a savings account produced
+  // them.
+  await expect(page.getByTestId("spend-total")).toHaveText("55,00");
+  await expect(page.getByTestId("income-total")).toHaveText("251,37");
 
   // A naming made in the wrong state, which is what that state invites.
   await page.goto("/merchants");
@@ -435,7 +441,10 @@ test("THE WRONG ANSWER, WALKED BACK: a savings statement answered as a spending 
   // The rows are HELD and named, the spend total has fallen by exactly
   // them, and the verdict still reads as books closing.
   await page.goto("/?month=2026-08");
+  // THE SPEND TOTAL HAS FALLEN BY EXACTLY THOSE ROWS, and so has income:
+  // every row on the account is now held and enters nothing.
   await expect(page.getByTestId("spend-total")).toHaveText("0,00");
+  await expect(page.getByTestId("income-total")).toHaveText("0,00");
   const held = page.getByTestId("month-account").filter({ hasText: "Buffer" });
   await expect(held).toHaveCount(1);
   await expect(held).toHaveAttribute("data-state", "held");

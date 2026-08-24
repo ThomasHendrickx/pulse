@@ -608,6 +608,140 @@ const scaledSweep = async (
   return { ...overflow, ...clipping, tapTargets, ...folds };
 };
 
+// ---------------------------------------------------------------------
+// CRITERION 14.7, THE WIDTH WITNESS. M3-P14 adds a FOURTH navigation link,
+// and every instrument this spec already had is blind to what that does:
+// tapTargetOffenders compares a rect's HEIGHT against the minimum only,
+// clippingOffenders scans the MAIN element while the navigation row lives in
+// the header, and globals.css sets overflow-wrap so a label too wide for its
+// share wraps inside that share rather than widening the document. A fourth
+// link changes WIDTH and not height, so all three stay green while an
+// existing target is pushed onto more lines.
+//
+// THE BASELINE, CAPTURED BEFORE THE FOURTH LINK EXISTED and written in here
+// by hand from that captured output, never read back from the running page.
+// Measured with the SAME text-scale helper this spec uses, which multiplies
+// each element's own computed size; a helper that sets a root font-size
+// measures nothing here, because every type token in this design system is
+// declared in px, and the first version of this measurement did exactly that
+// and reported identical numbers at 1x, 1.5x and 2x.
+//
+//   390 @ 1.0   overview 1   import 1   merchants 1
+//   390 @ 1.5   overview 2   import 1   merchants 2
+//   390 @ 2.0   overview 2   import 2   merchants 2
+//   360 @ 1.0   overview 1   import 1   merchants 1
+//   360 @ 1.5   overview 2   import 1   merchants 2
+//   360 @ 2.0   overview 3   import 2   merchants 3
+//
+// WHAT THIS FOUND, which is why the criterion is written the way it is. With
+// the fourth link added and the row left as it was, a quarter of 360 is 67
+// pixels and the measurement went: overview 1 -> 2 lines at 390@1, and
+// 2 -> 4 lines at 360@2, with merchants alongside it. That is hazard H14.8
+// exactly: an existing target made worse by a new one. The row now wraps two
+// per line at phone widths, which gives every link about half the row
+// instead of a quarter, and the numbers below are the result.
+const NAV_TESTIDS = [
+  "nav-overview",
+  "nav-import",
+  "nav-merchants",
+  "nav-accounts",
+] as const;
+
+const NAV_BASELINE: Readonly<
+  Record<string, Readonly<Record<string, number>>>
+> = {
+  "390@1": { "nav-overview": 1, "nav-import": 1, "nav-merchants": 1 },
+  "390@1.5": { "nav-overview": 2, "nav-import": 1, "nav-merchants": 2 },
+  "390@2": { "nav-overview": 2, "nav-import": 2, "nav-merchants": 2 },
+  "360@1": { "nav-overview": 1, "nav-import": 1, "nav-merchants": 1 },
+  "360@1.5": { "nav-overview": 2, "nav-import": 1, "nav-merchants": 2 },
+  "360@2": { "nav-overview": 3, "nav-import": 2, "nav-merchants": 3 },
+};
+
+// nav-accounts is the link THIS PHASE ADDS and therefore has no recorded
+// baseline of its own, so its bound is stated as an ABSOLUTE: the largest
+// line count the baseline records for any existing link, carried here by
+// hand from the same captured output. Without this the added link would be
+// the one element the guard leaves free to be the offender.
+const NAV_ADDED_LINK_MAX_LINES = 3;
+
+const navGeometry = (page: Page) =>
+  page.evaluate((testIds) => {
+    const out: Record<string, { lines: number; width: number; height: number }> =
+      {};
+    for (const id of testIds) {
+      const element = document.querySelector(`[data-testid="${id}"]`);
+      if (element === null) {
+        continue;
+      }
+      const rect = element.getBoundingClientRect();
+      // Rendered line count from the text's own client rects: one rect per
+      // visual line, so this measures what the reader sees rather than what
+      // the stylesheet intends.
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const tops = new Set(
+        [...range.getClientRects()].map((box) => Math.round(box.top)),
+      );
+      out[id] = {
+        lines: Math.max(1, tops.size),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+    }
+    return out;
+  }, NAV_TESTIDS as unknown as string[]);
+
+test("the fourth navigation link does not push an existing one onto more lines", async ({
+  page,
+}) => {
+  await signUp(page, "mv-nav-width");
+  for (const viewport of [PHONE, NARROW_PHONE] as const) {
+    for (const scale of [1, ...TEXT_SCALES] as const) {
+      await page.setViewportSize(viewport);
+      await page.goto("/");
+      if (scale !== 1) {
+        await applyTextScale(page, scale);
+      }
+      const key = `${viewport.width}@${scale}`;
+      const geometry = await navGeometry(page);
+
+      // ALL FOUR LINKS ARE THERE. A guard that measured three would pass by
+      // finding nothing.
+      for (const id of NAV_TESTIDS) {
+        expect.soft(geometry[id], `${id} missing at ${key}`).toBeDefined();
+      }
+
+      for (const [id, bound] of Object.entries(NAV_BASELINE[key] ?? {})) {
+        expect
+          .soft(geometry[id]?.lines ?? 99, `${id} line count at ${key}`)
+          .toBeLessThanOrEqual(bound);
+      }
+      expect
+        .soft(geometry["nav-accounts"]?.lines ?? 99, `nav-accounts lines at ${key}`)
+        .toBeLessThanOrEqual(NAV_ADDED_LINK_MAX_LINES);
+
+      // EACH LINK'S BORDER BOX CLEARS THE TAP-TARGET MINIMUM IN BOTH
+      // DIMENSIONS. The existing helper measures height only, which is the
+      // axis a fourth link does not move.
+      for (const id of NAV_TESTIDS) {
+        expect
+          .soft(geometry[id]?.width ?? 0, `${id} border-box width at ${key}`)
+          .toBeGreaterThanOrEqual(TAP_MIN);
+        expect
+          .soft(geometry[id]?.height ?? 0, `${id} border-box height at ${key}`)
+          .toBeGreaterThanOrEqual(TAP_MIN);
+      }
+
+      // And the document itself never widens.
+      const overflow = await horizontalOverflow(page);
+      expect
+        .soft(overflow.scrollWidth, `document width at ${key}`)
+        .toBeLessThanOrEqual(overflow.clientWidth);
+    }
+  }
+});
+
 const seedDense = async (page: Page): Promise<void> => {
   await signUp(page, "mv-dense");
   await uploadPotFile(page, "mv-dense.csv", "Daily account", "25");
