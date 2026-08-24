@@ -4,6 +4,16 @@ verdict: FIX-ROUND-NEEDED
 produced-by: claude-opus-5
 framing: criteria-walk
 review-contract: criteria
-findings: []
+findings:
+  - id: CR4-M3P12-01
+    severity: medium
+    evidence:
+      - "src/platform/db/resolve-env.ts:12 through :17 states, as a present-tense fact about the Prisma CLI: 'A variable the shell carries as the EMPTY STRING falls back too'. Witnessed FALSE against the pinned CLI in this worktree."
+      - "Captured, in /home/user/wt-m3p12-r4crit with a .env carrying DATABASE_URL and DIRECT_URL: `DATABASE_URL=\"\" DIRECT_URL=\"\" npx prisma validate` printed 'Environment variables loaded from .env' and then 'error: Error validating datasource `db`: You must provide a nonempty direct URL. The environment variable `DIRECT_URL` resolved to an empty string.' Prisma CLI Version 6.19.3, exit 1."
+      - "Same again isolating the variable the guard reads: `env -u DIRECT_URL DATABASE_URL=\"\" npx prisma validate` printed 'error: Error validating datasource `db`: You must provide a nonempty URL. The environment variable `DATABASE_URL` resolved to an empty string.'"
+      - "Control: `env -u DATABASE_URL -u DIRECT_URL npx prisma validate` printed 'The schemas at prisma/schema are valid', so the .env fallback for an ABSENT variable is real and only the EMPTY case is misdescribed."
+      - "resolveDbEnv at src/platform/db/resolve-env.ts:57 through :60 implements the misdescribed reading, and src/platform/db/guard-cli.ts consumes it."
+    concrete-fix: "Correct the paragraph at src/platform/db/resolve-env.ts:12 through :17 to say that the Prisma CLI loads .env only for a variable the shell does not carry AT ALL, and that resolveDbEnv deliberately treats a shell-EMPTY value as absent, which is STRICTER than the CLI and fails closed (the guard resolves a .env value and refuses, where the CLI would abort on an empty URL). Add a test in test/db/ pinning that stated asymmetry. The plan's criterion 12.23 carries the same false sentence and is a plan defect: it should be amended to state the asymmetry rather than to assert equivalence."
+    analysis: "This is an R-087 finding rather than a shipped-behaviour defect. Both divergent directions are fail-closed for guard-cli (it either refuses a target the CLI would not open, or reads a local .env value while the CLI aborts), so no destructive command escapes. What is false is the justification, and the justification is what criterion 12.23 rests its word 'decorative' on. The rederive interlock is NOT affected: it reads resolveClientDbUrl, which I separately witnessed matches what new PrismaClient() reads."
 criteria: []
 deviations-judged: []
