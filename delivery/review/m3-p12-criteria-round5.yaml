@@ -47,3 +47,52 @@ gates-run-by-this-lane:
   - command: npm run gate:tokens
     exit: 0
     summary: "grep negation over src/modules/*/ui, no match"
+
+directed-claims:
+  - id: 1
+    claim: >-
+      playwright.config.ts resolves its target at module scope through
+      src/platform/db/gate-target.ts, refuses anything not a local stack, and
+      ASSIGNS the approved values into process.env.
+    verdict: pending-e2e-witness
+    read-so-far: >-
+      Structure confirmed by reading. The import is playwright.config.ts:2 and
+      the call is playwright.config.ts:28 to :29, above every other read of
+      process.env in that file except PLAYWRIGHT_BASE_URL at :7. prodEnv is
+      built at playwright.config.ts:43 to :47 from process.env AFTER the
+      assignment, so the production web server inherits the pin even before
+      the explicit spread. There is no globalSetup and no globalTeardown in
+      either playwright.config.ts or playwright.deploy.config.ts, so nothing
+      runs ahead of the config module. The assignment itself is
+      src/platform/db/gate-target.ts:209 to :211.
+  - id: 3
+    claim: >-
+      applyRuleWrites checks every distinct inserted merchantId against a
+      household-filtered findMany inside the same transaction before any
+      create.
+    verdict: met-in-code
+    witness: >-
+      The check is src/modules/merchants/adapters/merchant-repository.ts:180
+      to :196 and the first create is at :198, both inside the
+      prisma.$transaction callback opened at :148. The ids are deduped through
+      a Set at :181 so the length comparison at :191 is sound. The
+      insert-submitted-ALONE case is
+      test/e2e/merchant-rule-write.spec.ts:192 to :207, with a positive
+      control at :211 to :227 proving the refusal is a refusal. Execution
+      witness owed by the e2e run below.
+  - id: 4
+    claim: >-
+      EXACT collisions supersede; a same-merchant PREFIX or PATTERN collision
+      skips; a different-merchant one blocks as an ordinary conflict, and
+      every superseded id is EXACT.
+    verdict: yes
+    witness: >-
+      The split is src/modules/merchants/application/rederive-rules.ts:505 to
+      :540. Both writes into supersededRuleIds are inside a rule.kind ===
+      "EXACT" guard, at :509 to :510 for the same-merchant branch and at :521
+      to :523 for the different-merchant branch, and grep finds no third
+      write. The split sits exactly where the argument splits: the argument is
+      that a bare pattern can never be applied again, which holds for equality
+      and fails for a glob or a namespace-prefix, and the comment at
+      src/modules/merchants/application/rederive-rules.ts:481 to :491 states
+      the false half it used to assert and why.
