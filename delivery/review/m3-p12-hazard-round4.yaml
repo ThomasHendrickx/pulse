@@ -339,11 +339,25 @@ findings:
 #    exercised on its own. No case in that spec submits an INSERT ALONE
 #    under a context whose householdId differs from the target merchant's
 #    household, which is the one case that would show the gap.
-#    NOT YET WITNESSED against a real Postgres: static analysis plus the
-#    schema and the two comparison points above are strong, but I have not
-#    yet run this against a live local database with an actual cross-
-#    household insert. Doing that next as part of setting up the local
-#    stack the gates need anyway.
+#    WITNESSED LIVE against my own local database (see the local-database
+#    section below): created my own local Postgres database (pulse_r4haz) on
+#    the shared local supabase stack at 127.0.0.1:54322, ran
+#    `npx prisma migrate deploy` against it (6 migrations applied cleanly),
+#    then ran a throwaway tsx script (scripts/ZZZ-witness-tenancy.mjs,
+#    written, run, then deleted; git status --short clean afterward) that
+#    called the REAL applyRuleWrites directly (not the fake) with an
+#    INSERT-ONLY input (no updates) under a household C context, whose
+#    merchantId belonged to a DIFFERENT household A. Captured output:
+#    "threw: undefined" and "created row: { id: ..., householdId:
+#    <household C's id>, merchantId: <household A's merchant id>, kind:
+#    EXACT, pattern: descriptor:witness-...-CROSS-HOUSEHOLD, createdAt:
+#    ... }", printed line "RESULT: threw = false ; row created with foreign
+#    merchantId = true". The write succeeded silently: no exception, and a
+#    MerchantRule row now exists whose declaration household does not own
+#    the merchant it names. Rows deleted immediately after by the same
+#    script. This upgrades CR4-M3P12-03 from a static-analysis claim to a
+#    directly reproduced defect against a real database with the real,
+#    unmodified adapter code.
 
 findings:
   - id: CR4-M3P12-03
@@ -390,6 +404,7 @@ findings:
       - "prisma/schema/merchants.prisma:85: `merchant Merchant @relation(fields: [merchantId], references: [id])` carries no householdId component, so the database's own foreign key permits a cross-household merchantId."
       - "test/application/fake-import-world.ts:442-459: the fake's applyRuleWrites inserts by calling `merchantsPort.upsertRule(context, insert)` for each insert (line ~453), which runs the SAME ownership check upsertRule makes for real. Every fast-gate assertion made against this fake for applyRuleWrites is therefore made against a stand-in that is stricter than the adapter it stands in for."
       - "test/e2e/merchant-rule-write.spec.ts:124-134, the one real-Postgres case naming a foreign household, submits an update AND an insert together; the update's own household check (the loop that runs first) throws before the insert statement is ever reached, so this case cannot distinguish 'the insert was refused' from 'the whole batch never got there'. No case in the file submits inserts only."
+      - "WITNESSED LIVE against my own local Postgres database (pulse_r4haz, migrated with `npx prisma migrate deploy`, 6 migrations applied), via a throwaway tsx script calling the real applyRuleWrites directly with updates:[] and one insert whose merchantId belonged to a different household than the calling context's householdId. Captured output: threw undefined; the row was created with householdId equal to the CALLING household and merchantId equal to the OTHER household's merchant; printed line 'RESULT: threw = false ; row created with foreign merchantId = true'. Script written, run, then deleted; git status --short showed a clean tree afterward; the created rows were deleted by the same script before it exited."
     concrete-fix: >-
       Add the same lookup upsertRule already makes, inside the SAME
       transaction, before the insert loop (or per insert, mirroring the
