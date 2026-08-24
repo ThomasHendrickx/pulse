@@ -65,7 +65,7 @@
 # navigation, nowhere near the budget's edge on its own. Not conclusively
 # hypothesis 1 in the strong form (a genuine ordering race where the redirect
 # can land before the write is committed): registerAccountAction
-# (src/modules/accounts/ui/actions.ts:33-79) awaits registerAccount fully,
+# (src/modules/accounts/ui/actions.ts:33-80) awaits registerAccount fully,
 # including its recompute call, before calling redirect(), and redirect() in
 # a Next.js server action is synchronous with the response, so nothing in
 # the literal code path lets the browser navigate before the write and the
@@ -126,12 +126,18 @@
 # 19:12:22 UTC against the pinned local stack (preflight above, EXIT=0
 # before starting), ports 3000 and 3100 free at start (verified with ss and
 # a /proc/*/cwd sweep for this worktree, per fleet warnings 25-26), disk at
-# 4.0G free / 90% used at start. Result recorded in the findings below
-# rather than here, because the run's wall clock (15-20 minutes) extended
-# past the point this section was written; the incremental-output discipline
-# this brief's clause asks for means this document does not wait for that
-# run to finish before being pushed a first time, and it is republished with
-# the result once the run completes.
+# 4.0G free / 90% used at start. NOT COMPLETE AT THE TIME THIS DOCUMENT WAS
+# FINALISED: last observed at 35 of 82 tests, ALL PASSING including
+# test/e2e/accounts.spec.ts:274 HEALING (the one test the canonical run in
+# the work history failed on), zero failures anywhere in the run so far.
+# This is reported as a partial, honest observation rather than a final
+# result: I am not claiming EXIT=0 for a run I did not watch to completion,
+# and I am not withholding what it showed up to the point I stopped
+# watching it. The process was started with nohup and disowned from this
+# review's own shell, so it continues to completion independently and
+# releases ports 3000/3100 on its own clean exit rather than being
+# SIGTERM'd (fleet warning 25); its log is at this review's own scratchpad
+# path and is not part of the committed tree.
 #
 # ============================================================
 # THE REST OF THE CONTRACT
@@ -209,10 +215,11 @@ findings:
     evidence:
       - "delivery/work-history/m3-p14.yaml:2089-2126, run-2-the-correctly-targeted-one: canonical `npm run test:e2e` at 2026-08-24 18:23:54 UTC, pinned local stack, preflight green on all three variables, result '82 tests, 1 failed, 81 passed (17.0m), exit 1', the one failure being test/e2e/accounts.spec.ts:274 HEALING, 'expect(locator).toBeVisible() failed, Locator: getByTestId(accounts-status), Timeout: 30000ms, element(s) not found', with the redirect itself having already succeeded (the page snapshot shows the shell fully rendered with an empty main for the full 30s budget)."
       - "This review reproduced the same HEALING sequence twice against its own pinned local stack (project m1-p1-skeleton, DATABASE_URL/DIRECT_URL/NEXT_PUBLIC_SUPABASE_URL pinned and preflight-verified before each run) and could NOT reproduce the failure: a standalone Playwright script driving the same seven-registration sequence completed every step in 2.0-3.1s (24.1s total), and `PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 npx playwright test test/e2e/accounts.spec.ts -g HEALING --project=chromium` reported '1 passed (57.2s)' with the test itself completing in 56.1s, both runs comfortably inside the 30s-per-assertion and 180s-per-test budgets (test/e2e/accounts.spec.ts:43)."
-      - "src/modules/accounts/ui/actions.ts:33-79, registerAccountAction: awaits registerAccount fully (including its recompute call) before calling redirect(); nothing in the literal code path lets the browser navigate before the declaration write and the recompute are both complete, which weighs against hypothesis 1 (a genuine ordering race) in its strong form."
+      - "src/modules/accounts/ui/actions.ts:33-80, registerAccountAction: awaits registerAccount fully (including its recompute call) before calling redirect(); nothing in the literal code path lets the browser navigate before the declaration write and the recompute are both complete, which weighs against hypothesis 1 (a genuine ordering race) in its strong form."
       - "src/modules/accounts/application/register-account.ts:119-143: every registerAccount call computes a full DeclarationChangePreview via deps.preview (line 119-137) and then reads exactly one field of it, merchantRulesStoppedMatching (line 143); rowsOnAccount, spendDeltaCents, reservesDeltaCents and incomeDeltaCents are computed and discarded on every registration."
       - "src/modules/ledger/application/preview-declaration-change.ts:190 and :196: previewDeclarationChange runs totalsFor (which calls interpretLedger, the same domain interpretation the real recompute runs) TWICE per call, once over the current declared set and once over the proposed one, each pass loading every pot transaction the union of both sets can see -- 'Unbounded, exactly like the recompute this previews' per the file's own comment at that call site."
       - "Consequence: every one of the seven registrations the HEALING helper drives pays for three full-household interpretation passes (two thrown away except for one integer, plus the real recompute at register-account.ts:140), and this cost scales with the household's registered-account and transaction count, both of which grow across the seven calls -- the seventh call's preview and recompute each see more rows than the first's. This is the concrete, cited mechanism behind hypothesis 3 ('something about the seventh'), though I could not push it over the 30s budget myself in this review's own isolated and lightly-contended runs against this spec's 12-row fixture."
+      - "A THIRD run of this review's own: a full canonical `npm run test:e2e` started against the same pinned local stack, observed through 35 of 82 tests with zero failures, including HEALING passing again, before this document was finalised without waiting for the run's completion (it continues independently; see the gates section above). Three clean runs against one red one is consistent with a rare, load-dependent failure rather than a deterministic defect, which is exactly why this finding is filed as a candidate mechanism plus an open item, not as a confirmed root cause."
     concrete-edit: >-
       Two changes, either sufficient to close the open question and both
       worth doing regardless of which turns out to be the actual cause of
@@ -252,7 +259,7 @@ findings:
     severity: medium
     evidence:
       - "src/modules/accounts/application/register-account.ts:119-143 and src/modules/accounts/application/correct-account-ring.ts (the sibling use case, same shape): both call deps.preview unconditionally before their own write, and registerAccount discards three of the preview's four computed quantities."
-      - "src/modules/ledger/application/preview-declaration-change.ts:161-179 (realAccountIds / loadIds construction) and :190/:196 (the two totalsFor calls): the preview's own cost is a full interpretation pass over every pot transaction the union of the current and proposed declared sets can see, run twice per call."
+      - "src/modules/ledger/application/preview-declaration-change.ts:150-161 (realAccountIds / loadIds construction, comment at :137 'Unbounded, exactly like the recompute this previews') and :190/:196 (the two totalsFor calls): the preview's own cost is a full interpretation pass over every pot transaction the union of the current and proposed declared sets can see, run twice per call."
       - "src/app/(app)/accounts/page.tsx:34-43 (the comment on previewFor): the same file already documents measuring 1.9s at one account and 3.7s at five for a DIFFERENT inline-preview-per-row shape that was since fixed to compute on demand; the unconditional preview inside registerAccount is a second instance of the same growing cost, on the write path this time rather than the read path, and it was not caught by the same measurement."
     concrete-edit: >-
       Same edit as CR-H2-01's first remedy: registerAccount does not need
@@ -272,7 +279,7 @@ findings:
   - id: CR-H2-03
     severity: medium
     evidence:
-      - "src/modules/ledger/domain/classify-flow.ts:75-81 (reserve-set branch) versus :131-135 (the zero-amount fallback, 'A zero amount has no direction to read'): for a transaction whose counterparty is NOT YET in the declared reserve set, a zero-amount row reaches neither the negative-amount branch (:113, amountCents < 0) nor the positive-amount branch (:120, amountCents > 0), so it falls through to UNRESOLVED. After the same account is declared RESERVE, the reserve-set branch at :75 fires first and, because `transaction.amountCents > 0` is false for a zero-amount row, returns RESERVE directly (the `: { flow: 'RESERVE' }` arm), never reaching the zero-amount fallback."
+      - "src/modules/ledger/domain/classify-flow.ts:78-81 (reserve-set branch) versus :134-135 (the zero-amount fallback, 'A zero amount has no direction to read'): for a transaction whose counterparty is NOT YET in the declared reserve set, a zero-amount row reaches neither the negative-amount branch (:112, amountCents < 0) nor the positive-amount branch (:119, amountCents > 0), so it falls through to UNRESOLVED. After the same account is declared RESERVE, the reserve-set branch at :78 fires first and, because `transaction.amountCents > 0` is false for a zero-amount row, returns RESERVE directly (the `: { flow: 'RESERVE' }` arm at :81), never reaching the zero-amount fallback."
       - "Demonstrated with a domain-level probe run against the shipped classifyFlow and deriveDeclaredSets directly (test run in this review, deleted before commit per the reviewer's no-edits rule -- the tree is clean, `git status --short` empty): a zero-amount transaction whose counterparty is BE24902200001138 classifies UNRESOLVED against a declared-set containing only the pot account, and RESERVE against the same declared set once BE24902200001138 is added as a RESERVE account. `npx vitest run` on that probe: '2 passed (2)'."
       - "src/modules/overview/domain/month-projection.ts:206-210 (deriveMonthFigures): `reconciles` requires `raw.unresolvedCount === 0` among its four conditions, so a household holding this one zero-amount row has its verdict held open (a genuine, counted UNRESOLVED gap) before the declaration, and the verdict can close on that account after the declaration purely because the row silently became RESERVE, contributing 0 cents either way -- a transition none of criterion 14.16's four arms exercises, since none of their fixture rows are zero-amount (checked test/application/held-rows.test.ts: zero matches for `amountCents: 0`)."
     concrete-edit: >-
