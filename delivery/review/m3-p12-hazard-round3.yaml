@@ -17,8 +17,249 @@ review-contract: hazard
 #      npm run gate:privacy exit 0  "gate:privacy clean"
 #      npm run gate:tokens exit 0
 # 4. Next: local database, e2e, and the three attack surfaces.
+# 5. Created my own local database pulse_r3haz on the running local supabase
+#    Postgres (127.0.0.1:54322), pinned DATABASE_URL/DIRECT_URL and the three
+#    supabase values on every invocation, migrated and seeded it. The ambient
+#    DATABASE_URL in this container points at a foreign Supabase project and
+#    was never used by any writing command.
+# 6. Witnessed: the target interlock refuses every local connection (exit 3).
+# 7. Witnessed: applyRuleWrites commits and a recompute rejection leaves the
+#    committed rewrite behind, while the script's failure handler says nothing
+#    was written.
+# 8. Witnessed: the same-merchant twin skip leaves a bare pattern that turns a
+#    later ordinary re-naming into a permanent merchant-conflict plus a LOST
+#    assignment that never happened.
+# 9. Reproduced criterion 12.2's numbers and the truncation residual on the
+#    two real documents, in memory, counts only.
 
-findings: []
+findings:
+  - id: CR3-M3P12-01
+    severity: high
+    analysis: >-
+      THE TWIN SKIP LEAVES A DEAD DECLARATION THAT THE ROUTINE'S OWN
+      BEFORE-SET STILL READS AS LIVE, AND THE NEXT ORDINARY NAMING TURNS IT
+      INTO A PERMANENT BLOCK ON A LOSS THAT NEVER HAPPENED. Pass one, on
+      finding a same-merchant claimant for the pattern it would write, leaves
+      the source rule exactly as it is and records
+      already-held-by-same-merchant-twin at
+      src/modules/merchants/application/rederive-rules.ts:427. That decision
+      is safe for assignments while both rules point at one merchant, and I
+      witnessed that. What it also does is leave an un-namespaced pattern in
+      merchant_rules permanently, and the shipped matcher can never apply one
+      again, because every key it is handed now carries a lowercase namespace
+      and normaliseCounterparty emits no lowercase letter. The routine,
+      however, still reads that dead row as a live declaration: keyForRule at
+      src/modules/merchants/application/rederive-rules.ts:271 sends any
+      un-namespaced pattern to the BASELINE key, and assignmentSet at
+      src/modules/merchants/application/rederive-rules.ts:288 tries the
+      un-namespaced rules FIRST, so the before-set credits the dead rule with
+      rows the deployed resolver never gave it. The state that makes this
+      bite is the one decision D-46's deploy window creates and the fix
+      round's own commit message names as the reachable seed: the owner's
+      pre-migration rule matches nothing, the group shows unresolved, the
+      owner names it again. If the owner names it with the SAME merchant the
+      run is clean. If the owner names it with a DIFFERENT merchant, which is
+      one form submission on the shipped screen and which upsertRule applies
+      by updating the row's merchantId at
+      src/modules/merchants/adapters/merchant-repository.ts:106, then every
+      later run of the migration reports a MERCHANT CONFLICT on the dead rule
+      AND a LOST assignment for a transaction that in production carries the
+      owner's current merchant and never carried the old one after the
+      deploy. Exit 1, applied false, and the whole write set is withheld:
+      every other rule of that household stays un-namespaced and every
+      promotion is withheld too, for as long as the operator does not pass
+      --accept for that rule id. Deleting the dead rule is forbidden by
+      decision D-39, so the condition never clears on its own. This is the
+      same class of defect round two found one layer down: the decide phase
+      modelling something the real world does not agree with. There the
+      working copy did not model the unique key; here the before-set does not
+      model that a pattern the matcher can never apply is not an assignment.
+    evidence:
+      - "Witnessed against my own pinned local database pulse_r3haz on 127.0.0.1:54322, seeded with one household, two counted transactions, one merchant and one EXACT rule whose pattern is un-namespaced. Step 1, the twin case: a second EXACT rule carrying the descriptor-namespaced form of the same pattern for the SAME merchant. Calling rederiveMerchantRules through the real merchantRepository printed: rule e1 pass=one basis=descriptor outcome=already-held-by-same-merchant-twin; rule e2 pass=one basis=descriptor outcome=descriptor-namespaced; applied true exit 0 rewritten 0 added 0 twin [e1] before 1 after 1 lost []."
+      - "Step 2, the same table with the namespaced rule pointing at a SECOND merchant, which is what one further naming of that group produces through upsertRule: rule e1 pass=one basis=descriptor outcome=merchant-conflict; applied false exit 1 rewritten 0 added 0 twin [] before 1 after 1 lost [{transactionId c1, ruleId e1}]. Nothing was written, and the reported loss is against a rule the shipped matcher cannot apply."
+      - "Step 3, the escape: the same call with acceptedRuleIds naming e1 printed outcome=merchant-conflict-accepted, applied true, exit 0, lost []. So the block is escapable only by a person naming the id on every future run."
+      - src/modules/merchants/application/rederive-rules.ts:427 is the twin skip; src/modules/merchants/application/rederive-rules.ts:271 is keyForRule; src/modules/merchants/application/rederive-rules.ts:288 is the un-namespaced-first before-set; src/modules/merchants/application/rederive-rules.ts:591 is the exit code.
+      - "src/modules/merchants/domain/merchant-rule.ts:98 through :116 is why an un-namespaced pattern can never match again: every key carries a namespace and the comparison is equality, startsWith or an anchored glob."
+    concrete-fix: >-
+      In pass one, when claimant returns a rule of the same kind holding the
+      pattern this rule would be rewritten to, treat the SOURCE rule as
+      SUPERSEDED rather than as a live declaration, whichever merchant the
+      claimant carries. Give it one outcome token per case, keep the existing
+      already-held-by-same-merchant-twin for the same-merchant case and add a
+      superseded-by-namespaced-rule token for the different-merchant one, and
+      exclude every superseded rule id from the before-set that assignmentSet
+      at src/modules/merchants/application/rederive-rules.ts:314 computes, so
+      the superset test measures only declarations the deployed matcher can
+      still apply. Do NOT exclude un-namespaced rules from the before-set in
+      general: on the first run they are all un-namespaced and the before-set
+      is the whole point of criterion 12.7. Keep the different-merchant case
+      PRINTED and counted, because the operator should see that a rule was
+      superseded, but stop calling it a merchant conflict a person must
+      settle and stop reporting a lost assignment for a row whose merchant
+      the owner themselves changed.
+  - id: CR3-M3P12-02
+    severity: high
+    analysis: >-
+      THE COMMAND TELLS THE OPERATOR NOTHING WAS WRITTEN ON A PATH WHERE THE
+      WHOLE WRITE SET IS COMMITTED. The apply block issues the rule writes
+      through one port member the adapter runs inside prisma.$transaction and
+      then runs the recompute OUTSIDE it, at
+      src/modules/merchants/application/rederive-rules.ts:618 and :622. The
+      recompute is deliberately outside and the reasoning for that is sound.
+      What is not sound is what the command says when it rejects. The
+      rejection handler at scripts/rederive-merchant-rules.ts:248 prints,
+      unconditionally and for every rejection, that the rule writes are
+      applied in one transaction, so a failure inside them wrote nothing and
+      the table is as this run found it. When the rejection comes from the
+      recompute that sentence is false in both halves: the pattern rewrites
+      and the inserted rules are committed, and the table is NOT as the run
+      found it. The header states the same thing as a general property at
+      scripts/rederive-merchant-rules.ts:46, that a failure anywhere rolls
+      back every write that preceded it, three lines before it says the
+      recompute is outside that transaction. And because the report is
+      printed only after rederiveMerchantRules returns, a recompute rejection
+      prints NO decision report at all, so the operator has an exit 1, a
+      sentence saying nothing happened, and no record of which patterns were
+      rewritten. The harm is not the state itself, which a re-run converges
+      out of, it is what a person does with a false report: the state left
+      behind is a fully migrated declaration table under an application whose
+      interpretation output is stale, and the response a false "nothing
+      happened" invites is rolling the code deploy back, which is the one
+      action that turns every migrated pattern into a rule that matches
+      nothing under the pre-deploy derivation. Clause R-087 is explicit that
+      a document or comment asserting a present-tense fact nothing keeps true
+      is a finding rather than a note.
+    evidence:
+      - "Witnessed against my own pinned local database pulse_r3haz. rederiveMerchantRules was called through the real merchantRepository with a recompute dependency that throws. Output: THREW: RECOMPUTE FAILED (simulated). The table afterwards, read with psql: the single rule's pattern had become the descriptor-namespaced form, committed, and both transactions still carried a null merchant id."
+      - scripts/rederive-merchant-rules.ts:248 through :250 is the unconditional claim printed on every rejection.
+      - scripts/rederive-merchant-rules.ts:41 through :49 is the header claim that a failure anywhere rolls back every write that preceded it.
+      - src/modules/merchants/application/rederive-rules.ts:618 is applyRuleWrites and src/modules/merchants/application/rederive-rules.ts:622 is the recompute outside it.
+    concrete-fix: >-
+      Make the routine tell the caller which side failed rather than making
+      the script assert one answer for both. Wrap only the recompute call at
+      src/modules/merchants/application/rederive-rules.ts:622 so a rejection
+      there is rethrown as a distinguishable error carrying the fact that the
+      rule writes COMMITTED, and print the decision report before rethrowing,
+      so the operator gets the record of what was rewritten. In the script's
+      rejection handler at scripts/rederive-merchant-rules.ts:248 replace the
+      unconditional sentence with two: for a failure inside the rule writes,
+      the present sentence; for a failure after them, that the rule writes
+      are committed, the interpretation output is stale, the rows will show
+      as unresolved until a recompute completes, and the fix is to re-run
+      this command rather than to roll the code back. Correct the header at
+      scripts/rederive-merchant-rules.ts:46 so it does not say a failure
+      anywhere rolls back every write.
+  - id: CR3-M3P12-03
+    severity: medium
+    analysis: >-
+      THE INTERLOCK DOES NOT RESOLVE THE ENVIRONMENT THE WAY THE COMMAND IT
+      GUARDS RESOLVES IT, AND THE FILE THAT WAS EXTRACTED TO MAKE THAT TRUE
+      SAYS IT DOES. Criterion 12.23 requires the target interlock to resolve
+      the connection the way the command it guards resolves it, and calls an
+      interlock that does not decorative. src/platform/db/resolve-env.ts:12
+      through :17 states the reading as Prisma's: shell first, and the .env
+      file at the package root for a variable the shell does not carry or
+      carries empty. That is the PRISMA CLI's reading, and it is correct for
+      guard-cli.ts, which guards prisma migrate reset and prisma migrate dev.
+      It is NOT the reading of the command the target interlock guards. That
+      command is tsx scripts/rederive-merchant-rules.ts, and its connection
+      is opened by new PrismaClient() at src/platform/db/client.ts, which
+      reads process.env and nothing else; nothing in the tree loads dotenv,
+      and the npm script at package.json:20 adds no env loading either. So
+      when the shell does not carry DATABASE_URL, or carries it empty, the
+      interlock reads a value out of .env, checks THAT against the operator's
+      two arguments and can APPROVE, while the routine then opens a different
+      connection or none at all. The direction is fail closed today, because
+      the routine cannot connect at all in that case, so I am not claiming a
+      wrong-database write. What I am claiming is that the equivalence the
+      criterion demands and the file asserts does not hold, and that a
+      reader of resolve-env.ts:12 will believe it does.
+    evidence:
+      - "Witnessed: in a temporary directory containing a .env carrying a DATABASE_URL, with DATABASE_URL unset in the shell, node -e requiring the worktree's @prisma/client printed: after import @prisma/client, DATABASE_URL = undefined. So the client does not read .env."
+      - "grep -rn for dotenv or loadEnvFile over src, scripts, prisma and package.json returned nothing, so no other module loads it either."
+      - src/platform/db/resolve-env.ts:12 through :17 is the claim; src/platform/db/resolve-env.ts:40 is the implementation; src/platform/db/client.ts:36 is where the client is constructed.
+      - package.json:20 is the invocation, tsx scripts/rederive-merchant-rules.ts, with no env loading around it.
+    concrete-fix: >-
+      Either make the claim true or make it accurate. The smaller change is
+      accuracy: amend the comment at src/platform/db/resolve-env.ts:12 to say
+      that the .env fallback matches the PRISMA CLI, which is what guard-cli
+      guards, and that for a tsx entry point the client reads process.env
+      only, so the fallback branch can only ever approve a target the routine
+      will fail to open. The stronger change, and the one criterion 12.23
+      actually asks for, is to have the script resolve DATABASE_URL once and
+      pass the SAME string both to assessRederiveTarget and to the
+      PrismaClient it constructs, through a datasource override, so the
+      string that was checked is by construction the string that is opened.
+  - id: CR3-M3P12-04
+    severity: medium
+    analysis: >-
+      THE ONE GUARD applyRuleWrites CARRIES FIRES AFTER ITS OWN TRANSACTION
+      HAS COMMITTED. The adapter runs the updates and the inserts inside
+      prisma.$transaction at
+      src/modules/merchants/adapters/merchant-repository.ts:167, then
+      inspects the updateMany counts and throws when a rule did not belong to
+      the household, at
+      src/modules/merchants/adapters/merchant-repository.ts:185 through :192.
+      The throw is outside the transaction callback, so by the time it runs
+      the inserts and the other updates are committed. On the one path this
+      check exists for, a rule id that is not this household's, the caller
+      gets an exception, the script prints its unconditional "wrote nothing"
+      sentence, and the table is half migrated. It is the exact shape round
+      two found in the decide phase, surviving one layer down in the adapter
+      the fix round added. The path is not reachable through the routine
+      today, because the ids come from listRules on the same context, which
+      is why this is medium and not high; it is reachable the moment any
+      other caller uses this port member, and the port member is exported.
+    evidence:
+      - src/modules/merchants/adapters/merchant-repository.ts:167 opens the transaction and src/modules/merchants/adapters/merchant-repository.ts:184 closes it.
+      - src/modules/merchants/adapters/merchant-repository.ts:185 through :192 is the household check, after the await, therefore after the commit.
+      - "The tenancy rule it enforces is CLAUDE.md non-negotiable 6, and the sibling write in the same file does it correctly INSIDE the transaction: src/modules/merchants/adapters/merchant-repository.ts:84 through :91."
+    concrete-fix: >-
+      Move the check inside the transaction, as upsertRule already does at
+      src/modules/merchants/adapters/merchant-repository.ts:84. Use the
+      interactive form, prisma.$transaction(async (tx) => ...), issue each
+      updateMany with the household in its where clause, and throw from
+      inside the callback the moment a count comes back zero, so the
+      rollback is the database's and the caller's "nothing was written"
+      contract is true on this path as well.
+  - id: CR3-M3P12-05
+    severity: medium
+    analysis: >-
+      THE MIGRATION CANNOT BE REHEARSED AGAINST ANY DATABASE AN OPERATOR CAN
+      CREATE, AND THE COMMAND'S OWN CONTRACT DOES NOT SAY SO. The interlock
+      refuses a connection carrying no project ref in either the username or
+      the host, at src/platform/db/target-guard.ts:163 through :169, and that
+      refusal is what criterion 12.23 demands. Its consequence is that no
+      local connection can ever be approved: a local URL carries the bare
+      word postgres as its username and a host that is neither db-prefixed
+      nor four labels long. I witnessed the refusal through the shipped
+      invocation point. So the first execution of this routine through its
+      own npm script, on any machine, is necessarily against the owner's
+      deployed project, and the write path that reaches
+      src/modules/merchants/adapters/merchant-repository.ts:167 has never
+      been exercised through the command that ships it. That is a real
+      residual for a migration over the owner's only declarations, and the
+      places a reader meets the command say nothing about it: the header at
+      scripts/rederive-merchant-rules.ts:1 through :74 describes the exit
+      codes, the destructive authority, the deploy order and the interlock,
+      and never says the command cannot be pointed at a local database. The
+      work history's deviations record the deployed run as owed under
+      criterion 12.17 but do not record that a local rehearsal is impossible.
+    evidence:
+      - "Witnessed with my own pinned local database: npm run rederive:merchant-rules -- --expect-host 127.0.0.1 --expect-ref pulse_r3haz --household <the seeded id> --dry-run printed: rederive-merchant-rules: the resolved connection carries no project ref in its username and none in its host, so it matches neither endpoint shape this interlock understands. Refusing as unparseable. Exit 3."
+      - src/platform/db/target-guard.ts:163 through :169 is the refusal; src/platform/db/target-guard.ts:100 through :107 is why a local host yields no ref; src/platform/db/target-guard.ts:83 through :90 is why a local username yields none.
+      - scripts/rederive-merchant-rules.ts:1 through :74 is the command's own contract, which does not state the consequence.
+    concrete-fix: >-
+      Do not weaken the interlock and do not add an override; the refusal is
+      what criterion 12.23 buys. State the consequence where the operator
+      meets it, in the header at scripts/rederive-merchant-rules.ts:57, in
+      one sentence: this command can only be pointed at an endpoint that
+      carries a project ref, so it cannot be run against a local database,
+      and a rehearsal of the write path belongs in the application-level
+      tests rather than in a local invocation. Record the same sentence as a
+      residual in the phase work history beside the deployed-run deviation,
+      so the person who runs it at deploy time knows the write path's first
+      execution through this command is that run.
 criteria: []
 deviations-judged: []
 hazard-classes-addressed:
