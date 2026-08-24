@@ -320,6 +320,35 @@ findings:
       HZ-M3P12-06 already bought one level up, where a promotion backed by one
       row was given its own token rather than being folded into "promoted".
 
+  - id: CR5-M3P12-12
+    severity: medium
+    evidence:
+      - "This lane's partial npm run test:e2e reached test 36 of 55 with 30 passed and 6 failed: test/e2e/month-view.spec.ts:120, :172, :252, :840 and :1229 under chromium and :120 under chromium-phone. Load average at start 3.20 5.40 5.16 on four cores, three concurrent fleet lanes, 1.8G free of 252G."
+      - "Every failure is a 5000ms timeout on a SETUP step, read from the retained error-context artifacts: five on getByRole('heading', { name: 'Confirm the detected format' }) and one on getByTestId('household-context'), all \"element(s) not found\"."
+      - "None of the six is an assertion about a total, a group, a merchant, an identity key or a rule, which is what a regression from this phase would look like."
+      - "The implementer's own run on a quieter machine reports 55 passed, 0 failed, exit 0 at load 4.25, and the previous four rounds each recorded e2e instability of exactly this shape, which fleet warning 18 attributes to fleet contention rather than to the implementation."
+      - "This phase does change src/modules/overview/domain/month-projection.ts, src/modules/overview/adapters/overview-repository.ts and src/modules/overview/ui/month-view.tsx, so month-view.spec.ts is not a file this phase may dismiss as unrelated the way earlier rounds dismissed auth and import."
+    concrete-fix: >-
+      Get ONE npm run test:e2e on a machine where no other lane holds ports
+      3000 and 3100, and record its exit code. That is an orchestrator action,
+      not an implementer one, and it is the only thing standing between
+      criterion 12.14 and met. If that run is green, this finding closes with
+      nothing to change. If any month-view spec fails on it, the 5000ms
+      expects in the setup half of test/e2e/month-view.spec.ts should be given
+      an explicit longer timeout for the two server round trips they wait on,
+      so a slow first compile stops presenting as a product failure and the
+      suite's reds mean what they say.
+    analysis: >-
+      Recorded as a finding rather than folded into criterion 12.14's prose
+      because it is the one thing this lane observed that it could not
+      attribute, and an unattributed red is worth a line someone has to close.
+      The evidence points at contention: one timeout bound, setup steps only,
+      three lanes on four cores, and the same symptom in four previous rounds.
+      But this lane will not certify that from a run that was interrupted
+      mid-session and whose database it then dropped, and it will not write
+      "unrelated to this phase" about a spec file whose subject this phase
+      edits. What it can say is what it saw and what would settle it.
+
 criteria:
   - id: "12.1"
     quote: >-
@@ -493,8 +522,11 @@ criteria:
     evidence:
       - "THE FIVE FAST GATES ARE MET. Run by this lane, every invocation pinned to its own local database. npm run typecheck: exit 0, tsc --noEmit, no output. npm run lint: exit 0, eslint ., no output. npm test: exit 0, \"Test Files 41 passed (41)\", \"Tests 624 passed (624)\", duration 21.52s. npm run gate:privacy: exit 0, printed \"gate:privacy clean\". npm run gate:tokens: exit 0, no match."
       - "THE E2E HALF IS NOT WITNESSED BY THIS LANE, and it is recorded as not witnessed rather than as red or as met. This lane made two attempts. The first was refused in seconds by Playwright itself: \"http://127.0.0.1:3100 is already used\", because a sibling lane held the committed ports; this lane did not free them and did not move its own, because reuseExistingServer is deliberately false and moving ports introduces a confound the run would then have to carry. It waited through 36 thirty-second polls."
-      - "The second attempt started 2026-08-24 17:23:29 UTC once the ports were released, at load average 3.20 5.40 5.16 on four cores with 1.8G free of 252G, on the committed ports, with no filter and no retries. It got through 13 of 55 tests with 13 passed and 0 failed, INCLUDING the two that matter most here: test/e2e/golden-journey.spec.ts:79 green in 23.0s, and test/e2e/merchant-rule-write.spec.ts:76, this phase's database contract spec, green. The process was then killed by an infrastructure fault in this lane's own session, not by a test, not by a timeout and not by the suite: the log ends mid-suite with no failure line and no exit code."
-      - "So this lane has no exit code to report for npm run test:e2e and does not report one. What it can report is that nothing had failed at the point it stopped, and that no failure of any kind was observed in this window. Fleet warning 18 asks what the load was before what the code did; the load was 3.20 and the contention was three lanes on two ports, which the orchestrator has confirmed is its own."
+      - "The second attempt started 2026-08-24 17:23:29 UTC once the ports were released, at load average 3.20 5.40 5.16 on four cores with 1.8G free of 252G, on the committed ports, with no filter and no retries. It reached test 36 of 55 with 30 PASSED and 6 FAILED before this lane's own cleanup terminated it with SIGTERM, exit 143. The exit code is this lane's kill and not the suite's, so no exit code is claimed for npm run test:e2e."
+      - "THE SIX FAILURES ARE REPORTED RATHER THAN DROPPED, and an earlier draft of this entry said 13 passed and 0 failed because it was written from the log as it stood at the moment this lane was interrupted; the run continued afterwards and that sentence was wrong. It is corrected here rather than left. The six are test/e2e/month-view.spec.ts:120, :172, :252, :840 and :1229 under chromium, and :120 again under chromium-phone."
+      - "WHAT THEY FAILED ON, read out of the retained error-context artifacts rather than inferred: every one is a 5000ms expect on a SETUP step, not on an assertion about anything this phase changed. Five are \"expect(locator).toBeVisible() failed, Locator: getByRole('heading', { name: 'Confirm the detected format' }), Timeout: 5000ms, element(s) not found\", which is the import declaration step; the sixth is \"expect(locator).toHaveText(expected) failed, Locator: getByTestId('household-context'), Timeout: 5000ms, element(s) not found\", which is the sign-up step. Not one of them is an assertion about a total, a group, a merchant, an identity key or a rule."
+      - "WHY THAT MATTERS AND WHERE IT STOPS. It matters because month-view.spec.ts is NOT a file this phase can wave away the way earlier rounds waved away auth and import flakes: this branch changes src/modules/overview/domain/month-projection.ts, src/modules/overview/adapters/overview-repository.ts and src/modules/overview/ui/month-view.tsx, so a month-view regression would be this phase's. It stops because the failures are all in the fixture-setup half, at one 5000ms bound, on a machine carrying three concurrent lanes, in a run that was also interrupted mid-session; the same 5000ms household-context symptom is the first thing the work history's own first full run recorded. The evidence points at contention and away from this phase's logic, and this lane says that with its evidence attached rather than asserting it."
+      - "This lane CANNOT settle it, and does not pretend to: it dropped its own database as part of cleanup before the failures were understood, so a re-run from here would be a different experiment. Raised as finding CR5-M3P12-12 so it is owed by a clean run rather than by this document's confidence."
       - "The implementer's own recorded run is at delivery/work-history/m3-p12.yaml onward in the gate-evidence section: 55 passed, 0 failed, exit 0, 12.1m, load average 4.25 4.62 5.16 on four cores, disk at 91 percent with 3.6G free, golden journey passing in 28.1s after failing in three earlier windows under load. This lane's partial run is consistent with it and contradicts it nowhere, but a partial run is not an independent confirmation and is not counted as one. The criterion is marked NOT MET for want of a witness, not for a failure."
   - id: "12.15"
     quote: >-
@@ -1092,7 +1124,11 @@ deviations-judged:
 #      3000 and 3100, producing an exit code. Neither this lane nor, per the
 #      orchestrator, the M3-P14 lane could get one in this window. That is an
 #      orchestrator problem, not an implementer one, and it is the only thing
-#      keeping criterion 12.14 from met.
+#      keeping criterion 12.14 from met. This lane's own partial run showed 30
+#      passed and 6 failed, all six 5000ms timeouts on setup steps in
+#      month-view.spec.ts, which is finding CR5-M3P12-12: the evidence points
+#      at contention and this lane will not certify that from an interrupted
+#      run, so the clean run settles it either way.
 #   4. Everything else here is carryable. CR5-M3P12-05 and CR5-M3P12-06 belong
 #      to phases that own those files, not to M3-P12.
 #
