@@ -148,6 +148,57 @@ findings:
       assert the account-basis row IS reported as a lost assignment while
       the descriptor-basis row is not, so criterion 12.7's own superset test
       is what proves the fix rather than a manual read of the diff.
+# 6. ATTACK SURFACE 2, THE COMMITTED-THEN-FAILED PATH. Read
+#    scripts/rederive-merchant-rules.ts:41-74 (the two-exit-code contract)
+#    and src/modules/merchants/application/rederive-rules.ts:709-724
+#    (applyRuleWrites then a separately-caught recompute, thrown as
+#    RederiveRecomputeError carrying the report and writesCommitted=true).
+#    Matches CR3-M3P12-02's concrete-fix closely: exit 4 is distinguishable
+#    from exit 1, the decision report prints before the failure message, the
+#    header no longer claims a blanket rollback, and the operator is told to
+#    re-run rather than roll the deploy back.
+#    WITNESSED two re-run scenarios end to end with the REAL fake world (the
+#    committed belfius-counterparty-identity.pdf fixture through
+#    makeFakeImportWorld, the real recomputeInterpretation, not a
+#    description), via two more throwaway vitest files, run then deleted
+#    (git status --short clean afterward both times):
+#      (a) a single un-namespaced rule with no twin and no promotion
+#          eligible: run 1 with a throwing recompute committed the pattern
+#          rewrite (confirmed by reading world.rules) and threw
+#          RederiveRecomputeError; run 2, with a real working recompute,
+#          returned exitCode 0, patternsRewritten 0 (nothing left to
+#          rewrite), and the transaction resolved to the right merchant
+#          (targetRow.merchantId === merchant.id) after run 2's own
+#          recompute completed. Converges cleanly.
+#      (b) two un-namespaced rules whose promotion succeeds: run 1 (throwing
+#          recompute) committed BOTH pattern rewrites AND both promoted
+#          account rules (2 EXACT account: rules present, confirmed by
+#          reading world.rules), then threw RederiveRecomputeError. Run 2
+#          (real recompute) did NOT throw, did not re-insert a duplicate
+#          account rule (count stayed at 2, same rule ids rule-31/rule-32),
+#          rulesAdded 0, patternsRewritten 0, exitCode 0. The claimant check
+#          at pass two (src/modules/merchants/application/rederive-rules.ts:557)
+#          correctly finds the already-inserted SAME-merchant account rule on
+#          the second pass and skips the insert rather than colliding or
+#          duplicating.
+#    ALSO NOTED, not a finding but worth recording: even in scenario (a), the
+#    row is UNRESOLVED (merchantId undefined) BEFORE the routine runs at
+#    all, confirming empirically that an un-namespaced pattern is dead in the
+#    shipped resolver from the moment it exists, not only once superseded.
+#    This is the D-46 deploy window working as documented, not a defect.
+#    CONCLUSION: for the two shapes tested (a clean rewrite, and a rewrite
+#    plus promotion), a re-run after a committed-then-failed run IS safe and
+#    DOES converge: no duplicate writes, no thrown error on retry, correct
+#    final resolution. I did not find a NEW hazard specific to the retry
+#    mechanism itself. The one real hazard in this area is CR4-M3P12-01
+#    above (the superseded-exclusion silent loss), which is a DECIDE-phase
+#    defect independent of whether recompute fails on the first attempt or
+#    not; I did not additionally probe "retry after commit" combined with
+#    the superseded-twin shape specifically, since the loss in CR4-M3P12-01
+#    is present on the FIRST run already and retrying does not change it
+#    (the silently-dropped rows are never in the decide phase's candidate
+#    set at all, on any run).
+
 criteria: []
 deviations-judged: []
 hazard-classes-addressed: []
