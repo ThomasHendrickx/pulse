@@ -42,38 +42,54 @@ import {
 const FIXTURE_DIRECTORY = resolve(fileURLToPath(new URL(".", import.meta.url)));
 
 // A LABEL THAT CANNOT CARRY AN IDENTIFIER OUT OF A REAL DOCUMENT, and in fix
-// round eight that is enforced rather than asserted (CRITERIA finding
-// CR6-M3P12-02, clause R-087).
+// round nine that is decided by PROVENANCE rather than by spelling (HAZARD
+// finding CR7-M3P12-01, clause R-087).
 //
-// WHAT THIS COMMENT USED TO SAY, and it was a bare claim with nothing checking
-// it: "A label that can never carry an identifier out of a real document." The
-// implementation returned the basename for a path under test/fixtures and the
-// FIRST EIGHT CHARACTERS of the basename for anything else. Eight characters
-// is safe only for a file carrying this fleet's renaming convention, an
-// eight-hex handle followed by a hyphen. It is NOT safe for a real bank export,
-// whose file name embeds an account number that LEADS the basename: handed one
-// of those, this function emitted the country code, the check digits and the
-// first four digits of the account. In a repository whose privacy gate exists
-// because two real merchant descriptors already reached it, a false privacy
-// claim is worse than no claim.
+// TWO THINGS THIS COMMENT HAS SAID AND BOTH WERE WRONG, quoted because the
+// second was written as the fix for the first and repeated its mistake one
+// level up.
 //
-// SO THE CLAIM IS MADE TRUE. A committed fixture is labelled by its basename,
-// which is invented by construction and reviewable in the tree. ANY OTHER PATH
-// is labelled by its leading eight characters ONLY IF those are eight hex
-// digits, which is the fleet handle and nothing else; otherwise the label is a
-// fixed placeholder that identifies nothing. A caller measuring a real upload
-// still gets a stable label per file when the fleet renamed it, and gets
-// silence when it did not.
-const FLEET_HANDLE = /^[0-9a-f]{8}$/;
+// IT FIRST SAID: "A label that can never carry an identifier out of a real
+// document", over an implementation that returned the first eight characters
+// of any outside basename. A real bank export leads its file name with an
+// account number, so for such a file those eight characters were eight
+// characters of it.
+//
+// IT THEN SAID the claim was "enforced rather than asserted", over an
+// implementation that returned those eight characters whenever they matched
+// /^[0-9a-f]{8}$/, the shape of this fleet's renaming handle. THAT IS THE SAME
+// ERROR, one case fold away: BELGIUM'S COUNTRY CODE LOWERCASES INTO THE HEX
+// ALPHABET. `BE68539007547034-...` was refused and `be68539007547034-...`, the
+// same digits, returned `be685390`, which is the country code, both check
+// digits and four digits of the account. The owner banks with Belgian
+// institutions and many upload pipelines lowercase file names.
+//
+// WHY BOTH FAILED THE SAME WAY: each asked what the name LOOKS LIKE. "Looks
+// like a bank filename" and "looks like a fleet handle" are both shape. The
+// identity of a fleet handle is its PROVENANCE, that the fleet named this
+// file, and provenance is not recoverable from the spelling of the name.
+//
+// SO NOTHING IS DERIVED FROM AN OUTSIDE NAME AT ALL. There are exactly two
+// sources of a label and both are facts about the invocation rather than
+// guesses about a string:
+//
+//   A COMMITTED FIXTURE is labelled by its basename. Its provenance is that
+//   it is in this repository, so every byte of that name is already public and
+//   reviewable in the tree.
+//
+//   ANY OTHER PATH is labelled by its ORDINAL POSITION in the invocation,
+//   which the operator chose and which carries no byte of the file name. It
+//   distinguishes several documents in one run, which is what the label is
+//   for, and it can leak nothing because it is not derived from the document.
+//
+//   A caller that supplies no ordinal gets UNLABELLED. Fail closed.
 export const UNLABELLED = "unlabelled";
 
-export const measurementLabel = (path: string): string => {
-  const name = basename(path);
+export const measurementLabel = (path: string, ordinal?: number): string => {
   if (resolve(path).startsWith(`${FIXTURE_DIRECTORY}/`)) {
-    return name;
+    return basename(path);
   }
-  const leading = name.slice(0, 8);
-  return FLEET_HANDLE.test(leading) ? leading : UNLABELLED;
+  return ordinal === undefined ? UNLABELLED : `document-${ordinal}`;
 };
 
 export type IdentityMeasurement = {
@@ -145,17 +161,24 @@ export const measureRows = (
   };
 };
 
-export const measureFile = async (path: string): Promise<IdentityMeasurement> => {
+export const measureFile = async (
+  path: string,
+  ordinal?: number,
+): Promise<IdentityMeasurement> => {
   const bytes = new Uint8Array(readFileSync(path));
   const detected = await statementParser.detect(bytes);
   if (!detected.ok) {
-    throw new Error(`detect failed for ${measurementLabel(path)}: ${detected.error.kind}`);
+    throw new Error(
+      `detect failed for ${measurementLabel(path, ordinal)}: ${detected.error.kind}`,
+    );
   }
   const parsed = await statementParser.parse(bytes, detected.value);
   if (!parsed.ok) {
-    throw new Error(`parse failed for ${measurementLabel(path)}: ${parsed.error.kind}`);
+    throw new Error(
+      `parse failed for ${measurementLabel(path, ordinal)}: ${parsed.error.kind}`,
+    );
   }
-  return measureRows(measurementLabel(path), parsed.value.rows);
+  return measureRows(measurementLabel(path, ordinal), parsed.value.rows);
 };
 
 export const formatMeasurement = (m: IdentityMeasurement): string =>
@@ -187,12 +210,16 @@ const main = async (paths: readonly string[]): Promise<number> => {
     return 2;
   }
   let failures = 0;
-  for (const path of paths) {
+  for (const [index, path] of paths.entries()) {
+    // THE ORDINAL IS THE INVOCATION'S OWN, one-based and in argument order, so
+    // a run over several real documents can tell them apart without any of
+    // them contributing a character to the output.
+    const ordinal = index + 1;
     try {
-      console.log(formatMeasurement(await measureFile(path)));
+      console.log(formatMeasurement(await measureFile(path, ordinal)));
     } catch (error) {
       failures += 1;
-      console.log(`file ${measurementLabel(path)}`);
+      console.log(`file ${measurementLabel(path, ordinal)}`);
       const reason =
         error instanceof Error
           ? (error.message.split(":").pop()?.trim() ?? "error")

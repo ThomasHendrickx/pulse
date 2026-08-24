@@ -28,6 +28,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { scoreMutantRun } from "./mutant-scoring";
 
 const root = join(import.meta.dirname, "..", "..");
 const target = join(
@@ -197,54 +198,12 @@ const runProperty = (): { failed: boolean; report: string } => {
   }
 };
 
-// The two properties, named so the record says WHICH one caught each mutant.
-const FIRST = "the loss set and the claimant-merchant class";
-const SECOND = "every published claimant pair and every published promotion pair";
-
-// ATTRIBUTION READS THE FAILURE LINES AND NOT THE WHOLE OUTPUT. Vitest prints
-// every test's title on a pass as well as a failure, so a substring search
-// over the report says both properties caught every mutant, which is the
-// opposite of the thing this harness exists to establish.
-// A CRASH IS NOT A CATCH (fix round eight, CRITERIA finding CR6-M3P12-01).
-// This file's own comment on M1 already stated the principle, that a mutant
-// which crashes proves nothing about the properties, and then left it as
-// prose: the only thing that decided a catch was vitest exiting non-zero, and
-// a file that DIES exits non-zero exactly as readily as one whose assertion
-// fired. A compile error, an import failure, a timeout or a throw inside
-// runOnce all satisfied it, and the harness reported "counted as CAUGHT" and
-// exited 0.
-//
-// THAT IS THE SHAPE-NOT-IDENTITY ERROR, in the instrument built to defend
-// against it: the check matched the SHAPE of a failure, a FAIL line bearing
-// the right title, rather than its IDENTITY, an assertion raised by the
-// property. So the identity is what is now required. A catch needs an
-// AssertionError; a non-zero exit without one is a HARNESS failure, counted
-// and reported as the mutant having died rather than having been caught.
-const summarise = (
-  report: string,
-): { properties: string[]; message: string; assertionFired: boolean } => {
-  const failed = report
-    .split("\n")
-    .filter((line) => line.trimStart().startsWith("FAIL"))
-    .map((line) => line.trim());
-  const properties: string[] = [];
-  if (failed.some((line) => line.includes(FIRST))) {
-    properties.push("FIRST biconditional");
-  }
-  if (failed.some((line) => line.includes(SECOND))) {
-    properties.push("SECOND, the lineage check");
-  }
-  const assertion = report
-    .split("\n")
-    .map((l) => l.trim())
-    .find((l) => l.includes("AssertionError:"))
-    ?.replace(/^Caused by: /, "");
-  return {
-    properties,
-    message: assertion ?? "(no assertion line found)",
-    assertionFired: assertion !== undefined,
-  };
-};
+// THE SCORING IS A PURE FUNCTION IN ITS OWN MODULE (fix round nine, HAZARD
+// finding CR7-M3P12-02), so all four of its branches are reachable from the
+// fast gate rather than only from a run of this harness. The SELF entry below
+// still exercises the crash branch LIVE, because a canned report cannot show
+// that a real crash produces no AssertionError; the two checks are
+// complementary rather than duplicates.
 
 let failures = 0;
 try {
@@ -260,15 +219,8 @@ try {
     }
     writeFileSync(target, mutated);
     const { failed, report } = runProperty();
-    const { properties, message, assertionFired } = summarise(report);
+    const { outcome, properties, message } = scoreMutantRun(failed, report);
     console.log(`--- ${mutant.id}: ${mutant.what} (${mutant.shipped}) ---`);
-    const outcome = !failed
-      ? "green"
-      : !assertionFired
-        ? "dies"
-        : properties.length === 0
-          ? "unattributed"
-          : "caught";
     if (outcome !== mutant.expect) {
       failures += 1;
     }

@@ -352,43 +352,62 @@ describe("the measurement harness is covered by the fast gate (plan step 1)", ()
     expect(output).toMatch(/\n {2}baseline-distinct-keys 24\n/);
   });
 
-  // CORRECTED AND MADE FALSIFIABLE IN FIX ROUND EIGHT, CRITERIA finding
-  // CR6-M3P12-02. The title of this test used to say the label keeps "a real
-  // upload's file name out of any record", and the only outside path it handed
-  // the guard already carried the fleet's eight-hex handle, so it matched the
-  // SHAPE of a renamed upload and never asked what the leading eight characters
-  // ARE. Handed a bank-shaped basename, where the account number LEADS the
-  // name, the guard emitted eight characters of that account number. The case
-  // below is that basename, wholly invented, and it is the one the old test
-  // could not have contained.
-  test("a path OUTSIDE test/fixtures survives only as a fleet handle, and a bank-shaped name is refused outright", async () => {
+  // CORRECTED TWICE, AND THE SECOND CORRECTION IS THE POINT (fix round nine,
+  // HAZARD finding CR7-M3P12-01, clause R-087).
+  //
+  // Fix round eight replaced "looks like a bank filename" with "looks like a
+  // fleet handle" and called the claim enforced. Both are SHAPE. Belgium's
+  // country code lowercases into the hex alphabet, so the very case the fix
+  // was built for defeated it one case fold away: the uppercase basename was
+  // refused and the same digits lowercased returned the country code, both
+  // check digits and four digits of the account.
+  //
+  // The label is now decided by PROVENANCE. A committed fixture is named by
+  // its basename, because that name is already public in this tree. Anything
+  // else is named by its ORDINAL POSITION in the invocation, which the
+  // operator chose and which carries no byte of the document, or by nothing at
+  // all if no ordinal is given. NO OUTSIDE NAME IS READ, so there is no
+  // spelling for a hostile one to have.
+  test("no character of an OUTSIDE file name reaches a label, whatever the name is spelled like", async () => {
     const { measurementLabel, UNLABELLED } = await import(
       "../fixtures/measure-identity-convergence"
     );
+    // A committed fixture keeps its basename: its provenance is the tree.
     expect(measurementLabel("test/fixtures/belfius-statement-a.pdf")).toBe(
       "belfius-statement-a.pdf",
     );
-    // A fleet-renamed upload: the eight-hex handle identifies the FILE and
-    // nothing in it, and it survives so a measurement can name its source.
-    expect(
-      measurementLabel("/somewhere/else/abcd1234-a-name-with-identifiers.pdf"),
-    ).toBe("abcd1234");
-    // THE CASE THE CLAIM WAS FALSE FOR. An invented bank-shaped basename whose
-    // leading characters are an account number rather than a handle. Before
-    // this round the label was "BE68 5390" without the space, which is a
-    // country code, two check digits and four digits of the account.
-    const bankShaped = "/uploads/BE68539007547034-2026-06-statement.pdf";
-    expect(measurementLabel(bankShaped)).toBe(UNLABELLED);
-    expect(measurementLabel(bankShaped)).not.toContain("BE68");
-    expect(measurementLabel(bankShaped)).not.toContain("5390");
-    // And the rule is on the SHAPE OF THE LEADING EIGHT being hex, not on the
-    // string being bank-shaped, so anything that is not a handle is refused.
-    for (const other of [
+
+    // EVERY ONE OF THESE IS INVENTED, and they are chosen to be the shapes a
+    // spelling test would disagree about: the fleet's own handle, the account
+    // number that broke the first fix, the SAME account number lowercased that
+    // broke the second, a mixed case of it, and two ordinary names. The point
+    // is that the guard no longer distinguishes between them at all.
+    const outside = [
+      "/somewhere/else/abcd1234-a-name-with-identifiers.pdf",
+      "/uploads/BE68539007547034-2026-06-statement.pdf",
+      "/uploads/be68539007547034-2026-06-statement.pdf",
+      "/uploads/Be68539007547034-2026-06-statement.pdf",
       "/uploads/Statement June 2026.pdf",
-      "/uploads/ABCD1234-upper-case-is-not-the-handle.pdf",
-      "/uploads/abcdefg-too-short.pdf",
+      "/uploads/deadbeef-cafe-1234-statement.pdf",
+    ];
+    for (const path of outside) {
+      // With no ordinal: nothing at all. Fail closed.
+      expect(measurementLabel(path)).toBe(UNLABELLED);
+      // With one: the operator's own position, and nothing else.
+      expect(measurementLabel(path, 2)).toBe("document-2");
+    }
+
+    // AND THE LEAK ITSELF, asserted directly rather than only through the
+    // equality above: no fragment of the account number survives in any form,
+    // in either case.
+    const bankShaped = "/uploads/be68539007547034-2026-06-statement.pdf";
+    for (const label of [
+      measurementLabel(bankShaped),
+      measurementLabel(bankShaped, 1),
     ]) {
-      expect(measurementLabel(other)).toBe(UNLABELLED);
+      for (const fragment of ["BE68", "be68", "5390", "68539007"]) {
+        expect(label).not.toContain(fragment);
+      }
     }
   });
 });
@@ -442,9 +461,23 @@ describe("the fixture token-overlap check is committed and covered (HZ-M3P12-09)
     expect(source).not.toMatch(/console\.log\([^)]*counterpartyName[^)]*\)/);
     expect(source).toMatch(/NEVER printed/);
     // And the label really goes through the guard, in every place it is
-    // printed, rather than being truncated here.
-    expect(source).toMatch(/measurementLabel\(path\)/);
-    expect(source).not.toMatch(/basename\(path\)\.slice/);
+    // printed, WITH the invocation's own ordinal, rather than being derived
+    // from the name here. The negative half is what stops a future edit
+    // reintroducing either of the two truncations this has already had.
+    //
+    // READ AS CODE, NOT AS PROSE. This file's header QUOTES both discarded
+    // implementations, because that is how clause R-087 requires a correction
+    // to be written, so a search over the raw text finds the very strings the
+    // negative assertions forbid. The same lesson as the client scanner in
+    // test/db/gate-target.test.ts: a check that reads comments is checking
+    // what the file SAYS rather than what it DOES.
+    const code = source
+      .split("\n")
+      .map((line) => line.replace(/\/\/.*$/, ""))
+      .join("\n");
+    expect(code).toMatch(/measurementLabel\(path, ordinal\)/);
+    expect(code).not.toMatch(/basename\(path\)/);
+    expect(code).not.toMatch(/measurementLabel\(path\)/);
   });
 });
 
