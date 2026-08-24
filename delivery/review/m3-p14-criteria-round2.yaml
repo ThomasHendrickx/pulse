@@ -212,3 +212,52 @@ findings:
       Strip comments with a scanner that tracks string and template state, or
       match on the un-stripped text and exclude a hit whose line begins with a
       comment marker, which is what the criterion actually needs.
+
+  - id: CRIT2-04
+    severity: medium
+    title: >-
+      gate:diff-tokens is blind to a named colour written the way a TSX file
+      writes one, and to any literal that follows a double slash on its line
+    criteria: ["14.10"]
+    hazards: ["H14.9"]
+    where: >-
+      scripts/gate-diff-tokens.sh:60 (the NAMED alternation and the COLOUR
+      pattern) and scripts/gate-diff-tokens.sh:84 (the comment stripper).
+    probes-run-by-this-lane: >-
+      Each probe was appended as one line to src/app/(app)/accounts/page.tsx,
+      which is inside the gate's own path filter, and npm run gate:diff-tokens
+      was run and the file restored. CAUGHT, exit 1: a hex literal; a length
+      written "1PX"; the CSS form "color: red;"; "border: 1px solid red".
+      MISSED, exit 0 and the clean line printed: { color: "red" };
+      { color: "navy" }; { borderColor: "lightgray" };
+      <div style={{ color: "crimson" }} />;
+      <div className="text-[red] border-[navy]" />;
+      and const probe = "https://x.example/a"; const p2 = { padding: "12px" };
+    why: >-
+      The named-colour arm is :[[:space:]]*(NAMED)[[:space:];] so it requires
+      the keyword to sit immediately after a colon and to be followed by
+      whitespace or a semicolon. Every JavaScript and JSX way of writing a
+      named colour puts a quote there instead, and the Tailwind arbitrary-value
+      form has no colon at all. The gate is scoped to src/app and
+      src/modules/*/ui, which is overwhelmingly TSX, so the arm that was
+      widened this round is the one arm that cannot fire in the file type the
+      gate mostly reads. The last miss is the same naive comment stripper as
+      CRIT2-03: sed 's|//.*$||' discards everything after a double slash
+      inside a string.
+    the-false-claim: >-
+      The script's own comment at scripts/gate-diff-tokens.sh:47 records that a
+      clean-room review "found them blind to ... color: RED, color: navy,
+      color: lightgray" and that "the colour list is the full CSS named set" as
+      the remedy. Adding 148 keywords did not close the blindness for TSX,
+      which is what the guard's readers will take from that sentence. R-087.
+    honest-scope: >-
+      This lane also scanned the branch's added lines for these shapes and
+      found none, so the gate's green on THIS tree is a true statement, exactly
+      as the script says of the earlier widening. The finding is that the guard
+      does not hold for the next change, which is what criterion 14.10 makes it
+      the whole guard for.
+    fix: >-
+      Add a quoted arm to the colour pattern, for example
+      ["\x27][[:space:]]*(NAMED)[[:space:]]*["\x27] and a Tailwind
+      arbitrary-value arm \[(NAMED)\], and strip comments with a scanner that
+      knows about string literals rather than with a bare sed.
