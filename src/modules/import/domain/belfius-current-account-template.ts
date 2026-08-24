@@ -57,6 +57,7 @@
 import { err, ok, type Result } from "@/platform/result";
 import type { Cents } from "@/platform/money";
 import { isValidPlainDate, plainDate, type PlainDate } from "@/platform/plain-date";
+import { canonicalAccountNumber } from "@/platform/account-number";
 import { parseAmountToCents } from "./parse-amount";
 import type { ParsedRow } from "./parse-statement";
 import type {
@@ -87,7 +88,13 @@ const TRANSACTION_START =
 // Belgian IBANs are two letters, two digits, twelve digits.
 const DESCRIPTION_IBAN = /\b([A-Z]{2}\d{2}(?:\s?\d{4}){3})\b/g;
 
-const compactIban = (text: string): string => text.replace(/\s/g, "");
+// The own-account and counterparty account numbers this template lifts
+// out of the document are stored in the ONE canonical form the platform
+// module defines (M3-P14, decision D-47, src/platform/account-number.ts).
+// This file used to carry a private whitespace-removal helper of its own,
+// which agreed with the platform form on the day it was written and was a
+// second copy of one transformation from then on; criterion 14.4
+// enumerates such copies and fails on them.
 
 const parseBelgianDate = (text: string): PlainDate | undefined => {
   const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(text);
@@ -166,7 +173,7 @@ const parse = (
       const band = BAND_LINE.exec(line.text);
       if (band !== null && band[1] !== undefined) {
         closeOpenBlock();
-        const iban = compactIban(band[1]);
+        const iban = canonicalAccountNumber(band[1]);
         if (!accountIbans.includes(iban)) {
           accountIbans.push(iban);
         }
@@ -264,7 +271,7 @@ const parse = (
     // lines at group boundaries, which the line join above restores.
     let counterpartyIban: string | undefined;
     for (const match of description.matchAll(DESCRIPTION_IBAN)) {
-      const candidate = match[1] === undefined ? undefined : compactIban(match[1]);
+      const candidate = match[1] === undefined ? undefined : canonicalAccountNumber(match[1]);
       if (candidate !== undefined && !ownAccounts.has(candidate)) {
         counterpartyIban = candidate;
         break;

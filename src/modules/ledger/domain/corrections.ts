@@ -4,6 +4,7 @@
 // order. Any change to the MEANING of a correction is an escalation per
 // the charter's stop-for list, never a local call.
 
+import { canonicalAccountNumber } from "@/platform/account-number";
 import {
   CASH_WITHDRAWAL_PATTERNS,
   SETTLEMENT_CREDIT_PATTERNS,
@@ -206,9 +207,19 @@ export type CounterpartyRef = Pick<
   "counterpartyIban" | "counterpartyName" | "description"
 >;
 
+// THE IBAN HALF OF THIS KEY USES THE PLATFORM CANONICAL FORM (M3-P14,
+// criterion 14.4). It used to write out its own uppercase-plus-
+// whitespace-removal expression here, which is a SECOND COPY of one
+// transformation living inside an identity derivation: it agreed with
+// the platform form on the day it was written and nothing held the two
+// together afterwards. The TEXT half below is deliberately NOT the
+// merchants module's richer normalisation and must never become it
+// (hazard H6.1, and the sibling note at
+// src/modules/merchants/domain/normalise-counterparty.ts): that is a
+// different rule about a different mechanism.
 export const counterpartyKey = (transaction: CounterpartyRef): string => {
   if (transaction.counterpartyIban !== undefined) {
-    return `iban:${transaction.counterpartyIban.toUpperCase().replace(/\s+/g, "")}`;
+    return `iban:${canonicalAccountNumber(transaction.counterpartyIban)}`;
   }
   const text = transaction.counterpartyName ?? transaction.description;
   return `text:${text.toUpperCase().replace(/\s+/g, " ").trim()}`;

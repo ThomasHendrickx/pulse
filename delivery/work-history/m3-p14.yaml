@@ -1,0 +1,106 @@
+kind: work-history
+phase: M3-P14
+prompt: |
+  Implementer for phases M3-P14 (account registry) and M3-P15 (ring
+  correction), dispatched together on one branch,
+  claude/m3-p14-account-registry, in worktree /home/user/wt-m3p14, cut from
+  main at 999d378.
+
+  Both phases answer one owner question: "I have 4 bank accounts, 4 saving
+  accounts and 2 credit cards. When I upload 1 bank account first, that one
+  contains transfers to other accounts. Now Pulse asks me to name them as
+  merchants, but they are not merchants. What do I need to do to get to that
+  final state?"
+
+  Two owner decisions bind and are not open: DR-0030 (Pulse ACCEPTS a reserve
+  account's own statement; its rows are HELD, in no month total and not an
+  uninterpreted gap) and DR-0028 (identity is deterministic: mod-97 plus a
+  pinned country-length table; a model names, it never decides identity).
+
+started: 2026-08-24
+
+verification-first:
+  - id: baseline-FOUR-account-shape
+    what: >-
+      M3-P14 step 1 baseline FOUR, RE-MEASURED rather than copied, by the
+      method the step records: the file set is git ls-files with the privacy
+      gate's own skip list, the pattern is that gate's IBAN alternation in
+      BOTH arms, each hit is normalised by that gate's own norm(), the
+      distinct values are then run through ISO 7064 mod-97.
+    command: bash scratch/measure-accounts.sh | node scratch/mod97.mjs -
+    output: |
+      FAIL BE00000000000000
+      FAIL BE02233445566778
+      FAIL BE02979245566602
+      FAIL BE10987654321001
+      FAIL BE20539007547099
+      PASS BE39103123456719
+      PASS BE43068999999501
+      FAIL BE45678901234515
+      FAIL BE54540123456789
+      PASS BE68539007547034
+      FAIL BE68539075417034
+      PASS BE71096123456769
+      FAIL BE77123456789012
+      FAIL BE90012345678944
+      PASS DE89370400440532013000
+      PASS FR1420041010050500013M02606
+      PASS NL91ABNA0417164300
+      distinct=17 pass=7 fail=10
+    conclusion: >-
+      17 distinct account-shaped values, 7 passing, 10 failing. My own run
+      agrees with the figure the plan records. Recorded as a reproduction of
+      the measurement, not as a citation of it.
+    note: >-
+      A TRAP FOUND WHILE DOING THIS, worth writing down because it is exactly
+      the shape of the two earlier wrong figures the plan warns about. My
+      FIRST generator for the new fixture numbers used a mod-97 loop with NO
+      four-character rotation, and it reported eleven of twelve generated
+      numbers invalid. The measurement script above does carry the rotation,
+      so the 17/7/10 figure was never affected; but a mod-97 without the
+      rotation is a check that looks like a check and answers a different
+      question, and it took a direct comparison against the shipped module to
+      see it. Every number this phase invents was regenerated against
+      src/platform/account-number.ts itself and asserted valid by a fast-gate
+      test (test/domain/account-number.test.ts).
+
+  - id: claim-single-caller-of-declareAccount
+    command: grep -rn "declareAccount" src/
+    output: |
+      src/modules/import/ui/profile-confirmation.tsx:169:            <legend>{t("declareAccountTitle")}</legend>
+      src/modules/import/ui/profile-confirmation.tsx:170:            <p className="import-note">{t("declareAccountBody")}</p>
+      src/modules/import/application/index.ts:8:  declareAccount,
+      src/modules/import/application/index.ts:59:  accounts: { findAccountByIban, getAccountById, declareAccount },
+      src/modules/import/application/confirm-import.ts:96:    const created = await deps.accounts.declareAccount(context, {
+      src/modules/import/application/ports.ts:247:  readonly declareAccount: (
+      src/modules/accounts/application/index.ts:27:export const declareAccount = (
+    conclusion: >-
+      Confirmed. One CALL SITE in application code, confirm-import.ts:96. The
+      other hits are the definition, the port declaration, the composition
+      root's binding and two i18n message keys whose names merely contain the
+      word.
+
+  - id: claim-no-accounts-route
+    command: ls -d "src/app/(app)/accounts"; find src/app -ipath '*account*' -print
+    output: |
+      ls: cannot access 'src/app/(app)/accounts': No such file or directory
+      (find printed nothing)
+    conclusion: Confirmed. No accounts route exists at the phase base.
+
+  - id: claim-null-flow-reads
+    command: grep -rn --include=*.ts -i 'flow" IS NULL' src/
+    output: |
+      src/modules/overview/adapters/overview-repository.ts:230:      COUNT(*) FILTER (WHERE t."flow" IS NULL)::bigint                                  AS "uninterpretedCount",
+      src/modules/overview/adapters/overview-repository.ts:280:        WHEN t."flow" IS NULL THEN 'uninterpreted'
+      src/modules/overview/adapters/overview-repository.ts:295:        t."flow" IS NULL
+    conclusion: >-
+      Confirmed, and confirmed at the shape criterion 14.14 states: THREE
+      occurrences in TWO reads, the uninterpreted count and the gap listing,
+      the listing carrying two of its own.
+  - id: claim-no-prisma-client-null-flow
+    command: grep -rn --include=*.ts 'flow: null' src/
+    output: "(no output)"
+    conclusion: >-
+      At the phase base the Prisma-client style of the absent-flow condition
+      appears nowhere under src/. Criterion 14.14 case FIVE's enumeration must
+      still cover it, because this phase and M3-P15 add reads.
