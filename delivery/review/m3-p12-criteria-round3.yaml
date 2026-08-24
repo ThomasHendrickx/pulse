@@ -46,6 +46,43 @@
 #   `npm install` done; node here is v26.7.0 (no nvm switch needed for repo
 #   tooling, only tiphys needs the nvm swap per fleet warning 2). Disk at 91%
 #   used, 3.5G free - watching this.
+# - CLAIM 2 WITNESSED against a real local database (created pulse_r3crit on
+#   the already-running local supabase Postgres at 127.0.0.1:54322,
+#   `npx prisma migrate deploy --schema prisma/schema` applied 6 migrations
+#   clean). Wrote an uncommitted witness script (deleted immediately after,
+#   never staged) that seeded one household, two merchants, two MerchantRule
+#   rows, then called the real `applyRuleWrites` with a batch of one UPDATE
+#   plus one INSERT whose pattern collides with the OTHER existing rule's
+#   (householdId, kind, pattern) unique key - a REAL constraint violation
+#   injected DURING apply, in the same batch as the update, not before it.
+#   Captured output: "THREW (expected): PrismaClientKnownRequestError",
+#   "AFTER: [ 'descriptor:ALREADY-TAKEN', 'descriptor:UPDATE-ME' ]" identical
+#   to BEFORE, "threw: true table unchanged: true row count before/after: 2
+#   2". CLAIM 2 CONFIRMED: prisma.$transaction([...]) array form in
+#   src/modules/merchants/adapters/merchant-repository.ts:167-184 really does
+#   roll back the whole batch atomically on a genuine mid-apply failure.
+#   FOUND A DEFECT while checking whether the outside-transaction recompute
+#   is "safe and stated where a reader meets it": scripts/rederive-merchant-
+#   rules.ts:224-252 wraps the WHOLE main() (rule writes AND recompute) in
+#   one rejection handler, and line 249 unconditionally prints "a failure
+#   inside them wrote nothing and the table is as this run found it" for
+#   EVERY rejection reaching it. src/modules/merchants/application/
+#   rederive-rules.ts:618-623 awaits applyRuleWrites (the transaction) and
+#   THEN awaits deps.recompute(context) OUTSIDE any transaction, with no
+#   local try/catch distinguishing the two. If recompute throws after the
+#   rule-write transaction has already committed, the same message prints
+#   and is FALSE: the table is NOT as the run found it, merchant_rules WAS
+#   rewritten, only the recompute step failed. This is a false claim in
+#   operator-facing output (clause R-087 shape), not a data-loss hazard
+#   (pass one/two are idempotent so a re-run heals it, "re-running is safe
+#   and converges" remains true), but the specific sentence "wrote nothing"
+#   is wrong on this path and no criterion catches it because no criterion
+#   asks about the recompute-outside-transaction window's operator message.
+#   Recording as a finding once the criteria walk reaches 12.7/12.23.
+# - GATES RUN against pulse_r3crit (same local db as above), all captured
+#   below in the gates block once the walk finishes. All five fast gates
+#   green: typecheck 0, lint 0, test 0 (39 files, 554 tests), gate:privacy 0,
+#   gate:tokens 0. e2e not yet run.
 kind: verdict
 phase: M3-P12
 verdict: FIX-ROUND-NEEDED
