@@ -225,8 +225,15 @@ test.describe("shell header focus order (M3-P7 fix round, HZ-M3P7-05)", () => {
       await page.goto("/");
       await expect(page.getByTestId("main-nav")).toBeVisible();
 
+      // FIVE STOPS SINCE M3-P14, which adds a fourth navigation link. The
+      // BEHAVIOUR this test guards is unchanged and is the whole point: the
+      // navigation is reached before the destructive control, whatever the
+      // navigation contains. Only the length of the sequence moved, and the
+      // expected sequence below names every stop rather than counting them,
+      // so a link added later fails here loudly instead of shifting Sign out
+      // out of the window and passing.
       const reached: { name: string; top: number }[] = [];
-      for (let step = 0; step < 4; step += 1) {
+      for (let step = 0; step < 5; step += 1) {
         await page.keyboard.press("Tab");
         reached.push(
           await page.evaluate(() => {
@@ -246,8 +253,14 @@ test.describe("shell header focus order (M3-P7 fix round, HZ-M3P7-05)", () => {
 
       expect(
         reached.map((stop) => stop.name),
-        "the first four stops are the three nav links, then sign out",
-      ).toEqual(["nav-overview", "nav-import", "nav-merchants", "Sign out"]);
+        "the first five stops are the four nav links, then sign out",
+      ).toEqual([
+        "nav-overview",
+        "nav-import",
+        "nav-merchants",
+        "nav-accounts",
+        "Sign out",
+      ]);
 
       // FINDING HZ2-07 (follow-up round). Buying the tab sequence cost the
       // property round 0 had recorded as holding: at 390 focus ran along the

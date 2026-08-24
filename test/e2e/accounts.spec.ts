@@ -150,8 +150,18 @@ const registerAll = async (page: Page): Promise<void> => {
   }
 };
 
+// READ THE LABELS ONLY ONCE THE PAGE HAS ACTUALLY RENDERED. allInnerTexts
+// resolves immediately against whatever is in the DOM, so a read issued
+// before the server component's content arrives returns an EMPTY ARRAY, and
+// an empty array satisfies "does not contain the own-account groups" while
+// telling you nothing. That is a test that passes for the wrong reason on
+// the assertion this whole phase turns on, so the wait is on a marker the
+// page renders in every state rather than on the groups themselves.
 const groupLabels = async (page: Page): Promise<string[]> => {
   await page.goto("/merchants");
+  await expect(page.getByTestId("unresolved-count")).toBeVisible({
+    timeout: 30_000,
+  });
   return page.getByTestId("group-label").allInnerTexts();
 };
 
@@ -285,9 +295,11 @@ test("a mistyped account number is refused on the accounts screen and the list i
   await page.getByTestId("account-bank-field").fill("Demobank");
   await page.getByTestId("account-number").fill("BE24902200001183");
   await page.getByTestId("account-ring-field").selectOption("RESERVE");
-  await page.getByTestId("register-account").click();
+  await submit(page, page.getByTestId("register-account").click());
 
-  await expect(page.getByTestId("accounts-status")).toBeVisible();
+  await expect(page.getByTestId("accounts-status")).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(page.getByTestId("accounts-status")).toContainText(
     "does not check out",
   );
