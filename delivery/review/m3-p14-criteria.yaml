@@ -347,3 +347,56 @@ findings:
     consequence: "None outstanding; recorded so the open item can be struck rather than carried."
     fix: "Strike the caveat from the gate evidence, citing this run."
     criterion-touched: "14.10, 15.8"
+
+  - id: CRIT-P14-11
+    severity: high
+    title: "CRITERION 14.2'S RESERVES-JOIN WITNESS IS VACUOUS. Every new fixture writes its counterparty accounts COMPACT, which is exactly the form the criterion forbids because a raw join then passes"
+    where: test/fixtures/ar-current.csv, ar-partners.csv, ar-pot-outgoing.csv, ar-pot-drawdown-only.csv, ar-pot-both-ways.csv, ar-savings.csv, and test/e2e/accounts.spec.ts:200
+    evidence: |
+      Criterion 14.2 requires that each reserve group's rendered label be the label the
+      household typed, "which fails if the reserves join at
+      src/modules/overview/adapters/overview-repository.ts:175 through :176 compares raw
+      stored strings, AND THE FIXTURE WRITES ITS COUNTERPARTY ACCOUNTS IN THE SPACED
+      SURFACE FORM PRECISELY SO THAT A JOIN OVER RAW VALUES CANNOT PASS."
+      Every counterparty account cell in every fixture this phase adds is written
+      COMPACT and UPPER CASE: the Tegenrekening column of test/fixtures/ar-current.csv
+      carries values of the shape BE66901100002243, with no space and no hyphen, and the
+      same is true of every other ar-*.csv. A grep for a spaced account shape across
+      test/fixtures matches only the pre-existing PDF fixtures and their generator, none
+      of which this criterion's arm uses.
+      The delimited parse stores the cell verbatim, so the stored
+      Transaction.counterpartyIban for these rows IS already its own canonical form.
+      Account.iban is stored canonical. So for every row in these fixtures the join
+      condition ra."iban" = t."counterpartyIban" and the shipped condition
+      ra."iban" = upper(replace(replace(t."counterpartyIban",' ',''),'-','')) at
+      src/modules/overview/adapters/overview-repository.ts:219 select the SAME rows.
+      The assertion at test/e2e/accounts.spec.ts:233 through :247, which the criterion
+      designs to redden on a raw join, cannot redden on a raw join over this fixture.
+      THE SEVENTH ASSERTION IS ABSENT ENTIRELY. Criterion 14.2 additionally requires
+      "an application test over a household whose stored counterparty account column
+      carries the SAME reserve account in two surface forms, one spaced and one compact",
+      asserting "exactly ONE reserve-group is returned, carrying the household's typed
+      label and the sum of both rows", and states why: "a fixture uniform in one surface
+      form passes a normalised join with a raw grouping and the owner then sees one
+      savings account twice, under the right name both times, with the money split."
+      No such test exists. A grep for a mixed-surface-form reserve household across
+      test/ returns nothing, and no test anywhere calls listReserveMovements.
+    consequence: |
+      Hazard H14.3 exactly ("The scenario is proved on a fixture built to pass"). Both
+      halves of the reserves SQL, the normalised JOIN and the normalised GROUP BY at
+      src/modules/overview/adapters/overview-repository.ts:227, are unguarded: the
+      normalised grouping could be reverted to GROUP BY the raw column and every test in
+      both phases stays green, while a household whose statement mixes the two surface
+      forms, which the criterion documents as a real state of this product because the
+      delimited parse stores verbatim and the PDF path compacts, sees one savings
+      account listed twice with its money split between the two lines.
+      This one is not a missing lane, unlike CRIT-P14-04 and CRIT-P14-05: the browser
+      lane runs and the assertion is in it. What is missing is the input that makes the
+      assertion discriminate.
+    fix: |
+      Write the Tegenrekening cells of the reserve rows in ar-current.csv in the spaced
+      surface form, which is how the owner's own document prints them, and add the
+      seventh assertion as a test over a household holding the same reserve account
+      spaced on one row and compact on another, asserting one group with the summed
+      total. Both changes redden against a raw join and a raw grouping respectively.
+    criterion-touched: "14.2, and hazards H14.3 and H14.5"
