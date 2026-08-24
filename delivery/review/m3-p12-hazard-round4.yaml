@@ -177,7 +177,7 @@ findings:
 #          (real recompute) did NOT throw, did not re-insert a duplicate
 #          account rule (count stayed at 2, same rule ids rule-31/rule-32),
 #          rulesAdded 0, patternsRewritten 0, exitCode 0. The claimant check
-#          at pass two (src/modules/merchants/application/rederive-rules.ts:557)
+#          at pass two (src/modules/merchants/application/rederive-rules.ts:558)
 #          correctly finds the already-inserted SAME-merchant account rule on
 #          the second pass and skips the insert rather than colliding or
 #          duplicating.
@@ -397,7 +397,7 @@ findings:
       never isolates the insert path from the update path, so it cannot see
       the gap either.
     evidence:
-      - "src/modules/merchants/adapters/merchant-repository.ts:151-160 is the insert loop: `tx.merchantRule.create({ data: { householdId: context.householdId, merchantId: insert.merchantId, kind: insert.kind, pattern: insert.pattern } })`, no lookup or filter on insert.merchantId anywhere before it."
+      - "src/modules/merchants/adapters/merchant-repository.ts:161-169 is the insert loop: tx.merchantRule.create({ data: { householdId: context.householdId, merchantId: insert.merchantId, kind: insert.kind, pattern: insert.pattern } }), no lookup or filter on insert.merchantId anywhere before it."
       - "src/modules/merchants/adapters/merchant-repository.ts:80-91 (upsertRule) makes the comparison finding explicit: it looks up `tx.merchant.findFirst({ where: { id: input.merchantId, householdId: context.householdId } })` and throws \"upsertRule: merchant does not belong to the household\" when it is null, before writing anything."
       - "prisma/schema/merchants.prisma:85: `merchant Merchant @relation(fields: [merchantId], references: [id])` carries no householdId component, so the database's own foreign key permits a cross-household merchantId."
       - "test/application/fake-import-world.ts:442-459: the fake's applyRuleWrites inserts by calling `merchantsPort.upsertRule(context, insert)` for each insert (line ~453), which runs the SAME ownership check upsertRule makes for real. Every fast-gate assertion made against this fake for applyRuleWrites is therefore made against a stand-in that is stricter than the adapter it stands in for."
@@ -846,9 +846,10 @@ deviations-judged:
       I directly witnessed this consequence myself: my own local database
       pulse_r4haz, created on 127.0.0.1:54322 and migrated, could never be
       approved by assessRederiveTarget because a local connection carries no
-      project ref in either field (confirmed by reading target-guard.ts:163-169
-      and by the shape of my own DATABASE_URL, which is exactly the local
-      pattern the interlock refuses). The alternative (an override flag) is
+      project ref in either field (confirmed by reading
+      src/platform/db/target-guard.ts:219-227, the usernameRef/hostRef
+      both-undefined refusal, and by the shape of my own DATABASE_URL,
+      which is exactly the local pattern the interlock refuses). The alternative (an override flag) is
       explicitly forbidden by the criterion's own text, so recording the
       limitation rather than engineering around it is the correct response.
   - deviation: >-
