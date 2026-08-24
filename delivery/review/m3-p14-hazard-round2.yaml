@@ -104,7 +104,13 @@
 # fix round should remove regardless of whether it is what pushed the one
 # canonical run over budget, because it is real waste on the product's own
 # critical path (registering ten accounts) whether or not it explains this
-# specific timeout. See CR-H2-01 and CR-H2-02 below.
+# specific timeout. See CR-H2-01 and CR-H2-02 below. UPDATE, written after
+# this review's own second full canonical npm run test:e2e finished clean
+# (82 passed, no failure, HEALING included) partway through drafting this
+# document: that result softened CR-H2-01 from high to medium, and the
+# updated reasoning is recorded there in place rather than silently, per
+# clause R-087, since the severity claim in this paragraph's neighbourhood
+# was true when written and the new evidence changed it.
 #
 # ============================================================
 # GATES I RAN MYSELF (this lane, this head, pinned local stack)
@@ -126,18 +132,21 @@
 # 19:12:22 UTC against the pinned local stack (preflight above, EXIT=0
 # before starting), ports 3000 and 3100 free at start (verified with ss and
 # a /proc/*/cwd sweep for this worktree, per fleet warnings 25-26), disk at
-# 4.0G free / 90% used at start. NOT COMPLETE AT THE TIME THIS DOCUMENT WAS
-# FINALISED: last observed at 35 of 82 tests, ALL PASSING including
-# test/e2e/accounts.spec.ts:274 HEALING (the one test the canonical run in
-# the work history failed on), zero failures anywhere in the run so far.
-# This is reported as a partial, honest observation rather than a final
-# result: I am not claiming EXIT=0 for a run I did not watch to completion,
-# and I am not withholding what it showed up to the point I stopped
-# watching it. The process was started with nohup and disowned from this
-# review's own shell, so it continues to completion independently and
-# releases ports 3000/3100 on its own clean exit rather than being
-# SIGTERM'd (fleet warning 25); its log is at this review's own scratchpad
-# path and is not part of the committed tree.
+# 4.0G free / 90% used at start, load settling from an earlier mistaken
+# self-inflicted stress test (killed and swept within two minutes, see
+# below) toward the box's ordinary multi-lane ambient load. COMPLETED:
+# "82 passed (17.4m)", no failure reported, matching an EXIT=0 by
+# Playwright's own reporting convention (a failing run names its failures;
+# this run's tail names none). test/e2e/accounts.spec.ts:274 HEALING is
+# test #3 in this run's own numbering and passed at 38.6s, well inside
+# budget. Every one of the 82 tests this branch's suite carries passed,
+# including all four rendered 14.16 arms, all of criterion 15.7's
+# three-locale preview comparisons, the phone-viewport project's full
+# copy of the navigation and month-view geometry tests, and the
+# production-mode smoke spec. This is a SECOND full canonical run of this
+# branch, independent of the implementer's own (delivery/work-history/
+# m3-p14.yaml:2089-2126, which recorded one failure at the same test),
+# and it is clean.
 #
 # ============================================================
 # THE REST OF THE CONTRACT
@@ -201,17 +210,27 @@
 # ============================================================
 # VERDICT: FIX-ROUND-NEEDED
 # ============================================================
-# CR-H2-01 is high because it is an unresolved, unattributed EXIT=1 on the
-# canonical slow gate that this branch's own work history reports and that
-# no round has yet closed with a confirmed cause; the schema's own rule
-# (APPROVE cannot stand beside a high or critical finding) applies whether
-# or not this review's candidate mechanism turns out to be the actual cause.
+# UPDATED after this review's own second full canonical npm run test:e2e
+# completed clean (82 passed, no failure) partway through drafting this
+# document: CR-H2-01 is now filed at medium rather than high (see its
+# analysis for the correction made in place), so no finding here is high
+# or critical and the schema's own APPROVE-forbidding rule does not itself
+# force this verdict. FIX-ROUND-NEEDED stands anyway as this reviewer's
+# own judgment: three real, cited, actionable findings remain open (the
+# wasted double-preview computation on the owner's own registration
+# journey, an untested fifth classification path in the round's central
+# invariant, and a coverage gap in a token-literal guard), on a phase pair
+# the plan itself marks critical severity, and none of the three is free
+# to defer without either a fix or an explicit owner sign-off accepting it
+# as a known gap, which is a decision for the fix round or the
+# orchestrator to make and not one this review can make on their behalf by
+# approving past it.
 kind: finding
 verdict: FIX-ROUND-NEEDED
 produced-by: claude
 findings:
   - id: CR-H2-01
-    severity: high
+    severity: medium
     evidence:
       - "delivery/work-history/m3-p14.yaml:2089-2126, run-2-the-correctly-targeted-one: canonical `npm run test:e2e` at 2026-08-24 18:23:54 UTC, pinned local stack, preflight green on all three variables, result '82 tests, 1 failed, 81 passed (17.0m), exit 1', the one failure being test/e2e/accounts.spec.ts:274 HEALING, 'expect(locator).toBeVisible() failed, Locator: getByTestId(accounts-status), Timeout: 30000ms, element(s) not found', with the redirect itself having already succeeded (the page snapshot shows the shell fully rendered with an empty main for the full 30s budget)."
       - "This review reproduced the same HEALING sequence twice against its own pinned local stack (project m1-p1-skeleton, DATABASE_URL/DIRECT_URL/NEXT_PUBLIC_SUPABASE_URL pinned and preflight-verified before each run) and could NOT reproduce the failure: a standalone Playwright script driving the same seven-registration sequence completed every step in 2.0-3.1s (24.1s total), and `PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 npx playwright test test/e2e/accounts.spec.ts -g HEALING --project=chromium` reported '1 passed (57.2s)' with the test itself completing in 56.1s, both runs comfortably inside the 30s-per-assertion and 180s-per-test budgets (test/e2e/accounts.spec.ts:43)."
@@ -219,7 +238,7 @@ findings:
       - "src/modules/accounts/application/register-account.ts:119-143: every registerAccount call computes a full DeclarationChangePreview via deps.preview (line 119-137) and then reads exactly one field of it, merchantRulesStoppedMatching (line 143); rowsOnAccount, spendDeltaCents, reservesDeltaCents and incomeDeltaCents are computed and discarded on every registration."
       - "src/modules/ledger/application/preview-declaration-change.ts:190 and :196: previewDeclarationChange runs totalsFor (which calls interpretLedger, the same domain interpretation the real recompute runs) TWICE per call, once over the current declared set and once over the proposed one, each pass loading every pot transaction the union of both sets can see -- 'Unbounded, exactly like the recompute this previews' per the file's own comment at that call site."
       - "Consequence: every one of the seven registrations the HEALING helper drives pays for three full-household interpretation passes (two thrown away except for one integer, plus the real recompute at register-account.ts:140), and this cost scales with the household's registered-account and transaction count, both of which grow across the seven calls -- the seventh call's preview and recompute each see more rows than the first's. This is the concrete, cited mechanism behind hypothesis 3 ('something about the seventh'), though I could not push it over the 30s budget myself in this review's own isolated and lightly-contended runs against this spec's 12-row fixture."
-      - "A THIRD run of this review's own: a full canonical `npm run test:e2e` started against the same pinned local stack, observed through 35 of 82 tests with zero failures, including HEALING passing again, before this document was finalised without waiting for the run's completion (it continues independently; see the gates section above). Three clean runs against one red one is consistent with a rare, load-dependent failure rather than a deterministic defect, which is exactly why this finding is filed as a candidate mechanism plus an open item, not as a confirmed root cause."
+      - "A SECOND full canonical `npm run test:e2e` of this review's own, against the same pinned local stack, COMPLETED after this document's first draft: '82 passed (17.4m)', no failure, HEALING (test #3 in this run's numbering) passing at 38.6s. Counting the implementer's own isolated pass (47.8s) and this review's two isolated passes (24.1s total across seven registrations; 56.1s for the real test), the tally across every run either reviewer has produced is FOUR clean runs (three isolated, one full canonical) against ONE red canonical run, which is the implementer's own. That is not zero evidence of a real defect -- one canonical EXIT=1 happened and is real -- but it is strong evidence against a deterministic or systemic cause, and it downgrades this finding from an unresolved high-confidence hazard to a rare, likely load- or timing-dependent one."
     concrete-edit: >-
       Two changes, either sufficient to close the open question and both
       worth doing regardless of which turns out to be the actual cause of
@@ -241,20 +260,30 @@ findings:
       that specific run so the next reviewer has a number rather than a
       hypothesis.
     analysis: >-
-      Rated high rather than medium because the schema's own rule requires
-      it: an EXIT=1 canonical slow-gate result that this branch's own work
-      history reports and that no round has closed with a confirmed cause is
-      not something an APPROVE can stand beside, independent of whether my
-      candidate mechanism is the actual cause. I am explicit about what this
-      finding is and is not: it is not a confirmed root cause (I did not
-      reproduce the failure, and neither did the implementer in isolation),
-      and it is not nothing (the wasted double-preview computation is real,
-      cited, demonstrated waste on the exact code path the failure sits on,
-      growing in exactly the direction the growing-set hypothesis asks
-      about). The honest reading, matching the implementer's own work
-      history at delivery/work-history/m3-p14.yaml:2127-2133, is that this
-      remains an open item against the branch and should be treated as one
-      by the next round rather than waved through as a flake.
+      CORRECTED IN PLACE (R-087 style) rather than silently rewritten: this
+      finding was drafted as severity high, on the reasoning that an EXIT=1
+      canonical slow-gate result with no confirmed cause cannot stand beside
+      an APPROVE. That reasoning was sound against the evidence I had at the
+      time (one red canonical run, two clean isolated runs of my own, one
+      canonical run still in flight). It no longer fits the evidence I now
+      have: my own second full canonical run came back clean at 82 of 82,
+      which brings the tally to four clean runs against one red one. I am
+      downgrading to medium rather than dropping the finding entirely,
+      because a single confirmed EXIT=1 on the branch's own canonical gate,
+      on the phase's own critical-severity owner journey, with no confirmed
+      cause, is still a real, open fact about this branch regardless of how
+      rarely it reproduces -- and because the candidate mechanism I found
+      (CR-H2-02, the wasted double preview) is real waste on that exact
+      journey independent of whether it explains this specific timeout. I
+      am NOT claiming the mechanism is confirmed, and I am NOT claiming the
+      branch is clean: I am reporting that repeated reproduction attempts,
+      mine and the implementer's, now lean toward "rare and load-dependent"
+      rather than "systemic," which is itself the answer the brief asked
+      for when it said a hazard probed and not reached is a real result.
+      This finding alone would not force FIX-ROUND-NEEDED under the
+      schema's own rule (no high or critical remains); I am recording that
+      the overall verdict below is FIX-ROUND-NEEDED on my own judgment as
+      reviewer, not because this finding's severity requires it.
   - id: CR-H2-02
     severity: medium
     evidence:
