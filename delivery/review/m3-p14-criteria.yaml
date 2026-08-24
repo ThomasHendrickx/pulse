@@ -36,5 +36,100 @@ gates:
     exit: 0
     summary: "the negated grep over src/modules/*/ui produced no match"
 
-findings: []
+
+findings:
+  - id: CRIT-P14-01
+    severity: medium
+    title: "A stray shell fragment was committed as a tracked file at the repository root"
+    where: 'the tracked path whose name begins "c -l)" at the repository root, added by commit 7da1725'
+    evidence: |
+      git ls-files shows a tracked entry named with an unbalanced quote and a pipe.
+      `git log --diff-filter=A` names 7da1725 "work history: record the intermittent
+      privacy-gate failure with its reproduction" as the commit that added it.
+      Its single line is a fragment of the privacy gate's own report line, captured
+      by a shell quoting accident while reproducing that failure. Content is benign
+      (no data), but the file is tracked in a PUBLIC repository and its name is
+      hostile to tooling: a bare `rm` of it needs quoting, and several shells and
+      CI checkout steps mishandle a filename containing a double quote.
+    consequence: "A junk file ships to a public repository and the next reader cannot tell it from a deliberate artifact."
+    fix: "git rm the path (quoting it) in a follow-up commit."
+    criterion-touched: "none directly; it is outside every criterion, which is the point"
+
+  - id: CRIT-P14-02
+    severity: medium
+    title: "THE THIRD SELF-PASSING GUARD. Criterion 14.4's enumeration test passes against a second copy of the transformation that is already in the tree"
+    where: test/domain/account-number.test.ts:162 and src/modules/overview/adapters/overview-repository.ts:98
+    evidence: |
+      Criterion 14.4 requires a test asserting "that no file under src/ other than the
+      platform module contains an uppercase plus whitespace-removal expression applied
+      to an account-bearing field", and it requires the one permitted exception to be
+      "recorded in the test as the one permitted exception with its reason".
+      The test at test/domain/account-number.test.ts:162 is named
+      "no file outside the platform module writes its own uppercase-plus-whitespace-removal
+      of an account-bearing field" and its PERMITTED list at test/domain/account-number.test.ts:167
+      is EMPTY.
+      src/modules/overview/adapters/overview-repository.ts:98 is exactly such an expression:
+      upper(replace(replace(t."counterpartyIban", ' ', ''), '-', '')).
+      It is uppercase, it removes separators, and it is applied to an account-bearing field.
+      The guard's detector requires a dot-prefixed .replace( with a REGEX LITERAL argument,
+      so the SQL form cannot match it. Probed directly rather than argued:
+      node probe over the guard's own two regexes returned
+        CAUGHT  platform's own line
+        MISSED  SQL copy already in the tree (overview-repository.ts:98)
+        CAUGHT  the old compactIban shape
+        CAUGHT  plausible TS second copy, regex + toUpperCase
+        MISSED  second copy via replaceAll
+        MISSED  second copy via split/join
+        MISSED  second copy spread over two lines
+      So the guard holds against the adversary criterion 14.4 names by name (M3-P12's
+      counterpartyIdentity, and the removed compactIban) and is green against a copy
+      that is in the tree today.
+    consequence: |
+      Two things. FIRST, per R-087 the test's own name is a FALSE statement about the
+      tree, and a false statement about a guard is worse than no guard because the next
+      reader stops looking. SECOND, the two copies already DISAGREE: the TypeScript form
+      strips /[\s -]/ (every whitespace character, non-breaking space included) and is
+      SHAPE-GATED, while the SQL form strips only a literal space and a literal hyphen
+      and is not gated. A stored counterparty account carrying a tab or a non-breaking
+      space canonicalises in TypeScript and does not canonicalise in the reserves join,
+      which is precisely the split-savings-account defect criterion 14.2's seventh
+      assertion exists to prevent, arriving through the half no guard watches.
+    fix: |
+      Either list overview-repository.ts:98 in PERMITTED with its reason (SQL cannot
+      import TypeScript), which is what the criterion's own compactIban clause
+      establishes the PERMITTED list for, and add a second detector for the SQL shape
+      so a THIRD copy in SQL reddens; or make the SQL form strip the same class the
+      TypeScript form strips. Do not leave the test name asserting more than it holds.
+    criterion-touched: "14.4"
+
+  - id: CRIT-P14-03
+    severity: low
+    title: "One of the two replaced private copies did change behaviour, in a direction the phase does not name"
+    where: src/modules/ledger/domain/corrections.ts:224
+    evidence: |
+      At 75ec85d the tree carried exactly two private copies of the transformation:
+      the helper at src/modules/import/domain/belfius-current-account-template.ts:90
+      and the inline expression at src/modules/ledger/domain/corrections.ts:211. Both
+      are gone at f41a33c; `grep -rn compactIban src/` now matches only the comment
+      naming it at src/platform/account-number.ts:36.
+      BELFIUS: behaviour is identical. Both call sites are fed by capturing regexes
+      (src/modules/import/domain/belfius-current-account-template.ts:82 and :90) that
+      can only yield two upper-case letters, two digits and three spaced groups of four
+      digits, so the platform form's shape gate always passes and its extra
+      hyphen-stripping and upper-casing are no-ops on that input.
+      CORRECTIONS: not identical. The old expression compacted UNCONDITIONALLY; the
+      platform form returns a value that is not shaped like an account number
+      UNCHANGED (src/platform/account-number.ts:70). For a counterparty account column
+      holding a value that is not IBAN-shaped and is written in two surface forms, the
+      old key collapsed the two and the new key does not, so the refund correction's
+      outgoing-history lookup can miss a match it used to make. In the other direction
+      a hyphenated IBAN now collapses where it did not.
+    consequence: |
+      Narrow and probably unreachable on Belgian statements, whose counterparty column
+      is an IBAN. It is recorded because the phase's own comment at corrections.ts:213
+      through :222 presents the change as a de-duplication and says nothing about the
+      shape gate it introduced into an identity key.
+    fix: "Name the shape-gate consequence in the comment, or apply the ungated strip in counterpartyKey deliberately."
+    criterion-touched: "14.4"
+
 criteria: []
