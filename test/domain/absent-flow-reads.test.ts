@@ -24,6 +24,13 @@ import { describe, expect, test } from "vitest";
 // what keeps them out of the count: neither is a database query.
 
 const SRC = join(__dirname, "..", "..", "src");
+const REPOSITORY = join(
+  SRC,
+  "modules",
+  "overview",
+  "adapters",
+  "overview-repository.ts",
+);
 
 const collectSources = (dir: string): readonly string[] => {
   const out: string[] = [];
@@ -196,16 +203,69 @@ describe("every read that can see a row with no flow is one of exactly three", (
     // accounts, so it widens nothing here. Stated as an assertion rather
     // than as a sentence, because a sentence claiming a guard covers
     // something it does not is worse than no guard.
-    const repository = readFileSync(
-      join(SRC, "modules", "overview", "adapters", "overview-repository.ts"),
-      "utf8",
-    );
+    const repository = readFileSync(REPOSITORY, "utf8");
     expect(repository).toContain('t."flow" IS NOT NULL');
-    // And the ring predicate is on it, which is NOT made redundant by the
-    // flow condition: a row outside the pot that still carries a flow is
-    // the clearing-that-missed-a-row state, and without the restriction
-    // this read would report it as counted money.
-    expect(repository).toContain("NON_POT_ROW");
-    expect(repository).toContain("POT_ROW");
+  });
+
+  test("EVERY ONE OF THE THREE READS CARRIES A RING PREDICATE IN ITS OWN WHERE CLAUSE", () => {
+    // CORRECTED AFTER BEING SHOWN GREEN AGAINST THE STATE IT FORBIDS
+    // (R-037a). This used to assert that the file text CONTAINED the strings
+    // "POT_ROW" and "NON_POT_ROW". Both are DEFINED at the top of the file,
+    // so the definitions alone satisfied that. Delete "AND ${POT_ROW}" from
+    // the WHERE of listGapRows and both identifiers remain defined and
+    // remain used elsewhere: the test stayed green, lint stayed green, and
+    // the gap listing began handing the screen held rows under a verdict
+    // that says the books close, which is hazard H14.19 exactly.
+    // Demonstrated, not argued: with that line removed, six of six passed.
+    //
+    // It now reads each read's OWN body and requires the predicate to be
+    // inside it. The bodies are found by the same enclosing-declaration walk
+    // the enumeration above uses, so the two cannot drift apart.
+    const lines = readFileSync(REPOSITORY, "utf8").split("\n");
+    const bodyOf = (name: string): string => {
+      const start = lines.findIndex((line) =>
+        new RegExp(`^(export )?const ${name}\\b`).test(line),
+      );
+      expect(start, `${name} is not declared in the repository`).toBeGreaterThan(-1);
+      let end = lines.length;
+      for (let i = start + 1; i < lines.length; i += 1) {
+        if (/^(export )?const \w+\s*[=:]/.test(lines[i] ?? "")) {
+          end = i;
+          break;
+        }
+      }
+      return lines.slice(start, end).join("\n");
+    };
+
+    // Each read, with the predicate its own WHERE must carry. The held read
+    // carries the INVERSE, which is the whole reason it can see what the
+    // other two must not.
+    const expectations = [
+      { read: "monthFigures", predicate: "${POT_ROW}" },
+      { read: "listGapRows", predicate: "${POT_ROW}" },
+      { read: "accountRowCounts", predicate: "NON_POT_ROW" },
+    ] as const;
+
+    for (const { read, predicate } of expectations) {
+      const body = bodyOf(read);
+      expect(
+        body.includes(predicate),
+        `${read} does not carry ${predicate} in its own body: a read that can see a row with no flow and does not filter by the ring hands the screen rows the verdict has already declared absent`,
+      ).toBe(true);
+      // And it must be in the WHERE, not merely mentioned: the predicate has
+      // to sit after the word WHERE in that same body.
+      const where = body.slice(body.search(/\bWHERE\b/));
+      expect(
+        where.includes(predicate),
+        `${read} mentions ${predicate} but not inside its WHERE clause`,
+      ).toBe(true);
+    }
+
+    // The counted read and the held read share one body, selected by a
+    // ternary, so both arms are asserted rather than only the one the
+    // enumeration names.
+    const shared = bodyOf("accountRowCounts");
+    expect(shared).toContain("POT_ROW");
+    expect(shared).toContain("NON_POT_ROW");
   });
 });

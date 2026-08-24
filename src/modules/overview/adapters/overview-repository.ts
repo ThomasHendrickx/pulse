@@ -104,7 +104,15 @@ const ACCOUNT_JOIN = Prisma.sql`JOIN "accounts" a
 // precisely the split-savings-account defect the reserves join exists to
 // prevent, arriving through the half that had no guard. regexp_replace with
 // the same class closes it.
-const CANONICAL_COUNTERPARTY_SQL = Prisma.sql`upper(regexp_replace(t."counterpartyIban", '[\s-]', '', 'g'))`;
+// A POSIX CLASS RATHER THAN \s, AND THE REASON IS A DEFECT THIS FILE ALREADY
+// SHIPPED ONCE. Written as '[\s-]' inside a TypeScript template literal, the
+// backslash-s is not a recognised escape and the template collapses it to a
+// bare s, so the database received '[s-]' and stripped the LETTER S and
+// hyphens while leaving every space in place. It looked right in the source
+// and was wrong in the query. Caught by test/e2e/overview-reads.spec.ts, the
+// first test in this project ever to execute this SQL. The POSIX class needs
+// no backslash and cannot be eaten by the template.
+const CANONICAL_COUNTERPARTY_SQL = Prisma.sql`upper(regexp_replace(t."counterpartyIban", '[[:space:]-]', '', 'g'))`;
 
 const MATCHED_LINK_EXISTS = Prisma.sql`EXISTS (
   SELECT 1 FROM "transfer_links" l
