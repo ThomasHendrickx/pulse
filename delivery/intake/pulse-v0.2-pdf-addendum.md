@@ -76,8 +76,8 @@ this check.
 - Row shape: transaction date, settlement date, description, amount.
   Booking date is the transaction date (spend lands in the month it
   happened), settlement date goes into the raw description.
-- Continuation lines ("Bedrag 35 USD", "Koers (1 EUR = ...)") belong to the
-  preceding row: FX detail, not transactions.
+- Continuation lines ("Bedrag <amount> <currency>", "Koers (1 EUR = <rate>)")
+  belong to the preceding row: FX detail, not transactions.
 - "Vorig saldo op <date>" and the "Totaal bedrag ... / Afrekening via je
   bank op <date>" block are balances and summary, not transactions.
 - The "DOMICILIERING VIA JE BANK" credit line IS a transaction: it is the
