@@ -20,6 +20,16 @@ export type Period = {
   readonly to: PlainDate;
 };
 
+// One account that put rows in the requested period, with how many. Never
+// an amount and never a count outside the period (decision D-60): the
+// reserves block is a MONTHLY MOVEMENT, and nothing in v1 accumulates across
+// months, so a number on this element must not be readable as a balance.
+export type AccountRowCount = {
+  readonly accountId: string;
+  readonly label: string;
+  readonly rowCount: number;
+};
+
 export type OverviewRepositoryPort = {
   // Query 1 of the read model: income grouped by merchant (income source),
   // with the counterparty text for unresolved grouping.
@@ -50,6 +60,19 @@ export type OverviewRepositoryPort = {
     context: HouseholdContext,
     period: Period,
   ) => Promise<readonly GapRow[]>;
+  // Queries 5 and 6, the two reads behind the month-accounts element
+  // (M3-P14, DR-0030, criterion 14.15): every account that put rows in the
+  // period, with whether those rows were COUNTED or HELD. Their ring
+  // predicates are complementary, so an account can appear in at most one of
+  // them by construction and the element can never show one account twice.
+  readonly listCountedAccountRows: (
+    context: HouseholdContext,
+    period: Period,
+  ) => Promise<readonly AccountRowCount[]>;
+  readonly listHeldAccountRows: (
+    context: HouseholdContext,
+    period: Period,
+  ) => Promise<readonly AccountRowCount[]>;
   // The empty state runs before the first import ever lands; one EXISTS.
   readonly hasAnyTransactions: (context: HouseholdContext) => Promise<boolean>;
 };

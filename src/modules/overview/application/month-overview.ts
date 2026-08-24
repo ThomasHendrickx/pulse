@@ -28,7 +28,7 @@ import {
   type OverviewGroup,
   type ReserveMovementGroup,
 } from "../domain/month-projection";
-import type { OverviewDependencies } from "./ports";
+import type { AccountRowCount, OverviewDependencies } from "./ports";
 
 export type MonthSection = {
   readonly groups: readonly OverviewGroup[];
@@ -64,6 +64,20 @@ export type MonthOverview = {
   readonly uninterpretedRows: readonly GapRow[];
   // Counted rows without a merchant, for the review pill in the header.
   readonly unresolvedCounterpartyCount: number;
+  // EVERY ACCOUNT THAT PUT ROWS IN THIS MONTH, with whether those rows were
+  // COUNTED or HELD (M3-P14, DR-0030, criterion 14.15). ONE field carrying
+  // both, fed by two reads with complementary ring predicates, so an account
+  // appears at most once by construction.
+  readonly accountsInPeriod: readonly MonthAccountEntry[];
+};
+
+export type MonthAccountEntry = {
+  readonly accountId: string;
+  readonly label: string;
+  // "counted": the rows entered this month's income and spend.
+  // "held": the rows are kept and counted in no month (DR-0030).
+  readonly state: "counted" | "held";
+  readonly rowCount: number;
 };
 
 export const getMonthOverview = async (
@@ -84,15 +98,45 @@ export const getMonthOverview = async (
   const previous = previousMonth(month);
 
   const period = monthBounds(month);
-  const [incomeRows, spendRows, reserveGroups, rawFigures, gapRows, hasAnyData] =
-    await Promise.all([
-      deps.overview.listIncomeGroups(context, period),
-      deps.overview.listSpendGroups(context, period),
-      deps.overview.listReserveMovements(context, period),
-      deps.overview.monthFigures(context, period),
-      deps.overview.listGapRows(context, period),
-      deps.overview.hasAnyTransactions(context),
-    ]);
+  const [
+    incomeRows,
+    spendRows,
+    reserveGroups,
+    rawFigures,
+    gapRows,
+    hasAnyData,
+    countedAccounts,
+    heldAccounts,
+  ] = await Promise.all([
+    deps.overview.listIncomeGroups(context, period),
+    deps.overview.listSpendGroups(context, period),
+    deps.overview.listReserveMovements(context, period),
+    deps.overview.monthFigures(context, period),
+    deps.overview.listGapRows(context, period),
+    deps.overview.hasAnyTransactions(context),
+    deps.overview.listCountedAccountRows(context, period),
+    deps.overview.listHeldAccountRows(context, period),
+  ]);
+  const entry = (
+    row: AccountRowCount,
+    state: "counted" | "held",
+  ): MonthAccountEntry => ({
+    accountId: row.accountId,
+    label: row.label,
+    state,
+    rowCount: row.rowCount,
+  });
+  // Sorted by label so the element reads the same way twice. The two reads
+  // carry complementary ring predicates, so this concatenation cannot
+  // produce two entries for one account; criterion 14.15 witness ONE
+  // asserts that rather than assuming it.
+  const accountsInPeriod: readonly MonthAccountEntry[] = [
+    ...countedAccounts.map((row) => entry(row, "counted")),
+    ...heldAccounts.map((row) => entry(row, "held")),
+  ].sort(
+    (a, b) =>
+      a.label.localeCompare(b.label) || (a.accountId < b.accountId ? -1 : 1),
+  );
 
   const foldOptions = {
     normalise: deps.normaliseCounterparty,
@@ -166,5 +210,6 @@ export const getMonthOverview = async (
     inTransitLegs: gapRows.filter((row) => row.gap === "in-transit"),
     uninterpretedRows: gapRows.filter((row) => row.gap === "uninterpreted"),
     unresolvedCounterpartyCount,
+    accountsInPeriod,
   };
 };

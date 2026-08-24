@@ -8,6 +8,7 @@ import type { HouseholdContext } from "@/platform/tenancy";
 import { normaliseCounterparty } from "@/modules/merchants/application";
 import { getMonthOverviewWith } from "@/modules/overview/application";
 import type {
+  AccountRowCount,
   CountedGroupRow,
   GapRow,
   OverviewDependencies,
@@ -45,6 +46,8 @@ type MonthData = {
   readonly reserves?: readonly ReserveMovementGroup[];
   readonly figures?: RawMonthFigures;
   readonly gaps?: readonly GapRow[];
+  readonly counted?: readonly AccountRowCount[];
+  readonly held?: readonly AccountRowCount[];
 };
 
 const fakeWorld = (byMonth: Record<string, MonthData>) => {
@@ -62,6 +65,9 @@ const fakeWorld = (byMonth: Record<string, MonthData>) => {
     monthFigures: async (_context, period) =>
       dataFor(period).figures ?? emptyFigures,
     listGapRows: async (_context, period) => dataFor(period).gaps ?? [],
+    listCountedAccountRows: async (_context, period) =>
+      dataFor(period).counted ?? [],
+    listHeldAccountRows: async (_context, period) => dataFor(period).held ?? [],
     hasAnyTransactions: async () => Object.keys(byMonth).length > 0,
   };
   const deps: OverviewDependencies = {

@@ -14,8 +14,13 @@ import {
 } from "./month-overview";
 import type { OverviewDependencies } from "./ports";
 
-export type { MonthOverview, MonthSection } from "./month-overview";
-export type { OverviewDependencies, OverviewRepositoryPort, Period } from "./ports";
+export type { MonthAccountEntry, MonthOverview, MonthSection } from "./month-overview";
+export type {
+  AccountRowCount,
+  OverviewDependencies,
+  OverviewRepositoryPort,
+  Period,
+} from "./ports";
 export type {
   CountedGroupRow,
   GapRow,
@@ -48,6 +53,8 @@ const liveDependencies: OverviewDependencies = {
     listReserveMovements: repository.listReserveMovements,
     monthFigures: repository.monthFigures,
     listGapRows: repository.listGapRows,
+    listCountedAccountRows: repository.listCountedAccountRows,
+    listHeldAccountRows: repository.listHeldAccountRows,
     hasAnyTransactions: repository.hasAnyTransactions,
   },
   // Lazy on purpose: platform/config's build-safe contract forbids env

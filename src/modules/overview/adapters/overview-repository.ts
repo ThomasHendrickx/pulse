@@ -23,7 +23,7 @@ import type {
   RawMonthFigures,
   ReserveMovementGroup,
 } from "../domain/month-projection";
-import type { Period } from "../application/ports";
+import type { AccountRowCount, Period } from "../application/ports";
 
 // The cash marker for SQL, derived from the ledger's published pattern
 // list so there is ONE list (see the sibling note at the patterns'
@@ -56,6 +56,46 @@ const CASH_SQL_PATTERN = CASH_WITHDRAWAL_PATTERNS.map(
 // context (test/schema/tenancy.test.ts). The SQL pin reads this file's TEXT
 // rather than importing the symbol, so nothing needs to be exported.
 const COUNTERPARTY_TEXT_SQL = Prisma.sql`COALESCE(t."counterpartyName", t."description")`;
+
+// THE RING PREDICATE, WRITTEN ONCE (M3-P14 decision D-56, M3-P15 step 5).
+// Every read in this file that can reach a transaction row carries it, and
+// they all carry the SAME one, because the cause block is gated on a COUNT
+// while the rows under it come from a LISTING and the two disagreeing is how
+// a household is shown a green verdict over money the repository is still
+// handing the screen (criterion 14.14 case FOUR).
+//
+// SCOPING IS BY THE ACCOUNT'S RING AND NEVER BY DROPPING A NULL-FLOW
+// CONDITION. A null flow on a POT account is a row ingest committed and
+// interpretation never reached: it must go on holding the verdict open and
+// go on being listed, which is finding CR-502 HELD rather than undone (see
+// the note at monthFigures below). A null flow on an account outside the pot
+// is the HELD state DR-0030 defines, and it is neither counted nor listed as
+// a gap; the held read below is what reports it, and it carries the INVERSE
+// of this predicate.
+const POT_ROW = Prisma.sql`a."role" = 'POT'::"AccountRole"`;
+const NON_POT_ROW = Prisma.sql`a."role" <> 'POT'::"AccountRole"`;
+const ACCOUNT_JOIN = Prisma.sql`JOIN "accounts" a
+      ON a."id" = t."accountId" AND a."householdId" = t."householdId"`;
+
+// THE CANONICAL ACCOUNT-NUMBER FORM, IN SQL. The TypeScript definition is
+// src/platform/account-number.ts and it is the authority; this is the copy
+// the reserves join and its GROUPING actually read, and it is written ONCE
+// here for the same reason COUNTERPARTY_TEXT_SQL above is.
+//
+// IT IS NOT A TRANSLATION OF THE WHOLE FUNCTION and the difference is
+// deliberate: the TypeScript form is SHAPE-GATED and returns a string that
+// is not an account number unchanged, because it is applied to a column that
+// usually holds a free-text descriptor. Here the surrounding query already
+// restricts to RESERVE rows with a non-null counterparty account, so every
+// value reaching this expression is an account number and the gate would
+// decide nothing.
+//
+// THE GROUPING USES IT TOO, not only the join, and that is the half that is
+// easy to miss: the stored column really does hold two surface forms for one
+// account, so a normalised join with a raw GROUP BY shows the household one
+// savings account twice, under the right name both times, with the money
+// split (criterion 14.2, seventh assertion).
+const CANONICAL_COUNTERPARTY_SQL = Prisma.sql`upper(replace(replace(t."counterpartyIban", ' ', ''), '-', ''))`;
 
 const MATCHED_LINK_EXISTS = Prisma.sql`EXISTS (
   SELECT 1 FROM "transfer_links" l
@@ -117,6 +157,7 @@ const countedGroups = async (
       SUM(t."amountCents")::bigint                          AS "totalCents",
       COUNT(*)::bigint                                      AS "rowCount"
     FROM "transactions" t
+    ${ACCOUNT_JOIN}
     LEFT JOIN "merchants" m
       ON m."id" = t."merchantId" AND m."householdId" = t."householdId"
     LEFT JOIN "merchant_tags" mt
@@ -126,6 +167,7 @@ const countedGroups = async (
     LEFT JOIN "tags" pt
       ON pt."id" = mt."tagId" AND pt."householdId" = t."householdId"
     WHERE t."householdId" = ${context.householdId}::uuid
+      AND ${POT_ROW}
       AND t."flow" = ${flow}::"Flow"
       AND t."bookingDate" >= ${plainDateToDbDate(period.from)}
       AND t."bookingDate" <= ${plainDateToDbDate(period.to)}
@@ -167,14 +209,17 @@ export const listReserveMovements = async (
     }[]
   >`
     SELECT
-      t."counterpartyIban"          AS "counterpartyIban",
-      a."label"                     AS "label",
+      ${CANONICAL_COUNTERPARTY_SQL} AS "counterpartyIban",
+      ra."label"                    AS "label",
       SUM(t."amountCents")::bigint  AS "totalCents",
       COUNT(*)::bigint              AS "rowCount"
     FROM "transactions" t
-    LEFT JOIN "accounts" a
-      ON a."iban" = t."counterpartyIban" AND a."householdId" = t."householdId"
+    ${ACCOUNT_JOIN}
+    LEFT JOIN "accounts" ra
+      ON ra."iban" = ${CANONICAL_COUNTERPARTY_SQL}
+     AND ra."householdId" = t."householdId"
     WHERE t."householdId" = ${context.householdId}::uuid
+      AND ${POT_ROW}
       AND t."flow" = 'RESERVE'::"Flow"
       AND t."counterpartyIban" IS NOT NULL
       AND t."bookingDate" >= ${plainDateToDbDate(period.from)}
@@ -230,7 +275,9 @@ export const monthFigures = async (
       COUNT(*) FILTER (WHERE t."flow" IS NULL)::bigint                                  AS "uninterpretedCount",
       COUNT(*) FILTER (WHERE t."flow" IS NOT NULL)::bigint                              AS "rowCount"
     FROM "transactions" t
+    ${ACCOUNT_JOIN}
     WHERE t."householdId" = ${context.householdId}::uuid
+      AND ${POT_ROW}
       AND t."bookingDate" >= ${plainDateToDbDate(period.from)}
       AND t."bookingDate" <= ${plainDateToDbDate(period.to)}
   `;
@@ -240,6 +287,16 @@ export const monthFigures = async (
   // every surface with a green panel. The named sums, changeInPot and
   // rowCount each filter on flow themselves, so the figures over
   // interpreted rows are unchanged.
+  //
+  // WHAT THE WHERE DOES CARRY, ADDED BY M3-P14 UNDER DECISION D-56, is the
+  // RING. CR-502 is held, not undone: a null flow on a POT account is still
+  // counted here and still holds the verdict open. What leaves is a null
+  // flow on an account OUTSIDE the pot, which is a HELD row under DR-0030
+  // and not a gap: without this scoping a household that ever imported a
+  // savings statement would see its books never close, over rows the
+  // product had decided on purpose not to interpret. The SAME predicate is
+  // on listGapRows below, because the cause block is gated on this count
+  // while its rows come from that listing.
   const row = rows[0];
   if (row === undefined) {
     throw new Error("Aggregate query returned no row");
@@ -287,8 +344,9 @@ export const listGapRows = async (
       a."label"                                       AS "accountLabel",
       t."amountCents"                                 AS "amountCents"
     FROM "transactions" t
-    JOIN "accounts" a ON a."id" = t."accountId" AND a."householdId" = t."householdId"
+    ${ACCOUNT_JOIN}
     WHERE t."householdId" = ${context.householdId}::uuid
+      AND ${POT_ROW}
       AND t."bookingDate" >= ${plainDateToDbDate(period.from)}
       AND t."bookingDate" <= ${plainDateToDbDate(period.to)}
       AND (
@@ -320,6 +378,91 @@ const parseGapKind = (value: string): GapRow["gap"] => {
       throw new Error(`Unknown gap kind from SQL: ${value}`);
   }
 };
+
+// THE TWO READS THAT NAME EVERY ACCOUNT WITH ROWS IN THE PERIOD (M3-P14,
+// DR-0030, criterion 14.15). Two rather than one, and they do different
+// work, which an earlier draft of this plan conflated.
+//
+// THE HELD READ is the THIRD test of an absent flow in this repository, and
+// it carries the INVERSE ring predicate of the other two: rows with no flow
+// on accounts that are NOT pot accounts, counted per account over the
+// requested period. That is the held state, and criterion 14.14 case FIVE
+// enumerates exactly three such reads and fails on a fourth.
+//
+// THE COUNTED READ carries NO null-flow condition at all, which is why it
+// sits OUTSIDE that enumeration rather than widening it: it is rows WITH a
+// flow ON pot accounts. It exists because the account whose ring was
+// answered wrongly toward the spending side IS a pot account, so a read
+// restricted to non-pot accounts could never see the very case the screen
+// element exists to surface, and that case is the dangerous one: a savings
+// account answered as a spending account has its interest taken as income,
+// its outgoings as spend and both legs of every transfer paired as internal,
+// so no cause block appears, the reserves card reads zero and the verdict
+// reads that the books close. Nothing on the month view's FIGURES differs
+// from a correct month.
+//
+// THE RING RESTRICTION ON THE COUNTED READ IS NOT MADE REDUNDANT BY THE FLOW
+// CONDITION. A row on a non-pot account that STILL CARRIES A FLOW is the
+// clearing-that-missed-a-row state; without the restriction this read would
+// report it to the household as counted money on the one screen state built
+// to tell counted from held.
+//
+// BOTH RETURN COUNTS PER ACCOUNT, never an amount and never a sum outside
+// the requested period, which is decision D-60: no figure in v1 is
+// accumulated across months, and a count of statements held is not a
+// balance.
+//
+// Written in raw SQL rather than through the Prisma client deliberately: it
+// is the style the other two absent-flow reads use and the style criterion
+// 14.14 case FIVE's enumeration was built for.
+const accountRowCounts = async (
+  context: HouseholdContext,
+  period: Period,
+  ring: "counted" | "held",
+): Promise<readonly AccountRowCount[]> => {
+  const rows = await prisma.$queryRaw<
+    readonly {
+      accountId: string;
+      label: string;
+      rowCount: bigint;
+    }[]
+  >`
+    SELECT
+      t."accountId"     AS "accountId",
+      a."label"         AS "label",
+      COUNT(*)::bigint  AS "rowCount"
+    FROM "transactions" t
+    ${ACCOUNT_JOIN}
+    WHERE t."householdId" = ${context.householdId}::uuid
+      AND ${ring === "counted" ? POT_ROW : NON_POT_ROW}
+      AND ${
+        ring === "counted"
+          ? Prisma.sql`t."flow" IS NOT NULL`
+          : Prisma.sql`t."flow" IS NULL`
+      }
+      AND t."bookingDate" >= ${plainDateToDbDate(period.from)}
+      AND t."bookingDate" <= ${plainDateToDbDate(period.to)}
+    GROUP BY 1, 2
+    ORDER BY 2 ASC, 1 ASC
+  `;
+  return rows.map((row) => ({
+    accountId: row.accountId,
+    label: row.label,
+    rowCount: Number(row.rowCount),
+  }));
+};
+
+export const listCountedAccountRows = (
+  context: HouseholdContext,
+  period: Period,
+): Promise<readonly AccountRowCount[]> =>
+  accountRowCounts(context, period, "counted");
+
+export const listHeldAccountRows = (
+  context: HouseholdContext,
+  period: Period,
+): Promise<readonly AccountRowCount[]> =>
+  accountRowCounts(context, period, "held");
 
 export const hasAnyTransactions = async (
   context: HouseholdContext,

@@ -230,6 +230,14 @@ export const listCountedTransactions = async (
     where: {
       householdId: context.householdId,
       flow: { in: ["INCOME", "SPEND"] },
+      // SCOPED BY THE RING (M3-P15 step 5). A counted flow can only sit on
+      // a pot account once interpretation has run, so this filter changes
+      // nothing on a correctly interpreted household: it is defence in
+      // depth against a clearing that missed a row, so a stale INCOME or
+      // SPEND on an account that has LEFT the pot can never go on being
+      // offered for naming. The phase says that rather than claiming the
+      // verdict depends on it.
+      account: { role: "POT" },
     },
     select: {
       id: true,
