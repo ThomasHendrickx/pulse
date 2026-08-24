@@ -235,7 +235,6 @@ findings:
 #    a same-project pooling-mode mismatch, which is real but narrower than
 #    the cross-project hazard this interlock exists for).
 
-findings:
   - id: CR4-M3P12-02
     severity: medium
     analysis: >-
@@ -359,7 +358,6 @@ findings:
 #    directly reproduced defect against a real database with the real,
 #    unmodified adapter code.
 
-findings:
   - id: CR4-M3P12-03
     severity: medium
     analysis: >-
@@ -513,6 +511,499 @@ findings:
 #     warning 6, then the specific CR3-M3P12-09 wording-alignment spec the
 #     dispatch names.
 
-criteria: []
-deviations-judged: []
-hazard-classes-addressed: []
+criteria:
+  - id: '12.1'
+    quote: "CONVERGENCE, COUNTED... the test asserts the distinct-key count is exactly 12, printing both 12 and 24"
+    evidence:
+      - "test/domain/counterparty-identity.test.ts is present and part of the 579-test green run (npm test, exit 0). Not independently re-derived by me line by line; relying on the passing fast gate plus my own reading of counterparty-identity.ts's derivation logic, which I traced in full for attack surface 1."
+      - "The composition clause's strict-reading dispute is recorded as a declared deviation in delivery/work-history/m3-p12.yaml:800-816 and judged below."
+    met: true
+  - id: '12.2'
+    quote: "CONVERGENCE ON THE OWNER'S OWN MONTH... total rows 39, distinct identity keys EXACTLY 20 against a recorded baseline of 25"
+    evidence:
+      - "This criterion asks for a phase work history record of a real-document run, not a fast-gate test. I did not re-run the measurement script against the real documents myself in this round; I relied on the committed record and the fact that this criterion is unchanged by the round-3-to-round-4 diff (not one of the five files this round touched)."
+    met: true
+  - id: '12.3'
+    quote: "NAMED ONCE, MATCHED AGAIN... calls assignMerchant EXACTLY ONCE... then asserts that a DIFFERENT transaction... now carries that merchant id"
+    evidence:
+      - "test/application/counterparty-identity-journey.test.ts (1 test) PASSED in my own npm test run: \"named once, matched again (criterion 12.3) > one naming of the designated counterparty reaches a later transaction it was not made from\", 647ms."
+    met: true
+  - id: '12.4'
+    quote: "DIFFERENT COUNTERPARTIES STAY DIFFERENT WHERE THE STORED VALUES DIFFER... this criterion is NOT the guard on H12.1"
+    evidence:
+      - "test/domain/counterparty-identity-contracts.test.ts (12 tests) PASSED in my own npm test run. Not independently re-derived against the generator's own record by me this round; relying on the passing fast gate."
+    met: true
+  - id: '12.5'
+    quote: "THIS PHASE STRIPS NOTHING NEW... A separate test asserts normaliseCounterparty never emits a lowercase letter"
+    evidence:
+      - "test/domain/counterparty-identity.test.ts:187-211 (\"normaliseCounterparty never emits a lowercase letter\") is present and I read it directly during attack surface 1; it asserts /[a-z]/.test(sample) is false. Confirmed by reading src/modules/merchants/domain/normalise-counterparty.ts:457 (rawText.toUpperCase() as the first transformation) and every constant substituted into the output (CARD_NUMBER_LABEL etc, all uppercase literals)."
+      - "git diff of the baseline against this branch for normalise-counterparty.ts's card-grammar constants was not re-run by me this round; this criterion is unchanged by the round-3-to-round-4 diff (not one of the five files touched)."
+    met: true
+  - id: '12.6'
+    quote: "A ROW MATCHING NO FAMILY IS NOT GUESSED AT... no row is ever keyed on a bare namespace"
+    evidence:
+      - "src/modules/merchants/domain/counterparty-identity.ts:83-113 (isBareIdentityKey, identityRemainder) read in full during attack surface 5; the predicate is reused verbatim by merchant-review.ts and, after this round's fix, by month-projection.ts (isBareKey), so the guard is applied consistently at all five consumer sites I traced."
+    met: true
+  - id: '12.7'
+    quote: "NO NAMING THE OWNER MADE IS DISCARDED, MEASURED AS EFFECT AND NOT AS ROWS... asserts the after set is a SUPERSET of the before set"
+    evidence:
+      - "test/application/rederive-merchant-rules.test.ts's superset tests are present and passing (part of the 579-test green run). HOWEVER my own witness in attack surface 1 (finding CR4-M3P12-01) constructed a case, run through the real rederiveMerchantRules, where a real prior assignment (present in the before-set under round two's code, confirmed by a counterfactual toggle) is silently absent from BOTH before and after after round three's fix, so the superset property as CODED holds trivially (empty subset of anything) while the guarantee the criterion is FOR does not. I read this as the criterion's own TEST passing while the property it exists to protect has a hole the test's seeded data does not reach."
+    met: false
+  - id: '12.8'
+    quote: "THE RE-DERIVATION IS IDEMPOTENT, AND IDEMPOTENT MEANS THE SAME ANSWER RATHER THAN A QUIET ONE"
+    evidence:
+      - "test/application/rederive-merchant-rules.test.ts's idempotence test (comparing formatDecisionReport(second) to formatDecisionReport(first), excluding matched counts) is present and passing. I additionally witnessed idempotence myself under a committed-then-failed-then-retried scenario (attack surface 2, scratch witness 2): rulesAdded 0 and patternsRewritten 0 on the second call, no duplicate account rule, no thrown error."
+    met: true
+  - id: '12.9'
+    quote: "FACTS ARE NOT REWRITTEN AND THE CHANGE IS A DERIVATION PLUS A RECOMPUTE"
+    evidence:
+      - "src/modules/merchants/application/rederive-rules.ts read in full: no call anywhere in the decide or apply phases touches a transactions row; applyRuleWrites (src/modules/merchants/adapters/merchant-repository.ts:125-168) writes only merchant_rules. Reachable transaction writes happen only through the separate recompute call, which is INTERPRETATION rather than a fact write (pulse-domain section 2)."
+    met: true
+  - id: '12.10'
+    quote: "PREFIX AND PATTERN ARE SETTLED... matchRules refuses to apply a PREFIX or a PATTERN rule to an ACCOUNT-basis key"
+    evidence:
+      - "Unchanged by this round's diff (not one of the five files touched); src/modules/merchants/domain/merchant-rule.ts was not in the f3bfd66..0d41c3b diff. Relying on the passing fast gate for this criterion's own tests."
+    met: true
+  - id: '12.11'
+    quote: "THE TWO SCREENS AGREE WHERE THEY ARE MEANT TO"
+    evidence:
+      - "Read src/modules/overview/adapters/overview-repository.ts:112-134 (the SQL) and src/modules/merchants/domain/merchant-review.ts's groupDirection during attack surface 5; both consult counterpartyIdentity/isBareIdentityKey identically. test/domain/merchant-review.test.ts's SQL pin is present and passing."
+    met: true
+  - id: '12.12'
+    quote: "THE MODULE BOUNDARY HOLDS. The MerchantResolver port still has exactly one member"
+    evidence:
+      - "src/modules/merchants/application/resolve-identities.ts read in full: takes distinct identity keys, matches verbatim, no normalisation. src/modules/ledger/domain/corrections.ts was not touched by this round's diff (confirmed by git diff f3bfd66 0d41c3b --stat, which does not list it)."
+    met: true
+  - id: '12.13'
+    quote: "NOTHING OF THE OWNER'S DATA REACHES THE REPOSITORY"
+    evidence:
+      - "npm run gate:privacy exit 0, \"gate:privacy clean\", in my own run this round. No real descriptor, amount, date, place or counterparty appears anywhere in this review document; every witness I built used wholly invented values from test/fixtures/generate-pdf-fixtures.ts's IDENTITY_FIXTURE_ACCOUNTS or synthetic strings I wrote myself, and no filename beyond the 8-hex-prefix convention was used."
+    met: true
+  - id: '12.14'
+    quote: "THE STANDING GATE. npm run typecheck, npm run lint, npm test and npm run gate:privacy all exit 0, and npm run test:e2e exits 0"
+    evidence:
+      - "My own run this round: typecheck exit 0, lint exit 0, test exit 0 (579/579), gate:privacy exit 0, gate:tokens exit 0. test:e2e result recorded separately below once my own run completes; quoted honestly whatever it says, per the dispatch's instruction, including any red."
+    met: PENDING_E2E
+  - id: '12.15'
+    quote: "THE WHOLE-CORPUS EFFECT IS RECORDED, NOT ONLY THE HAPPY FIXTURE"
+    evidence:
+      - "Unchanged by this round's diff. Not independently re-derived by me this round; relying on the passing fast gate and the unchanged status of the underlying fixtures and script."
+    met: true
+  - id: '12.16'
+    quote: "THE ACCOUNT BASIS FAILS CLOSED, AND THIS IS THE GUARD ON H12.1"
+    evidence:
+      - "src/modules/merchants/domain/counterparty-identity.ts's isTrustedCounterpartyAccount and the country-length table read in full during attack surface 1's setup (I used IDENTITY_FIXTURE_ACCOUNTS.counterparty2/3, both of which pass this gate, to build my witness). Unchanged by this round's diff."
+    met: true
+  - id: '12.17'
+    quote: "THE RE-DERIVATION HAS ONE NAMED INVOCATION POINT AND ONE STATED ORDER... THE DEPLOYED RUN IS OWED BY M3-P16 AND IS NOT DROPPED HERE"
+    evidence:
+      - "package.json:19 carries \"rederive:merchant-rules\": \"tsx scripts/rederive-merchant-rules.ts\", confirmed by reading it directly. scripts/rederive-merchant-rules.ts:6-15 states the order and the reason in its own header, as required. The deployed-run half is explicitly deferred to M3-P16 per delivery/work-history/m3-p12.yaml's own deviation entry, which this criterion's own text anticipates (\"THE DEPLOYED RUN IS OWED BY M3-P16 AND IS NOT DROPPED HERE\")."
+    met: true
+  - id: '12.18'
+    quote: "THE RULE SUBJECT IS VALIDATED AT THE WRITE BOUNDARY"
+    evidence:
+      - "src/modules/merchants/application/assign-merchant.ts read during attack surface 1 investigation (unchanged by this round's diff, confirmed absent from git diff f3bfd66 0d41c3b --stat)."
+    met: true
+  - id: '12.19'
+    quote: "THE GOVERNING DOCUMENT SAYS WHAT THE CODE DOES"
+    evidence:
+      - "Not independently re-checked against .claude/skills/pulse-domain/SKILL.md by me this round; unchanged by this round's diff, so relying on the state round three's own review already confirmed."
+    met: true
+  - id: '12.20'
+    quote: "THE RESIDUE IS COUNTED AND NAMED"
+    evidence:
+      - "Unchanged by this round's diff; not independently re-derived by me this round."
+    met: true
+  - id: '12.21'
+    quote: "PASS ONE CANNOT LOSE A RULE'S MEANING, FOR ANY KIND"
+    evidence:
+      - "test/property/pass-one-preserves-meaning.test.ts (5 tests) PASSED in my own npm test run. Read src/modules/merchants/application/rederive-rules.ts:403-436 (pass one's guards for already-namespaced and empty patterns) directly during attack surface 1; both guards are reached and both are distinct from this round's new twin/supersede logic."
+    met: true
+  - id: '12.22'
+    quote: "THE TRUST TABLE IS PINNED AND SOURCED"
+    evidence:
+      - "Unchanged by this round's diff; not independently re-derived by me this round."
+    met: true
+  - id: '12.23'
+    quote: "THE ROUTINE REFUSES A DATABASE IT WAS NOT TOLD TO WRITE TO, AND THE REFUSAL SHIPS IN THE SAME MERGE AS THE ROUTINE"
+    evidence:
+      - "src/platform/db/target-guard.ts read in full (250 lines) for attack surface 3. host= parameter refused, unknown query parameters refused against a 4-entry allow list, database name checked against \"postgres\", host and both ref shapes checked, no override flag, nothing resolved printed on any refusal path (confirmed by reading every `reason:` string in the file). The equivalence exception (percent-decoded username) is documented and is fail-closed by construction (WHATWG URL vs the client's decoder), matching the criterion's own stated acceptance of that one direction."
+      - "MY OWN FINDING CR4-M3P12-02 (attack surface 3): the interlock does not compare the connection's PORT at all, witnessed empirically (three otherwise-identical connection strings differing only in port, 5432/6543/9999, all approved identically). The criterion's own text does not name port as one of the fields the ref/host comparison must cover, so I read the criterion's LITERAL text as met while flagging the port gap as a hazard-class matter distinct from what 12.23 explicitly asks for, rather than marking the criterion itself unmet on a field it never named."
+    met: true
+
+deviations-judged:
+  - deviation: >-
+      Criterion 12.17, the half requiring the phase work history to record the
+      command actually run AGAINST THE DEPLOYED DATABASE with its exit code
+      and its printed before-and-after assignment-set sizes.
+    serves-plan-intent: true
+    reasoning: >-
+      D-46 forbids the routine running before the code deploys and this
+      branch is not deployed, so producing this record here would require
+      either violating D-46 or fabricating a number. Deferring to M3-P16,
+      whose entry condition is the deploy, is the only reading that does not
+      contradict the decision the criterion itself is built on. I did not
+      independently verify M3-P16 exists as a phase to receive this, but the
+      criterion's own text (quoted in my criteria walk for 12.17) anticipates
+      exactly this split.
+  - deviation: >-
+      Criteria 12.7, 12.8 and 12.9, which speak of "a seeded database" holding
+      MerchantRule rows written under the baseline derivation.
+    serves-plan-intent: true
+    reasoning: >-
+      Consistent with this tree's standing convention (no live-Postgres lane
+      in the fast gate, confirmed by reading test/e2e/merchant-rule-write.spec.ts's
+      own header, which states this explicitly and is the ONE real-Postgres
+      spec covering the adjacent write path). The deviation is honestly
+      recorded rather than silently reinterpreting the word "database".
+  - deviation: >-
+      files-to-touch, which does not name .gitignore.
+    serves-plan-intent: true
+    reasoning: >-
+      A leaked absolute container path in a public repository is a real
+      defect and fixing it is squarely in the phase's interest; the
+      orchestrator's own no-history-rewrite decision is recorded as theirs
+      rather than the implementer's, which is the right attribution. I did
+      not re-verify the blob is still reachable in branch history myself.
+  - deviation: >-
+      files-to-touch, which does not name src/app/globals.css, test/e2e/,
+      messages/en.json, messages/nl.json, messages/fr.json or
+      src/app/(app)/merchants/page.tsx.
+    serves-plan-intent: true
+    reasoning: >-
+      Criterion 12.18 requires the refusal to reach the reader, which is
+      unreachable without touching a route, a style and all three message
+      catalogues; the deviation names the criterion that forces it rather
+      than asserting the files were needed without a reason. The correction
+      to the M3-P9 conflicts-with entry (a false CHECKED claim corrected
+      rather than left standing) is exactly the discipline clause R-087
+      asks for.
+  - deviation: >-
+      Criterion 12.1's composition clause, "at least 8 rows carry none",
+      under its strict reading.
+    serves-plan-intent: true
+    reasoning: >-
+      The deviation itself states the criterion's own arithmetic (24 rows,
+      12 counterparties, 8 descriptor-basis rows fixed by construction)
+      contradicts the strict "no account field" reading, and attributes the
+      defect to the plan rather than the implementation, with both prior
+      review lanes agreeing per the deviation's own text. I did not
+      independently re-derive the fixture's row-by-row composition to
+      confirm the arithmetic myself this round.
+  - deviation: >-
+      Criterion 12.5's committed baseline table, test/fixtures/baseline-descriptor-keys.json.
+    serves-plan-intent: true
+    reasoning: >-
+      A privacy-gate housekeeping note (one invented substring added to the
+      identifier allow list with its provenance) rather than a substantive
+      deviation from the plan's intent.
+  - deviation: >-
+      Step 13, "run the full gate before calling the slice done", read as one
+      clean run of every gate.
+    serves-plan-intent: true
+    reasoning: >-
+      Honestly recorded rather than summarised away, matching what my own
+      round found for the fast gate (clean on the first run) and what the
+      gate-evidence entry for Playwright separately states as red with a
+      named cause. I judge the RECORDING as serving the plan's intent; the
+      Playwright RESULT itself is judged in the e2e section of this review,
+      not here.
+  - deviation: >-
+      Criterion 12.23, added to the plan AFTER this implementation was built.
+    serves-plan-intent: true
+    reasoning: >-
+      Built in this round rather than left as an acknowledged gap, which is
+      the strongest possible response to a criterion added after the fact.
+      My own reading of target-guard.ts in full (attack surface 3) confirms
+      the interlock exists and does most of what 12.23 asks; my finding
+      CR4-M3P12-02 is about a field the criterion's own text never named
+      (port), not about the interlock being absent or decorative.
+  - deviation: >-
+      files-to-touch, which does not name src/platform/db/guard-cli.ts or
+      src/platform/db/resolve-env.ts.
+    serves-plan-intent: true
+    reasoning: >-
+      src/platform/db/ is on the amended files-to-touch list per the plan
+      text I read, and the extraction of resolve-env.ts is exactly what
+      criterion 12.23's own "reads what the client will use" requirement
+      demands; I confirmed by reading resolve-env.ts in full (attack
+      surface 3) that guard-cli.ts's behaviour is unchanged (resolveDbEnv's
+      signature and reading are identical to before).
+  - deviation: >-
+      Criterion 12.17, the deployed run.
+    serves-plan-intent: true
+    reasoning: >-
+      Restates the first 12.17 deviation with the criteria lane's agreement
+      recorded; judged the same way for the same reason.
+  - deviation: >-
+      Criterion 12.23's consequence: the routine cannot be rehearsed against
+      any database an operator can create.
+    serves-plan-intent: true
+    reasoning: >-
+      I directly witnessed this consequence myself: my own local database
+      pulse_r4haz, created on 127.0.0.1:54322 and migrated, could never be
+      approved by assessRederiveTarget because a local connection carries no
+      project ref in either field (confirmed by reading target-guard.ts:163-169
+      and by the shape of my own DATABASE_URL, which is exactly the local
+      pattern the interlock refuses). The alternative (an override flag) is
+      explicitly forbidden by the criterion's own text, so recording the
+      limitation rather than engineering around it is the correct response.
+  - deviation: >-
+      files-to-touch, which does not name src/modules/overview/.
+    serves-plan-intent: true
+    reasoning: >-
+      This is CR3-M3P12-06's own repair, which I read and confirmed in full
+      during attack surface 5: the fold now marks an unnameable group instead
+      of rendering an empty label, the predicate is injected the same way the
+      identity already was, and the overview module still imports nothing
+      from merchants (confirmed by reading its own import list). The group's
+      money stays in the month, which I confirmed directly by reading the
+      fold's summation logic.
+
+hazard-classes-addressed:
+  - class-id: H12.1
+    probed: >-
+      Built a witness fixture (attack surface 1) with two rows carrying two
+      DIFFERENT trusted accounts (IDENTITY_FIXTURE_ACCOUNTS.counterparty2 and
+      .counterparty3) sharing one descriptor pattern superseded by a twin
+      rule; checked directly whether these two accounts were ever merged
+      into ONE group. They were not: they simply fell out of both before and
+      after (finding CR4-M3P12-01), which is a different failure (a lost
+      assignment) from a collapse (two accounts sharing one key). Confirmed
+      isTrustedCounterpartyAccount and the country-length table are
+      untouched by this round's diff (git diff f3bfd66 0d41c3b --stat).
+    cleared-because: >-
+      No new collapse path found; the account basis's trust gate is
+      unchanged by this round and my own constructed adversarial case did
+      not produce two different trusted accounts sharing one identity key.
+  - class-id: H12.2
+    probed: >-
+      Not re-probed fresh this round: normalise-counterparty.ts, the
+      fixture generator and the real-document measurement script are not
+      among the five files this round's diff touches (confirmed via git
+      diff f3bfd66 0d41c3b --stat).
+    cleared-because: >-
+      Out of this round's attack surface; unchanged since the prior round's
+      review, which is context rather than authority for this one but which
+      I have no evidence to contradict.
+  - class-id: H12.3
+    probed: >-
+      Full trace of rederive-rules.ts's before/after computation (attack
+      surface 1), including a live counterfactual toggle proving the same
+      seeded data was caught by the pre-round-three code and is silently
+      missed by the shipped code.
+    finding: CR4-M3P12-01
+  - class-id: H12.4
+    probed: >-
+      Read src/modules/merchants/application/rederive-rules.ts end to end
+      (attack surfaces 1 and 2): no call in the decide phase or the apply
+      phase touches the transactions table. applyRuleWrites
+      (src/modules/merchants/adapters/merchant-repository.ts:125-168)
+      writes only merchant_rules; the separate recompute call is
+      interpretation, not a fact write.
+    cleared-because: >-
+      No transaction-row write found anywhere in the migration's write
+      path, confirmed by direct reading rather than by grep alone.
+  - class-id: H12.5
+    probed: >-
+      npm run gate:privacy exit 0 in my own run. Read back my own scratch
+      witness files before running them and before deleting them: every
+      identifier used was drawn from test/fixtures/generate-pdf-fixtures.ts's
+      already-invented, already-allow-listed IDENTITY_FIXTURE_ACCOUNTS
+      constants or was a string I wrote myself (e.g. "SHARED CORNER SHOP"),
+      and every commit message in this review's own history was checked
+      before committing to carry no data.
+    cleared-because: >-
+      No real descriptor, amount, date, place or counterparty content
+      reached this review's commits, fixtures or this document.
+  - class-id: H12.6
+    probed: >-
+      Traced isBareIdentityKey's enforcement at all five consumer sites
+      during attack surface 5, including the NEW month-projection.ts site
+      this round added.
+    cleared-because: >-
+      The predicate is applied consistently and I found no shortened or
+      bucketed key path anywhere in the traced consumers.
+  - class-id: H12.7
+    probed: >-
+      Not re-probed fresh this round: normalise-counterparty.ts's card
+      grammar and always-on passes are not among the five files this
+      round's diff touches (confirmed via git diff --stat).
+    cleared-because: >-
+      Out of this round's attack surface; unchanged since the prior round.
+  - class-id: H12.8
+    probed: >-
+      Attack surface 5: read overview-repository.ts's SQL and merchant-review.ts's
+      groupDirection side by side; both consult counterpartyIdentity and
+      isBareIdentityKey identically, and the COUNTERPARTY_TEXT_SQL fragment
+      criterion 12.11 pins is unchanged by this round.
+    cleared-because: >-
+      No divergence found between the two screens beyond the three
+      documented, expected exceptions (cash-first branching, tag
+      regrouping, date-bound scope) that predate this round.
+  - class-id: H12.9
+    probed: >-
+      Not re-probed fresh this round: the CSV-import path and criterion
+      12.15's recovery test are not among the five files this round's diff
+      touches.
+    cleared-because: >-
+      Out of this round's attack surface; unchanged since the prior round.
+  - class-id: H12.10
+    probed: >-
+      Read src/modules/merchants/application/resolve-identities.ts in full:
+      the exported function takes distinct identity keys typed as strings
+      derived only from counterpartyIdentity call sites, and its port
+      member is the sole MerchantResolver member (criterion 12.12).
+    cleared-because: >-
+      No call site handing raw text to this member was found; unchanged by
+      this round's diff.
+  - class-id: H12.11
+    probed: >-
+      Confirmed src/modules/ledger/domain/corrections.ts is absent from
+      git diff f3bfd66 0d41c3b --stat, so its counterpartyKey is
+      byte-unchanged by this round.
+    cleared-because: >-
+      The sibling that must stay unmerged was not touched.
+  - class-id: H12.12
+    probed: >-
+      Attack surface 2's second scratch witness: a run that promotes (adds
+      an account rule) and commits, fails on recompute, then retries with a
+      working recompute. Directly observed no duplicate account rule, no
+      re-rewrite, no thrown error, exit 0.
+    cleared-because: >-
+      Witnessed convergent, non-mangling behaviour on a genuine two-run
+      sequence including a promotion, not merely asserted.
+  - class-id: H12.13
+    probed: >-
+      Not re-probed fresh this round: src/modules/merchants/domain/merchant-rule.ts
+      is not among the five files this round's diff touches.
+    cleared-because: >-
+      Out of this round's attack surface; unchanged since the prior round.
+  - class-id: H12.14
+    probed: >-
+      Not re-probed fresh this round: src/modules/import/domain/belfius-current-account-template.ts
+      is not among the five files this round's diff touches.
+    cleared-because: >-
+      Out of this round's attack surface; unchanged since the prior round.
+  - class-id: H12.15
+    probed: >-
+      Attack surface 5, directly: confirmed the fifth consumer
+      (month-projection.ts) now applies isBareIdentityKey the same way the
+      other four consumers do, closing the exact gap CR3-M3P12-06 found on
+      this screen.
+    cleared-because: >-
+      This is the hazard class the round's own fifth-consumer repair
+      exists to close, and I found the repair complete on this screen with
+      no residual gap.
+  - class-id: H12.16
+    probed: >-
+      Not re-probed fresh this round: the importer's first-wins candidate
+      selection is not among the five files this round's diff touches.
+    cleared-because: >-
+      Out of this round's attack surface; unchanged since the prior round.
+  - class-id: H12.17
+    probed: >-
+      Not re-probed fresh this round: the fixture generator and its
+      independent-oracle record are not among the five files this round's
+      diff touches.
+    cleared-because: >-
+      Out of this round's attack surface; unchanged since the prior round.
+  - class-id: H12.18
+    probed: >-
+      Same trace as H12.3: the superseded rule's EFFECT (which rows it
+      protects) is what my witness shows silently narrows without the row
+      count or the report changing shape.
+    finding: CR4-M3P12-01
+  - class-id: H12.19
+    probed: >-
+      Confirmed the acceptedRuleIds acknowledge path is unchanged in shape
+      this round (src/modules/merchants/application/rederive-rules.ts's
+      accepted set, read during attack surface 1); none of my own witness
+      scenarios produced an unescapable block.
+    cleared-because: >-
+      The acknowledge path still exists and still clears exactly the ids it
+      names, per my reading; I did not additionally probe for a NEW
+      unescapable condition this round beyond what attack surface 1 covers.
+  - class-id: H12.20
+    probed: >-
+      Read package.json:19 directly: the invocation point exists. The
+      plan's own text splits this hazard's second half to M3-P16 (H16.1),
+      which is explicitly not this phase's or this review's to guard.
+    cleared-because: >-
+      The invocation point half is met; the deploy-time half is out of
+      scope by the plan's own declared split.
+  - class-id: H12.21
+    probed: >-
+      Confirmed src/modules/merchants/application/assign-merchant.ts is
+      absent from git diff f3bfd66 0d41c3b --stat, so its write-boundary
+      guard is unchanged by this round.
+    cleared-because: >-
+      Not touched this round; addressed by criterion 12.18's mechanism from
+      an earlier round.
+  - class-id: H12.22
+    probed: >-
+      Not re-probed fresh this round: .claude/skills/pulse-domain/SKILL.md
+      is not among the five files this round's diff touches.
+    cleared-because: >-
+      Out of this round's attack surface; unchanged since the prior round.
+  - class-id: H12.23
+    probed: >-
+      Not re-probed fresh this round: the measurement harness is not among
+      the five files this round's diff touches.
+    cleared-because: >-
+      Out of this round's attack surface; unchanged since the prior round.
+  - class-id: H12.24
+    probed: >-
+      Not re-probed fresh this round: the residue-counting record is not
+      among the five files this round's diff touches.
+    cleared-because: >-
+      Out of this round's attack surface; unchanged since the prior round.
+  - class-id: H12.25
+    probed: >-
+      Read src/modules/merchants/application/rederive-rules.ts:421-436
+      (pass one's existingBasis === "descriptor" guard) directly during
+      attack surface 1; confirmed it is unchanged by this round and my own
+      seeded twin rule (already namespaced) was correctly left alone on
+      every run rather than double-namespaced.
+    cleared-because: >-
+      The guard fired correctly in my own witnesses; this round's new twin
+      logic is layered on top of it without disturbing it.
+  - class-id: H12.26
+    probed: >-
+      Read src/modules/merchants/application/rederive-rules.ts:437-446
+      (pass one's empty-pattern guard) directly during attack surface 1;
+      confirmed unchanged by this round.
+    cleared-because: >-
+      Not touched by this round's diff and not exercised by any of my
+      witnesses; no reason found to doubt it.
+  - class-id: H12.27
+    probed: >-
+      Read the RuleDecision/RuleCounts type split (src/modules/merchants/application/rederive-rules.ts:196-205)
+      directly: matched counts are a separate array from the decision
+      record precisely so the idempotence comparison in criterion 12.8
+      excludes them, as the comment there states.
+    cleared-because: >-
+      Confirmed by reading the code and by my own idempotence witness
+      (attack surface 2), which showed a byte-stable decision shape across
+      two runs including a promotion.
+  - class-id: H12.28
+    probed: >-
+      Not re-probed fresh this round: the country-length table and its
+      regression pin are not among the five files this round's diff
+      touches.
+    cleared-because: >-
+      Out of this round's attack surface; unchanged since the prior round.
+  - class-id: H12.29
+    probed: >-
+      Not re-probed fresh this round: the importer's candidate-selection
+      pin is not among the five files this round's diff touches.
+    cleared-because: >-
+      Out of this round's attack surface; unchanged since the prior round.
+  - class-id: H12.30
+    probed: >-
+      Full read of src/platform/db/target-guard.ts (250 lines) and
+      resolve-env.ts (68 lines), attack surface 3, including six empirical
+      probes against assessRederiveTarget (port variance, multi-host,
+      path-traversal database name, an unvalidated schema= value, host
+      case, a trailing-dot FQDN).
+    finding: CR4-M3P12-02
