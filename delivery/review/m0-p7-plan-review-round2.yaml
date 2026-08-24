@@ -1,0 +1,535 @@
+# Adversarial plan review of the M3-P9 amendment, ROUND TWO (dispatch M0-P7,
+# reviewer worktree /home/user/wt-m0p7-adv, branch claude/m0-p7-plan-review).
+# Round one is delivery/review/m0-p7-plan-review.yaml, commit ebed878, and
+# carried thirteen findings against amendment bca2a74. The revision under
+# review is 75006f8, merged into this branch at d7cc2b5.
+#
+# THE SHORT ANSWER ON THE ROUND ONE FINDINGS. All thirteen are answered and
+# none is silently dropped. Six were taken essentially as offered, four were
+# rewritten, and in three of those the plan-writer was correcting me. Those
+# three corrections are checked below and all three are RIGHT. What this
+# round finds is not a retreat from any of them: it is three defects the
+# repairs themselves introduced, two of which are criteria that cannot pass,
+# plus one hole in the new criterion 9.9(e) that the four endings cannot see.
+#
+# work-log (incremental, newest last):
+# - created this file as a beacon before reading the revision
+# - read `git diff 75006f8~1 75006f8 -- delivery/plan/pulse-v02.yaml` in
+#   full: 497 insertions, 37 deletions, touching the M3-P7 disagreement
+#   entry, M3-P4's conflicts-with, M3-P9's intent, step, files-to-touch,
+#   criteria 9.3, 9.7 and 9.9, H9.5, H9.10, H9.11, the new H9.12, the
+#   migrations note, M3-P9's conflicts-with, D-22 and D-61.
+#
+# - CHECK 1, the plan-writer's correction of my ADV-M3P9A-09, that a
+#   middleware exists. IT IS RIGHT AND I WAS WRONG. Captured:
+#     $ ls -la src/middleware.ts   -> 1806 bytes, present
+#     $ sed -n '13p' src/middleware.ts
+#       export async function middleware(request: NextRequest) {
+#     $ grep -n "Content-Security\|script-src\|nonce\|headers.set" \
+#         src/middleware.ts   -> exit 1, no output
+#   So the file exists, :13 is the export, it does session refresh and route
+#   protection, and it sets no security header. My conclusion survives and
+#   its reason changes, and D-61's rewrite is a better outcome than my edit:
+#   naming src/middleware.ts as where a policy would land, and requiring a
+#   nonce in the same change or a red 9.9, gives the future phase a place to
+#   trip over rather than a silent loss of the press.
+#
+# - CHECK 2, the correction of my H9.12 citation. RIGHT. Captured:
+#     $ sed -n '26,33p' playwright.config.ts
+#       28: fullyParallel: false
+#       30: workers: 1
+#   :32 was wrong, :28 and :30 are right.
+#
+# - CHECK 3, the mouse-ending reasoning in the new 9.9(e). CORRECT, and see
+#   the analysis under R2-04 for the one nuance. Pointer Events gives a
+#   direct-manipulation pointer implicit capture to its pointerdown target,
+#   so a touch pointerup fires on that element however far the finger has
+#   travelled, while a mouse pointer has no implicit capture and its
+#   pointerup targets whatever is under the cursor at release. A clear bound
+#   to the event target therefore passes endings one, two and three and
+#   fails ending four. The ending is worth having and it was not in my edit.
+#
+# - CHECK 4, the bookkeeping. RIGHT, and stronger than my edit in one place.
+#   M3-P4's conflicts-with is no longer [] (plan :2923 to :2931) and it
+#   forbids removing, relocating OR WRAPPING the listener; "wrapping" was not
+#   in my proposal and it forecloses the refactor I could not otherwise pin.
+#   The M3-P7 disagreement entry at :1330 is corrected in place, keeps the
+#   viewport claim it actually settles, and does not delete the sentence.
+#
+# - CHECK 5, my ADV-M3P9A-02 fix as the plan now writes it. THIS IS WHERE
+#   THE ROUND TURNS. The criterion at plan :5019 writes the command as
+#   `grep -rn ^"use client"`, with the anchor OUTSIDE the quoting. Captured
+#   in this worktree:
+#     $ grep -rn ^"use client" src/
+#     exit=1                       (no output at all)
+#     $ printf '%s\n' ^"use client"
+#     ^use client
+#     $ grep -rn '^"use client"' src/
+#     src/platform/ui/nav-link.tsx:1:"use client";
+#     exit=0
+#   The shell removes the double quotes before grep sees them, so the pattern
+#   the criterion actually runs is ^use client, which cannot match a line
+#   whose first character is a double quote. The criterion demands exactly
+#   ONE line and the command it names returns ZERO. Finding R2-01. The
+#   coordinator's verification used the single-quoted form, which is the
+#   intent and is not what the plan says.
+#
+# - CHECK 6, the new control experiment in 9.3(a) against the mechanism it is
+#   bound to. The refusal 9.9(a) permits is, in the prior round's own spec,
+#   /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:815-822:
+#     document.addEventListener("click", (event) => {
+#       event.preventDefault();
+#       event.stopPropagation();
+#     }, true);
+#   Capture phase on document, with stopPropagation. Per the DOM standard's
+#   stop-propagation flag the event is then dispatched to no further object
+#   in the propagation path, and document is at the head of that path, so the
+#   control's own listeners never run in EITHER condition. Finding R2-02.
+#
+# - CHECK 7, the ran-assertion at :5100. Its durable clause is "the spec
+#   FAILS rather than skips when no project it can run under matched it". A
+#   file that no project's testMatch matches is never loaded by Playwright,
+#   so nothing in it can fail. Finding R2-03, which is also the whole of the
+#   M3-P10 gap the plan-writer declared.
+#
+# - CHECK 8, the endings against the prior round's sampler. holdTouch starts
+#   requestAnimationFrame sampling BEFORE the CDP touchStart is dispatched
+#   (/home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:701-744 and
+#   :761-794), which is why the measured runs show exactly one leading frame
+#   without the attribute, 28 of 29 and 26 of 27. Finding R2-05, and the
+#   fragility is mine: my own round-one edit replaced a percentage with an
+#   all-but-the-first rule over a window nobody defined.
+#
+# - CONSTRUCTION PASS on 9.9(e). One implementation passes all four endings
+#   and still sticks: see R2-04.
+#
+# - validation: --type verdict first, captured at the foot, then
+#   --type finding, as round one did.
+
+kind: finding
+verdict: revise
+produced-by: claude (Opus 5, claude-opus-5)
+findings:
+  - id: R2-01
+    severity: high
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:5019 (criterion 9.7(c), rewritten in this
+        revision to close round one's ADV-M3P9A-02): 'grep -rn ^"use client"
+        over src/, THE PATTERN ANCHORED at the start of the line, returns
+        exactly ONE line, src/platform/ui/nav-link.tsx:1'.
+      - >-
+        Captured in /home/user/wt-m0p7-adv, the command exactly as the
+        criterion writes it: `grep -rn ^"use client" src/` produces NO OUTPUT
+        and exits 1.
+      - >-
+        Why: `printf '%s\n' ^"use client"` prints `^use client`. The shell
+        removes the double quotes before grep is invoked, so the pattern is
+        ^use client, and the line it must match is `"use client";`, whose
+        first character is a double quote.
+      - >-
+        The correctly quoted form works: `grep -rn '^"use client"' src/`
+        returns `src/platform/ui/nav-link.tsx:1:"use client";` and exits 0.
+      - >-
+        Round one's proposed edit placed the anchor INSIDE the quoting,
+        `grep -rn '^\"use client\"'`; the revision moved it outside.
+      - >-
+        Every other grep in this phase's criteria is written as a runnable
+        command with working quoting, including the one two clauses later at
+        :5096, `grep -nE "data-pressed|dataset\.pressed|toggleAttribute"`, so
+        an implementer will paste this one and run it.
+    analysis: >-
+      Round one's finding was that 9.7(c) could not pass because the grep it
+      named returned two lines where it demanded one. The repair took the
+      right idea, anchoring on the directive, and shipped it with the anchor
+      outside the quotes, so the criterion still cannot pass and now returns
+      ZERO where it demands one. The prose in the same clause states the
+      intent correctly, twice, which is what makes this a transcription defect
+      rather than a reasoning defect and is why it is cheap. It is high all
+      the same, because a criterion nobody can satisfy is the same round trip
+      whether it fails high or low, and because the failure mode is worse than
+      the one it replaced: two lines invited an implementer to look at the
+      tree and think, zero lines invites them to conclude the anchor is wrong
+      and remove it, which puts the original defect straight back.
+    concrete-edit: >-
+      In criterion 9.7(c) at :5019 replace `grep -rn ^"use client"` with
+      `grep -rn '^"use client"'`, single quotes around the whole pattern so
+      the shell does not strip the double quotes the pattern needs, and add
+      the captured result beside it so the next reader can check the command
+      rather than the sentence: "which returns
+      src/platform/ui/nav-link.tsx:1:\"use client\"; and exits 0, where the
+      unquoted form `grep -rn ^\"use client\"` returns nothing at all because
+      the shell removes the quotes and leaves the pattern ^use client."
+  - id: R2-02
+    severity: high
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:4904-4914 (criterion 9.3(a), the clause
+        added in this revision to close round one's ADV-M3P9A-05): "a click
+        dispatched at the control's centre fires no click event on the
+        control, and the SAME click at the SAME coordinates does fire one once
+        the aria-disabled marking is removed ... The activation itself is
+        stopped by the capture-phase click refusal criterion 9.9(a) permits
+        the spec to install".
+      - >-
+        The refusal, in the prior round's own spec,
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:815-822:
+        `document.addEventListener("click", (event) => { event.preventDefault();
+        event.stopPropagation(); }, true);` Capture phase, on document, with
+        stopPropagation.
+      - >-
+        DOM standard, the stop-propagation flag: once set, the event is
+        dispatched to no further object in the propagation path. document sits
+        at the head of the capture path, so the control's own listeners never
+        run, in the disabled condition and in the control condition alike.
+      - >-
+        delivery/plan/pulse-v02.yaml:5096-5100 (criterion 9.9(a)) names this
+        refusal as the spec's ONE permitted injected mutation, "which half (e)
+        and criterion 9.3(a) both need", so the two clauses are bound to each
+        other by the same revision that wrote them.
+      - >-
+        Separately, `pointer-events: none` removes the control from hit
+        testing, so Playwright's locator.click() fails its actionability check
+        rather than producing a clean assertion; only a raw coordinate click,
+        page.mouse.click(x, y), reaches the point at all.
+    analysis: >-
+      The obvious implementation of this clause is a listener on the control
+      element. Under the refusal the criterion itself names, that listener
+      fires in NEITHER condition: the first half then passes vacuously, "no
+      click event on the control" being trivially true, and the second half,
+      the control experiment that is the entire point, fails. So the criterion
+      is red for a reason that has nothing to do with the stylesheet. Worse is
+      the repair an implementer reaches for under that red. Moving the
+      observation to the refusal listener and asserting only that a click was
+      CAPTURED is vacuous in the other direction: with pointer-events none the
+      click still fires, on the ancestor behind the control, and is still
+      captured at document, so "a click was captured" is true in both
+      conditions and the experiment proves nothing. Exactly one observable
+      works, and the criterion does not name it: the TARGET of the click as
+      seen by the document capture listener, which is the ancestor when the
+      marking is present and the control when it is removed. That is a real
+      discriminator, it survives stopPropagation because the document listener
+      is first in the path, and it isolates the marking rather than the
+      coordinates. The fix is to say so. On the coordinator's question, does
+      the control experiment isolate the marking rather than the coordinates:
+      yes in principle and only once the observable is named, and it needs one
+      more guard, that the control's bounding rect is identical across the two
+      attempts, because the second click is only the SAME click if nothing
+      moved between them.
+    concrete-edit: >-
+      In criterion 9.3(a) replace "a click dispatched at the control's centre
+      fires no click event on the control, and the SAME click at the SAME
+      coordinates does fire one once the aria-disabled marking is removed"
+      with: "a REAL HIT-TESTED click at the control's viewport centre,
+      page.mouse.click at raw coordinates and never element.dispatchEvent,
+      which bypasses hit testing and would fire regardless of pointer-events,
+      is OBSERVED AT THE CAPTURE-PHASE CLICK REFUSAL ITSELF and not at a
+      listener on the control, because that refusal calls stopPropagation on
+      document and no listener below it ever runs. The observable is the
+      click's TARGET: with the marking present the target is an ANCESTOR of
+      the control and the control neither is nor contains it, and with the
+      marking removed and the control's bounding rect unchanged, the SAME
+      click at the SAME coordinates targets the control. Asserting only that a
+      click was captured proves nothing, because a click at those coordinates
+      is captured in both conditions; it is the target that moves, and it
+      moves because of the marking rather than because of the coordinates,
+      which is what the unchanged rect pins."
+  - id: R2-03
+    severity: high
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:5100-5112 (criterion 9.9(a), the clause
+        added in this revision to close round one's ADV-M3P9A-03): "the spec
+        FAILS rather than skips when no project it can run under matched it,
+        so a testMatch that stops matching reddens the suite instead of
+        silently emptying it."
+      - >-
+        A spec file that no project's testMatch matches is never loaded by
+        Playwright. No test in it is collected, none runs, and none can fail.
+        The clause describes a behaviour the file cannot have.
+      - >-
+        The clause beside it is documentary, not mechanical: "The phase work
+        history records the captured tail of npx playwright test
+        --project=chromium-phone naming this spec, with that project's PASSED
+        and SKIPPED counts side by side". A work-history record binds the
+        round that writes it and no later round.
+      - >-
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:803:
+        `test.skip(({ hasTouch }) => hasTouch !== true, "touch paths need the
+        phone project");` The skip is correct and necessary, because the same
+        spec runs under the desktop project where the CDP touch path does not
+        exist.
+      - >-
+        /home/user/wt-m3p9/playwright.config.ts:94: the phone project's
+        membership is a filename regex,
+        `/(month-view|navigation|pressed-and-disabled)\.spec\.ts/`.
+      - >-
+        M3-P10's criterion 10.7 (delivery/plan/pulse-v02.yaml, M3-P10) permits
+        playwright.config.ts to be touched, "for the new project and the
+        testMatch widenings", and does not pin src/app/layout.tsx to an empty
+        diff. M3-P4's new conflicts-with entry (:2923) covers the root layout
+        for that phase; nothing covers the config for M3-P10.
+    analysis: >-
+      This is round one's ADV-M3P9A-03 half closed. The documentary half is
+      real and worth having: it makes THIS round prove the measurement ran.
+      The durable half, the one that was supposed to survive into later
+      phases, cannot be built as described, so what is actually shipped is a
+      record in a work history plus a skip that is still invisible in an exit
+      code. And this is the SAME GAP the plan-writer declared as the one
+      remaining thing it could see, arriving from the other side. Taking the
+      coordinator's question directly: it is acceptable to leave M3-P10
+      unopened, and it is not acceptable to leave this clause as it stands,
+      because the two are one thing. M3-P10's real protection is 10.7's
+      requirement that every pre-existing spec pass under EVERY project, and
+      that protection is strong where it bites: a client-island refactor that
+      moved the listener into a useEffect would emit no script tag, and
+      criterion 9.9(a)'s raw-response-body assertion would go red, which is
+      exactly the property D-61's second reason depends on and is now guarded.
+      What 10.7 cannot catch is a phone project that no longer contains this
+      spec, because then 9.9 is not a spec that fails, it is a spec that is
+      not there. Make the ran-guard an assertion the suite carries rather than
+      a sentence a work history carries, and M3-P10 needs nothing added to it:
+      10.7 plus a self-checking spec is a real interlock. Leave it, and both
+      gaps stay open and the plan is trusting a record written one phase
+      earlier.
+    concrete-edit: >-
+      In criterion 9.9(a) replace "and the spec FAILS rather than skips when
+      no project it can run under matched it, so a testMatch that stops
+      matching reddens the suite instead of silently emptying it" with: "AND
+      THE SPEC CHECKS ITS OWN MEMBERSHIP, in a test that carries NO skip
+      condition and therefore runs under every project the file is collected
+      by: it reads playwright.config.ts, by import or from disk, and asserts
+      that a project exists whose use options carry hasTouch true and whose
+      testMatch matches this spec's own filename, taken from test.info().file.
+      A spec that no project matches is never loaded by Playwright and cannot
+      fail from inside itself, which is why the guard is written as a claim
+      about the CONFIG rather than about the run: a later phase that widens or
+      narrows testMatch, and playwright.config.ts is a file M3-P10's criterion
+      10.7 expressly permits it to touch, then reddens this spec under the
+      projects that still collect it instead of silently emptying the phone
+      project. This is what makes M3-P10's requirement that every pre-existing
+      spec pass under every project into a real interlock rather than a
+      requirement about a spec that is no longer there."
+  - id: R2-04
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:5185-5215 (criterion 9.9(e), added in
+        this revision): four endings, "a touch release ON the control", "a
+        touch release AWAY from the control", "a POINTERCANCEL", and "a MOUSE
+        press begun on the control and released elsewhere". Each is driven on
+        one control, one press at a time.
+      - >-
+        The assertion after each ending is
+        `document.querySelectorAll("[data-pressed]") has length ZERO`, which
+        is the right assertion and is only ever evaluated after a SINGLE press
+        has ended.
+      - >-
+        delivery/plan/pulse-v02.yaml:4656-4666 (the step) mandates "capture-phase
+        pointerup and pointercancel listeners that clear every data-pressed in
+        the document", so the step already specifies the correct
+        implementation. The criterion is what falsifies, and the criterion
+        cannot see the difference.
+      - >-
+        A single-slot clear, a module-scope variable holding the last pressed
+        element and a clear that removes the attribute from that variable,
+        passes all four endings on all three shapes.
+    analysis: >-
+      Answering the coordinator's question, can a listener pass all four
+      endings and still leave something drawn pressed: yes, and the
+      implementation that does it is the most natural wrong one. Remember the
+      pressed element in a variable, clear that element on pointerup and
+      pointercancel. Ending one clears it, ending two clears it, ending three
+      clears it, ending four clears it, because in every one of the four
+      exactly one control has been pressed and the variable holds it. Now put
+      two fingers down. Finger A presses control X, the variable holds X.
+      Finger B presses control Y before A lifts, the variable now holds Y. A
+      lifts, Y is cleared, X is not, and X stays drawn pressed with nothing
+      left that will ever clear it. That is round one's stuck-pressed defect
+      surviving the criterion written to catch it, and 9.9(e) cannot see it
+      because it never has two presses in flight. On the mouse ending itself,
+      which the coordinator asked me to check rather than agree with: the
+      reasoning is CORRECT. A direct-manipulation pointer gets implicit
+      capture to its pointerdown target, so a touch pointerup fires on the
+      control however far the finger travelled, and endings one through three
+      genuinely cannot separate a target-scoped clear from a document-wide
+      one; a mouse pointer has no implicit capture, so ending four separates
+      them. One nuance worth stating and not worth changing: what ending four
+      protects is the DESK screen and any future non-capturing pointer, since
+      under touch a target-scoped clear leaves nothing stuck at all. It earns
+      its place, and it was not in my edit.
+    concrete-edit: >-
+      Add a fifth ending to criterion 9.9(e), after ending FOUR: "FIVE, TWO
+      PRESSES IN FLIGHT. A touch begins on one control and, before it ends, a
+      second touch begins on a different control; then the FIRST touch ends
+      and then the second. After the last of the two endings,
+      document.querySelectorAll(\"[data-pressed]\") has length ZERO. This
+      ending exists because the four above drive one press at a time and
+      therefore cannot see the most natural wrong implementation: a clear that
+      remembers the pressed element in a single slot passes endings one
+      through four and, under two presses, overwrites the slot and leaves the
+      first control drawn pressed with nothing left that will clear it. The
+      clear this phase specifies sweeps the document, and this ending is what
+      makes the specification falsifiable rather than merely written down."
+      And extend the FALSIFIED BY clause from "after ANY of half (e)'s four
+      endings" to "after ANY of half (e)'s five endings".
+  - id: R2-05
+    severity: medium
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:5118-5127 (criterion 9.9(b), rewritten in
+        this revision from round one's ADV-M3P9A-06): "Over the frames sampled
+        while the touch is held: (i) the control under test carries
+        [data-pressed] on EVERY sampled frame except at most the FIRST". The
+        window, "frames sampled while the touch is held", is not defined
+        against any recorded timestamp.
+      - >-
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:761-794:
+        holdTouch starts the requestAnimationFrame sampler and THEN sends the
+        CDP Input.dispatchTouchEvent touchStart. Frames therefore tick between
+        the sampler starting and the pointerdown arriving, and the number of
+        them is a function of round-trip latency.
+      - >-
+        That is exactly why the measured runs read 28 of 29 and 26 of 27: one
+        leading frame, on an idle container. Two leading frames make the same
+        correct implementation read 27 of 29 and FAIL "every frame except at
+        most the first".
+      - >-
+        The sampler already records the anchor this needs:
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:725-727 sets
+        `state.pressAt = performance.now()` on the first pointerdown.
+      - >-
+        Criterion 9.9(b)(iv), in the same clause, DOES anchor correctly: "the
+        FIRST OR SECOND sampled frame at or after the pointerdown".
+      - >-
+        Captured in this container: `uptime` load average 11.29 on `nproc` 4,
+        against fleet environment warning 18's measured 5.8 to 9.44.
+    analysis: >-
+      This one is mine and I will own it. Round one's complaint against the 60
+      percent floor was that it tightens as the sample thins, and the edit I
+      proposed replaced it with an all-but-the-first rule over a window I did
+      not define. Taken literally against the sampler that exists, that rule
+      is MORE load-fragile than what it replaced, not less: the frames it
+      cannot tolerate are the pre-press ones, and the number of pre-press
+      frames is precisely what a busy box inflates. So the answer to the
+      coordinator's question, did tightening the floors introduce a new flake,
+      is yes, in (i), and the fix is one phrase rather than a retreat, because
+      the sampler already records the pointerdown timestamp and the sibling
+      clause (iv) already uses it. Anchored at pressAt the rule is both
+      stricter and load-robust: the handler runs synchronously inside event
+      dispatch and no animation frame can interleave with it, so every frame
+      at or after the pointerdown should carry the attribute and the tolerance
+      for one is margin rather than necessity. The other two floors are now
+      safe. The eight-frame minimum is 20 frames per second against a measured
+      68, a factor of three, and it fails LOUDLY as unmeasured rather than
+      passing thin, which is the right direction; what it lacks is a sentence
+      saying what the round does when it fires, and without one the fix round
+      will lower the eight.
+    concrete-edit: >-
+      In criterion 9.9(b) replace "Over the frames sampled while the touch is
+      held:" with "Over the frames sampled AT OR AFTER THE RECORDED POINTERDOWN
+      TIMESTAMP and before the touch ends, which is the window and not merely
+      the hold: the sampler starts before the press is dispatched, so frames
+      tick before the pointerdown arrives and their number is a function of
+      how busy the machine is, which is the one thing no floor here may
+      depend on:". And add to the eight-frame sentence: "A run that fails this
+      floor is a MACHINE result and is recorded as one, retaken with the load
+      captured beside it; it is never repaired by lowering the floor, because
+      the floor is what separates a thin sample from a measurement."
+  - id: R2-06
+    severity: low
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:5201-5206 (criterion 9.9(e), ending
+        THREE): "the path is shown to be alive the way half (c) requires, by
+        asserting that a pointercancel was really captured, before anything is
+        concluded from its result."
+      - >-
+        Endings ONE, TWO and FOUR carry no such requirement, and each of them
+        concludes from an ABSENCE, that no element carries data-pressed, which
+        is exactly the shape round one's ADV-M3P9A-04 showed can be satisfied
+        by an ending that never happened.
+      - >-
+        The sampler already captures the event list that would prove it:
+        /home/user/wt-m3p9/test/e2e/pressed-and-disabled.spec.ts:718-731
+        records pointerdown, touchstart, pointerup, touchend, pointercancel,
+        mousedown and click on the control.
+    analysis: >-
+      The revision accepted the alive-before-absent principle for criterion
+      9.9(c) and applied it to one of four endings in 9.9(e), and the other
+      three conclude from an absence just as much. A touch release that was
+      never delivered leaves zero elements carrying data-pressed for the
+      reason that nothing was ever pressed. Low, because ending three is the
+      one most likely to be silently unproduced, a gesture threshold being
+      engine-tuned, and the plan already guards it; but the principle should
+      not be applied unevenly inside one clause, since unevenness is what a
+      later reader copies.
+    concrete-edit: >-
+      In criterion 9.9(e), after "the spec drives FOUR endings and keeps
+      sampling frames after each one", insert: "EVERY ending is shown to have
+      happened before anything is concluded from it, the way half (c)
+      requires, by asserting that the ending's own event was captured on the
+      control: pointerup for endings one, two and four, pointercancel for
+      ending three. Each of the four concludes from an ABSENCE, that nothing
+      carries data-pressed, and an absence is what an ending that never
+      happened also produces."
+  - id: R2-07
+    severity: low
+    evidence:
+      - >-
+        delivery/plan/pulse-v02.yaml:4656-4666 (the step): the clear listeners
+        "clear every data-pressed in the document".
+      - >-
+        Two touches on two controls: the first to be released clears BOTH, so
+        the control still under a finger stops being drawn pressed while that
+        finger is still on it.
+      - >-
+        No criterion in the phase measures this, and the proposed ending five
+        under R2-04 asserts the state after the LAST ending, so it does not
+        measure it either.
+    analysis: >-
+      A consequence of the mandated design rather than a defect in it. The
+      document-wide clear is the right choice, it is what makes the listener
+      one handler rather than a pointer-id table, and its price is that a
+      second finger's release also clears the first finger's still-held press.
+      The failure it produces is a press that DISAPPEARS, not one that sticks,
+      it self-corrects at the next press, and multitouch across two controls
+      is rare on this product. It is worth one recorded sentence and not worth
+      a criterion: what is expensive is not the behaviour, it is a later fix
+      round rediscovering it and rebuilding the listener around pointer ids to
+      chase it.
+    concrete-edit: >-
+      Add to the step at :4656, after "clear every data-pressed in the
+      document": "WHAT THAT COSTS, recorded here so a later round does not
+      rediscover it and rebuild the listener around pointer ids to chase it: a
+      clear that sweeps the document also clears a press another finger is
+      still holding, so with two touches on two controls the first release
+      un-draws both. The failure is a press that disappears rather than one
+      that sticks, it corrects itself at the next press, and it is the price
+      of one handler with no pointer-id table. The sticking failure is the one
+      that matters and criterion 9.9(e) measures it."
+
+# ---------------------------------------------------------------------
+# VALIDATION RECORD, captured rather than asserted.
+#
+# $ export NVM_DIR=/opt/nvm && . /opt/nvm/nvm.sh
+# $ cd /home/user/pulse-fleet && npx tiphys validate --type verdict \
+#     /home/user/wt-m0p7-adv/delivery/review/m0-p7-plan-review-round2.yaml
+# INVALID # value does not satisfy the requirements its own shape triggers here
+# INVALID #/criteria required property criteria is missing
+# INVALID #/deviations-judged required property deviations-judged is missing
+# INVALID #/findings/0/concrete-edit property concrete-edit is not permitted here
+# INVALID #/findings/0/concrete-fix required property concrete-fix is missing
+# ... the same two lines for findings 1 through 6 ...
+#
+# Same result and same reason as round one: the verdict contract is the
+# shape an IMPLEMENTATION verdict takes, requiring `criteria` and
+# `deviations-judged` and spelling the edit field `concrete-fix`. A plan
+# review judges no criteria and adjudicates no deviations, so the fallback
+# is taken, as delivery/review/m0-p7-plan-review.yaml and both precedent
+# plan-adversarial reviews did.
+#
+# $ npx tiphys validate --type finding \
+#     /home/user/wt-m0p7-adv/delivery/review/m0-p7-plan-review-round2.yaml
+# (no output) EXIT=0
+# ---------------------------------------------------------------------
