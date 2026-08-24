@@ -2,132 +2,1012 @@ kind: verdict
 phase: M3-P12
 verdict: FIX-ROUND-NEEDED
 produced-by: claude-sonnet-5
-framing: hazard-round6-in-progress
+framing: fix-round
 review-contract: hazard
 
-findings: []
+# CLEAN-ROOM HAZARD REVIEW, ROUND 6. Head db56b90, branch
+# claude/m3-p12-rev6-haz (review worktree; the reviewed head is the
+# implementation branch this worktree was cut from). Contract: hazard.
+# Order followed: hazard classes first (see the five numbered attacks in
+# the round dispatch), acceptance criteria last, per clause
+# review-contract-hazard.
+#
+# WHAT THIS ROUND CHANGED, per git diff db56b90~1 db56b90 --stat:
+# scripts/rederive-merchant-rules.ts, src/modules/merchants/application/
+# rederive-rules.ts, test/application/rederive-merchant-rules.test.ts,
+# test/property/mutants.mts (new), test/property/rederive-loss-reporting.
+# test.ts, delivery/work-history/m3-p12.yaml. All of it is criterion 12.7's
+# amendment: the loss/claimant-merchant split decided from three merchant
+# identities plus a published, verified lineage, and the four-mutant
+# harness pinning it. Everything outside that surface (target-guard.ts,
+# assign-merchant.ts, the identity function itself, the PDF fixtures) is
+# UNCHANGED since fix round five and is reported here from the green gate
+# run plus targeted spot checks, not re-derived from scratch.
+#
+# GATES I RAN MYSELF, in this worktree, against no database (the fast gate
+# opens none; nothing here touches Postgres):
+#   npm install: exit 0, "added 472 packages in 29s" (EBADENGINE warning
+#     only: package.json pins node 22.x, container default is v26.7.0).
+#   npm run typecheck: exit 0, no diagnostics.
+#   npm run lint: exit 0, no diagnostics.
+#   npm test: exit 0, "Test Files 42 passed (42) / Tests 648 passed (648)".
+#   npm run gate:privacy: exit 0, "gate:privacy clean".
+#   npm run gate:tokens: exit 0 (grep -v finds nothing).
+# npm run test:e2e was NOT run, on explicit instruction: two M3-P14 review
+# lanes hold that window and disk is at 90% (4.0G free measured by this
+# review via `df -h /`). Criterion 12.14 is marked not-witnessed below for
+# that reason, not as an implementer defect.
+#
+# WITNESSED, NOT TRUSTED: I independently re-ran
+# `npx tsx test/property/mutants.mts` myself (not just read the work
+# history's claim). Captured output, verbatim:
+#   --- M1: reports every change (round two) --- red on: FIRST
+#     biconditional. AssertionError: expected { row: 'descriptorRow', lost:
+#     true } to deeply equal { row: 'descriptorRow', lost: false }
+#   --- M2: excludes a superseded rule's whole claim from the before set
+#     (round three) --- red on: FIRST biconditional.
+#   --- M3: asks only whether the row is covered by ANYTHING after the run
+#     (round four) --- red on: FIRST biconditional. AssertionError:
+#     expected { row: 'accountRow', lost: false } to deeply equal
+#     { row: 'accountRow', lost: true }
+#   --- M4: publishes one promotion pair whose holder and source name
+#     DIFFERENT merchants (the forged lineage) --- red on: FIRST
+#     biconditional and SECOND, the lineage check.
+#   restored: original 33f7f7fee0ddf710, on disk 33f7f7fee0ddf710
+# `git status --short -- src/modules/merchants/application/rederive-rules.ts`
+# printed nothing before or after: the harness leaves the tree clean, as
+# its own comment claims.
 
-criteria: []
-deviations-judged: []
-hazard-classes-addressed: []
+findings:
+  - id: HZ6-M3P12-01
+    severity: high
+    evidence:
+      - >-
+        src/modules/merchants/application/rederive-rules.ts:568-578, the
+        shared `claimant()` helper both passes call, filters candidates by
+        `rule.kind === kind` (the SOURCE rule's own kind) in addition to
+        pattern equality. test/property/rederive-loss-reporting.test.ts:
+        124-134, `claimantInSeed`, mirrors that restriction: it returns
+        undefined for anything but an EXACT source and searches only for an
+        EXACT candidate. Criterion 12.7's own text (plan phase M3-P12,
+        criterion id 12.7) requires exactly this: "A test checks every
+        published claimant pair against the seeded table: the claimant is a
+        rule of the same kind whose pattern is exactly the namespaced form
+        of the superseded rule's pattern."
+      - >-
+        WITNESS, run by this review, self-restoring, verified clean before
+        and after (`git status --short -- src/modules/merchants/
+        application/rederive-rules.ts` printed nothing both times). I
+        constructed a fifth mutant not present in test/property/mutants.mts:
+        deleted the `rule.kind === kind &&` conjunct from claimant() at
+        rederive-rules.ts:576, via a scratch script that confirmed the
+        anchor matched exactly once, then restored the file from a saved
+        copy immediately after each run.
+      - >-
+        RESULT ONE: `npx vitest run
+        test/property/rederive-loss-reporting.test.ts` with the mutation in
+        place. Both properties PASSED. Captured output, verbatim: "shapes
+        reached: unchanged 524, coveredByNothing 252, takenByAStranger 107,
+        licensedByTheClaimant 195, licensedByThePromotion 66,
+        claimantMerchantClass 64" / "Test Files 1 passed (1) / Tests 2
+        passed (2)".
+      - >-
+        RESULT TWO, the wider check: `npx vitest run
+        test/application/rederive-merchant-rules.test.ts test/property/`
+        with the SAME mutation in place. ALL 67 tests across 4 files
+        PASSED, "Test Files 4 passed (4) / Tests 67 passed (67)", including
+        the two tests that already carry a PREFIX-kind seed ("A PASS-ONE
+        claimant at kind PREFIX carrying a DIFFERENT merchant BLOCKS rather
+        than superseding", rederive-merchant-rules.test.ts:1263, and "EVERY
+        superseded rule is EXACT, on a run that produces one",
+        rederive-merchant-rules.test.ts:1311).
+      - >-
+        WHY NOTHING CATCHES IT. seedArbitrary
+        (test/property/rederive-loss-reporting.test.ts:178-276) constructs
+        every rule with a literal `kind: "EXACT"`; no other kind literal
+        appears in that generator. seedDeployWindowWorld
+        (test/application/rederive-merchant-rules.test.ts:1111-1141) takes a
+        `kind` parameter but every call site passes the SAME kind for both
+        the old rule and its twin/rival (lines 1264, 1296, 1312-1319), so no
+        seed anywhere in the tree constructs a pattern collision between two
+        rules of DIFFERENT kinds. The schema permits exactly that: the
+        unique key is (householdId, kind, pattern)
+        (prisma/schema/merchants.prisma:88), so an EXACT rule and a PREFIX
+        rule can legally coexist with the identical pattern string. The
+        "same kind" assertions at
+        test/property/rederive-loss-reporting.test.ts:462-463
+        (`expect(dead?.kind).toBe("EXACT"); expect(claimant?.kind).toBe
+        ("EXACT")`) can therefore never be violated by anything the
+        generator can build, which is the exact vacuity criterion 12.7's own
+        text warns against for the four shipped mutants ("a property that
+        cannot fail passes every count it is asked for") applied to a fifth
+        mechanism the four mutants never touch.
+      - >-
+        PROBED AND CLEARED, so this is not overstated: I also constructed a
+        same-merchant two-sources-promote-onto-one-holder scenario by hand
+        (two dead EXACT rules, same merchant, each with its own namespaced
+        descriptor claimant, both promoting onto the identical account
+        pattern) and ran rederiveMerchantRules directly against a
+        hand-built fake port (mirroring the property test's own `runOnce`).
+        The known "last write wins" overwrite in `recordPromotion`
+        (rederive-rules.ts:833-841, its own comment) fired exactly as
+        documented, but produced NO loss and NO claimant-merchant report
+        because the biconditional is decided purely on MERCHANT identity
+        and both merchants were identical throughout
+        (`if (after?.merchantId === held.merchantId) continue;`,
+        rederive-rules.ts:936-938 short-circuits before the lineage is ever
+        consulted). Output: "exitCode 0, lostAssignments [],
+        claimantMerchantReports [], supersededBy [deadA->claimantA,
+        deadB->claimantB], promotedFrom [pending-1->claimantB]". This shape
+        is real but harmless BY CONSTRUCTION (recordPromotion throws if the
+        merchants ever differ), which the kind-blindness above is not: a
+        wrong-kind claimant can attribute a supersede to a rule of a
+        DIFFERENT merchant with nothing stopping it and nothing testing it.
+    concrete-fix: >-
+      Add a fifth mutant to test/property/mutants.mts that deletes
+      `rule.kind === kind &&` from the `claimant()` predicate at
+      rederive-rules.ts:576 (mirroring the four existing entries' shape:
+      id, what, shipped, edits), AND extend seedArbitrary in
+      test/property/rederive-loss-reporting.test.ts (and, separately,
+      seedDeployWindowWorld's call sites in
+      test/application/rederive-merchant-rules.test.ts) with at least one
+      scenario that plants a rule of a DIFFERENT kind holding the exact
+      pattern a same-kind claimant would also hold, so the "same kind"
+      assertions at rederive-loss-reporting.test.ts:462-463 can actually be
+      falsified by a wrong implementation. Until the generator can build
+      that world, criterion 12.7's own published-lineage check of "same
+      kind" is unverified rather than verified, and the fifth mutant is
+      what turns that from an assertion of faith into a witnessed pass.
+    analysis: >-
+      Not a live production defect today: assignMerchant writes EXACT and
+      only EXACT (criterion 12.10, unchanged), and the deployed table holds
+      zero PREFIX or PATTERN rows (measured, root-cause section). It is a
+      gap in the SAFETY NET the phase built specifically because this
+      mechanism has been wrong three times running, on exactly the
+      dimension (rule kind) the criterion's own prose calls out as the
+      reason the supersede exception is restricted to EXACT in the first
+      place ("the argument that an un-namespaced pattern is already dead is
+      an argument about EQUALITY and holds for neither other kind"). PREFIX
+      and PATTERN are live in the matcher and are reserved, by design, for
+      slice-5's accepted-answer path; the day either is written by hand or
+      by a later slice, a refactor that so much as hoists `kind` out of
+      claimant() without noticing it is load-bearing would ship with all 67
+      example tests and both properties green.
+  - id: HZ6-M3P12-02
+    severity: medium
+    evidence:
+      - >-
+        test/application/rederive-merchant-rules.test.ts:1752-1757 asserts,
+        as a present-tense fact: "The schema's ids are cuids: a lowercase
+        letter followed by alphanumerics, with no hyphen anywhere", backed
+        by `const databaseId = /^[a-z][a-z0-9]*$/`.
+      - >-
+        prisma/schema/merchants.prisma:52 declares `MerchantRule.id` as
+        `String @id @default(uuid()) @db.Uuid`, not a cuid. A Prisma
+        `@db.Uuid` column returns the canonical 36-character hyphenated
+        form (8-4-4-4-12 hex groups, e.g.
+        550e8400-e29b-41d4-a716-446655440000), which DOES contain hyphens,
+        so both the claimed id scheme and the claimed absence of hyphens
+        are false.
+      - >-
+        This is a clause-R-087 case: a present-tense fact in a test comment
+        that nothing in the suite checks against the real id format (the
+        regex is only ever applied to the three invented placeholder
+        strings "pending-1", "pending-2", "pending-17", never to anything
+        shaped like a real Prisma-generated id).
+    concrete-fix: >-
+      Correct the comment and the regex at
+      test/application/rederive-merchant-rules.test.ts:1752-1761 to state
+      that the schema's ids are uuids (prisma/schema/merchants.prisma:52,
+      `@default(uuid())`), and that the reason a `pending-<n>` placeholder
+      can never collide with a real one is the fixed 36-character
+      hyphen-at-fixed-positions shape (or simply the fact that
+      "pending-<n>" is never 36 characters long), not "no hyphen
+      anywhere" -- a real uuid also contains hyphens. Consider replacing
+      `databaseId` with a real uuid-shaped regex so the assertion checks
+      the actual claim instead of a claim about a different id scheme.
+    analysis: >-
+      The SEPARATION property the test defends (a promotion placeholder can
+      never be mistaken for a real database id) still holds, just for a
+      different reason than the one stated: string length and character
+      layout, not hyphen-absence. So this is a correctness-of-documentation
+      defect rather than a live collision risk, and is rated medium rather
+      than high on that basis.
+  - id: HZ6-M3P12-03
+    severity: low
+    evidence:
+      - >-
+        `grep -rn "mutants.mts" test src package.json` finds only the
+        comment inside test/property/mutants.mts itself
+        (`npx tsx test/property/mutants.mts`); no npm script and no vitest
+        file imports or shells out to it.
+      - >-
+        package.json's `scripts` block (read in full) has: dev, build,
+        start, typecheck, lint, gate:tokens, gate:privacy, test, test:e2e,
+        db:reset, db:migrate, rederive:merchant-rules. No mutant-related
+        entry.
+    concrete-fix: >-
+      Add an npm script (e.g. `test:mutants`) that runs `npx tsx
+      test/property/mutants.mts` and exits non-zero on any mutant left
+      green (the harness already sets `process.exitCode = 1` for that
+      case), so a CI job or a pre-merge checklist item can catch the harness
+      going stale (an anchor drifting, a mutant becoming unreachable as the
+      generator changes) without relying on a human remembering to run it
+      by hand, which is exactly how the two defects the phase's own work
+      history already found in this harness (an unreachable mutant, a
+      ReferenceError) were found: by someone remembering to run it.
+    analysis: >-
+      Not a criterion violation -- criterion 12.7 asks only that the phase
+      work history record a run of the four mutants, which it does, and
+      which I reproduced. This is a durability observation: nothing stops
+      the harness's anchors going stale silently the next time
+      rederive-rules.ts changes, on a mechanism this review's own finding
+      HZ6-M3P12-01 shows still has an unguarded dimension.
 
-# WORKING NOTES (round 6, hazard lane). Append-as-you-go per the
-# incremental-output clause. This section is scratch and will be trimmed
-# before final validation; the structured fields above are placeholders
-# until the review is complete.
+criteria:
+  - id: "12.1"
+    quote: >-
+      CONVERGENCE, COUNTED... the fixture carries 24 rows representing 12
+      invented counterparties, and the test asserts the distinct-key count
+      is exactly 12... and separately asserts that the BASELINE derivation
+      ... yields EXACTLY 24 distinct keys.
+    evidence:
+      - test/domain/counterparty-identity.test.ts:71-107 (describe/2 tests).
+      - >-
+        Unchanged by this round's diff. Green in this review's own npm test
+        run (Test Files 42 passed, Tests 648 passed).
+      - >-
+        A declared deviation narrows the composition sub-clause's strict
+        reading ("at least 8 rows carry none" read as "no account field")
+        to "exactly 8 descriptor-basis rows", recorded as a plan defect and
+        judged below under deviations-judged.
+    met: true
+  - id: "12.2"
+    quote: >-
+      CONVERGENCE ON THE OWNER'S OWN MONTH... total rows 39, distinct
+      identity keys EXACTLY 20 against a recorded baseline of 25... and the
+      same run over the real KBC card document records 22 rows and EXACTLY
+      16 identity keys, unchanged from its baseline of 16.
+    evidence:
+      - >-
+        delivery/work-history/m3-p12.yaml:895-910 (finding (a)) records the
+        command and the exact figures (20/6/14 against baseline 25/11/14;
+        16/0/16 against baseline 16), naming the committed harness
+        test/fixtures/measure-identity-convergence.ts, counts only.
+      - >-
+        test/application/counterparty-identity-surfaces.test.ts:331-374
+        confirms the harness is covered by the fast gate over the COMMITTED
+        fixtures (not the real documents).
+      - >-
+        NOT RE-RUN BY THIS REVIEW: I did not open the owner's real
+        documents, per the review contract and because they are outside
+        this worktree's committed tree. Not touched by this round's diff.
+    met: true
+  - id: "12.3"
+    quote: >-
+      NAMED ONCE, MATCHED AGAIN... calls assignMerchant EXACTLY ONCE
+      against that group's identity key... and then asserts that a
+      DIFFERENT transaction of the same counterparty... now carries that
+      merchant id.
+    evidence:
+      - test/application/counterparty-identity-journey.test.ts:81-87.
+      - "Green in this review's own npm test run: \"✓ test/application/counterparty-identity-journey.test.ts (1 test)\", \"named once, matched again (criterion 12.3)\"."
+    met: true
+  - id: "12.4"
+    quote: >-
+      DIFFERENT COUNTERPARTIES STAY DIFFERENT WHERE THE STORED VALUES
+      DIFFER... the 12 identity keys partition the 24 rows exactly as THE
+      GENERATOR'S OWN INPUT RECORD says... and a check asserts regenerating
+      the fixture reproduces both files byte for byte.
+    evidence:
+      - test/domain/counterparty-identity.test.ts:108-185.
+      - Unchanged this round; green in this review's suite run.
+    met: true
+  - id: "12.5"
+    quote: >-
+      THIS PHASE STRIPS NOTHING NEW... the identity key produced by this
+      branch is exactly the lowercase literal "descriptor:" followed by a
+      suffix BYTE-IDENTICAL to the key the baseline commit produces...
+    evidence:
+      - test/domain/counterparty-identity.test.ts:186-254.
+      - >-
+        `git diff db56b90~1 db56b90 --stat` confirms this round touches
+        neither normalise-counterparty.ts nor the pinned regression table.
+    met: true
+  - id: "12.6"
+    quote: >-
+      A ROW MATCHING NO FAMILY IS NOT GUESSED AT... no truncation, no
+      opening-prefix key and no fallback bucket is ever produced.
+    evidence:
+      - test/domain/counterparty-identity.test.ts:255-393.
+      - Unchanged this round; green in this review's suite run.
+    met: true
+  - id: "12.7"
+    quote: >-
+      NO NAMING THE OWNER MADE IS DISCARDED, MEASURED AS EFFECT AND NOT AS
+      ROWS... THE CHECK COMPARES PUBLISHED IDENTITIES AND NEVER RE-DERIVES
+      ONE... the claimant is a rule of the same kind whose pattern is
+      exactly the namespaced form of the superseded rule's pattern... THE
+      WHOLE OF THE ABOVE IS PINNED BY ONE PROPERTY-STYLE TEST AND NOT BY
+      THREE EXAMPLES.
+    evidence:
+      - >-
+        test/property/rederive-loss-reporting.test.ts (508 lines), both
+        biconditionals, read in full by this review.
+      - >-
+        test/property/mutants.mts (200 lines), all four mutants
+        independently re-run by this review with matching output to the
+        work history's own claim (captured above).
+      - >-
+        test/application/rederive-merchant-rules.test.ts:315-657, the
+        CRITERION 12.7 describe block, and the surrounding CR2/CR3/CR4/HAZ5
+        regression tests through line 2043, all green in this review's own
+        suite run.
+      - >-
+        FINDING HZ6-M3P12-01 (this review, high severity): the claimant
+        lookup's "same kind" restriction, which the criterion's own text
+        requires the published-pair check to verify, is unverifiable by
+        anything in the generator -- the assertion at
+        rederive-loss-reporting.test.ts:462-463 is vacuous because no seed
+        anywhere in the tree constructs a cross-kind pattern collision.
+        Witnessed by a self-constructed fifth mutant that all 67 example
+        tests and both properties pass against.
+      - >-
+        Everything else this criterion requires -- the superset property,
+        the exception's exact scope, the published lineage's two relations,
+        the placeholder correspondence, the acknowledge-by-pair
+        granularity, the six-shape count -- is present, exercised, and
+        green in this review's run, and the four mutants I re-ran
+        independently confirm the loss/claimant-merchant split itself is
+        correctly decided from merchant identity alone.
+    met: false
+  - id: "12.8"
+    quote: >-
+      THE RE-DERIVATION IS IDEMPOTENT, AND IDEMPOTENT MEANS THE SAME ANSWER
+      RATHER THAN A QUIET ONE... The matched-count columns... are EXCLUDED
+      from that comparison...
+    evidence:
+      - test/application/rederive-merchant-rules.test.ts:658-731.
+      - >-
+        rederive-rules.ts:207-212 states and the report type enforces that
+        RuleDecision carries no matched-count field, so the byte-comparable
+        formatDecisionReport (rederive-rules.ts:1061-1068) structurally
+        cannot include it.
+      - Unchanged by this round's diff at the mechanism level; green in this review's suite run.
+    met: true
+  - id: "12.9"
+    quote: >-
+      FACTS ARE NOT REWRITTEN AND THE CHANGE IS A DERIVATION PLUS A
+      RECOMPUTE...
+    evidence:
+      - test/application/rederive-merchant-rules.test.ts:732-844.
+      - "`grep -n \"transaction\\.\" src/modules/merchants/application/rederive-rules.ts` finds no write against a transactions table; the only port members used are listRules, listCountedTransactions, upsertRule (unused), applyRuleWrites (merchant_rules only)."
+    met: true
+  - id: "12.10"
+    quote: >-
+      PREFIX AND PATTERN ARE SETTLED... matchRules refuses to apply a
+      PREFIX or a PATTERN rule to an ACCOUNT-basis key...
+    evidence:
+      - test/domain/counterparty-identity-contracts.test.ts:25-89.
+      - Unchanged this round; green in this review's suite run.
+    met: true
+  - id: "12.11"
+    quote: >-
+      THE TWO SCREENS AGREE WHERE THEY ARE MEANT TO... Three divergences
+      are named as expected exceptions...
+    evidence:
+      - test/application/counterparty-identity-surfaces.test.ts:70-175.
+      - Unchanged this round; green in this review's suite run.
+    met: true
+  - id: "12.12"
+    quote: >-
+      THE MODULE BOUNDARY HOLDS. The MerchantResolver port still has
+      exactly one member...
+    evidence:
+      - test/domain/counterparty-identity-contracts.test.ts:90-119.
+      - >-
+        `git log --oneline -- src/modules/ledger/domain/corrections.ts` on
+        this branch shows no commit touching that file within the M3-P12
+        commit range, consistent with the criterion's own pin.
+    met: true
+  - id: "12.13"
+    quote: >-
+      NOTHING OF THE OWNER'S DATA REACHES THE REPOSITORY. npm run
+      gate:privacy passes...
+    evidence:
+      - "npm run gate:privacy run by this review: exit 0, \"gate:privacy clean\"."
+      - >-
+        This round's diff (rederive-rules.ts, mutants.mts, the two test
+        files) prints and asserts on rule ids, passes, bases, outcome
+        tokens and counts only; no descriptor, counterparty, place, amount
+        or date literal appears in it (spot-checked by reading every
+        changed file in full).
+      - "Commit messages on this review's own branch (claude/m3-p12-rev6-haz) carry no data, per this review's own commit."
+    met: true
+  - id: "12.14"
+    quote: >-
+      THE STANDING GATE. npm run typecheck, npm run lint, npm test and npm
+      run gate:privacy all exit 0, and npm run test:e2e exits 0...
+    evidence:
+      - "typecheck, lint, test, gate:privacy all witnessed exit 0 by this review (captured above)."
+      - >-
+        test:e2e NOT RUN by this review, on explicit dispatch instruction:
+        two M3-P14 review lanes hold the e2e port window this session and
+        disk is at 90% (4.0G free, measured via `df -h /`). This is
+        reported as NOT WITNESSED rather than assumed green or run anyway,
+        per the dispatch's own instruction and fleet warning 18's caution
+        about e2e flakiness under contention.
+    met: false
+  - id: "12.15"
+    quote: >-
+      THE WHOLE-CORPUS EFFECT IS RECORDED, NOT ONLY THE HAPPY FIXTURE...
+    evidence:
+      - test/application/counterparty-identity-surfaces.test.ts:176-215.
+      - Unchanged this round; green in this review's suite run.
+    met: true
+  - id: "12.16"
+    quote: >-
+      THE ACCOUNT BASIS FAILS CLOSED... an account that is empty or
+      whitespace... a country code the pinned table does not carry... a
+      length that differs... an account that fails ISO 7064 mod-97...
+    evidence:
+      - test/domain/counterparty-identity.test.ts:394-592.
+      - Unchanged this round; green in this review's suite run.
+    met: true
+  - id: "12.17"
+    quote: >-
+      THE RE-DERIVATION HAS ONE NAMED INVOCATION POINT AND ONE STATED
+      ORDER... THE DEPLOYED RUN IS OWED BY M3-P16 AND IS NOT DROPPED HERE...
+    evidence:
+      - test/domain/counterparty-identity-contracts.test.ts:120-142.
+      - "`package.json` scripts block, read by this review: `\"rederive:merchant-rules\": \"tsx scripts/rederive-merchant-rules.ts\"`."
+      - >-
+        A declared deviation (delivery/work-history/m3-p12.yaml:1602-1610)
+        records the deployed-run half as owed by M3-P16 and no longer this
+        phase's, matching the criterion's own text. Judged true below.
+    met: true
+  - id: "12.18"
+    quote: >-
+      THE RULE SUBJECT IS VALIDATED AT THE WRITE BOUNDARY. assignMerchant
+      returns a typed error, and writes nothing...
+    evidence:
+      - test/application/counterparty-identity-surfaces.test.ts:216-330.
+      - Unchanged this round; green in this review's suite run.
+    met: true
+  - id: "12.19"
+    quote: >-
+      THE GOVERNING DOCUMENT SAYS WHAT THE CODE DOES. pulse-domain section
+      7's resolution chain is amended...
+    evidence:
+      - test/domain/counterparty-identity-contracts.test.ts:143-160.
+      - >-
+        `grep -n "account basis\|normalised counterparty string" .claude/skills/pulse-domain/SKILL.md`
+        confirms the amended chain is present and the stale sentence is not,
+        spot-checked by this review.
+    met: true
+  - id: "12.20"
+    quote: >-
+      THE RESIDUE IS COUNTED AND NAMED... the number of rows whose identity
+      key is shared with no other row after the change...
+    evidence:
+      - "delivery/work-history/m3-p12.yaml:1038-1059 and :1109-1132 (findings (j), (n))."
+      - >-
+        NOT RE-RUN BY THIS REVIEW against the real documents, for the same
+        reason as criterion 12.2; the recorded figures are counts only and
+        cite the committed harness.
+    met: true
+  - id: "12.21"
+    quote: >-
+      PASS ONE CANNOT LOSE A RULE'S MEANING, FOR ANY KIND... the generator
+      INCLUDES the empty pattern and an already-namespaced pattern...
+    evidence:
+      - test/property/pass-one-preserves-meaning.test.ts:58-135 (read by this review; 5 tests).
+      - Unchanged this round; green in this review's suite run ("✓ test/property/pass-one-preserves-meaning.test.ts (5 tests)").
+    met: true
+  - id: "12.22"
+    quote: >-
+      THE TRUST TABLE IS PINNED AND SOURCED... A regression test pins its
+      FULL contents...
+    evidence:
+      - test/domain/counterparty-identity.test.ts:593-629.
+      - Unchanged this round; green in this review's suite run.
+    met: true
+  - id: "12.23"
+    quote: >-
+      THE ROUTINE REFUSES A DATABASE IT WAS NOT TOLD TO WRITE TO, AND THE
+      REFUSAL SHIPS IN THE SAME MERGE AS THE ROUTINE... THIS CRITERION WAS
+      ADDED AFTER THIS PHASE'S IMPLEMENTATION WAS BUILT...
+    evidence:
+      - "src/platform/db/target-guard.ts (278 lines) and test/db/target-guard.test.ts (549 lines) exist and are wired into scripts/rederive-merchant-rules.ts:296-311 as the first statement of main()."
+      - >-
+        `git log --oneline -- src/platform/db/target-guard.ts` shows it was
+        built in fix round five (commit 3051f08), NOT this round; this
+        round's diff does not touch it.
+      - >-
+        Green in this review's own suite run (test/db/target-guard.test.ts
+        is part of the 648 passing tests), but NOT independently re-derived
+        line by line by this review this round (e.g. the percent-encoding
+        exception, the two endpoint-shape ref extractions) -- it is outside
+        this round's diff and was the subject of rounds three through five.
+        Spot-checked only: the file exists, is wired in, and its whole test
+        file passes.
+    met: true
+
+# NOTE ON COVERAGE: the phase's acceptance section (read in full by this
+# review) runs id 12.1 through id 12.23 with no gaps and no id beyond
+# 12.23; every one of those 23 ids is walked above. The hazard table's own
+# ids run to H12.32 and some (H12.24, H12.25, ...) reference a criterion by
+# a DIFFERENT number (H12.24 is addressed-by criterion 12.20, H12.25 by
+# criterion 12.21), which is the plan's own cross-reference and not a
+# missing criterion; hazard-classes-addressed below covers all 32 hazard
+# ids on their own.
+
+deviations-judged:
+  - deviation: >-
+      Criterion 12.17, the half requiring the phase work history to record
+      the command actually run AGAINST THE DEPLOYED DATABASE with its exit
+      code and its printed before-and-after assignment-set sizes.
+    serves-plan-intent: true
+    reasoning: >-
+      Matches criterion 12.17's own text, which explicitly forbids running
+      the routine before the code deploys (decision D-46) and states that
+      the deployed run is owed by M3-P16, "the phase whose entry condition
+      IS the deploy". The invocation-point half, which is this phase's own
+      to deliver, is met (package.json script plus a test that finds it).
+      Not running a write against the owner's live database from this
+      worktree is also correct under the fleet's own safety rules.
+  - deviation: >-
+      Criteria 12.7, 12.8 and 12.9, which speak of "a seeded database"
+      holding MerchantRule rows written under the baseline derivation.
+    serves-plan-intent: true
+    reasoning: >-
+      The in-memory fake repository is this codebase's standing convention
+      for application-layer tests (test/application/fake-import-world.ts)
+      and is what makes criterion 12.9's "issues no write against the
+      transactions table" observable at all; a query log against a real
+      database would be a heavier and less direct instrument for the same
+      fact. Disclosed rather than left for a reader to assume a live
+      Postgres was used.
+  - deviation: "files-to-touch, which does not name .gitignore."
+    serves-plan-intent: false
+    reasoning: >-
+      The underlying incident (a tracked node_modules symlink publishing an
+      absolute container path) was fixed at the tip, but the work history's
+      own correction records that the blob remains reachable in the
+      branch's pushed history (commits 62612ad and d62b63d), and the route
+      taken -- no history rewrite, on the argument that the path carries no
+      household data and the phase squash-merges -- was the ORCHESTRATOR's
+      call, not this implementer's, and is recorded as such. I am marking
+      this false not because the implementer erred (the disclosure is
+      exactly right, per fleet warning 20) but because the underlying state
+      -- a leaked absolute path still reachable in pushed history -- does
+      not itself serve the plan's privacy intent, and a reviewer should say
+      so rather than let a well-disclosed deviation read as a resolved one.
+      This is not a new finding of this round (the path is unchanged by
+      db56b90) and is recorded here only because R-057b requires every
+      declared deviation judged, not assumed.
+  - deviation: >-
+      files-to-touch, which does not name src/app/globals.css, test/e2e/,
+      messages/en.json, messages/nl.json, messages/fr.json or
+      src/app/(app)/merchants/page.tsx.
+    serves-plan-intent: true
+    reasoning: >-
+      Criterion 12.18 requires a naming refusal to reach the reader, which
+      structurally needs a route status, a rendering component, a message
+      catalogue entry per language, a style, and a browser witness; none of
+      those were declared but all are necessary for the criterion to be
+      met at all. The implementer also corrected a false checked statement
+      in the plan's conflicts-with entry for M3-P9 rather than leaving it
+      wrong, which is the right response per fleet warning 20 (disclosure
+      over a self-serving claim).
+  - deviation: >-
+      Criterion 12.1's composition clause, "at least 8 rows carry none",
+      under its strict reading.
+    serves-plan-intent: true
+    reasoning: >-
+      The strict reading ("no account field at all") is arithmetically
+      incompatible with the same criterion's own pinned count (24 rows, 12
+      keys, exactly 8 descriptor-basis) once step 7's mandatory
+      truncation-attack rows are added, since those rows carry an account
+      field and still take the descriptor basis. The implementer took the
+      only reading consistent with the criterion's own numbers rather than
+      contorting the fixture or the code to chase a self-contradictory
+      spec, and flagged it as the plan's defect rather than quietly
+      resolving it. I did not independently re-verify the arithmetic
+      collision, but the described contradiction is real on its face:
+      requiring both "no account field" as the descriptor-basis test AND
+      exactly 8 descriptor-basis rows AND that both truncation-attack rows
+      (which carry an account field) are among the fixture's rows is not
+      simultaneously satisfiable.
+  - deviation: >-
+      Criterion 12.5's committed baseline table,
+      test/fixtures/baseline-descriptor-keys.json.
+    serves-plan-intent: true
+    reasoning: >-
+      Recorded as a housekeeping note rather than a substantive deviation:
+      an already-invented identifier fragment was added to the allow list
+      with its provenance because the file it lived beside moved. Does not
+      change what is proved.
+  - deviation: >-
+      Step 13, "run the full gate before calling the slice done", read as
+      one clean run of every gate.
+    serves-plan-intent: true
+    reasoning: >-
+      typecheck, lint, test, gate:privacy and gate:tokens are reported
+      clean on the first run; one Playwright spec needed a re-run, recorded
+      rather than summarised away, consistent with fleet warning 18's
+      documented e2e flakiness under this fleet's contention rather than a
+      code defect. This review did not re-run test:e2e itself (see
+      criterion 12.14) so I could not independently re-witness this, but
+      the disclosure pattern (say what failed and why rather than reporting
+      a single clean pass) is the correct one per fleet warning 20.
+  - deviation: >-
+      Criterion 12.23, added to the plan AFTER this implementation was
+      built.
+    serves-plan-intent: true
+    reasoning: >-
+      This is exactly what the criterion's own text authorizes ("owed by
+      the next change to this phase"): the target interlock was built in
+      the round that followed the criterion's addition, with the stated
+      consequence (the script cannot be rehearsed against any database an
+      operator can create) disclosed rather than hidden.
+  - deviation: >-
+      files-to-touch, which does not name src/platform/db/guard-cli.ts or
+      src/platform/db/resolve-env.ts.
+    serves-plan-intent: true
+    reasoning: >-
+      src/platform/db/ is in files-to-touch as amended; extracting the
+      shared environment-resolution reading into resolve-env.ts rather than
+      duplicating it in the new interlock is what criterion 12.23 itself
+      demands ("resolves the connection... the way the command it guards
+      resolves it... an interlock that resolves differently... is
+      decorative"). Avoiding a second copy that silently drifts is the
+      right call.
+  - deviation: >-
+      Criterion 12.17, the deployed run.
+    serves-plan-intent: true
+    reasoning: >-
+      Matches criterion 12.17's own text verbatim ("Criterion 16.1 carries
+      them, in the phase whose entry condition IS the deploy"). The
+      invocation-point half, which is this phase's to own, is met.
+  - deviation: >-
+      Criterion 12.23's consequence: the routine cannot be rehearsed
+      against any database an operator can create.
+    serves-plan-intent: true
+    reasoning: >-
+      A disclosed, structural consequence of a no-override, ref-based
+      interlock (criterion 12.23 explicitly forbids an override flag), not
+      an accident. The alternative is a carve-out for local hosts that the
+      criterion does not authorize. Rehearsal instead lives in the
+      application-level tests and the Playwright spec against a real
+      database, which is a reasonable substitute given the constraint.
+  - deviation: >-
+      files-to-touch, which does not name src/modules/overview/.
+    serves-plan-intent: true
+    reasoning: >-
+      Closes a real fifth-consumer gap the plan's own hazard H12.15
+      describes (an empty-label merge in the overview fold) that an earlier
+      round fixed on the sibling screen and not this one. The stated
+      change is narrow (a marker plus an existing, already-translated
+      sentence) and does not import merchants into overview.
+  - deviation: >-
+      files-to-touch, which does not name playwright.config.ts,
+      src/platform/db/gate-target.ts or src/platform/db/guard.ts.
+    serves-plan-intent: true
+    reasoning: >-
+      Required so the Playwright gate itself refuses an unnamed database
+      target before its web servers start against whatever the container
+      holds, which is the same target-safety concern criterion 12.23
+      raises for the routine. The plan's conflicts-with entry for M3-P9 was
+      updated in the same change to name the newly-shared file rather than
+      leaving the overlap to surface on rebase.
+  - deviation: >-
+      Criterion 12.23, which requires the interlock to resolve the
+      environment "the way the command it guards resolves it" and
+      describes that reading as ".env only for a variable the shell does
+      not carry OR carries empty".
+    serves-plan-intent: true
+    reasoning: >-
+      The implementer corrected a false claim in the CRITERION itself
+      (witnessed against Prisma CLI 6.19.3: an absent variable falls back
+      to .env, a shell-empty one does not and the CLI aborts) rather than
+      writing code to match a spec that does not describe the real CLI,
+      and left the guard strictly stricter than the command in both
+      directions, which is the only safe direction for a fail-closed
+      interlock to diverge in. This is the correct response to a plan
+      defect: name it, do not silently implement the wrong behaviour to
+      satisfy the letter of a false criterion clause.
+  - deviation: >-
+      CRITERIA finding CR5-M3P12-11, which asks that a pass-two promotion
+      adding no rule get its own outcome token.
+    serves-plan-intent: true
+    reasoning: >-
+      Textbook application of fleet warning 15 (a review's concrete-edit is
+      a proposal, never a patch): the implementer built the suggested edit,
+      witnessed it break criterion 12.8's byte-identical idempotence
+      requirement across four tests, and reverted with the reasoning
+      recorded rather than silently discarding either the finding or the
+      criterion. What was kept (clarifying what "promoted" means and
+      pointing to rules-added for the count) addresses the finding's real
+      concern without the structural break.
+  - deviation: >-
+      CRITERIA finding CR5-M3P12-05 and the dispatch that accepted it,
+      both of which describe the development-server refusal as gated on
+      isProduction() being false.
+    serves-plan-intent: true
+    reasoning: >-
+      The wider predicate was tried and produces two observed regressions
+      (the fast gate would refuse to run under any remote ambient
+      DATABASE_URL, and tsx entry points carry no NODE_ENV including the
+      re-derivation command this same phase hardens). Narrowing to
+      NODE_ENV === "development" closes the gap the finding actually named
+      (the dev server) without those regressions. Recorded honestly as
+      narrower than asked, with the reason.
+
+hazard-classes-addressed:
+  - class-id: H12.1
+    probed: >-
+      Re-read the account-basis trust gate (test/domain/counterparty-
+      identity.test.ts:394-592) end to end; confirmed unchanged by this
+      round's diff; ran the full suite (648 tests green) rather than
+      re-deriving each refusal case from scratch, since this surface was
+      not touched by db56b90.
+    cleared-because: >-
+      criterion 12.16, unchanged since fix round five and green in this
+      review's own run; not independently re-derived this round beyond the
+      full-suite witness, since it is outside this round's diff.
+  - class-id: H12.2
+    probed: >-
+      Confirmed the measurement harness is committed
+      (test/fixtures/measure-identity-convergence.ts) and covered by the
+      fast gate over committed fixtures
+      (test/application/counterparty-identity-surfaces.test.ts:331-374).
+      Did not re-run it against the real documents myself.
+    cleared-because: >-
+      criterion 12.2; real-document figures recorded in the work history
+      with the committed command, not re-run by this review (outside this
+      round's diff, and the review contract does not have me open the real
+      documents).
+  - class-id: H12.3
+    probed: >-
+      Read rederive-rules.ts in full (1068 lines) and the property test in
+      full (508 lines); independently re-ran the four-mutant harness;
+      constructed and ran a fifth mutant of my own (removing the same-kind
+      restriction from claimant()).
+    finding: HZ6-M3P12-01
+  - class-id: H12.4
+    probed: >-
+      Grepped rederive-rules.ts for any write against a transactions table;
+      confirmed the only port members used are listRules,
+      listCountedTransactions and applyRuleWrites (merchant_rules only).
+    cleared-because: >-
+      criterion 12.9, test/application/rederive-merchant-rules.test.ts:
+      732-844, green in this review's run.
+  - class-id: H12.5
+    probed: >-
+      Ran gate:privacy myself (exit 0); read every file this round's diff
+      touches in full and confirmed no descriptor, place, amount or date
+      literal appears in any of them, only rule ids, passes, bases and
+      outcome tokens.
+    cleared-because: criterion 12.13, witnessed directly by this review.
+  - class-id: H12.6
+    probed: >-
+      Re-read test/domain/counterparty-identity.test.ts:255-393; confirmed
+      unchanged by this round's diff.
+    cleared-because: criterion 12.6, green in this review's full-suite run.
+  - class-id: H12.7
+    probed: >-
+      Confirmed via `git diff db56b90~1 db56b90 --stat` that
+      normalise-counterparty.ts is untouched by this round.
+    cleared-because: criterion 12.5, unchanged this round.
+  - class-id: H12.8
+    probed: >-
+      Re-read the SQL-fragment-sharing assertion in
+      test/application/counterparty-identity-surfaces.test.ts:70-175;
+      confirmed unchanged by this round's diff.
+    cleared-because: criterion 12.11, green in this review's full-suite run.
+  - class-id: H12.9
+    probed: >-
+      Re-read test/application/counterparty-identity-surfaces.test.ts:
+      176-215; confirmed unchanged by this round's diff.
+    cleared-because: criterion 12.15, green in this review's full-suite run.
+  - class-id: H12.10
+    probed: >-
+      Re-read the MerchantResolver single-member assertion in
+      test/domain/counterparty-identity-contracts.test.ts:90-119.
+    cleared-because: criterion 12.12, unchanged this round.
+  - class-id: H12.11
+    probed: >-
+      Confirmed via `git log --oneline -- src/modules/ledger/domain/
+      corrections.ts` that no commit in this phase's range touches that
+      file.
+    cleared-because: criterion 12.12, unchanged this round.
+  - class-id: H12.12
+    probed: >-
+      Re-read test/application/rederive-merchant-rules.test.ts:658-731 (the
+      idempotence test) and ran it myself as part of the full suite.
+    cleared-because: criterion 12.8, green in this review's own run.
+  - class-id: H12.13
+    probed: >-
+      Re-read test/domain/counterparty-identity-contracts.test.ts:25-89.
+      NOTE this is distinct from finding HZ6-M3P12-01: this hazard is about
+      matchRules refusing a PREFIX/PATTERN rule against an ACCOUNT-basis
+      KEY (unchanged, still guarded), not about the claimant DISCOVERY step
+      inside rederive-rules.ts pass one, which is where my finding lives.
+    cleared-because: criterion 12.10, green in this review's full-suite run.
+  - class-id: H12.14
+    probed: >-
+      Re-read the truncation end-to-end test at
+      test/domain/counterparty-identity.test.ts:459-509.
+    cleared-because: criterion 12.16, unchanged this round.
+  - class-id: H12.15
+    probed: >-
+      Re-read the empty/whitespace-account test at
+      test/domain/counterparty-identity.test.ts:268-381.
+    cleared-because: criterion 12.6, unchanged this round.
+  - class-id: H12.16
+    probed: >-
+      Re-read the first-wins pin at test/domain/counterparty-identity.test.
+      ts:568-592.
+    cleared-because: criterion 12.16, unchanged this round.
+  - class-id: H12.17
+    probed: >-
+      Re-read the row-by-row partition test and the byte-for-byte
+      regeneration check at test/domain/counterparty-identity.test.ts:
+      140-185.
+    cleared-because: criterion 12.4, unchanged this round.
+  - class-id: H12.18
+    probed: >-
+      This is the core mechanism criterion 12.7 exists to guard. Read
+      rederive-rules.ts's supersede/claimant machinery in full; re-ran the
+      four shipped mutants; built and ran a fifth.
+    finding: HZ6-M3P12-01
+  - class-id: H12.19
+    probed: >-
+      Read the acknowledge-by-pair machinery
+      (rederive-rules.ts:963-975, scripts/rederive-merchant-rules.ts:
+      322-348) and its tests (test/application/rederive-merchant-rules.
+      test.ts:521-657, 984-1025); confirmed the report prints every lost
+      transaction id and rule id before an operator could accept it, so the
+      acknowledge path cannot clear something not shown.
+    cleared-because: >-
+      criterion 12.7's acknowledge-path sub-clause; distinct from finding
+      HZ6-M3P12-01, which is about claimant discovery rather than the
+      acknowledge granularity. This half is well covered: the "clears only
+      what it names" tests
+      (rederive-merchant-rules.test.ts:521,574) pass, and the
+      printReport function (scripts/rederive-merchant-rules.ts:226-262)
+      prints every transaction/rule id pair an operator would need to
+      construct --accept-loss.
+  - class-id: H12.20
+    probed: >-
+      Confirmed the package.json script and its test.
+    cleared-because: criterion 12.17, unchanged this round.
+  - class-id: H12.21
+    probed: >-
+      Re-read test/application/counterparty-identity-surfaces.test.ts:
+      216-330.
+    cleared-because: criterion 12.18, unchanged this round.
+  - class-id: H12.22
+    probed: "Grepped .claude/skills/pulse-domain/SKILL.md for the stale sentence."
+    cleared-because: criterion 12.19, unchanged this round.
+  - class-id: H12.23
+    probed: >-
+      Confirmed the harness is committed and fast-gate-covered; did not
+      re-run against the real documents myself.
+    cleared-because: criterion 12.2.
+  - class-id: H12.24
+    probed: >-
+      Read delivery/work-history/m3-p12.yaml findings (j) and (n); did not
+      re-derive the residue counts myself.
+    cleared-because: criterion 12.20.
+  - class-id: H12.25
+    probed: >-
+      Re-ran test/property/pass-one-preserves-meaning.test.ts as part of
+      the full suite (5 tests, green); confirmed by reading that its
+      generator includes an already-namespaced pattern among its cases.
+    cleared-because: criterion 12.21, unchanged this round.
+  - class-id: H12.26
+    probed: >-
+      Read the empty-pattern guard at rederive-rules.ts:613-621
+      ("empty-pattern-left-alone") and confirmed the property test's
+      generator includes the empty pattern per criterion 12.21.
+    cleared-because: criterion 12.21, unchanged this round.
+  - class-id: H12.27
+    probed: >-
+      Read rederive-rules.ts:207-212's comment and the RuleDecision type,
+      confirming matched counts are structurally excluded from
+      formatDecisionReport; re-read the idempotence test's seed
+      requirement (a rule whose rows split across the two bases).
+    cleared-because: criterion 12.8, green in this review's own run.
+  - class-id: H12.28
+    probed: "Re-read the full-contents pin at test/domain/counterparty-identity.test.ts:593-618."
+    cleared-because: criterion 12.22, unchanged this round.
+  - class-id: H12.29
+    probed: "Re-read the first-wins pin, same as H12.16."
+    cleared-because: criterion 12.16, unchanged this round.
+  - class-id: H12.30
+    probed: >-
+      Confirmed target-guard.ts and its 549-line test file exist and are
+      wired into the script as the first statement of main(); ran the full
+      suite (target-guard.test.ts is part of the 648 green tests). Did not
+      re-derive the percent-encoding exception or the two endpoint-shape
+      extractions line by line myself this round, since target-guard.ts is
+      unchanged by db56b90 (last touched fix round five per git log).
+    cleared-because: criterion 12.23.
+  - class-id: H12.31
+    probed: >-
+      This is the hazard my own probing bears most directly on. Confirmed
+      the four shipped mutants (one of which, M4, is exactly this hazard's
+      shape -- a forged promotion pair) are still caught; found that the
+      SAME class of defect is unverifiable for a cross-kind claimant
+      because no generator anywhere builds that world.
+    finding: HZ6-M3P12-01
+  - class-id: H12.32
+    probed: >-
+      Constructed a hand-built two-sources-promote-onto-one-holder
+      scenario (two dead EXACT rules, same merchant, each with its own
+      namespaced claimant, both promoting onto the identical account
+      pattern) and ran rederiveMerchantRules directly against it. The
+      "last write wins" overwrite in recordPromotion fired as its own
+      comment predicts, but produced no loss and no claimant-merchant
+      report, because the biconditional short-circuits on merchant
+      identity before the lineage is ever consulted
+      (rederive-rules.ts:936-938), and recordPromotion itself refuses
+      (throws) if the two merchants ever differ
+      (rederive-rules.ts:518-523). Captured output: "exitCode 0,
+      lostAssignments [], claimantMerchantReports []".
+    cleared-because: >-
+      criterion 12.7's own merchant-identity-only design closes this
+      specific over-blocking path by construction, witnessed directly by
+      this review rather than assumed from the prose.
+
+# END OF STRUCTURED REVIEW. Working log below kept for traceability; the
+# fields above are the actual deliverable.
 #
-# Started: investigating criterion 12.7 as amended (merchant-decided loss
-# property), the three-sentinel fix, the mutant harness, and the generator
-# shape coverage, per the round-6 dispatch's five numbered attack points.
+# VALIDATION, both attempts as instructed.
 #
-# npm install: added 472 packages in 29s, exit 0 (default node in this
-# container is v26.7.0, not the v22 package.json engines pins; only an
-# EBADENGINE warning, not a failure).
+# `npx tiphys validate --type verdict --context <copy of charter.yaml,
+# delivery/plan/pulse-v02.yaml as plan.yaml, delivery/work-history/
+# m3-p12.yaml as work-history.yaml, and pulse-fleet's assurance-modes.yaml>
+# <this file>`: every schema-level check and every Kind B check that a
+# single lane's own document can satisfy passes -- criteria completeness
+# against the plan's 12.1-12.23, deviations-judged completeness against
+# all 16 of the work history's declared deviations (verbatim plan-clause
+# join), hazard-classes-addressed completeness against all 32 declared
+# hazard classes. The ONE remaining line, unchanged across two context
+# variants I tried (context root only, and context root plus a copy of
+# this file under its own delivery/review/), reads verbatim: "INVALID
+# #/phase only 1 verdict document(s) exist under delivery/review for phase
+# M3-P12, and a delegated grant requires two independent clean-room
+# reviews of the exact head (check: dual-review-decorrelation)". That
+# check is inherently a TWO-DOCUMENT comparison (this is what fleet
+# warning 17 and the shared dispatch contract's own description of the
+# criteria/hazard split mean by "two contracts, not two reviewers"): it
+# cannot be satisfied by any single lane's document, however correct,
+# before its sibling exists and is committed alongside it. This is
+# reported as the captured failure rather than worked around.
 #
-# npm run typecheck: exit 0, no diagnostics.
+# `npx tiphys validate --type finding` against this SAME file: fails
+# structurally and cannot be made to pass without discarding most of this
+# document's content -- the finding schema's `additionalProperties: false`
+# forbids `phase`, `framing`, `review-contract`, `criteria`,
+# `deviations-judged` and `hazard-classes-addressed` outright, and its
+# findings require `concrete-edit` rather than `concrete-fix`. Given the
+# verdict schema is fully registered (`tiphys validate --type verdict` is
+# a real, working invocation, not the unregistered type the shared
+# dispatch contract's boilerplate anticipated) and validates cleanly
+# except for the two-lane comparison above, this document keeps
+# `kind: verdict` rather than being flattened into the much thinner
+# `finding` shape, matching the format every prior round's committed
+# hazard-lane deliverable in this repository's history uses.
 #
-# Read in full: src/modules/merchants/application/rederive-rules.ts (1068
-# lines), test/property/rederive-loss-reporting.test.ts (508 lines),
-# test/property/mutants.mts (200 lines).
-#
-# CANDIDATE FINDING (R-087, false claim in a comment nothing checks):
-# test/application/rederive-merchant-rules.test.ts:1752-1757 asserts "The
-# schema's ids are cuids: a lowercase letter followed by alphanumerics, with
-# no hyphen anywhere" and backs it with regex /^[a-z][a-z0-9]*$/. But
-# prisma/schema/merchants.prisma:52 declares MerchantRule.id as
-# `@default(uuid()) @db.Uuid`, not a cuid, and a real uuid is
-# hyphen-containing (e.g. 8-4-4-4-12 hex groups). The claim is false. The
-# actual reason a real id can never equal a `pending-<n>` placeholder is
-# STRING LENGTH/shape (36-char hyphenated uuid vs a short `pending-N`
-# token), not "no hyphen": a uuid also contains hyphens, so the stated
-# reason is backwards. The separation property the test is defending
-# (production ids can't collide with the placeholder) still holds by
-# accident of a different argument, so this is not (yet) a live collision
-# defect, but it is a false present-tense claim shipped in test code that
-# nothing checks against the real id format. Severity to decide: likely
-# medium (false claim, R-087, but the property it's defending happens to
-# still hold for an unstated reason).
-#
-# NEXT: reason carefully about claimantInSeed's uniqueness argument
-# (attack 1), look for a seed where it's ambiguous or a different-kind rule
-# should be the claimant; then run test/property/mutants.mts myself
-# (witness, not trust the work-history claim) and the full npm test suite,
-# lint, gate:privacy, gate:tokens.
-#
-# WITNESSED: npx tsx test/property/mutants.mts (self, from a clean git
-# tree). Exit 0. All four mutants caught: M1 red on FIRST biconditional, M2
-# red on FIRST, M3 red on FIRST, M4 red on FIRST AND SECOND. "restored:
-# original 33f7f7fee0ddf710, on disk 33f7f7fee0ddf710" -- matches, file
-# confirmed clean via git status --short after. This matches the work
-# history's own claim (delivery/work-history/m3-p12.yaml finding (ii)); I
-# reproduced it independently rather than trusting the record.
-#
-# ATTACK 1 (claimant uniqueness) / ATTACK 3 (fifth wrong predicate) /
-# MAJOR FINDING, HIGH SEVERITY, WITNESSED BY ME:
-#
-# claimantInSeed (test/property/rederive-loss-reporting.test.ts:124-134) and
-# the production claimant() helper (src/modules/merchants/application/
-# rederive-rules.ts:568-578) both filter candidates by `kind === kind`
-# (same kind as the source rule). I constructed a fifth mutant NOT in
-# test/property/mutants.mts: deleted the `rule.kind === kind &&` conjunct
-# from claimant() (rederive-rules.ts:576), so it matches a same-pattern
-# rule of ANY kind, not just the source's own kind. Applied via a scratch
-# python edit (verified anchor matched exactly once), restored via `cp`
-# from a saved copy immediately after each run, `git status --short`
-# confirmed clean after every restore.
-#
-# RESULT: ran `npx vitest run test/property/rederive-loss-reporting.test.ts`
-# with the mutation in place -- BOTH properties passed (2 passed, "shapes
-# reached: unchanged 524, coveredByNothing 252, takenByAStranger 107,
-# licensedByTheClaimant 195, licensedByThePromotion 66,
-# claimantMerchantClass 64"). Then ran the FULL suite
-# (`npx vitest run test/application/rederive-merchant-rules.test.ts
-# test/property/`) with the same mutation: 4 test files, 67 tests, ALL
-# PASSED, including "EVERY superseded rule is EXACT, on a run that produces
-# one" and both PREFIX-kind tests.
-#
-# WHY NOTHING CATCHES IT: seedArbitrary
-# (rederive-loss-reporting.test.ts:178-276) only ever constructs rules with
-# `kind: "EXACT"` -- grep confirms no other kind literal appears in that
-# generator. seedDeployWindowWorld (rederive-merchant-rules.test.ts:1111)
-# takes a `kind` parameter but always uses the SAME kind for both the old
-# rule and its twin/rival in every call site, so no test ever seeds a
-# cross-kind pattern collision (an EXACT rule and a PREFIX rule sharing the
-# literal same pattern string, which the schema's own unique key
-# (householdId, kind, pattern) permits to coexist). So the "same kind"
-# restriction that criterion 12.7's own prose requires of the claimant
-# check ("the claimant is a rule of the SAME KIND whose pattern is exactly
-# the namespaced form...") is asserted in
-# rederive-loss-reporting.test.ts:462-463 (`expect(dead?.kind).toBe
-# ("EXACT"); expect(claimant?.kind).toBe("EXACT")`) but that assertion is
-# VACUOUS: it can never be violated because the generator cannot produce a
-# non-EXACT rule for it to catch.
-#
-# IMPACT: not a live production bug today (assignMerchant writes EXACT
-# only; the deployed table holds zero PREFIX/PATTERN rows, per the plan's
-# own measurement). But PREFIX and PATTERN are LIVE in the matcher and
-# explicitly reserved for slice-5's accepted-answer path, so a future
-# EXACT-vs-PREFIX (or EXACT-vs-PATTERN) same-pattern coexistence is a
-# state the schema already permits. If claimant()'s kind filter were ever
-# accidentally dropped or weakened (e.g. a refactor that hoists `kind` out
-# without noticing it's load-bearing), pass one could pick a WRONG rule as
-# the claimant of a superseded EXACT rule -- attributing the exemption to
-# an unrelated PREFIX/PATTERN rule that happens to share the pattern
-# string -- and the entire test suite (67 tests + both properties) would
-# stay green. That is exactly hazard H12.31's shape (a transaction ends up
-# carrying a merchant that is neither the one it carried before nor the
-# claimant's, reported as licensed when it should be a lost assignment or
-# a claimant-merchant report), on the one mechanism the phase's own
-# criterion 12.7 says has been "wrong three times running" and is pinned
-# by a property FOR THIS REASON.
-#
-# This is attack point 1 AND attack point 3 at once: it is exactly "a rule
-# of a different kind [that] should have been the claimant" (or rather,
-# should NOT have been but nothing stops it), and it is a genuine fifth
-# wrong predicate the four committed mutants do not represent -- a
-# discovery-side defect (which rule counts as a claimant) rather than a
-# comparison-side one (what the exemption does once a claimant is known),
-# which is where all four shipped mutants live.
-#
-# File restored, verified clean: git status --short -- src/modules/
-# merchants/application/rederive-rules.ts produced no output both times.
+# All temporary probes (the fifth mutant, the two-sources-one-holder
+# script) were applied to rederive-rules.ts via a scratch copy-and-restore
+# outside git, or run as a standalone tsx script importing the module
+# read-only; `git status --short -- src/modules/merchants/application/
+# rederive-rules.ts` printed nothing at the end of this review. No file in
+# the reviewed tree was left edited by this review. Nothing was posted to
+# the pull request. The sibling criteria lane's document
+# (/home/user/wt-m3p12-c6) was not opened at any point before this file was
+# written and pushed.
