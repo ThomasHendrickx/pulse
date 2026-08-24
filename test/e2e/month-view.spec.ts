@@ -398,11 +398,20 @@ const DESK_BASE_HOUSEHOLD_COLOUR = "oklch(0.23 0.008 265)";
 // allowed to grow; it is not allowed to grow by half again, which is what
 // the first round of this phase did unrecorded.
 const DESK_BASE_SPEND_CARD_HEIGHT = 1136;
-// The card M3-P14 adds, bounded on its own. One entry per account with rows
-// in the period, two lines each; the dense fixture has one account. Generous
-// enough for a household with the owner's ten accounts and tight enough that
-// the card cannot become a second month view.
-const DESK_MONTH_ACCOUNTS_MAX_HEIGHT = 900;
+// The card M3-P14 adds, bounded on its own. Measured at this head with the
+// dense fixture: 42 pixels for its one account.
+//
+// TIGHTENED from 900 after a clean-room review pointed out that 900 is more
+// than twenty times the measured value, so the half of the split that is
+// meant to replace the slack retired from M3-P7's document bound was not a
+// working bound at all. Derived rather than picked: the measured height for
+// one entry, plus a per-entry allowance for the owner's ten accounts, plus
+// one entry of headroom. A card that grows past a household's whole account
+// list reddens.
+const DESK_MONTH_ACCOUNTS_ONE_ENTRY = 42;
+const DESK_MONTH_ACCOUNTS_MAX_ENTRIES = 11;
+const DESK_MONTH_ACCOUNTS_MAX_HEIGHT =
+  DESK_MONTH_ACCOUNTS_ONE_ENTRY * DESK_MONTH_ACCOUNTS_MAX_ENTRIES;
 const DESK_CARD_HEIGHT_FACTOR = 1.25;
 // FINDING HZ2-06. The round's own account of the round-0 damage quotes the
 // desk row height and the desk document height, and then bounded neither.

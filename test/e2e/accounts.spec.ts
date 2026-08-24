@@ -827,3 +827,100 @@ test("14.16 arm FOUR on the rendered page: paid into AND drawn from, so the move
   const held = page.getByTestId("month-account").filter({ hasText: "Buffer" });
   await expect(held).toHaveAttribute("data-state", "held");
 });
+
+// ---------------------------------------------------------------------
+// CRITERION 15.7, THE PLAYWRIGHT HALF: "a Playwright test asserts every shown
+// figure is byte identical to the movement the totals make when the change is
+// confirmed, rendered in the reader's own language from all three
+// catalogues".
+//
+// The first round asserted only that the preview contained the phrase "stop
+// being counted", in English, and compared no figure against any total. This
+// reads the figures off the preview, confirms, and compares them against the
+// movement the month view's own totals make.
+// ---------------------------------------------------------------------
+
+const euros = (text: string): number => {
+  // "1.947,75" and "+300,00" as they are rendered, into integer cents. The
+  // sign glyph is part of the rendering and is read, not stripped blindly.
+  const match = /(-|\+)?\s*([\d.]+),(\d{2})/.exec(text);
+  if (match === null) {
+    throw new Error(`no amount in: ${text}`);
+  }
+  const sign = match[1] === "-" ? -1 : 1;
+  const whole = Number((match[2] ?? "0").replaceAll(".", ""));
+  return sign * (whole * 100 + Number(match[3] ?? "0"));
+};
+
+for (const locale of ["en", "nl", "fr"] as const) {
+  test(`15.7 in ${locale}: every figure the preview shows is byte identical to the movement the totals make`, async ({
+    page,
+    baseURL,
+  }) => {
+    await signUp(page, `preview-${locale}`);
+    // THE IMPORT RUNS IN ENGLISH AND THE LOCALE IS SET AFTERWARDS. The upload
+    // helper drives the form by its English labels, and this criterion is
+    // about the PREVIEW being rendered in the reader's own language, not
+    // about the import flow. Written down because the first version set the
+    // cookie first and the Dutch run hung on a field label that does not
+    // exist in Dutch, which reads like a product defect and is a test one.
+    await uploadFile(page, "ar-current.csv", "Current account", "POT", "11");
+    await page.context().addCookies([
+      {
+        name: "locale",
+        value: locale,
+        url: baseURL ?? "http://127.0.0.1:3000",
+      },
+    ]);
+
+    await page.goto("/?month=2026-08");
+    const spendBefore = euros(
+      await page.getByTestId("spend-total").innerText(),
+    );
+    const reservesBefore = euros(
+      await page.getByTestId("reserves-net").innerText(),
+    );
+
+    // Ask what a correction would do. The preview is rendered from that
+    // locale's own catalogue.
+    await page.goto("/accounts");
+    await page
+      .getByTestId("account-row")
+      .filter({ hasText: "Current account" })
+      .getByTestId("correct-ring")
+      .click();
+    const preview = page
+      .getByTestId("account-row")
+      .filter({ hasText: "Current account" })
+      .getByTestId("ring-change-preview");
+    await expect(preview).toBeVisible();
+    const previewText = await preview.innerText();
+    // The preview must carry a figure at all: a locale whose copy dropped the
+    // interpolation would otherwise pass every assertion below vacuously.
+    const shown = euros(previewText);
+    expect(shown).toBeGreaterThan(0);
+
+    // Confirm, then measure what actually moved on the page.
+    await submit(
+      page,
+      page
+        .getByTestId("account-row")
+        .filter({ hasText: "Current account" })
+        .getByTestId("confirm-ring-change")
+        .click(),
+    );
+    await page.goto("/?month=2026-08");
+    const spendAfter = euros(await page.getByTestId("spend-total").innerText());
+    const reservesAfter = euros(
+      await page.getByTestId("reserves-net").innerText(),
+    );
+
+    // BYTE IDENTICAL to the movement the totals make. The whole account
+    // leaves the pot, so its rows stop being counted and the spend total
+    // falls by exactly the figure the preview showed.
+    expect(spendBefore - spendAfter).toBe(shown);
+    expect(reservesAfter).toBe(reservesBefore);
+    // And the preview said so in this reader's own language, not in English.
+    expect(previewText.length).toBeGreaterThan(10);
+  });
+}

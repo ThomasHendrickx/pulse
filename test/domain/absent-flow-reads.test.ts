@@ -143,6 +143,53 @@ for (const file of collectSources(SRC)) {
   }
 }
 
+describe("the domain skill records DR-0030 rather than the sentence it superseded", () => {
+  // CRITERION 14.10's last clause: the superseded sentence in the always-in-
+  // context skill "is corrected in this phase's commit to record DR-0030 and
+  // the held state; a grep asserts the superseded sentence is gone".
+  //
+  // WRITTEN AGAINST WHAT ACTUALLY MATTERS, and a clean-room review is why.
+  // The correction is made in the R-087 corrected-in-place style, which
+  // QUOTES the old clause in order to say it is false. A grep written to the
+  // criterion's letter would therefore be RED against a correctly corrected
+  // file, and green against one where the sentence had been silently
+  // deleted, which is the outcome R-087 exists to prevent. So this asserts
+  // the property the criterion is for: the file records the decision, and the
+  // old clause survives only inside a paragraph that marks it as corrected.
+  const SKILL = join(
+    __dirname,
+    "..",
+    "..",
+    ".claude",
+    "skills",
+    "pulse-domain",
+    "SKILL.md",
+  );
+  const skill = readFileSync(SKILL, "utf8");
+  const SUPERSEDED = "their statements are not imported in v1";
+
+  test("the skill records DR-0030 and the held state", () => {
+    expect(skill).toContain("DR-0030");
+    expect(skill).toContain("HELD");
+    expect(skill).toMatch(/ACCEPTS a reserve account's own statement/i);
+  });
+
+  test("the superseded sentence survives only inside a paragraph marked as corrected", () => {
+    const occurrences = skill.split(SUPERSEDED).length - 1;
+    expect(
+      occurrences,
+      "the superseded sentence is not quoted at all, so a reader who met it cannot tell it changed",
+    ).toBe(1);
+    // The quotation sits inside the correction, which is the paragraph that
+    // says the clause is FALSE. Asserted by proximity so a future edit that
+    // moves the quote out of the correction reddens.
+    const at = skill.indexOf(SUPERSEDED);
+    const paragraph = skill.slice(Math.max(0, at - 600), at + 600);
+    expect(paragraph).toMatch(/CORRECTED, NOT QUIETLY REWRITTEN/);
+    expect(paragraph).toContain("FALSE");
+  });
+});
+
 describe("every read that can see a row with no flow is one of exactly three", () => {
   test("the enumeration finds occurrences at all, so a broken walk cannot pass by finding nothing", () => {
     expect(occurrences.length).toBeGreaterThan(0);

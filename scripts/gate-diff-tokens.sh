@@ -35,8 +35,19 @@ fail=0
 # freshness is green: it was matching something other than what it claimed.
 # The witnesses below the script now run both directions before it is
 # trusted.
-COLOUR='oklch\(|#[0-9a-fA-F]{3,8}|rgba?\(|hsla?\(|:[[:space:]]*(red|blue|green|black|white|grey|gray|orange|yellow|purple|pink|brown|cyan|magenta)[[:space:];]'
-LENGTH='[0-9.]+(px|rem|em)\b'
+# WIDENED after a clean-room review probed both patterns in both directions
+# and found them blind to "1PX", "12Px", "color: RED", "color: navy",
+# "color: lightgray" and color-mix(). CSS units and colour keywords are
+# case-insensitive and the named-colour set has 148 members, of which the
+# first version listed sixteen. Both greps now fold case, the colour list is
+# the full CSS named set, and the length pattern covers every absolute and
+# relative unit rather than three of them. The review also scanned this
+# branch's added lines for exactly the missed shapes and found none, so the
+# green this reported was a true statement about this tree; the widening is
+# so that it stays true of the next one.
+NAMED='aliceblue|antiquewhite|aqua|aquamarine|azure|beige|bisque|black|blanchedalmond|blue|blueviolet|brown|burlywood|cadetblue|chartreuse|chocolate|coral|cornflowerblue|cornsilk|crimson|cyan|darkblue|darkcyan|darkgoldenrod|darkgray|darkgreen|darkgrey|darkkhaki|darkmagenta|darkolivegreen|darkorange|darkorchid|darkred|darksalmon|darkseagreen|darkslateblue|darkslategray|darkslategrey|darkturquoise|darkviolet|deeppink|deepskyblue|dimgray|dimgrey|dodgerblue|firebrick|floralwhite|forestgreen|fuchsia|gainsboro|ghostwhite|gold|goldenrod|gray|green|greenyellow|grey|honeydew|hotpink|indianred|indigo|ivory|khaki|lavender|lavenderblush|lawngreen|lemonchiffon|lightblue|lightcoral|lightcyan|lightgoldenrodyellow|lightgray|lightgreen|lightgrey|lightpink|lightsalmon|lightseagreen|lightskyblue|lightslategray|lightslategrey|lightsteelblue|lightyellow|lime|limegreen|linen|magenta|maroon|mediumaquamarine|mediumblue|mediumorchid|mediumpurple|mediumseagreen|mediumslateblue|mediumspringgreen|mediumturquoise|mediumvioletred|midnightblue|mintcream|mistyrose|moccasin|navajowhite|navy|oldlace|olive|olivedrab|orange|orangered|orchid|palegoldenrod|palegreen|paleturquoise|palevioletred|papayawhip|peachpuff|peru|pink|plum|powderblue|purple|rebeccapurple|red|rosybrown|royalblue|saddlebrown|salmon|sandybrown|seagreen|seashell|sienna|silver|skyblue|slateblue|slategray|slategrey|snow|springgreen|steelblue|tan|teal|thistle|tomato|turquoise|violet|wheat|white|whitesmoke|yellow|yellowgreen'
+COLOUR="oklch\(|oklab\(|color-mix\(|#[0-9a-fA-F]{3,8}|rgba?\(|hsla?\(|:[[:space:]]*($NAMED)[[:space:];]"
+LENGTH='[0-9.]+(px|rem|em|vw|vh|vmin|vmax|ch|ex|pt|pc|cm|mm|in|q)\b'
 while IFS= read -r file; do
   case "$file" in
     src/app/*|src/modules/*/ui/*) ;;
@@ -65,8 +76,8 @@ while IFS= read -r file; do
     code="$(printf '%s' "$line" \
       | sed -e 's|/\*.*\*/||g' -e 's|/\*.*$||' -e 's|^[[:space:]]*\*.*$||' -e 's|//.*$||')"
     [ -n "$code" ] || continue
-    if printf '%s' "$code" | grep -qE "$COLOUR" || \
-       printf '%s' "$code" | grep -qE "$LENGTH"; then
+    if printf '%s' "$code" | grep -qiE "$COLOUR" || \
+       printf '%s' "$code" | grep -qiE "$LENGTH"; then
       printf '%s: added line carries a colour literal or a px/rem/em length: %s\n' "$file" "$code" >&2
       fail=1
     fi

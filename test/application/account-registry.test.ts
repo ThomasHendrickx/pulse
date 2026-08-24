@@ -587,12 +587,29 @@ describe("criteria 14.13 and 15.6: a naming that stops applying is kept, counted
 describe("criterion 15.7: the preview is the same computation as the outcome", () => {
   test("all three quantities match the movement the totals actually make when the change is confirmed", async () => {
     const world = makeFakeImportWorld();
+    // THE SEVEN OWN ACCOUNTS FIRST, so the partner statement below ADOPTS the
+    // account it belongs to rather than declaring a second one. That is
+    // criterion 14.3's mechanism, and getting the order wrong here is what
+    // the refusal is for.
+    await registerAll(world);
     await importFile(world, "ar-current.csv", {
       label: "Current account",
       bank: "Demobank",
       role: "POT",
     });
-    await registerAll(world);
+    // A FIXTURE THAT CAN TELL THE DRY RUN FROM THE SECOND QUERY THE DECISION
+    // FORBIDS. Criterion 15.7 requires this to run over rows that carry a
+    // MATCHED TRANSFER PAIR as well as ordinary ones, so that a preview
+    // computed by a naive second rule (sum the rows whose counterparty
+    // account matches) diverges from the engine rather than agreeing with
+    // it. The first round imported ar-current.csv alone, whose eleven rows
+    // contain no partner statement and therefore no transfer link at all: on
+    // that input the two approaches return the same numbers and the test
+    // could not discriminate. The partner leg is imported here, which makes
+    // one pot-to-pot transfer a MATCHED pair and puts the unmatched-leg
+    // accounting into play.
+    await importFile(world, "ar-partners.csv");
+    expect(world.links.length).toBeGreaterThan(0);
     const before = totals(world);
 
     const accountId =
