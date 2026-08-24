@@ -15,12 +15,15 @@ import {
   formatDecisionReport,
   rederiveMerchantRules,
 } from "../../src/modules/merchants/application/rederive-rules";
+import type { RederiveDependencies } from "../../src/modules/merchants/application/rederive-rules";
 import type { MerchantRepositoryPort } from "../../src/modules/merchants/application/ports";
 import {
   ACCOUNT_NAMESPACE,
   DESCRIPTOR_NAMESPACE,
 } from "../../src/modules/merchants/domain/counterparty-identity";
 import { IDENTITY_FIXTURE_ACCOUNTS } from "../fixtures/generate-pdf-fixtures";
+import { cents } from "../../src/platform/money";
+import type { CountedTransaction } from "../../src/modules/merchants/application/ports";
 import { makeFakeImportWorld } from "./fake-import-world";
 
 // CRITERIA 12.7, 12.8 and 12.9.
@@ -994,7 +997,13 @@ describe("HZ-M3P12-06: a promotion backed by ONE row says so", () => {
 // their rows show as unresolved, and the owner names those groups again.
 // findMerchantByName reuses the merchant, so a namespaced EXACT rule lands
 // beside the old un-namespaced one FOR THE SAME MERCHANT.
-const seedDeployWindowWorld = async (): Promise<{
+// THE KIND IS A PARAMETER (fix round four, CRITERIA finding CR4-M3P12-03).
+// supersede treatment rests on an argument about EQUALITY, so it holds for
+// EXACT and for nothing else; the same shape at kind PREFIX must reach the
+// conservative branch, and a seed that can only build EXACT cannot show that.
+const seedDeployWindowWorld = async (
+  kind: "EXACT" | "PREFIX" = "EXACT",
+): Promise<{
   world: World;
   oldRuleId: string;
   twinRuleId: string;
@@ -1007,12 +1016,12 @@ const seedDeployWindowWorld = async (): Promise<{
   );
   const old = await world.merchantsPort.upsertRule(context, {
     merchantId: merchant.id,
-    kind: "EXACT",
+    kind,
     pattern: bare,
   });
   const twin = await world.merchantsPort.upsertRule(context, {
     merchantId: merchant.id,
-    kind: "EXACT",
+    kind,
     pattern: `${DESCRIPTOR_NAMESPACE}${bare}`,
   });
   await recomputeInterpretation(context, world.ledgerDeps);
@@ -1133,6 +1142,82 @@ describe("CR2-M3P12-02 and HZ-M3P12-R2-01: a same-merchant collision is DECIDED,
     expect(
       seed.world.rules.some((rule) => rule.id === seed.oldRuleId),
     ).toBe(true);
+  });
+
+  // FIX ROUND FOUR, CRITERIA finding CR4-M3P12-03. The supersede rests on an
+  // argument about EQUALITY: a bare pattern can never equal a namespaced key,
+  // because every key carries a lowercase namespace and nothing uppercases
+  // into an ASCII lowercase letter. That argument says nothing about a glob or
+  // a prefix, and a reviewer disproved the generalisation against the shipped
+  // matcher: a PATTERN rule beginning with a star matches a namespaced key,
+  // and a PREFIX rule whose pattern is a prefix of the NAMESPACE matches every
+  // key of that basis. So the treatment splits on kind, and these two tests
+  // are what keep it split.
+  test("A PASS-ONE claimant at kind PREFIX carrying a DIFFERENT merchant BLOCKS rather than superseding", async () => {
+    const seed = await seedDeployWindowWorld("PREFIX");
+    const rival = await seed.world.merchantsPort.createMerchant(context, "Gamma");
+    const twin = seed.world.rules.find((rule) => rule.id === seed.twinRuleId);
+    await seed.world.merchantsPort.upsertRule(context, {
+      merchantId: rival.id,
+      kind: "PREFIX",
+      pattern: twin?.pattern ?? "",
+    });
+    const counting = countingDeps(seed.world);
+
+    const report = await rederiveMerchantRules(context, counting.deps, {});
+
+    console.log(
+      `pass-one PREFIX different merchant: exit ${report.exitCode}, conflicts ${report.conflicts.length}, superseded ${report.supersededByNamespacedRule.length}`,
+    );
+    expect(report.conflicts).toContain(seed.oldRuleId);
+    expect(report.supersededByNamespacedRule).toEqual([]);
+    expect(report.exitCode).toBe(1);
+    expect(report.applied).toBe(false);
+    const outcome = report.decisions.find(
+      (decision) => decision.ruleId === seed.oldRuleId,
+    )?.outcome;
+    expect(outcome).toBe("merchant-conflict");
+    // And it has the ordinary acknowledge path, like every other conflict.
+    const accepted = await rederiveMerchantRules(context, countingDeps(seed.world).deps, {
+      acceptedRuleIds: [seed.oldRuleId],
+    });
+    expect(accepted.conflicts).toEqual([]);
+    expect(accepted.acceptedConflicts).toContain(seed.oldRuleId);
+  });
+
+  test("A PASS-ONE claimant at kind PREFIX carrying the SAME merchant is still a skip: no row can change hands", async () => {
+    const seed = await seedDeployWindowWorld("PREFIX");
+    const counting = countingDeps(seed.world);
+
+    const report = await rederiveMerchantRules(context, counting.deps, {});
+
+    expect(report.alreadyHeldBySameMerchantTwin).toContain(seed.oldRuleId);
+    expect(report.supersededByNamespacedRule).toEqual([]);
+    expect(report.conflicts).toEqual([]);
+    expect(counting.log.updates).not.toContain(seed.oldRuleId);
+  });
+
+  // THE ASSUMPTION, PINNED SO IT GOES RED RATHER THAN SILENT. Only EXACT rules
+  // may ever reach the superseded list. The day a PREFIX or PATTERN rule is
+  // written and collides, this fails instead of quietly treating a live rule
+  // as dead.
+  test("EVERY superseded rule is EXACT, on a run that produces one", async () => {
+    const seed = await seedDeployWindowWorld();
+    const rival = await seed.world.merchantsPort.createMerchant(context, "Gamma");
+    const twin = seed.world.rules.find((rule) => rule.id === seed.twinRuleId);
+    await seed.world.merchantsPort.upsertRule(context, {
+      merchantId: rival.id,
+      kind: "EXACT",
+      pattern: twin?.pattern ?? "",
+    });
+
+    const report = await rederiveMerchantRules(context, countingDeps(seed.world).deps, {});
+
+    expect(report.supersededByNamespacedRule.length).toBeGreaterThan(0);
+    for (const ruleId of report.supersededByNamespacedRule) {
+      const rule = seed.world.rules.find((candidate) => candidate.id === ruleId);
+      expect(rule?.kind).toBe("EXACT");
+    }
   });
 
   test("A PASS-TWO collision between DIFFERENT merchants still BLOCKS, so the blocking condition is a distinction and not gone", async () => {
@@ -1505,5 +1590,154 @@ describe("CR3-M3P12-07: there is ONE write path for a declaration", () => {
     );
     expect(ports).toContain("applyRuleWrites");
     expect(ports).not.toMatch(/readonly deleteRule/);
+  });
+});
+
+// M3-P12 FIX ROUND FOUR, HAZARD finding CR4-M3P12-01, high.
+//
+// THE BEFORE-SET EXCLUSION ROUND THREE ADDED TRADED A FALSE LOSS FOR A HIDDEN
+// ONE. It excluded the WHOLE superseded rule from the before-set, and the
+// justification for doing so only covers the rows the namespaced claimant can
+// actually reach. The baseline key is basis-agnostic, so a superseded rule
+// also claims rows that have MIGRATED TO THE ACCOUNT BASIS, which a
+// descriptor-namespaced claimant can never match and which pass two promotes
+// only when they all carry one trusted account. Those rows were dropped from
+// both sides of the superset test, so a real loss vanished with no entry, no
+// count and no line in the report.
+//
+// THIS SEED IS THE ONE THE REVIEWER EXECUTED, rebuilt here so the routine's
+// own superset test is what proves the fix. Two rules in the CR3-M3P12-01
+// shape, and rows whose baseline key routes to the dead rule but whose
+// IDENTITY keys split: one descriptor-basis row the claimant covers, and two
+// account-basis rows on DIFFERENT trusted accounts, which pass two refuses to
+// promote ("not-promoted-several-accounts") and which nothing else covers.
+describe("CR4-M3P12-01 (hazard): the superseded exclusion is narrowed to the rows the claimant reaches", () => {
+  const SHARED = "SHARED COUNTERPARTY TEXT";
+
+  const row = (
+    id: string,
+    account?: string,
+  ): CountedTransaction => ({
+    id,
+    flow: "SPEND",
+    amountCents: cents(-1_000),
+    description: SHARED,
+    ...(account === undefined ? {} : { counterpartyAccount: account }),
+  });
+
+  const world = (rows: readonly CountedTransaction[]) => {
+    const rules = [
+      { id: "dead", merchantId: "alpha", kind: "EXACT" as const, pattern: SHARED },
+      {
+        id: "claimant",
+        merchantId: "beta",
+        kind: "EXACT" as const,
+        pattern: `${DESCRIPTOR_NAMESPACE}${SHARED}`,
+      },
+    ];
+    const deps = {
+      listRules: async () => rules,
+      listCountedTransactions: async () => rows,
+      upsertRule: async () => {
+        throw new Error("not used");
+      },
+      applyRuleWrites: async () => {},
+    } as unknown as RederiveDependencies["merchants"];
+    return { merchants: deps, recompute: async () => {} };
+  };
+
+  test("A DESCRIPTOR-BASIS ROW THE CLAIMANT COVERS is still not a loss: the round-three landmine stays closed", async () => {
+    const report = await rederiveMerchantRules(context, world([row("descriptorRow")]), {});
+    console.log(
+      `narrowed, covered row: exit ${report.exitCode}, before ${report.assignmentsBefore}, after ${report.assignmentsAfter}, lost ${report.lostAssignments.length}`,
+    );
+    expect(report.lostAssignments).toEqual([]);
+    expect(report.exitCode).toBe(0);
+    expect(report.supersededByNamespacedRule).toContain("dead");
+  });
+
+  // THE HIDDEN LOSS ITSELF. Both rows take the ACCOUNT basis on two different
+  // trusted accounts, so the claimant cannot match either and pass two refuses
+  // the promotion. Under round three's code this reported exit 0, lost 0, and
+  // both rows appeared nowhere in the report.
+  test("AN ACCOUNT-BASIS ROW THE CLAIMANT CANNOT REACH IS A REAL LOSS, and it blocks", async () => {
+    const report = await rederiveMerchantRules(
+      context,
+      world([
+        row("accountRowB", IDENTITY_FIXTURE_ACCOUNTS.counterparty2),
+        row("accountRowC", IDENTITY_FIXTURE_ACCOUNTS.counterparty3),
+      ]),
+      {},
+    );
+    console.log(
+      `narrowed, unreachable rows: exit ${report.exitCode}, lost ${report.lostAssignments.length}`,
+    );
+    expect(report.lostAssignments.map((lost) => lost.transactionId).sort()).toEqual([
+      "accountRowB",
+      "accountRowC",
+    ]);
+    for (const lost of report.lostAssignments) {
+      expect(lost.ruleId).toBe("dead");
+    }
+    expect(report.exitCode).toBe(1);
+    expect(report.applied).toBe(false);
+  });
+
+  test("THE TWO KINDS OF ROW IN ONE RUN: the covered one is silent, the unreachable ones block", async () => {
+    const report = await rederiveMerchantRules(
+      context,
+      world([
+        row("descriptorRow"),
+        row("accountRowB", IDENTITY_FIXTURE_ACCOUNTS.counterparty2),
+        row("accountRowC", IDENTITY_FIXTURE_ACCOUNTS.counterparty3),
+      ]),
+      {},
+    );
+    expect(report.lostAssignments.map((lost) => lost.transactionId).sort()).toEqual([
+      "accountRowB",
+      "accountRowC",
+    ]);
+    expect(report.exitCode).toBe(1);
+  });
+
+  // AND THE LOSS HAS THE ORDINARY ACKNOWLEDGE PATH, so an operator who has
+  // looked at it can proceed. A hidden loss has no such path, which is what
+  // made hiding it worse than blocking on it.
+  test("the acknowledge path clears it, and clears only the rule it names", async () => {
+    const report = await rederiveMerchantRules(
+      context,
+      world([
+        row("accountRowB", IDENTITY_FIXTURE_ACCOUNTS.counterparty2),
+        row("accountRowC", IDENTITY_FIXTURE_ACCOUNTS.counterparty3),
+      ]),
+      { acceptedRuleIds: ["dead"] },
+    );
+    expect(report.lostAssignments).toEqual([]);
+    expect(
+      report.acceptedLostAssignments.map((lost) => lost.transactionId).sort(),
+    ).toEqual(["accountRowB", "accountRowC"]);
+    expect(report.exitCode).toBe(0);
+  });
+
+  // AND WHERE THE PROMOTION *DOES* COVER THE ROW there is no loss to report,
+  // which is the other half of "narrowed": a single account-basis row lets
+  // pass two promote the claimant onto that account, so the row is covered
+  // afterwards and the run is silent. This is what keeps the narrowing from
+  // being a blanket restoration of round two's blocking.
+  test("an account-basis row the promotion DOES cover is not reported, so the narrowing is narrow", async () => {
+    const report = await rederiveMerchantRules(
+      context,
+      world([row("accountRowB", IDENTITY_FIXTURE_ACCOUNTS.counterparty2)]),
+      {},
+    );
+    expect(report.lostAssignments).toEqual([]);
+    expect(report.exitCode).toBe(0);
+    // AND THE BEFORE-SET IS WHOLE, which is the structural half of the fix and
+    // the assertion that fails round three's wholesale exclusion even on a run
+    // with no loss: the dead rule is the ONLY rule that claims this row before
+    // the run, so excluding it made assignmentsBefore 0 and the superset test
+    // had nothing to compare.
+    expect(report.assignmentsBefore).toBe(1);
+    expect(report.assignmentsAfter).toBe(1);
   });
 });

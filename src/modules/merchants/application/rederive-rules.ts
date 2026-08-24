@@ -245,6 +245,9 @@ export type RederiveReport = {
   // Rules pass one left alone because a namespaced rule of the same kind for
   // a DIFFERENT merchant already holds the pattern they would have been
   // rewritten to (fix round three). Printed and counted, never blocking.
+  // EXACT ONLY (fix round four, CRITERIA finding CR4-M3P12-03): the argument
+  // a rule is dead is an argument about EQUALITY, and a colliding PREFIX or
+  // PATTERN rule of another merchant blocks as a conflict instead.
   readonly supersededByNamespacedRule: readonly string[];
   // Whether the writes this report describes were ISSUED. False on a dry run
   // and false on a blocked run, which are the only two ways a report can
@@ -458,28 +461,81 @@ export const rederiveMerchantRules = async (
     // run, already namespaced, which is the shape decision D-46's deploy
     // window produces when the owner names a group again.
     //
-    // SO THE SOURCE RULE IS DEAD, not contested. The shipped matcher can
-    // never apply an un-namespaced pattern again: every key carries a
-    // lowercase namespace, EXACT is equality, and PREFIX and PATTERN would
-    // need a pattern that is a strict prefix of a lowercase namespace, which
-    // the uppercasing normaliser cannot emit. Rewriting it is impossible, the
-    // unique key refuses it; blocking on it is wrong, because the namespaced
-    // rule has been the live declaration since the code deployed and the
-    // owner chose its merchant on the screen. It is recorded, counted, and
-    // left in place, because decision D-39 forbids deleting a declaration.
+    // AN EXACT SOURCE RULE IS DEAD, not contested, AND A PREFIX OR PATTERN
+    // ONE IS NOT. Corrected in fix round four under CRITERIA finding
+    // and corrected loudly, because the sentence that stood here claimed an
+    // impossibility that a reviewer disproved against the shipped matcher.
+    //
+    // WHAT IT USED TO SAY: "The shipped matcher can never apply an
+    // un-namespaced pattern again: every key carries a lowercase namespace,
+    // EXACT is equality, and PREFIX and PATTERN would need a pattern that is
+    // a strict prefix of a lowercase namespace, which the uppercasing
+    // normaliser cannot emit."
+    //
+    // THE HALF THAT HOLDS, and it was verified exhaustively rather than
+    // sampled: over every Unicode code point, none uppercases into a string
+    // containing an ASCII lowercase letter, and none survives the shipped
+    // normaliser as one. So a bare pattern can never EQUAL a namespaced key,
+    // and an EXACT rule holding one is dead by construction.
+    //
+    // THE HALF THAT IS FALSE: a glob is not required to be a prefix of
+    // anything. Witnessed against the shipped matcher, a PATTERN rule whose
+    // pattern begins with a star matches a namespaced key, and a bare star
+    // matches every key of every basis; a PREFIX rule whose pattern is a
+    // prefix of the NAMESPACE itself matches too. Neither needs a pattern the
+    // normaliser could emit, and merchant-rule.ts says in as many words that
+    // PREFIX and PATTERN exist for rules written by hand.
+    //
+    // SO THE TREATMENT SPLITS ON KIND rather than resting on a claim that
+    // covers only one of them. An EXACT collision is recorded as superseded
+    // and left in place, because decision D-39 forbids deleting a declaration
+    // and blocking on a dead row would stop a migration for nothing. A
+    // PREFIX or PATTERN collision is NOT assumed dead: for the same merchant
+    // it is still a skip, since no assignment can change hands between one
+    // merchant and itself, and for a different merchant it BLOCKS with the
+    // ordinary conflict outcome and the ordinary acknowledge path, which is
+    // what a live rule whose target pattern another merchant holds deserves.
+    //
+    // THIS IS A MEASURED FACT ABOUT TODAY'S TABLE, not a structural one:
+    // assignMerchant writes EXACT and only EXACT, so the deployed declaration
+    // holds no row of either other kind and the split changes nothing about
+    // the owner's own migration. The day a PREFIX rule is written, the
+    // conservative branch is the one that runs.
     if (collision !== undefined) {
       const sameMerchant = collision.merchantId === rule.merchantId;
-      supersededRuleIds.add(rule.id);
-      (sameMerchant ? alreadyHeldBySameMerchantTwin : supersededByNamespacedRule).push(
-        rule.id,
-      );
+      if (sameMerchant) {
+        // Safe for every kind: the claimant carries the same merchant, so
+        // whether the source rule is dead or live, no row can change hands.
+        if (rule.kind === "EXACT") {
+          supersededRuleIds.add(rule.id);
+        }
+        alreadyHeldBySameMerchantTwin.push(rule.id);
+        decisions.push({
+          ruleId: rule.id,
+          pass: "one",
+          basis: "descriptor",
+          outcome: "already-held-by-same-merchant-twin",
+        });
+        continue;
+      }
+      if (rule.kind === "EXACT") {
+        supersededRuleIds.add(rule.id);
+        supersededByNamespacedRule.push(rule.id);
+        decisions.push({
+          ruleId: rule.id,
+          pass: "one",
+          basis: "descriptor",
+          outcome: "superseded-by-namespaced-rule",
+        });
+        continue;
+      }
+      const isAccepted = accepted.has(rule.id);
+      (isAccepted ? acceptedConflicts : conflicts).push(rule.id);
       decisions.push({
         ruleId: rule.id,
         pass: "one",
         basis: "descriptor",
-        outcome: sameMerchant
-          ? "already-held-by-same-merchant-twin"
-          : "superseded-by-namespaced-rule",
+        outcome: isAccepted ? "merchant-conflict-accepted" : "merchant-conflict",
       });
       continue;
     }
@@ -622,11 +678,33 @@ export const rederiveMerchantRules = async (
   // block the whole migration on it, permanently, since decision D-39 forbids
   // deleting the dead row.
   //
-  // ONLY SUPERSEDED IDS ARE EXCLUDED, never un-namespaced rules in general:
-  // on a first run every rule is un-namespaced and the before-set is the
-  // whole point of criterion 12.7.
-  const liveBefore = before.filter((rule) => !supersededRuleIds.has(rule.id));
-  const assignmentsBefore = assignmentSet(rows, liveBefore);
+  // THE EXCLUSION IS NARROWED TO THE ROWS THE CLAIMANT ACTUALLY REACHES, and
+  // it happens at the COMPARISON rather than by removing the source rule from
+  // the before-set (fix round four, HAZARD finding CR4-M3P12-01). Round three
+  // excluded the whole superseded rule, and that traded a false loss for a
+  // hidden one, witnessed by executing this routine against a constructed
+  // seed rather than by reading it.
+  //
+  // WHY THE WHOLESALE EXCLUSION WAS WRONG. The before-set reads a rule under
+  // the key it is written against, so an un-namespaced rule is read under the
+  // BASELINE key, and the baseline key is basis-agnostic: it is computed for
+  // every row whatever basis that row takes under the new scheme. A
+  // superseded rule therefore claims two kinds of row. The first is a
+  // DESCRIPTOR-basis row, which the namespaced claimant matches by
+  // construction, because the identity key of such a row is exactly the
+  // namespace plus its baseline key. The second is an ACCOUNT-basis row,
+  // which the claimant can NEVER match, because a descriptor-namespaced
+  // pattern cannot match an account-namespaced key (decision D-40), and which
+  // pass two's promotion covers only when every row routed to the rule
+  // carries the same trusted account. Excluding the whole rule dropped the
+  // second kind from BOTH sides of the superset test, so a row that the
+  // owner's naming used to cover and that nothing covers afterwards vanished
+  // with no loss, no count and no line in the report. That is the very shape
+  // criterion 12.7 exists to catch, and hazards H12.3 and H12.18 name it.
+  //
+  // SO THE BEFORE-SET IS WHOLE AGAIN and the artifact is filtered where it
+  // can be told apart from a real loss: below, at allLost.
+  const assignmentsBefore = assignmentSet(rows, before);
 
   // THE AFTER STATE IS THE WORKING COPY, not a re-read. Nothing has been
   // written yet, so there is nothing to read back; `working` IS the state
@@ -638,9 +716,30 @@ export const rederiveMerchantRules = async (
   // has changed under it, matches nothing: the row count is preserved while
   // the naming is dead, so counting rows would report that clean.
   const allLost = [...assignmentsBefore.entries()]
-    .filter(
-      ([id, held]) => assignmentsAfter.get(id)?.merchantId !== held.merchantId,
-    )
+    .filter(([id, held]) => {
+      const after = assignmentsAfter.get(id);
+      if (after?.merchantId === held.merchantId) {
+        return false;
+      }
+      // THE ONE ARTIFACT THAT IS NOT A LOSS, and the narrowest statement of
+      // it (fix round four, HAZARD finding CR4-M3P12-01). A SUPERSEDED claim
+      // on a row is a claim the deployed matcher stopped honouring the moment
+      // the code deployed, because its pattern carries no namespace. If the
+      // row is still covered AFTER this run, by the claimant or by anything
+      // else, then no naming has been discarded: a later naming the owner
+      // made on the screen simply won, which is what a supersede IS, and
+      // reporting it as a loss blocks the migration permanently because
+      // decision D-39 forbids deleting the dead row.
+      //
+      // IF THE ROW IS COVERED BY NOTHING AFTERWARDS, it is a REAL loss and it
+      // is reported, whatever rule claimed it before. That is the case round
+      // three hid: an account-basis row whose claimant cannot reach it and
+      // whose promotion did not happen.
+      if (supersededRuleIds.has(held.ruleId) && after !== undefined) {
+        return false;
+      }
+      return true;
+    })
     .map(([id, held]) => ({ transactionId: id, ruleId: held.ruleId }));
   // ACCEPTANCE IS PER RULE ID and clears exactly the ids it names. It
   // PARTITIONS rather than filters (finding CR-M3P12-01): an accepted loss

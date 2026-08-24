@@ -2,6 +2,7 @@
 // declarations (M3-P12, decision D-46, criterion 12.17).
 //
 //   npm run rederive:merchant-rules -- --expect-host <host> --expect-ref <ref>
+//     [--expect-port <port>]
 //     --household <id> [--accept <ruleId,...>] [--dry-run]
 //
 // WHEN IT RUNS, and why the order is FORCED rather than preferred: AFTER the
@@ -110,14 +111,41 @@ import {
   merchantRepository,
   rederiveMerchantRules,
 } from "@/modules/merchants/application";
-import type { RederiveReport } from "@/modules/merchants/application";
+import type {
+  RederiveDependencies,
+  RederiveReport,
+} from "@/modules/merchants/application";
 
-const argument = (name: string): string | undefined => {
-  const index = process.argv.indexOf(`--${name}`);
+// EVERYTHING IMPURE main() TOUCHES, in one parameter with a production
+// default (M3-P12 fix round four, CRITERIA finding CR4-M3P12-05). Before this,
+// read process.argv and process.env directly and closed over the real
+// repository, so it could not be called from a test, so the exit codes it
+// returns were pinned only by a toContain over the file's own header comment:
+// changing `return 4` to `return 1` left every assertion green while the
+// header kept promising 4. A contract nothing can execute is prose.
+export type RederiveMainDeps = {
+  readonly argv: readonly string[];
+  readonly databaseUrl: string | undefined;
+  readonly merchants: RederiveDependencies["merchants"];
+  readonly recompute: RederiveDependencies["recompute"];
+};
+
+const productionDeps = (): RederiveMainDeps => ({
+  argv: process.argv,
+  // THE STRING THE CLIENT WILL OPEN, not the one the Prisma CLI would
+  // resolve (fix round three, finding CR3-M3P12-03). new PrismaClient()
+  // reads process.env only, so the interlock reads process.env only.
+  databaseUrl: resolveClientDbUrl(),
+  merchants: merchantRepository,
+  recompute: (context) => recomputeInterpretation(context),
+});
+
+const argumentIn = (argv: readonly string[], name: string): string | undefined => {
+  const index = argv.indexOf(`--${name}`);
   if (index === -1) {
     return undefined;
   }
-  return process.argv[index + 1];
+  return argv[index + 1];
 };
 
 // THE REPORT, PRINTED FROM ONE PLACE, so the recompute-failure path shows
@@ -147,15 +175,23 @@ const printReport = (report: RederiveReport): void => {
   for (const ruleId of report.alreadyHeldBySameMerchantTwin) {
     console.log(`  twin-holds-pattern-rule ${ruleId}`);
   }
-  // SUPERSEDED DECLARATIONS (fix round three, finding CR3-M3P12-01). A rule
-  // whose pattern carries no namespace can never be applied again by the
-  // shipped matcher, and a namespaced rule of the same kind for a DIFFERENT
-  // merchant already holds the pattern it would have been rewritten to. It is
-  // dead rather than contested: the owner chose the other merchant on the
-  // screen, and the deployed resolver has been applying that choice since the
-  // code deployed. It is left in place, because decision D-39 forbids
-  // deleting a declaration, and it is printed here so the operator can see
-  // which declarations are now inert.
+  // SUPERSEDED DECLARATIONS (fix round three, finding CR3-M3P12-01;
+  // narrowed in fix round four, CRITERIA finding CR4-M3P12-03). An EXACT rule
+  // pattern carries no namespace can never be applied again, because every
+  // identity key carries a lowercase namespace and nothing uppercases into an
+  // ASCII lowercase letter, so equality can never hold; and a namespaced rule
+  // of the same kind for a DIFFERENT merchant already holds the pattern it
+  // would have been rewritten to. It is dead rather than contested: the owner
+  // chose the other merchant on the screen, and the deployed resolver has been
+  // applying that choice since the code deployed. It is left in place, because
+  // decision D-39 forbids deleting a declaration, and it is printed here so
+  // the operator can see which declarations are now inert.
+  //
+  // ONLY EXACT RULES REACH THIS LIST. The impossibility above is about
+  // equality and does not extend to a glob or a prefix, so a colliding PREFIX
+  // or PATTERN rule of another merchant blocks as a conflict instead. Today's
+  // table holds no rule of either kind, so this list is the whole story of the
+  // owner's own migration.
   console.log(
     `superseded-by-namespaced-rule ${report.supersededByNamespacedRule.length}`,
   );
@@ -221,15 +257,23 @@ const printReport = (report: RederiveReport): void => {
   }
 };
 
-const main = async (): Promise<number> => {
+export const main = async (
+  deps: RederiveMainDeps = productionDeps(),
+): Promise<number> => {
+  const argument = (name: string): string | undefined =>
+    argumentIn(deps.argv, name);
   // THE INTERLOCK RUNS FIRST, before the household argument is even read and before
   // any repository call. A refused run has read nothing and written nothing.
   const target = assessRederiveTarget(
-    // THE STRING THE CLIENT WILL OPEN, not the one the Prisma CLI would
-    // resolve (fix round three, finding CR3-M3P12-03). new PrismaClient()
-    // reads process.env only, so the interlock reads process.env only.
-    { DATABASE_URL: resolveClientDbUrl() },
-    { host: argument("expect-host"), projectRef: argument("expect-ref") },
+    { DATABASE_URL: deps.databaseUrl },
+    {
+      host: argument("expect-host"),
+      projectRef: argument("expect-ref"),
+      // OPTIONAL (fix round four, hazard finding CR4-M3P12-02). Unnamed, the
+      // port must be one of the two this product's own connection strings
+      // use; named, it must match exactly.
+      port: argument("expect-port"),
+    },
   );
   if (!target.allowed) {
     console.error(`rederive-merchant-rules: ${target.reason}`);
@@ -244,7 +288,7 @@ const main = async (): Promise<number> => {
     );
     return 2;
   }
-  const dryRun = process.argv.includes("--dry-run");
+  const dryRun = deps.argv.includes("--dry-run");
   const accepted = (argument("accept") ?? "")
     .split(",")
     .map((value) => value.trim())
@@ -267,10 +311,7 @@ const main = async (): Promise<number> => {
   try {
     report = await rederiveMerchantRules(
       context,
-      {
-        merchants: merchantRepository,
-        recompute: (ctx) => recomputeInterpretation(ctx),
-      },
+      { merchants: deps.merchants, recompute: deps.recompute },
       { acceptedRuleIds: accepted, dryRun },
     );
   } catch (error: unknown) {
@@ -299,7 +340,15 @@ const main = async (): Promise<number> => {
   return report.exitCode;
 };
 
-void main().then(
+// RUN ONLY WHEN THIS FILE IS THE ENTRY POINT. main() is exported so a test
+// can drive its exit codes; without this check, importing it would start a
+// run against whatever the importing process's environment holds.
+const invokedDirectly =
+  process.argv[1] !== undefined &&
+  /rederive-merchant-rules\.[cm]?ts$/.test(process.argv[1]);
+
+if (invokedDirectly) {
+  void main().then(
   (code) => {
     process.exitCode = code;
   },
@@ -334,3 +383,4 @@ void main().then(
     process.exitCode = 1;
   },
 );
+}

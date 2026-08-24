@@ -158,6 +158,42 @@ export const applyRuleWrites = async (
         );
       }
     }
+    // THE INSERT HALF'S OWN TENANCY CHECK (fix round four, finding
+    // HAZARD finding CR4-M3P12-03). The update loop above verifies ownership
+    // statement as the write; this loop verified nothing at all. A rule row
+    // carries the CALLING household's id in its own column, so every read
+    // that filters on householdId still finds it, but its merchantId pointed
+    // wherever the caller said: the schema's foreign key on
+    // MerchantRule.merchantId references Merchant.id with no household
+    // component, so the database permits a declaration in household A that
+    // names a merchant owned by household B. WITNESSED against real Postgres
+    // before this fix: a cross-household insert succeeded, threw nothing, and
+    // created the row. CLAUDE.md non-negotiable 6 is not a severity
+    // judgement, so this is not one either.
+    //
+    // upsertRule, above in this same file, has always made exactly this
+    // check and calls a foreign merchantId "a bug or an attack". The fake
+    // repository the fast gate binds routes its inserts through upsertRule,
+    // so the fake was STRICTER than the adapter it stands in for and could
+    // not have caught this: the real-database spec is what pins it, with an
+    // INSERT submitted ALONE so the update loop cannot throw first.
+    const insertedMerchantIds = [
+      ...new Set(input.inserts.map((insert) => insert.merchantId)),
+    ];
+    if (insertedMerchantIds.length > 0) {
+      const owned = await tx.merchant.findMany({
+        where: {
+          id: { in: insertedMerchantIds },
+          householdId: context.householdId,
+        },
+        select: { id: true },
+      });
+      if (owned.length !== insertedMerchantIds.length) {
+        throw new Error(
+          "applyRuleWrites: one or more inserted rules point at a merchant that does not belong to the household",
+        );
+      }
+    }
     for (const insert of input.inserts) {
       await tx.merchantRule.create({
         data: {

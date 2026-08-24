@@ -446,6 +446,15 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
         for (const update of input.updates) {
           await rewritePattern(context, update);
         }
+        // THE INSERT PATH ROUTES THROUGH upsertRule, WHICH CHECKS OWNERSHIP,
+        // and until fix round four that made this fake STRICTER than the
+        // adapter it stands in for: the real applyRuleWrites checked nothing
+        // on its inserts, so the fast gate could not have caught the
+        // cross-household insert the hazard lane witnessed against real
+        // Postgres (HAZARD finding CR4-M3P12-03). The adapter now makes the
+        // check inside its transaction, so the two agree again. The wordings
+        // differ deliberately, because the adapter's check is over a BATCH
+        // and names that; both say "does not belong to the household".
         for (const insert of input.inserts) {
           await merchantsPort.upsertRule(context, insert);
         }

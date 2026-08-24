@@ -9,12 +9,44 @@
 // interlock needed the same one, so the choice was one implementation or two
 // copies that agree until somebody edits one. This is the one.
 //
-// THE READING, and the case the two obvious readings differ on. The PRISMA
-// CLI takes a variable from the shell when the shell carries it, and falls
-// back to the .env file at the package root otherwise. A variable the shell
-// carries as the EMPTY STRING falls back too: an empty DATABASE_URL is not a
-// connection string, and treating it as one would make an interlock refuse a
-// target the command would happily open, or approve one it would not.
+// THE READING, and the case the two obvious readings differ on.
+//
+// CORRECTED IN M3-P12'S FOURTH FIX ROUND, CRITERIA finding CR4-M3P12-01, and
+// LOUDLY because the sentence that stood here was a present-tense claim about
+// another program's behaviour and it was FALSE. It said: "A variable the
+// shell carries as the EMPTY STRING falls back too." It does not. Witnessed
+// against the pinned Prisma CLI 6.19.3 in this tree: with a .env at the
+// package root carrying both variables, `env -u DIRECT_URL DATABASE_URL=""
+// npx prisma validate` loaded the .env file and then failed with "You must
+// provide a nonempty URL. The environment variable `DATABASE_URL` resolved to
+// an empty string." The control run, with the variable ABSENT rather than
+// empty, validated cleanly. So the fallback for an absent variable is real
+// and the fallback for an empty one is not.
+//
+// WHAT IS ACTUALLY TRUE. The PRISMA CLI takes a variable from the shell when
+// the shell carries it AT ALL, empty included, and falls back to the .env
+// file at the package root only when the shell does not carry it. resolveDbEnv
+// below deliberately treats a shell-EMPTY value as ABSENT, so it falls back
+// where the CLI would abort.
+//
+// WHY THAT DIVERGENCE IS SAFE, checked in both directions rather than
+// asserted, because criterion 12.23's word "decorative" rests on it. The
+// divergence can only arise when the shell carries an EMPTY value, and in
+// that case the CLI aborts before touching any database. Either the guard
+// resolves a .env value and approves, and the command it guards then aborts
+// on the empty string having opened nothing; or the guard resolves a .env
+// value and REFUSES, and the command never runs. Neither direction lets a
+// command reach a target the guard did not check. The guard is STRICTER than
+// the command, which is the direction a fail-closed interlock must err in.
+// test/db/db-guard.test.ts pins this asymmetry so the paragraph stops being a
+// claim nothing checks.
+//
+// THIS IS A PLAN DEFECT TOO, reported and not papered over: criterion 12.23
+// repeats the false sentence, requiring the guard to read ".env only for a
+// variable the shell does not carry OR carries empty, which is the resolution
+// guard-cli.ts already implements". The two readings are not equivalent and
+// the criterion should state the asymmetry above. Routing that is the
+// orchestrator's; the code says what is true in the meantime.
 //
 // THIS IS THE CLI'S READING AND NOT THE CLIENT'S, corrected in M3-P12's third
 // fix round under finding CR3-M3P12-03 because the sentence above used to say
@@ -40,7 +72,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const dotEnvFallback = (name: string): string | undefined => {
+// EXPORTED as readDotEnvValue in M3-P12's fourth fix round: the gate
+// interlock (gate-target.ts) must read the .env file DIRECTLY rather than
+// through a loader that declines to override a shell variable, and this is
+// the reader this tree already has.
+export const readDotEnvValue = (name: string): string | undefined => {
   const dotEnvPath = join(process.cwd(), ".env");
   if (!existsSync(dotEnvPath)) {
     return undefined;
@@ -57,7 +93,7 @@ const dotEnvFallback = (name: string): string | undefined => {
 export const resolveDbEnv = (name: string): string | undefined =>
   process.env[name] !== undefined && process.env[name] !== ""
     ? process.env[name]
-    : dotEnvFallback(name);
+    : readDotEnvValue(name);
 
 // WHAT `new PrismaClient()` WILL SEE, exactly: process.env and no fallback.
 // An interlock in front of a tsx entry point reads THIS, so the string it

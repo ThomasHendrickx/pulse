@@ -388,6 +388,64 @@ describe("CRITERION 12.23: the endpoint is the whole string, not the authority",
     expect(check(`postgresql://postgres.${REF}:pw@${HOST}:5432/postgres`).allowed).toBe(true);
   });
 
+  // CRITERIA FINDING CR4-M3P12-04. The four admitted names were checked by NAME
+  // alone, and one of them decides which data a write lands on. A hostile
+  // schema value was ALLOWED by every earlier version of this function.
+  test("an ADMITTED parameter whose value moves the write is refused on its VALUE: schema", () => {
+    expect(check(`${correct}?schema=someone_elses_schema`).allowed).toBe(false);
+    expect(check(`${correct}?schema=public`).allowed).toBe(true);
+    expect(check(correct).allowed).toBe(true);
+  });
+
+  test("a DUPLICATED schema parameter is refused on the occurrence the first read would miss", () => {
+    expect(check(`${correct}?schema=public&schema=someone_elses_schema`).allowed).toBe(
+      false,
+    );
+  });
+
+  // THE DELIBERATE OTHER HALF OF THAT SPLIT: these three change HOW the
+  // connection is made and not WHERE it lands, so their values stay free.
+  // Pinned so the distinction is a decision and not an omission.
+  test("an admitted parameter whose value does NOT move the write keeps its value free", () => {
+    expect(check(`${correct}?sslmode=disable`).allowed).toBe(true);
+    expect(check(`${correct}?connection_limit=1`).allowed).toBe(true);
+    expect(check(`${correct}?pgbouncer=true`).allowed).toBe(true);
+  });
+
+  // HAZARD FINDING CR4-M3P12-02. Three otherwise identical strings differing
+  // only in port were all approved with the SAME reason text before this
+  // round: the interlock never read parsed.port and the expectation had no
+  // field for it.
+  test("AN UNKNOWN PORT is refused, and the two this product uses are not", () => {
+    expect(check(`postgresql://postgres.${REF}:pw@${HOST}:9999/postgres`).allowed).toBe(
+      false,
+    );
+    expect(check(`postgresql://postgres.${REF}:pw@${HOST}:5432/postgres`).allowed).toBe(
+      true,
+    );
+    expect(check(`postgresql://postgres.${REF}:pw@${HOST}:6543/postgres`).allowed).toBe(
+      true,
+    );
+  });
+
+  test("a NAMED port is compared exactly, so a pooling-mode mismatch is refused too", () => {
+    const withPort = (url: string, port: string) =>
+      assessRederiveTarget(
+        { DATABASE_URL: url },
+        { host: HOST, projectRef: REF, port },
+      );
+    expect(
+      withPort(`postgresql://postgres.${REF}:pw@${HOST}:6543/postgres`, "5432").allowed,
+    ).toBe(false);
+    expect(
+      withPort(`postgresql://postgres.${REF}:pw@${HOST}:5432/postgres`, "5432").allowed,
+    ).toBe(true);
+    // And naming an unusual port deliberately is how an operator reaches one.
+    expect(
+      withPort(`postgresql://postgres.${REF}:pw@${HOST}:9999/postgres`, "9999").allowed,
+    ).toBe(true);
+  });
+
   test("a query parameter this interlock does not understand is refused rather than ignored", () => {
     expect(check(`${correct}?options=-c%20search_path%3Dsomething`).allowed).toBe(false);
     expect(check(`${correct}?whatever=1`).allowed).toBe(false);

@@ -108,6 +108,7 @@ export {
 } from "./rederive-rules";
 export type {
   RederiveReport,
+  RederiveDependencies,
   RuleDecision,
   RuleCounts,
 } from "./rederive-rules";

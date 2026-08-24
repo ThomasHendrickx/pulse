@@ -73,6 +73,17 @@
 //   ANY OTHER UNKNOWN PARAMETER is refused too, rather than ignored, because
 //   the interlock cannot say what it does. The four below are the ones this
 //   codebase's own connection strings use.
+//
+// A NAME IS NOT ENOUGH WHERE THE VALUE MOVES THE WRITE (fix round four,
+// CRITERIA finding CR4-M3P12-04). This set was checked by NAME alone, and one
+// of the four names decides which data a write lands on: the Postgres
+// connector's `schema` parameter selects the search path, so an approved
+// project, an approved host and an approved database can still be entered at
+// a schema nobody named. That is the same reason the database name is
+// compared below, one field further in, so the two are now treated alike.
+// `pgbouncer`, `sslmode` and `connection_limit` change HOW the connection is
+// made and not WHERE it lands, so their values are deliberately not
+// constrained; that distinction is the point of the split below.
 const UNDERSTOOD_PARAMETERS: ReadonlySet<string> = new Set([
   "pgbouncer",
   "sslmode",
@@ -80,11 +91,29 @@ const UNDERSTOOD_PARAMETERS: ReadonlySet<string> = new Set([
   "schema",
 ]);
 
+// The one admitted parameter whose value decides which data a write lands on.
+// Absent or the literal default; anything else is refused.
+const EXPECTED_SCHEMA = "public";
+
 // The only database this product uses. Checked because the module's own
 // question is whether the migration is pointed at the ONE database an
 // operator named, and a string differing only in its database name was
 // approved before this (finding CR3-M3P12-08).
 const EXPECTED_DATABASE = "postgres";
+
+// THE PORTS THIS PRODUCT'S OWN CONNECTION STRINGS USE (fix round four,
+// hazard finding CR4-M3P12-02). 5432 is the direct and session-pooler
+// endpoint, 6543 the transaction pooler; .env.example names both and the
+// architecture rule about which one migrations use is written there. The
+// interlock never compared the port at all, so three otherwise identical
+// strings on 5432, 6543 and an arbitrary 9999 were approved identically,
+// with the same reason text. A port is the last field of the endpoint the
+// client resolves, and the whole rule this module is built on is that the
+// guard must account for every part of the connection that decides where it
+// lands. An unknown port is therefore REFUSED rather than ignored, and an
+// operator who wants the stricter thing can name the exact port on the
+// command line and have it compared.
+const KNOWN_PORTS: ReadonlySet<string> = new Set(["5432", "6543"]);
 
 export type RederiveTargetEnv = {
   // The connection the ROUTINE ITSELF would use. DIRECT_URL is deliberately
@@ -100,6 +129,14 @@ export type RederiveTargetEnv = {
 export type RederiveTargetExpectation = {
   readonly host?: string | undefined;
   readonly projectRef?: string | undefined;
+  // OPTIONAL, unlike the two above, and the asymmetry is deliberate. An
+  // unnamed port is not an unchecked one: it must be one of the two this
+  // product uses, so the arbitrary port is refused either way. Naming it
+  // narrows the check to an exact match, which is what an operator who cares
+  // about pooling mode wants. Making it a third REQUIRED argument would
+  // change the invocation criterion 12.23 documents, for a field that cannot
+  // reach a different project on its own.
+  readonly port?: string | undefined;
 };
 
 export type RederiveTargetVerdict =
@@ -196,6 +233,40 @@ export const assessRederiveTarget = (
           "the resolved connection carries a query parameter this interlock does not understand, so it cannot account for what the client would do with it. Refusing. The parameter name is deliberately not printed here.",
       };
     }
+  }
+
+  // THE PORT, the last field of the endpoint the client resolves.
+  const port = parsed.port;
+  if (expectation.port !== undefined && expectation.port !== "") {
+    if (port !== expectation.port) {
+      return {
+        allowed: false,
+        reason:
+          "the resolved connection's port is not the port given on the command line. Refusing. The resolved value is deliberately not printed here.",
+      };
+    }
+  } else if (!KNOWN_PORTS.has(port)) {
+    return {
+      allowed: false,
+      reason:
+        "the resolved connection uses a port this product's own connection strings never use, and none was given on the command line, so the interlock cannot account for what is listening there. Refusing. Pass --expect-port to name it deliberately.",
+    };
+  }
+
+  // THE SCHEMA, which is the fourth thing that decides which data a write
+  // lands on. Absent is the ordinary case and means the connector's default.
+  // EVERY occurrence is checked, not the first: a duplicated parameter is
+  // resolved by the connector and not by this interlock, and reading one of
+  // two values is how a comparison gets walked past.
+  if (
+    parsed.searchParams
+      .getAll("schema")
+      .some((value) => value !== EXPECTED_SCHEMA)
+  ) {
+    return {
+      allowed: false,
+      reason: `the resolved connection names a schema other than "${EXPECTED_SCHEMA}", which is where this product's tables live. Refusing: an approved project, host and database can still be entered at a schema nobody named.`,
+    };
   }
 
   // THE DATABASE NAME, which is the third thing that decides which data a

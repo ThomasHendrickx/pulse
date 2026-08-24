@@ -158,6 +158,12 @@ files-touched:
   - test/fixtures/baseline-descriptor-keys.json
   - test/fixtures/allowed-identifiers.txt
   - delivery/work-history/m3-p12.yaml
+  - playwright.config.ts
+  - src/platform/db/gate-target.ts
+  - src/platform/db/guard.ts
+  - test/db/gate-target.test.ts
+  - test/db/db-guard.test.ts
+  - test/application/rederive-script-exit-codes.test.ts
 per-step-commits:
   - sha: 502da43
     subject: >-
@@ -460,6 +466,144 @@ key-decisions:
       it, and the screen says the same sentence its sibling says about the
       same rows. The predicate is injected the way the identity already is, so
       the overview module still imports nothing from merchants.
+  - decision: >-
+      FIX ROUND FOUR'S FINDING IDS ARE QUALIFIED BY LANE everywhere they are
+      cited, in this document and in every source comment.
+    why: >-
+      The two round-four review lanes numbered their findings independently
+      and collided on four ids: CR4-M3P12-01 is the resolve-env comment in the
+      criteria lane and the before-set narrowing in the hazard lane, -02 is
+      the unnamed database and the uncompared port, -03 is the supersede
+      generalisation and the tenancy breach, -04 is the schema parameter and
+      the e2e run. An unqualified id in a comment would point a later reader
+      at the wrong finding, which is the failure this phase has already had
+      twice with claims that were true of one half of a statement.
+  - decision: >-
+      FIX ROUND FOUR. The Playwright gate resolves and PINS its own database
+      target, refuses anything that is not a local stack, and does not consult
+      the ambient DATABASE_URL at all. src/platform/db/gate-target.ts.
+    why: >-
+      Criteria finding CR4-M3P12-02, the phase's most important. This phase added a
+      spec whose whole content is direct writes through a client constructed
+      with no arguments, and that constructor reads process.env and nothing
+      else, so the target of every write was whatever the invoking shell
+      carried. In this fleet's containers that is a DEPLOYED pooler belonging
+      to a different project with a working password. The plan names this
+      exact shape as hazard H12.30 and criterion 12.23 bought a guard against
+      it for ONE command; the same phase then opened a second writing surface
+      without one. THE ORCHESTRATOR ESTABLISHED THAT NO PULSE TABLE EXISTS IN
+      THAT PROJECT, so a write could not have succeeded rather than merely not
+      having been observed. That is why this is a fix round and not an
+      incident, and it does not make the hole acceptable.
+  - decision: >-
+      The ambient DATABASE_URL is not a source, and an approved target is
+      ASSIGNED into process.env rather than merely checked.
+    why: >-
+      Two separate things had to be true for the gate to be safe and checking
+      alone gives neither. FIRST, the variable this fleet's containers carry
+      is precisely the variable nobody named for this purpose, so the resolver
+      reads PULSE_GATE_* names, which exist for no other purpose, and then the
+      .env file at the package root, and then refuses. SECOND, a check that
+      leaves process.env alone is not a pin: the reviewer proved that Next's
+      own loader does not override a shell variable, so a .env file was not a
+      pin at all, and playwright.config.ts spread the whole ambient
+      environment into both web servers. The approved values are therefore
+      written into process.env at config module scope, before a server is
+      spawned and again inside every worker that loads the config.
+  - decision: >-
+      There is no override flag on the gate interlock, and the refusal is a
+      throw out of the config rather than a skipped test.
+    why: >-
+      A gate that may be pointed at a deployed database on request is a gate
+      that will be, and the sibling destructive guard's escape hatch exists
+      for a command an operator invokes deliberately, which a test suite is
+      not. A throw out of the config is the only moment early enough to be a
+      mechanism: it aborts before a web server is spawned and before a worker
+      constructs a client. A per-test skip would let the servers start first.
+  - decision: >-
+      The one spec that opens a client of its own ALSO refuses for itself, and
+      it does not run at all in deploy-verify mode.
+    why: >-
+      The config covers every run through `playwright test`; the beforeAll
+      covers the case the config cannot, which is the same spec imported by a
+      different runner now or later. And in deploy-verify mode the suite
+      drives a DEPLOYED app through its browser and opens no database of its
+      own: this is the only spec that would, and pointing direct writes at a
+      deployed database would be worse than the hole being closed.
+  - decision: >-
+      The supersede treatment is restricted to kind EXACT, and a colliding
+      PREFIX or PATTERN rule of another merchant blocks as an ordinary
+      conflict.
+    why: >-
+      Criteria finding CR4-M3P12-03. The justification for leaving a superseded
+      place is an argument about EQUALITY, and the reviewer verified the
+      property it rests on exhaustively over every Unicode code point: nothing
+      uppercases into an ASCII lowercase letter, so a bare pattern can never
+      EQUAL a namespaced key. The comment then generalised that to PREFIX and
+      PATTERN and the generalisation is FALSE, witnessed against the shipped
+      matcher: a glob need not be a prefix of anything, so a pattern beginning
+      with a star matches a namespaced key and a bare star matches every key.
+      No shipped defect follows, because assignMerchant writes EXACT and only
+      EXACT and the deployed table holds no row of either other kind. What was
+      wrong was the REASON, and a later reader would have relied on it. The
+      treatment now splits where the argument splits.
+  - decision: >-
+      main() in scripts/rederive-merchant-rules.ts takes its impure
+      dependencies as a parameter and is exported.
+    why: >-
+      Criteria finding CR4-M3P12-05. The exit-4 contract was pinned only by a
+      over the script's own header comment, so changing `return 4` to
+      `return 1` left every assertion green while the header kept promising 4.
+      A contract nothing can execute is prose. The auto-run is now guarded on
+      the file being the process entry point, so importing it in a test starts
+      no run.
+  - decision: >-
+      The superseded rule is put back into the before-set whole, and the
+      artifact it produces is filtered at the COMPARISON instead.
+    why: >-
+      Hazard finding CR4-M3P12-01, high. Round three excluded the whole
+      superseded rule from the before-set, and the justification for doing so
+      covers only the rows the namespaced claimant can actually reach. The
+      baseline key is basis-agnostic, so a superseded rule also claims rows
+      that have migrated to the ACCOUNT basis, which a descriptor-namespaced
+      claimant can never match and which pass two promotes only when they all
+      carry one trusted account. Those rows were dropped from BOTH sides of
+      the superset test, so a real loss vanished with no entry, no count and
+      no line in the report: round three traded a false loss for a hidden one.
+      The narrowed rule is that a superseded rule's claim is dismissed only
+      when the row is still covered AFTER the run, by the claimant or by
+      anything else, and is reported as a loss when nothing covers it.
+  - decision: >-
+      applyRuleWrites verifies the inserted merchant belongs to the household,
+      inside the same transaction as the write.
+    why: >-
+      Hazard finding CR4-M3P12-03. Fix round three closed the UPDATE half of
+      this; the INSERT half had never had a check at all. The schema's foreign
+      key on MerchantRule.merchantId carries no household component, so the
+      database permits a declaration in one household naming a merchant owned
+      by another, and it was witnessed doing exactly that against a real local
+      Postgres. CLAUDE.md's sixth non-negotiable is a rule about what reaches
+      the table, so this is not a severity judgement. The fake the fast gate
+      binds routes its inserts through upsertRule, which DOES check, so the
+      fake was stricter than its subject and could never have caught this: the
+      real-database spec now submits an INSERT ALONE, so the update loop
+      cannot throw first and the two write paths are proven independently.
+  - decision: >-
+      The target interlock compares the connection PORT: unknown ports are
+      refused, and --expect-port compares one exactly.
+    why: >-
+      Hazard finding CR4-M3P12-02, folded in with the unnamed-database high
+      because they are the same subject. Three otherwise identical strings on
+      5432, 6543 and an arbitrary 9999 were approved identically with the same
+      reason text, because nothing read parsed.port. The port is the last
+      field of the endpoint the client resolves and the module's whole rule is
+      that the guard must account for every part of the connection that
+      decides where it lands. The new argument is OPTIONAL on purpose: an
+      unnamed port must still be one of the two this product's own strings
+      use, so the arbitrary port is refused either way, and making it a third
+      required argument would change the invocation criterion 12.23 documents
+      for a field that cannot reach a different project on its own.
+
 verification-first:
   - finding: >-
       (a) THE CONVERGENCE NUMBERS ON THE REAL DOCUMENTS, reproduced against
@@ -724,6 +868,108 @@ verification-first:
       inside an interactive transaction and throws from inside the callback,
       so the rollback is the database's.
     contradicts-plan: false
+  - finding: >-
+      (r) THE HOLE ITSELF, WITNESSED BEFORE AND AFTER ON THIS CONTAINER, with
+      no write attempted against the ambient connection at any point. A probe
+      loads playwright.config.ts exactly as `playwright test` loads it and
+      then reports whether anything refused and what class of host
+      `new PrismaClient()` would open. It prints a CLASS and never a value.
+      RED, with this round's changes stashed and the tree at the merge head:
+      "shell DATABASE_URL before the config loads: NOT-LOCAL (a deployed
+      endpoint)", "config LOADED: nothing refused", "what new PrismaClient()
+      would now open: NOT-LOCAL (a deployed endpoint)". GREEN, same shell,
+      same .env, this round's tree: "shell DATABASE_URL before the config
+      loads: NOT-LOCAL (a deployed endpoint)", "config LOADED: nothing
+      refused", "what new PrismaClient() would now open: LOCAL". GREEN with
+      no source naming a target, run from a working directory with no .env:
+      "config REFUSED: GateDbTargetRefused". GREEN with a source NAMING a
+      deployed target, using an invented connection string: "config REFUSED:
+      GateDbTargetRefused". The refusal text names variables and never a
+      value.
+    contradicts-plan: false
+  - finding: >-
+      (s) THE FALSE SENTENCE ABOUT THE PRISMA CLI, re-witnessed rather than
+      taken from the review, and now executed by the fast gate. Two spawned
+      runs of the pinned CLI against a throwaway package root carrying its own
+      schema and its own .env: with the variable ABSENT the schema validates
+      and the run exits 0, and with the variable carried by the shell as the
+      EMPTY STRING the run exits non-zero with "empty string" in its output.
+      So the fallback for an absent variable is real and the fallback for an
+      empty one is not, which is the opposite of what
+      src/platform/db/resolve-env.ts asserted. The asymmetry, and the
+      direction it errs in, are pinned in test/db/db-guard.test.ts.
+    contradicts-plan: true
+    stopped-and-reported: >-
+      REPORTED AND NOT PAPERED OVER, on the orchestrator's instruction.
+      Criterion 12.23 carries the same false sentence, requiring the interlock
+      to read ".env only for a variable the shell does not carry OR carries
+      empty, which is the resolution guard-cli.ts already implements". The two
+      readings are not equivalent and the criterion asserts an equivalence
+      that does not hold. The code's comment now states what is true and why
+      the divergence is safe in both directions, and the criterion's wording
+      is the orchestrator's to route.
+  - finding: >-
+      (t) THE EXIT CODES, EXECUTED. main() is exported and takes its impure
+      dependencies as a parameter, so a test drives the command with a
+      recompute that throws and asserts the returned code. Six cases run in
+      the fast gate: 0 on a clean run that says "applied yes", 4 on a
+      recompute failure whose printed record still says "applied yes" and
+      never says "nothing was written", 3 on a refused target decided before
+      the household argument is read, 2 on a missing household, 0 on a dry run
+      that says it wrote nothing, and a failure INSIDE the rule writes
+      propagating instead of being reported as 4. Before this round the only
+      test of that path asserted that the file's own header comment contained
+      the words "EXIT 4".
+    contradicts-plan: false
+  - finding: >-
+      (u) THE SUPERSEDE GENERALISATION, split where the argument splits and
+      pinned. Three new cases in test/application/rederive-merchant-rules.test.ts:
+      a pass-one claimant at kind PREFIX carrying a different merchant now
+      BLOCKS with the ordinary conflict outcome and the ordinary acknowledge
+      path rather than being treated as dead; the same shape at the same
+      merchant is still a skip, because no row can change hands between one
+      merchant and itself; and on a run that produces a superseded rule, EVERY
+      id in the list is asserted to be an EXACT rule, so the day a PREFIX rule
+      is written the assumption goes red rather than silent.
+
+    contradicts-plan: false
+  - finding: >-
+      (v) THE HIDDEN LOSS, RED AND GREEN, through the routine's own superset
+      test rather than by reading the diff. The seed is the one the hazard
+      lane executed: an un-namespaced EXACT rule for merchant alpha,
+      superseded by a namespaced twin for merchant beta, and rows whose
+      baseline key routes to the dead rule but whose identity keys split
+      between a descriptor-basis row the twin covers and two account-basis
+      rows on DIFFERENT trusted accounts, which pass two refuses to promote.
+      RED, against the round-three code restored from the previous commit: 4
+      of the 5 new cases fail, "expected [] to deeply equal [ 'accountRowB',
+      'accountRowC' ]" three times and an assignmentsBefore of 0 where 1 is
+      required. GREEN, against this round's code: 5 passed. The
+      round-three landmine case is among the 5 and passes in BOTH runs, which
+      is the point: the narrowing does not reopen what round three closed.
+    contradicts-plan: false
+  - finding: >-
+      (w) THE CROSS-HOUSEHOLD INSERT, RED AND GREEN ON A REAL DATABASE. An
+      insert submitted ALONE, with no update beside it, naming a merchant
+      owned by a different household. RED, against the adapter restored from
+      the previous commit: "INSERT ALONE, cross-household merchant: threw =
+      false", "row created with foreign merchantId = true". GREEN, against
+      this round's adapter: "threw = applyRuleWrites: one or more inserted
+      rules point at a merchant that does not belong to the household", "row
+      created with foreign merchantId = false". Run against database
+      pulse_r4impl, created by this lane on the local Supabase Postgres,
+      migrated with prisma migrate deploy, pinned on every invocation and
+      dropped afterwards. The ambient connection was never written to.
+    contradicts-plan: false
+  - finding: >-
+      (x) THE UNCOMPARED PORT, RED AND GREEN. Four probes against the shipped
+      predicate. RED, against the guard restored from the previous commit:
+      "port 5432: ALLOWED", "port 6543: ALLOWED", "port 9999: ALLOWED", "port
+      6543 with --expect-port 5432: ALLOWED". GREEN: "port 5432: ALLOWED",
+      "port 6543: ALLOWED", "port 9999: REFUSED", "port 6543 with
+      --expect-port 5432: REFUSED".
+    contradicts-plan: false
+
 deviations:
   - plan-clause: >-
       Criterion 12.17, the half requiring the phase work history to record the
@@ -902,6 +1148,34 @@ deviations:
       all three languages, and the predicate is injected the way the identity
       already was, so the overview module still imports nothing from
       merchants. The group's money stays in the month.
+  - plan-clause: >-
+      files-to-touch, which does not name playwright.config.ts,
+      src/platform/db/gate-target.ts or src/platform/db/guard.ts.
+    why: >-
+      REQUIRED BY THE FIX AND NAMED RATHER THAN SLIPPED IN. Finding
+      Criteria finding CR4-M3P12-02 is about a writing surface this phase itself
+      only place early enough to refuse an unnamed target is the gate's own
+      configuration: a per-test guard runs after both web servers have already
+      started against whatever the container held. src/platform/db/ is in
+      files-to-touch as amended, so the two files there are inside the phase's
+      set; playwright.config.ts is not, and it is also a file M3-P9 edits, so
+      the plan's conflicts-with entry for M3-P9 is updated in the same change
+      to say so rather than leaving the overlap to be discovered on rebase.
+  - plan-clause: >-
+      Criterion 12.23, which requires the interlock to resolve the environment
+      "the way the command it guards resolves it" and describes that reading
+      as ".env only for a variable the shell does not carry OR carries empty".
+    why: >-
+      THE CRITERION'S DESCRIPTION OF THE PRISMA CLI IS FALSE and the code no
+      longer repeats it. Witnessed twice against CLI 6.19.3, and now executed
+      by the fast gate: an ABSENT variable falls back to .env, a shell-EMPTY
+      one does not and the CLI aborts on it. The guard's reading diverges from
+      the CLI on exactly that case, deliberately, and the divergence leaves
+      the guard STRICTER than the command in both directions, which is the
+      only direction a fail-closed interlock may err in. The implementation is
+      unchanged; what changed is that the comment states what is true and a
+      test pins it. Amending the criterion's wording is the orchestrator's.
+
 gate-evidence:
   - gate: >-
       npm run typecheck (tsc --noEmit; Node 26.7.0 via nvm; worktree
@@ -1108,6 +1382,58 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
+  - gate: >-
+      FIX ROUND FOUR, all five fast gates on the fix-round-four head, which is
+      also the head after merging origin/main (the gate:privacy correction at
+      dc8c505, and one conflict in the plan's conflicts-with entry for M3-P9,
+      resolved to keep this phase's correction and add the third shared file
+      this round introduces). npm run typecheck (tsc --noEmit, no output), npm
+      run lint (eslint ., no output), npm test (vitest run, 41 test files),
+      npm run gate:privacy (printed "gate:privacy clean"), npm run gate:tokens
+      (no output). Every one exited 0. The test count rose from 579 to 624:
+      22 for the gate's own database interlock, 6 for the command's exit
+      codes, 5 for the narrowed superseded exclusion, 4 for the empty-variable
+      asymmetry between the migration CLI and this tree's resolver, 5 for the
+      guard's schema and port checks, and 3 for the supersede treatment's
+      split on rule kind.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 624
+    passed: 624
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: >-
+      FIX ROUND FOUR, npm run test:e2e. GREEN, exit 0, 55 passed, 0 failed,
+      12.1m, on the committed ports and on a quiet machine: load average 4.25,
+      4.62, 5.16 on four cores, disk at 91 percent with 3.6G free, and no
+      other lane driving Playwright while it ran (this run WAITED for a
+      concurrent worktree to release ports 3000 and 3100 rather than freeing
+      them). That is exactly the condition the hazard lane's own finding
+      CR4-M3P12-04 asked for before criterion 12.14 could be judged, and it
+      closes with this. THE GOLDEN JOURNEY PASSED, in 28.1s, after failing in
+      three consecutive earlier windows under fleet load; so did every spec
+      both lanes reported failing. All four of this phase's own specs passed:
+      merchant-rule-write.spec.ts in 436ms, the three merchants.spec.ts cases,
+      and the production-mode smoke.
+      AND THE RUN IS ITS OWN WITNESS FOR THE ROUND'S HIGH: it was started with
+      NOTHING pinned in the invoking shell, which in this container means the
+      ambient DATABASE_URL was a deployed pooler belonging to a different
+      project. Every earlier run in this phase had to be started with the
+      environment pinned by hand. The config resolved the target from the .env
+      file at the package root, refused to consider the ambient value, and
+      assigned the approved one, so the two web servers and the one
+      database-driving spec all opened the named local stack.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 55
+    passed: 55
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+
 claims:
   - id: C-M3P12-01
     kind: coverage
@@ -1335,6 +1661,52 @@ claims:
       wrong database, so the asymmetry is accepted. It is named in the
       criterion, in the module's own header and in a test that pins it.
       Whether any other divergence exists I did not establish.
+  - id: C-M3P12-11
+    kind: coverage
+    statement: >-
+      The Playwright gate could reach a database nobody named before this
+      round and cannot after it, witnessed on this container with no write
+      attempted against the ambient connection at any point.
+    settled-by:
+      executed-construction:
+        command: >-
+          a probe that loads playwright.config.ts exactly as `playwright test`
+          loads it and then reports whether anything refused and what CLASS of
+          host new PrismaClient() would open; run first with this round's
+          changes stashed and the tree at the merge head, then on this
+          round's tree, then from a working directory with no .env, then with
+          a PULSE_GATE_* variable naming an INVENTED deployed string
+        exit-code: 0
+        output: |
+          RED, pre-round tree, ambient shell, .env present:
+            shell DATABASE_URL before the config loads: NOT-LOCAL (a deployed endpoint)
+            config LOADED: nothing refused
+            what new PrismaClient() would now open: NOT-LOCAL (a deployed endpoint)
+          GREEN A, same shell, same .env, this round's tree:
+            shell DATABASE_URL before the config loads: NOT-LOCAL (a deployed endpoint)
+            config LOADED: nothing refused
+            what new PrismaClient() would now open: LOCAL
+          GREEN B, no source names a target:
+            config REFUSED: GateDbTargetRefused
+          GREEN C, a source NAMES a deployed target (invented string):
+            config REFUSED: GateDbTargetRefused
+          No refusal printed a connection value; each names variables only.
+  - id: C-M3P12-12
+    kind: open-question
+    statement: >-
+      Whether every database-opening surface in this repository is now named
+      is settled for tests, gates and scripts, and deliberately NOT settled
+      for the application itself.
+    still-open-because: >-
+      `npm run dev` and `npx next start` resolve DATABASE_URL from the ambient
+      environment with no refusal, and in this fleet's containers that reaches
+      a deployed project. That is not a hole this mechanism may close: the
+      deployed app must open a deployed database, so a local-only refusal
+      would be wrong, and requiring the app to be told its target is a product
+      decision with a deployment change behind it and no criterion covering
+      it. Named here so the next reader does not take "the gate is guarded" to
+      mean "everything is".
+
 fix-round:
   - mechanism: >-
       DERIVING A GROUPING KEY FROM A ROW'S STORED FIELDS, and specifically its
@@ -1528,6 +1900,118 @@ fix-round:
       THE BARE-KEY GROUP STILL SHOWS ITS MONEY: the month view marks it
       unnameable rather than dropping it, because dropping it would take the
       amount out of a month that must reconcile.
+  - mechanism: >-
+      GUARDING A WRITE PATH, and specifically WHICH write paths a guard is
+      taken to cover. Criterion 12.23 established the mechanism for one
+      command: an interlock in front of a writing entry point, resolving
+      exactly what the client will open, refusing anything it cannot account
+      for. Fix round four's high finding is that the phase which built that
+      interlock then opened a SECOND writing entry point, in a Playwright
+      spec, and left it pointing at whatever the container's environment held.
+      The mechanism's rule as it now reads: a guard covers the entry point it
+      is attached to and nothing else, so adding a write path means adding a
+      guard, and the question "which database does this open" has to be asked
+      of TESTS and GATES and not only of scripts an operator runs. The plan
+      already carried this as hazard H12.30 in general terms; what this round
+      adds is that a test suite is one of the invocations it is about.
+    derivation:
+      command: >-
+        grep -rn "new PrismaClient()" test/ scripts/ src/ --include=*.ts
+        --include=*.tsx
+      output: |
+        src/platform/db/client.ts:26:    return new PrismaClient();
+        test/e2e/merchant-rule-write.spec.ts:53:const prisma = new PrismaClient();
+        TWO CONSTRUCTIONS IN THE TREE. The first is the application's own
+        client and its target is the deployment's, which is the one case where
+        an ambient variable IS the named target. The second is this phase's
+        spec, and it is now preceded in the same file by a beforeAll that
+        refuses a non-local target, and preceded in the run by
+        playwright.config.ts resolving and PINNING the gate's target before a
+        worker starts. The resolution deliberately does not consult the
+        ambient DATABASE_URL: it reads names that exist only to name this
+        target, then the .env file at the package root, then refuses. There is
+        no override flag.
+    not-covered: >-
+      THE APPLICATION'S OWN CLIENT IS NOT GUARDED AND SHOULD NOT BE BY THIS
+      MECHANISM. `npm run dev` and `npx next start` resolve DATABASE_URL from
+      the ambient environment with no refusal, and in this fleet's containers
+      that reaches a deployed project. A local-only refusal would be wrong
+      there, because the deployed app must open a deployed database; making
+      the app demand an affirmation of its target is a product decision with a
+      deployment change behind it and no criterion in this phase covering it.
+      What IS closed is that no test, no gate and no script reaches an unnamed
+      database: the two destructive npm scripts route through the local-only
+      guard, the re-derivation routes through the target interlock, the
+      Playwright gate routes through the one added here, and the fast gate
+      opens no connection at all. The one remaining unguarded path a person
+      can type is `npx prisma db seed` invoked directly rather than through
+      db:reset or db:migrate, which the local-only guard covers. AND THE GATE
+      INTERLOCK IS BYPASSED IN DEPLOY-VERIFY MODE, deliberately: there the
+      suite drives a deployed app through its browser and opens no database of
+      its own, which is enforced by the one database-driving spec skipping
+      itself rather than by the config, because the config cannot know whether
+      a future spec will open one.
+  - mechanism: >-
+      REPAIRING A GUARD BY NARROWING WHAT IT LOOKS AT, and what that trades
+      away. Fix round three removed a false positive from criterion 12.7's
+      superset test by excluding superseded rules from the before-set
+      wholesale. The repair was correct about the rows its own justification
+      named and silent about the rest, and fix round four's high hazard
+      finding is that the rest were real losses: rows the dead rule covered
+      that had migrated to the ACCOUNT basis, which the namespaced claimant
+      can never match and which pass two promotes only when they all carry one
+      trusted account. Excluded from BOTH sides of the comparison, they could
+      not appear in the loss set at all. The mechanism's rule as it now reads:
+      when a check produces a false positive, filter the false positive at the
+      point where it can be told apart from a true one, and never by removing
+      the input from the check; and state the narrowing as a condition on the
+      ROW, not on the rule, because the rule is not the thing the check is
+      about. The same round's other high is the same shape one layer down: a
+      write path whose UPDATE half was repaired while its INSERT half, three
+      lines away, kept a guarantee nobody had checked it had.
+    derivation:
+      command: >-
+        grep -n "supersededRuleIds\|assignmentsBefore\|insertedMerchantIds"
+        src/modules/merchants/application/rederive-rules.ts
+        src/modules/merchants/adapters/merchant-repository.ts
+      output: |
+        rederive-rules.ts: supersededRuleIds is populated only for EXACT
+        collisions, assignmentsBefore is built from the WHOLE before-set, and
+        the superseded artifact is dismissed at allLost and only when the row
+        is still covered after the run.
+        merchant-repository.ts: insertedMerchantIds is checked against
+        tx.merchant.findMany filtered on householdId, inside the same
+        transaction, before any tx.merchantRule.create runs.
+        ONE COMPARISON, not one exclusion. ONE TRANSACTION, both halves
+        checked. And the interlock beside them now reads the port as well as
+        the host, the username, the database and the query.
+    not-covered: >-
+      THE NARROWED CHECK STILL DISMISSES A CLAIM WHEN THE ROW IS COVERED BY
+      ANY MERCHANT, not only by the claimant. That is deliberate: a row that
+      some declaration still names has not had a naming discarded, and
+      requiring the claimant specifically would re-report a loss whenever a
+      third rule legitimately took the row over. It does mean a run in which
+      the owner's naming moved to an unrelated merchant is silent about the
+      move; the decision report still lists the superseded rule by id, which
+      is where that shows. THE INSERT CHECK IS A LOOKUP, NOT A CONSTRAINT: the
+      schema's foreign key still carries no household component, so a future
+      write path that bypasses applyRuleWrites would have the same gap, and
+      closing it in the schema is a migration this phase does not own. AND THE
+      SAME SHAPE EXISTS OUTSIDE THIS MODULE, checked rather than assumed away
+      while answering whether a cross-household row can still be written: the
+      ledger's transferLink.createMany writes householdId but does not verify
+      that the transaction and import ids it links belong to that household,
+      and the importer's transaction.createMany does not verify its accountId
+      (its importId IS verified, by the household-filtered claim immediately
+      above it). Both derive their ids from household-scoped reads today, which
+      is the same "one call site away" position applyRuleWrites was in, and
+      both are in modules this phase does not touch. Named here so the answer
+      to "can a cross-household row be written" is not read as a blanket no.
+      AND THE
+      PORT CHECK REFUSES AN UNKNOWN PORT RATHER THAN PROVING A KNOWN ONE
+      CORRECT: 5432 and 6543 are both admitted when the operator names
+      neither, so a session-versus-transaction pooling mismatch still passes
+      unless --expect-port is given.
 
 environment-warnings:
   - warning: >-

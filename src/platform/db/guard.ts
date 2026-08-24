@@ -28,7 +28,16 @@ export type DbGuardVerdict =
   | { readonly allowed: true; readonly reason: string }
   | { readonly allowed: false; readonly reason: string };
 
-const LOCAL_HOSTS: ReadonlySet<string> = new Set(["127.0.0.1", "localhost", "::1"]);
+// EXPORTED so the gate interlock beside this one (gate-target.ts, M3-P12 fix
+// round four) asks the same question of a hostname that this guard asks.
+// One list, not two that agree until somebody edits one.
+export const LOCAL_DB_HOSTS: ReadonlySet<string> = new Set([
+  "127.0.0.1",
+  "localhost",
+  "::1",
+]);
+
+const LOCAL_HOSTS = LOCAL_DB_HOSTS;
 
 const CHECKED_VARIABLES = ["DATABASE_URL", "DIRECT_URL"] as const;
 
