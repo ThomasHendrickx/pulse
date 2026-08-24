@@ -118,3 +118,97 @@ findings:
     evidence-command: >-
       npx vitest run test/domain/absent-flow-reads.test.ts, and npm test, run
       by this lane after each of the three edits above.
+
+  - id: CRIT2-02
+    severity: high
+    title: >-
+      Criterion 14.4's duplicate detector is green against a private second copy
+      of the canonical transform written in the commonest idiom, which is the
+      exact shape the criterion names M3-P12's counterpartyIdentity as
+    criteria: ["14.4"]
+    hazards: ["H14.5"]
+    where: >-
+      test/domain/account-number.test.ts:182 through :186, the REMOVES_SEPARATORS
+      patterns, used by the test at test/domain/account-number.test.ts:224.
+    the-criterion-clause: >-
+      Criterion 14.4 requires the enumeration test to be "written so that a
+      SECOND implementation of the same transformation reddens it wherever it
+      lives, including one written inline inside another module's identity
+      derivation", and says in its own words that this "is what stops M3-P12's
+      counterpartyIdentity, which lands after this pin has already gone green,
+      from growing a private copy".
+    red-witness-derived-by-this-lane: >-
+      Prepend to src/modules/ledger/domain/corrections.ts the four lines
+      const counterpartyIdentityProbe = (counterpartyIban: string): string =>
+      counterpartyIban.toUpperCase().replace(/[^A-Z0-9]/g, ""); and run
+      npx vitest run test/domain/account-number.test.ts. Result: 17 passed
+      (17), exit 0. That function IS a working second copy of
+      canonicalAccountNumber for every input the codebase hands it, it lives in
+      a module whose own file the criterion names as the risk, and it is
+      written in the way an IBAN normaliser is most often written.
+    why-the-pattern-misses-it: >-
+      The JavaScript detector's first pattern requires the regex literal's
+      character class to begin with one of backslash, s, hyphen or space, so a
+      NEGATED class such as [^A-Z0-9] or [^a-zA-Z0-9] matches nothing. Probed
+      by this lane over the guard's own predicate, extracted verbatim: the two
+      negated-class forms MISS, and so do two SQL forms, regexp_replace(upper(x,
+      ...)) with the two functions in the other order and upper(translate(x, ...)),
+      because SQL_CANONICALISATION at test/domain/account-number.test.ts:188
+      pins one nesting order and two function names.
+    what-still-holds: >-
+      The detector's self-test at test/domain/account-number.test.ts:294 is real
+      and its five mustCatch shapes are genuinely caught, so this is a gap in
+      COVERAGE rather than a guard that catches nothing. The one-definition
+      tests for canonicalAccountNumber, ACCOUNT_NUMBER_LENGTHS and the mod-97
+      loop are separate and unaffected.
+    fix: >-
+      Detect the ACT rather than the idiom: match any .replace/.replaceAll whose
+      second argument is the empty string and whose first argument is a regex
+      literal at all, then decide by proximity as it already does; and for SQL,
+      match upper and a replace-family function within one expression in either
+      order rather than one nesting.
+    verdict-on-the-criterion: >-
+      14.4 NOT MET as stated. The three one-definition halves are met; the
+      inline-second-copy half, which the criterion writes out at length and
+      names its purpose for, is not.
+
+  - id: CRIT2-03
+    severity: medium
+    title: >-
+      The MerchantRule delete guard is defeated by any string containing a
+      double slash earlier on the same line, because its comment stripper is
+      naive
+    criteria: ["14.13", "15.6"]
+    hazards: ["H15.5"]
+    where: >-
+      test/application/account-registry.test.ts:392, the stripComments helper
+      used by rulesDeletedIn at test/application/account-registry.test.ts:395.
+    both-directions-derived-by-this-lane: >-
+      GREEN HALF CONFIRMED. Prepending an ordinary
+      await tx.merchantRule.deleteMany({ where: { householdId } }); to
+      src/modules/ledger/application/interpret-window.ts reddens the guard:
+      1 failed of 1 run, which is the fix round's claimed red witness and it
+      holds.
+      RED HALF, THE HOLE. Prepending the SAME call on a line that also carries
+      a string with a double slash in it, for example
+      const auditUrl = "https://audit.example/rules"; const probeB = async (tx)
+      => { await tx.merchantRule.deleteMany({ where: { householdId } }); };
+      leaves the guard GREEN: 1 passed of 1 run. stripComments treats the
+      double slash inside the string literal as the start of a line comment and
+      discards the rest of the line, taking the delete with it.
+    why-it-matters: >-
+      The guard's own comment at test/application/account-registry.test.ts:381
+      says this is "the ONE guard in either phase that holds an ABSOLUTE rule of
+      the domain rather than a criterion's own assertion", and decision D-49
+      rests on it twice. A guard on an absolute rule should not be defeatable by
+      a URL.
+    honest-scope: >-
+      The construction is contrived; nothing in the tree writes a delete after a
+      double slash on the same line today, and the ordinary forms are all
+      caught. Rated medium rather than high for that reason, not because the
+      hole is theoretical: the same flaw fires for any string or regex literal
+      containing a double slash ahead of code on that line.
+    fix: >-
+      Strip comments with a scanner that tracks string and template state, or
+      match on the un-stripped text and exclude a hit whose line begins with a
+      comment marker, which is what the criterion actually needs.
