@@ -11,7 +11,6 @@
 export const ACCOUNT_STATUS_KEYS = {
   "empty-label": "accountsErrorLabel",
   "empty-bank": "accountsErrorBank",
-  "account-number-required": "accountsErrorNumberRequired",
   "account-number-empty": "accountsErrorNumberEmpty",
   "account-number-unknown-country": "accountsErrorNumberCountry",
   "account-number-wrong-length": "accountsErrorNumberLength",

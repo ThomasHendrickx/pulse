@@ -6,7 +6,12 @@
 // never a mock of code we own.
 
 import { statementParser } from "../../src/modules/import/adapters/statement-parser";
-import { interpretForImport } from "../../src/modules/ledger/application/interpret-window";
+import {
+  interpretForImport,
+  recomputeInterpretation,
+} from "../../src/modules/ledger/application/interpret-window";
+import { previewDeclarationChange } from "../../src/modules/ledger/application/preview-declaration-change";
+import { canonicalAccountNumber } from "../../src/platform/account-number";
 import { resolveCounterparties } from "../../src/modules/merchants/application/resolve-counterparties";
 import type { MerchantRuleLike } from "../../src/modules/merchants/domain/merchant-rule";
 import type {
@@ -36,7 +41,10 @@ import type {
 } from "../../src/modules/import/application/ports";
 import type {
   AccountRecord,
+  AccountRepositoryPort,
+  DeclarationChangePreviewPort,
   NewAccount,
+  RecomputeInterpretation,
 } from "../../src/modules/accounts/application/ports";
 import type { HouseholdContext } from "../../src/platform/tenancy";
 
@@ -83,6 +91,11 @@ export type StoredMerchantTag = {
 export type FakeImportWorld = {
   readonly deps: ImportDependencies;
   readonly ledgerDeps: LedgerDependencies;
+  readonly accountsRepository: AccountRepositoryPort;
+  readonly engine: {
+    readonly preview: DeclarationChangePreviewPort;
+    readonly recompute: RecomputeInterpretation;
+  };
   readonly merchantsPort: MerchantRepositoryPort;
   readonly transactions: readonly StoredTransaction[];
   readonly links: readonly StoredTransferLink[];
@@ -106,7 +119,13 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
   const links: StoredTransferLink[] = [];
   const imports = new Map<string, MutableImport>();
   const profiles: (StoredProfile & { householdId: string })[] = [];
-  const accounts: (AccountRecord & { householdId: string })[] = [];
+  // MUTABLE ROLE, deliberately: the ring correction is a DECLARATION EDIT
+  // (M3-P15) and this store has to be able to represent one, or every
+  // correction test would be exercising a world where rings never change.
+  const accounts: (Omit<AccountRecord, "role"> & {
+    householdId: string;
+    role: AccountRecord["role"];
+  })[] = [];
   const merchants: StoredMerchant[] = [];
   const rules: StoredRule[] = [];
   const tags: StoredTag[] = [];
@@ -321,10 +340,16 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
   };
 
   const accountsPort: AccountsGateway = {
+    // CANONICAL ON BOTH SIDES, mirroring the Prisma adapter (M3-P14,
+    // decision D-47). Account.iban is stored canonical by every writer, so
+    // canonicalising the argument is the whole adoption mechanism; a fake
+    // that compared raw strings would let every adoption test pass while the
+    // real repository failed on exactly the surface forms that occur.
     findAccountByIban: async (context, iban) =>
       accounts.find(
         (account) =>
-          account.householdId === context.householdId && account.iban === iban,
+          account.householdId === context.householdId &&
+          account.iban === canonicalAccountNumber(iban),
       ) ?? null,
     getAccountById: async (context, accountId) =>
       accounts.find(
@@ -338,9 +363,62 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
         label: input.label,
         bank: input.bank,
         role: input.role,
-        ...(input.iban === undefined ? {} : { iban: input.iban }),
+        // Normalised on the way in, exactly as the adapter does.
+        ...(input.iban === undefined
+          ? {}
+          : { iban: canonicalAccountNumber(input.iban) }),
       };
       accounts.push(account);
+      return account;
+    },
+  };
+
+  // THE ACCOUNTS MODULE'S OWN REPOSITORY PORT over the same store (M3-P14).
+  // The gateway above is the slice the IMPORT module sees; this is the full
+  // port the registration and ring-correction use cases depend on.
+  const accountsRepository: AccountRepositoryPort = {
+    createAccount: async (context, input) => {
+      const account = {
+        id: id("account"),
+        householdId: context.householdId,
+        label: input.label,
+        bank: input.bank,
+        role: input.role,
+        ...(input.iban === undefined
+          ? {}
+          : { iban: canonicalAccountNumber(input.iban) }),
+      };
+      accounts.push(account);
+      return account;
+    },
+    listAccounts: async (context) =>
+      accounts.filter((account) => account.householdId === context.householdId),
+    findAccountByIban: accountsPort.findAccountByIban,
+    getAccountById: accountsPort.getAccountById,
+    listAccountsWithImportState: async (context) =>
+      accounts
+        .filter((account) => account.householdId === context.householdId)
+        .map((account) => ({
+          ...account,
+          hasImport: [...imports.values()].some(
+            (record) =>
+              record.householdId === context.householdId &&
+              record.accountId === account.id,
+          ),
+        })),
+    updateAccountRole: async (context, accountId, role) => {
+      const account = accounts.find(
+        (candidate) =>
+          candidate.householdId === context.householdId &&
+          candidate.id === accountId,
+      );
+      if (account === undefined) {
+        return null;
+      }
+      // ONE DECLARATION COLUMN. Nothing here touches a transaction row, and
+      // the fake is written so that a use case which tried to would have no
+      // way through this port to do it.
+      account.role = role;
       return account;
     },
   };
@@ -664,6 +742,16 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       },
     },
     ledgerDeps,
+    accountsRepository,
+    // The two engine dependencies the accounts module's use cases take as
+    // explicit arguments, bound here to the REAL ledger use cases over this
+    // fake persistence, so an accounts test exercises the real dry run and
+    // the real recompute rather than a stub of either.
+    engine: {
+      preview: (context, input) =>
+        previewDeclarationChange(context, ledgerDeps, input),
+      recompute: (context) => recomputeInterpretation(context, ledgerDeps),
+    },
     merchantsPort,
     transactions,
     links,

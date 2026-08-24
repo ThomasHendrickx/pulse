@@ -31,14 +31,13 @@ export type RegisterAccountError =
   | { readonly kind: "empty-label" }
   | { readonly kind: "empty-bank" }
   // A CARD IS NOT REGISTERED HERE, AND THE FORM HAS NO PATH THAT REACHES
-  // THIS (decision D-48). A card account carries no account number by
-  // design and is recognised through its bound source profile at import
-  // time, so a pre-registered card would have no identifier for the import
-  // path to adopt it by and would become a SECOND account. The duplicate
-  // hazard is closed by construction rather than by a mechanism: there is
-  // no way to create an account without an account number. The screen says
-  // in its own copy that a card is registered by importing its statement.
-  | { readonly kind: "account-number-required" }
+  // AN ACCOUNT WITHOUT A NUMBER (decision D-48). A card account carries no
+  // account number by design and is recognised through its bound source
+  // profile at import time, so a pre-registered card would have no
+  // identifier for the import path to adopt it by and would become a SECOND
+  // account. The duplicate hazard is closed by construction rather than by
+  // a mechanism. An empty submission lands on the account-number-empty
+  // refusal below, whose copy says how a card IS registered.
   | { readonly kind: "invalid-account-number"; readonly reason: AccountNumberError }
   | { readonly kind: "already-registered"; readonly existing: AccountRecord };
 
@@ -79,17 +78,22 @@ export const registerAccount = async (
   if (bank === "") {
     return err({ kind: "empty-bank" as const });
   }
-  const typed = input.accountNumber.trim();
-  if (typed === "") {
-    return err({ kind: "account-number-required" as const });
-  }
+  // AN EMPTY ACCOUNT NUMBER IS THE FIRST OF CRITERION 14.12'S FOUR
+  // REFUSALS, not a fifth reason of its own. It used to be a separate
+  // "required" error, which meant the refusal the criterion names as "empty
+  // after canonicalisation" was unreachable through this use case: the
+  // trimmed check fired first and answered something else. Same refusal,
+  // one name, and the copy for it is the one that also says how a card is
+  // registered, because an empty number is what a household trying to
+  // register a card would submit.
+
   // A REGISTRATION THE ENGINE CANNOT USE IS REFUSED AT THE FORM, NOT
   // ACCEPTED SILENTLY (criterion 14.12, DR-0028). An account number
   // mistyped by one character matches nothing in classification, so the
   // transfer falls through to the sign rule, lands in the spend total and
   // is offered on the naming screen: a state indistinguishable from never
   // having registered at all, and one the household has no way to see.
-  const verdict = verifyAccountNumber(typed);
+  const verdict = verifyAccountNumber(input.accountNumber);
   if (!verdict.ok) {
     return err({
       kind: "invalid-account-number" as const,
