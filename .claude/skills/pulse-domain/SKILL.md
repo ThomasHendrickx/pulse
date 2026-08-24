@@ -19,7 +19,45 @@ Every euro sits in one of three places, and every rule below depends on knowing 
 
 `Account.role` is `POT` or `RESERVE`. The user declares it at first sight. Never infer it, never guess it from the account name, never default it.
 
-Reserve accounts are registered for their IBAN only. Their statements are not imported in v1. A reserve movement is classified entirely from the pot side.
+**CORRECTED, NOT QUIETLY REWRITTEN (DR-0030, owner, 2026-08-24).** This
+paragraph used to say that reserve accounts are registered for their account
+number only, that their statements are not imported in v1, and that a reserve
+movement is classified entirely from the pot side. The first clause is now
+only half true and the second is FALSE. It is corrected in place rather than
+deleted, because this file is always in context and a reader who met the old
+sentence needs to know it changed rather than to wonder whether they imagined
+it.
+
+**Pulse ACCEPTS a reserve account's own statement.** The owner's deciding
+argument was the opening balance: a savings figure derived only from
+transfers is a running sum from an assumed zero, and is therefore wrong by
+the household's existing savings unless that account started empty. A
+statement is the one document that arrives CHECKED rather than typed, because
+the balance contract already makes opening plus rows equal closing a hard
+per-file gate. It also carries the two things a transfer can never show: the
+interest a savings account earns, which has no matching row on any pot
+account, and a movement between two reserve accounts, which touches no pot
+account at all.
+
+**A reserve account's own rows are HELD.** Ingested as facts, classified by
+nothing, entering no month total, offered for no naming, and NOT an
+uninterpreted gap. Held is derived from the account's RING and is not a new
+`Flow` member: the absence of a flow already means the row was not
+interpreted, and what tells a held row from a genuinely uninterpreted one is
+which ring its account sits in. Every read that can see a row with no flow
+therefore carries a ring predicate, and the month view NAMES each account
+that put rows in the period with whether those rows were counted or held, in
+all three languages, so a reader can tell held from missing and held from
+uninterpreted.
+
+A reserve account can still be REGISTERED by its account number alone,
+without a statement, and a reserve movement seen from the pot side is still
+classified from the pot side. What has changed is that the reserve
+statement is no longer refused.
+
+The reserves block on the month view is a MOVEMENT IN THE MONTH and never a
+balance. No figure in v1 is accumulated across months; a heading that read as
+an amount held would be inventing exactly the number this decision rejected.
 
 ## 2. Facts versus interpretation
 
