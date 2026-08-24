@@ -4,3 +4,46 @@
 # branch claude/m0-p10-plan-142, two hunks inside the 14.2 entry.
 # Status: reading brief, schema and diff. No verdict yet.
 verdict: pending
+#
+# work-log append 1 (evidence captured, verdict still pending)
+#
+# CODE VERIFICATION AT THIS TREE (branch claude/m0-p10-plan-review off
+# claude/m0-p10-plan-142 at 0761d31):
+#
+# overview-repository.ts, reserves read, line numbers exact:
+#   175:    LEFT JOIN "accounts" a
+#   176:      ON a."iban" = t."counterpartyIban" AND a."householdId" = t."householdId"
+#   182:    GROUP BY 1, 2
+#   186-187: counterpartyIban: row.counterpartyIban,
+#            label: row.label ?? row.counterpartyIban,
+#   The join is raw and the grouping is raw. Both citations accurate.
+#
+# detect-profile.ts:
+#   45: const IBAN = /^[A-Z]{2}\d{2}[A-Z0-9]{8,30}$/;
+#   313: if (values.length === 0 || !values.every((value) => IBAN.test(value))) {
+#   Anchored, whitespace-free, upper-case only, every-value guard. Accurate.
+#   BUT the loop at 305-328 assigns counterpartyIban AND accountIban under the
+#   SAME guard (324, 326, 328). The unreachability argument therefore applies
+#   verbatim to the file's OWN account column, which criterion 14.3 relies on.
+#
+# parse-statement.ts:114-123 optionalText covers counterpartyIban AND
+#   accountIban and stores the cell verbatim. Accurate, and same consequence.
+#   accountIbans is built at :150/:165-166 from row.accountIban.
+#
+# upload-statement.ts:65 = const detected = await deps.parser.detect(...)
+#   :84 = const profiles = await deps.imports.listProfiles(context);
+#   The author's citation correction is right; the dispatch's :84 was wrong.
+#
+# confirm-import.ts:84 const fileIban = parsed.value.accountIbans[0];
+#   so the file's own account number reaches the confirm path from the
+#   detected column, not from user input.
+#
+# IMPLEMENTER BRANCH claude/m3-p14-account-registry at 837dfce:
+#   test/e2e/overview-reads.spec.ts EXISTS there; it does not exist at this
+#   plan tree. overview-repository.ts:115 there carries
+#     const CANONICAL_COUNTERPARTY_SQL = Prisma.sql`upper(regexp_replace(
+#       t."counterpartyIban", '[[:space:]-]', '', 'g'))`
+#   used at :229 (the SELECT that GROUP BY 1 groups on) and :236 (the join),
+#   with a comment at :80-83 calling itself "the copy". Both halves already
+#   normalise on that branch. The reserves read there also carries POT_ROW
+#   (:239), which the criterion's described seed does not account for.
