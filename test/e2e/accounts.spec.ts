@@ -545,3 +545,109 @@ test("a row on an account that LEFT the pot stops counting and stops being offer
   await expect(back).toHaveAttribute("data-state", "counted");
   await expect(page.getByTestId("spend-total")).toHaveText(CONTROL_SPEND);
 });
+
+// ---------------------------------------------------------------------
+// CRITERION 14.15 witnesses FOUR, FIVE and SIX: the state is words the
+// reader sees, IN THEIR OWN LANGUAGE, and the reserves heading is not a
+// balance.
+// ---------------------------------------------------------------------
+
+test("both states are rendered as words in each of the three languages, and the reserves heading names a movement", async ({
+  page,
+  baseURL,
+}) => {
+  await signUp(page, "ar-locales");
+  // One HELD account (a savings statement answered correctly) and one
+  // COUNTED account (an ordinary current account), so both states are on
+  // the page at once and each language is checked against both.
+  await uploadFile(page, "ar-savings.csv", "Buffer", "RESERVE", "3");
+  await uploadFile(page, "ar-current.csv", "Current account", "POT", "11");
+
+  const expectations = [
+    {
+      locale: "en",
+      counted: "counted in this month's income and spend",
+      held: "kept and counted in no month",
+      heading: "Moved to savings this month",
+      eyebrow: "This month only",
+      // Balance words in this language. The reserves card must contain
+      // none of them: this block is a MOVEMENT IN THE MONTH and nothing in
+      // v1 is accumulated across months, so a heading that reads as an
+      // amount held would be inventing exactly the number the owner
+      // decision rejected.
+      //
+      // THE COPY SAYS WHAT IT IS RATHER THAN WHAT IT IS NOT, and this test
+      // is why. The eyebrow first read "Movement in the month, not a
+      // balance", which tripped its own guard on the word inside the
+      // denial. Rewording it around the word would have been a way to keep
+      // defensive prose and satisfy a check; saying "This month only"
+      // instead is shorter, fits a phone better, and needs no denial.
+      balanceWords: ["balance", "total saved", "saved so far", "holdings"],
+    },
+    {
+      locale: "nl",
+      counted: "telt mee in de inkomsten en uitgaven van deze maand",
+      held: "bewaard en telt in geen enkele maand mee",
+      heading: "Deze maand opzijgezet",
+      eyebrow: "Alleen deze maand",
+      balanceWords: ["saldo", "tegoed", "totaal gespaard"],
+    },
+    {
+      locale: "fr",
+      counted: "compté dans les revenus et les dépenses de ce mois",
+      held: "conservé et compté dans aucun mois",
+      heading: "Mis de côté ce mois-ci",
+      eyebrow: "Ce mois-ci uniquement",
+      balanceWords: ["solde", "avoir", "total \u00e9pargn\u00e9"],
+    },
+  ] as const;
+
+  for (const expectation of expectations) {
+    await page.context().addCookies([
+      {
+        name: "locale",
+        value: expectation.locale,
+        url: baseURL ?? "http://127.0.0.1:3210",
+      },
+    ]);
+    await page.goto("/?month=2026-08");
+
+    const counted = page
+      .getByTestId("month-account")
+      .filter({ hasText: "Current account" });
+    await expect(counted).toHaveAttribute("data-state", "counted");
+    // THE VISIBLE TEXT carries the state copy. A label, a number and an
+    // invisible attribute would satisfy a weaker wording while telling the
+    // household nothing, so this asserts what is on the page.
+    await expect(counted).toContainText(expectation.counted);
+
+    const held = page.getByTestId("month-account").filter({ hasText: "Buffer" });
+    await expect(held).toHaveAttribute("data-state", "held");
+    await expect(held).toContainText(expectation.held);
+
+    // AN ACCOUNT APPEARS IN AT MOST ONE ENTRY, by construction: the two
+    // reads carry complementary ring predicates.
+    await expect(page.getByTestId("month-account")).toHaveCount(2);
+
+    // THE HEADING IS NOT A BALANCE (decision D-60).
+    const reserves = page.getByTestId("reserves-card");
+    await expect(reserves).toContainText(expectation.heading);
+    await expect(reserves).toContainText(expectation.eyebrow);
+    const reservesText = (await reserves.innerText()).toLowerCase();
+    for (const word of expectation.balanceWords) {
+      expect(
+        reservesText.includes(word.toLowerCase()),
+        `the reserves card reads as a balance in ${expectation.locale}: "${word}"`,
+      ).toBe(false);
+    }
+
+    // AND IT RENDERS OUTSIDE THE RECONCILIATION PANEL, with the verdict
+    // still reading as books closing: a held statement is a normal state
+    // and rendering it as a cause would say the books are open when they
+    // are not.
+    await expect(
+      page.getByTestId("recon-panel").getByTestId("month-accounts"),
+    ).toHaveCount(0);
+    await expect(page.getByTestId("recon-cause-uninterpreted")).toHaveCount(0);
+  }
+});
