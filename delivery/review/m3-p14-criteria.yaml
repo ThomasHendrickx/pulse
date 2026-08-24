@@ -132,4 +132,105 @@ findings:
     fix: "Name the shape-gate consequence in the comment, or apply the ungated strip in counterpartyKey deliberately."
     criterion-touched: "14.4"
 
-criteria: []
+
+  - id: CRIT-P14-04
+    severity: high
+    title: "CRITERION 14.16 HAS NO WITNESS OVER THE SHIPPED READ PATH. All four arms assert against a re-implementation of the aggregation written inside the test file, and the Playwright half the criterion mandates is absent"
+    where: test/application/held-rows.test.ts:82 through :147, and test/e2e/accounts.spec.ts (no arm present)
+    evidence: |
+      Criterion 14.16 asserts on "every field of MonthFigures", and MonthFigures is
+      what src/modules/overview/domain/month-projection.ts:195 derives from the raw
+      SQL of src/modules/overview/adapters/overview-repository.ts:240. The four arms
+      never touch either. They call a local function figuresOf, defined at
+      test/application/held-rows.test.ts:82, which walks world.transactions in
+      TypeScript and re-derives income, spend, netToReserves, changeInPot, difference,
+      uninterpretedCount, rowCount, reconciles and the held entries itself.
+      The test WRITES OUT THE PREDICATE IT IS SUPPOSED TO BE TESTING. At
+      test/application/held-rows.test.ts:97 the comment reads "THE HELD READ'S
+      PREDICATE: no flow, on an account outside the pot" immediately above the test's
+      own implementation of that predicate; at test/application/held-rows.test.ts:104
+      it reads "Every figure below carries the ring predicate AND its own flow
+      condition, exactly as the scoped SQL reads do". If the shipped SQL held read at
+      src/modules/overview/adapters/overview-repository.ts:437 lost its NON_POT_ROW
+      arm, or monthFigures at overview-repository.ts:280 lost its POT_ROW, every one
+      of these tests would stay green.
+      THE RE-IMPLEMENTATION ALREADY DIVERGES FROM THE SHIPPED ONE. figuresOf computes
+      reconciles at test/application/held-rows.test.ts:142 as
+      "difference === 0 && uninterpreted === 0 && internalUnmatched === 0", while the
+      shipped verdict at src/modules/overview/domain/month-projection.ts:207 also
+      requires unresolvedCount === 0 and inTransitCount === 0. The two agree on these
+      fixtures by luck of the fixtures, not by construction.
+      NOTHING ELSE COVERS THE GAP. Across the whole fast gate no test executes
+      src/modules/overview/adapters/overview-repository.ts: test/application/month-overview.test.ts:65
+      supplies monthFigures and listGapRows as fakes, and test/domain/absent-flow-reads.test.ts:200
+      reads that file as TEXT. So the only lane in which the shipped reads run at all
+      is Playwright, and criterion 14.16's Playwright half ("ALL FOUR ARMS carry a
+      Playwright half asserting the same totals and the same verdict on the rendered
+      page") is not present: test/e2e/accounts.spec.ts contains no test for any arm.
+      I walked the arithmetic of all four arms against classify-flow.ts, corrections.ts,
+      month-projection.ts and the SQL myself and it is CORRECT (see the criteria walk
+      for 14.16). The defect is not the arithmetic. It is that nothing in the tree
+      would notice if the arithmetic stopped being correct.
+    consequence: |
+      The implementer's accounting reads "14.16: all four arms green at the application
+      level, NO Playwright half", which understates the deficit. Green at a level that
+      re-implements its own subject is not an application-level witness of MonthFigures;
+      it is a witness that the test author can do the arithmetic. Hazard H14.17 (a held
+      row leaking into income, spend, net to reserves or the change in the pot) is
+      therefore unguarded in the fast gate AND in the slow gate.
+      The comment at test/application/held-rows.test.ts:337 through :340 makes this a
+      false claim about a guard as well: it states that this case is what catches a
+      counted read written without its ring restriction (hazard H14.21), while
+      figuresOf skips every non-pot row at test/application/held-rows.test.ts:107
+      regardless of what the shipped counted read does.
+    fix: |
+      Move these four arms to a lane where the real reads execute. The fast gate has
+      no live Postgres; the Playwright gate does. Either add the four arms as Playwright
+      tests asserting the seven rendered figures and the verdict, which is what the
+      criterion asks for, or stand up a database-backed application lane. Delete
+      figuresOf or reduce it to a helper that CALLS deriveMonthFigures over rows the
+      real repository returned.
+    criterion-touched: "14.16, and hazards H14.17 and H14.21"
+
+  - id: CRIT-P14-05
+    severity: high
+    title: "The two new reads and the two pre-existing null-flow reads have no executable test at all; criterion 14.14's five cases were shipped as captured output, and the lane that could run them exists"
+    where: test/domain/absent-flow-reads.test.ts, and the absence of any database-backed test of overview-repository.ts
+    evidence: |
+      Criterion 14.14 states "Five cases, all at the application level over the real
+      repository." The implementer reports cases 1 to 4 as captured real-repository
+      output rather than executable tests, with the stated blocker that the fast gate
+      has no database. What ships as an executable guard is
+      test/domain/absent-flow-reads.test.ts, which is criterion 14.14 case FIVE's FIRST
+      assertion only: a static enumeration of the absent-flow conditions in the source
+      TEXT. It reads files and matches patterns; it executes no query.
+      Case FIVE's SECOND assertion, the row-class partition ("the pot row is counted by
+      uninterpretedCount AND returned by listGapRows AND absent from the held read"),
+      is asserted in test/application/held-rows.test.ts:355 through :374 against
+      figuresOf, not against uninterpretedCount, listGapRows or listHeldAccountRows.
+      So no test anywhere executes listGapRows, monthFigures, listCountedAccountRows or
+      listHeldAccountRows.
+      THE BLOCKER IS A CHOICE, NOT A CONSTRAINT. The Playwright gate runs against a
+      live local Postgres: playwright.config.ts brings up a webServer that serves the
+      month view from these very reads, and test/e2e/accounts.spec.ts:331 already
+      depends on listHeldAccountRows executing correctly to render its assertion. A
+      case stated as "at the application level over the real repository" belongs in
+      that lane, called directly against the repository with a seeded household, or as
+      a Playwright test that reads the rendered consequence. Captured output from a
+      repository state that stops existing when the phase lands is precisely what
+      criterion 15.4 elsewhere refuses ("obtainable inside this phase's OWN tree rather
+      than from a repository state that stops existing the moment the phase lands").
+    consequence: |
+      Hazards H14.10, H14.14 and H14.19 are addressed-by criterion 14.14, and criterion
+      14.14 has no executable arm over the reads it governs. A future edit that drops
+      POT_ROW from listGapRows, or NON_POT_ROW from the held read, reddens nothing:
+      the text enumeration in absent-flow-reads.test.ts counts OCCURRENCES of a
+      null-flow test, not the ring predicate beside it.
+    fix: |
+      Put cases ONE through FIVE where the database is. Either a Playwright-lane
+      application test file that imports the repository directly against the seeded
+      local stack, or five Playwright tests reading the rendered consequence. Add to
+      the enumeration in test/domain/absent-flow-reads.test.ts an assertion that each
+      of the three reads carries a ring predicate, which is the half the current text
+      guard leaves out.
+    criterion-touched: "14.14, and hazards H14.10, H14.14, H14.19"
