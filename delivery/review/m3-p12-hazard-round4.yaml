@@ -35,8 +35,119 @@ review-contract: hazard
 #    five attack surfaces the dispatch names, starting from the hazard
 #    classes and NOT from the acceptance criteria.
 
-findings: []
-no-findings-statement: "placeholder, in progress"
+# 5. ATTACK SURFACE 1, THE TWIN TREATMENT. Read
+#    src/modules/merchants/application/rederive-rules.ts end to end: the
+#    claimant/twin logic (lines ~447-483), keyForRule/assignmentSet
+#    (~301-334), and the before/after computation (~614-635).
+#    Confirmed the lowercase-namespace safety argument holds: normalise-
+#    counterparty.ts uppercases its input on the FIRST line of the exported
+#    function (rawText.toUpperCase() at line 457) and every constant that can
+#    end up in the output (CARD_NUMBER_LABEL, terminal noise, city tokens
+#    etc.) is itself uppercase; test/domain/counterparty-identity.test.ts:187
+#    already pins "normaliseCounterparty never emits a lowercase letter" with
+#    a property-style scan at :211. So a bare/un-namespaced pattern can never
+#    collide with a namespaced key. That half of the round-3 argument is
+#    sound.
+#    Then attacked the before-set exclusion itself with a constructed
+#    counterfactual, run through the REAL rederiveMerchantRules function
+#    (not a description of it): one un-namespaced EXACT rule e1 (pattern P,
+#    merchant alpha) superseded by a namespaced twin e2 (pattern
+#    "descriptor:"+P, merchant beta, the CR3-M3P12-01 shape exactly), and TWO
+#    account-basis rows (txB, txC) whose counterpartyText normalises to P but
+#    which each carry a DIFFERENT trusted account, so pass two's promotion of
+#    e2 hits "not-promoted-several-accounts" and adds nothing.
+#    WITNESSED against the shipped code (0d41c3b), via
+#    npx vitest run on a throwaway test file, deleted before any commit and
+#    confirmed absent from git status afterward: exitCode 0, applied true,
+#    assignmentsBefore 0, assignmentsAfter 0, lostAssignments [], decisions
+#    [e1 superseded-by-namespaced-rule, e2 descriptor-namespaced, e2
+#    not-promoted-several-accounts]. Both rows vanish from both sides of the
+#    superset test with no trace.
+#    WITNESSED THE COUNTERFACTUAL: temporarily changed line 628 from
+#    `before.filter((rule) => !supersededRuleIds.has(rule.id))` to `before`
+#    (no exclusion, closer to the pre-round-3 shape), re-ran the identical
+#    test: lostAssignments now contains {transactionId: "txB", ruleId: "e1"}
+#    (assertion failure printed the object), i.e. the exact same data DID
+#    trip the loss guard before round 3's fix narrowed it. Reverted the file
+#    from a saved copy immediately after and confirmed `git status --short`
+#    showed nothing (clean tree) before proceeding.
+#    CONCLUSION: this is finding CR4-M3P12-01 below, high severity. Written
+#    up and committed next.
+
+findings:
+  - id: CR4-M3P12-01
+    severity: high
+    analysis: >-
+      THE BEFORE-SET EXCLUSION ROUND THREE ADDED PROTECTS DESCRIPTOR-BASIS
+      ROWS AND SILENTLY DROPS ACCOUNT-BASIS ONES THAT USED THE SAME PATTERN.
+      Round three's fix for CR3-M3P12-01 was right that a superseded
+      un-namespaced rule can never match anything live, and right that a
+      DESCRIPTOR-basis row matching its old pattern is always still covered,
+      because the namespaced twin matches that same row under identityKey by
+      construction (the meaning-preserving proof pass one already relies on:
+      identityKey of a descriptor-basis row is exactly "descriptor:" plus its
+      baseline key). What the fix does not account for is that baselineKey is
+      basis-agnostic: it is computed for every row regardless of what basis
+      that row takes under the new identity scheme, and it stops being what
+      the twin's own promotion actually needs to cover a row that has
+      migrated to the ACCOUNT basis. Pass two's promotion of the twin only
+      ever adds coverage when every row baselineKey routes to it carries the
+      SAME trusted account (src/modules/merchants/application/rederive-rules.ts:539-543,
+      "not-promoted-several-accounts" / "not-promoted-untrusted-account"). Any
+      row that fails that test, and any row that would have been covered by
+      the dead rule's ACCOUNT-basis reading but the twin cannot reach because
+      a descriptor-namespaced EXACT/PREFIX/PATTERN rule can never match an
+      account-basis key (decision D-40), is now excluded from `liveBefore`
+      at line 628 together with its dead rule, and therefore from
+      `assignmentsBefore` entirely. It is also absent from `assignmentsAfter`
+      (nothing matches it). Absent from both means the superset comparison
+      at line ~640 never sees it: it is not in `assignmentsBefore.entries()`,
+      so it can never appear in `allLost`. This is not the artifact CR3-M3P12-01
+      described (a FALSE loss on a row the deployed system never actually
+      gave to the old merchant): this is a REAL loss, on a row that, under
+      round two's code (before the exclusion existed), the exact same superset
+      test correctly caught and blocked the run on, and the operator would
+      have had a chance to see, understand and either fix the split (naming
+      both groups the same merchant, criterion 12.15's own remedy) or accept
+      the loss knowingly. Round three's fix removes that chance for exactly
+      the rows the fix's own justification does not cover, without printing,
+      counting or naming a single one of them. Hazard H12.3 and H12.18 both
+      name this shape directly: "the naming the owner has already made is
+      lost when the key changes... and nothing notices" and "a rule survives
+      as a row while its EFFECT dies... and a row-count check reports the
+      migration clean." Here it is worse than a row-count check reporting
+      clean: even the superset-of-EFFECT test criterion 12.7 was written to
+      replace a row count with reports clean, because the row that carries
+      the effect is excluded from the comparison before it runs.
+    evidence:
+      - "WITNESSED against the shipped rederiveMerchantRules (0d41c3b), via a throwaway vitest file (test/application/ZZZ-scratch-witness.test.ts, written, run, then deleted; git status --short showed a clean tree afterward). Seed: rule e1 {id e1, merchant alpha, EXACT, pattern P}; rule e2 {id e2, merchant beta, EXACT, pattern descriptor:P} (the CR3-M3P12-01 shape). Two counted rows txB and txC, both with counterpartyName/description normalising to P, txB carrying trusted account IDENTITY_FIXTURE_ACCOUNTS.counterparty2 and txC carrying trusted account IDENTITY_FIXTURE_ACCOUNTS.counterparty3 (both wholly invented values already listed in test/fixtures/allowed-identifiers.txt under their own provenance)."
+      - "Captured output: REPORT {\"exitCode\":0,\"applied\":true,\"assignmentsBefore\":0,\"assignmentsAfter\":0,\"lostAssignments\":[],\"supersededByNamespacedRule\":[\"e1\"],\"decisions\":[{\"ruleId\":\"e1\",\"pass\":\"one\",\"basis\":\"descriptor\",\"outcome\":\"superseded-by-namespaced-rule\"},{\"ruleId\":\"e2\",\"pass\":\"one\",\"basis\":\"descriptor\",\"outcome\":\"descriptor-namespaced\"},{\"ruleId\":\"e2\",\"pass\":\"two\",\"basis\":\"descriptor\",\"outcome\":\"not-promoted-several-accounts\"}]}. Neither txB nor txC appears anywhere in the report: not lost, not counted, not promoted, not printed."
+      - "COUNTERFACTUAL, same seed, same test: temporarily replaced src/modules/merchants/application/rederive-rules.ts:628 (`const liveBefore = before.filter((rule) => !supersededRuleIds.has(rule.id));`) with `const liveBefore = before;`, saved a copy of the original file first, re-ran the identical test. It FAILED with `AssertionError: expected { transactionId: 'txB', ruleId: 'e1' } to be undefined`, i.e. lostAssignments now contained {transactionId: txB, ruleId: e1}, proving the same data was caught by the guard before this exclusion narrowed it. Restored the file from the saved copy immediately after; `git status --short` confirmed no diff survived."
+      - "src/modules/merchants/application/rederive-rules.ts:628 is the exclusion (`liveBefore`); :629 is where assignmentsBefore is built from it; :521-543 is pass two's promotion, whose 'not-promoted-several-accounts' and 'not-promoted-untrusted-account' branches are exactly the cases this finding's rows fall into; :634-641 is the superset comparison that reads assignmentsBefore.entries() and therefore cannot see an excluded row."
+      - "hazard H12.3 (src/modules/merchants/application/rederive-rules.ts region cited above) and hazard H12.18, both in this phase's declared hazard-classes table, name exactly this shape: a naming the owner already made silently failing to reproduce after the key changes."
+    concrete-fix: >-
+      Do not exclude the whole superseded rule from the before-set. Exclude
+      it only for the rows the live twin (after its own pass-two promotion,
+      if any) actually reaches. Concretely: compute `assignmentsBefore` in
+      two passes per superseded rule id -- for a row the twin (or its
+      promoted account-basis addition) already matches under `working`,
+      drop the superseded rule's baseline-key claim on that row (the
+      artifact CR3-M3P12-01 fixed); for a row the twin does NOT reach even
+      after promotion, keep the superseded rule's baseline-key claim in
+      `liveBefore` for that row specifically, so a real gap still surfaces
+      as a lost assignment the operator can accept or resolve. One way to
+      express this without a per-row special case: build `assignmentsBefore`
+      with the superseded rule INCLUDED as before, then compute
+      `assignmentsAfter` as today, then only DROP a superseded-rule-sourced
+      "loss" entry from `allLost` when `assignmentsAfter` (or the twin's own
+      match set) actually credits the SAME row to the twin's merchant --
+      i.e. filter false artifacts at the comparison, not by removing the
+      source rule from the before-set wholesale. Add a test seeding exactly
+      this shape (a superseded rule whose baseline-matched rows split across
+      a covered descriptor-basis row and an uncovered account-basis row) and
+      assert the account-basis row IS reported as a lost assignment while
+      the descriptor-basis row is not, so criterion 12.7's own superset test
+      is what proves the fix rather than a manual read of the diff.
 criteria: []
 deviations-judged: []
 hazard-classes-addressed: []
