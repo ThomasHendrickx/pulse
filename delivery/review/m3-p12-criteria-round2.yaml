@@ -51,3 +51,62 @@ findings:
     The script's own claim that stands in place of a check: scripts/rederive-merchant-rules.ts:17 through :25.
   concrete-fix: |-
     Route the new entry point through the existing interlock rather than inventing a second rule. Either add the guard invocation to the npm script at package.json:17 the way db:reset does at :15, so the run refuses a non-local target unless PULSE_ALLOW_REMOTE_DB_DESTRUCTION=1 is set for that run, or, since this script is meant to be run against the deployed database exactly once, add a required --expect-host argument to scripts/rederive-merchant-rules.ts:68 that is compared against the resolved DATABASE_URL hostname before any repository call and refuses on mismatch. Widen the comment at src/platform/db/guard.ts:16 in the same change so it says writing entry point rather than destructive one, because that sentence is what this phase read and complied with literally.
+implementer-claims-verified:
+- claim: |-
+    A bare identity key (a namespace with an empty remainder) is refused at the matcher, at the write boundary and on the review surface, while still being SHOWN and COUNTED on the review surface as at baseline.
+  verdict: VERIFIED
+  evidence:
+  - |-
+    Witnessed by my own script against the built modules, not by reading the suite. The derivation does emit the bare key: a row whose description is whitespace only returns key "descriptor:" with basis descriptor, and the exported predicate at src/modules/merchants/domain/counterparty-identity.ts:118 reports it bare.
+  - |-
+    MATCHER, key side and pattern side. matchRules returned undefined for an EXACT rule on the bare descriptor namespace against the bare key, for a PREFIX rule on the bare namespace against an ordinary descriptor key, for a PATTERN rule on the bare namespace against an ordinary descriptor key, and for an EXACT rule on the bare account namespace against a bare account key. The control in the same run still matched: an ordinary EXACT rule on a full descriptor key returned its merchant. The refusals are at src/modules/merchants/domain/merchant-rule.ts:98 and :111 through :113.
+  - |-
+    WRITE BOUNDARY, both bases, with a write counter on the fake port. Subject "descriptor:" returned error unidentifiable-counterparty with 0 writes; "account:" returned untrusted-counterparty-account with 0 writes; "descriptor:" followed by three spaces returned unidentifiable-counterparty with 0 writes; "account:" followed by two spaces returned untrusted-counterparty-account with 0 writes; an un-namespaced subject returned unnamespaced-counterparty with 0 writes; and a well-formed descriptor subject succeeded with 3 writes, so the counter was live. The guard is at src/modules/merchants/application/assign-merchant.ts:109 through :115.
+  - |-
+    REVIEW SURFACE, and this is the half the claim asks be checked specifically. Over three rows, two carrying no counterparty text and one carrying a descriptor, buildMerchantReview returned two spend groups: key "descriptor:" with count 2 and total -3000 and NO counterpartyText field, and the ordinary group with count 1 and its form field present. spendTotalCents was -6000, so both bare rows' money is still in the total, and unresolvedCount was 2, so the bare group is still counted as an unresolved group. Nothing is dropped from any count; only the naming form is withheld, at src/modules/merchants/domain/merchant-review.ts:129 through :133.
+  - |-
+    THE ASYMMETRY THE BRIEF NAMED IS REAL AND IS THE RIGHT WAY ROUND. In the same run, a PREFIX rule whose pattern is the descriptor namespace followed by one space still matched a key of the descriptor namespace followed by two spaces and an X, exactly as the bare pattern of one space matched the bare key of two spaces and an X. A trimming refusal at the matcher would have broken that pair, which is criterion 12.21's meaning-preservation. The matcher is strict at src/modules/merchants/domain/counterparty-identity.ts:118 and the writer trims at src/modules/merchants/application/assign-merchant.ts:109, and both are documented at their sites.
+- claim: |-
+    --dry-run writes nothing.
+  verdict: VERIFIED
+  evidence:
+  - |-
+    Run against a real Postgres database I created for this review, pulse_r2crit on the local supabase stack at 127.0.0.1:54322, migrated with prisma migrate deploy and seeded by hand with 5 merchant_rules rows and 5 counted transactions. The connection was pinned explicitly on every invocation; the ambient DATABASE_URL was never used.
+  - |-
+    The witness is not the report, it is the storage. Before each run I captured id, xmin, ctid, kind, merchantId and md5(pattern) for every merchant_rules row and id, xmin, ctid, flow and merchantId for every transactions row. An UPDATE writing an identical value still moves xmin and ctid, so this catches a rewrite the report would not show.
+  - |-
+    RUN B, the CLEAN dry run, is the one that carries the claim: --dry-run with both blocking conditions accepted, exit 0, printed applied no and "nothing was written: this was a dry run", reporting patterns-rewritten 3 and rules-added 1 as the work it WOULD do. The snapshot afterwards was byte-identical to the snapshot before: no xmin moved on any of the 10 rows, the rule count stayed 5, and no transaction changed, so the recompute did not run either.
+  - |-
+    The contrast that proves the snapshot is sensitive: RUN D, the same command without --dry-run, moved xmin on three merchant_rules rows, inserted a fourth, and moved xmin on all five transactions rows, setting merchantId on three of them.
+  - |-
+    The flag is honoured inside the routine rather than in the script, at src/modules/merchants/application/rederive-rules.ts:528, which is the only place that gates both write loops and the recompute.
+- claim: |-
+    A blocked run (conflict or loss) withholds ALL writes, exits 1, and leaves the assignment set untouched.
+  verdict: VERIFIED
+  evidence:
+  - |-
+    RUN C, the real run with no acknowledgement, against the same seeded database: exit 1, printed conflicts 1 with the conflicting rule id, lost-assignments 2 with both transaction ids and the rule that held them, applied no, and "nothing was written: the run is blocked, and the database is exactly as it was found".
+  - |-
+    The snapshot after run C was byte-identical to the baseline snapshot: no xmin moved on any merchant_rules or transactions row, the counts stayed 5 and 5. The assignment set is therefore untouched in the only sense that matters, which is that no transaction row was written at all.
+  - |-
+    The structural reason, which is what makes this hold for cases I did not seed: every write is recorded into pendingUpdates and pendingInserts and issued only after the exit code is computed, at src/modules/merchants/application/rederive-rules.ts:285 through :290 and :528 through :537, and the superset test is computed against the in-memory working copy at :495 rather than against a re-read.
+- claim: |-
+    The acknowledge path is usable: a dry run yields the conflict ids with zero writes, and accepting exactly those ids applies.
+  verdict: VERIFIED, both halves
+  evidence:
+  - |-
+    FIRST HALF. RUN A, --dry-run with no acknowledgement: exit 1, and the report named the conflicting rule id and both lost transactions with their holding rule id. Snapshot byte-identical to baseline, so the ids were learnable from a run that had written nothing. That is the exact defect the fix round says it closed and it is closed.
+  - |-
+    SECOND HALF. RUN D, the same two ids passed to --accept without --dry-run: exit 0, applied yes, patterns-rewritten 3, rules-added 1. The snapshot afterwards shows exactly those writes: three rule patterns changed hash and moved xmin, one new rule row appeared pointing at the same merchant as the rule it was promoted from, and the recompute set merchantId on three transactions.
+  - |-
+    ACCEPTANCE CLEARS ONLY WHAT IT NAMES. In run D the accepted-conflict rule was left byte-identical, its pattern hash unchanged from the baseline snapshot, and the two accepted losses did land: both transactions ended with no merchant. That is the accepted consequence, printed and visible, rather than a quiet green.
+  - |-
+    IDEMPOTENCE, re-measured here because the fix round reshaped the routine. RUN E, the same command again: exit 0, patterns-rewritten 0, rules-added 0, already-namespaced 5, and the decision report diffed BYTE-IDENTICAL against run D's. No merchant_rules row moved its xmin on the second run.
+- claim: |-
+    Accepted losses are PARTITIONED into their own reported field, not filtered out of the report.
+  verdict: VERIFIED
+  evidence:
+  - |-
+    RUN B and RUN D both printed "lost-assignments 0" followed by "accepted-lost-assignments 2" and then one accepted-lost-transaction line per loss, each naming the transaction id and the rule that held it. RUN A and RUN C, with nothing accepted, printed "lost-assignments 2" and "accepted-lost-assignments 0". The two lists are complements of the same set and neither run reads like a run that lost nothing.
+  - |-
+    The partition, rather than the previous filter: src/modules/merchants/application/rederive-rules.ts:509 through :512, reported through the field declared at :182 and printed at scripts/rederive-merchant-rules.ts:143 through :150.
