@@ -169,6 +169,7 @@ files-touched:
   - src/platform/db/connection-string.ts
   - test/e2e/auth.spec.ts
   - test/domain/counterparty-identity-contracts.test.ts
+  - test/property/mutants.mts
 per-step-commits:
   - sha: 502da43
     subject: >-
@@ -826,6 +827,69 @@ key-decisions:
       is precisely the hole the pair check exists to fill, and it is why the
       answer is a second, independent property rather than a rewrite of the
       first.
+  - decision: >-
+      The first biconditional is decided from MERCHANT IDENTITY ALONE and
+      resolves the claimant from the SEED, not from the report.
+    why: >-
+      Criterion 12.7 as amended, which names the earlier form this phase
+      shipped and rules it out: an assertion of the shape reported equals
+      changed and not licensed carries no merchant term and cannot express the
+      invariant. The rewritten assertion has three terms and all three are
+      merchant identities: the merchant the row carried before, the merchant it
+      carries after, and the merchant carried by the claimant of the rule it
+      previously resolved through.
+      AND THE HONEST QUALIFICATION, which is the review's first low finding.
+      The criterion's prose says the first biconditional "names no lineage"
+      while its own sentence names the claimant relation. It does name it. What
+      makes the property independent is that the relation is not READ FROM THE
+      RUN: the table's unique key is (householdId, kind, pattern), so for a
+      superseded EXACT rule with pattern P the claimant is the UNIQUE rule of
+      the same kind whose pattern is the namespaced form of P, and the test
+      finds it in the seed. A forged pair in the report cannot move it. The
+      neighbouring never-re-derive rule binds the ROUTINE's comparison, which
+      reads published ids; it does not bind a test that must establish the same
+      fact independently. That is written into the property's own header rather
+      than left as a disagreement with the plan's wording.
+  - decision: >-
+      Two ABSENCES are encoded as distinct sentinels rather than as undefined.
+    why: >-
+      Found by the property on its first run against the amended form, and it
+      is not a detail. "The merchant it carries after" is not a merchant at all
+      when nothing covers the row, and "the merchant the claimant carries" is
+      not a merchant when there is no claimant. Compared as undefined they are
+      EQUAL, so a row that nothing covers, held by a rule with no claimant,
+      reads as a row that ended at the claimant's merchant: the criterion's
+      plainest lost assignment silently classified as its exception. The
+      criterion says the same thing in words, that a row ending covered by
+      nothing at all is a lost assignment, and the sentinels are how three
+      merchant terms stay comparable without that collision.
+  - decision: >-
+      A LOSS IS ACCEPTED BY THE PAIR of rule id and transaction id, and no flag
+      form clears one by rule alone.
+    why: >-
+      Criterion 12.7. One rule can hold a real loss on one row and an ordinary
+      claimant-merchant report on another, so a flag that clears a RULE clears
+      rows the person never saw, which is M3-P16's hazard H16.3. The conflict
+      flag keeps its rule-level granularity, because a conflict is a property
+      of a rule and not of a row. THE COST IS REAL AND IS PAID IN THE TESTS
+      RATHER THAN HIDDEN: thirteen tests were relying on the conflict flag to
+      clear a loss as a side effect, which is exactly the conflation the
+      criterion outlaws. They now do what an operator does, running once to
+      learn what blocks and accepting what they were told, through one helper.
+  - decision: >-
+      The CLAIMANT-MERCHANT class is a third outcome, reported and printed
+      under its own name, and it exits 0.
+    why: >-
+      Criterion 12.7, which states the cost rather than estimating it: this is
+      the ordinary shape of a MIXED-BASIS group, where the claimant's promotion
+      is declined because one row of the group carries no trusted account while
+      the account half of that counterparty is already held by the owner's own
+      later naming, so the row already carries that merchant under the deployed
+      code and nothing moved. Blocking it would stop an ordinary migration on a
+      loss that did not happen. A run that reports it and a lost assignment
+      under one name does not meet the criterion, so it has its own report
+      field, its own console lines carrying the rule that held the row and the
+      rule that holds it now, and its own conjunct in the second biconditional.
 
 verification-first:
   - finding: >-
@@ -1345,6 +1409,57 @@ verification-first:
       change there moves them together and the property agrees with itself,
       which is the same shape of weakness as reading the lineage the run
       publishes. Only a named example caught this one.
+    contradicts-plan: false
+  - finding: >-
+      (ii) THE FOUR MUTANTS, run from a committed harness rather than by hand,
+      each recorded with the property that went red and its assertion message.
+      test/property/mutants.mts applies each wrong predicate to the module
+      under test, runs the property file, attributes the failure and restores
+      the source from a saved copy on every exit path, printing the original's
+      checksum beside the restored file's.
+      M1, reports every change, which is round two: red on the FIRST
+      biconditional, "AssertionError: expected { row: 'descriptorRow', lost:
+      true } to deeply equal { row: 'descriptorRow', lost: false }".
+      M2, excludes a superseded rule's whole claim from the before set, which
+      is round three: red on the FIRST biconditional, "AssertionError: expected
+      { row: 'accountRow', lost: false } to deeply equal { row: 'accountRow',
+      lost: true }".
+      M3, asks only whether the row is covered by ANYTHING after the run, which
+      is round four: red on the FIRST biconditional, same assertion shape on
+      accountRow.
+      M4, publishes one promotion pair whose holder and source name DIFFERENT
+      merchants, the forged lineage: red on the FIRST biconditional AND on the
+      lineage check, "AssertionError: expected { row: 'accountRow', lost: false
+      } to deeply equal { row: 'accountRow', lost: true }". THE FIRST IS THE
+      ONE THE CRITERION REQUIRES of this mutant and is how a reader checks the
+      licence conjunct was actually struck; before the strike this same mutant
+      left the first biconditional green.
+      restored: original 33f7f7fee0ddf710, on disk 33f7f7fee0ddf710.
+    contradicts-plan: false
+  - finding: >-
+      (jj) TWO DEFECTS THE MUTANTS FOUND THAT NO COUNT WOULD HAVE, which is the
+      case for requiring them. FIRST, M4 did not redden the first biconditional
+      on its first run, and the reason was a GENERATOR gap rather than a
+      property gap: a forged promotion pair can only be published where pass
+      two reaches its collision branch, which needs every row the claimant
+      reaches to carry one trusted account and the holder of that account
+      pattern to carry a different merchant, and no generated world had that
+      shape. The mutant was unreachable and looked caught. A scenario was added
+      for it and the six shape counts moved with it, takenByAStranger from 83
+      to 131. SECOND, M1 as first written removed the claimant declaration
+      along with the exemption and died of a ReferenceError, which proves
+      nothing about the properties; it now keeps the declaration, and the
+      harness's own comment says why a mutant that crashes is not a mutant that
+      is caught.
+    contradicts-plan: false
+  - finding: >-
+      (kk) THE SIX SHAPES, all reached, over 500 generated worlds: "unchanged
+      504, coveredByNothing 225, takenByAStranger 131, licensedByTheClaimant
+      189, licensedByThePromotion 66, claimantMerchantClass 67". The last three
+      are the ones that need a claimant to exist, and the criterion counts them
+      for that reason: the first three are reachable in worlds carrying no
+      claimant at all, so a generator that never builds one satisfies them
+      while leaving the licence conjunct unexercised.
     contradicts-plan: false
 
 deviations:
@@ -1894,6 +2009,24 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 5
+  - gate: >-
+      FIX ROUND SIX, all five fast gates on the head that merges criterion
+      12.7's approved amendment. npm run typecheck (tsc --noEmit, no output),
+      npm run lint (eslint ., no output), npm test (vitest run, 42 test files),
+      npm run gate:privacy (printed "gate:privacy clean"), npm run gate:tokens
+      (no output). Every one exited 0. The count moved from 644 to 648: the
+      property file was rewritten to the amended criterion as two
+      biconditionals rather than one, four tests were added for the before
+      set's two clauses and the published lineage's two statements, and the
+      acknowledge-path tests were reworked onto the pair granularity.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 648
+    passed: 648
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
 
 claims:
   - id: C-M3P12-01

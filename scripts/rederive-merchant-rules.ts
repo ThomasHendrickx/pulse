@@ -3,7 +3,8 @@
 //
 //   npm run rederive:merchant-rules -- --expect-host <host> --expect-ref <ref>
 //     [--expect-port <port>]
-//     --household <id> [--accept <ruleId,...>] [--dry-run]
+//     --household <id> [--accept <ruleId,...>]
+//     [--accept-loss <ruleId:transactionId,...>] [--dry-run]
 //
 // WHEN IT RUNS, and why the order is FORCED rather than preferred: AFTER the
 // code deploys. The routine imports the new derivation to compute the new
@@ -240,6 +241,25 @@ const printReport = (report: RederiveReport): void => {
       `  accepted-lost-transaction ${lost.transactionId} held-by-rule ${lost.ruleId}`,
     );
   }
+  // THE CLAIMANT-MERCHANT CLASS, printed under its own name and never folded
+  // into the losses above (criterion 12.7, fix round six). A row here ended at
+  // the merchant the CLAIMANT carries, through a rule outside the lineage, so
+  // under the deployed code it already carried that merchant and nothing
+  // moved. It is not a loss, it does not block, and a run reporting the two
+  // under one name does not meet the criterion. Ids only, as everywhere here.
+  console.log(
+    `claimant-merchant-reports ${report.claimantMerchantReports.length}`,
+  );
+  if (report.claimantMerchantReports.length > 0) {
+    console.log(
+      "  these rows end at the merchant the claimant carries, reached by a rule outside the claimant's lineage. This is the ordinary shape of a group split across the two bases: nothing moved and nothing is lost, and it is listed so the operator can see it rather than infer it.",
+    );
+  }
+  for (const report_ of report.claimantMerchantReports) {
+    console.log(
+      `  claimant-merchant-transaction ${report_.transactionId} held-by-rule ${report_.heldByRuleId} now-held-by-rule ${report_.nowHeldByRuleId}`,
+    );
+  }
   console.log(`promoted-on-one-row ${report.promotedOnOneRow.length}`);
   if (report.promotedOnOneRow.length > 0) {
     // WHAT THE COUNT MEANS, for the operator and not only for the code's
@@ -303,6 +323,29 @@ export const main = async (
     .split(",")
     .map((value) => value.trim())
     .filter((value) => value !== "");
+  // A LOSS IS ACCEPTED BY THE PAIR, never by the rule (criterion 12.7, fix
+  // round six). --accept clears a merchant-conflict, which is a property of a
+  // RULE; --accept-loss clears one lost assignment, named as
+  // <ruleId>:<transactionId>, because one rule can hold a real loss on one row
+  // and an ordinary claimant-merchant report on another, and a flag that
+  // cleared the rule would clear rows the person never saw.
+  const acceptedLosses = (argument("accept-loss") ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value !== "")
+    .map((pair) => {
+      const separator = pair.indexOf(":");
+      return separator === -1
+        ? undefined
+        : {
+            ruleId: pair.slice(0, separator),
+            transactionId: pair.slice(separator + 1),
+          };
+    })
+    .filter(
+      (pair): pair is { ruleId: string; transactionId: string } =>
+        pair !== undefined && pair.ruleId !== "" && pair.transactionId !== "",
+    );
 
   const context: HouseholdContext = {
     householdId: householdId(household),
@@ -322,7 +365,7 @@ export const main = async (
     report = await rederiveMerchantRules(
       context,
       { merchants: deps.merchants, recompute: deps.recompute },
-      { acceptedRuleIds: accepted, dryRun },
+      { acceptedRuleIds: accepted, acceptedLosses, dryRun },
     );
   } catch (error: unknown) {
     if (!(error instanceof RederiveRecomputeError)) {

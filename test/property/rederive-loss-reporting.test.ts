@@ -5,172 +5,286 @@ import { householdId, userId, type HouseholdContext } from "../../src/platform/t
 import type { CountedTransaction } from "../../src/modules/merchants/application/ports";
 import type { MerchantRuleLike } from "../../src/modules/merchants/domain/merchant-rule";
 import {
-  assignmentSet,
-  baselineKeyOfRow,
-  identityKeyOfRow,
   rederiveMerchantRules,
   type RederiveDependencies,
 } from "../../src/modules/merchants/application/rederive-rules";
-import { matchRules } from "../../src/modules/merchants/domain/merchant-rule";
-import {
-  compactAccount,
-  isTrustedCounterpartyAccount,
-} from "../../src/modules/merchants/domain/counterparty-identity";
-import {
-  ACCOUNT_NAMESPACE,
-  DESCRIPTOR_NAMESPACE,
-} from "../../src/modules/merchants/domain/counterparty-identity";
 import { IDENTITY_FIXTURE_ACCOUNTS } from "../fixtures/generate-pdf-fixtures";
 
-// M3-P12 FIX ROUND FIVE, HAZARD finding HAZ5-1.
+// CRITERION 12.7, THE WHOLE OF IT, AS TWO BICONDITIONALS OVER GENERATED
+// WORLDS.
 //
-// WHY THIS IS A PROPERTY AND NOT A FOURTH EXAMPLE. The re-derivation's loss
-// exemption has been rewritten three times and each rewrite traded one bug
-// for another: round two reported losses that had not happened, round three
-// hid losses that had, and round four hid a silent REASSIGNMENT of a row from
-// one merchant to an unrelated third one. Every rewrite was correct against
-// the counterexample in front of it and wrong about the shape nobody had
-// built yet. Three more example tests aimed at three known witnesses would
-// buy nothing against a fourth.
+// WHY THIS IS A PROPERTY AND NOT EXAMPLES. The re-derivation's loss reporting
+// has been rewritten in three consecutive fix rounds and EACH ROUND PASSED ITS
+// OWN EXAMPLES: round two reported losses that had not happened, round three
+// hid a real loss, round four hid a reassignment of a row to an unrelated
+// third merchant. Every one was correct against the witness in front of it and
+// wrong about a shape nobody had built yet.
 //
-// So this file states the guarantee itself, over generated worlds, as ONE
-// biconditional:
+// NOTHING HERE IS COMPUTED BY THE ROUTINE. The merchant a row carried before
+// and after is decided by a resolver this file writes against the seed and the
+// captured write batch, using this file's own model of the two key spaces.
+// Importing the routine's assignment-set helper or its identity-key helper
+// would certify the function against itself, which is exactly what a mechanism
+// wrong three times running cannot afford.
 //
-//   a row is reported in the loss set  IF AND ONLY IF  its merchant changed
-//   and the change is licensed by the supersede lineage.
+// THE FIRST BICONDITIONAL IS DECIDED FROM MERCHANT IDENTITY ALONE and names no
+// relation the RUN publishes, so a run cannot green it by publishing a
+// relationship that is not true.
 //
-// The three known shapes are corollaries of it, and so is any fourth:
+// ONE HONEST QUALIFICATION, because the criterion's prose says the first
+// biconditional "names no lineage" while its own sentence names the claimant
+// of the rule the row resolved through. It does name that relation. What
+// makes the property independent is that the relation is not READ FROM THE
+// RUN: the table's unique key is (householdId, kind, pattern), so for a
+// superseded EXACT rule with pattern P the claimant is the UNIQUE rule of the
+// same kind whose pattern is the namespaced form of P, and this file finds it
+// in the SEED. A forged pair in the report cannot move it. The neighbouring
+// never-re-derive rule binds the ROUTINE's comparison, which reads published
+// ids; it does not bind a test that must decide the same fact independently.
 //
-//   A FALSE LOSS is reported && !changed.
-//   A HIDDEN LOSS is changed (to nothing) && !reported && !licensed.
-//   A HIDDEN REASSIGNMENT is changed (to another merchant) && !reported
-//   && !licensed.
-//
-// WHAT "LICENSED" MEANS, and it is read from the run's own published lineage
-// rather than recomputed: the row's coverage after the run must descend from
-// the specific rule that superseded the rule making the claim, either by
-// being that claimant or by carrying its promotion. The lineage the run
-// publishes is not taken on trust: the last test in this file checks every
-// claimed supersede against the seed, so a run cannot license itself by
-// inventing a relationship.
-//
-// EVERY VALUE BELOW IS INVENTED. The accounts are the identity fixture's own
+// EVERY VALUE BELOW IS INVENTED: the accounts are the identity fixture's own
 // invented IBANs, already listed with their provenance in
-// test/fixtures/allowed-identifiers.txt; the counterparty text is a
-// hand-typed English phrase.
+// test/fixtures/allowed-identifiers.txt, the untrusted token is a hand-typed
+// string that is not an account at all, and the counterparty texts are
+// hand-typed English phrases.
 
 const context: HouseholdContext = {
   householdId: householdId("household-property"),
   userId: userId("user-property"),
 };
 
-// Uppercase and free of punctuation, so the shipped normaliser is the
-// identity on it and a bare rule pattern equals the rows' baseline key.
-const SHARED_TEXT = "SHARED COUNTERPARTY TEXT";
+const SHARED = "SHARED COUNTERPARTY TEXT";
+const OTHER = "OTHER COUNTERPARTY TEXT";
 
 const ACCOUNTS = [
   IDENTITY_FIXTURE_ACCOUNTS.counterparty1,
   IDENTITY_FIXTURE_ACCOUNTS.counterparty2,
   IDENTITY_FIXTURE_ACCOUNTS.counterparty3,
 ] as const;
+// Not an account: it fails the trust gate, so a row carrying it takes the
+// DESCRIPTOR basis. It is what makes a promotion decline, which is what makes
+// the claimant-merchant class reachable.
+const UNTRUSTED = "NOT-AN-ACCOUNT";
+const TRUSTED = new Set<string>(ACCOUNTS);
 
 const MERCHANTS = ["merchant-one", "merchant-two", "merchant-three"] as const;
 
+const ACCOUNT_NS = "account:";
+const DESCRIPTOR_NS = "descriptor:";
+const isNamespaced = (pattern: string): boolean =>
+  pattern.startsWith(ACCOUNT_NS) || pattern.startsWith(DESCRIPTOR_NS);
+
+// ---- THIS FILE'S OWN RESOLVER ------------------------------------------
+// The two key spaces, modelled from the criterion's words rather than from the
+// code. Every generated description is uppercase ASCII with single spaces, so
+// the pre-phase normalisation is the identity on it; every generated account
+// is already compact and uppercase. If either model were wrong the
+// biconditionals below would break, because the REPORTED side comes from the
+// routine and only this side comes from here.
+const prePhaseKey = (row: CountedTransaction): string => row.description;
+const identityKey = (row: CountedTransaction): string =>
+  row.counterpartyAccount !== undefined && TRUSTED.has(row.counterpartyAccount)
+    ? `${ACCOUNT_NS}${row.counterpartyAccount}`
+    : `${DESCRIPTOR_NS}${row.description}`;
+
+// THE PRE-PHASE SPACE IS CONSULTED FIRST, the identity space only for a row no
+// un-namespaced rule reaches. The order is the criterion's and it is what
+// decides whether a row claimed in BOTH spaces carries the superseded rule's
+// merchant before the run, which is the state the exception exists to carry.
+const holderBefore = (
+  row: CountedTransaction,
+  rules: readonly MerchantRuleLike[],
+): MerchantRuleLike | undefined =>
+  rules.find((rule) => !isNamespaced(rule.pattern) && rule.pattern === prePhaseKey(row)) ??
+  rules.find((rule) => isNamespaced(rule.pattern) && rule.pattern === identityKey(row));
+
+const holderAfter = (
+  row: CountedTransaction,
+  rules: readonly MerchantRuleLike[],
+): MerchantRuleLike | undefined =>
+  rules.find((rule) => rule.pattern === identityKey(row));
+
+// THE CLAIMANT, FOUND IN THE SEED AND NOT IN THE REPORT. Pinned uniquely by
+// the table's unique key over (household, kind, pattern). EXACT only: the
+// argument that an un-namespaced pattern is dead is an argument about
+// EQUALITY, so the criterion admits the exception for no other kind.
+// TWO ABSENCES THAT MUST NOT BE EQUAL. "The merchant it carries after" is not
+// a merchant at all when nothing covers the row, and "the merchant the
+// claimant carries" is not a merchant when there is no claimant. Comparing
+// those two as undefined makes a row nothing covers, held by a rule with no
+// claimant, look like a row that ended at the claimant's merchant, which is
+// the criterion's plainest case of a LOST assignment read as its exception.
+// Distinct sentinels keep the three merchant terms comparable without that
+// collision, and the criterion says the same thing in words: a row that ends
+// covered by nothing at all is a lost assignment.
+const COVERED_BY_NOTHING = Symbol("covered by nothing");
+const THERE_IS_NO_CLAIMANT = Symbol("there is no claimant");
+type MerchantTerm = string | typeof COVERED_BY_NOTHING | typeof THERE_IS_NO_CLAIMANT;
+
+const claimantInSeed = (
+  rule: MerchantRuleLike,
+  rules: readonly MerchantRuleLike[],
+): MerchantRuleLike | undefined =>
+  rule.kind !== "EXACT" || isNamespaced(rule.pattern)
+    ? undefined
+    : rules.find(
+        (candidate) =>
+          candidate.kind === "EXACT" &&
+          candidate.pattern === `${DESCRIPTOR_NS}${rule.pattern}`,
+      );
+
+// ---- THE GENERATED WORLDS ----------------------------------------------
 type Seed = {
   readonly rules: readonly MerchantRuleLike[];
   readonly rows: readonly CountedTransaction[];
+  readonly label: string;
 };
+
+const makeRow = (
+  id: string,
+  description: string,
+  account?: string,
+): CountedTransaction => ({
+  id,
+  flow: "SPEND",
+  amountCents: cents(-1_000),
+  description,
+  ...(account === undefined ? {} : { counterpartyAccount: account }),
+});
+
+// THE SCENARIOS EXIST SO EVERY SHAPE IS REACHABLE, not so the property knows
+// which shape it is looking at: the assertions never read the label. Three of
+// the six shapes need a claimant to exist AND need its promotion to happen or
+// to be declined, which independent coin flips reach too rarely to be relied
+// on, and a shape the generator cannot reach is a conjunct the property never
+// exercises.
+const scenarios = [
+  "no-claimant",
+  "claimant-covers-descriptor-row",
+  "claimant-promotes-onto-one-account",
+  "promotion-declined-nothing-covers",
+  "promotion-declined-third-merchant-covers",
+  "promotion-declined-claimant-merchant-covers",
+  // THE WORLD THE FORGED-PAIR MUTANT NEEDS, and the generator did not have it
+  // until that mutant asked for it. Pass two reaches its COLLISION branch only
+  // when the promotion is actually attempted, which needs every row the
+  // claimant reaches to carry one trusted account, and only takes the conflict
+  // arm when the holder of that account pattern carries a DIFFERENT merchant.
+  // Without such a world a run that forges a promotion pair has nowhere to
+  // forge one, and the mutant looks caught when it was merely unreachable.
+  "promotion-collides-with-third-merchant",
+] as const;
 
 const seedArbitrary = fc
   .record({
-    // The rule this whole mechanism is about: un-namespaced, so pass one
-    // either rewrites it or finds it already superseded.
+    scenario: fc.constantFrom(...scenarios),
     deadMerchant: fc.constantFrom(...MERCHANTS),
-    // The claimant, present or not. Absent means pass one rewrites the dead
-    // rule instead of superseding it, which is the ordinary first-run shape.
-    claimant: fc.option(
-      fc.record({ merchantId: fc.constantFrom(...MERCHANTS) }),
-      { nil: undefined },
-    ),
-    // A pre-existing account-basis rule with no relationship to either. This
-    // is what turned round four's exemption into a hidden reassignment.
-    unrelated: fc.option(
-      fc.record({
-        merchantId: fc.constantFrom(...MERCHANTS),
-        account: fc.constantFrom(...ACCOUNTS),
-      }),
-      { nil: undefined },
-    ),
-    // A second un-namespaced rule on a DIFFERENT text, so worlds exist in
+    claimantMerchant: fc.constantFrom(...MERCHANTS),
+    thirdMerchant: fc.constantFrom(...MERCHANTS),
+    account: fc.constantFrom(...ACCOUNTS),
+    // A second un-namespaced rule on a different text, so worlds exist in
     // which more than one rule is migrating at once.
-    second: fc.option(
-      fc.record({ merchantId: fc.constantFrom(...MERCHANTS) }),
-      { nil: undefined },
-    ),
-    rows: fc.array(
-      fc.record({
-        account: fc.option(fc.constantFrom(...ACCOUNTS), { nil: undefined }),
-        otherText: fc.boolean(),
-      }),
-      { minLength: 1, maxLength: 5 },
-    ),
+    second: fc.option(fc.constantFrom(...MERCHANTS), { nil: undefined }),
+    // Rows carrying no relation to any of it.
+    noise: fc.array(fc.option(fc.constantFrom(...ACCOUNTS), { nil: undefined }), {
+      maxLength: 2,
+    }),
   })
-  .map(({ deadMerchant, claimant, unrelated, second, rows }): Seed => {
-    const rules: MerchantRuleLike[] = [
-      {
-        id: "dead",
-        merchantId: deadMerchant,
-        kind: "EXACT",
-        pattern: SHARED_TEXT,
-      },
-    ];
-    if (claimant !== undefined) {
-      rules.push({
-        id: "claimant",
-        merchantId: claimant.merchantId,
-        kind: "EXACT",
-        pattern: `${DESCRIPTOR_NAMESPACE}${SHARED_TEXT}`,
+  .map(
+    ({
+      scenario,
+      deadMerchant,
+      claimantMerchant,
+      thirdMerchant,
+      account,
+      second,
+      noise,
+    }): Seed => {
+      const rules: MerchantRuleLike[] = [
+        { id: "dead", merchantId: deadMerchant, kind: "EXACT", pattern: SHARED },
+      ];
+      const rows: CountedTransaction[] = [];
+      const claimant = (): void => {
+        rules.push({
+          id: "claimant",
+          merchantId: claimantMerchant,
+          kind: "EXACT",
+          pattern: `${DESCRIPTOR_NS}${SHARED}`,
+        });
+      };
+      const unrelatedAccountRule = (merchantId: string): void => {
+        rules.push({
+          id: "unrelated",
+          merchantId,
+          kind: "EXACT",
+          pattern: `${ACCOUNT_NS}${account}`,
+        });
+      };
+      // A SUPERSEDED RULE'S ROWS SPLIT ACROSS THE TWO BASES is what makes the
+      // promotion link load bearing rather than decorative, so it is the shape
+      // every declined scenario carries: one row that stays on the descriptor
+      // basis because its account is not one, and one that moves to the
+      // account basis.
+      const splitRows = (): void => {
+        rows.push(makeRow("descriptorRow", SHARED, UNTRUSTED));
+        rows.push(makeRow("accountRow", SHARED, account));
+      };
+      switch (scenario) {
+        case "no-claimant":
+          rows.push(makeRow("descriptorRow", SHARED));
+          rows.push(makeRow("accountRow", SHARED, account));
+          break;
+        case "claimant-covers-descriptor-row":
+          claimant();
+          rows.push(makeRow("descriptorRow", SHARED));
+          break;
+        case "claimant-promotes-onto-one-account":
+          claimant();
+          // Every row the claimant reaches under the pre-phase key carries the
+          // SAME trusted account, so the promotion is made and the row that
+          // moved to the account basis is covered by it.
+          rows.push(makeRow("accountRow", SHARED, account));
+          break;
+        case "promotion-declined-nothing-covers":
+          claimant();
+          splitRows();
+          break;
+        case "promotion-declined-third-merchant-covers":
+          claimant();
+          splitRows();
+          unrelatedAccountRule(thirdMerchant);
+          break;
+        case "promotion-declined-claimant-merchant-covers":
+          claimant();
+          splitRows();
+          unrelatedAccountRule(claimantMerchant);
+          break;
+        case "promotion-collides-with-third-merchant":
+          claimant();
+          rows.push(makeRow("accountRow", SHARED, account));
+          unrelatedAccountRule(thirdMerchant);
+          break;
+      }
+      if (second !== undefined) {
+        rules.push({ id: "second", merchantId: second, kind: "EXACT", pattern: OTHER });
+      }
+      noise.forEach((noiseAccount, index) => {
+        rows.push(makeRow(`noise-${index}`, OTHER, noiseAccount));
       });
-    }
-    if (unrelated !== undefined) {
-      rules.push({
-        id: "unrelated",
-        merchantId: unrelated.merchantId,
-        kind: "EXACT",
-        pattern: `${ACCOUNT_NAMESPACE}${unrelated.account}`,
-      });
-    }
-    if (second !== undefined) {
-      rules.push({
-        id: "second",
-        merchantId: second.merchantId,
-        kind: "EXACT",
-        pattern: "OTHER COUNTERPARTY TEXT",
-      });
-    }
-    return {
-      rules,
-      rows: rows.map((row, index) => ({
-        id: `row-${index}`,
-        flow: "SPEND" as const,
-        amountCents: cents(-1_000),
-        description: row.otherText ? "OTHER COUNTERPARTY TEXT" : SHARED_TEXT,
-        ...(row.account === undefined ? {} : { counterpartyAccount: row.account }),
-      })),
-    };
-  });
+      return { rules, rows, label: scenario };
+    },
+  );
 
-type Captured = {
-  readonly updates: { readonly ruleId: string; readonly pattern: string }[];
-  readonly inserts: {
-    readonly merchantId: string;
-    readonly kind: MerchantRuleLike["kind"];
-    readonly pattern: string;
-  }[];
+// ---- RUNNING ONE WORLD --------------------------------------------------
+type Insert = {
+  readonly merchantId: string;
+  readonly kind: MerchantRuleLike["kind"];
+  readonly pattern: string;
 };
 
 const runOnce = async (seed: Seed) => {
-  const captured: Captured = { updates: [], inserts: [] };
+  const updates: { ruleId: string; pattern: string }[] = [];
+  const inserts: Insert[] = [];
   const deps = {
     merchants: {
       listRules: async () => seed.rules,
@@ -180,179 +294,176 @@ const runOnce = async (seed: Seed) => {
       },
       applyRuleWrites: async (
         _context: HouseholdContext,
-        input: {
-          updates: readonly { ruleId: string; pattern: string }[];
-          inserts: readonly {
-            merchantId: string;
-            kind: MerchantRuleLike["kind"];
-            pattern: string;
-          }[];
-        },
+        input: { updates: readonly { ruleId: string; pattern: string }[]; inserts: readonly Insert[] },
       ) => {
-        captured.updates.push(...input.updates);
-        captured.inserts.push(...input.inserts);
+        updates.push(...input.updates);
+        inserts.push(...input.inserts);
       },
     },
     recompute: async () => {},
   } as unknown as RederiveDependencies;
 
-  // EVERY RULE IS ACCEPTED, so no world blocks and the writes are always
-  // issued. Acceptance PARTITIONS the loss set rather than filtering it, so
-  // the report still names every change; what it buys is that the captured
-  // writes are the real after state in every generated world rather than only
-  // in the ones that happened not to block.
+  // A FIRST RUN TO LEARN WHAT BLOCKS, then a run that accepts exactly that, so
+  // the writes are issued in EVERY generated world rather than only in the
+  // ones that happened not to block. A blocked run writes nothing, so the
+  // learning run leaves the seed untouched. Acceptance PARTITIONS the loss set
+  // rather than filtering it, so the report still names every row.
+  const blocked = await rederiveMerchantRules(context, deps, {});
   const report = await rederiveMerchantRules(context, deps, {
-    acceptedRuleIds: seed.rules.map((rule) => rule.id),
+    acceptedRuleIds: blocked.conflicts,
+    acceptedLosses: blocked.lostAssignments.map((lost) => ({
+      ruleId: lost.ruleId,
+      transactionId: lost.transactionId,
+    })),
   });
 
-  // THE AFTER STATE, built from what the run actually wrote. The inserted
-  // rules take the placeholder ids the report's own contract names:
-  // pending-<n>, one-based, in batch order.
-  const rewritten = new Map(
-    captured.updates.map((update) => [update.ruleId, update.pattern]),
-  );
+  // THE AFTER STATE, from the write batch the routine ISSUED. A promotion this
+  // run inserted is named in the lineage by a placeholder, and the criterion
+  // fixes the correspondence: `pending-<n>` where n is the one-based position
+  // of that insert in this batch, in this order. It is resolved HERE, against
+  // the batch, and never against the report's own account of itself.
+  const rewritten = new Map(updates.map((update) => [update.ruleId, update.pattern]));
   const rulesAfter: MerchantRuleLike[] = [
     ...seed.rules.map((rule) => ({
       ...rule,
       pattern: rewritten.get(rule.id) ?? rule.pattern,
     })),
-    ...captured.inserts.map((insert, index) => ({
+    ...inserts.map((insert, index) => ({
       id: `pending-${index + 1}`,
       merchantId: insert.merchantId,
       kind: insert.kind,
       pattern: insert.pattern,
     })),
   ];
-
-  return {
-    report,
-    rulesAfter,
-    before: assignmentSet(seed.rows, seed.rules),
-    after: assignmentSet(seed.rows, rulesAfter, identityKeyOfRow),
-  };
+  return { report, rulesAfter, inserts };
 };
 
-describe("HAZ5-1: the loss report is exactly the set of unlicensed merchant changes", () => {
-  test("THE BICONDITIONAL, over generated worlds, and every shape is reached", async () => {
-    // HOW MANY WORLDS REACHED EACH SHAPE. A property that cannot construct a
-    // situation passes vacuously about it, and this generator has been edited
-    // once already; if it drifts so that, say, no world ever strands a row,
-    // the biconditional stays green while covering two shapes instead of
-    // three. So the shapes are COUNTED and every count is asserted non-zero
-    // after the run. The counts are of situations the run must judge
-    // correctly, not of bugs: a correct implementation reaches all three and
-    // reports the right answer in each.
-    //
-    //   licensedChange: the row's merchant changed AND the change descends
-    //   from the claimant, so it must NOT be reported. This is where a FALSE
-    //   LOSS would show.
-    //
-    //   vanished: the row was held before and nothing holds it after, so it
-    //   must be reported. This is the HIDDEN REAL LOSS shape.
-    //
-    //   reassigned: the row is held after by a rule outside the claimant's
-    //   lineage and carrying a different merchant, so it must be reported.
-    //   This is the HIDDEN REASSIGNMENT shape, the one that got through three
-    //   rewrites of this predicate.
-    const shapes = { licensedChange: 0, vanished: 0, reassigned: 0 };
+describe("CRITERION 12.7: the two biconditionals, over generated worlds", () => {
+  test("the loss set and the claimant-merchant class are exactly what the criterion says, and every shape is reached", async () => {
+    // THE SIX SHAPES. The counts prove the generator REACHED each one; they do
+    // not prove the property can fail at one, which is what the mutant record
+    // in the phase work history is for.
+    const shapes = {
+      unchanged: 0,
+      coveredByNothing: 0,
+      takenByAStranger: 0,
+      licensedByTheClaimant: 0,
+      licensedByThePromotion: 0,
+      claimantMerchantClass: 0,
+    };
 
     await fc.assert(
       fc.asyncProperty(seedArbitrary, async (seed) => {
-        const { report, before, after } = await runOnce(seed);
-        // The writes were issued, so `after` is the real post-run state.
+        const { report, rulesAfter } = await runOnce(seed);
         expect(report.applied).toBe(true);
 
-        const claimantOf = new Map(
-          report.supersededBy.map((link) => [link.ruleId, link.claimantRuleId]),
-        );
-        const sourceOf = new Map(
-          report.promotedFrom.map((link) => [link.ruleId, link.sourceRuleId]),
-        );
-        const reported = new Set(
+        const reportedLost = new Set(
           [...report.lostAssignments, ...report.acceptedLostAssignments].map(
             (lost) => lost.transactionId,
           ),
         );
+        const reportedClaimantMerchant = new Set(
+          report.claimantMerchantReports.map((entry) => entry.transactionId),
+        );
+        // The licence is the test's OWN reading of the published lineage, and
+        // it is used only by the SECOND biconditional.
+        const claimantOfPublished = new Map(
+          report.supersededBy.map((link) => [link.ruleId, link.claimantRuleId]),
+        );
+        const promotionSource = new Map(
+          report.promotedFrom.map((link) => [link.ruleId, link.sourceRuleId]),
+        );
 
         for (const row of seed.rows) {
-          const held = before.get(row.id);
+          const held = holderBefore(row, seed.rules);
           if (held === undefined) {
-            // A row no declaration reached before the run cannot lose a
-            // naming, so it must never be reported.
-            expect(reported.has(row.id)).toBe(false);
+            // A row no declaration reached before the run cannot lose a naming
+            // and cannot be in either class.
+            expect(reportedLost.has(row.id)).toBe(false);
+            expect(reportedClaimantMerchant.has(row.id)).toBe(false);
             continue;
           }
-          const nowHeldBy = after.get(row.id);
-          const changed =
-            nowHeldBy === undefined || nowHeldBy.merchantId !== held.merchantId;
-          const claimant = claimantOf.get(held.ruleId);
+          const nowHeldBy = holderAfter(row, rulesAfter);
+          const before: MerchantTerm = held.merchantId;
+          const after: MerchantTerm = nowHeldBy?.merchantId ?? COVERED_BY_NOTHING;
+          const claimantMerchant: MerchantTerm =
+            claimantInSeed(held, seed.rules)?.merchantId ?? THERE_IS_NO_CLAIMANT;
+
+          // FIRST BICONDITIONAL, IN MERCHANTS AND IN NOTHING ELSE.
+          const isLoss = before !== after && after !== claimantMerchant;
+          expect({ row: row.id, lost: reportedLost.has(row.id) }).toEqual({
+            row: row.id,
+            lost: isLoss,
+          });
+
+          // SECOND BICONDITIONAL, where the lineage decides, separating the two
+          // non-blocking outcomes that both end at the claimant's merchant.
+          const claimantRuleId = claimantOfPublished.get(held.id);
           const licensed =
-            claimant !== undefined &&
+            claimantRuleId !== undefined &&
             nowHeldBy !== undefined &&
-            (sourceOf.get(nowHeldBy.ruleId) ?? nowHeldBy.ruleId) === claimant;
-
-          if (changed && licensed) {
-            shapes.licensedChange += 1;
-          } else if (changed && nowHeldBy === undefined) {
-            shapes.vanished += 1;
-          } else if (changed) {
-            shapes.reassigned += 1;
-          }
-
+            (promotionSource.get(nowHeldBy.id) ?? nowHeldBy.id) === claimantRuleId;
+          const isClaimantMerchantClass =
+            before !== after && !licensed && after === claimantMerchant;
           expect({
             row: row.id,
-            reported: reported.has(row.id),
-          }).toEqual({ row: row.id, reported: changed && !licensed });
+            claimantMerchant: reportedClaimantMerchant.has(row.id),
+          }).toEqual({ row: row.id, claimantMerchant: isClaimantMerchantClass });
+
+          if (before === after) {
+            shapes.unchanged += 1;
+          } else if (after === COVERED_BY_NOTHING) {
+            shapes.coveredByNothing += 1;
+          } else if (licensed) {
+            if (nowHeldBy?.id === claimantRuleId) {
+              shapes.licensedByTheClaimant += 1;
+            } else {
+              shapes.licensedByThePromotion += 1;
+            }
+          } else if (after === claimantMerchant) {
+            shapes.claimantMerchantClass += 1;
+          } else {
+            shapes.takenByAStranger += 1;
+          }
         }
       }),
-      { numRuns: 400 },
+      { numRuns: 500 },
     );
 
-    // EVERY SHAPE WAS ACTUALLY REACHED. Printed as well as asserted, because
-    // a count of one is technically green and worth seeing.
     console.log(
-      `shapes reached: licensedChange ${shapes.licensedChange}, vanished ${shapes.vanished}, reassigned ${shapes.reassigned}`,
+      `shapes reached: unchanged ${shapes.unchanged}, coveredByNothing ${shapes.coveredByNothing}, takenByAStranger ${shapes.takenByAStranger}, licensedByTheClaimant ${shapes.licensedByTheClaimant}, licensedByThePromotion ${shapes.licensedByThePromotion}, claimantMerchantClass ${shapes.claimantMerchantClass}`,
     );
-    expect(shapes.licensedChange).toBeGreaterThan(0);
-    expect(shapes.vanished).toBeGreaterThan(0);
-    expect(shapes.reassigned).toBeGreaterThan(0);
+    for (const [name, count] of Object.entries(shapes)) {
+      expect({ shape: name, reached: count > 0 }).toEqual({
+        shape: name,
+        reached: true,
+      });
+    }
   });
 
-  // THE LINEAGE IS NOT TAKEN ON TRUST. The property above reads the run's own
-  // published relationships to decide what is licensed, so a run that
-  // invented a claimant could license anything. This checks every claimed
-  // link against the seed: the claimant must exist, must be of the same kind,
-  // and must hold exactly the namespaced form of the superseded pattern.
-  test("EVERY PUBLISHED SUPERSEDE IS A REAL ONE", async () => {
+  // THE PUBLISHED LINEAGE IS NOT SELF-CERTIFYING, AND BOTH RELATIONS ARE
+  // CHECKED, because the licence reads both and a verification covering one
+  // leaves the other as the escape hatch.
+  test("every published claimant pair and every published promotion pair is a real one", async () => {
     await fc.assert(
       fc.asyncProperty(seedArbitrary, async (seed) => {
-        const { report, rulesAfter } = await runOnce(seed);
-        const byId = new Map(seed.rules.map((rule) => [rule.id, rule]));
+        const { report, rulesAfter, inserts } = await runOnce(seed);
+        const seedById = new Map(seed.rules.map((rule) => [rule.id, rule]));
+        const afterById = new Map(rulesAfter.map((rule) => [rule.id, rule]));
+
         for (const link of report.supersededBy) {
-          const dead = byId.get(link.ruleId);
-          const claimant = byId.get(link.claimantRuleId);
+          const dead = seedById.get(link.ruleId);
+          const claimant = seedById.get(link.claimantRuleId);
           expect(dead).toBeDefined();
           expect(claimant).toBeDefined();
-          expect(claimant?.kind).toBe(dead?.kind);
-          expect(claimant?.pattern).toBe(
-            `${DESCRIPTOR_NAMESPACE}${dead?.pattern ?? ""}`,
-          );
+          // EXACT ONLY: the criterion admits the exception for no other kind,
+          // and a run recording a claimant for a PREFIX or PATTERN rule does
+          // not meet it.
+          expect(dead?.kind).toBe("EXACT");
+          expect(claimant?.kind).toBe("EXACT");
+          expect(claimant?.pattern).toBe(`${DESCRIPTOR_NS}${dead?.pattern ?? ""}`);
         }
-        // AND EVERY PUBLISHED PROMOTION IS A REAL ONE, checked against the
-        // seed the way a supersede is (fix round six, review of the amended
-        // criterion 12.7). This used to be one line asserting that the source
-        // id named SOME rule in the seed, and that is the half nothing
-        // verified: lineageRoot consults exactly this map, so a run
-        // publishing one bad pair licenses a row moving to a third merchant
-        // and exits 0, which is hazard H12.31 verbatim, reached through the
-        // branch that carries the second link.
-        //
-        // FOUR THINGS MAKE A PAIR REAL, and the last is what ties the holder
-        // to THAT source rather than to any account rule that happens to
-        // exist: the promotion keys on the ONE trusted account of the rows
-        // the source reached under the OLD key, which is the question pass
-        // two asks and which is re-derived here from the seed.
-        const afterById = new Map(rulesAfter.map((rule) => [rule.id, rule]));
+
         for (const link of report.promotedFrom) {
           const holder = afterById.get(link.ruleId);
           const source = afterById.get(link.sourceRuleId);
@@ -361,38 +472,37 @@ describe("HAZ5-1: the loss report is exactly the set of unlicensed merchant chan
           if (holder === undefined || source === undefined) {
             continue;
           }
-          // A promotion is made FROM a descriptor rule INTO an account rule.
-          expect(source.pattern.startsWith(DESCRIPTOR_NAMESPACE)).toBe(true);
+          expect(source.pattern.startsWith(DESCRIPTOR_NS)).toBe(true);
           expect(holder.kind).toBe("EXACT");
-          expect(holder.pattern.startsWith(ACCOUNT_NAMESPACE)).toBe(true);
-          // It is the source's OWN naming, so it carries the same merchant.
-          // A pair failing this is the one that licenses a reassignment.
+          expect(holder.pattern.startsWith(ACCOUNT_NS)).toBe(true);
+          // A promotion is the source's OWN naming: same merchant. The pair
+          // that fails this is the one that licenses a reassignment.
           expect(holder.merchantId).toBe(source.merchantId);
-          // And it keys on the single trusted account of the rows the source
-          // reached under the key it was written against.
-          const bare = {
-            ...source,
-            pattern: source.pattern.slice(DESCRIPTOR_NAMESPACE.length),
-          };
-          const reached = seed.rows.filter(
-            (row) => matchRules(baselineKeyOfRow(row), [bare]) !== undefined,
-          );
+          // And it keys on the ONE trusted account carried by every row the
+          // source matched under the pre-phase key.
+          const bare = source.pattern.slice(DESCRIPTOR_NS.length);
+          const reached = seed.rows.filter((row) => prePhaseKey(row) === bare);
           expect(reached.length).toBeGreaterThan(0);
-          expect(
-            reached.every((row) =>
-              isTrustedCounterpartyAccount(row.counterpartyAccount),
-            ),
-          ).toBe(true);
           const accounts = new Set(
-            reached.map((row) => compactAccount(row.counterpartyAccount ?? "")),
+            reached.map((row) => row.counterpartyAccount ?? ""),
           );
           expect(accounts.size).toBe(1);
-          expect(holder.pattern).toBe(
-            `${ACCOUNT_NAMESPACE}${[...accounts][0] ?? ""}`,
-          );
+          const only = [...accounts][0] ?? "";
+          expect(TRUSTED.has(only)).toBe(true);
+          expect(holder.pattern).toBe(`${ACCOUNT_NS}${only}`);
+          // A PLACEHOLDER IS RESOLVED AGAINST THE ISSUED BATCH, never against
+          // the report's own account of itself.
+          if (link.ruleId.startsWith("pending-")) {
+            const position = Number(link.ruleId.slice("pending-".length));
+            expect(Number.isInteger(position)).toBe(true);
+            expect(position).toBeGreaterThan(0);
+            expect(position).toBeLessThanOrEqual(inserts.length);
+            expect(inserts[position - 1]?.pattern).toBe(holder.pattern);
+            expect(inserts[position - 1]?.merchantId).toBe(holder.merchantId);
+          }
         }
       }),
-      { numRuns: 200 },
+      { numRuns: 250 },
     );
   });
 });

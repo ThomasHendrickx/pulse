@@ -231,6 +231,16 @@ export type LostAssignment = {
   readonly ruleId: string;
 };
 
+// A row that ends at the claimant's own merchant through a rule outside the
+// lineage. It carries the id of the rule that HELD it and the id of the rule
+// that HOLDS it now, because the operator's question is which declaration
+// took it over.
+export type ClaimantMerchantReport = {
+  readonly transactionId: string;
+  readonly heldByRuleId: string;
+  readonly nowHeldByRuleId: string;
+};
+
 export type RederiveReport = {
   readonly decisions: readonly RuleDecision[];
   readonly counts: readonly RuleCounts[];
@@ -250,6 +260,22 @@ export type RederiveReport = {
   // from a run that lost nothing. Acceptance removes an assignment from the
   // BLOCKING decision and from nothing else.
   readonly acceptedLostAssignments: readonly LostAssignment[];
+  // THE CLAIMANT-MERCHANT CLASS (criterion 12.7, fix round six). A row whose
+  // merchant changed, whose change is NOT licensed by the lineage, and which
+  // ends at the CLAIMANT'S OWN merchant through a rule outside that lineage.
+  // It is reported, printed and counted under its own name, and it exits 0.
+  //
+  // WHY IT IS NOT A LOST ASSIGNMENT, and the criterion states the cost rather
+  // than estimating it: this is the ordinary shape of a MIXED-BASIS group.
+  // The claimant's promotion is declined because one row of the group carries
+  // no trusted account, while the account half of that same counterparty is
+  // already held by the owner's own later naming, so under the deployed code
+  // the row ALREADY carries that merchant and nothing moved. Blocking it
+  // would stop an ordinary migration on a loss that did not happen and spend
+  // an acceptance ceremony on an outcome that is not a loss. A run that
+  // reports this class and a lost assignment under one name does not meet
+  // criterion 12.7.
+  readonly claimantMerchantReports: readonly ClaimantMerchantReport[];
   // Rules promoted on the evidence of exactly one row (finding HZ-M3P12-06).
   readonly promotedOnOneRow: readonly string[];
   // Rules pass one left alone because a same-merchant twin already holds the
@@ -304,9 +330,21 @@ export type RederiveDependencies = {
 };
 
 export type RederiveInput = {
-  // Rule ids whose merchant-conflict or lost assignment a PERSON has seen
-  // and accepted. It clears exactly the ids it names and nothing else.
+  // Rule ids whose MERCHANT-CONFLICT a person has seen and accepted. It
+  // clears exactly the ids it names and nothing else, and it no longer
+  // clears a lost assignment: see acceptedLosses (criterion 12.7, fix round
+  // six).
   readonly acceptedRuleIds?: readonly string[];
+  // THE PAIR IS THE GRANULARITY FOR A LOSS AND A BARE RULE ID IS NOT
+  // (criterion 12.7). One rule can hold a real loss on one row and an
+  // ordinary claimant-merchant report on another, so a flag that clears a
+  // RULE clears rows the person never saw. Accepting is therefore by the pair
+  // of rule id and transaction id, and no flag form clears a loss by rule
+  // alone.
+  readonly acceptedLosses?: readonly {
+    readonly ruleId: string;
+    readonly transactionId: string;
+  }[];
   // A REAL DRY RUN (fix round, finding HZ-M3P12-02). Decide everything,
   // write nothing, recompute nothing, and return the report a real run would
   // return. The flag used to live only in the script, where it swapped the
@@ -876,59 +914,65 @@ export const rederiveMerchantRules = async (
   // 12.7). A rule left byte-identical survives as a row and, once the key
   // has changed under it, matches nothing: the row count is preserved while
   // the naming is dead, so counting rows would report that clean.
-  const allLost = [...assignmentsBefore.entries()]
-    .filter(([id, held]) => {
-      const after = assignmentsAfter.get(id);
-      if (after?.merchantId === held.merchantId) {
-        return false;
-      }
-      // THE ONE ARTIFACT THAT IS NOT A LOSS, stated as the lineage it rests on
-      // (fix round five, hazard finding HAZ5-1). A superseded rule's claim on
-      // a row is a claim the deployed matcher stopped honouring the moment the
-      // code deployed, because its pattern carries no namespace. What licenses
-      // dismissing that claim is not that SOMETHING covers the row now. It is
-      // that the specific namespaced rule which took the dead rule's pattern
-      // covers it, because that rule is the owner's own later naming of the
-      // same group, made on the screen inside decision D-46's deploy window.
-      //
-      // SO THE TEST IS DESCENT, NOT COVERAGE: the rule holding the row after
-      // the run must BE the claimant, or must be carrying the claimant's own
-      // promotion into the account key space. Anything else covering the row
-      // is an unrelated declaration, and a row moving to it has changed
-      // merchant by something nobody in this relationship named. Criterion
-      // 12.7 guarantees two things, that no transaction loses its merchant
-      // AND that none changes from one merchant to another, and round four's
-      // "covered by anything" reading silently gave up the second.
-      //
-      // THE ERROR THIS CAN STILL MAKE IS THE SAFE ONE. A row that ends up at
-      // the claimant's merchant through an unrelated rule is reported as a
-      // change, which blocks with an acknowledge path rather than passing in
-      // silence. After three rounds of this predicate hiding things, over
-      // reporting is the direction to err in, and it is the direction a
-      // person can clear in one flag.
-      const claimantOfHeld = supersededByClaimant.get(held.ruleId);
-      if (
-        claimantOfHeld !== undefined &&
-        after !== undefined &&
-        lineageRoot(after.ruleId) === claimantOfHeld
-      ) {
-        return false;
-      }
-      return true;
-    })
-    .map(([id, held]) => ({ transactionId: id, ruleId: held.ruleId }));
-  // ACCEPTANCE IS PER RULE ID and clears exactly the ids it names. It
-  // PARTITIONS rather than filters (finding CR-M3P12-01): an accepted loss
-  // leaves the blocking decision and nothing else, so it is still printed,
-  // still counted and still named in the report.
-  const lostAssignments = allLost.filter((lost) => !accepted.has(lost.ruleId));
-  const acceptedLostAssignments = allLost.filter((lost) =>
-    accepted.has(lost.ruleId),
+  // THE THREE-WAY SPLIT criterion 12.7 prescribes, and the order of the tests
+  // below IS the criterion's order. A row whose merchant did not change is
+  // nothing. A change the lineage licenses is the admitted exception. A change
+  // that ends at the claimant's own merchant through a rule outside the
+  // lineage is the CLAIMANT-MERCHANT class, reported and not blocking. Every
+  // other change, including a row nothing covers afterwards, is a LOST
+  // assignment, reported and blocking.
+  //
+  // THE INVARIANT TO READ IT BY, in the criterion's own words: no run may
+  // leave a transaction carrying a merchant that is neither the one it carried
+  // before nor the one carried by the claimant of the rule it previously
+  // resolved through. Both admitted cases end at the claimant's own merchant;
+  // every departure is a loss whatever else is true of it.
+  const merchantOfRule = (ruleId: string): string | undefined =>
+    working.find((rule) => rule.id === ruleId)?.merchantId;
+  const allLost: LostAssignment[] = [];
+  const claimantMerchantReports: ClaimantMerchantReport[] = [];
+  for (const [id, held] of assignmentsBefore) {
+    const after = assignmentsAfter.get(id);
+    if (after?.merchantId === held.merchantId) {
+      continue;
+    }
+    const claimantOfHeld = supersededByClaimant.get(held.ruleId);
+    if (
+      claimantOfHeld !== undefined &&
+      after !== undefined &&
+      lineageRoot(after.ruleId) === claimantOfHeld
+    ) {
+      continue;
+    }
+    const claimantMerchant =
+      claimantOfHeld === undefined ? undefined : merchantOfRule(claimantOfHeld);
+    if (
+      after !== undefined &&
+      claimantMerchant !== undefined &&
+      after.merchantId === claimantMerchant
+    ) {
+      claimantMerchantReports.push({
+        transactionId: id,
+        heldByRuleId: held.ruleId,
+        nowHeldByRuleId: after.ruleId,
+      });
+      continue;
+    }
+    allLost.push({ transactionId: id, ruleId: held.ruleId });
+  }
+  // ACCEPTANCE IS BY THE PAIR, never by the rule (criterion 12.7). A rule can
+  // hold a real loss on one row and an ordinary claimant-merchant report on
+  // another, so clearing a rule clears rows nobody saw.
+  const acceptedLossPairs = new Set(
+    (input.acceptedLosses ?? []).map(
+      (loss) => `${loss.ruleId}\u0000${loss.transactionId}`,
+    ),
   );
+  const isAcceptedLoss = (lost: LostAssignment): boolean =>
+    acceptedLossPairs.has(`${lost.ruleId}\u0000${lost.transactionId}`);
+  const lostAssignments = allLost.filter((lost) => !isAcceptedLoss(lost));
+  const acceptedLostAssignments = allLost.filter(isAcceptedLoss);
 
-  // EXACTLY TWO BLOCKING CONDITIONS. Every other outcome, including a rule
-  // that could not be promoted, is printed, counted and exits 0: a rule
-  // left safely in place is not a reason to block a deploy.
   const exitCode =
     conflicts.length > 0 || lostAssignments.length > 0 ? 1 : 0;
 
@@ -969,6 +1013,7 @@ export const rederiveMerchantRules = async (
     acceptedConflicts,
     lostAssignments,
     acceptedLostAssignments,
+    claimantMerchantReports,
     assignmentsBefore: assignmentsBefore.size,
     assignmentsAfter: assignmentsAfter.size,
     exitCode,
