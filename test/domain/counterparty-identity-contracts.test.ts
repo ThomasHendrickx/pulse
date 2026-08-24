@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -54,15 +53,24 @@ describe("CRITERION 12.10: PREFIX and PATTERN are settled", () => {
     ).toBe("m2");
   });
 
-  test("the MerchantRuleKind enum in the Prisma schema is UNCHANGED from the branch point", () => {
-    const diff = execFileSync(
-      "git",
-      ["diff", "7f4aafb", "--", "prisma/schema/merchants.prisma"],
-      { cwd: repositoryRoot, encoding: "utf8" },
-    );
-    // The schema comment may be corrected; the enum may not move.
-    expect(diff).not.toMatch(/^[+-]\s*(EXACT|PREFIX|PATTERN)\s*$/m);
-    expect(diff).not.toMatch(/^[+-]enum MerchantRuleKind/m);
+  // PINNED BY CONTENT, NOT BY A BRANCH POINT (fix round, finding
+  // CR-M3P12-09). This used to shell out to `git diff <literal sha>`, which
+  // passes here and throws after a rebase, a squash-merge or a shallow
+  // clone, and the failure would read as a regression in the enum rather
+  // than as a broken fixture. The property is the same; the mechanism now
+  // survives history being rewritten under it.
+  test("the MerchantRuleKind enum in the Prisma schema is UNCHANGED: it is these three members, in this order", () => {
+    const schema = read("prisma/schema/merchants.prisma");
+    const block = /enum MerchantRuleKind \{([^}]*)\}/.exec(schema);
+    expect(block).not.toBeNull();
+    const members = (block?.[1] ?? "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "");
+    expect(members).toEqual(["EXACT", "PREFIX", "PATTERN"]);
+    // And exactly one such enum exists, so a second one cannot be added
+    // beside it and satisfy the assertion above.
+    expect(schema.match(/enum MerchantRuleKind/g)).toHaveLength(1);
   });
 
   test("the stated disposition, that no product surface writes either kind today, appears in BOTH files", () => {
@@ -80,13 +88,26 @@ describe("CRITERION 12.10: PREFIX and PATTERN are settled", () => {
 });
 
 describe("CRITERION 12.12: the module boundary holds", () => {
-  test("the ledger's own counterparty key is UNCHANGED from the branch point, so no flow classification moves", () => {
-    const diff = execFileSync(
-      "git",
-      ["diff", "7f4aafb", "--", "src/modules/ledger/domain/corrections.ts"],
-      { cwd: repositoryRoot, encoding: "utf8" },
+  // PINNED BY CONTENT for the reason above (finding CR-M3P12-09). The
+  // function body is restated here verbatim, so a change to the ledger's own
+  // key reddens on THIS file's name rather than on a branch point that may
+  // no longer exist.
+  test("the ledger's own counterparty key is UNCHANGED, so no flow classification moves", () => {
+    const corrections = read("src/modules/ledger/domain/corrections.ts");
+    expect(corrections).toContain(
+      [
+        "export const counterpartyKey = (transaction: CounterpartyRef): string => {",
+        "  if (transaction.counterpartyIban !== undefined) {",
+        "    return `iban:${transaction.counterpartyIban.toUpperCase().replace(/\\s+/g, \"\")}`;",
+        "  }",
+        "  const text = transaction.counterpartyName ?? transaction.description;",
+        "  return `text:${text.toUpperCase().replace(/\\s+/g, \" \").trim()}`;",
+        "};",
+      ].join("\n"),
     );
-    expect(diff).toBe("");
+    // Exactly one definition, so the pin cannot be satisfied by a copy left
+    // beside a rewritten original.
+    expect(corrections.match(/export const counterpartyKey/g)).toHaveLength(1);
   });
 
   test("the merchants module's identity derivation is NOT imported by the ledger domain, so the two keys stay separate", () => {

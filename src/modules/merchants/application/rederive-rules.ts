@@ -12,6 +12,18 @@
 // DELETES NOTHING, EVER (decision D-39). Two passes, and the split is the
 // whole design.
 //
+// IT DECIDES BEFORE IT WRITES, AND THAT IS THE SHAPE OF THE WHOLE ROUTINE
+// (fix round, finding HZ-M3P12-03). Both passes run against an in-memory
+// working copy of the rule set and record the writes they would make; the
+// superset test, the conflicts and the exit code are computed against that
+// copy; and only then, if the run is neither BLOCKED nor a DRY RUN, are the
+// updates, the inserts and the recompute issued. The first shape of this
+// routine wrote as it went and computed its blocking conditions afterwards,
+// so exit 1 was a report about work already applied and the acknowledge path
+// could not be used first: the only way to learn which rule ids to accept
+// was a run that had already applied the loss. A blocked run now leaves the
+// database exactly as it found it.
+//
 // PASS ONE is MECHANICAL, TOTAL over the rules it applies to, and consults
 // no transaction. Every rule whose pattern does not already begin with a
 // known namespace has its pattern rewritten to the descriptor namespace
@@ -51,6 +63,13 @@
 // merchant the owner named. The two can never both fire on one key, because
 // one begins with the account namespace and the other with the descriptor
 // namespace, so the matcher's tie-break is never reached between them.
+//
+// A DRY RUN IS A REAL DRY RUN (fix round, finding HZ-M3P12-02). `dryRun`
+// decides everything, writes nothing and recomputes nothing, and returns the
+// report a real run would return. The flag used to exist only in the script,
+// where it substituted a no-op recompute and left both write paths untouched,
+// so a person previewing the migration against the owner's live database
+// performed it and left the rows un-recomputed on top.
 //
 // REVERSIBILITY IS STRUCTURAL AND RESTS ON NO FILE. Pass one's rewrite is
 // invertible by stripping a constant prefix and pass two only adds, so a run
@@ -95,6 +114,19 @@ export type RederiveOutcomeKind =
   | "empty-pattern-left-alone"
   // Pass two.
   | "promoted"
+  // A promotion whose whole evidence is ONE row (fix round, finding
+  // HZ-M3P12-06). It is still a promotion, and the reason it is not refused
+  // is the owner's own case: their deployed naming is a single EXACT rule
+  // written from one row, so a two-row floor would decline to promote the
+  // one declaration this phase exists to carry. What was wrong was that it
+  // was INVISIBLE: the same-account test is vacuous over one row, and a
+  // one-row rule promoted to a one-row account key reports matchedBefore
+  // equal to matchedAfter, so it landed in no broadened list and no report
+  // line distinguished it from a promotion several agreeing rows support.
+  // The account it keys on is whatever the first-wins scrape stored for that
+  // single row, and hazard H12.16 records that choice as unanswered, so this
+  // token is what turns a parked READ question into a visible WRITE.
+  | "promoted-on-one-row"
   | "not-promoted-no-matching-rows"
   | "not-promoted-untrusted-account"
   | "not-promoted-several-accounts"
@@ -141,6 +173,19 @@ export type RederiveReport = {
   readonly conflicts: readonly string[];
   readonly acceptedConflicts: readonly string[];
   readonly lostAssignments: readonly LostAssignment[];
+  // ACCEPTED LOSSES ARE PRINTED, COUNTED AND NAMED (fix round, finding
+  // CR-M3P12-01). They were filtered out of lostAssignments and put nowhere,
+  // so a run in which a person deliberately accepted losing one of the
+  // owner's namings printed lost-assignments 0 and was byte-indistinguishable
+  // from a run that lost nothing. Acceptance removes an assignment from the
+  // BLOCKING decision and from nothing else.
+  readonly acceptedLostAssignments: readonly LostAssignment[];
+  // Rules promoted on the evidence of exactly one row (finding HZ-M3P12-06).
+  readonly promotedOnOneRow: readonly string[];
+  // Whether the writes this report describes were ISSUED. False on a dry run
+  // and false on a blocked run, which are the only two ways a report can
+  // describe work that did not happen.
+  readonly applied: boolean;
   readonly assignmentsBefore: number;
   readonly assignmentsAfter: number;
   readonly exitCode: number;
@@ -158,6 +203,14 @@ export type RederiveInput = {
   // Rule ids whose merchant-conflict or lost assignment a PERSON has seen
   // and accepted. It clears exactly the ids it names and nothing else.
   readonly acceptedRuleIds?: readonly string[];
+  // A REAL DRY RUN (fix round, finding HZ-M3P12-02). Decide everything,
+  // write nothing, recompute nothing, and return the report a real run would
+  // return. The flag used to live only in the script, where it swapped the
+  // recompute dependency for a no-op and left both write paths untouched, so
+  // a person previewing the migration against the owner's live database
+  // migrated it. It is threaded to the write paths here because that is the
+  // only place that can honour it.
+  readonly dryRun?: boolean;
 };
 
 // The key a rule was WRITTEN against before this phase: the whole normalised
@@ -211,9 +264,30 @@ export const rederiveMerchantRules = async (
   const conflicts: string[] = [];
   const acceptedConflicts: string[] = [];
   const broadened: string[] = [];
+  const promotedOnOneRow: string[] = [];
   let patternsRewritten = 0;
   let alreadyNamespaced = 0;
   let rulesAdded = 0;
+
+  // DECIDE FIRST, APPLY LAST (fix round, finding HZ-M3P12-03). Both passes
+  // used to issue their writes as they went and the routine computed its
+  // blocking conditions afterwards, so the exit code was a report about work
+  // already done: a run that DETECTED a lost assignment had already rewritten
+  // the patterns, added the rules and run the recompute that put the wrong
+  // merchant on the row. "Blocking" named nothing, and the acknowledge path
+  // could not be used first, because the only way to learn which ids to
+  // accept was a run that had already applied the loss.
+  //
+  // Every write is therefore recorded here and issued at the very end, and
+  // only when the run is neither blocked nor a dry run. The in-memory
+  // working copy below is what the passes read and write instead, so the
+  // report is identical to what a real run produces either way.
+  const pendingUpdates: { ruleId: string; pattern: string }[] = [];
+  const pendingInserts: {
+    merchantId: string;
+    kind: MerchantRuleLike["kind"];
+    pattern: string;
+  }[] = [];
 
   // A working copy of the rule set, so the two passes see each other's
   // effects and so conflicts are decided against the state that will exist.
@@ -288,10 +362,7 @@ export const rederiveMerchantRules = async (
       continue;
     }
     const matchedBefore = matchedBy(rule, rows, baselineKey).length;
-    await deps.merchants.updateRulePattern(context, {
-      ruleId: rule.id,
-      pattern: newPattern,
-    });
+    pendingUpdates.push({ ruleId: rule.id, pattern: newPattern });
     entry.pattern = newPattern;
     patternsRewritten += 1;
     const matchedAfter = matchedBy(
@@ -375,13 +446,17 @@ export const rederiveMerchantRules = async (
       continue;
     }
     if (collision === undefined) {
-      const added = await deps.merchants.upsertRule(context, {
+      pendingInserts.push({
         merchantId: rule.merchantId,
         kind: "EXACT",
         pattern: accountPattern,
       });
+      // The id is a placeholder because the real one is only known once the
+      // insert is issued, and nothing downstream reads it: `working` uses it
+      // to exclude a rule from its own collision test, and the decision
+      // report is keyed on the SOURCE rule's id, never on an added rule's.
       working.push({
-        id: added.id,
+        id: `pending-${pendingInserts.length}`,
         merchantId: rule.merchantId,
         kind: "EXACT",
         pattern: accountPattern,
@@ -397,48 +472,88 @@ export const rederiveMerchantRules = async (
     if (matchedAfter > matchedBefore) {
       broadened.push(rule.id);
     }
+    // ONE ROW OF EVIDENCE IS STILL A PROMOTION, BUT IT SAYS SO (finding
+    // HZ-M3P12-06). matchedBefore is the count under the OLD key, so it is
+    // the same on a second run and the decision report stays byte-identical
+    // across runs (criterion 12.8).
+    const onOneRow = matchedBefore === 1;
+    if (onOneRow) {
+      promotedOnOneRow.push(rule.id);
+    }
     decisions.push({
       ruleId: rule.id,
       pass: "two",
       basis: "account",
-      outcome: "promoted",
+      outcome: onOneRow ? "promoted-on-one-row" : "promoted",
     });
   }
 
-  const after = await deps.merchants.listRules(context);
-  const assignmentsAfter = assignmentSet(rows, after, identityKey);
+  // THE AFTER STATE IS THE WORKING COPY, not a re-read. Nothing has been
+  // written yet, so there is nothing to read back; `working` IS the state
+  // the pending writes would produce, and computing the superset test
+  // against it is what lets the routine block BEFORE it writes.
+  const assignmentsAfter = assignmentSet(rows, working, identityKey);
   // THE SUPERSET TEST, measured as EFFECT rather than as rows (criterion
   // 12.7). A rule left byte-identical survives as a row and, once the key
   // has changed under it, matches nothing: the row count is preserved while
   // the naming is dead, so counting rows would report that clean.
-  const lostAssignments = [...assignmentsBefore.entries()]
+  const allLost = [...assignmentsBefore.entries()]
     .filter(
       ([id, held]) => assignmentsAfter.get(id)?.merchantId !== held.merchantId,
     )
-    .map(([id, held]) => ({ transactionId: id, ruleId: held.ruleId }))
-    // ACCEPTANCE IS PER RULE ID and clears exactly the ids it names.
-    .filter((lost) => !accepted.has(lost.ruleId));
+    .map(([id, held]) => ({ transactionId: id, ruleId: held.ruleId }));
+  // ACCEPTANCE IS PER RULE ID and clears exactly the ids it names. It
+  // PARTITIONS rather than filters (finding CR-M3P12-01): an accepted loss
+  // leaves the blocking decision and nothing else, so it is still printed,
+  // still counted and still named in the report.
+  const lostAssignments = allLost.filter((lost) => !accepted.has(lost.ruleId));
+  const acceptedLostAssignments = allLost.filter((lost) =>
+    accepted.has(lost.ruleId),
+  );
 
-  await deps.recompute(context);
+  // EXACTLY TWO BLOCKING CONDITIONS. Every other outcome, including a rule
+  // that could not be promoted, is printed, counted and exits 0: a rule
+  // left safely in place is not a reason to block a deploy.
+  const exitCode =
+    conflicts.length > 0 || lostAssignments.length > 0 ? 1 : 0;
+
+  // ---- APPLY ----------------------------------------------------------
+  // The only place in this routine that writes, and it is reached only when
+  // the run is neither blocked nor a dry run. A blocked run therefore leaves
+  // the database exactly as it found it, which is what the word blocking has
+  // to mean for the acknowledge path to be usable: an operator runs it, is
+  // blocked, reads the ids off a report describing work that did NOT happen,
+  // and decides. The recompute is inside the same gate, so a blocked run
+  // never carries a lost assignment onto a transaction row.
+  const applied = exitCode === 0 && input.dryRun !== true;
+  if (applied) {
+    for (const update of pendingUpdates) {
+      await deps.merchants.updateRulePattern(context, update);
+    }
+    for (const insert of pendingInserts) {
+      await deps.merchants.upsertRule(context, insert);
+    }
+    await deps.recompute(context);
+  }
 
   return {
     decisions,
     counts,
     rulesBefore: before.length,
-    rulesAfter: after.length,
+    rulesAfter: working.length,
     patternsRewritten,
     alreadyNamespaced,
     rulesAdded,
     broadened,
+    promotedOnOneRow,
     conflicts,
     acceptedConflicts,
     lostAssignments,
+    acceptedLostAssignments,
     assignmentsBefore: assignmentsBefore.size,
     assignmentsAfter: assignmentsAfter.size,
-    // EXACTLY TWO BLOCKING CONDITIONS. Every other outcome, including a rule
-    // that could not be promoted, is printed, counted and exits 0: a rule
-    // left safely in place is not a reason to block a deploy.
-    exitCode: conflicts.length > 0 || lostAssignments.length > 0 ? 1 : 0,
+    exitCode,
+    applied,
   };
 };
 

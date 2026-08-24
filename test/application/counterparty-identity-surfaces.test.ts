@@ -251,6 +251,27 @@ describe("CRITERION 12.18: the rule subject is validated at the write boundary",
     expect(world.rules).toHaveLength(0);
   });
 
+  // FIX ROUND, finding HZ-M3P12-01. The descriptor side had NO emptiness
+  // test at all: the trim test above passes for any namespaced subject, and
+  // the only emptiness test lived on the account branch. A page rendering a
+  // group of rows that carry no counterparty text submitted `descriptor:`
+  // and the boundary wrote an EXACT rule on the bare namespace.
+  test("a DESCRIPTOR-basis subject with nothing after the namespace is refused and writes NOTHING", async () => {
+    const world = await ingestFixture();
+    for (const remainder of ["", "   ", "\t"]) {
+      const outcome = await assignMerchant(context, deps(world), {
+        counterpartyText: `${DESCRIPTOR_NAMESPACE}${remainder}`,
+        merchantName: "Demo Bank",
+      });
+      expect(outcome.ok).toBe(false);
+      if (!outcome.ok) {
+        expect(outcome.error.kind).toBe("unidentifiable-counterparty");
+      }
+    }
+    expect(world.rules).toHaveLength(0);
+    expect(world.merchants).toHaveLength(0);
+  });
+
   test("an ACCOUNT-basis subject that fails the trust gate is refused", async () => {
     const world = await ingestFixture();
     const valid = IDENTITY_FIXTURE_ACCOUNTS.counterparty1;
@@ -340,5 +361,54 @@ describe("the measurement harness is covered by the fast gate (plan step 1)", ()
     expect(
       measurementLabel("/somewhere/else/abcd1234-a-name-with-identifiers.pdf"),
     ).toBe("abcd1234");
+  });
+});
+
+// FIX ROUND, finding HZ-M3P12-09. The privacy check that gate:privacy cannot
+// make is now a COMMITTED harness with its definition in its own header, the
+// way the convergence harness already was. This covers it in the fast gate
+// and pins the definition, so a number recorded against it can be re-derived
+// by anyone rather than only replicated in conclusion.
+describe("the fixture token-overlap check is committed and covered (HZ-M3P12-09)", () => {
+  test("its population is the fixture's own alphabetic runs of four or more, with the statement grammar subtracted", async () => {
+    const { STATEMENT_GRAMMAR, fixtureDescriptions, nameLikeTokens, overlap } =
+      await import("../fixtures/measure-fixture-token-overlap");
+    const tokens = nameLikeTokens(fixtureDescriptions());
+    expect(tokens.length).toBeGreaterThan(0);
+    // Every token is uppercase, alphabetic, at least four characters, and
+    // not a grammar word: the definition, asserted rather than described.
+    for (const token of tokens) {
+      expect(token).toMatch(/^[A-Z]{4,}$/);
+      expect(STATEMENT_GRAMMAR.has(token)).toBe(false);
+    }
+    // A grammar word IS present in the fixture and IS excluded, so the
+    // subtraction is doing work rather than being a no-op.
+    expect(
+      fixtureDescriptions().some((line) => line.includes("OVERSCHRIJVING")),
+    ).toBe(true);
+    expect(tokens).not.toContain("OVERSCHRIJVING");
+
+    // The overlap function finds what is there and nothing else.
+    const someToken = tokens[0] ?? "";
+    expect(overlap(tokens, `PREFIX ${someToken} SUFFIX`)).toEqual([someToken]);
+    expect(overlap(tokens, "")).toEqual([]);
+  });
+
+  test("it prints only strings drawn from the COMMITTED fixture, never from the corpus", async () => {
+    const source = readFileSync(
+      join(repositoryRoot, "test/fixtures/measure-fixture-token-overlap.ts"),
+      "utf8",
+    );
+    // The corpus text is joined into one string, `corpusHaystack`, and that
+    // string is only ever an argument to `includes`. Nothing logs it, and no
+    // parsed description or counterparty name is logged either. What the
+    // harness DOES print from a corpus path is the eight-character label
+    // fleet warning 9 requires and a row count.
+    expect(source).not.toMatch(/console\.log\([^)]*corpusHaystack[^)]*\)/);
+    expect(source).not.toMatch(/console\.log\([^)]*row\.description[^)]*\)/);
+    expect(source).not.toMatch(/console\.log\([^)]*counterpartyName[^)]*\)/);
+    expect(source).toMatch(/NEVER printed/);
+    // And the label really is truncated.
+    expect(source).toMatch(/basename\(path\)\.slice\(0, 8\)/);
   });
 });

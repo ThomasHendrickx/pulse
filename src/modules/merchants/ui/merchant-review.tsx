@@ -103,13 +103,21 @@ const DirectionSection = async ({
 // message that tells the reader what happened (criterion 12.18). A status
 // this map does not carry renders nothing, so an unknown query string can
 // never put an empty banner on the screen.
-const REFUSAL_MESSAGE: Readonly<Record<string, "nameRefusedStale" | "nameRefusedName" | "nameRefusedAccount">> =
-  {
-    "empty-merchant-name": "nameRefusedName",
-    "empty-counterparty": "nameRefusedStale",
-    "unnamespaced-counterparty": "nameRefusedStale",
-    "untrusted-counterparty-account": "nameRefusedAccount",
-  };
+const REFUSAL_MESSAGE: Readonly<
+  Record<
+    string,
+    | "nameRefusedStale"
+    | "nameRefusedName"
+    | "nameRefusedAccount"
+    | "nameRefusedUnidentifiable"
+  >
+> = {
+  "empty-merchant-name": "nameRefusedName",
+  "empty-counterparty": "nameRefusedStale",
+  "unnamespaced-counterparty": "nameRefusedStale",
+  "untrusted-counterparty-account": "nameRefusedAccount",
+  "unidentifiable-counterparty": "nameRefusedUnidentifiable",
+};
 
 export const MerchantReviewScreen = async ({
   context,

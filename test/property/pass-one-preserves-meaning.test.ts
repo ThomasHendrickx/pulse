@@ -88,24 +88,41 @@ describe("CRITERION 12.21: pass one preserves meaning for every kind", () => {
     ).toBe(true);
   });
 
-  test("GUARD ONE, WITNESSED: namespacing an EMPTY pattern would turn an inert rule into one that matches every descriptor key", () => {
+  // AMENDED IN THE M3-P12 FIX ROUND, finding HZ-M3P12-01, and amended rather
+  // than deleted because the guard it witnesses is still there and still
+  // right. What changed is that this test used to assert the DANGER by
+  // asserting that a bare-namespace PREFIX rule MATCHES every descriptor
+  // key, and the fix closed exactly that at the matcher, so the assertion
+  // became false. The danger is now shown as the string property it always
+  // was, and BOTH layers are pinned: pass one never creates such a rule, and
+  // the matcher refuses one however it got there.
+  test("GUARD ONE, WITNESSED: the bare namespace IS a prefix of every descriptor key, which is why pass one leaves an empty pattern alone", () => {
     const keys = ["DEMO ALFA", "KOSTEN DEMO REKENINGPAKKET", "A"];
     for (const key of keys) {
-      // Today: an empty pattern is filtered out by the matcher, so it is
-      // inert whatever the key.
+      const namespaced = `${DESCRIPTOR_NAMESPACE}${key}`;
+      // THE DANGER, as a fact about strings rather than about the matcher:
+      // if pass one namespaced an empty pattern, the result would be a
+      // non-empty PREFIX of EVERY descriptor-basis key. That is what makes
+      // creating it unacceptable, whatever any matcher does with it.
+      expect(namespaced.startsWith(DESCRIPTOR_NAMESPACE)).toBe(true);
+      // LAYER ONE: an empty pattern is filtered by the matcher, so it is
+      // inert today and stays inert after the migration.
       expect(matchRules(key, [rule("PREFIX", "")])).toBeUndefined();
-      // If pass one namespaced it, the bare namespace would be a non-empty
-      // PREFIX matching EVERY descriptor-basis key. This is why pass one
-      // leaves it alone.
+      expect(matchRules(namespaced, [rule("PREFIX", "")])).toBeUndefined();
+      // LAYER TWO, added by the fix round: even if such a rule existed, the
+      // matcher refuses to apply it. Before the fix this returned a match
+      // and one declaration could have swept the whole household.
       expect(
-        matchRules(`${DESCRIPTOR_NAMESPACE}${key}`, [
-          rule("PREFIX", DESCRIPTOR_NAMESPACE),
-        ]),
-      ).toBeDefined();
-      // And with the guard, the rule stays inert after the migration too.
-      expect(
-        matchRules(`${DESCRIPTOR_NAMESPACE}${key}`, [rule("PREFIX", "")]),
+        matchRules(namespaced, [rule("PREFIX", DESCRIPTOR_NAMESPACE)]),
       ).toBeUndefined();
+      expect(
+        matchRules(namespaced, [rule("EXACT", DESCRIPTOR_NAMESPACE)]),
+      ).toBeUndefined();
+      // AND THE MATCHER STILL WORKS, so the two refusals above are refusals
+      // and not a matcher that stopped matching.
+      expect(
+        matchRules(namespaced, [rule("PREFIX", DESCRIPTOR_NAMESPACE + key)]),
+      ).toBeDefined();
     }
   });
 

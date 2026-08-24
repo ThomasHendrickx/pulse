@@ -15,6 +15,7 @@ import {
   ACCOUNT_NAMESPACE,
   compactAccount,
   identityBasisOfKey,
+  identityRemainder,
   isTrustedCounterpartyAccount,
 } from "../domain/counterparty-identity";
 import type {
@@ -35,7 +36,14 @@ export type AssignMerchantError =
   // An account-basis subject whose remainder is empty, or which the trust
   // gate refuses. Writing it would attach the naming to a key the derivation
   // can never produce.
-  | { readonly kind: "untrusted-counterparty-account" };
+  | { readonly kind: "untrusted-counterparty-account" }
+  // A DESCRIPTOR-basis subject with nothing after the namespace (fix round,
+  // finding HZ-M3P12-01). The row it came from carries no counterparty text
+  // at all, so there is nothing to identify a counterparty BY; naming it
+  // would attach every other such row of the household to the same merchant.
+  // Before this phase the same subject arrived as the empty string and the
+  // writer refused it; this is that refusal restored.
+  | { readonly kind: "unidentifiable-counterparty" };
 
 export type AssignMerchantInput = {
   // The counterparty IDENTITY KEY being named, exactly as the review screen
@@ -82,6 +90,28 @@ export const assignMerchant = async (
   const basis = identityBasisOfKey(pattern);
   if (basis === undefined) {
     return err({ kind: "unnamespaced-counterparty" as const });
+  }
+  // THE BARE NAMESPACE, REFUSED ON BOTH BASES (fix round, finding
+  // HZ-M3P12-01). Before the namespaces existed this subject arrived as the
+  // empty string and the normalise-and-refuse guard stopped it; namespacing
+  // made it non-empty, so the trim test above passes it and only the account
+  // branch below caught it. A rule on a bare namespace is the worst thing
+  // this module can store: EXACT it would name every row that carries no
+  // counterparty text, and PREFIX or PATTERN it would name every row of that
+  // basis outright (hazard H12.26). The account side keeps its own error
+  // kind, because for an account the honest thing to tell the reader is that
+  // the number could not be read.
+  // TRIMMED HERE, strict in the matcher, and the asymmetry is deliberate: a
+  // subject arriving from a form is not a derived key, and a remainder that
+  // is whitespace only identifies no counterparty either. The matcher must
+  // stay strict, because `descriptor: ` is a legitimate PREFIX rule that
+  // pass one is required to preserve (criterion 12.21).
+  if ((identityRemainder(pattern) ?? "x").trim() === "") {
+    return err(
+      basis === "account"
+        ? ({ kind: "untrusted-counterparty-account" } as const)
+        : ({ kind: "unidentifiable-counterparty" } as const),
+    );
   }
   if (basis === "account") {
     const account = pattern.slice(ACCOUNT_NAMESPACE.length);

@@ -7,7 +7,10 @@
 // groups are, which is what the e2e asserts stays fixed across a naming.
 
 import type { Cents } from "@/platform/money";
-import { counterpartyIdentity } from "./counterparty-identity";
+import {
+  counterpartyIdentity,
+  isBareIdentityKey,
+} from "./counterparty-identity";
 import {
   counterpartyText,
   normaliseCounterparty,
@@ -113,8 +116,20 @@ const groupDirection = (
         merchantId === undefined
           ? unresolvedLabel
           : (merchantNames.get(merchantId) ?? unresolvedLabel),
+      // THE NAMING FORM IS WITHHELD FROM A BARE-NAMESPACE GROUP (fix round,
+      // finding HZ-M3P12-01). `counterpartyText` is what the form submits,
+      // and the screen renders no form for a group that has none. A group
+      // keyed on a bare namespace holds rows that carry NO counterparty text
+      // at all, so there is nothing to recognise the next such row by;
+      // offering a naming there would offer to put every one of them under
+      // one merchant. The group is still SHOWN and its money is still
+      // counted, which is what it did before this phase; what it cannot do
+      // is be named, and the write boundary refuses the subject as well, so
+      // the two guards agree.
       ...(merchantId === undefined
-        ? { counterpartyText: identity.key }
+        ? isBareIdentityKey(identity.key)
+          ? {}
+          : { counterpartyText: identity.key }
         : { merchantId }),
       total: row.amountCents,
       count: 1,

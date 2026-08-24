@@ -318,10 +318,45 @@ test("submitting a PRE-MIGRATION un-namespaced subject surfaces the refusal to t
   await group.getByPlaceholder("Name this counterparty").fill("Stale Naming");
   await group.getByRole("button", { name: "Name" }).click();
 
-  // The refusal reaches the reader, and nothing was written.
+  // THE REFUSAL REACHES THE READER. This is the half this spec carries, and
+  // it is the half that needs a browser: the banner is rendered from a
+  // redirect status the screen reads, in the reader's own language.
   await expect(page.getByTestId("naming-refused")).toBeVisible();
+
+  // NOTHING WAS WRITTEN. Corrected in the fix round, finding HZ-M3P12-08:
+  // the two assertions below used to be described as showing this, and they
+  // cannot, because an un-namespaced pattern matches no identity key, so a
+  // rule that WAS written would also produce zero merchant groups and an
+  // unchanged unresolved count. They are kept because they DO show that the
+  // screen did not regroup, and the observation that distinguishes a refusal
+  // from a dead rule is added after them: a reload re-renders the group from
+  // the database, so an unchanged hidden subject and an unchanged group set
+  // is the page state a refusal leaves and a written rule does not.
+  //
+  // The stronger form of "writes NOTHING", counting the repository calls, is
+  // carried by test/application/counterparty-identity-surfaces.test.ts,
+  // which can see the port. Neither test claims the other's half.
   await expect(page.getByTestId("merchant-group")).toHaveCount(0);
   await expect(page.getByTestId("unresolved-group")).toHaveCount(
     unresolvedBefore,
   );
+
+  await page.reload();
+  await expect(page.getByTestId("unresolved-group")).toHaveCount(
+    unresolvedBefore,
+  );
+  await expect(page.getByTestId("merchant-group")).toHaveCount(0);
+  const subjectAfterReload = await page
+    .getByTestId("unresolved-group")
+    .first()
+    .evaluate((element) => {
+      const hidden = element.querySelector<HTMLInputElement>(
+        'input[name="counterpartyText"]',
+      );
+      return hidden === null ? null : hidden.value;
+    });
+  // Still a namespaced identity key, which is what the derivation produces
+  // and what the stale page had rolled back.
+  expect(subjectAfterReload).not.toBeNull();
+  expect(subjectAfterReload).toMatch(/^(account|descriptor):.+/);
 });

@@ -68,7 +68,7 @@ export {
   isTrustedCounterpartyAccount,
   ACCOUNT_NAMESPACE,
   DESCRIPTOR_NAMESPACE,
-  IDENTITY_NAMESPACES,
+  isBareIdentityKey,
   IBAN_LENGTH_BY_COUNTRY,
 } from "../domain/counterparty-identity";
 export type {
