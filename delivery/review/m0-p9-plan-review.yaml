@@ -1,0 +1,359 @@
+# Adversarial plan review of delivery/plan/pulse-v02.yaml, phase M3-P12:
+# criterion 12.7 as rewritten by af36f97 and hazard class H12.31 added by
+# 352d721, both on claude/m0-p9-plan-supersede (head 352d721, baseline main).
+# Reviewed from worktree /home/user/wt-m0p9-adv on branch
+# claude/m0-p9-plan-review. Nothing was edited outside this file.
+#
+# work-log (incremental, newest last):
+# - created this file as beacon before deep reading
+# - read the brief in full, then schemas/finding.schema.json and
+#   schemas/verdict.schema.json from /home/user/pulse-fleet/schemas
+# - captured the diff: `git diff main HEAD --stat` = 1 file, 111 insertions,
+#   35 deletions; af36f97 103/35 (criterion 12.7), 352d721 8/0 (H12.31)
+# - STORAGE CHECK, the author's first self-report. Parsed the committed YAML
+#   and read criterion 12.7 back as a string: length 7467, newline count 0,
+#   double-space count 0, no token matching /\S+- \S+/ anywhere, no em dash.
+#   The folded scalar round-trips byte-clean; the `merchant- conflict` class
+#   of artifact is not present.
+# - STRUCTURE CHECK, the author's second self-report. `git show 352d721`
+#   diffstat is 8 insertions, 0 deletions, one hunk, and the hunk body is
+#   exactly the H12.31 block; criterion 12.7 is untouched by it. Hazard ids
+#   read back in file order end ...H12.18,H12.19,H12.31,H12.20,H12.21,H12.22,
+#   H12.23,H12.24,H12.7...,H12.30: nothing renumbered, and H12.31 is the next
+#   free id above H12.30. `tiphys validate --type plan` exits 0, dispatchable.
+# - HAZARD CHECK, the author's third self-report. H12.3 (naming lost when the
+#   key changes), H12.18 (rule survives as a row while its effect dies) and
+#   H12.19 (blocks forever with no acknowledge path) each read against the new
+#   text: all three remain guarded by it. H12.19 in particular is still met,
+#   since the acknowledge path survived the rewrite and now also names the
+#   superseded-rule outcome as an exit-0 outcome.
+# - read the shipped mechanism in full at /home/user/wt-m3p12:
+#   src/modules/merchants/application/rederive-rules.ts (953 lines) and
+#   test/property/rederive-loss-reporting.test.ts (305 lines), which is the
+#   file criterion 12.7 now names.
+# - constructed the attacks below against that mechanism rather than against
+#   the criterion's prose alone. Four survive as high findings.
+# - SATISFIABILITY, checked as its own question because this plan has shipped
+#   an unsatisfiable clause five times. Criterion 12.7 as amended IS buildable
+#   inside the phase: every clause is discharged against a seeded local
+#   database and a generated-world test, the file it names
+#   (test/property/rederive-loss-reporting.test.ts) already exists on the
+#   implementation branch, the report format and the exit-code contract are
+#   already implemented, and no clause asks for the deployed run, which
+#   criterion 12.17 has already split out to M3-P16 criterion 16.1. I found no
+#   clause requiring evidence that cannot exist while the phase is open. The
+#   defects below are all reachable-and-still-wrong defects, not impossible
+#   ones.
+# - validated the deliverable: `tiphys validate --type verdict` INVALID, as
+#   expected and as the precedent plan reviews record, on kind, phase,
+#   framing, review-contract, criteria, deviations-judged, the verdict
+#   vocabulary and concrete-edit versus concrete-fix; this document is a
+#   finding set and not a clean-room verdict. `tiphys validate --type finding`
+#   exits 0.
+kind: finding
+verdict: revise
+produced-by: claude (Opus 5, claude-opus-5)
+findings:
+  - id: APR-M0P9-01
+    severity: high
+    evidence:
+      - "delivery/plan/pulse-v02.yaml:7485, criterion 12.7 first sentence: 'the test compares the set of (transactionId, merchantId) pairs recompute produces BEFORE the re-derivation with the set it produces AFTER'."
+      - "Word search over the stored criterion text: 'baseline' occurs once, in 'rows written under the baseline derivation'; 'written against' 0 occurrences; 'own key' 0 occurrences. The criterion never says which key space the before set is read under."
+      - "/home/user/wt-m3p12/src/modules/merchants/application/rederive-rules.ts:337 through :350, comment on keyForRule, recording fix round two finding HZ-M3P12-R2-03 as a measured fact: 'the before-set came back EMPTY, the lost-assignment set was empty by construction, and the lost-assignment half of the exit code could not be reached at all, while the run still wrote and still recomputed.'"
+      - "The same file at :811 computes assignmentsBefore as assignmentSet(rows, before) with NO key argument, which at :374 through :378 reads each rule under keyForRule, that is, an un-namespaced pattern under the pre-phase normalised-descriptor key and a namespaced pattern under the identity key. That per-rule reading is the only reason the before set is non-empty, and it appears nowhere in the criterion."
+      - "The shipped recompute resolves through the shipped matcher, which is handed identity keys only, so a before set literally produced by 'recompute' over a seed of baseline-derivation rules is empty for every un-namespaced rule."
+    concrete-edit: >-
+      Insert into criterion 12.7, immediately after the first sentence and
+      before 'THAT SUPERSET PROPERTY HAS EXACTLY ONE ADMITTED EXCEPTION':
+      "THE BEFORE SET IS NOT WHAT THE SHIPPED RECOMPUTE PRODUCES, and the
+      criterion fixes it here because a before set read under one key space is
+      empty by construction and makes every clause below vacuous. Each stored
+      rule is read under the key space its own pattern is written against: a
+      pattern carrying no known namespace against the pre-phase normalised
+      counterparty key, a namespaced pattern against the identity key, with the
+      matcher's own tie-break applied within each space. A test asserts, over a
+      seed of un-namespaced rules, that the before set is NON-EMPTY and that its
+      size equals the number of rows those rules reached under the pre-phase
+      key, so an implementation whose before set is empty is red here rather
+      than green everywhere."
+    analysis: >-
+      This is the amendment's own structural defect, one level below the one it
+      repairs. The criterion now defines the EXCEPTION with great care and
+      leaves undefined the SET the exception is an exception to. An
+      implementation that reads the before set with the shipped recompute
+      satisfies every word of criterion 12.7 as written, produces an empty
+      before set over a seed of baseline rules, reports no loss for any input,
+      exits 0 always, and passes the biconditional vacuously for every row. The
+      code already carries the right reading, and it carries it in a comment
+      citing a fix-round finding, which is precisely the shape the amendment's
+      own opening sentence says caused four rounds of re-derivation.
+  - id: APR-M0P9-02
+    severity: high
+    evidence:
+      - "Criterion 12.7 names two published relations and verifies one: 'a test checks every published claimant pair against the seeded table, that the claimant is a rule of the same kind whose pattern is exactly the namespaced form of the superseded rule's pattern'. There is no corresponding sentence for the promotion relation."
+      - "The licence itself reads BOTH relations. Criterion 12.7: 'the rule holding the row AFTER the run must BE that specific claimant, or must be the rule carrying that claimant's own promotion into the account key space'."
+      - "/home/user/wt-m3p12/src/modules/merchants/application/rederive-rules.ts:436, lineageRoot(ruleId) = promotionSource.get(ruleId) ?? ruleId; :852 through :857, the exemption is lineageRoot(after.ruleId) === claimantOfHeld. The promotion map is the second and unverified branch of the licence."
+      - "The only merchant guard on that map lives in the code and not in the criterion: rederive-rules.ts:695 refuses the promotion when collision.merchantId !== rule.merchantId, and :746 records promotionSource only past that guard. Criterion 12.7 nowhere requires a promoted rule to carry its source rule's merchant."
+      - "The shipped test's promotion check is existence only: test/property/rederive-loss-reporting.test.ts:299, expect(promotableIds.has(link.sourceRuleId)).toBe(true)."
+    concrete-edit: >-
+      Replace the sentence beginning 'THE PUBLISHED LINEAGE IS NOT
+      SELF-CERTIFYING EITHER' with: "THE PUBLISHED LINEAGE IS NOT
+      SELF-CERTIFYING EITHER, AND BOTH RELATIONS ARE CHECKED, because the
+      licence reads both and a verification covering one of them leaves the
+      other as the escape hatch. A test checks every published claimant pair
+      against the seeded table, that the claimant is a rule of the same kind
+      whose pattern is exactly the namespaced form of the superseded rule's
+      pattern. A test checks every published promotion pair the same way: the
+      source rule is a descriptor-namespaced rule the run could promote, the
+      promoted rule carries the SAME merchant id as its source rule, and its
+      pattern is the account namespace followed by the single trusted compacted
+      account carried by every row the source rule matched under the pre-phase
+      key. A run that publishes a promotion pair failing any of those does not
+      meet this criterion, and a run that licenses a change through a pair it
+      published but did not make is the same defect as inventing a claimant."
+    analysis: >-
+      This is round four's defect surviving one relation over, and it is exactly
+      the shape H12.31 names. Take an implementation that records a promotion
+      link whenever a rule already holds the account pattern computed from a
+      source rule's rows, without the merchant guard the shipped code happens to
+      apply. Row R resolved through superseded rule S carrying merchant M1; S's
+      claimant is C carrying M2; the account pattern for R's account is already
+      held by an unrelated rule X carrying M3. The run publishes the promotion
+      pair X to C, the licence fires because lineageRoot(X) equals C, R comes out
+      of the run carrying M3, no loss is reported and the exit is 0. Every word
+      of criterion 12.7 is satisfied. This is the plain answer to the brief's
+      third question: yes, a run can still license a change by publishing a
+      relationship that is not the relationship that happened, because the
+      relation that grants the licence in the harder half of the exemption is
+      the relation nothing checks.
+  - id: APR-M0P9-03
+    severity: high
+    evidence:
+      - "Criterion 12.7 requires exactly three counted shapes: 'a row whose merchant does not change at all, a row whose coverage ends at nothing, and a row that ends held by a rule which is neither the claimant nor the carrier of the claimant's promotion'."
+      - "None of the three is a LICENSED change. The biconditional's right-hand side is 'the merchant it carried before the run differs from the merchant it carries after AND that change is not licensed by the published lineage'; the conjunct 'not licensed' is exercised by no counted shape."
+      - "Worse, all three counts are reachable in worlds containing NO claimant at all. Shape three is phrased as 'neither the claimant nor the carrier of the claimant's promotion', which every rule satisfies when no claimant exists; shape two needs only a declined promotion; shape one is the common case. The shipped generator makes the claimant optional: test/property/rederive-loss-reporting.test.ts:84 through :89, claimant: fc.option(..., { nil: undefined })."
+      - "The one clause that does demand a claimant is not counted: 'The generated worlds include one in which a superseded rule's rows SPLIT across the two bases' carries no assertion, so unlike the three shapes it is not red when the generator cannot reach it. A split world also does not imply a licensed change, since a same-merchant claimant short-circuits before the licence is consulted (rederive-rules.ts:848 through :851)."
+    concrete-edit: >-
+      Replace 'how many exhibited each of three shapes, prints the three counts
+      and asserts each one is greater than zero' with 'how many exhibited each
+      of FIVE shapes, prints the five counts and asserts each one is greater
+      than zero', and replace the list of three with: "a row whose merchant does
+      not change at all; a row whose coverage ends at nothing; a row that ends
+      held by a rule which is neither the claimant nor the carrier of the
+      claimant's promotion; A ROW WHOSE MERCHANT CHANGES AND WHOSE CHANGE IS
+      LICENSED BECAUSE IT ENDS HELD BY THE CLAIMANT ITSELF; and A ROW WHOSE
+      MERCHANT CHANGES AND WHOSE CHANGE IS LICENSED BECAUSE IT ENDS HELD BY THE
+      RULE CARRYING THAT CLAIMANT'S PROMOTION. The last two are the exception
+      this criterion exists to admit, and a generator that reaches neither
+      leaves the words AND THAT CHANGE IS NOT LICENSED unexercised, so a run
+      that reports EVERY change as a loss, which is round two's defect exactly,
+      passes the biconditional and all the other counts."
+    analysis: >-
+      The amendment's stated purpose is to stop the fourth oscillation by
+      pinning the exception. The test it mandates does not require the exception
+      to be exercised even once. The three counted shapes are the three failure
+      witnesses of rounds two, three and four restated; the shape that is new in
+      this amendment, the licensed change, is the one shape no count demands.
+      A generator that never builds a claimant satisfies all three counts, and
+      against such a generator the biconditional collapses to 'reported if and
+      only if changed', which is round two's implementation. This is the plain
+      answer to the brief's second question: the three shapes are not the right
+      three, and the fourth and fifth shapes the biconditional covers are the
+      two the exception is made of.
+  - id: APR-M0P9-04
+    severity: high
+    evidence:
+      - "Criterion 12.7 gives the biconditional's two terms no definition a test can compute independently: 'the merchant it carried before the run' and 'licensed by the published lineage as defined above'. 'As defined above' is the production predicate."
+      - "/home/user/wt-m3p12/src/modules/merchants/application/rederive-rules.ts:352 through :360 exports assignmentSet and identityKeyOfRow with the comment 'EXPORTED FOR THE PROPERTY TEST ... it must ask that question the way the routine asks it or the two are not comparing the same thing'."
+      - "test/property/rederive-loss-reporting.test.ts:223 computes the before term as assignmentSet(seed.rows, seed.rules), the module under test's own function, and :260 through :263 computes licensed as (sourceOf.get(nowHeldBy.ruleId) ?? nowHeldBy.ruleId) === claimant, which is a line-for-line restatement of the production predicate at rederive-rules.ts:436 and :852 through :857."
+      - "The same phase already carries the vocabulary that forbids this, at criterion 12.4: 'A mapping transcribed from counterpartyIdentity's own output does not meet this criterion, because it would certify the function against itself.' Criterion 12.7 does not use it."
+      - "Fleet environment warning 24: 'when a check and the thing it checks can fail together, the check proves nothing'."
+    concrete-edit: >-
+      Append to the biconditional sentence: "BOTH SIDES OF THE BICONDITIONAL ARE
+      COMPUTED FROM THE GENERATED WORLD AND NEVER FROM THE ROUTINE. The merchant
+      a row carried before and after is decided by the generator's own record of
+      which rule was intended to hold which row, or by a resolver written in the
+      test against the seed and the captured writes; the licence is decided by
+      the test's own reading of the published lineage. A test that imports the
+      routine's assignment-set helper, its identity-key helper or its lineage
+      predicate to compute either side does not meet this criterion, for the
+      reason criterion 12.4 already gives: it would certify the function against
+      itself, and this predicate has been wrong three times in a row."
+    analysis: >-
+      This is the brief's question about decidability, and the answer is that
+      the biconditional is decidable but the criterion permits, and the shipped
+      test takes, the degenerate reading in which the test restates the
+      implementation. With licensed computed by the same expression the filter
+      uses, the property reduces to asserting that the filter equals itself, and
+      the only residual content is whichever way assignmentSet happens to read
+      the before set, which finding APR-M0P9-01 shows is itself unspecified. Two
+      unspecified things checked against each other is the exact instrument this
+      fleet's warning 24 was written about.
+  - id: APR-M0P9-05
+    severity: medium
+    evidence:
+      - "Criterion 12.7 states the cost of its deliberate over-report as one flag: 'A row that ends at the claimant's merchant through an unrelated rule is reported too, and that over-report is deliberate rather than sloppy, because it costs one flag while its opposite is a row changing hands in silence.'"
+      - "Constructed against the shipped mechanism. Seed: rule S, EXACT, un-namespaced pattern P, merchant M1, the pre-deploy naming. Rule C, EXACT, descriptor-namespaced P, merchant M2, the deploy-window renaming. Rule U, EXACT, an account-namespaced pattern, merchant M2, the deploy-window naming of the same counterparty's account group. Rows: R1 whose descriptor normalises to P and which carries the trusted account U names, and R2 whose descriptor normalises to P and which carries no account."
+      - "Pass one supersedes S with claimant C (rederive-rules.ts:601 through :609). Pass two declines C's promotion, because not every row C matches under the pre-phase key carries a trusted account (:669 through :675, outcome not-promoted-untrusted-account), so no promotion link is recorded for C."
+      - "Before set: R1 and R2 both held by S at M1. After set: R2 held by C at M2, licensed; R1 held by U at M2, lineageRoot(U) is U and not C, so R1 is a LOST assignment, it blocks, and it clears only through the acknowledge path."
+      - "Under the deployed code and the pre-migration table, R1 already resolves through U to M2 and R2 already resolves through C to M2, so the run changes neither row and the reported loss is of a merchant R1 never carried."
+      - "The mixed-basis group is not exotic: criterion 12.1 requires the phase's own fixture to carry at least 8 account-basis and at least 8 descriptor-basis rows, and criterion 12.15 prescribes naming both halves of a split group with the same merchant name as the owner's recovery path."
+      - "The cost is not one flag. Phase M3-P16 criterion 16.2 (delivery/plan/pulse-v02.yaml:10583) requires, for every rule id any invocation carried under --accept, the blocking condition it was reported under by an invocation made WITHOUT --accept, that invocation's exit code, and the owner's acceptance of each id by reference to a dated work-history entry. M3-P16 hazard H16.3 is the hazard that the acknowledge flag gets used rather than read."
+    concrete-edit: >-
+      Replace 'because it costs one flag while its opposite is a row changing
+      hands in silence' with: "because its opposite is a row changing hands in
+      silence. WHAT IT COSTS IS STATED RATHER THAN ESTIMATED, because it is not
+      one flag: the shape reaches an ordinary run, where a mixed-basis group
+      declines the claimant's promotion and the account half of that same
+      counterparty is held by the owner's own later naming, and clearing it
+      costs a blocked migration plus the whole acceptance ceremony criterion
+      16.2 imposes, which is an owner decision recorded in the work history.
+      SO THIS OUTCOME IS ITS OWN CLASS AND IS NOT A LOST ASSIGNMENT: a row that
+      ends at the CLAIMANT'S OWN MERCHANT through a rule outside the lineage is
+      REPORTED, PRINTED AND COUNTED under its own name, and exits 0; only a row
+      that ends at a merchant the claimant does not carry, or at nothing,
+      blocks. A run that reports the two under one name does not meet this
+      criterion, because it spends the acknowledge path that hazard H16.3
+      exists to keep expensive on the outcome that is not a loss."
+    analysis: >-
+      This is the brief's first question from the false-loss side, and the
+      answer is yes: the exception rejects a legitimate case, and the case is
+      the mixed-basis group the phase exists to serve rather than a corner.
+      Round two's defect is reporting losses that had not happened; the
+      construction above is that defect, narrowed to one shape and made
+      deliberate. Making it deliberate is defensible. Calling it one flag is
+      not, because criterion 16.2 turns every accepted rule id into an owner
+      conversation, and an over-report that trains the operator to reach for
+      --accept is the direct feed for H16.3. An alternative fix the plan may
+      prefer, and it should choose one rather than leave both open: extend the
+      licence with a third published relation, the rule already holding the
+      account pattern of a row the claimant matched under the pre-phase key and
+      carrying the claimant's merchant, verified against the seed exactly as
+      APR-M0P9-02 requires of the promotion relation.
+  - id: APR-M0P9-06
+    severity: medium
+    evidence:
+      - "Criterion 12.7's reason for the kind split: 'A same-merchant PREFIX or PATTERN collision SKIPS, records no claimant and needs none, because no assignment can change hands between one merchant and itself.'"
+      - "Counterexample against the shipped matcher and the shipped routine. Rule S, PREFIX, un-namespaced pattern AB, merchant M1. Rule C, PREFIX, descriptor-namespaced AB, merchant M1, the same merchant. Rule D, EXACT, descriptor-namespaced ABC, merchant M2, a pre-existing deploy-window naming. One row whose descriptor normalises to ABC and which carries no account."
+      - "Pass one takes the same-merchant branch and, because rederive-rules.ts:589 guards the claimant record with rule.kind === 'EXACT', records NO claimant."
+      - "Before set: the row is read under the pre-phase key ABC, where only S is a candidate, so it is held by S at M1. After set: the identity key is the descriptor namespace plus ABC, where C matches as a prefix and D matches exactly, and the matcher's most-specific tie-break gives D, so the row is held at M2."
+      - "The merchant changed between two rules neither of which is the other's twin, no claimant exists to license it, so it is reported as a lost assignment and blocks; and under the deployed code the row already carried M2, so the loss never happened."
+      - "The same criterion elsewhere already knows a bare PREFIX rule is not dead: 'the argument that an un-namespaced pattern is already dead is an argument about EQUALITY and holds for neither other kind'."
+    concrete-edit: >-
+      Replace 'because no assignment can change hands between one merchant and
+      itself' with: "because the twin carries the same merchant, so no row the
+      twin takes over can change hands; where a THIRD rule takes the row
+      instead, which a live un-namespaced PREFIX or PATTERN rule makes possible,
+      the change is reported rather than licensed, and that is the safe
+      direction and not an impossibility. The criterion says so plainly rather
+      than claiming the change cannot occur, because an implementer who believes
+      the claim will write an assertion where a report belongs."
+    analysis: >-
+      The brief asked me to test the argument rather than accept it. The
+      outcome the criterion prescribes is right; the reason it gives is false,
+      and it is false for the same reason the criterion itself corrects two
+      sentences earlier, that a bare PREFIX or PATTERN rule is not dead. Today
+      this costs nothing, because criterion 12.10 pins that assignMerchant
+      writes EXACT and only EXACT and no rule of either other kind is deployed.
+      It is a medium rather than a low because a false reason in this particular
+      criterion is the mechanism the amendment exists to remove: the next round
+      reads the reason, not the outcome.
+  - id: APR-M0P9-07
+    severity: medium
+    evidence:
+      - "Criterion 12.7 requires the routine to PUBLISH the lineage in its report: 'it PUBLISHES both relations in its report as pairs of rule ids'."
+      - "Criterion 12.8 (delivery/plan/pulse-v02.yaml:7591) requires the report to be byte-identical across runs and excludes exactly one thing: 'The matched-count columns criterion 12.7 requires are EXCLUDED from that comparison'. The lineage is not named either way."
+      - "The lineage is NOT stable across runs. On the first run a promotion this run inserts is named by the placeholder; on the second run the same promotion is attributed to the real inserted rule, because the account pattern now already exists and the collision branch records the source against the existing holder (/home/user/wt-m3p12/src/modules/merchants/application/rederive-rules.ts:715 through :746)."
+      - "Hazard H12.27 is the hazard that a legitimately differing column turns a CORRECT run red and pushes the implementer toward a seed that avoids the shape."
+    concrete-edit: >-
+      Append to the sentence beginning 'The routine already knows which rule
+      superseded which': "THE PUBLISHED LINEAGE IS EXCLUDED FROM CRITERION 12.8's
+      BYTE COMPARISON, for the same reason the matched counts are and stated
+      here so it is not rediscovered: a promotion this run inserts is named by
+      its placeholder on the run that inserts it and by its database id on every
+      run after, so the lineage legitimately differs between two runs whose
+      DECISIONS are identical, and comparing it would turn a correct second run
+      red."
+    analysis: >-
+      Small, but it is the same class as H12.27 and it lands on the one field
+      this amendment adds. An implementer reading 12.7's 'in its report' beside
+      12.8's 'the same DECISION REPORT ... byte for byte' has to guess, and the
+      guess that fails is the safe-looking one.
+  - id: APR-M0P9-08
+    severity: medium
+    evidence:
+      - "Criterion 12.7 introduces the placeholder in one clause and fixes nothing about it: 'a promotion this run inserts being named by a stable placeholder the report states is not a database id'."
+      - "The comparison that grants the licence is an identity comparison over exactly these values: /home/user/wt-m3p12/src/modules/merchants/application/rederive-rules.ts:852 through :857, lineageRoot(after.ruleId) === claimantOfHeld."
+      - "The placeholder's meaning exists only in a code comment, not in the criterion: rederive-rules.ts:700 through :707, 'pending-<n> where n is the ONE-BASED index of the insert in the batch handed to applyRuleWrites, in that same order. Nothing may treat it as a database id.'"
+      - "Nothing anywhere requires the placeholder's form to be one a database id cannot take, and nothing requires a test to reconstruct the correspondence from the writes actually issued rather than from the report's own account of itself. The shipped test reconstructs it by rebuilding the same rule from captured inserts (test/property/rederive-loss-reporting.test.ts:206 through :217), which works only because that test also captured the write batch."
+      - "The same phase holds itself to construction-proof non-collision for the two key namespaces at criterion 12.5, 'a separate test asserts normaliseCounterparty never emits a lowercase letter, so no descriptor key can ever begin with either namespace and the two key spaces cannot collide by construction'."
+    concrete-edit: >-
+      Replace 'a promotion this run inserts being named by a stable placeholder
+      the report states is not a database id' with: "a promotion this run
+      inserts being named by a placeholder whose correspondence this criterion
+      fixes rather than the code's comment: it is the one-based position of that
+      insert in the batch the routine actually hands to its write port, in that
+      order, and its form is one no database id of this schema can take, which a
+      test asserts by construction in the way criterion 12.5 asserts it for the
+      two key namespaces. A test reconstructs each placeholder from the write
+      batch the routine ISSUED, never from the report's own account of itself,
+      because the licence is granted by an identity comparison and a placeholder
+      that only the report can resolve is not an identity."
+    analysis: >-
+      The brief asked me to look hard here, and the concern is right for a
+      reason narrower than a collision. The placeholder is fine as a value; what
+      is missing is that its meaning is fixed nowhere the criterion can be
+      checked against, so the second half of the licence is granted by comparing
+      a database id to a token whose correspondence to a real write is taken on
+      the report's word. That is the same gap as APR-M0P9-02 seen from the
+      identity side rather than the relation side, and the two edits together
+      close it.
+  - id: APR-M0P9-09
+    severity: medium
+    evidence:
+      - "Criterion 16.2 (delivery/plan/pulse-v02.yaml:10583): 'The recorded after size is greater than or equal to the recorded before size, which is criterion 12.7's superset property observed on the deployed data rather than on a seed.'"
+      - "The word SUPERSET does survive in criterion 12.7, twice, so the textual reference resolves and M3-P16 is not stranded."
+      - "The equivalence the sentence asserts does not survive. A change of hands removes one pair and adds one pair, so it is size-neutral: the after set can fail to be a superset of the before set while the two sizes are equal. That is true of a LICENSED change, which criterion 12.7 now admits by name, and equally of the UNLICENSED change hazard class H12.31 names."
+      - "So on the deployed data the size comparison cannot see the shape this amendment was written for, and criterion 12.7's property is observed there only through the routine's own lineage-based loss report and exit code, which criterion 16.2 requires under a different clause."
+    concrete-edit: >-
+      In criterion 16.2, replace 'which is criterion 12.7's superset property
+      observed on the deployed data rather than on a seed' with: "which is a
+      strictly WEAKER observation than criterion 12.7's superset property and is
+      recorded as one, because a row changing hands removes one pair and adds
+      one and is therefore size-neutral, so the size comparison cannot see
+      either the change criterion 12.7 licenses or the reassignment hazard
+      H12.31 names. The superset property itself is observed on the deployed
+      data only through the routine's own lineage-based loss report, so the
+      record also carries that report's loss count and the exit code beside
+      these two sizes."
+    analysis: >-
+      The brief's sixth question. The reference resolves and 16.2 is not
+      stranded, so the decision to keep the word was right. What the amendment
+      breaks is the equivalence 16.2 asserts about it, and it breaks it exactly
+      at the shape H12.31 names, so a reader taking 16.2 at its word believes
+      the deployed run verified the one thing it cannot.
+  - id: APR-M0P9-10
+    severity: low
+    evidence:
+      - "H12.31 (delivery/plan/pulse-v02.yaml:8022) states the shape rather than the incident, which is the right call, and it is the next free id above H12.30 with nothing renumbered."
+      - "It is not readable on its own. 'the claimant of the rule it previously resolved through' and 'the carrier of that claimant's promotion' are defined only inside criterion 12.7, a 7467-character scalar, and no other hazard class in this phase uses either term."
+      - "The hazard contract is deliberately decorrelated from the criteria contract, and schemas/verdict.schema.json requires each hazard class to carry a probe that names a construction, so a hazard lane that cannot resolve the class's own terms without reading the criterion it is addressed-by has lost part of that decorrelation."
+      - "The over-report direction has no class of its own. H12.31 names only the silent-reassignment direction; the false-loss direction constructed in APR-M0P9-05 is covered by H12.19 only where no acknowledge path exists, which is not this case."
+    concrete-edit: >-
+      Extend H12.31's statement with one clause that makes it self-contained,
+      after 'previously resolved through': "(the namespaced rule of the same
+      kind that already held the pattern the old rule would have been rewritten
+      to)". And add H12.32, addressed-by criterion 12.7: "A change that the
+      lineage does license, or a row whose merchant did not move at all under
+      the deployed code, is reported as a lost assignment and BLOCKS, so an
+      ordinary mixed-basis migration stops on a loss that never happened and is
+      cleared by an acknowledge flag the owner must ratify, which spends the
+      path hazard H16.3 exists to keep expensive."
+    analysis: >-
+      H12.31 answers the brief's seventh question in the affirmative for the
+      shape it names: a hazard reviewer reading the classes now looks for the
+      silent reassignment. What it leaves is asymmetry. This mechanism has
+      oscillated between over-reporting and under-reporting, the amendment adds
+      a class for one direction and deliberately accepts the other, and a
+      deliberately accepted failure with no class is one no hazard lane is
+      obliged to probe.
