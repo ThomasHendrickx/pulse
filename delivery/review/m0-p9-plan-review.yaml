@@ -302,6 +302,7 @@ findings:
       - "The comparison that grants the licence is an identity comparison over exactly these values: /home/user/wt-m3p12/src/modules/merchants/application/rederive-rules.ts:852 through :857, lineageRoot(after.ruleId) === claimantOfHeld."
       - "The placeholder's meaning exists only in a code comment, not in the criterion: rederive-rules.ts:714 through :720, 'pending-<n> where n is the ONE-BASED index of the insert in the batch handed to applyRuleWrites, in that same order. Nothing may treat it as a database id.'"
       - "Nothing anywhere requires the placeholder's form to be one a database id cannot take, and nothing requires a test to reconstruct the correspondence from the writes actually issued rather than from the report's own account of itself. The shipped test reconstructs it by rebuilding the same rule from captured inserts (test/property/rederive-loss-reporting.test.ts:208 through :218), which works only because that test also captured the write batch."
+      - "The placeholder is resolvable against NO table. Criterion 12.7 verifies the lineage 'against the seeded table', where an inserted rule does not exist; after the writes are issued the inserted rule exists under a real database id and the published report still names the placeholder, so the promotion half of the lineage cannot be checked against the pre-run table or the post-run one. The only thing that can resolve it is the write batch the routine issued, and the criterion does not name it."
       - "The same phase holds itself to construction-proof non-collision for the two key namespaces at criterion 12.5, 'a separate test asserts normaliseCounterparty never emits a lowercase letter, so no descriptor key can ever begin with either namespace and the two key spaces cannot collide by construction'."
     concrete-edit: >-
       Replace 'a promotion this run inserts being named by a stable placeholder
@@ -373,3 +374,34 @@ findings:
       a class for one direction and deliberately accepts the other, and a
       deliberately accepted failure with no class is one no hazard lane is
       obliged to probe.
+  - id: APR-M0P9-11
+    severity: high
+    evidence:
+      - "The loss is reported per TRANSACTION and cleared per RULE. Criterion 12.7: 'it is reported with the transaction id and the id of the rule that HELD the assignment'; and 'the routine accepts a flag naming the specific rule ids whose conflict or lost assignment a person has seen and accepted, exits 0 for exactly those'."
+      - "The test the criterion mandates for the flag is also keyed on rule ids: 'a test asserts the flag clears only the ids it names and clears nothing else'. It is satisfied by a run that clears every reported transaction of a named rule."
+      - "The shipped routine reads the same way: rederive-rules.ts:862 maps each lost row to held.ruleId, and :867 filters the blocking set with accepted.has(lost.ruleId), so one accepted rule id clears every reported row of that rule."
+      - "One rule can hold both classes at once. Extending the construction in APR-M0P9-05 by a single row: rule S also matched row R3, which carries a different trusted account that no rule names, so after the run R3 is covered by nothing. R1 is the deliberate over-report, ending at the claimant's own merchant through an unrelated rule; R3 is a real loss of the kind hazards H12.3 and H12.18 name. Both are reported under rule id S, and one --accept S clears both."
+      - "M3-P16 hazard H16.3 is exactly this: 'A blocking exit is cleared with the acknowledge flag rather than read ... so a merchant conflict or a lost assignment is waved through and the declaration the owner made is damaged without anyone deciding that it should be.'"
+    concrete-edit: >-
+      Replace 'the routine accepts a flag naming the specific rule ids whose
+      conflict or lost assignment a person has seen and accepted, exits 0 for
+      exactly those, and prints them as accepted; a test asserts the flag clears
+      only the ids it names and clears nothing else' with: "the routine accepts
+      a flag naming a merchant-conflict by RULE ID and a lost assignment by the
+      PAIR of rule id and transaction id, exits 0 for exactly those, and prints
+      them as accepted. THE PAIR IS THE GRANULARITY AND A BARE RULE ID IS NOT,
+      because this criterion deliberately over-reports and one rule can hold
+      both a deliberate over-report and a real loss at once, so a flag that
+      clears a rule clears rows the person never saw. A test asserts that
+      accepting one pair leaves every other reported row of the same rule
+      blocking, and that no flag form clears a lost assignment by rule alone."
+    analysis: >-
+      This is the amendment's own new cost landing on the oldest hole. Before
+      the rewrite a lost assignment was a rare, genuine event, and clearing a
+      whole rule was close enough to clearing one row. The rewrite creates a
+      class of reported non-loss that a correct run is EXPECTED to produce, and
+      routes it through the same coarse flag as a real loss. The operator now
+      has a routine reason to type --accept, and the id they type takes rows
+      with it that hazards H12.3 and H12.18 exist to protect. Over-reporting is
+      the safe direction only while the clearing mechanism is at least as
+      precise as the reporting mechanism, and here it is one level coarser.
