@@ -1,49 +1,355 @@
-# tiphys adversarial plan review: M3-P14 criterion 14.2 amendment
-# WORK IN PROGRESS. Started 2026-08-24.
-# Target: git diff main HEAD -- delivery/plan/pulse-v02.yaml at 0761d31,
-# branch claude/m0-p10-plan-142, two hunks inside the 14.2 entry.
-# Status: reading brief, schema and diff. No verdict yet.
-verdict: pending
+# Adversarial plan review of the M3-P14 criterion 14.2 amendment.
 #
-# work-log append 1 (evidence captured, verdict still pending)
+# Dispatch M0-P10. Reviewer worktree /home/user/wt-m0p10-adv, branch
+# claude/m0-p10-plan-review, off claude/m0-p10-plan-142 at 0761d31.
+# Under review: git diff main HEAD -- delivery/plan/pulse-v02.yaml, two hunks,
+# both inside the acceptance entry id "14.2", 124 insertions and 54 deletions.
+# Nothing outside that entry is touched, verified by git diff --numstat.
 #
-# CODE VERIFICATION AT THIS TREE (branch claude/m0-p10-plan-review off
-# claude/m0-p10-plan-142 at 0761d31):
+# WORK LOG, incremental, newest last.
+# - created this file as a beacon before the deep read
+# - read: the role brief, finding.schema.json, verdict.schema.json, the
+#   precedent adversarial plan reviews (delivery/review/pulse-v02-plan-
+#   adversarial.yaml uses kind: finding), the whole M3-P14 phase block, and
+#   the diff
+# - code verification pass, every cited file:line read in this worktree:
+#     overview-repository.ts:175 LEFT JOIN "accounts" a
+#     overview-repository.ts:176   ON a."iban" = t."counterpartyIban" AND ...
+#     overview-repository.ts:182 GROUP BY 1, 2   (ordinals over the SELECT at
+#       :170 t."counterpartyIban" and :171 a."label")
+#     overview-repository.ts:187 label: row.label ?? row.counterpartyIban
+#     detect-profile.ts:45  const IBAN = /^[A-Z]{2}\d{2}[A-Z0-9]{8,30}$/
+#     detect-profile.ts:313 !values.every((value) => IBAN.test(value)) -> skip
+#     detect-profile.ts:305-328 the SAME loop and the SAME guard assign
+#       columns.counterpartyIban (:324, :328) AND columns.accountIban (:326)
+#     parse-statement.ts:114-123 optionalText covers counterpartyIban AND
+#       accountIban and writes the cell verbatim; accountIbans built at
+#       :150 and :165-166
+#     belfius-current-account-template.ts:90 compactIban
+#     upload-statement.ts:65 const detected = await deps.parser.detect(...)
+#     upload-statement.ts:84 const profiles = await deps.imports.listProfiles(
+#       context)   [so the dispatch's :84 was wrong and the author's :65 is
+#       right; that correction is confirmed, not re-litigated]
+#     confirm-import.ts:84 const fileIban = parsed.value.accountIbans[0]
+#   All citations the amendment makes are ACCURATE at this tree.
+# - R-087 quote check, mechanical, against git show main:delivery/plan/
+#   pulse-v02.yaml with whitespace normalised: all THREE quoted fragments
+#   are present verbatim in the pre-amendment text. FOUND, FOUND, FOUND.
+# - the two central claims were checked by hand against the SQL and both
+#   hold; the "strictly stronger" claim holds and is understated. See
+#   no-findings-adjacent notes under each finding's analysis.
+# - implementer branch claude/m3-p14-account-registry read at 837dfce for
+#   satisfiability evidence only. It carries test/e2e/overview-reads.spec.ts
+#   (real Postgres, no browser, prisma.transaction.create writing
+#   counterpartyIban directly, households seeded with a POT current account
+#   AND a RESERVE account), overview-repository.ts:115
+#   CANONICAL_COUNTERPARTY_SQL used at :229 and :236, test/domain/
+#   account-number.test.ts with a PERMITTED exception list, and
+#   test/domain/counterparty-key-invariant.test.ts.
+# - findings written, severity ranked, every one carrying a concrete edit
 #
-# overview-repository.ts, reserves read, line numbers exact:
-#   175:    LEFT JOIN "accounts" a
-#   176:      ON a."iban" = t."counterpartyIban" AND a."householdId" = t."householdId"
-#   182:    GROUP BY 1, 2
-#   186-187: counterpartyIban: row.counterpartyIban,
-#            label: row.label ?? row.counterpartyIban,
-#   The join is raw and the grouping is raw. Both citations accurate.
-#
-# detect-profile.ts:
-#   45: const IBAN = /^[A-Z]{2}\d{2}[A-Z0-9]{8,30}$/;
-#   313: if (values.length === 0 || !values.every((value) => IBAN.test(value))) {
-#   Anchored, whitespace-free, upper-case only, every-value guard. Accurate.
-#   BUT the loop at 305-328 assigns counterpartyIban AND accountIban under the
-#   SAME guard (324, 326, 328). The unreachability argument therefore applies
-#   verbatim to the file's OWN account column, which criterion 14.3 relies on.
-#
-# parse-statement.ts:114-123 optionalText covers counterpartyIban AND
-#   accountIban and stores the cell verbatim. Accurate, and same consequence.
-#   accountIbans is built at :150/:165-166 from row.accountIban.
-#
-# upload-statement.ts:65 = const detected = await deps.parser.detect(...)
-#   :84 = const profiles = await deps.imports.listProfiles(context);
-#   The author's citation correction is right; the dispatch's :84 was wrong.
-#
-# confirm-import.ts:84 const fileIban = parsed.value.accountIbans[0];
-#   so the file's own account number reaches the confirm path from the
-#   detected column, not from user input.
-#
-# IMPLEMENTER BRANCH claude/m3-p14-account-registry at 837dfce:
-#   test/e2e/overview-reads.spec.ts EXISTS there; it does not exist at this
-#   plan tree. overview-repository.ts:115 there carries
-#     const CANONICAL_COUNTERPARTY_SQL = Prisma.sql`upper(regexp_replace(
-#       t."counterpartyIban", '[[:space:]-]', '', 'g'))`
-#   used at :229 (the SELECT that GROUP BY 1 groups on) and :236 (the join),
-#   with a comment at :80-83 calling itself "the copy". Both halves already
-#   normalise on that branch. The reserves read there also carries POT_ROW
-#   (:239), which the criterion's described seed does not account for.
+# NO ACCOUNT-SHAPED TOKEN APPEARS IN THIS FILE, deliberately: it is a tracked
+# file and gate:privacy checks identifier shapes in the tree against
+# test/fixtures/allowed-identifiers.txt. Values are described, never written.
+
+kind: finding
+verdict: revise
+produced-by: claude (Opus 5, claude-opus-5)
+findings:
+  - id: PR142-001
+    severity: high
+    evidence:
+      - "src/modules/import/domain/detect-profile.ts:305-328: ONE loop assigns both IBAN column roles. :313 `if (values.length === 0 || !values.every((value) => IBAN.test(value))) { continue; }` gates the whole loop body; :324 and :328 assign columns.counterpartyIban and :326 assigns columns.accountIban inside it."
+      - "src/modules/import/domain/detect-profile.ts:45 `const IBAN = /^[A-Z]{2}\\d{2}[A-Z0-9]{8,30}$/` is anchored, whitespace free AND upper case only, so it rejects a spaced value and a lower-case country code alike."
+      - "src/modules/import/application/confirm-import.ts:84 `const fileIban = parsed.value.accountIbans[0];`, and src/modules/import/domain/parse-statement.ts:150 and :165-166 build accountIbans from row.accountIban, which exists only when detection assigned the column."
+      - "delivery/plan/pulse-v02.yaml, criterion 14.3 first case: 'runs the upload and confirm path for a file whose own account number is that account written in a DIFFERENT surface form (spaced against compact, and a lower-case country code)'."
+      - "Implementer branch claude/m3-p14-account-registry at 837dfce: test/application/account-registry.test.ts:199-201 comments 'The file writes the SPACED form; the declaration stored the canonical one' and :240-242 'The file writes it spaced', while test/fixtures/ar-current.csv row 3 writes the own-account cell COMPACT and test/application/fake-import-world.ts:8 and :770 wire the REAL statementParser. The surface-form difference was silently moved to the typed registration value at :194."
+    concrete-edit: >-
+      In criterion 14.3, replace the first case's clause "runs the upload and
+      confirm path for a file whose own account number is that account written
+      in a DIFFERENT surface form (spaced against compact, and a lower-case
+      country code)" with: "runs the upload and confirm path for a file whose
+      own account number is that account in the ONLY surface form the detector
+      can admit, upper case and compact
+      (src/modules/import/domain/detect-profile.ts:45 applied through the
+      values.every guard at detect-profile.ts:313, which gates the own-account
+      column at detect-profile.ts:326 exactly as it gates the counterparty
+      column), while the REGISTRATION side carries the different surface form,
+      spaced and with a lower-case country code, because registration is the
+      side a household types and is the only side of this comparison a shipped
+      path can vary." Add, in the same case, "and the test's own comments state
+      which side carries the varied form, because a comment claiming the FILE
+      is spaced is a claim the detector refutes."
+    analysis: >-
+      This is the SAME false premise the amendment was written to correct,
+      still standing one criterion away, and it has already produced two false
+      comments in the shipped tree. The amendment's scope claim, that the other
+      surface-form mentions in M3-P14 go nowhere near the delimited detector,
+      is wrong: 14.3's first case runs the delimited detector head on, through
+      the real parser, and its own-account column is gated by the identical
+      values.every guard on the identical anchored pattern. R-087 asks for the
+      correction to be made in place and loudly. It was made in one place and
+      the sibling that rests on the refuted sentence was left alone. An
+      implementer who reads 14.2 and then 14.3 is told in one breath that the
+      state is unreachable and in the next to build a file that reaches it.
+  - id: PR142-002
+    severity: high
+    evidence:
+      - "delivery/plan/pulse-v02.yaml, criterion 14.4: 'This criterion exists because it was measured rather than supposed: every one of the 26 account-shaped tokens in the owner's own current-account document is written spaced, and the delimited parse stores such a cell verbatim (src/modules/import/domain/parse-statement.ts:114 through :123) while the PDF path compacts it'."
+      - "The amendment's own refutation, same file, criterion 14.2: 'the parse then stores verbatim only what that detector has already accepted (src/modules/import/domain/parse-statement.ts:114 through :123), which is the step the old sentence read as permission and which is in fact downstream of the constraint.'"
+      - "The two sentences quote the SAME citation, parse-statement.ts:114 through :123, and read it in opposite directions. Verified at this tree: parse-statement.ts:114-123 is optionalText, which reads spec.columns[role], and spec.columns is what detect-profile.ts:305-328 assigns under the :313 guard."
+    concrete-edit: >-
+      In criterion 14.4, replace "and the delimited parse stores such a cell
+      verbatim (src/modules/import/domain/parse-statement.ts:114 through :123)
+      while the PDF path compacts it
+      (src/modules/import/domain/belfius-current-account-template.ts:90)" with:
+      "and the PDF path is where those spaced tokens actually enter, lifted by
+      pattern and compacted before they are stored
+      (src/modules/import/domain/belfius-current-account-template.ts:90). The
+      delimited path CANNOT store a spaced cell, for the reason criterion 14.2
+      records in full: parse-statement.ts:114 through :123 writes verbatim only
+      what detect-profile.ts:313 has already accepted against the anchored,
+      whitespace-free pattern at detect-profile.ts:45. This criterion's
+      canonical form is therefore defence against a future importer change and
+      against the PDF path, not against a delimited cell that exists today, and
+      the ledger domain test below asserts over a constructed transaction
+      rather than an imported one for exactly that reason."
+    analysis: >-
+      The amendment refutes a reading of parse-statement.ts:114-123 that
+      criterion 14.4 still states as the measured justification for its own
+      existence. Two acceptance criteria in one phase now read the same three
+      lines of code in opposite directions, and the plan is the document a
+      reviewer holds against the tree. The harm is not a failing test, it is
+      that the next reader who checks 14.4's rationale will find it false, will
+      not find 14.2's correction attached to it, and has every incentive to
+      conclude the canonical form is unmotivated. That is how a real guard gets
+      deleted, which is the exact fate the amendment says it is protecting
+      against three paragraphs earlier.
+  - id: PR142-003
+    severity: high
+    evidence:
+      - "delivery/plan/pulse-v02.yaml, criterion 14.2: 'a fast-gate test enumerates the write paths that can reach the stored counterparty account column and asserts that the reachable set is upper-case, compact and account-shaped ... That may be the same enumeration criterion 14.4 already requires, and this criterion asks for no second artifact'."
+      - "A search of the ENTIRE M3-P14 phase block (96841 characters, from `id: M3-P14` to `id: M3-P15`) for 'write path', 'write-path' and 'reachable set' returns exactly ONE hit each, all three inside criterion 14.2's own sentence above. No other criterion mentions either."
+      - "Criterion 14.4's enumeration is a DIFFERENT artifact: it 'enumerates the call sites' of the canonical account-number function, 'asserts that no file under src/ other than the platform module contains an uppercase plus whitespace-removal expression applied to an account-bearing field', and 'asserts that the pinned country-length table and the mod-97 implementation each have exactly one definition under src/'. None of that enumerates write paths into Transaction.counterpartyIban and none of it asserts anything about a reachable SET of stored values."
+      - "On the implementer branch the two are separate files: test/domain/account-number.test.ts holds 14.4's pin, and test/domain/counterparty-key-invariant.test.ts holds the reachable-set claim (its header: 'So the reachable set is upper-case, compact, and account-shaped'), which was written for hazard finding HZ-M3P14-01 and is required by no criterion."
+      - "That same file records the failure mode this criterion is exposed to, in its own header: 'CORRECTED AFTER BEING SHOWN GREEN AGAINST THE STATE IT FORBIDS (R-087, finding CR-P14C2-12). ... The body read only the two files it named and asserted their contents; it enumerated nothing, so a third producer added anywhere could not redden it. A clean-room lane added one to src/modules/import/domain/parse-statement.ts and got 3 passed of 3.'"
+    concrete-edit: >-
+      In criterion 14.2, replace "That may be the same enumeration criterion
+      14.4 already requires, and this criterion asks for no second artifact,
+      only that a claim this criterion itself makes is not left standing on
+      prose alone" with: "It is NOT criterion 14.4's enumeration, which pins
+      the canonical form's call sites and the validity predicate's definitions
+      and says nothing about what values can reach the column. This criterion
+      therefore REQUIRES that write-path enumeration as a named artifact of its
+      own: a fast-gate test that DISCOVERS the writers of
+      Transaction.counterpartyIban by walking src/ rather than by naming files,
+      that fails when a writer appears which no shape gate covers, and that
+      carries a red-witness note recording the state it was shown red against.
+      A test that names its producers instead of enumerating them does not meet
+      this clause, because that exact test was shipped in this phase, was green
+      against a producer added to
+      src/modules/import/domain/parse-statement.ts, and had to be corrected
+      under R-087."
+    analysis: >-
+      This is the load-bearing sentence of the whole amendment and it is the
+      one sentence that requires nothing. The criterion says the unreachability
+      claim "is itself held by a test rather than by this paragraph", then
+      points at a criterion that does not require that test, then explicitly
+      declines to require it. As the plan stands, an implementation can satisfy
+      every clause of 14.2 while the reachable-set assertion exists nowhere,
+      and nothing in the phase goes red on the day an importer change makes the
+      seeded state reachable. That is precisely the museum piece the amendment
+      argues it is not. It is one sentence away from being what it claims: the
+      artifact already exists on the branch, and the criterion only has to
+      name it and describe what makes it real rather than nominal.
+  - id: PR142-004
+    severity: high
+    evidence:
+      - "Criterion 14.2 as amended requires the reserves read to normalise 'BOTH the join predicate and the grouping key'. The join at src/modules/overview/adapters/overview-repository.ts:176 is column against column (`ON a.\"iban\" = t.\"counterpartyIban\"`), so the transformation cannot be applied in TypeScript and must be written in SQL inside that file."
+      - "Criterion 14.4 asserts 'that no file under src/ other than the platform module contains an uppercase plus whitespace-removal expression applied to an account-bearing field' and names compactIban as 'the one permitted exception' (singular)."
+      - "src/modules/overview/adapters/overview-repository.ts is under src/ and is not the platform module."
+      - "The collision is not hypothetical. On claude/m3-p14-account-registry at 837dfce, overview-repository.ts:115 carries `const CANONICAL_COUNTERPARTY_SQL = Prisma.sql`upper(regexp_replace(t.\"counterpartyIban\", '[[:space:]-]', '', 'g'))`` used at :236 (the join) and :229 (the SELECT that GROUP BY 1 groups on), with a comment at :80-83 calling itself 'the copy'."
+      - "test/domain/account-number.test.ts on that branch resolves the collision by adding a SECOND entry to a PERMITTED list, `\"src/modules/overview/adapters/overview-repository.ts::sql:upper(replace(\"`, with the comment 'THE ONE PERMITTED EXCEPTION, recorded here with its reason, which is what criterion 14.4's own compactIban clause establishes this list for'. The list criterion 14.4 opened for compactIban now carries an entry criterion 14.4 does not name, and compactIban is gone."
+    concrete-edit: >-
+      Two edits, in the same commit. (a) In criterion 14.2, after "Only a read
+      that normalises BOTH the join predicate and the grouping key returns one
+      group", add: "The join predicate compares column to column, so that
+      transformation is expressed in SQL inside
+      src/modules/overview/adapters/overview-repository.ts and cannot import
+      the platform function. This criterion therefore CREATES a second copy of
+      the canonical form outside the platform module, and criterion 14.4's
+      enumeration is amended in the same commit to carry it as a named,
+      permitted and pinned exception rather than to be widened silently by
+      whoever meets this criterion first." (b) In criterion 14.4, replace
+      "recorded in the test as the one permitted exception with its reason"
+      with "recorded in the test as a permitted exception with its reason, on a
+      list whose every entry is named in this criterion. The list carries
+      exactly two entries and this criterion names both: the SQL copy of the
+      canonical form that criterion 14.2's normalising reserves join and
+      grouping require, inside
+      src/modules/overview/adapters/overview-repository.ts, and compactIban if
+      it survives; an entry appearing on that list which this criterion does
+      not name fails this criterion, because a list that grows when a criterion
+      is met is a grep that passes by accident with extra steps."
+    analysis: >-
+      The dispatch asks whether 14.4's own requirements are quietly widened by
+      being borrowed. They are, and it has already happened. 14.4's pin exists
+      to stop a second implementation of the transformation appearing outside
+      the platform module; 14.2 as amended MAKES one mandatory; the plan says
+      nothing about the conflict, so the first implementer to satisfy both did
+      the only thing available, which was to widen the exception list without
+      any criterion recording that it grew. The mechanism 14.4 built to make
+      the exception "a list a reader can check rather than a grep that passes
+      by accident" is now a list a reader cannot check against the plan.
+  - id: PR142-005
+    severity: high
+    evidence:
+      - "Criterion 14.2's seventh assertion seeds ONE reserve account, ONE label, and TWO rows, and asserts exactly three things: 'that exactly ONE reserve movement group comes back, that its label is byte identical to the household's typed label and carries no account-shaped token, and that its parked total is the sum of both rows'."
+      - "The group's own key is never asserted. src/modules/overview/adapters/overview-repository.ts:186 returns `counterpartyIban: row.counterpartyIban` as a field of ReserveMovementGroup, and :187 uses it as the label fallback, so it is observable and is the value the grouping key produces."
+      - "An implementation that joins on the normalised value and writes `SELECT ra.\"iban\" AS \"counterpartyIban\", ra.\"label\" ... GROUP BY 1, 2` satisfies all three clauses over this seed: one group, the typed label, the sum of both rows. It has NOT normalised the grouping key, it has replaced it with the joined account's column, and it collapses every reserve row whose counterparty matches no registered account into a single group whose key and label are both null, against a declared type of `counterpartyIban: string`."
+      - "An implementation grouping on the label alone likewise satisfies all three clauses over this seed, and merges two reserve accounts a household happened to give the same typed label into one line with their money summed."
+    concrete-edit: >-
+      In criterion 14.2's seventh assertion, replace "The test creates a
+      household holding one reserve account" through "and writes TWO
+      transaction rows" with: "The test creates a household holding TWO reserve
+      accounts with DIFFERENT account numbers and DIFFERENT typed labels, each
+      stored in the canonical form of the number the household would type, and
+      writes THREE transaction rows directly to the transactions table", and
+      replace the assertion clause with: "asserts that exactly TWO reserve
+      movement groups come back, one per reserve account; that each group's
+      label is byte identical to that account's typed label and carries no
+      account-shaped token; that each group's own counterparty-account field is
+      byte identical to the canonical form of that account's number, which is
+      what pins the GROUPING KEY itself rather than a property that happens to
+      be one-to-one with it in a thinner seed; and that the first group's
+      parked total is the sum of its two rows and the second group's is its one
+      row, each compared against a string written by hand in the test from the
+      seed's own arithmetic and never read back from the implementation."
+      Keep the two-surface-forms clause on the first account's pair of rows.
+    analysis: >-
+      This is the construction the adversarial stance asks for: an
+      implementation that satisfies every clause as written and is still wrong.
+      The criterion's entire stated purpose is to pin the grouping key, and
+      over a seed with one account, one label and one number, every candidate
+      key is one-to-one with every other, so the assertion cannot tell them
+      apart. Grouping on the joined account's column is the more natural wrong
+      answer and is invisible here; grouping on the label is the more damaging
+      one and is invisible here too. Adding a second account with a distinct
+      label and asserting the group's own key costs the seed one row and closes
+      both.
+  - id: PR142-006
+    severity: medium
+    evidence:
+      - "Criterion 14.2's seed is described as 'a household holding one reserve account', with no pot account and no statement of which account the two rows belong to."
+      - "Transaction rows carry an accountId, so the seed must place them somewhere, and the ring of that account is now load bearing in this very phase."
+      - "On claude/m3-p14-account-registry at 837dfce the reserves read carries `AND ${POT_ROW}` at overview-repository.ts:239, where POT_ROW is `a.\"role\" = 'POT'::\"AccountRole\"` (:75) joined through ACCOUNT_JOIN on the row's OWN account (:77-78). Rows seeded on the reserve account itself return zero groups."
+      - "Every household in test/e2e/overview-reads.spec.ts on that branch holds a POT current account alongside the reserve account (:130-131, :208-209, :237-238), which is what makes those seeds work."
+    concrete-edit: >-
+      In criterion 14.2's seventh assertion, after "The test creates a
+      household holding" the reserve accounts, add: "and a POT current account,
+      on which every seeded row sits, because the reserves read joins the row's
+      OWN account and this phase's ring scoping means a row seeded on the
+      reserve account itself is excluded before the join predicate is ever
+      reached; a test that returns zero groups because of the ring predicate is
+      red for a reason that has nothing to do with normalisation, and the two
+      reds this assertion claims are both reds of the JOIN and the GROUPING."
+    analysis: >-
+      The criterion claims its single assertion is "RED TWICE OVER" and names
+      both reds precisely. A seed built literally from the sentence as written
+      is red a third way, for a reason the criterion never mentions, and an
+      implementer chasing that red will change the read's ring predicate,
+      which criterion 14.14 and decision D-56 put there on purpose. Naming the
+      pot account costs one clause.
+  - id: PR142-007
+    severity: medium
+    evidence:
+      - "src/platform/account-number.ts on claude/m3-p14-account-registry: `export const canonicalAccountNumber = (value: string): string => { const stripped = value.replace(/[\\s -]/g, \"\").toUpperCase(); return CANONICAL_SHAPE.test(stripped) ? stripped : value; };` The form is SHAPE GATED and returns a non-account-shaped value UNCHANGED, and the file's own comment says why: the stored counterparty column 'often holds a free-text descriptor', and upper-casing one is 'a silent change of meaning in the one place this codebase is most careful about'."
+      - "The SQL copy at overview-repository.ts:115 carries NO shape guard and transforms unconditionally, so the two copies disagree on exactly the input class the platform module singles out."
+      - "The agreement test on that branch, 'the permitted SQL copy strips the SAME character class as the platform form', asserts the CHARACTER CLASS only and not the shape guard, and no criterion requires either test."
+    concrete-edit: >-
+      In criterion 14.2, after the sentence requiring both halves of the read
+      to normalise, add: "The SQL copy of the canonical form is held to the
+      platform form's BEHAVIOUR and not only to its character class: a test
+      asserts the two agree over an enumerated corpus that includes at least
+      one value which is NOT account shaped, because the platform form is shape
+      gated and returns such a value unchanged
+      (src/platform/account-number.ts) while an unguarded SQL expression
+      upper-cases it and strips its separators, which merges two descriptors
+      that differ only in case or spacing into one group and mangles the value
+      the read hands back. Either the SQL copy carries the same shape guard or
+      the test records, with its reason, the input class on which the two are
+      allowed to differ."
+    analysis: >-
+      14.2 mandates a second copy of a transformation whose defining subtlety
+      is that it does NOTHING to most of its inputs, and then constrains only
+      the half of the behaviour that is easy to see. The character class was
+      already found divergent once on this branch and was fixed; the shape
+      guard is still divergent and no criterion can see it. The product
+      consequence is thin today because a RESERVE row's counterparty has
+      matched a registered account by construction, which is why this is medium
+      and not high, but the pin is the point and the pin does not reach it.
+  - id: PR142-008
+    severity: medium
+    evidence:
+      - "Criterion 14.2 requires exactly one thing to be written into the test tree: 'The spec carries in its own header comment, and this criterion carries in its text, the reason no existing test catches any of this', and the reason named there is the reconciliation identity's invariance, not the unreachability."
+      - "The unreachability rationale, 'a state that is UNREACHABLE THROUGH THE PRODUCT today, tested anyway, on purpose, with the reason written down rather than left for the next reader to rediscover as a puzzle', is written in the PLAN and is required nowhere in the test."
+      - "The reader who deletes the test is a reader in the code, who tries to reproduce the seeded state through the product, fails, and concludes the test asserts an impossible thing."
+    concrete-edit: >-
+      In criterion 14.2, replace "AND THE PLAN SAYS PLAINLY WHAT THIS TEST IS"
+      with "AND THE TEST SAYS PLAINLY WHAT IT IS, in its own header comment and
+      not only here, because the reader who would delete it is reading the test
+      and not the plan. That header states: that the seeded state is
+      unreachable through the product today; the two citations that make it
+      unreachable, src/modules/import/domain/detect-profile.ts:45 and the
+      values.every guard at detect-profile.ts:313; that the state is seeded
+      below the importer on purpose; and the NAME of the write-path enumeration
+      test that holds the unreachability claim, so that deleting either one
+      leaves a dangling reference in the other. A test carrying the plan's
+      argument only by reference does not meet this clause." Keep the
+      reconciliation-invariance sentence that follows.
+    analysis: >-
+      The provenance argument is sound, and this is the edit that makes it
+      survive its own success. The argument's weakest point is not its logic,
+      it is its location: everything that stops the next reader treating this
+      as a museum piece is currently in a delivery artifact that reader has no
+      reason to open, while the test itself will read as an assertion about a
+      state nobody can produce.
+  - id: PR142-009
+    severity: low
+    evidence:
+      - "delivery/plan/pulse-v02.yaml, M3-P14 hazard-classes: H14.1 'The registration surface reaches only accounts the household could already declare by importing, leaving the reserve case, which is the one that cannot be expressed at all, still unreachable.' addressed-by: criterion 14.2. Its statement is untouched by this diff, confirmed by git diff --numstat showing the only plan hunk inside the 14.2 acceptance entry."
+      - "H14.5 'The owner types an account number in the form their own document prints, it is stored in a form nothing compares equal to, and registration silently classifies nothing.' addressed-by: criterion 14.4."
+      - "The seventh assertion added by this amendment guards surface-form equality in the reserves read, which is H14.5's territory, not the registration surface's reach, which is H14.1's."
+    concrete-edit: >-
+      In the M3-P14 hazard-classes block, change H14.5's addressed-by from
+      "criterion 14.4" to "criteria 14.4 and 14.2", and add to 14.2's text,
+      immediately before the seventh assertion, the sentence "The first six
+      assertions address hazard class H14.1; the seventh addresses H14.5 from
+      the read side, and is recorded there so that trimming this criterion
+      again cannot silently drop a hazard class's only read-side guard."
+    analysis: >-
+      This criterion has already been trimmed once for carrying an
+      unsatisfiable clause. The hazard table is what tells the next person
+      doing that which coverage they are about to remove, and today it says
+      only H14.1, which the seventh assertion does not serve.
+  - id: PR142-010
+    severity: low
+    evidence:
+      - "M3-P14 step 3: 'every COMPARISON against a transaction's counterparty account normalises both sides at comparison time ... That includes the declared-set derivation and the reserves SQL join at src/modules/overview/adapters/overview-repository.ts:175 through :176.' The grouping at :182 is not named."
+      - "Criterion 14.2 as amended now turns entirely on the grouping: 'Only a read that normalises BOTH the join predicate and the grouping key returns one group.'"
+      - "overview-repository.ts:182 is `GROUP BY 1, 2`, ordinals over the SELECT list at :170 and :171, so an implementer reading the step alone would normalise :176 and leave :170 raw, which is exactly the second red the criterion describes."
+    concrete-edit: >-
+      In M3-P14 step 3, replace "and the reserves SQL join at
+      src/modules/overview/adapters/overview-repository.ts:175 through :176"
+      with "and BOTH halves of the reserves SQL read, the join predicate at
+      src/modules/overview/adapters/overview-repository.ts:175 through :176 and
+      the grouping key at overview-repository.ts:182, which groups by ordinal
+      over the SELECT list at :170 and :171 and is therefore normalised by
+      normalising that SELECT expression; criterion 14.2 is red on either half
+      left raw."
+    analysis: >-
+      The steps are what an implementer builds from and the criteria are what
+      the phase is judged by. Since the amendment moved 14.2's whole
+      discriminating power onto the grouping key, the step that names only the
+      join is now the shorter of two instructions that disagree, and it is the
+      one that gets read first.
