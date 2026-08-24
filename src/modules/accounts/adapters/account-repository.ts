@@ -3,6 +3,7 @@
 // non-negotiable 6); the static tenancy gate holds this file to that rule.
 
 import { prisma } from "@/platform/db/client";
+import { canonicalAccountNumber } from "@/platform/account-number";
 import type { HouseholdContext } from "@/platform/tenancy";
 import type { AccountRole } from "../domain/account-role";
 import type { AccountRecord, NewAccount } from "../application/ports";
@@ -23,6 +24,10 @@ const toRecord = (row: AccountRow): AccountRecord => ({
   ...(row.iban === null ? {} : { iban: row.iban }),
 });
 
+// A DECLARATION IS NORMALISED ON THE WAY IN (M3-P14, decision D-47). Every
+// writer of Account.iban goes through here, so the column holds ONE form
+// tree-wide. The rule and its sibling list live at
+// src/platform/account-number.ts.
 export const createAccount = async (
   context: HouseholdContext,
   input: NewAccount,
@@ -33,7 +38,8 @@ export const createAccount = async (
       label: input.label,
       bank: input.bank,
       role: input.role,
-      iban: input.iban ?? null,
+      iban:
+        input.iban === undefined ? null : canonicalAccountNumber(input.iban),
     },
   });
   return toRecord(row);
@@ -49,12 +55,21 @@ export const listAccounts = async (
   return rows.map(toRecord);
 };
 
+// THE LOOKUP THAT MAKES ADOPTION WORK (M3-P14 criterion 14.3). A later
+// import of an account the household already registered must resolve to the
+// SAME account, whatever surface form the file writes it in. Account.iban is
+// a DECLARATION and is stored canonical by every writer, so canonicalising
+// the argument is the whole mechanism; the per-household uniqueness
+// constraint at prisma/schema/accounts.prisma:28 is the backstop behind it.
 export const findAccountByIban = async (
   context: HouseholdContext,
   iban: string,
 ): Promise<AccountRecord | null> => {
   const row = await prisma.account.findFirst({
-    where: { householdId: context.householdId, iban },
+    where: {
+      householdId: context.householdId,
+      iban: canonicalAccountNumber(iban),
+    },
   });
   return row === null ? null : toRecord(row);
 };

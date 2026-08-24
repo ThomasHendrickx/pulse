@@ -17,6 +17,7 @@
 // imported, so classification from the pot side is sufficient and complete
 // (pulse-v1-architecture.md). Callers pass only INTERNAL transfer legs.
 
+import { canonicalAccountNumber } from "@/platform/account-number";
 import { TRANSFER_DATE_TOLERANCE_DAYS } from "./constants";
 import type { DeclaredSets, LedgerTransaction } from "./ledger-transaction";
 import { dayDistance } from "./plain-date-distance";
@@ -72,15 +73,22 @@ export const pairInternalTransfers = (
       if (distance > TRANSFER_DATE_TOLERANCE_DAYS) {
         continue;
       }
+      // Both sides canonical at comparison time (M3-P14, decision D-47):
+      // the map side comes from the declared sets, this side is the stored
+      // FACT column, and one household really does hold two surface forms
+      // of one account because the delimited parse stores a cell verbatim
+      // while the PDF path compacts it.
       if (
         out.counterpartyIban === undefined ||
-        out.counterpartyIban !== accountIban.get(inc.accountId)
+        canonicalAccountNumber(out.counterpartyIban) !==
+          accountIban.get(inc.accountId)
       ) {
         continue;
       }
       if (
         inc.counterpartyIban === undefined ||
-        inc.counterpartyIban !== accountIban.get(out.accountId)
+        canonicalAccountNumber(inc.counterpartyIban) !==
+          accountIban.get(out.accountId)
       ) {
         continue;
       }

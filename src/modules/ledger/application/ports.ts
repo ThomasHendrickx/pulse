@@ -109,9 +109,17 @@ export type LedgerRepositoryPort = {
     context: HouseholdContext,
     input: {
       readonly transactionIds: readonly string[];
+      // NULL CLEARS AN INTERPRETATION, exactly as a null merchantId
+      // clears an assignment above (M3-P14 decision D-59, M3-P15 step 4).
+      // A row on an account that is NOT a pot account is HELD: ingested as
+      // a fact, classified by nothing, counted nowhere. Interpretation owns
+      // every transaction in the household, not only the ones it counts, so
+      // a row whose account LEAVES the pot has its flow cleared here rather
+      // than being left standing with whatever it was last stamped with.
+      // Held is derived from the account's ring and needs no Flow member.
       readonly flows: readonly {
         readonly transactionId: string;
-        readonly flow: Flow;
+        readonly flow: Flow | null;
       }[];
       readonly merchants: readonly InterpretationMerchantWrite[];
       readonly links: readonly InterpretationLinkWrite[];

@@ -21,6 +21,7 @@
 // classification's: an unmatched leg STAYS INTERNAL and is flagged by the
 // interpretation (pulse-domain section 4).
 
+import { canonicalAccountNumber } from "@/platform/account-number";
 import type { Flow } from "./flow";
 import {
   correctCardSettlement,
@@ -57,12 +58,24 @@ export const classifyFlow = (
 ): Classification => {
   const { sets } = context;
 
+  // THE COUNTERPARTY ACCOUNT COLUMN IS A FACT AND IS NEVER REWRITTEN
+  // (pulse-domain section 2 rule 1), so it is canonicalised HERE, at
+  // comparison time, against sets whose own side was canonicalised in
+  // deriveDeclaredSets. Measured rather than supposed: every account-shaped
+  // token in the owner's own current-account document is written spaced,
+  // the delimited parse stores such a cell verbatim
+  // (src/modules/import/domain/parse-statement.ts) while the PDF path
+  // compacts it, so one household really does hold two surface forms of one
+  // account. A raw comparison silently classifies nothing, which is exactly
+  // the defect this round exists to remove.
+  const counterparty =
+    transaction.counterpartyIban === undefined
+      ? undefined
+      : canonicalAccountNumber(transaction.counterpartyIban);
+
   // 1. Declared reserve set, both directions. Outgoing parks money;
   // incoming is the drawdown correction: RESERVE, never INCOME.
-  if (
-    transaction.counterpartyIban !== undefined &&
-    sets.reserveIbans.has(transaction.counterpartyIban)
-  ) {
+  if (counterparty !== undefined && sets.reserveIbans.has(counterparty)) {
     return transaction.amountCents > 0
       ? { flow: correctReserveDrawdown(transaction, sets.reserveIbans) ?? "RESERVE" }
       : { flow: "RESERVE" };
@@ -70,10 +83,7 @@ export const classifyFlow = (
 
   // 2. Declared pot set: a movement between two of the household's own
   // pot accounts, excluded from both sides whatever pairing finds.
-  if (
-    transaction.counterpartyIban !== undefined &&
-    sets.potIbans.has(transaction.counterpartyIban)
-  ) {
+  if (counterparty !== undefined && sets.potIbans.has(counterparty)) {
     return { flow: "INTERNAL" };
   }
 

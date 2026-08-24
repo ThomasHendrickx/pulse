@@ -603,7 +603,16 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
               candidate.id === entry.transactionId,
           );
           if (stored !== undefined) {
-            stored.flow = entry.flow;
+            // A NULL FLOW CLEARS THE INTERPRETATION, the same way a null
+            // merchantId clears an assignment below: the held state
+            // (DR-0030, decision D-59) is the ABSENCE of a flow on a row
+            // whose account is not a pot account, so the fake must be able
+            // to represent it or every held-row test passes vacuously.
+            if (entry.flow === null) {
+              delete stored.flow;
+            } else {
+              stored.flow = entry.flow;
+            }
           }
         }
         for (const entry of input.merchants) {

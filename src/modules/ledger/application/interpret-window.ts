@@ -20,6 +20,9 @@ import type { LedgerDependencies } from "./ports";
 
 export type InterpretationSummary = {
   readonly transactionsInterpreted: number;
+  // Rows on accounts that are not pot accounts, whose interpretation this
+  // run CLEARED: the held set (DR-0030).
+  readonly transactionsHeld: number;
   readonly transferPairs: number;
   readonly settlements: number;
   readonly unmatchedInternalIds: readonly string[];
@@ -37,6 +40,23 @@ export const interpretWindow = async (
   const windowedAccountIds = [...sets.potAccountIds].filter(
     (accountId) => !sets.cardAccountIds.has(accountId),
   );
+  // INTERPRETATION OWNS EVERY TRANSACTION IN THE HOUSEHOLD, NOT ONLY THE
+  // ONES IT COUNTS (M3-P15 step 4, DR-0030, decision D-59). It goes on
+  // CLASSIFYING pot accounts only; what it additionally does is CLEAR the
+  // interpretation columns of rows on accounts that are not pot accounts.
+  // That is the HELD state: a row with no flow on an account that is not a
+  // pot account, ingested as a fact, entering no month total, offered for
+  // no naming, and not an uninterpreted gap. It is told apart from a
+  // genuinely uninterpreted row by its account's ring, which is why every
+  // read that can see a row with no flow carries a ring predicate.
+  //
+  // WITHOUT THIS the rows of an account that LEAVES the pot keep the flow
+  // and the merchant they were last stamped with and are never visited
+  // again, so they go on counting in the totals and go on being offered on
+  // the naming screen. A ring correction would then be a lie.
+  const heldAccountIds = accounts
+    .filter((account) => !sets.potAccountIds.has(account.id))
+    .map((account) => account.id);
 
   // Finding CR-301: settlement matching resolves against card IMPORTS,
   // whole, never against the slice of them a window happens to load. A
@@ -58,6 +78,19 @@ export const interpretWindow = async (
           accountIds: cardAccountIds,
         });
   const transactions = [...windowed, ...cardRows];
+  // Loaded over the SAME window as the pot rows, and unbounded on a
+  // recompute, which is the run a ring correction triggers. A held row
+  // outside the window is left alone because a held row carries no
+  // interpretation to go stale: the only way one acquires a flow is a
+  // declaration change, and a declaration change recomputes everything.
+  const heldRows =
+    heldAccountIds.length === 0
+      ? []
+      : await deps.ledger.listPotTransactions(context, {
+          accountIds: heldAccountIds,
+          ...(window.from === undefined ? {} : { from: window.from }),
+          ...(window.to === undefined ? {} : { to: window.to }),
+        });
 
   // Finding HZ-M3P3-01: a card import's settlement total is the figure its
   // own statement carries, read from the stored fact column, never
@@ -120,7 +153,7 @@ export const interpretWindow = async (
     context,
     countedTexts,
   );
-  const merchants = transactions.map((transaction) => ({
+  const merchants = [...transactions, ...heldRows].map((transaction) => ({
     transactionId: transaction.id,
     merchantId: isCounted(transaction.id)
       ? (resolvedMerchants.get(merchantText(transaction)) ?? null)
@@ -142,16 +175,28 @@ export const interpretWindow = async (
   ];
 
   const transactionIds = transactions.map((transaction) => transaction.id);
+  const heldIds = heldRows.map((transaction) => transaction.id);
+  // The held rows' imports reach INTERPRETED too. Their rows really have
+  // been visited: the answer is that nothing classifies them, which is a
+  // decision and not an omission.
   const interpretedImportIds = [
-    ...new Set(transactions.map((transaction) => transaction.importId)),
+    ...new Set(
+      [...transactions, ...heldRows].map((transaction) => transaction.importId),
+    ),
   ].sort();
 
   await deps.ledger.replaceInterpretation(context, {
-    transactionIds,
-    flows: transactionIds.flatMap((transactionId) => {
-      const flow = interpretation.flows.get(transactionId);
-      return flow === undefined ? [] : [{ transactionId, flow }];
-    }),
+    transactionIds: [...transactionIds, ...heldIds],
+    flows: [
+      ...transactionIds.flatMap((transactionId) => {
+        const flow = interpretation.flows.get(transactionId);
+        return flow === undefined ? [] : [{ transactionId, flow }];
+      }),
+      // The clearing write. Never a raw-column write and never a new Flow
+      // member: the ABSENCE of a flow is the held state, and the account's
+      // ring is what says which absence it is.
+      ...heldIds.map((transactionId) => ({ transactionId, flow: null })),
+    ],
     merchants,
     links,
     interpretedImportIds,
@@ -159,6 +204,7 @@ export const interpretWindow = async (
 
   return {
     transactionsInterpreted: transactionIds.length,
+    transactionsHeld: heldIds.length,
     transferPairs: interpretation.transferPairs.length,
     settlements: interpretation.settlements.length,
     unmatchedInternalIds: interpretation.unmatchedInternalIds,

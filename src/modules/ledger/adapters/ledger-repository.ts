@@ -161,7 +161,7 @@ export const replaceInterpretation = async (
     readonly transactionIds: readonly string[];
     readonly flows: readonly {
       readonly transactionId: string;
-      readonly flow: Flow;
+      readonly flow: Flow | null;
     }[];
     readonly merchants: readonly InterpretationMerchantWrite[];
     readonly links: readonly InterpretationLinkWrite[];
@@ -181,7 +181,7 @@ export const replaceInterpretation = async (
     });
     // Flows are written per flow value: set-based updates, never a
     // row-by-row loop over thousands of rows.
-    const byFlow = new Map<Flow, string[]>();
+    const byFlow = new Map<Flow | null, string[]>();
     for (const entry of input.flows) {
       const list = byFlow.get(entry.flow);
       if (list === undefined) {

@@ -7,6 +7,7 @@
 import type { Cents } from "@/platform/money";
 import type { PlainDate } from "@/platform/plain-date";
 import { SETTLEMENT_CREDIT_PATTERNS, matchesAny } from "./constants";
+import { canonicalAccountNumber } from "@/platform/account-number";
 
 export type LedgerTransaction = {
   readonly id: string;
@@ -31,9 +32,16 @@ export type DeclaredAccount = {
   readonly iban?: string;
 };
 
-// Derived, not declared: the sets classification runs against. Reserve
-// accounts are registered by IBAN only (their statements are not imported),
-// so the reserve set is a set of IBANs. Pot accounts with an IBAN form the
+// Derived, not declared: the sets classification runs against.
+//
+// CORRECTED RATHER THAN QUIETLY REWRITTEN (R-087, M3-P14). This comment used
+// to read "Reserve accounts are registered by IBAN only (their statements
+// are not imported), so the reserve set is a set of IBANs". The parenthesis
+// is FALSE under DR-0030: a reserve account's statement IS imported, its
+// rows are ingested as facts and then HELD. The reserve set is still a set
+// of account numbers, because what it is for is recognising a POT-side row
+// whose counterparty is one of the household's reserve accounts; the reserve
+// account's OWN rows are not classified at all. Pot accounts with an IBAN form the
 // pot set; pot accounts WITHOUT an IBAN are card accounts (the observed
 // card export shape carries no own-account identifier; such accounts are
 // recognised through their bound SourceProfile at import time).
@@ -45,6 +53,14 @@ export type DeclaredSets = {
   readonly cardAccountIds: ReadonlySet<string>;
 };
 
+// BOTH SIDES ARE CANONICALISED AT COMPARISON TIME (M3-P14, decision D-47).
+// A declaration is stored canonical on the way in, so canonicalising it
+// again here is idempotent and costs nothing; the reason this call is here
+// anyway is that it is the SET side of a comparison whose other side is a
+// FACT column that is never rewritten, and a comparison is only as canonical
+// as its weaker half. The transaction side is canonicalised in
+// classify-flow.ts. See the rule and its sibling list at
+// src/platform/account-number.ts.
 export const deriveDeclaredSets = (
   accounts: readonly DeclaredAccount[],
 ): DeclaredSets => {
@@ -54,18 +70,22 @@ export const deriveDeclaredSets = (
   const potAccountIds = new Set<string>();
   const cardAccountIds = new Set<string>();
   for (const account of accounts) {
+    const iban =
+      account.iban === undefined
+        ? undefined
+        : canonicalAccountNumber(account.iban);
     if (account.role === "RESERVE") {
-      if (account.iban !== undefined) {
-        reserveIbans.add(account.iban);
+      if (iban !== undefined) {
+        reserveIbans.add(iban);
       }
       continue;
     }
     potAccountIds.add(account.id);
-    if (account.iban === undefined) {
+    if (iban === undefined) {
       cardAccountIds.add(account.id);
     } else {
-      potIbans.add(account.iban);
-      potIbanToAccountId.set(account.iban, account.id);
+      potIbans.add(iban);
+      potIbanToAccountId.set(iban, account.id);
     }
   }
   return { reserveIbans, potIbans, potIbanToAccountId, potAccountIds, cardAccountIds };

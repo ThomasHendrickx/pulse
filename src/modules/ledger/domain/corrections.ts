@@ -133,7 +133,10 @@ export const correctReserveDrawdown = (
 ): "RESERVE" | undefined =>
   transaction.amountCents > 0 &&
   transaction.counterpartyIban !== undefined &&
-  reserveIbans.has(transaction.counterpartyIban)
+  // Both sides canonical at comparison time: the set side was canonicalised
+  // in deriveDeclaredSets, this side is a FACT column and is never rewritten
+  // (M3-P14, decision D-47).
+  reserveIbans.has(canonicalAccountNumber(transaction.counterpartyIban))
     ? "RESERVE"
     : undefined;
 

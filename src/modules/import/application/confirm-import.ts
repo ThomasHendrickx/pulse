@@ -5,6 +5,7 @@
 // spec fix can change which column is the account column.
 
 import type { HouseholdContext } from "@/platform/tenancy";
+import { canonicalAccountNumber } from "@/platform/account-number";
 import { assignDedupKeys, zipRowsWithDedupKeys } from "../domain/dedup";
 import type { SourceProfileSpec } from "../domain/source-profile";
 import type { NewAccount } from "@/modules/accounts/application";
@@ -81,7 +82,17 @@ export const confirmImport = async (
   // binding of a spec-identical stored profile, then, and only then, the
   // user's declaration.
   const existingProfile = await findProfileBySpec(context, deps, input.spec);
-  const fileIban = parsed.value.accountIbans[0];
+  // ONE CANONICAL FORM IS STORED TREE-WIDE (M3-P14, decision D-47). The
+  // declaration this path writes is normalised on the way in, exactly as the
+  // registration form's is, so Account.iban holds one form everywhere and
+  // the per-household uniqueness constraint at
+  // prisma/schema/accounts.prisma:28 is a real backstop rather than a
+  // nominal one. The parsed value is a FACT of the file and the row column
+  // keeps whatever surface form the document printed; this canonicalisation
+  // is on the DECLARATION only.
+  const rawFileIban = parsed.value.accountIbans[0];
+  const fileIban =
+    rawFileIban === undefined ? undefined : canonicalAccountNumber(rawFileIban);
   let accountId: string | undefined;
   if (fileIban !== undefined) {
     const existing = await deps.accounts.findAccountByIban(context, fileIban);
