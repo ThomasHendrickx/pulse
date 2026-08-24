@@ -6,7 +6,6 @@ round: 2
 lane: clean-room-criteria
 head: e3345b58fe1cab928652c52fa1739e00fdbca150
 branch: claude/m3-p14-rev2-crit
-status: in-progress
 
 gates-run-by-this-lane:
   note: >-
@@ -520,3 +519,388 @@ findings:
       Enumerate the writers rather than inspecting two of them: walk src/ for
       assignments to counterpartyIban and assert the producing set equals the
       two named files.
+
+coordination:
+  slow-gate: >-
+    THIS LANE DID NOT RUN npm run test:e2e, deliberately. The sibling hazard
+    lane holds port 3000: a walk of /proc/*/cwd found pid 28694 running
+    npm run dev -p 3000 with cwd /home/user/wt-m3p14-h2, together with its
+    next-server child pid 28727, and playwright.config.ts sets
+    reuseExistingServer false on both web servers, so a run from this worktree
+    would have failed on the occupied port and would have disturbed the lane
+    that is attacking the failure's cause. Every slow-gate statement in this
+    document is therefore a judgement about the branch's OWN canonical run as
+    recorded at delivery/work-history/m3-p14.yaml:2087, and is labelled as such.
+  sibling-verdict: >-
+    /home/user/wt-m3p14-h2 was met in a directory listing and in the process
+    walk above. Its review document was NOT opened at any point before this one
+    was written and pushed.
+  edits: >-
+    Nine temporary edits were made to derive red witnesses, each reverted
+    immediately and each verified reverted with git status. The only files this
+    lane leaves changed are under delivery/review/. No source, test, script or
+    plan file is modified.
+
+re-derivations:
+  the-invariant-red-witness-14-16:
+    claim: >-
+      The branch claims that breaking netToReserves' sign inversion at one line
+      reddens five of six tests in test/application/held-rows.test.ts, where
+      before the fix that edit was invisible to all of them.
+    reproduced: >-
+      CONFIRMED for the green-to-red half. Changing
+      src/modules/overview/domain/month-projection.ts:200 from
+      const netToReserves = 0 - raw.reserveSignedCents to
+      const netToReserves = raw.reserveSignedCents and running
+      npx vitest run test/application/held-rows.test.ts gives
+      "Tests 5 failed | 1 passed (6)". The one survivor is the CR-502 test,
+      which holds no reserve rows and so has no netToReserves to invert. The
+      file was restored.
+    what-this-lane-did-not-re-derive: >-
+      The counterfactual half, that the same edit was invisible to all six
+      before the fix round, is a statement about a tree this lane did not check
+      out. It is plausible from the file's own history and is not disputed; it
+      is simply not re-derived here.
+    the-limit-that-stands: >-
+      The claim is correctly scoped to deriveMonthFigures. The aggregation over
+      rows in test/application/held-rows.test.ts:105 through :160 is still a
+      re-implementation, and it is precisely the RING PREDICATES that it
+      re-implements: the pot-membership test, the held read's inverse predicate
+      and the uninterpreted count. The file's own comment says so. So the four
+      arms' arithmetic is now shared with the product and their ring scoping is
+      still not, and the only executable guard on the shipped ring predicates is
+      test/e2e/overview-reads.spec.ts plus the fast-gate structural guard that
+      finding CRIT2-01 shows self-passing in three ways.
+  the-account-shape-figure:
+    claim: "distinct=34 pass=19 fail=15 on this branch, re-measured with the recorded method."
+    reproduced: >-
+      CONFIRMED, independently. This lane rebuilt the measurement from
+      scripts/gate-privacy.sh directly: git ls-files, that gate's own skip list
+      at scripts/gate-privacy.sh:143 through :146, its IBAN alternation at
+      scripts/gate-privacy.sh:76 through :78 in both arms, its norm at
+      scripts/gate-privacy.sh:109, distinct values, then ISO 7064 with the
+      four-character rotation. Result: distinct=34 pass=19 fail=15. Exactly the
+      reported figure, to all three components.
+  the-five-cases-of-14-14:
+    claim: "the five cases now execute against a real database."
+    checked: >-
+      They do execute, and they are in the gate. playwright.config.ts:63
+      declares the chromium project over testDir test/e2e with testIgnore
+      /prod-smoke/, so test/e2e/overview-reads.spec.ts is in the chromium
+      project and ran. Each read's own WHERE clause is exercised rather than
+      described: cases ONE, THREE, FOUR and FIVE call monthFigures, listGapRows
+      and listHeldAccountRows on seeded households and assert the three reads
+      agree or disagree as the case requires, and the 14.15 witness ONE case at
+      test/e2e/overview-reads.spec.ts:216 calls listCountedAccountRows over an
+      account holding a cleared row AND a stale-flow row, which is the counted
+      read's ring predicate asserted by behaviour.
+    correction-to-the-branch-s-own-account: >-
+      The fix-round note names cases ONE, THREE, FOUR and FIVE and leaves TWO
+      pointing at captured output. Case TWO is in fact executed too: the test at
+      test/e2e/overview-reads.spec.ts:322, filed under criterion 15.4, asserts
+      every MonthFigures field and both listGapRows entries by hand against the
+      recorded baseline over an all-pot household, which is case TWO verbatim.
+      The branch under-claims here.
+    what-this-does-not-close: >-
+      These ten tests live only in the slow gate, which exits 1 at this head, so
+      the ring predicates have no guard in a green gate. Finding CRIT2-01 is why
+      that matters.
+
+criteria-walk:
+  note: >-
+    Every criterion of both phases is walked. Each is identified by its own
+    leading clause quoted verbatim from the phase contract; the full text runs
+    to several hundred words per criterion and is not reproduced, and the
+    verdict below names the specific clause it turns on in every case where the
+    verdict is not met.
+  M3-P14:
+    - id: "14.1"
+      quote: "THE OWNER'S SCENARIO, END TO END, AND THE FIXTURE IS PROVED CAPABLE OF FAILING."
+      verdict: met
+      evidence: >-
+        test/e2e/accounts.spec.ts:188 (control arm) and :215 (registered arm),
+        both reported passed in the branch's canonical run. The control arm
+        keys on a hand-written list of the seven counterparty texts, so the
+        registered arm's zero is a set difference. Every fixture account number
+        is asserted valid in the fast gate by test/domain/account-number.test.ts,
+        which this lane re-ran green.
+    - id: "14.2"
+      quote: "THE SAVINGS CASE, WHICH NO EXISTING TEST CAN CATCH."
+      verdict: partial
+      evidence: >-
+        Six of the seven assertions are made in the registered arm. The seventh
+        is now made, at test/e2e/overview-reads.spec.ts:264, over a household
+        holding one reserve account in two surface forms, and it does
+        discriminate a raw GROUPING as well as a raw join. What is not met is
+        the criterion's own fixture clause, that the fixture "writes its
+        counterparty accounts in the spaced surface form", which findings
+        CRIT2-11 shows to be unsatisfiable through the delimited path. The
+        branch's own entry carries a partial block for this criterion and
+        counts it met anyway (CRIT2-05).
+    - id: "14.3"
+      quote: "ADOPTION, NOT DUPLICATION."
+      verdict: met
+      evidence: >-
+        Three cases at test/application/account-registry.test.ts:144 onward,
+        including a spaced lower-case registration adopted by a compact import,
+        the reverse order refused by name, and the import path storing the
+        canonical form. Green in this lane's own npm test run.
+    - id: "14.4"
+      quote: "ONE CANONICAL FORM, WITNESSED WHERE IT MATTERS."
+      verdict: not met
+      evidence: >-
+        The three one-definition halves are met and the behavioural halves are
+        met. The clause the criterion writes out at length, that a second
+        implementation "reddens it wherever it lives, including one written
+        inline inside another module's identity derivation", fails: finding
+        CRIT2-02 puts a working second copy in src/modules/ledger/domain and the
+        guard reports 17 passed of 17.
+    - id: "14.5"
+      quote: "REGISTRATION HEALS ROWS THAT ARE ALREADY THERE."
+      verdict: partial
+      evidence: >-
+        The application half is green. The browser half is
+        test/e2e/accounts.spec.ts:274, which is the one failure of the branch's
+        canonical run. Finding CRIT2-06.
+    - id: "14.6"
+      quote: "THE CARD CASE IS STATED AND ITS CONSEQUENCE IS MEASURED."
+      verdict: partial
+      evidence: >-
+        The refusal is witnessed at test/application/account-registry.test.ts:239
+        and the card copy is on the screen and in three catalogues. The
+        settlement-consequence Playwright test is absent, as the branch states,
+        and the UI grep clause is absent too, which it does not state
+        (CRIT2-09).
+    - id: "14.7"
+      quote: "THE SCREEN IS REACHABLE AND SURVIVES THE PHONE."
+      verdict: met
+      evidence: >-
+        test/e2e/month-view.spec.ts:717 runs both widths and both text scales
+        under the desktop and phone projects, asserts line counts against a
+        hand-written three-link baseline, the tap-target floor in BOTH
+        dimensions and the document width. Reported passed in both projects in
+        the canonical run. The criterion found a real regression and the shell
+        changed for it, which is the strongest kind of evidence a criterion can
+        produce.
+    - id: "14.8"
+      quote: "THE NEW GAP IS NAMED WITH ITS REMEDY, NOT LEFT AS AN ALARM."
+      verdict: partial
+      evidence: >-
+        recon-cause-unmatched is asserted visible with its count at
+        test/e2e/accounts.spec.ts:266. The total, the verdict clause, the
+        remedy-copy clause and the whole fourth test are unasserted. Finding
+        CRIT2-08.
+    - id: "14.9"
+      quote: "NO FACT IS REWRITTEN AND NO DECLARATION IS WRITTEN BY AN ENGINE."
+      verdict: met
+      evidence: >-
+        test/application/account-registry.test.ts:340 asserts raw columns byte
+        identical across a declaration write plus a full recompute and two
+        recomputes identical to one. The accounts repository exports no
+        transaction write.
+    - id: "14.10"
+      quote: "npm run typecheck, npm run lint, npm test, npm run gate:tokens and npm run gate:privacy all exit 0, and npm run test:e2e exits 0 with the new spec reporting its tests as passed."
+      verdict: not met
+      evidence: >-
+        The five fast gates exit 0, re-run by this lane and quoted in
+        gates-run-by-this-lane above, and the diff-scoped grep exists, runs and
+        exits 0. The slow gate exits 1 and the failing test is in the new spec.
+        The skill correction is made and is asserted by
+        test/domain/absent-flow-reads.test.ts:150 onward. Findings CRIT2-04 and
+        CRIT2-05.
+    - id: "14.11"
+      quote: "THE SAVINGS STATEMENT IS ACCEPTED, IN THE ORDER A HOUSEHOLD IS ACTUALLY IN, AND NOTHING IS DECLARED SILENTLY."
+      verdict: partial
+      evidence: >-
+        Witnesses ONE, THREE and FOUR are met, and the account-shape figure
+        witness FOUR rests on was independently re-derived above. Witness TWO is
+        incomplete on the branch's own admission: the reserve-with-no-account-
+        number refusal is implemented and wired to three catalogues and nothing
+        asserts that it fires. Counted met in the standing block (CRIT2-05).
+    - id: "14.12"
+      quote: "A REGISTRATION THE ENGINE CANNOT USE IS REFUSED AT THE FORM, NOT ACCEPTED SILENTLY."
+      verdict: met
+      evidence: >-
+        Four refusals over invented inputs with no account row created, at
+        test/application/account-registry.test.ts:210 onward, plus the browser
+        test at test/e2e/accounts.spec.ts:301. Green in this lane's fast-gate
+        run; the browser half passed in the canonical run.
+    - id: "14.13"
+      quote: "A NAMING THAT STOPS APPLYING IS COUNTED AND NAMED, NEVER SILENTLY GONE."
+      verdict: partial
+      evidence: >-
+        The application half is complete and the delete grep is real: this lane
+        confirmed it reddens on the ordinary Prisma form. The Playwright half is
+        on the CORRECTION path and the criterion names the REGISTRATION path.
+        Honestly scoped by the branch. The delete grep carries one hole
+        (CRIT2-03).
+    - id: "14.14"
+      quote: "EVERY READ THAT CAN SEE A ROW WITH NO FLOW IS SCOPED BY THE RING, SO A HELD ROW IS NEVER REPORTED AS A GAP AND A GAP IS NEVER REPORTED AS HELD."
+      verdict: met
+      evidence: >-
+        All five cases execute against a real database, including case TWO which
+        the branch under-claims; see re-derivations above. Case FIVE's
+        enumeration assertion is real and this lane did not defeat it.
+      caveat: >-
+        The companion ring-predicate assertion in the same file is self-passing
+        in three ways (CRIT2-01), so the criterion's guarantee holds only while
+        the slow gate runs, and the slow gate exits 1.
+    - id: "14.15"
+      quote: "EVERY ACCOUNT THAT PUT ROWS IN THIS MONTH IS NAMED, WITH WHETHER THOSE ROWS WERE COUNTED OR HELD."
+      verdict: met
+      evidence: >-
+        All six witnesses are present. Witness FOUR runs the page in each of the
+        three locales and asserts the VISIBLE TEXT of each entry against that
+        catalogue's own string, which is what the criterion insists on over an
+        sr-only or attribute-only answer. Witness THREE is asserted by
+        transaction at test/e2e/overview-reads.spec.ts:194 and in the fake world.
+        Witness SIX, the counted side, is the wrong-answer journey at
+        test/e2e/accounts.spec.ts:424, which passed.
+      caveat: >-
+        Hazard H14.21, which this criterion addresses, is exactly the state
+        CRIT2-01 witness ONE constructs with the fast gate green.
+    - id: "14.16"
+      quote: "THE HELD ROW CHANGES NOTHING, AND THE DECLARATION CHANGES EXACTLY WHAT IT SHOULD."
+      verdict: met
+      evidence: >-
+        Four arms at the application level in test/application/held-rows.test.ts
+        and four rendered halves at test/e2e/accounts.spec.ts:716, :747, :774
+        and :803, each asserting the same figures on the page against
+        hand-written strings. The claimed red witness reproduces, 5 of 6.
+      caveat: >-
+        Arms THREE and FOUR omit the uninterpreted-count stillness on the
+        rendered page, which the criterion names for both; it is asserted in
+        their application halves. And the application halves still re-implement
+        the ring predicates in their aggregation, which the file states.
+  M3-P15:
+    - id: "15.1"
+      quote: "A RING IS CORRECTED AND THE MONEY MOVES, IN THE DIRECTION THE CLASSIFICATION ORDER ACTUALLY PRODUCES."
+      verdict: partial
+      evidence: >-
+        The second arm is met at the application level and its fixture number
+        passes the platform check. The first arm has two of its four assertions
+        at any level and no browser half. Finding CRIT2-07.
+    - id: "15.2"
+      quote: "A ROW ON AN ACCOUNT THAT LEFT THE POT STOPS COUNTING AND STOPS BEING OFFERED."
+      verdict: met
+      evidence: >-
+        test/e2e/accounts.spec.ts:504 asserts the rows leave every figure, the
+        counterparties leave /merchants, the entry is NAMED AS HELD rather than
+        vanishing, and a second correction FLIPS it back with the entry
+        remaining. The application half asserts no flow and no merchant after
+        the recompute. Both passed.
+    - id: "15.3"
+      quote: "AND THE BOOKS STILL CLOSE, WITHOUT THE GAP READ BEING BLINDED TO DO IT."
+      verdict: met
+      evidence: >-
+        The same e2e test asserts the verdict, the zero count and the absent
+        cause blocks. CR-502 is held rather than undone, asserted both in the
+        fake world at test/application/held-rows.test.ts:404 and against a real
+        database at test/e2e/overview-reads.spec.ts:150. The cleared-row-reaches-
+        nothing half is asserted at test/e2e/overview-reads.spec.ts:404.
+    - id: "15.4"
+      quote: "SCOPING THE READS MOVES NOTHING THAT EXISTS TODAY."
+      verdict: met
+      evidence: >-
+        This is the criterion the fix round repaired most honestly. The golden
+        journey is untouched in the diff, and the second and third witnesses are
+        now executable tests inside this phase's own tree at
+        test/e2e/overview-reads.spec.ts:322 and :373, asserting the recorded
+        baseline field by field and gap row by gap row, and asserting that a
+        household holding a non-pot account differs only in the field the
+        scoping changes.
+    - id: "15.5"
+      quote: "NO FACT IS REWRITTEN, ANYWHERE IN THIS PHASE."
+      verdict: met
+      evidence: >-
+        Asserted with 14.9 at test/application/account-registry.test.ts:340. The
+        correction path writes one declaration column and calls recompute.
+    - id: "15.6"
+      quote: "A DEAD MERCHANT RULE IS KEPT, COUNTED AND NAMED, AND NO ENGINE DELETES IT."
+      verdict: met
+      evidence: >-
+        test/application/account-registry.test.ts:414 and :479, including the
+        revival case on the construction where a rule really does revive, which
+        the file records as a corrected first attempt. The delete grep is real
+        and this lane reddened it on the ordinary Prisma form.
+      caveat: The grep hole at CRIT2-03.
+    - id: "15.7"
+      quote: "THE OWNER IS TOLD BEFORE THEY CONFIRM, AND THE PREVIEW IS THE SAME COMPUTATION AS THE OUTCOME."
+      verdict: partial
+      evidence: >-
+        Three quantities are shown, the preview is a dry run, the outcome is
+        measured after the write rather than echoed, and the browser half DOES
+        byte-compare in all three locales. The settlement-matched card debit the
+        criterion names is absent from the fixture, so the divergence case the
+        whole of decision D-58 is about is only half exercised. Findings
+        CRIT2-05 and CRIT2-10.
+    - id: "15.8"
+      quote: "npm run typecheck, npm run lint, npm test, npm run gate:tokens and npm run gate:privacy all exit 0, and npm run test:e2e exits 0 with the accounts spec and the month-view spec both reporting their tests as passed."
+      verdict: not met
+      evidence: >-
+        The fast gates exit 0, re-run by this lane. The slow gate exits 1 and
+        the accounts spec is the spec that failed. The verification-first
+        captured-output half is present and substantial.
+    - id: "15.9"
+      quote: "THE REMEDY M3-P14'S COPY NAMES EXISTS, AND ONE JOURNEY WALKS THE WRONG ANSWER BACK."
+      verdict: met
+      evidence: >-
+        test/e2e/accounts.spec.ts:424 walks the whole path in one journey and
+        passed in the canonical run. It clicks the control, so its existence is
+        asserted by use rather than by a grep, which is stronger.
+
+count:
+  met: 14
+  partial: 8
+  not-met: 3
+  total: 25
+  met-list: ["14.1","14.3","14.7","14.9","14.12","14.14","14.15","14.16","15.2","15.3","15.4","15.5","15.6","15.9"]
+  partial-list: ["14.2","14.5","14.6","14.8","14.11","14.13","15.1","15.7"]
+  not-met-list: ["14.4","14.10","15.8"]
+  against-the-branch-s-own-count: >-
+    The branch reports 21 met, 4 partial, 0 not met. This lane reaches 14 met,
+    8 partial, 3 not met. The gap is entirely accounting rather than
+    disagreement about the artifact: seven of the eight partials are states the
+    branch's own document describes accurately somewhere, and the two gate
+    criteria turn on a slow-gate exit code the branch records honestly two
+    blocks before it counts them green. The one substantive disagreement is
+    14.4, where this lane derived a red witness the branch did not have.
+  round-one-comparison: >-
+    Round one recorded 12 of 25 and this lane reaches 14 of 25, which
+    understates the round's real progress: 14.14, 14.16 and 15.4 moved from
+    evidence that did not support them to executable tests against a real
+    database, and three of the four guards round one broke now redden on the
+    ordinary form of what they forbid. The count moves little because the fix
+    round also raised its own claims faster than its evidence.
+
+what-this-contract-did-not-reach:
+  - >-
+    THE SLOW GATE WAS NOT RUN BY THIS LANE. Every statement about browser-level
+    behaviour rests on the branch's recorded canonical run, not on an
+    independent execution. If that run is wrong in either direction, so is this
+    document.
+  - >-
+    THE ONE FAILURE'S CAUSE IS NOT INVESTIGATED HERE. This lane judged only what
+    it undermines. Whether the registration path carries a race is open.
+  - >-
+    THE CRITERIA DO NOT REACH THE COUNTED READ'S RING PREDICATE IN A GREEN GATE.
+    Criterion 14.15 asserts the one-entry property by construction and criterion
+    14.14 case FIVE explicitly excludes the counted read from its enumeration.
+    The only executable guard on it is in the slow gate. That is a gap in the
+    CONTRACT and not only in the artifact, and finding CRIT2-01 is what it costs.
+  - >-
+    NO CRITERION IN EITHER PHASE ASKS WHETHER THE TWO-SURFACE-FORM STATE IS
+    REACHABLE. Both phases assume it is, and CRIT2-11 shows it is not. A review
+    that executed both contracts faithfully would not have asked.
+  - >-
+    THE PRIVACY GATE'S OWN INTERMITTENCY, disclosed by the branch as OQ-1, was
+    not reproduced here: this lane ran gate:privacy once and it exited 0. That
+    is one sample and it is not evidence about the intermittency either way.
+  - >-
+    "ALL ACCEPTANCE CRITERIA MET" WOULD NOT BE A TERMINAL GREEN EVEN AT 25 OF
+    25. The four guards this round rebuilt were all green over the states they
+    forbid before it, and three of them are green over a state they forbid now.
+    The count is a statement about the contract; the red witnesses above are the
+    statement about the artifact.
+
+status: complete
