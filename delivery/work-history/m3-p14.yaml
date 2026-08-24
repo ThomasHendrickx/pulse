@@ -104,3 +104,50 @@ verification-first:
       At the phase base the Prisma-client style of the absent-flow condition
       appears nowhere under src/. Criterion 14.14 case FIVE's enumeration must
       still cover it, because this phase and M3-P15 add reads.
+
+open-questions:
+  - id: OQ-1-gate-privacy-is-flaky
+    severity: blocks-a-clean-gate-reading-not-this-phase
+    statement: >-
+      `npm run gate:privacy` is INTERMITTENTLY RED, and it names a different
+      already-listed identifier in a different untouched file each time. It
+      is deterministic-green when run alone and unhealthy under concurrent
+      load. I did NOT find the mechanism and I did not change the script,
+      which is not in this phase's files-to-touch.
+    evidence: |
+      Sweep of six consecutive runs on an otherwise idle container:
+        run 1 exit=0 0 hits
+        run 2 exit=0 0 hits
+        run 3 exit=1 1 hits      <-- named test/fixtures/mv-transit-a.csv
+        run 4 exit=0 0 hits
+        run 5 exit=0 0 hits
+        run 6 exit=0 0 hits
+      With a vitest run in parallel, two of two runs failed.
+      Instrumented copy (scratch only, the tracked script untouched), one
+      failure in fifteen:
+        DBG f=test/domain/kbc-fix-round-3.test.ts hit=[541788XXXXXX7654] knownlen=799 allowexists=yes
+      541788XXXXXX7654 IS on the allow list, and knownlen=799 is the same
+      length the healthy runs produce, so at the moment of the false report
+      BOTH sides of the comparison were correct.
+      The comparison itself was then stressed in isolation, 3000 iterations
+      of the exact `printf '%s\n' "$known" | grep -qxF "541788XXXXXX7654"`:
+        misses=0 non-one-exits=0
+      So the isolated comparison is stable and the fault is upstream of it,
+      somewhere in the per-file hit pipeline. I did not isolate it further.
+    not-caused-by-this-phase: |
+      git log --oneline -1 -- test/domain/kbc-fix-round-3.test.ts scripts/gate-privacy.sh
+        ac37a63 gate:privacy: fold case on the shape that reaches a letters-bearing body
+      git diff --name-only origin/main...HEAD | grep -E 'gate-privacy|kbc-fix-round-3|mv-transit-a'
+        (no output: none of the three is touched by this branch)
+      Two different runs named two different files, both untouched, both
+      carrying only allow-listed values. A defect in this phase's own
+      identifiers could not select an untouched file at random.
+    what-a-reviewer-should-do: >-
+      Re-run it. A lone red gate:privacy naming an identifier that IS on the
+      allow list is this flake until someone shows otherwise, and treating it
+      as a real finding will send a round chasing a value that is listed. The
+      honest reading of my green gate line below is therefore "green on the
+      run recorded, on a quiet container", not "green deterministically".
+      This is a real hole in the project's most safety-critical gate and it
+      deserves a phase of its own; I am recording it rather than fixing it
+      because the script is not in this phase's files-to-touch.
