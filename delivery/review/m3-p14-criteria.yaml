@@ -234,3 +234,66 @@ findings:
       of the three reads carries a ring predicate, which is the half the current text
       guard leaves out.
     criterion-touched: "14.14, and hazards H14.10, H14.14, H14.19"
+
+  - id: CRIT-P14-06
+    severity: low
+    title: "Criterion 14.14's structural guard asserts the ring predicates are DEFINED, not that any query uses them"
+    where: test/domain/absent-flow-reads.test.ts:195 through :208
+    evidence: |
+      The last test in that file asserts the repository file text contains
+      't."flow" IS NOT NULL', "NON_POT_ROW" and "POT_ROW". Both constants are
+      DEFINED at src/modules/overview/adapters/overview-repository.ts:75 and :76,
+      so those two assertions are satisfied by the definitions alone. Delete
+      "AND ${POT_ROW}" from the WHERE of listGapRows at overview-repository.ts:349
+      and both constants remain defined and remain used elsewhere, so the test
+      stays green, eslint stays green, and the gap listing starts handing the
+      screen held rows under a verdict that says the books close, which is
+      hazard H14.19 exactly.
+    consequence: "The guard reads as covering the ring scoping and covers only the existence of two identifiers."
+    fix: "Assert per-read: that the WHERE clause of each of the three reads carries a ring predicate, keyed on the enclosing declaration the file's own readContaining helper already computes."
+    criterion-touched: "14.14 case FIVE, hazard H14.19"
+
+  - id: CRIT-P14-07
+    severity: low
+    title: "Criterion 14.10's diff-scoped grep is narrower than the criterion's words in three named ways"
+    where: scripts/gate-diff-tokens.sh:38 and :39
+    evidence: |
+      I ran the script in this worktree: exit 0, "gate:diff-tokens clean (src/app and
+      src/modules/*/ui, added lines only)". I then probed its two patterns in both
+      directions over synthetic lines. It CAUGHT #b22222, #b22, oklch(), rgb(), rgba(),
+      hsl(), "color: red", "background: white", 12px, 0.5rem, 1.2em, and a value on a
+      line carrying a trailing comment; it correctly SKIPPED a comment-only line and
+      values written as var() tokens. It MISSED "1PX", "12Px", "color: RED",
+      "color: navy", "color: lightgray" and color-mix().
+      The criterion's words are "a colour literal in any notation or a px, rem or em
+      length". CSS units and colour keywords are case-insensitive and the named-colour
+      set has 148 members, of which the pattern at scripts/gate-diff-tokens.sh:38 lists
+      sixteen.
+      I then scanned this branch's 918 added lines under src/app and src/modules/*/ui
+      for exactly the shapes the guard misses (the unlisted colour names, and vw, vh,
+      ch, ex, pt, cm, mm lengths) and found NONE, so the guard's green is a true
+      statement about this tree.
+      Separately: scripts/gate-diff-tokens.sh is not wired into package.json, so it runs
+      only when a person remembers to run it. Criterion 14.10 asks only that it be run
+      and recorded, so this is compliant, but the phase's own warning TWO says this grep
+      "is the WHOLE guard on this phase's new surface" and a whole guard that no gate
+      invokes stops running the day this phase closes.
+    consequence: "A future edit under src/app can add a named colour outside the sixteen, or a case-variant unit, and no guard reddens."
+    fix: "Add the -i flag to both greps, replace the sixteen-name list with the CSS named-colour set, and wire the script as an npm script beside gate:tokens."
+    criterion-touched: "14.10"
+
+  - id: CRIT-P14-08
+    severity: low
+    title: "The desk height bound the new card is measured against is roughly twenty times the measured value"
+    where: test/e2e/month-view.spec.ts:401 and the assertion added at the desk density test
+    evidence: |
+      DESK_MONTH_ACCOUNTS_MAX_HEIGHT is 900. The diff's own comment records the
+      measured value at this head as 42 pixels for the one-account dense fixture.
+      The document-height assertion now subtracts the card's measured height before
+      comparing against M3-P7's bound, which is the right technique and is argued;
+      the card's own bound is what is loose. At 900 the card could grow to twenty
+      one entries' worth before reddening, which is more than the ten accounts the
+      comment sizes it for.
+    consequence: "The half of the split that is supposed to replace the retired slack is not a working bound."
+    fix: "Set the bound from the measured value plus a stated allowance per entry, e.g. 42 + 11 entries at the measured per-entry height."
+    criterion-touched: "14.7, and M3-P7's density guard this phase modifies"
