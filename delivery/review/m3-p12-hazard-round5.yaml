@@ -3,3 +3,50 @@
 # WORK IN PROGRESS - appended incrementally
 status: in-progress
 findings: []
+
+# WORK LOG round 5, entry 1.
+# Read brief in full (two pages via offset). Confirmed worktree at 606e3ee,
+# branch claude/m3-p12-rev5-haz, clean tree.
+# Read round4 hazard verdict (origin/claude/m3-p12-rev4-haz) and round4
+# criteria verdict (origin/claude/m3-p12-rev4-crit) in full as context.
+# Round4 hazard found: CR4-M3P12-01 (high, before-set exclusion hid a real
+# loss on account-basis rows), CR4-M3P12-02 (medium, port never compared),
+# CR4-M3P12-03 (medium, insert half of applyRuleWrites had no tenancy
+# check, witnessed live against a local db), CR4-M3P12-04 (low, e2e not
+# green under load, not attributed to this phase).
+# Round4 criteria found: CR4-M3P12-02 (high, e2e write spec + servers
+# unguarded against ambient DATABASE_URL -- this is what gate-target.ts
+# now answers), CR4-M3P12-01 (medium, false comment re: empty-var
+# fallback), CR4-M3P12-03 (medium, false claim PREFIX/PATTERN dead after
+# supersede), CR4-M3P12-04 (low, schema param value unchecked),
+# CR4-M3P12-05 (low, exit-4 contract untested).
+# Diff this round (606e3ee vs previous head, 17 files, +2025/-63) matches:
+# gate-target.ts (new, 228 lines), target-guard.ts (+port, +schema pin),
+# rederive-rules.ts (+147, collision split), merchant-repository.ts (+36,
+# insert tenancy), playwright.config.ts (+30), resolve-env.ts (comment
+# fix), guard.ts (+11, exports LOCAL_DB_HOSTS), plus new tests.
+#
+# FINDING CANDIDATE 1 (surface: interlock's new fields, port). Read
+# target-guard.ts (321 lines) and test/db/target-guard.test.ts's port
+# tests in full. KNOWN_PORTS = {"5432","6543"}. When the operator does NOT
+# pass --expect-port, assessRederiveTarget ALLOWS either port with no
+# distinction (test/db/target-guard.test.ts:419-429, "AN UNKNOWN PORT is
+# refused, and the two this product uses are not" asserts BOTH 5432 and
+# 6543 allowed with no --expect-port). .env.example:3-10 states the
+# architecture rule directly: "DATABASE_URL = the pooled string (port
+# 6543, pgbouncer)" in deployed environments, DIRECT_URL = direct/5432.
+# RederiveTargetEnv deliberately checks ONLY DATABASE_URL (comment at
+# target-guard.ts:118-124: "DIRECT_URL is deliberately not checked...this
+# routine runs no migration"), and resolveClientDbUrl (what `new
+# PrismaClient()` actually reads) is DATABASE_URL only. So by the
+# product's OWN documented architecture, the routine's default,
+# unpinned-port path is expected to see port 6543 (pgbouncer/transaction
+# pooling) in a standard deployed environment, and the interlock now
+# SILENTLY approves that with no operator signal, which is exactly the
+# ambiguity round4's own finding CR4-M3P12-02 was raised to force a
+# decision on ("this routine's OWN correctness guarantee...depends on the
+# connection preserving session state across statements...which is
+# exactly what transaction-mode pooling is documented not to guarantee").
+# CR4-M3P12-02's own concrete-fix offered two paths: default to 5432, OR
+# document the scope limitation explicitly. The shipped fix took neither:
+# it silently admits both. Writing this up next as a HIGH finding.
