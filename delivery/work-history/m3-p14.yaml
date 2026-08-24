@@ -2066,3 +2066,75 @@ environment-finding-the-slow-gate-ran-against-a-foreign-project:
     environment, not a product or test defect: not one of them reached its
     own assertion. The first run is kept in the record rather than replaced
     by a better number, because it is the evidence for this finding.
+
+fix-round-canonical-slow-gate:
+  note: >-
+    TWO runs are recorded, and the first is kept rather than replaced by a
+    better number. It is not a worse measurement of the same thing, it is a
+    measurement of a DIFFERENT thing: what an unpinned environment produces.
+    It is the evidence for the environment finding above.
+
+  run-1-the-mis-targeted-one:
+    conditions: >-
+      2026-08-24 18:06:02 UTC, 7.3G free at 81 percent, load 0.62, .next-prod
+      warm at 167M, zero seconds waited for the window.
+    result: "82 tests, 79 failed, 3 passed (10.8m), exit 1"
+    verdict: >-
+      NOT A TEST RESULT AND NOT THIS BRANCH. All 79 died in shared sign-up
+      setup before reaching their own subject, all with the same signature.
+      The 3 that passed are the 3 that never sign up. Cause fully isolated
+      and recorded under the environment finding above: the run was pointed
+      at a foreign Supabase project by the container's ambient variables.
+
+  run-2-the-correctly-targeted-one:
+    conditions: >-
+      2026-08-24 18:23:54 UTC, 7.3G free at 81 percent, load 0.27, .next-prod
+      warm at 167M. A pre-flight asserted DATABASE_URL, DIRECT_URL and
+      NEXT_PUBLIC_SUPABASE_URL were all local BEFORE anything started, and it
+      passed on all three; the same pre-flight is red on the ambient
+      environment, which is how run 1's cause was proved.
+    result: "82 tests, 1 failed, 81 passed (17.0m), exit 1"
+    the-one-failure: |
+      [chromium] accounts.spec.ts:274 HEALING: importing first and registering
+      afterwards reaches the same place, with no further upload (59.2s)
+
+      Error: expect(locator).toBeVisible() failed
+        Locator: getByTestId('accounts-status')
+        Timeout: 30000ms
+        Error: element(s) not found
+        at register (test/e2e/accounts.spec.ts:157:53)
+        at registerAll (test/e2e/accounts.spec.ts:164:5)
+    whose-is-it: >-
+      THIS BRANCH'S. test/e2e/accounts.spec.ts is new in this phase and so is
+      the register helper it failed inside. It is not attributed to the
+      environment, to another lane or to the container, and no part of the
+      claim below rests on any of those.
+    what-the-evidence-shows: >-
+      The submit's own wait had already succeeded, so the server action ran
+      and the redirect to a status URL happened. The saved page snapshot then
+      shows the shell fully rendered, banner, household name and all four
+      navigation links, with an EMPTY main and an empty alert, for the whole
+      30 second budget. So the failure is the accounts page rendering no main
+      content after a redirect that did happen.
+    what-i-could-not-establish: >-
+      I COULD NOT ISOLATE THE CAUSE and I am not going to dress a guess as
+      one. Run once in isolation against a pinned local stack it PASSED, in
+      47.8 seconds. That is close to its own budget: the helper does seven
+      sequential page loads, seven form submits and seven waits, so the test
+      is the slowest in the file by construction. The obvious hypothesis, a
+      shared stack grown slow, does NOT hold up: the local database holds 427
+      households, 494 accounts and 2564 transactions, which is nowhere near
+      enough to make a page read take 30 seconds. One failure in 82, not
+      reproduced in one isolation, cause unknown.
+    what-a-reviewer-should-do-with-it: >-
+      Treat it as an open item against this branch, not as a closed one and
+      not as a flake. The honest reading is that the gate exited 1 and the
+      failing test belongs to this phase. If it is a real race in the
+      registration path it will recur; if it is the helper sitting too close
+      to its own timeout, the fix is the helper's budget and not a loosened
+      assertion, and that is a decision for whoever picks it up.
+    everything-else: >-
+      The other 81 pass, including all ten database-backed reads in
+      overview-reads.spec.ts, all four rendered 14.16 arms, the three-locale
+      preview comparison, and both browser projects' copies of the navigation
+      and month-view geometry tests.
