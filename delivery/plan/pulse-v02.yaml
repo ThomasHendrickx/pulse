@@ -6642,21 +6642,40 @@ phases:
           the only thing that writes transactions.merchantId (pulse-domain
           section 2 rule 1 and rule 2).
       - text: >-
-          Give the routine somewhere to run from and one stated order
-          (decision D-46). package.json gains a script that invokes
+          Give the routine somewhere to run from and one stated order (decision
+          D-46). package.json gains a script that invokes
           scripts/rederive-merchant-rules.ts; at the baseline package.json
-          carries build, start, typecheck, lint, the two gates, test,
-          test:e2e, db:reset and db:migrate and no deploy or release hook at
-          all, so without this the routine has no invocation point and D-39's
-          "stops the deploy" would be unfounded. The routine runs AFTER the
-          code deploys, and that is forced rather than preferred: it imports
-          the new derivation to compute the new patterns, so it cannot run
-          against a build that does not carry it. State the consequence of the
-          window between the two: for its duration the stored patterns are
+          carries build, start, typecheck, lint, the two gates, test, test:e2e,
+          db:reset and db:migrate and no deploy or release hook at all, so
+          without this the routine has no invocation point and D-39's guarantee
+          that every declaration already written is re-derived rather than
+          dropped or left dead has nothing to carry it. The routine runs AFTER
+          the code deploys, and that is forced rather than preferred: it
+          imports the new derivation to compute the new patterns, so it cannot
+          run against a build that does not carry it. State the consequence of
+          the window between the two: for its duration the stored patterns are
           pre-migration and the matcher computes namespaced keys, so rules
           match nothing and the affected rows show as unresolved. No total
           moves (hazard H3.2), nothing is lost, and the recompute the routine
           runs at its end closes the window.
+      - text: >-
+          Ship the TARGET INTERLOCK in the same change as the routine, because
+          a guard that arrives one merge later leaves a writing migration
+          sitting in the trunk with a documented invocation point and nothing
+          but nobody's attention protecting it. Before the routine reads or
+          writes anything it requires an explicit target host AND an explicit
+          target project ref as arguments on its own command line, resolves the
+          connection it would actually use, and refuses unless both match. The
+          assessment is one pure function in a module beside
+          src/platform/db/guard.ts, in that guard's posture and not as a second
+          copy of it: guard.ts answers a different question, whether a
+          DESTRUCTIVE command is pointed at a local host, and it compares a
+          hostname only, which is a complete answer to its question and not to
+          this one. Criterion 12.23 measures this, and the reason the ref is
+          not optional is measured rather than argued: on the session pooler,
+          which fleet warning 5 records as the only endpoint reachable from an
+          IPv4 environment, the host is regional infrastructure shared by every
+          project in that region.
       - text: >-
           Make the run reversible and the broadening visible (decision D-45,
           answering the objection that a rewrite of a DECLARATION is not
@@ -6780,36 +6799,58 @@ phases:
       - prisma/schema/merchants.prisma
       - package.json (the named invocation point for the re-derivation)
       - .claude/skills/pulse-domain/SKILL.md (section 7's resolution chain)
+      - src/platform/db/ (the target interlock, criterion 12.23)
       - scripts/
       - test/domain/
       - test/application/
+      - test/db/
       - test/fixtures/
     extras:
       - scripts/rederive-merchant-rules.ts
       - test/fixtures/allowed-identifiers.txt
       - test/fixtures/generate-pdf-fixtures.ts
       - test/fixtures/measure-identity-convergence.ts
+      - src/platform/db/target-guard.ts
+      - test/db/target-guard.test.ts
     acceptance:
       - id: "12.1"
         criterion: >-
-          CONVERGENCE, COUNTED. A test in test/domain/counterparty-identity.test.ts
-          parses test/fixtures/belfius-counterparty-identity.pdf through the
-          shipped path and counts DISTINCT counterpartyIdentity keys over its
-          rows. The fixture carries 24 rows representing 12 invented
-          counterparties, and the test asserts the distinct-key count is
-          exactly 12, printing both 12 and 24, and separately asserts that the
-          BASELINE derivation (normaliseCounterparty(counterpartyText(row)))
-          over the same rows yields EXACTLY 24 distinct keys, one per row,
-          printing that number too, so the fixture is proven to reproduce the
-          TOTAL non-convergence the owner's month shows on its
-          account-carrying rows (11 rows, 11 baseline keys, measured) rather
-          than a partly converged version of it. The fixture's composition is
-          also asserted, so neither basis can carry the proof alone: at least
-          8 rows carry a trusted account over at least 4 distinct accounts,
-          and at least 8 rows carry none. A test that asserts only that a rule
-          exists, that asserts a count without printing the row count beside
-          it, or that admits a baseline count below 24, does not meet this
-          criterion.
+          CONVERGENCE, COUNTED. A test in
+          test/domain/counterparty-identity.test.ts parses
+          test/fixtures/belfius-counterparty-identity.pdf through the shipped
+          path and counts DISTINCT counterpartyIdentity keys over its rows. The
+          fixture carries 24 rows representing 12 invented counterparties, and
+          the test asserts the distinct-key count is exactly 12, printing both
+          12 and 24, and separately asserts that the BASELINE derivation
+          (normaliseCounterparty(counterpartyText(row))) over the same rows
+          yields EXACTLY 24 distinct keys, one per row, printing that number
+          too, so the fixture is proven to reproduce the TOTAL non-convergence
+          the owner's month shows on its account-carrying rows (11 rows, 11
+          baseline keys, measured) rather than a partly converged version of
+          it. The fixture's composition is also asserted, so neither basis can
+          carry the proof alone: at least 8 rows carry a trusted account over
+          at least 4 distinct accounts, and at least 8 rows take the DESCRIPTOR
+          basis, whether by carrying no counterparty account at all or by
+          carrying one the trust gate refuses. THE DESCRIPTOR HALF IS COUNTED
+          BY BASIS AND NEVER BY AN ABSENT FIELD, and the criterion says why
+          rather than leaving the reading to chance: the step that builds this
+          fixture through the committed generator requires it to carry the rows
+          that attack the account basis, and those rows DO carry an account
+          field and fall to the descriptor basis when the trust gate refuses
+          the stored value, so a count of rows carrying no account field at all
+          would contradict the step that builds the fixture, while the 24 rows
+          and 12 counterparties this criterion also pins force the
+          descriptor-basis count to exactly 8, so the at-least-8 threshold and
+          the exactly-8 arithmetic are one requirement and not two. THIS
+          REFERENCE NAMES THE STEP BY WHAT IT DOES RATHER THAN BY ITS ORDINAL,
+          because a step list is renumbered by any insertion and a stale
+          ordinal sends the reader to a step about something else, which is the
+          failure this sentence was added to repair; the four ordinal step
+          references remaining elsewhere in this phase were checked against the
+          step list when this sentence was written and all four resolve. A test
+          that asserts only that a rule exists, that asserts a count without
+          printing the row count beside it, or that admits a baseline count
+          below 24, does not meet this criterion.
       - id: "12.2"
         criterion: >-
           CONVERGENCE ON THE OWNER'S OWN MONTH, so the fixture cannot be built
@@ -7093,14 +7134,22 @@ phases:
           THE RE-DERIVATION HAS ONE NAMED INVOCATION POINT AND ONE STATED
           ORDER. package.json carries a script that runs
           scripts/rederive-merchant-rules.ts, asserted by a test that reads
-          package.json and finds it; decision D-46 states that it runs AFTER
-          the code deploy and why that is forced rather than chosen; and the
-          phase work history records the command actually run against the
-          deployed database with its exit code and its printed before-and-after
-          assignment-set sizes, with no pattern content. A phase that ships
-          the routine with no invocation point does not meet this criterion,
-          and neither does one whose work history records only that the
-          routine exists.
+          package.json and finds it; and decision D-46 states that it runs
+          AFTER the code deploy and why that is forced rather than chosen, with
+          the script's own header carrying that same order and that same
+          reason, so the person about to invoke it reads it there rather than
+          in a plan they do not have open. A phase that ships the routine with
+          no invocation point does not meet this criterion, and neither does
+          one whose work history records only that the routine exists, with no
+          test that finds the script. THE DEPLOYED RUN IS OWED BY M3-P16 AND IS
+          NOT DROPPED HERE, and the criterion says why rather than leaving the
+          split to be wondered about: D-46 forbids the routine running before
+          the code deploys, and this branch is neither merged nor deployed
+          while this phase is open, so the run against the deployed database,
+          its exit code and its printed before-and-after assignment-set sizes
+          cannot be produced here without violating the decision this same
+          criterion pins. Criterion 16.1 carries them, in the phase whose entry
+          condition IS the deploy.
       - id: "12.18"
         criterion: >-
           THE RULE SUBJECT IS VALIDATED AT THE WRITE BOUNDARY. assignMerchant
@@ -7171,6 +7220,84 @@ phases:
           both ends. A separate assertion covers the case the property test
           cannot generate: no PREFIX or PATTERN rule produced by pass one ever
           matches an ACCOUNT-basis key, which is D-40's refusal.
+      - id: "12.23"
+        criterion: >-
+          THE ROUTINE REFUSES A DATABASE IT WAS NOT TOLD TO WRITE TO, AND THE
+          REFUSAL SHIPS IN THE SAME MERGE AS THE ROUTINE. Before it reads or
+          writes anything, the re-derivation requires an explicit target host
+          AND an explicit target project ref as arguments on its own command
+          line, resolves the connection it would actually use, and proceeds
+          only where BOTH match. It resolves that connection the way the
+          command it guards resolves it: shell first, and the .env file only
+          for a variable the shell does not carry OR carries empty, which is
+          the resolution src/platform/db/guard-cli.ts already implements and is
+          named here because the two readings differ on the empty case and an
+          interlock that resolves differently from the command it guards is
+          decorative. THE EQUIVALENCE HAS ONE EXCEPTION AND IT IS FAIL CLOSED,
+          named so that the refusal is not read as a mystery: the URL parser
+          this resolution uses does not percent-decode a username while the
+          client's own parser does, so a connection string carrying a
+          percent-encoded username is seen here in its encoded form, its
+          extracted ref does not equal the bare ref the operator passed, and it
+          REFUSES a target the client would have opened. That direction is a
+          blocked run and a round trip rather than a migration in the wrong
+          place, which is why it is accepted rather than engineered around. THE
+          REF IS READ FROM WHICHEVER FIELD CARRIES IT, AND THIS CRITERION FIXES
+          BOTH THE FIELD AND THE EXTRACTION, because a field is not a ref and
+          an implementer left to split one will sometimes take the wrong half.
+          On a SESSION POOLER the ref is in the USERNAME, which is the literal
+          word postgres, a dot, and then the ref: the ref is the part AFTER the
+          first dot, and the host is regional pooler infrastructure shared by
+          every project in that region. On a DIRECT CONNECTION the ref is
+          inside the HOST, which is db, a dot, the ref, a dot, and the provider
+          domain: the ref is the second dot-separated label, and the username
+          carries no ref at all, being the same literal word for every project.
+          THE VALUE THE OPERATOR PASSES IS THE BARE REF AND NEVER A DECORATED
+          FIELD, so one argument is correct against either endpoint shape, and
+          a resolver whose extracted value is EQUAL FOR TWO DIFFERENT PROJECTS
+          does not meet this criterion whatever its tests say. A unit test
+          asserts that the extracted value DIFFERS for two invented connection
+          strings of the same shape that differ only in their ref, one such
+          test per shape, which is the assertion that fails a resolver
+          returning the fixed prefix rather than the ref. A resolver that reads
+          only one of the two shapes does not meet this criterion either. THE
+          HOST MATCH IS NEVER SUFFICIENT ALONE, and the reason is measured:
+          fleet warning 5 records the pooler as the only endpoint reachable
+          from an IPv4 environment, so on the endpoint this routine must use a
+          matching host proves the REGION and not the project, and an interlock
+          that approves on host alone approves every project the owner has in
+          that region. Refusal is fail closed and total: no target given,
+          target given but empty, connection absent, connection unparseable,
+          host mismatched, project ref mismatched with the ref in the username,
+          project ref mismatched with the ref in the host, and a connection
+          carrying no ref in either field, which refuses as unparseable; unit
+          tests assert every one of them plus one matching case PER ENDPOINT
+          SHAPE that proceeds, and a suite exercising one shape does not meet
+          this criterion. A test asserts the refusal happens BEFORE any
+          repository call, using a fake that records calls and must record
+          none, so a refused run cannot have read or written anything, and
+          refusal exits non-zero. THE INTERLOCK HAS NO OVERRIDE FLAG and a test
+          asserts that no argument makes a mismatch proceed, because an
+          override would be a flag asserting the target is right, which is the
+          assertion being checked; this differs deliberately from
+          src/platform/db/guard.ts, whose escape hatch exists because its
+          default posture is local-only. No connection string, password or host
+          is printed on any path, asserted over the captured output of every
+          refusal case, and the confirmation line names the target the operator
+          gave rather than anything resolved. THE ROUTINE'S OWN DIFF CARRIES
+          ONLY THE WIRING, the import, the two target arguments, the call and
+          the refusal exit, with no change to what the routine computes or
+          writes. THIS CRITERION WAS ADDED AFTER THIS PHASE'S IMPLEMENTATION
+          WAS BUILT, and it says so rather than letting a review lane discover
+          it as a defect: the interlock was relocated here from a later phase
+          because a guard arriving one merge after the routine leaves a writing
+          migration unprotected in the trunk in between, and the implementation
+          under review at the time of that relocation was built against this
+          phase without this criterion. A review evaluating that implementation
+          marks this criterion NOT MET AND NOT YET OWED, records that it
+          postdates the work under review, and does not report it as an
+          implementer omission; it is owed by the next change to this phase and
+          by nothing already merged.
     hazard-classes:
       - id: H12.1
         statement: >-
@@ -7288,9 +7415,15 @@ phases:
         addressed-by: criterion 12.7
       - id: H12.20
         statement: >-
-          The routine is shipped with nowhere to run from, so the migration is
-          described rather than performed and criterion 12.7's exit code is
-          observed by nobody.
+          The routine is shipped with nowhere to run from, so it cannot be
+          invoked at all and decision D-39's guarantee that every declaration
+          already written is re-derived rather than dropped or left dead has
+          nothing to carry it. THE SECOND HALF OF THIS HAZARD, that the
+          migration is described rather than performed and criterion 12.7's
+          exit code is observed by nobody, IS NOT THIS PHASE'S TO GUARD after
+          the split of criterion 12.17: it is hazard class H16.1 in phase
+          M3-P16, and a reviewer clearing H12.20 clears the invocation point
+          only.
         addressed-by: criterion 12.17
       - id: H12.21
         statement: >-
@@ -7355,6 +7488,17 @@ phases:
           matches an account-basis key on a prefix of an account number and
           merges two counterparties.
         addressed-by: criterion 12.10
+      - id: H12.30
+        statement: >-
+          The routine ships with a documented invocation point and no target
+          check, so an invocation made with whatever the environment happens to
+          hold writes a migration into a database nobody named. It is not a
+          remote possibility in this fleet: the ambient DATABASE_URL belongs to
+          another of the owner's projects and shell environment overrides .env
+          for Prisma (fleet warning 1), and an instruction to pin the
+          connection is only an instruction, since the routine obeys whatever
+          it is handed.
+        addressed-by: criterion 12.23
     migrations: >-
       None. The identity is carried in the pattern string's namespace prefix
       rather than in a new column, so MerchantRule keeps its shape and the
@@ -9524,6 +9668,735 @@ phases:
       - R-005
       - R-010a
       - R-012
+  - id: M3-P16
+    branch: claude/m3-p16-rederivation-deployed-run
+    intent: >-
+      The one-off re-derivation M3-P12 ships is RUN, once, against the deployed
+      database, and every number about it is evidence a second party can
+      re-derive rather than a claim: the command, every exit code, the
+      assignment-set size before and after, a namespaced-versus-un-namespaced
+      rule count taken by a query the record writes out in full, and the two
+      zeroes the invocation after the writing one must report. This phase
+      exists to own the post-deploy half of M3-P12, because decision D-46
+      forces the routine to run after the code deploys and no phase that SHIPS
+      the routine can therefore be the phase that runs it. It adds no code, and
+      both instruments it depends on are in place before it begins: the build
+      stamp that shows what production is serving, which M3-P17 ships, and the
+      target interlock that makes the routine refuse a database it was not told
+      to write to, which ships inside the routine itself under M3-P12's
+      criterion 12.23, because a guard that arrives after the thing it guards
+      leaves a writing migration unguarded in the trunk in between. THE PHASE
+      HAS EXACTLY TWO TERMINAL STATES, and the second one carries its own
+      reason rather than a list: MET, meaning production was observed to carry
+      the derivation and the run was made, and BLOCKED, meaning it was not
+      made, for a reason the record names, with no invocation issued against
+      any database. Until the run is made the window D-46 states stays open:
+      the deployed matcher computes namespaced keys while the stored patterns
+      are still pre-migration, so the naming the owner already made matches
+      nothing and its rows read as unresolved.
+    grounding: >-
+      Decision D-46, which states the order and calls it forced rather than
+      preferred: the routine imports the new derivation to compute the new
+      patterns, so it cannot run against a build that does not carry it.
+      Decision D-45 for what the run may write, pass one rewriting a pattern by
+      prefixing a constant namespace and pass two only ADDING a rule beside the
+      naming, and for the already-migrated guard that makes the invocation
+      after the writing one report zero; decision D-39 for what it never does,
+      which is delete anything. M3-P12's criterion 12.7 fixes the two blocking
+      exit conditions, the acknowledge path and the superset property this
+      phase observes rather than redefines, and its criterion 12.17 fixes the
+      invocation point this phase invokes. READ BEFORE THIS PHASE WAS WRITTEN,
+      and load-bearing for three of its criteria: the routine decides
+      everything against an in-memory copy and issues no write unless the run
+      is clean, so a blocked run leaves the database exactly as it was found
+      and says so in one printed word, applied no, where a run that wrote
+      reports applied yes; and the write gate it reports is one boolean
+      covering the pattern updates, the rule inserts AND the recompute, so any
+      clean non-dry invocation recomputes the household even when it rewrites
+      nothing. THE CREDENTIAL POSITION IS NOT ASSUMED HERE, it is read off a
+      closed phase: M3-P6 filed an accepted deviation against this phase's own
+      pinning clause because no pulse database password exists in this
+      container or in the repository, and it measured through the Supabase
+      management API pinned to the project by its ref instead
+      (delivery/work-history/m3-p6.yaml, deviations[0]). That substitute runs
+      SQL and therefore serves this phase's read-only counts; it cannot run the
+      routine, which writes through Prisma. The endpoint, where a credential
+      does reach the container, is the pulse deployed project's SESSION POOLER,
+      named explicitly for the run and never the ambient DATABASE_URL, which
+      belongs to another project and overrides .env (fleet environment warnings
+      1 and 5). The governing document for what may be written down is
+      CLAUDE.md non-negotiable 8: the repository is public and a stored pattern
+      is derived from a real statement's text.
+    severity: high
+    verified-root-cause: >-
+      Not a defect phase in the code. It exists because an obligation had no
+      owner that could meet it: criterion 12.17 as first written required
+      M3-P12's work history to record a command run against the DEPLOYED
+      database, while D-46 forbids that run before the code deploys and
+      M3-P12's branch is neither merged nor deployed while the phase is open.
+      Checked rather than assumed: no phase in this plan owns post-deploy
+      evidence, and the only after-merge check anywhere in it is M3-P2's
+      criterion 2.8, which belongs to the import screen. FOUR DEFECTS IN THIS
+      PHASE'S OWN EARLIER DRAFTS ARE FIXED HERE RATHER THAN INHERITED, each
+      found by adversarial review of the draft before it. One: the first draft
+      asked the phase to name the deployed commit while nothing in the tree
+      could observe it, so the instrument had to be built and is now M3-P17's.
+      Two: the second draft shipped that instrument inside this phase, which
+      forced a merge mid-phase and a branch that kept taking commits
+      afterwards; splitting it out removes that and each phase again closes at
+      its own merge. Three: every draft so far described its non-entry states
+      as a LIST, and each round found a reachable state the list did not carry,
+      first the fetch that returns no sha, then an unresolvable sha, an origin
+      nobody supplied and a database nobody can reach; a list of the failures
+      someone thought of is not a terminal state, so the blocked branch now
+      closes on any reason at all and names it. Four: the drafts pinned the
+      connection by INSTRUCTION while the routine obeys whatever it is handed,
+      and the ambient credential in a fleet container belongs to another of the
+      owner's projects, so an instruction was the only thing standing between a
+      writing migration and the wrong database; the refusal is now in the
+      routine and M3-P17 ships it.
+    steps:
+      - kind: verification-first
+        text: >-
+          Establish four things before anything is fetched, run or written, and
+          record each with the command or the answer that produced it. ONE,
+          FIRST AND SETTLED IN THE NEGATIVE RATHER THAN MERELY UNVERIFIED:
+          whether a pulse database credential reaches this container at all.
+          M3-P6 filed a deviation against this phase's own pinning clause
+          because no pulse database password exists in this container or in the
+          repository (delivery/work-history/m3-p6.yaml, deviations[0]), and
+          every previous deployed-schema step in this delivery measured through
+          the Supabase management API pinned by project ref instead. Establish
+          which transport this container actually has before anything else: the
+          management API serves the read-only counts, and the routine has no
+          substitute at all. TWO: the PRODUCTION origin, which this phase never
+          guesses. No deploy-verify in this delivery has recorded one, checked
+          rather than assumed, so it is obtained from the owner and recorded
+          here with the answer. THIS ASK IS BOUNDED AT ONE exactly as the
+          deploy ask is: where no answer comes, the phase records BLOCKED under
+          criterion 16.1 naming the missing origin as the reason, because a
+          wait nobody ends is indistinguishable from a phase that quietly
+          stopped. THREE: whether the deployment platform stamps this project's
+          builds at all. It cannot be settled from inside this container, the
+          connector returns 403 for this project, so it is named as unverified,
+          and a production build answering with the marker unstamped is the
+          observation that refutes it. FOUR: the M3-P12 merge commit and the
+          M3-P17 merge commit, since every later check compares against them.
+      - text: >-
+          Observe the entry condition from the PRODUCTION origin rather than
+          believing it. Fetch M3-P17's build stamp and record every fetch made,
+          each with its URL, its HTTP status and its body. The body's
+          deployment-environment field is what decides whether the origin was
+          production; a body reading preview or development, or carrying the
+          marker unstamped in either field, is not the observation this phase
+          needs. Where no sha comes back, ask ONCE for the deploy, naming what
+          is being asked for and of whom, and fetch again; if the route still
+          returns no sha the phase records BLOCKED and stops there. THE WAIT IS
+          BOUNDED BY THAT ONE ASK, because neither the merge, the deploy, nor
+          the platform setting that stamps a build is in this phase's power
+          (delivery/work-history/m1-p1-notes.md:26).
+      - text: >-
+          Decide the order with one command and quote it as run. The sha the
+          route returned must be a descendant of the M3-P12 merge, tested with
+          git merge-base --is-ancestor taking the M3-P12 merge FIRST and the
+          returned sha SECOND, and the record carries that command line beside
+          its exit code, because this command prints nothing on success and
+          reversed it exits 0 exactly when production is serving a build that
+          PREDATES the merge. An exit that is neither 0 nor 1, which is what an
+          unresolvable value produces, is not a pass and not a fail but a
+          reason to stop: the phase records BLOCKED naming it. Where the test
+          says the deployed build predates the merge the phase also STOPS,
+          because running the routine against a build that does not carry the
+          derivation is the one order D-46 forbids, and a correctly stopped
+          phase is not a failed one.
+      - text: >-
+          Take the BEFORE numbers, all read-only: the merchant_rules row count,
+          the number of those rows whose pattern begins with a known namespace
+          and the number that do not, and the number of transactions carrying a
+          merchant id. Take them over an explicitly named session pooler
+          connection where a credential exists, and otherwise through the
+          Supabase management API pinned to the pulse project by its ref, which
+          is the transport M3-P6's accepted deviation established and which
+          runs the same SQL. WRITE THE QUERY OUT IN FULL in the work history,
+          household filter included, rather than describing it: a query anyone
+          can re-run against the same database is the only part of this phase's
+          evidence that outlives the container it ran in.
+      - text: >-
+          Run the routine ONCE and WITHOUT --accept, through the package.json
+          invocation point rather than by hand, WITH THE TARGET NAMED
+          EXPLICITLY ON THE COMMAND as M3-P12's criterion 12.23 requires, with
+          the target ref given as the BARE project ref that criterion fixes and
+          never a username, a host or any decorated form of it, and capture the
+          whole of its output verbatim to a file the run wrote rather than to a
+          retyped transcript. If the interlock refuses, that refusal is the
+          answer and not an obstacle to work around: the phase records BLOCKED
+          naming it, and no attempt is made to satisfy the routine by handing
+          it a connection nobody named. The first invocation carries no
+          acknowledge flag and its exit code is recorded before any accepted
+          rerun is even considered: an invocation that accepts a condition
+          nobody has seen reported is how a blocking condition disappears
+          without a decision.
+      - text: >-
+          Read the exit code and the applied line together. Exit 0 with applied
+          yes is the whole outcome for every case except the two criterion 12.7
+          makes blocking, a merchant conflict and a lost assignment, and both
+          of those are a person's decision rather than a rerun: a blocked run
+          reports applied no and leaves the database exactly as it was found,
+          so record which condition fired and the rule ids the routine printed
+          for it, put those ids to the owner, and only then rerun with --accept
+          naming exactly the ids the owner accepted, with the exchange left as
+          a dated entry in the work history carrying the rule ids and nothing
+          else. Asking here is legitimate under DR-0029 and is not the
+          mechanics question that rule forbids, because the two answers leave
+          the owner with different data.
+      - text: >-
+          Invoke the routine once more immediately after the invocation that
+          actually WROTE, which is the one whose captured output reports
+          applied yes: on a clean run that is the second invocation, and on the
+          acknowledge path it is the third, because the blocked first run wrote
+          nothing. This is not another migration, and it is not a second chance
+          to change a DECLARATION: under decision D-45's already-migrated guard
+          every pattern now carries a namespace, so this invocation rewrites no
+          pattern and adds no rule. IT DOES WRITE, and the step says so rather
+          than letting an implementer believe a read is happening: the
+          routine's write gate is one boolean covering the updates, the inserts
+          AND the recompute, so a clean non-dry invocation runs a second full
+          recompute over the deployed household. Record that it did, beside the
+          two zeroes and its exit code, and take the AFTER counts after THIS
+          invocation rather than between the two, so the numbers describe the
+          state the phase actually leaves behind.
+      - text: >-
+          Record the outcome as counts and never as content: the assignment-set
+          size before and after, the namespaced and un-namespaced rule counts
+          before and after, the rules-before and rules-after totals, the
+          patterns rewritten, the rules added, the rules reported as broadened,
+          every invocation's exit code and applied line, the interlock's
+          confirmation line, and the sha and environment the build stamp
+          returned. No pattern, no descriptor, no counterparty, no place, no
+          amount, no date, no account number, and no connection string,
+          password or host reaches the work history, the commit message or any
+          note (CLAUDE.md non-negotiable 8, fleet warnings 11 and 12), and the
+          record is read back line by line before it is committed.
+      - text: >-
+          State plainly whether the window D-46 describes is CLOSED, which is
+          what the recompute the routine runs at its end does, and back it with
+          the after count rather than with the assertion: the number of
+          transactions carrying a merchant id after the run, beside the number
+          before it. WHERE THE PHASE CLOSES BLOCKED INSTEAD, the same record
+          states what is still owed, what would discharge it and what it costs
+          the owner meanwhile, because a blocked close that reads like a
+          finished one is how this obligation went missing the first time. THIS
+          PHASE FETCHES EXACTLY ONE THING FROM PRODUCTION, the build stamp, and
+          runs no e2e spec against it: the production smoke spec signs in and
+          uploads a statement (playwright.config.ts:11 through :14), so
+          pointing it at the owner's live household would write fixture rows
+          into the owner's own data. The phase adds no code, and anything the
+          run reveals that needs one is raised against the phase that owns that
+          code.
+    files-to-touch:
+      - >-
+        scripts/rederive-merchant-rules.ts (executed against the deployed
+        database, never modified: this phase runs the committed routine and
+        changes no line of it, and it adds no source file of its own)
+    extras: []
+    acceptance:
+      - id: "16.1"
+        criterion: >-
+          THE RUN HAPPENED, AGAINST THE DATABASE THE RUN NAMED, AND IT LEFT
+          RESIDUE A LATER READER CAN CHECK. The phase work history records the
+          command actually run, which is the package.json invocation point
+          M3-P12's criterion 12.17 names, carrying the explicit target M3-P12's
+          criterion 12.23 requires, with the interlock's own confirmation line
+          quoted from the captured output; its EXIT CODE and its applied line;
+          and the assignment-set size the routine printed before the run beside
+          the one it printed after. THE RECORD ALSO CARRIES TWO THINGS NO LATER
+          READER HAS TO TAKE ON TRUST, and the criterion says why rather than
+          trusting the implementer to see it: the captured output is not
+          committed (criterion 16.4), so once the container is gone a number
+          typed from imagination and a number read off a real run are
+          byte-identical, and no gate in this repository can tell them apart.
+          FIRST, A RESIDUE THAT OUTLIVES THE CONTAINER: the number of
+          merchant_rules rows in the household whose pattern begins with a
+          known namespace and the number that do not, taken before the run and
+          again after the invocation that ran last, counts only, measured by a
+          read-only query the work history WRITES OUT IN FULL, household filter
+          included. Those counts MAY be taken through the Supabase management
+          API pinned to the pulse project by its ref, which is the transport
+          M3-P6's accepted deviation established and which runs the named query
+          unchanged, so the query is re-runnable by either transport; THE
+          ROUTINE ITSELF HAS NO SUCH SUBSTITUTE, because it writes through
+          Prisma and needs a connection string with a password. WHAT THE RE-RUN
+          CHECKS IS THE AFTER PAIR AND THIS CRITERION SAYS SO RATHER THAN
+          IMPLYING BOTH: the run rewrites the patterns, so the before pair
+          describes a state that no longer exists, while the after pair is
+          re-derivable from the deployed database until the household's next
+          write to merchant_rules, and that is the half a fabricated record
+          cannot survive. SECOND, IDEMPOTENCE, which is a property of the
+          routine and not of anybody's arithmetic: the invocation made
+          immediately after THE FIRST INVOCATION THAT WROTE, which is the one
+          whose captured output reports applied yes, reports zero patterns
+          rewritten and zero rules added, and the record carries its exit code,
+          those two zeroes, which numbered invocation it was, and that it ran a
+          further recompute, since the routine's write gate covers the
+          recompute as well. THE ANCHOR IS THE WRITING RUN AND NEVER THE FIRST
+          RUN, because a blocked run writes nothing, reports applied no and
+          leaves the database exactly as it was found, so on the acknowledge
+          path the run that writes is the accepted rerun and the invocation
+          after THAT is the one whose zeroes mean anything. WHERE THE RUN IS
+          NOT MADE, FOR ANY REASON AT ALL, this criterion is met instead by a
+          BLOCKED record which names that reason rather than matching it
+          against a list, carries every fetch made with its URL, status and
+          body, carries the ancestor test with its quoted command line and exit
+          code where a sha was returned, and states that NO invocation of the
+          routine was issued against any database. The reasons foreseen are
+          examples and NOT the boundary: a deployed build that predates the
+          M3-P12 merge; no sha at all after the one ask criterion 16.3 bounds
+          the wait with; a returned value this clone cannot resolve, so the
+          ancestor test errors rather than answering; no production origin,
+          because the one ask for it was not answered; no database credential
+          the routine can use, which M3-P6's deviation records as this
+          container's measured position; and the interlock refusing the
+          connection it was offered. ANY OTHER REASON IS ALSO THIS BRANCH, and
+          a phase left open because its situation was not on somebody's list is
+          the failure this sentence replaces. A BLOCKED RECORD ALSO STATES WHAT
+          REMAINS OWED AND WHAT WOULD DISCHARGE IT, by name and in one
+          paragraph: that the deployed run is still owed, that hazard H16.1 is
+          live until it is made, the exact condition whose change would let
+          this phase be entered again, and the owner-visible consequence of
+          leaving it, which is that the naming the owner already made goes on
+          matching nothing. WHERE THE REASON IS AN ASK THAT WENT UNANSWERED,
+          the record carries that ask as a dated entry in the phase work
+          history quoting what was asked, of whom and when, in exactly the form
+          this criterion's sibling 16.2 already requires for the owner's
+          acceptance of a rule id, and it states what was searched in this
+          repository for the answer before asking. A blocked record whose
+          reason is an ask that appears nowhere does not meet this criterion,
+          and the asymmetry is deliberate: every other reason this branch
+          admits leaves an artefact behind, a fetch with a status, a command
+          line with an exit code, a captured refusal, so the one reason that
+          leaves none is the one that has to be evidenced on purpose. Criterion
+          16.2 does not otherwise apply to a blocked record; criteria 16.3,
+          16.4 and 16.5 do, and a blocked record that reads as a finished phase
+          does not meet this criterion.
+      - id: "16.2"
+        criterion: >-
+          NO ASSIGNMENT IS LOST AND A BLOCKING EXIT IS NEVER MADE GREEN
+          QUIETLY. The recorded after size is greater than or equal to the
+          recorded before size, which is criterion 12.7's superset property
+          observed on the deployed data rather than on a seed. WHERE --accept
+          APPEARS IN ANY INVOCATION OF THE ROUTINE, INCLUDING A DRY RUN, the
+          record names every rule id it carried, the blocking condition each of
+          those ids was reported under BY AN INVOCATION MADE WITHOUT --accept,
+          the exit code of that unaccepted invocation, and the owner's
+          acceptance of each id by reference to a dated entry in the phase work
+          history carrying the rule ids and nothing else. A record whose only
+          reported invocation carried --accept does not meet this criterion,
+          whatever its exit code. THE CRITERION IS KEYED ON THE FLAG AND NEVER
+          ON THE EXIT CODE, and the reason is the whole of it: an exit code is
+          something the invocation can choose, so an obligation conditioned on
+          a non-zero exit is an obligation an implementer can walk around by
+          choosing the invocation that never produces one. Where no invocation
+          carried --accept the record says so and carries the exit code of the
+          run it made.
+      - id: "16.3"
+        criterion: >-
+          THE DEPLOY ORDER IS OBSERVED RATHER THAN ASSUMED, AND THE INSTRUMENT
+          PROVES THE ORIGIN INSTEAD OF THE IMPLEMENTER ASSERTING IT. The record
+          carries the response M3-P17's build stamp returned, captured BEFORE
+          the run, with the request URL and the HTTP status beside it, and THE
+          BODY'S DEPLOYMENT-ENVIRONMENT FIELD READS production, quoted from the
+          captured body beside the sha. A body whose environment field reads
+          preview or development, or carries the marker unstamped, does not
+          meet this criterion whatever the URL was, and the record names the
+          origin and where it came from beside it. That field is the whole
+          answer to the easiest wrong path: a preview deployment of this
+          phase's own branch, cut from a trunk that already carries the M3-P12
+          merge, answers 200 with a descendant sha and a real exit code while
+          production may still serve a build that predates it, which is hazard
+          H16.4 passing an attestation. The record also carries the ancestor
+          test as `git merge-base --is-ancestor <the M3-P12 merge commit> <the
+          sha the route returned>` exiting 0, IN THAT ARGUMENT ORDER AND WITH
+          THE COMMAND LINE AS RUN QUOTED BESIDE ITS EXIT CODE, because this
+          command's meaning is entirely its argument order: reversed it exits 0
+          exactly when production is serving a build that PREDATES the merge,
+          and it prints nothing on success, so an exit code with no arguments
+          attached to it says nothing. A SHA TAKEN FROM git rev-parse, FROM
+          origin/main OR FROM ANY LOCAL REF DOES NOT MEET THIS CRITERION
+          either, because none of them observes what the deployment is serving.
+          THE WAIT IS BOUNDED AND ITS BOUND IS RECORDED: where the route has
+          not returned a production sha after the one deploy this phase asked
+          for, the phase records BLOCKED under criterion 16.1 rather than
+          waiting further, because neither the deploy nor the platform setting
+          that stamps a build is in this phase's power
+          (delivery/work-history/m1-p1-notes.md:26).
+      - id: "16.4"
+        criterion: >-
+          NOTHING OF THE OWNER'S DATA REACHES THE REPOSITORY. npm run
+          gate:privacy exits 0 on this branch; the phase work history quotes no
+          pattern, no descriptor, no counterparty, no place, no amount, no date
+          and no account from the deployed household and carries counts only;
+          and the branch's commit messages carry no data of any kind, no
+          connection string, no host and no project ref. The captured output of
+          the run is not committed, because a stored pattern is derived from a
+          real statement's text and this repository is public. WHAT IS
+          COMMITTED IS LISTED RATHER THAN LEFT TO JUDGEMENT, because an unruled
+          value is how this repository has leaked before: the build stamp's sha
+          and environment field, the production origin the fetch was made
+          against, the household id the named query and the recorded commands
+          filter on, the project ref where a management-API transport is used,
+          which M3-P6's work history already records, the queries this phase
+          names and every count it records ARE committed and are not data. A
+          commit sha and a public application origin identify a build and an
+          address; a household id is a database key that names no account, no
+          counterparty, no place, no amount and no date, and it is written out
+          because criterion 16.1's query is worthless redacted. NO CONNECTION
+          STRING, PASSWORD OR DATABASE HOST IS COMMITTED ANYWHERE, on any path,
+          including inside a quoted command line, which is quoted with its
+          target argument shown as the interlock prints it and never as a URL.
+      - id: "16.5"
+        criterion: >-
+          THE DEPLOYED HALF IS WITNESSED BY THIS PHASE AND THE RECORD SAYS SO.
+          M3-P17's gate cannot witness the stamp's sha branch: npm test does
+          not reach test/e2e, and the production smoke spec run locally builds
+          and serves the app itself, so no platform build variable exists there
+          and the unstamped branch is the one that passes. This phase's own
+          fetch against the production origin, recorded under criterion 16.3
+          with its URL, status and body, IS therefore the only execution
+          anywhere that witnesses the sha and environment fields working on the
+          platform, and the record states that in one line rather than leaving
+          a reader to believe a gate covered it. THE SMOKE SPEC IS NOT POINTED
+          AT PRODUCTION TO GET THAT WITNESS, and the criterion says why rather
+          than leaving it as an option a later implementer takes: that spec
+          signs in and uploads a statement (playwright.config.ts:11 through
+          :14), so running it against the owner's live household would write
+          fixture rows into the owner's own data. A record that claims a gate
+          witnessed the deployed stamp, or one made by running the smoke spec
+          against the production origin, does not meet this criterion.
+    hazard-classes:
+      - id: H16.1
+        statement: >-
+          The routine is shipped and never run, so the migration is described
+          rather than performed: the deployed matcher keeps computing
+          namespaced keys while the stored patterns stay pre-migration, and the
+          naming the owner already made matches nothing for as long as the
+          window stays open.
+        addressed-by: criterion 16.1
+      - id: H16.2
+        statement: >-
+          The run writes to a database nobody named. The ambient DATABASE_URL
+          in a fleet container belongs to ANOTHER of the owner's projects and
+          overrides .env for Prisma (fleet warning 1), and an instruction to
+          pin the connection is only an instruction: the routine obeys whatever
+          it is handed, so a writing migration lands in the wrong project and
+          succeeds.
+        addressed-by: criterion 16.1
+      - id: H16.3
+        statement: >-
+          A blocking exit is cleared with the acknowledge flag rather than
+          read, by learning the rule ids from one invocation and reporting only
+          the accepted one, so a merchant conflict or a lost assignment is
+          waved through and the declaration the owner made is damaged without
+          anyone deciding that it should be.
+        addressed-by: criterion 16.2
+      - id: H16.4
+        statement: >-
+          The routine runs against a build that does not carry the derivation,
+          which is the one order D-46 forbids, so patterns are rewritten under
+          a matcher still computing the old keys and every rewritten rule stops
+          matching. It reaches this phase four ways and the criterion has to
+          refuse all four: a sha read from a local ref, a sha read from a
+          preview deployment of a branch, an ancestor test asked in the
+          reversed argument order, and an attestation that the origin was
+          production standing in for an observation of it.
+        addressed-by: criterion 16.3
+      - id: H16.5
+        statement: >-
+          A stored pattern, which is derived from a real statement's text,
+          reaches this public repository through the run's captured output, a
+          work history line or a commit message.
+        addressed-by: criterion 16.4
+      - id: H16.6
+        statement: >-
+          The idempotence check is anchored on the first invocation, so on the
+          acknowledge path it lands on the accepted rerun, which is the run
+          that actually wrote and legitimately reports non-zero counts: one
+          reading blocks a correct implementer and the other excuses an
+          incomplete one.
+        addressed-by: criterion 16.1
+      - id: H16.7
+        statement: >-
+          The whole record is written from imagination, because the captured
+          output cannot be committed, an invented count looks exactly like a
+          measured one to every gate in this repository, and nothing that does
+          reach the tree can contradict it.
+        addressed-by: criterion 16.1
+      - id: H16.8
+        statement: >-
+          The phase reaches a state its criteria did not foresee, a credential
+          that does not exist, an origin nobody supplied, a value the ancestor
+          test cannot resolve or something nobody has thought of yet, and stays
+          open forever because its non-entry states were written as a list
+          rather than as a rule.
+        addressed-by: criterion 16.1
+      - id: H16.9
+        statement: >-
+          An observation is bought by writing to the owner's live household,
+          for example by pointing the production smoke spec, which signs in and
+          uploads a statement, at the production origin.
+        addressed-by: criterion 16.5
+      - id: H16.10
+        statement: >-
+          The phase closes BLOCKED and the deployed run becomes unowned again,
+          because a correctly stopped phase has passed its gate and the
+          remainder lives only in a closed phase's work history, which is the
+          one place nobody rereads. That is this thread's original defect in
+          its final form.
+        addressed-by: criterion 16.1
+    migrations: >-
+      None of its own. This phase performs the one-off re-derivation of
+      DECLARATION rows (merchant_rules patterns) that M3-P12 ships, followed by
+      the recompute the routine itself runs at its end. No DDL, no Prisma
+      migration, no schema change, and no write to any transaction fact
+      (decisions D-39 and D-45).
+    conflicts-with:
+      - >-
+        M3-P12 (this phase runs the routine M3-P12 ships and changes none of
+        its files): runs strictly AFTER M3-P12 is merged and after the code
+        carrying counterpartyIdentity is deployed to production, which is
+        D-46's forced order and is this phase's entry condition rather than a
+        preference, observed through M3-P17's build stamp rather than assumed.
+      - >-
+        M3-P17 (this phase reads the build stamp M3-P17 ships and modifies none
+        of it): runs strictly AFTER M3-P17 is merged and after that stamp is
+        deployed to production, because a build that does not carry the route
+        cannot answer the request this phase's entry condition rests on.
+      - >-
+        M3-P9 and M3-P13 (both declare test/e2e/, and this phase modifies no
+        file at all): recorded as checked rather than left to be assumed, and
+        no ordering between them is required.
+    parallelizable: false
+    citations:
+      - R-005
+      - R-010a
+      - DR-0027
+  - id: M3-P17
+    branch: claude/m3-p17-deployed-build-stamp
+    intent: >-
+      One route makes the deployed build observable, so that a phase which must
+      not run before a deploy can SEE whether that deploy has landed and
+      whether it is looking at production rather than at a preview. The route
+      answers with the commit the running build was built from and the
+      deployment environment it is running in, or with a marker saying it has
+      neither, and it answers with nothing else. That is the whole phase: no
+      schema, no dependency, no scheduler, no second subject, and no consumer
+      here, because the consumer is M3-P16.
+    grounding: >-
+      The gap is measured, not assumed: over src, scripts, test and every
+      config file there are zero hits for VERCEL_GIT_COMMIT_SHA, VERCEL_URL,
+      VERCEL_ENV, commitSha or buildId, there is no vercel.json and no .vercel
+      directory, and the only routes under src/app/api are the two health
+      probes, neither of which names a build. THE SHAPE IS ONE THIS PROJECT
+      ALREADY CHOSE FOR EXACTLY THIS PROBLEM: src/app/api/health/db/route.ts:16
+      records that the fleet cannot read Vercel function logs and answers by
+      surfacing the deployed state over HTTP with no auth, accepted for v1 by
+      owner direction (src/app/api/health/db/route.ts:21), and
+      test/e2e/prod-smoke.spec.ts:10 already runs a production smoke against a
+      deployed URL. A commit sha and a deployment environment are build facts,
+      as public as the repository itself under DR-0024, and they name nothing
+      about any household. WHAT THIS PHASE DOES NOT CARRY, said because an
+      earlier draft of it did: the target interlock that makes the
+      re-derivation refuse a database it was not told to write to ships with
+      the routine itself, in M3-P12's criterion 12.23, because a guard that
+      arrives one merge after the thing it guards leaves a writing migration in
+      the trunk in between.
+    severity: high
+    verified-root-cause: >-
+      Not a defect phase in the code. It exists because M3-P16 cannot observe
+      its own entry condition and nothing in the tree can observe it either, so
+      the instrument has to be built. Drafted inside M3-P16 it forced a merge
+      in the middle of that phase; split out, each phase closes at its own
+      merge and M3-P16 waits on this one's deploy the way any phase waits on a
+      dependency. THE PREMISE THIS PHASE CANNOT VERIFY, named here rather than
+      discovered later: whether the platform supplies a build commit and a
+      deployment environment to this project's builds at all cannot be settled
+      from inside a fleet container, since the connector returns 403 for this
+      project. The route is written so that the unanswerable case is VISIBLE
+      rather than silent, and M3-P16 is where the observation lands. That is
+      also why the two variable names are fixed by this plan rather than left
+      to an implementer: a WRONG NAME and an UNSET VARIABLE produce the same
+      answer in production, so nothing downstream could tell a typo from a
+      missing platform setting.
+    steps:
+      - kind: verification-first
+        text: >-
+          Confirm two things before writing anything, each recorded with the
+          command that produced it. ONE: no build stamp already exists, by the
+          grep this phase's grounding names over src, scripts, test and every
+          config file; if one exists, this phase adds none and says so. TWO:
+          THE TWO PLATFORM VARIABLE NAMES ARE FIXED BY THIS PLAN AND NOT CHOSEN
+          BY AN IMPLEMENTER, for the same reason the marker is: the build
+          commit is read from VERCEL_GIT_COMMIT_SHA and the deployment
+          environment from VERCEL_ENV, whose three values are production,
+          preview and development. Record that whether the platform sets them
+          for this project is NOT verifiable from here, and record that a wrong
+          name and an unset variable are indistinguishable in production, both
+          answering unstamped forever, which is why the names are fixed here
+          rather than recalled.
+      - text: >-
+          Add one route under src/app/api/health returning exactly two fields:
+          the commit the running build was built from, read from
+          VERCEL_GIT_COMMIT_SHA, and the deployment environment it is running
+          in, read from VERCEL_ENV, each carrying the marker unstamped when its
+          variable is unset or empty. THE MARKER IS FIXED BY THIS PLAN AND NOT
+          CHOSEN BY AN IMPLEMENTER, because M3-P16 decides a terminal state by
+          comparing against it: it is the lowercase word unstamped, which
+          carries characters that are not hexadecimal digits, so no reader and
+          no test can take it for a commit. No auth, in the shape the sibling
+          probe already sets, and no third field, no host, no connection string
+          and no header dump.
+      - text: >-
+          Test the route where it can be tested. A unit test covers the present
+          case and the absent case for both fields over the handler. The
+          production smoke spec gains one assertion, that the route answers 200
+          and that each field is either its platform value in the expected
+          shape or exactly unstamped. SAY IN THE SPEC WHY THE LOCAL RUN CANNOT
+          DO BETTER: it builds and serves the application itself, so no
+          platform variable exists there and the unstamped branch is the branch
+          that passes; the deployed shape is witnessed by M3-P16's fetch
+          against the production origin and by nothing here.
+      - text: >-
+          Run the full gate in the worktree with pinned local database
+          credentials per the fleet environment warnings: npm run typecheck,
+          npm run lint, npm test, npm run gate:privacy, then npm run test:e2e.
+          This phase adds one route and its tests. It is CLOSED TO FURTHER
+          ADDITIONS: anything else the work suggests is raised, and a second
+          subject arriving here is the signal to split a phase rather than to
+          absorb it.
+    files-to-touch:
+      - src/app/api/health/
+      - test/app/
+      - test/e2e/prod-smoke.spec.ts
+    extras:
+      - src/app/api/health/version/route.ts
+      - test/app/health-version.test.ts
+    acceptance:
+      - id: "17.1"
+        criterion: >-
+          THE ROUTE ANSWERS WITH THE BUILD'S FACTS OR SAYS IT HAS NONE, AND THE
+          TWO CANNOT BE CONFUSED. A unit test asserts both branches of both
+          fields over the handler: with the platform variables set, the
+          response is 200 and its two fields are exactly the commit the build
+          was built from and the deployment environment it runs in; with either
+          unset or empty, that field is exactly the marker unstamped. THE
+          MARKER IS THE LITERAL WORD unstamped, fixed by this plan so that this
+          phase and M3-P16 are written against one value rather than against
+          each other's code: it is lowercase, it is one word, and it carries
+          characters that are not hexadecimal digits, so no test and no reader
+          can take it for a commit. A route that returns an empty string, a
+          zero, a placeholder that is hexadecimal, or an omitted field does not
+          meet this criterion.
+      - id: "17.2"
+        criterion: >-
+          IT DISCLOSES TWO BUILD FACTS AND NOTHING ELSE. The response body
+          carries those two fields and no others, asserted by a test over the
+          parsed response's key set, and grep of the route shows it reads
+          exactly the two environment variables step 1 names, BY THOSE NAMES,
+          VERCEL_GIT_COMMIT_SHA and VERCEL_ENV, and no third; a count without
+          the names does not meet this criterion, because a wrong name is
+          invisible to a test that sets whatever the handler reads. There is no
+          auth, which is the disclosure level the sibling probe already sets by
+          owner direction (src/app/api/health/db/route.ts:16 through :22), and
+          neither field names a household, an account, an amount or a date: a
+          commit sha and a deployment environment of a public repository
+          (DR-0024) describe a build.
+      - id: "17.3"
+        criterion: >-
+          THE GATE THAT RUNS THE SPEC IS THE GATE THIS CRITERION NAMES. npm run
+          typecheck, npm run lint, npm test AND npm run test:e2e all exit 0
+          with these tests in them, each with its captured output in the phase
+          work history, because npm test does not reach test/e2e and a
+          criterion that asserts something about an e2e spec while naming only
+          the fast gate certifies itself with commands that cannot see it. The
+          smoke spec's new assertion accepts either branch of each field, and
+          the criterion states plainly that the local prod project builds and
+          serves the application itself, so the unstamped branch is what passes
+          there and the deployed shape is owed by M3-P16's criterion 16.3
+          rather than claimed here.
+      - id: "17.4"
+        criterion: >-
+          THE PHASE ADDS ONE INSTRUMENT AND NOTHING ELSE. git diff --name-only
+          against the phase base shows exactly one new route under
+          src/app/api/health, its unit test, and the one-assertion change to
+          test/e2e/prod-smoke.spec.ts, and no other file at all: no dependency
+          added to package.json, no Prisma model or migration, no scheduler,
+          poller, queue or persisted deploy record, and no change to any module
+          outside that route. npm run gate:privacy exits 0 and the branch's
+          commit messages carry no data of any kind, no connection string, no
+          host and no project ref.
+    hazard-classes:
+      - id: H17.1
+        statement: >-
+          The absent case answers with something a reader or a test takes for a
+          real value, an empty string, a placeholder that is hexadecimal or a
+          silently omitted field, so an unstamped build is recorded as a
+          deployed commit and the instrument certifies exactly what it was
+          built to refuse.
+        addressed-by: criterion 17.1
+      - id: H17.2
+        statement: >-
+          The route reads a variable name nobody pinned, or grows a third
+          field, a host, a header dump or another environment value: the first
+          is invisible in every gate and looks in production exactly like a
+          platform that stamps nothing, and the second turns a build stamp into
+          an unauthenticated environment probe.
+        addressed-by: criterion 17.2
+      - id: H17.3
+        statement: >-
+          The new assertion is added to a spec no gate in this criterion's list
+          runs, so it is green by never executing.
+        addressed-by: criterion 17.3
+      - id: H17.4
+        statement: >-
+          The platform does not supply a build commit or a deployment
+          environment to this project's builds at all, so the route answers
+          with the marker forever and the instrument cannot decide anything. It
+          cannot be settled here, because this fleet cannot read the project's
+          platform settings, and the observation that settles it is a
+          production build answering with the marker.
+        addressed-by: "later-phase: M3-P16"
+      - id: H17.5
+        statement: >-
+          The instrument grows into infrastructure, a scheduler, a poller, a
+          persisted deploy record or a status page, which CLAUDE.md's scope
+          discipline forbids and which a route named after deploys invites.
+        addressed-by: criterion 17.4
+    migrations: >-
+      none. One route reading two environment variables: no DDL, no Prisma
+      model, no migration, no schema drift, and no write to any table.
+    conflicts-with:
+      - >-
+        M3-P16 (which reads this instrument and modifies none of it): runs
+        strictly BEFORE it, and M3-P16's entry condition is this phase merged
+        and its build stamp deployed to production.
+      - >-
+        M3-P12 (no shared file: this phase touches one route, one unit test and
+        one e2e spec, and M3-P12 touches none of them; the target interlock
+        that once sat here is M3-P12's own criterion 12.23): recorded as
+        checked rather than assumed, and no ordering between them is required.
+      - >-
+        M3-P2 (declares src/app/api/health/pdf/route.ts and
+        test/e2e/prod-smoke.spec.ts and is CLOSED, its work history written):
+        no live conflict, recorded as checked rather than assumed, and this
+        phase adds a sibling route beside that one rather than touching it.
+      - >-
+        M3-P9 and M3-P13 (both declare test/e2e/, and this phase adds one
+        assertion to test/e2e/prod-smoke.spec.ts, a spec neither of them
+        names): recorded as checked, and no ordering between them is required.
+    parallelizable: false
+    citations:
+      - R-005
+      - R-010a
+      - DR-0027
 decisions:
   - id: D-1
     statement: >-
@@ -10514,26 +11387,26 @@ decisions:
   - id: D-46
     statement: >-
       THE RE-DERIVATION RUNS AFTER THE CODE DEPLOY, AND THAT IS FORCED RATHER
-      THAN PREFERRED. The routine imports the new derivation to compute the
-      new patterns, so it cannot run against a build that does not carry it;
-      there is no ordering in which it runs first. The window between the two
-      is stated rather than hidden: for its duration the stored patterns are
+      THAN PREFERRED. The routine imports the new derivation to compute the new
+      patterns, so it cannot run against a build that does not carry it; there
+      is no ordering in which it runs first. The window between the two is
+      stated rather than hidden: for its duration the stored patterns are
       pre-migration while the matcher computes namespaced keys, so rules match
       nothing and the affected rows show as unresolved. No total moves, which
       is hazard H3.2's standing guarantee, nothing is lost, and the recompute
-      the routine runs at its end closes the window. Spelled out because it
-      was checked rather than assumed: a recompute happening INSIDE that
-      window clears the affected merchantId values, since interpretation
-      output is rebuilt wholesale and a null write is how an assignment no
-      rule supports stops applying
-      (src/modules/ledger/application/ports.ts:53 through :56), and the
-      routine's own recompute restores them. Facts untouched, declarations
-      untouched, no total moved. package.json gains the
-      script that invokes it, because at the baseline the repository has build,
-      start, typecheck, lint, two gates, test, test:e2e, db:reset and
-      db:migrate and no deploy or release hook of any kind, so without it the
-      routine would have nowhere to run from and D-39's "stops the deploy"
-      would be unfounded.
+      the routine runs at its end closes the window. Spelled out because it was
+      checked rather than assumed: a recompute happening INSIDE that window
+      clears the affected merchantId values, since interpretation output is
+      rebuilt wholesale and a null write is how an assignment no rule supports
+      stops applying (src/modules/ledger/application/ports.ts:53 through :56),
+      and the routine's own recompute restores them. Facts untouched,
+      declarations untouched, no total moved. package.json gains the script
+      that invokes it, because at the baseline the repository has build, start,
+      typecheck, lint, two gates, test, test:e2e, db:reset and db:migrate and
+      no deploy or release hook of any kind, so without it the routine would
+      have nowhere to run from and D-39's guarantee that every declaration
+      already written is re-derived rather than dropped or left dead would have
+      nothing to carry it.
   - id: D-47
     statement: >-
       THE CANONICAL FORM OF AN ACCOUNT NUMBER LIVES IN src/platform, NOT IN A
@@ -10987,6 +11860,37 @@ open-questions:
   - DR-0002
   - DR-0023
 parked:
+  - item: >-
+      Criterion 12.23, the target interlock, against any M3-P12 implementation
+      built before it was added.
+    reason: >-
+      ADDED LATE, and recorded here rather than left for a later reader to find
+      as a contradiction (finding R5-M3P12-02). The interlock was relocated
+      into M3-P12 from a later phase during the plan amendment for criterion
+      12.17, because a guard that arrives one merge after the routine it guards
+      leaves a writing migration in the trunk with a documented invocation
+      point and no target check in between. The relocation is right and the
+      timing is the problem: M3-P12's implementation was built, and was under
+      clean-room re-review, against this phase as it stood WITHOUT criterion
+      12.23. A review evaluating that implementation marks 12.23 NOT MET AND
+      NOT YET OWED and reads this entry rather than reporting an implementer
+      omission, since the implementer was never handed it. Discharged when a
+      work history for this phase records criterion 12.23 met.
+  - item: >-
+      The deployed run of the re-derivation, where M3-P16 closes BLOCKED rather
+      than MET.
+    reason: >-
+      M3-P16 is the only phase that owns the run, and its blocked outcome is a
+      legitimate close rather than a failure, so without an entry here the
+      obligation would live only inside a closed phase's work history, which is
+      where criterion 12.17's obligation went missing in the first place. It is
+      recorded as parked rather than as an open question because this plan's
+      open-questions register carries decision-record references only. The
+      condition is written in the phase: hazard H16.1 stays live until the run
+      is made, and what discharges this entry is a work history recording the
+      run as MET, with the exit codes and the before-and-after assignment-set
+      sizes criterion 16.1 requires. Until then the naming the owner already
+      made goes on matching nothing.
   - item: >-
       A savings BALANCE, sourced from a reserve statement's closing balance.
     reason: >-
