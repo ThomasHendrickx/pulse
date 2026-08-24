@@ -88,6 +88,7 @@ const liveRepository: MerchantRepositoryPort = {
   createMerchant: repository.createMerchant,
   upsertRule: repository.upsertRule,
   updateRulePattern: repository.updateRulePattern,
+  applyRuleWrites: repository.applyRuleWrites,
   findTagByName: repository.findTagByName,
   createTag: repository.createTag,
   setMerchantTag: repository.setMerchantTag,

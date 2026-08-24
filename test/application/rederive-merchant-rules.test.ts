@@ -34,10 +34,15 @@ import { makeFakeImportWorld } from "./fake-import-world";
 // tree saying the false thing, which is the place a next implementer reads
 // first when deciding whether the routine has database coverage.
 //
-// THE ADAPTER'S OWN WRITE PATH IS COVERED SEPARATELY, in the live-Postgres
-// lane at test/db/merchant-rule-write.test.ts (finding CR-M3P12-02), because
-// the fake REIMPLEMENTS updateRulePattern rather than calling it, so nothing
-// here reaches merchant-repository.ts.
+// THE ADAPTER'S OWN WRITE PATH IS COVERED SEPARATELY, at
+// test/e2e/merchant-rule-write.spec.ts, which runs in the PLAYWRIGHT gate
+// because that is the only lane in this tree with a live database (finding
+// CR-M3P12-02). CORRECTED IN FIX ROUND TWO under finding HZ-M3P12-R2-05: this
+// sentence named test/db/merchant-rule-write.test.ts, a path that does not
+// exist, inside a paragraph whose whole purpose is correcting an earlier
+// false claim. It is the sentence a next implementer reads when deciding
+// whether the routine's production write path has database coverage, and it
+// led nowhere.
 //
 // The seed deliberately contains all three shapes criterion 12.8 names: a
 // rule that cannot be promoted, a rule whose matched rows split across the
@@ -49,6 +54,8 @@ const context: HouseholdContext = {
   householdId: householdId("household-1"),
   userId: userId("user-1"),
 };
+
+const repositoryRoot = join(__dirname, "..", "..");
 
 const FIXTURE = "belfius-counterparty-identity.pdf";
 
@@ -229,7 +236,11 @@ const seedLossyWorld = async (): Promise<{
 const deps = (world: World) => ({
   merchants: world.merchantsPort as Pick<
     MerchantRepositoryPort,
-    "listRules" | "listCountedTransactions" | "upsertRule" | "updateRulePattern"
+    | "listRules"
+    | "listCountedTransactions"
+    | "upsertRule"
+    | "updateRulePattern"
+    | "applyRuleWrites"
   >,
   recompute: (ctx: HouseholdContext) =>
     recomputeInterpretation(ctx, world.ledgerDeps),
@@ -308,6 +319,20 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
       ) => {
         updates.push({ ...input });
         return world.merchantsPort.updateRulePattern(ctx, input);
+      },
+      // FIX ROUND TWO: the routine issues its write set through one member
+      // now, so the spy on the individual write has to be reached through it.
+      applyRuleWrites: async (
+        ctx: HouseholdContext,
+        input: Parameters<World["merchantsPort"]["applyRuleWrites"]>[1],
+      ) => {
+        for (const update of input.updates) {
+          updates.push({ ...update });
+          await world.merchantsPort.updateRulePattern(ctx, update);
+        }
+        for (const insert of input.inserts) {
+          await world.merchantsPort.upsertRule(ctx, insert);
+        }
       },
     };
     // The port carries no delete at all, which is the structural half of
@@ -668,11 +693,35 @@ const countingDeps = (world: World): { deps: ReturnType<typeof deps>; log: Write
       return world.merchantsPort.upsertRule(ctx, input);
     },
   };
+  // FIX ROUND TWO: the routine now issues its whole write set through ONE
+  // port member so the adapter can run it in a transaction, so the recorder
+  // has to sit there too. It routes back through the two spied members above,
+  // which is what keeps the update and insert logs meaningful, and it keeps
+  // the fake's all-or-nothing behaviour by delegating to the fake's own
+  // implementation.
+  const withApply = {
+    ...merchants,
+    applyRuleWrites: async (
+      ctx: HouseholdContext,
+      input: Parameters<World["merchantsPort"]["applyRuleWrites"]>[1],
+    ) => {
+      for (const update of input.updates) {
+        await merchants.updateRulePattern(ctx, update);
+      }
+      for (const insert of input.inserts) {
+        await merchants.upsertRule(ctx, insert);
+      }
+    },
+  };
   return {
     deps: {
-      merchants: merchants as Pick<
+      merchants: withApply as Pick<
         MerchantRepositoryPort,
-        "listRules" | "listCountedTransactions" | "upsertRule" | "updateRulePattern"
+        | "listRules"
+        | "listCountedTransactions"
+        | "upsertRule"
+        | "updateRulePattern"
+        | "applyRuleWrites"
       >,
       recompute: async (ctx: HouseholdContext) => {
         log.recomputes.count += 1;
@@ -910,5 +959,302 @@ describe("HZ-M3P12-06: a promotion backed by ONE row says so", () => {
     expect(matchedBefore ?? 0).toBeGreaterThan(1);
     expect(decision?.outcome).toBe("promoted");
     expect(report.promotedOnOneRow).not.toContain(many.id);
+  });
+});
+
+// =====================================================================
+// FIX ROUND TWO. Findings CR2-M3P12-02 and HZ-M3P12-R2-01, found
+// independently by both clean-room lanes: a SAME-MERCHANT pattern collision
+// was not a conflict, was not reported, and crashed the migration part way
+// through applying. The fake below enforces the unique key the schema
+// declares, which is what makes these tests able to see it at all; before
+// this round it modelled rule identity, kind and pattern and not the one
+// constraint the real table enforces over exactly those three fields.
+// =====================================================================
+
+// THE DEPLOY WINDOW SHAPE, seeded exactly. Decision D-46 deploys the code
+// before this routine runs, so the owner's pre-migration rules match nothing,
+// their rows show as unresolved, and the owner names those groups again.
+// findMerchantByName reuses the merchant, so a namespaced EXACT rule lands
+// beside the old un-namespaced one FOR THE SAME MERCHANT.
+const seedDeployWindowWorld = async (): Promise<{
+  world: World;
+  oldRuleId: string;
+  twinRuleId: string;
+  merchantId: string;
+}> => {
+  const world = await ingestFixture();
+  const merchant = await world.merchantsPort.createMerchant(context, "Alpha");
+  const bare = await baselineKeyOfRow(world, (d) =>
+    d.includes("Premie kwartaal een"),
+  );
+  const old = await world.merchantsPort.upsertRule(context, {
+    merchantId: merchant.id,
+    kind: "EXACT",
+    pattern: bare,
+  });
+  const twin = await world.merchantsPort.upsertRule(context, {
+    merchantId: merchant.id,
+    kind: "EXACT",
+    pattern: `${DESCRIPTOR_NAMESPACE}${bare}`,
+  });
+  await recomputeInterpretation(context, world.ledgerDeps);
+  return {
+    world,
+    oldRuleId: old.id,
+    twinRuleId: twin.id,
+    merchantId: merchant.id,
+  };
+};
+
+describe("CR2-M3P12-02 and HZ-M3P12-R2-01: a same-merchant collision is DECIDED, not thrown", () => {
+  test("the D-46 window shape: no update is issued against the colliding rule, the run exits 0, and nothing throws", async () => {
+    const seed = await seedDeployWindowWorld();
+    const counting = countingDeps(seed.world);
+    const patternsBefore = seed.world.rules
+      .map((rule) => `${rule.id}|${rule.pattern}`)
+      .sort();
+
+    const report = await rederiveMerchantRules(context, counting.deps, {});
+
+    console.log(
+      `deploy-window run: exit ${report.exitCode}, updates ${counting.log.updates.length}, twin-outcomes ${report.alreadyHeldBySameMerchantTwin.length}`,
+    );
+    expect(report.exitCode).toBe(0);
+    // The colliding rule is NOT updated. Before this round the routine queued
+    // exactly this update and the unique key refused it mid-apply.
+    expect(counting.log.updates).not.toContain(seed.oldRuleId);
+    // It is REPORTED rather than silent, with its own outcome token.
+    expect(report.alreadyHeldBySameMerchantTwin).toContain(seed.oldRuleId);
+    const outcome = report.decisions.find(
+      (decision) => decision.ruleId === seed.oldRuleId && decision.pass === "one",
+    )?.outcome;
+    expect(outcome).toBe("already-held-by-same-merchant-twin");
+    // The source rule survives verbatim: decision D-39 forbids deleting it,
+    // and this round does not rewrite it either.
+    const after = seed.world.rules.find((rule) => rule.id === seed.oldRuleId);
+    expect(after).toBeDefined();
+    expect(
+      patternsBefore.includes(`${seed.oldRuleId}|${after?.pattern ?? ""}`),
+    ).toBe(true);
+    // AND NOTHING IS LOST, which is what makes leaving it alone correct: the
+    // twin reaches under the new key every row the old rule reached under the
+    // old one.
+    expect(report.lostAssignments).toEqual([]);
+  });
+
+  test("PARTIAL APPLICATION IS UNREACHABLE: a clean rewrite and a colliding one in the same run leave no half-migrated table", async () => {
+    const seed = await seedDeployWindowWorld();
+    // A third rule whose rewrite is clean, so the run has both shapes in it.
+    const other = await seed.world.merchantsPort.createMerchant(context, "Beta");
+    const cleanRule = await seed.world.merchantsPort.upsertRule(context, {
+      merchantId: other.id,
+      kind: "EXACT",
+      pattern: await baselineKeyOfRow(seed.world, (d) => d.includes("Boekhandel")),
+    });
+    const counting = countingDeps(seed.world);
+
+    const report = await rederiveMerchantRules(context, counting.deps, {});
+
+    console.log(
+      `mixed run: exit ${report.exitCode}, updates ${counting.log.updates.length}, applied ${String(report.applied)}`,
+    );
+    expect(report.exitCode).toBe(0);
+    expect(report.applied).toBe(true);
+    // The clean one IS rewritten, so the run did its work.
+    expect(counting.log.updates).toContain(cleanRule.id);
+    expect(
+      seed.world.rules.find((rule) => rule.id === cleanRule.id)?.pattern,
+    ).toMatch(new RegExp(`^${DESCRIPTOR_NAMESPACE}`));
+    // The colliding one is left alone, and no exception reached the caller,
+    // so there is no half-migrated state to recover from.
+    expect(counting.log.updates).not.toContain(seed.oldRuleId);
+    expect(counting.log.recomputes.count).toBe(1);
+  });
+
+  test("A DIFFERENT-MERCHANT collision still BLOCKS, so this is a distinction and not a blanket permission", async () => {
+    const seed = await seedDeployWindowWorld();
+    const rival = await seed.world.merchantsPort.createMerchant(context, "Gamma");
+    const bare = await baselineKeyOfRow(seed.world, (d) =>
+      d.includes("Afrekening een"),
+    );
+    await seed.world.merchantsPort.upsertRule(context, {
+      merchantId: rival.id,
+      kind: "EXACT",
+      pattern: `${DESCRIPTOR_NAMESPACE}${bare}`,
+    });
+    const contender = await seed.world.merchantsPort.upsertRule(context, {
+      merchantId: seed.merchantId,
+      kind: "EXACT",
+      pattern: bare,
+    });
+    const counting = countingDeps(seed.world);
+
+    const report = await rederiveMerchantRules(context, counting.deps, {});
+
+    expect(report.conflicts).toContain(contender.id);
+    expect(report.exitCode).toBe(1);
+    expect(report.applied).toBe(false);
+    expect(counting.log.updates).toEqual([]);
+  });
+
+  test("THE FAKE ENFORCES THE UNIQUE KEY, so these tests can see what the schema refuses", async () => {
+    const seed = await seedDeployWindowWorld();
+    const twin = seed.world.rules.find((rule) => rule.id === seed.twinRuleId);
+    expect(twin).toBeDefined();
+    await expect(
+      seed.world.merchantsPort.updateRulePattern(context, {
+        ruleId: seed.oldRuleId,
+        pattern: twin?.pattern ?? "",
+      }),
+    ).rejects.toThrow(/Unique constraint failed/);
+  });
+
+  test("the second run prints the same decision report, so the new outcome is stable", async () => {
+    const seed = await seedDeployWindowWorld();
+    const first = await rederiveMerchantRules(context, deps(seed.world), {});
+    const second = await rederiveMerchantRules(context, deps(seed.world), {});
+    expect(formatDecisionReport(second)).toBe(formatDecisionReport(first));
+    expect(second.exitCode).toBe(first.exitCode);
+  });
+});
+
+describe("CR2-M3P12-03: the write set is applied ALL OR NOTHING", () => {
+  test("the routine issues its writes through ONE port member, which the adapter runs in a transaction", () => {
+    const source = readFileSync(
+      join(
+        repositoryRoot,
+        "src/modules/merchants/application/rederive-rules.ts",
+      ),
+      "utf8",
+    );
+    // One call, not a loop of separate awaits.
+    expect(source).toContain("deps.merchants.applyRuleWrites(context, {");
+    expect(source).not.toMatch(/for \(const update of pendingUpdates\) \{\s*await/);
+    expect(source).not.toMatch(/for \(const insert of pendingInserts\) \{\s*await/);
+    const adapter = readFileSync(
+      join(
+        repositoryRoot,
+        "src/modules/merchants/adapters/merchant-repository.ts",
+      ),
+      "utf8",
+    );
+    expect(adapter).toContain("prisma.$transaction([");
+    // Every statement in it still carries the household id: the update's
+    // where clause and the insert's data both name it.
+    const block = adapter.slice(adapter.indexOf("export const applyRuleWrites"));
+    expect(block).toContain("where: { id: update.ruleId, householdId: context.householdId }");
+    expect(block).toContain("householdId: context.householdId,");
+  });
+
+  test("a rejection anywhere in the write set leaves the table as the run found it", async () => {
+    const seed = await seedWorld();
+    const patternsBefore = seed.world.rules
+      .map((rule) => `${rule.id}|${rule.pattern}`)
+      .sort();
+    // A write set whose SECOND update is refused. The fake restores its array
+    // on any rejection, exactly as the adapter's transaction rolls back.
+    const first = seed.world.rules[0];
+    expect(first).toBeDefined();
+    await expect(
+      seed.world.merchantsPort.applyRuleWrites(context, {
+        updates: [
+          { ruleId: first?.id ?? "", pattern: "descriptor:SOMETHING NEW" },
+          { ruleId: "a-rule-that-does-not-exist", pattern: "descriptor:X" },
+        ],
+        inserts: [],
+      }),
+    ).rejects.toThrow();
+    expect(
+      seed.world.rules.map((rule) => `${rule.id}|${rule.pattern}`).sort(),
+    ).toEqual(patternsBefore);
+  });
+});
+
+describe("HZ-M3P12-R2-03: the superset guard is alive on every run, not only the first", () => {
+  test("the SECOND run's before-set equals the FIRST run's after-set, rather than reading 0", async () => {
+    const { world, ruleIds } = await seedWorld();
+    const accepted = { acceptedRuleIds: [ruleIds.conflicting] };
+    const first = await rederiveMerchantRules(context, deps(world), accepted);
+    const second = await rederiveMerchantRules(context, deps(world), accepted);
+    console.log(
+      `run 1 before/after ${first.assignmentsBefore}/${first.assignmentsAfter}; run 2 before/after ${second.assignmentsBefore}/${second.assignmentsAfter}`,
+    );
+    // Before this round the second run reported before 0, so allLost was
+    // empty by construction and the lost-assignment half of the exit code
+    // could not be reached while the run still wrote and still recomputed.
+    expect(first.assignmentsAfter).toBeGreaterThan(0);
+    expect(second.assignmentsBefore).toBe(first.assignmentsAfter);
+    expect(second.assignmentsAfter).toBe(second.assignmentsBefore);
+  });
+
+  test("a HALF-MIGRATED table is read correctly: the un-migrated rules under the baseline key and the migrated ones under the identity key", async () => {
+    const { world, ruleIds } = await seedWorld();
+    // Migrate exactly one rule by hand, leaving the rest pre-migration.
+    const target = world.rules.find((rule) => rule.id === ruleIds.unpromotable);
+    expect(target).toBeDefined();
+    await world.merchantsPort.updateRulePattern(context, {
+      ruleId: ruleIds.unpromotable,
+      pattern: `${DESCRIPTOR_NAMESPACE}${target?.pattern ?? ""}`,
+    });
+    const report = await rederiveMerchantRules(context, deps(world), {
+      acceptedRuleIds: [ruleIds.conflicting],
+      dryRun: true,
+    });
+    console.log(
+      `half-migrated table: before ${report.assignmentsBefore}, after ${report.assignmentsAfter}`,
+    );
+    // The hand-migrated rule still holds its rows, so the before-set is not
+    // the empty one a single-key read would produce.
+    expect(report.assignmentsBefore).toBeGreaterThan(0);
+    expect(report.assignmentsAfter).toBeGreaterThanOrEqual(
+      report.assignmentsBefore,
+    );
+  });
+});
+
+describe("CR2-M3P12-04: a database error is never printed raw", () => {
+  test("the rejection handler prints the error's kind and code and NOT its message", () => {
+    const script = readFileSync(
+      join(repositoryRoot, "scripts", "rederive-merchant-rules.ts"),
+      "utf8",
+    );
+    const handler = script.slice(script.indexOf("void main().then("));
+    // A Postgres constraint violation quotes the whole failing row inside the
+    // message, and a stored pattern is derived from a real statement's text.
+    // The only occurrence left is the comment saying it USED to print it.
+    const code = handler
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//"))
+      .join("\n");
+    expect(code).not.toContain("error.message");
+    expect(handler).toContain("error.constructor.name");
+    expect(handler).toContain("code");
+    expect(handler).toContain("deliberately not printed");
+  });
+
+  test("the contract now answers the FAILED run as well as the blocked one", () => {
+    const script = readFileSync(
+      join(repositoryRoot, "scripts", "rederive-merchant-rules.ts"),
+      "utf8",
+    );
+    expect(script).toContain("AND WHAT A FAILED RUN LEAVES BEHIND");
+    expect(script).toContain("rolls back every write that preceded it");
+    // And the promise rests on a real mechanism rather than on the sentence.
+    const routine = readFileSync(
+      join(repositoryRoot, "src/modules/merchants/application/rederive-rules.ts"),
+      "utf8",
+    );
+    expect(routine).toContain("applyRuleWrites");
+  });
+
+  test("the new twin outcome and the one-row explanation both reach the operator's console", () => {
+    const script = readFileSync(
+      join(repositoryRoot, "scripts", "rederive-merchant-rules.ts"),
+      "utf8",
+    );
+    expect(script).toContain("already-held-by-same-merchant-twin");
+    expect(script).toContain("twin-holds-pattern-rule");
+    expect(script).toContain("promoted on the evidence of ONE transaction");
   });
 });

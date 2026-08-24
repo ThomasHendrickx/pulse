@@ -34,7 +34,14 @@ const GroupRow = async ({
           that value is the counterparty IDENTITY KEY that becomes the EXACT
           MerchantRule pattern, and a masked subject would match nothing. */}
       <span className="merchant-row-label" data-testid="group-label">
-        {maskCardNumbers(group.label)}
+        {/* A GROUP THAT CANNOT BE NAMED STILL NEEDS A NAME ON THE SCREEN
+            (fix round two, findings CR2-M3P12-07 and HZ-M3P12-R2-04). Its
+            label is the normalised counterparty text, and for these rows
+            there is none, so the row rendered blank: an item carrying money
+            and a row count with nothing to read and nothing to do. */}
+        {group.unnameableReason === undefined
+          ? maskCardNumbers(group.label)
+          : t("unnameableLabel")}
       </span>
       <span className="merchant-row-count">
         {group.count} {t("rows")}
@@ -62,6 +69,14 @@ const GroupRow = async ({
             {t("nameIt")}
           </button>
         </form>
+      ) : null}
+      {/* AND THE REASON WHERE THE FORM WOULD HAVE BEEN. The copy already
+          existed and was reachable only by submitting a form the screen no
+          longer offers, so the explanation could never be read. */}
+      {unresolved && group.unnameableReason !== undefined ? (
+        <p className="merchant-row-unnameable" data-testid="group-unnameable">
+          {t("nameRefusedUnidentifiable")}
+        </p>
       ) : null}
     </li>
   );
@@ -117,6 +132,11 @@ const REFUSAL_MESSAGE: Readonly<
   "unnamespaced-counterparty": "nameRefusedStale",
   "untrusted-counterparty-account": "nameRefusedAccount",
   "unidentifiable-counterparty": "nameRefusedUnidentifiable",
+  // A subject that is not the key the screen renders did not come from a
+  // rendered group, which is the same thing a page left open across the
+  // deploy submits, so the reader gets the same instruction: reload and name
+  // the group again (fix round two, finding CR2-M3P12-08).
+  "non-canonical-counterparty": "nameRefusedStale",
 };
 
 export const MerchantReviewScreen = async ({

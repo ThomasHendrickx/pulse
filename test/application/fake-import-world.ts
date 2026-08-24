@@ -399,10 +399,51 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
           "updateRulePattern: rule does not belong to the household",
         );
       }
+      // THE UNIQUE KEY THE SCHEMA DECLARES, enforced here (M3-P12 fix round
+      // two, finding CR2-M3P12-02 / HZ-M3P12-R2-01). prisma/schema/merchants.prisma
+      // carries @@unique([householdId, kind, pattern]); this fake used to
+      // model rule identity, kind and pattern and NOT the one constraint the
+      // real table enforces on exactly those three fields, so a routine could
+      // decide a run clean here and throw against Postgres. A fake that is
+      // weaker than its subject reports safe by construction.
+      const clash = rules.find(
+        (rule) =>
+          rule.householdId === context.householdId &&
+          rule.id !== existing.id &&
+          rule.kind === existing.kind &&
+          rule.pattern === input.pattern,
+      );
+      if (clash !== undefined) {
+        throw new Error(
+          "Unique constraint failed on the fields: (householdId,kind,pattern)",
+        );
+      }
       declarationWriteCount += 1;
       const updated = { ...existing, pattern: input.pattern };
       rules[rules.indexOf(existing)] = updated;
       return updated;
+    },
+    // M3-P12 fix round two. The routine's whole write set, applied ALL OR
+    // NOTHING, mirroring the adapter's transaction. It DELEGATES to the two
+    // members below rather than reimplementing them, so a spy bound to
+    // either still sees every call, and it restores the array on any
+    // rejection so a failed apply leaves the fake as the run found it.
+    applyRuleWrites: async (context, input) => {
+      const snapshot = rules.map((rule) => ({ ...rule }));
+      const writesBefore = declarationWriteCount;
+      try {
+        for (const update of input.updates) {
+          await merchantsPort.updateRulePattern(context, update);
+        }
+        for (const insert of input.inserts) {
+          await merchantsPort.upsertRule(context, insert);
+        }
+      } catch (error) {
+        rules.length = 0;
+        rules.push(...snapshot);
+        declarationWriteCount = writesBefore;
+        throw error;
+      }
     },
     upsertRule: async (context, input) => {
       // Finding CR-401, mirrored from the adapter: the merchant the rule

@@ -147,6 +147,10 @@ files-touched:
   - test/e2e/merchant-rule-write.spec.ts
   - test/fixtures/measure-fixture-token-overlap.ts
   - delivery/plan/pulse-v02.yaml
+  - src/platform/db/target-guard.ts
+  - src/platform/db/resolve-env.ts
+  - src/platform/db/guard-cli.ts
+  - test/db/target-guard.test.ts
   - test/fixtures/generate-pdf-fixtures.ts
   - test/fixtures/measure-identity-convergence.ts
   - test/fixtures/belfius-counterparty-identity.pdf
@@ -291,6 +295,72 @@ key-decisions:
       whitespace. A subject arriving from a FORM is not a derived key, so the
       boundary trims. The split is stated at both sites rather than left as a
       subtlety.
+  - decision: >-
+      FIX ROUND TWO. A SAME-MERCHANT pattern collision is DECIDED in pass one
+      with its own outcome token, and the source rule is left alone; it is not
+      treated as a conflict and it does not block.
+    why: >-
+      Both clean-room lanes found the same defect independently: the collision
+      test blocked only on a DIFFERENT merchant, so a same-merchant claimant
+      fell through and queued an update onto a pattern another rule of the
+      same kind already held, which the declaration table's unique key on
+      (householdId, kind, pattern) refuses. The decide-then-apply shape the
+      first fix round built then did not hold: the decision phase reported the
+      run clean and the write phase threw. It is NOT a conflict, because there
+      is no ambiguity to settle: the two rules already say the same thing
+      about the same merchant, so the rewrite is redundant rather than
+      contested, and blocking on it would stop a migration that has nothing
+      wrong with it. Leaving the old rule un-namespaced loses nothing, and the
+      superset test proves that rather than assuming it: every row the old
+      rule reached under the old key is reached by the twin under the new one.
+      Deleting it is forbidden by decision D-39.
+  - decision: >-
+      FIX ROUND TWO. The routine's whole write set goes through ONE port
+      member the adapter runs in a database transaction, and the RECOMPUTE
+      stays outside it.
+    why: >-
+      The apply block was separate awaits with nothing around them, so any
+      failure partway through left the table half migrated with no report
+      printed at all, while the command's own contract told the operator a
+      non-zero exit meant nothing had happened. Modelling the unique key
+      closes the one reachable collision; the transaction closes the class,
+      including a check constraint, a lost connection or anything else the
+      decide phase cannot model. The recompute is outside deliberately: it
+      writes interpretation output rather than a declaration, it is
+      idempotent, and holding a transaction open across it would put a long
+      write lock on the transactions table for a guarantee the recompute
+      already gives by being re-runnable.
+  - decision: >-
+      FIX ROUND TWO. The target interlock is a NEW module beside
+      src/platform/db/guard.ts rather than a widening of it, and the
+      environment resolution both share is EXTRACTED into one file.
+    why: >-
+      guard.ts answers whether a DESTRUCTIVE command is pointed at a LOCAL
+      host, and a hostname is a complete answer to that. This asks whether a
+      WRITING migration is pointed at the ONE database an operator named, and
+      a hostname is not a complete answer to that, because the session pooler
+      host is regional infrastructure shared by every project in the region.
+      Folding the second question into the first would have given guard.ts two
+      postures and one escape hatch that cleared both. The RESOLUTION is
+      shared, because criterion 12.23 requires the interlock to resolve the
+      way the command it guards resolves and calls an interlock that does not
+      "decorative"; two copies that agree today is not that, so guard-cli.ts
+      now imports the same function.
+  - decision: >-
+      FIX ROUND TWO. The interlock has NO override, and the account subject at
+      the write boundary is REPAIRED while the descriptor subject is REFUSED.
+    why: >-
+      An override on the interlock would be a flag asserting the target is
+      right, which is the assertion being checked; guard.ts has one because
+      its default posture is local-only and a deliberate remote reset needs a
+      door. On the write boundary the asymmetry is about what a canonical form
+      IS: compactAccount is a total function with exactly one answer and it is
+      the same function the derivation applies, so rebuilding the subject from
+      it stores the key the derivation would derive. normaliseCounterparty is
+      a lossy grammar rather than a canonicalisation, so re-running it over a
+      subject that is already a key is not a repair and could change what the
+      owner named; a descriptor subject that is not a fixed point of the
+      normaliser did not come from a rendered group, so it is refused.
 verification-first:
   - finding: >-
       (a) THE CONVERGENCE NUMBERS ON THE REAL DOCUMENTS, reproduced against
@@ -459,6 +529,52 @@ verification-first:
       residue is unchanged, which is the honest shape of what this phase does
       to a corpus written before it.
     contradicts-plan: false
+  - finding: >-
+      (k) FIX ROUND TWO, THE SAME-MERCHANT COLLISION, REPRODUCED BEFORE IT WAS
+      FIXED AND AGAINST A REAL DATABASE. Both clean-room lanes found it
+      independently. Reproduced here twice. AGAINST THE FAKE, once the fake
+      was taught the unique key the schema declares: seeding the D-46 window
+      shape, an un-namespaced EXACT rule and a namespaced EXACT rule for ONE
+      merchant on one descriptor, the shipped routine printed THREW: Unique
+      constraint failed on the fields: (householdId,kind,pattern), calls:
+      ["update rule-2 REJECTED unique(kind,pattern)"], report: none produced.
+      AGAINST REAL POSTGRES, on a database created for this purpose and pinned
+      explicitly: THREW: PrismaClientKnownRequestError code=P2002, exit: none,
+      applied: undefined. After the fix, on the same real database: THREW: no,
+      exit: 0, applied: true, twin-outcomes: 1, old rule pattern unchanged:
+      true, twin rule pattern unchanged: true, rule row count before 2 after
+      2.
+    contradicts-plan: false
+  - finding: >-
+      (l) FIX ROUND TWO, WHAT THE TARGET INTERLOCK REFUSES IN THIS CONTAINER,
+      witnessed through the shipped command and with nothing connected. Run
+      with no target arguments: exit 3 and the message "no target host was
+      given". Run with the AMBIENT connection's own host passed as
+      --expect-host, which is what a host-only interlock would have approved,
+      and the Pulse project ref as --expect-ref: REFUSED, "the project ref in
+      the resolved connection's username is not the ref given on the command
+      line". That is the coordinator's scenario exactly: the ambient
+      DATABASE_URL in these containers is a different project of the owner's,
+      in the same region, so the host matches and the ref does not. No
+      connection was opened, and no resolved host, ref or password appears in
+      any refusal output.
+    contradicts-plan: false
+  - finding: >-
+      (m) FIX ROUND TWO, THE TRUNCATION RESIDUAL SIZED ON THE OWNER'S OWN
+      ROWS, which finding HZ-M3P12-R2-06 asked for and which turns out to
+      bound it to nothing. The population the residual can reach is rows whose
+      scrape match is FOLLOWED by a further four-digit group, since that is
+      the only shape whose Belgian-prefixed truncation the length test cannot
+      refuse. Measured in memory over both real documents through the shipped
+      path: current-account document, rows 39, rows with a stored account 11,
+      ROWS WHOSE SCRAPE MATCH IS FOLLOWED BY ANOTHER GROUP 0; card document,
+      rows 22, rows with a stored account 0, such rows 0. So the residual is
+      real, it is open, and on the owner's data today it reaches zero rows.
+      The one-row promotion residual is sized the other way and is not zero:
+      the deployed table holds a single EXACT rule written from one row, so
+      every declaration the owner has would be promoted on one row of
+      evidence, 1 of 1.
+    contradicts-plan: false
 deviations:
   - plan-clause: >-
       Criterion 12.17, the half requiring the phase work history to record the
@@ -564,6 +680,47 @@ deviations:
       run gate:tokens all exit 0 on the first run. The Playwright run needed a
       re-run of one spec; what failed, why, and the outcome are in the
       gate-evidence entry for it rather than summarised away here.
+  - plan-clause: >-
+      Criterion 12.23, added to the plan AFTER this implementation was built.
+    why: >-
+      BUILT IN THIS ROUND, and recorded here rather than left to look like a
+      criterion that was always owed. The criterion says of itself that it
+      postdates the implementation under review at the time of its relocation,
+      that a review evaluating that implementation marks it NOT MET AND NOT
+      YET OWED, and that it is owed by the NEXT change to this phase. This is
+      that change, so it is built: src/platform/db/target-guard.ts with
+      test/db/target-guard.test.ts, wired into
+      scripts/rederive-merchant-rules.ts as its first statement. ONE
+      CONSEQUENCE WORTH STATING because it is not obvious and it is
+      deliberate: the interlock refuses a connection carrying no project ref
+      in either field, and a local Postgres connection carries none, so THE
+      SCRIPT CANNOT BE RUN AGAINST A LOCAL DATABASE AT ALL. That is what the
+      criterion specifies and it is right for a one-off command aimed at one
+      deployed database, but it means the script's own end-to-end behaviour is
+      exercised by the routine's tests and by the process-level refusal tests
+      rather than by a local happy-path run.
+  - plan-clause: >-
+      files-to-touch, which does not name src/platform/db/guard-cli.ts or
+      src/platform/db/resolve-env.ts.
+    why: >-
+      src/platform/db/ IS in files-to-touch as amended, and both files are
+      inside it, but the guard-cli edit deserves naming because it changes a
+      file this phase otherwise has no business in. Criterion 12.23 requires
+      the interlock to resolve the environment the way the command it guards
+      resolves it and calls an interlock that does not "decorative". The
+      reading lived inline in guard-cli.ts, so meeting that requirement was a
+      choice between one implementation and two copies that agree until
+      somebody edits one. The reading is extracted to resolve-env.ts and
+      guard-cli.ts now imports it; its behaviour is unchanged.
+  - plan-clause: >-
+      Criterion 12.17, the deployed run.
+    why: >-
+      STILL NOT DONE AND NO LONGER THIS PHASE'S TO DO. The criteria lane
+      recorded it as half met with the deployed run impossible before merge
+      and attributed the defect to the plan; the plan now agrees and has moved
+      the deployed run to M3-P16. The invocation point half is met and is now
+      met with a target interlock in front of it, which is the part this phase
+      owed.
 gate-evidence:
   - gate: >-
       npm run typecheck (tsc --noEmit; Node 26.7.0 via nvm; worktree
@@ -668,6 +825,49 @@ gate-evidence:
     discovered: 55
     passed: 55
     failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: >-
+      FIX ROUND TWO, all five fast gates chained with && on the fix-round-two
+      head. npm run typecheck (tsc --noEmit, no output), npm run lint (eslint
+      ., no output), npm test (vitest run, 39 test files, 22.63s), npm run
+      gate:privacy (printed "gate:privacy clean"), npm run gate:tokens (no
+      output). The chain exited 0.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 554
+    passed: 554
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: >-
+      FIX ROUND TWO, npm run test:e2e. NOT GREEN IN THIS WINDOW AND NOT
+      ATTRIBUTABLE TO THIS CHANGE, and both halves of that sentence are
+      evidenced rather than asserted. 52 passed, 3 failed, 16.1m, exit 1:
+      test/e2e/golden-journey.spec.ts:79, test/e2e/import.spec.ts:170 and
+      test/e2e/month-view.spec.ts:275 under chromium-phone. Two of the three
+      PASSED when re-run alone. The third, the golden journey, reproduces in
+      isolation, so it was isolated properly: with THIS ROUND'S CHANGES
+      STASHED and the tree at the committed head, the same command fails the
+      same way, so it is not introduced here. And a CONCURRENT FLEET LANE on
+      an unrelated branch was running its own Playwright suite on the same
+      machine and the same local stack throughout, and its own test-results
+      directory holds failures for the SAME four tests, including the golden
+      journey at 12:02 with "Test timeout of 30000ms exceeded". The failure
+      signatures across the window are the contention ones fleet warning 10
+      describes: two timeouts and one "Protocol error (Runtime.callFunctionOn):
+      Internal server error, session closed". Disk was at 88 percent when the
+      run started and was freed to 83 percent afterwards. THIS PHASE'S OWN
+      SPECS PASSED: test/e2e/merchants.spec.ts:276, the stale-page refusal
+      witness, and test/e2e/merchant-rule-write.spec.ts:32, the adapter's
+      write path against a real database, both green in the full run.
+    result: red
+    wrapper-exit-code: 1
+    discovered: 55
+    passed: 52
+    failed: 3
     skipped: 0
     todo: 0
     did-not-run: 0
@@ -824,6 +1024,80 @@ claims:
       on the allow list; it is now listed with its provenance, so the gate's
       answer no longer depends on which alternative matches. That does not
       prove it was the cause and I do not claim it was.
+  - id: C-M3P12-08
+    kind: coverage
+    statement: >-
+      A same-merchant pattern collision crashed the migration part way through
+      applying before this round, and is a reported decision that writes
+      nothing after it; the property holds against real Postgres and not only
+      against a fake.
+    settled-by:
+      executed-construction:
+        command: >-
+          the fake taught the unique key the schema declares, then the D-46
+          window shape seeded and the routine run against it; then the same
+          seed against a real Postgres database created for this purpose and
+          pinned explicitly, with the collision branch removed and restored
+        exit-code: 1
+        output: |
+          RED, against the fake:
+            THREW: Unique constraint failed on the fields: (householdId,kind,pattern)
+            calls: ["update rule-2 REJECTED unique(kind,pattern)"]
+            report: none produced
+          RED, against real Postgres:
+            THREW: PrismaClientKnownRequestError code=P2002
+            exit: none  applied: undefined
+          GREEN, against real Postgres, after the fix:
+            THREW: no
+            exit: 0  applied: true
+            twin-outcomes: 1
+            old rule pattern unchanged: true
+            twin rule pattern unchanged: true
+            rule row count before 2 after 2
+          The fast gate carries five committed tests for it, including a
+          different-merchant collision that still BLOCKS, so the new outcome
+          is a distinction and not a blanket permission.
+  - id: C-M3P12-09
+    kind: coverage
+    statement: >-
+      The target interlock refuses the ambient connection in this container
+      even when the ambient host is passed as the expected host, which is the
+      case a host-only interlock approves.
+    settled-by:
+      executed-construction:
+        command: >-
+          npx tsx scripts/rederive-merchant-rules.ts --household demo, then
+          the same with --expect-host set to the ambient connection's own host
+          and --expect-ref set to the Pulse project ref
+        exit-code: 3
+        output: |
+          With no target arguments:
+            rederive-merchant-rules: no target host was given. This command
+            rewrites every merchant rule of a household and then recomputes;
+            it will not run against a database nobody named. Pass
+            --expect-host and --expect-ref.
+            exit 3
+          With the ambient host and the Pulse ref:
+            rederive-merchant-rules: the project ref in the resolved
+            connection's username is not the ref given on the command line.
+            Refusing. The resolved value is deliberately not printed here.
+          No connection was opened on either path, and no resolved host, ref
+          or password appears in either message.
+  - id: C-M3P12-10
+    kind: open-question
+    statement: >-
+      Whether the interlock's resolution is byte-for-byte equivalent to the
+      database client's own for every connection string is not settled, and
+      one direction of the gap is known and accepted rather than closed.
+    still-open-because: >-
+      The URL parser this resolution uses does not percent-decode a username
+      while the client's parser does, so a connection string carrying a
+      percent-encoded username is seen here in its encoded form and REFUSES a
+      target the client would have opened. That direction costs a blocked run
+      and a round trip; the other direction would cost a migration in the
+      wrong database, so the asymmetry is accepted. It is named in the
+      criterion, in the module's own header and in a test that pins it.
+      Whether any other divergence exists I did not establish.
 fix-round:
   - mechanism: >-
       DERIVING A GROUPING KEY FROM A ROW'S STORED FIELDS, and specifically its
@@ -880,8 +1154,106 @@ fix-round:
       assumed. And the truncation residual named in HZ-M3P12-05 is corrected
       in prose and pinned by a counterexample test, NOT closed: closing it
       means changing the importer's account scrape, which is a layout version
-      bump and a re-parse of every stored source.
+      bump and a re-parse of every stored source. AND THE ONE-ROW PROMOTION,
+      added in fix round two under finding CR2-M3P12-06 because it belonged in
+      this list and was not in it: a promotion whose whole evidence is a
+      single transaction is still a promotion, the account it keys on is
+      whichever candidate the importer's first-wins scrape stored for that one
+      row, hazard H12.16 records that choice as unanswered and measures it at
+      4 of the owner's 39 rows, and this phase makes it VISIBLE with its own
+      outcome token, its own list and an explanatory line on the operator's
+      console rather than closing it. Sized against the owner's own table it
+      is 1 of 1: the deployed declaration is a single EXACT rule written from
+      one row.
+  - mechanism: >-
+      DECIDING A MIGRATION AGAINST A MODEL OF THE TABLE, and specifically what
+      the model must carry. The first fix round moved every decision onto an
+      in-memory working copy so the routine could block before it writes. The
+      second round's high finding, raised independently by both clean-room
+      lanes, is that the working copy modelled rule identity, kind and pattern
+      and NOT the one constraint the real table enforces over exactly those
+      three fields, @@unique([householdId, kind, pattern]). A model weaker than
+      its subject reports safe by construction: the routine reached the end of
+      its decision phase clean, reported exit 0, and then threw inside the
+      write it had promised was safe. The mechanism's rule is that a decide
+      phase is only as good as the constraints its model carries, and that
+      where the model cannot carry them the APPLY must be atomic so a
+      rejection cannot land after a commit. Both halves are built here.
+    derivation:
+      command: >-
+        grep -rn "applyRuleWrites\|assessRederiveTarget\|resolveDbEnv" src/
+        scripts/ --include=*.ts
+      output: |
+        src/modules/merchants/application/index.ts:91:  applyRuleWrites: repository.applyRuleWrites,
+        src/modules/merchants/application/rederive-rules.ts:223:    | "applyRuleWrites"
+        src/modules/merchants/application/rederive-rules.ts:618:    await deps.merchants.applyRuleWrites(context, {
+        src/modules/merchants/application/ports.ts:95:  readonly applyRuleWrites: (
+        src/modules/merchants/adapters/merchant-repository.ts:153:export const applyRuleWrites = async (
+        src/modules/merchants/adapters/merchant-repository.ts:190:      "applyRuleWrites: one or more rules did not belong to the household",
+        src/platform/db/target-guard.ts:112:export const assessRederiveTarget = (
+        src/platform/db/guard-cli.ts:2:import { resolveDbEnv } from "./resolve-env";
+        src/platform/db/guard-cli.ts:14:const resolved = resolveDbEnv;
+        src/platform/db/resolve-env.ts:40:export const resolveDbEnv = (name: string): string | undefined =>
+        scripts/rederive-merchant-rules.ts:77:import { resolveDbEnv } from "@/platform/db/resolve-env";
+        scripts/rederive-merchant-rules.ts:78:import { assessRederiveTarget } from "@/platform/db/target-guard";
+        scripts/rederive-merchant-rules.ts:97:  const target = assessRederiveTarget(
+        scripts/rederive-merchant-rules.ts:98:    { DATABASE_URL: resolveDbEnv("DATABASE_URL") },
+        ONE WRITE SITE, not a loop of awaits: the routine issues its whole set
+        through one port member, the adapter runs that member's statements
+        inside prisma.$transaction, and the fake mirrors the all-or-nothing
+        behaviour by restoring its array on any rejection. ONE GUARD SITE, and
+        it is the first statement of the command's main function, before the
+        household argument is read. ONE RESOLUTION, shared by the two
+        interlocks in src/platform/db so they cannot drift apart.
+    not-covered: >-
+      THE MODEL STILL DOES NOT CARRY EVERY CONSTRAINT, and the transaction is
+      what stands where it does not: a check constraint, a foreign key, a
+      trigger or a lost connection is still discovered at apply time, and what
+      the fix guarantees is that discovering one leaves the table as the run
+      found it rather than half migrated. THE RECOMPUTE IS OUTSIDE THE
+      TRANSACTION, deliberately, so a failure between the rule writes and the
+      recompute leaves the declarations migrated and the rows not yet
+      recomputed; that is the deploy window D-46 already describes and the
+      recompute is idempotent and re-runnable. THE INTERLOCK CANNOT BE
+      EXERCISED END TO END AGAINST A LOCAL DATABASE, because a local
+      connection carries no project ref and the interlock refuses one; its
+      happy path is covered per endpoint shape as a pure function and its
+      refusals through the shipped command as a process. AND IT GUARDS THIS
+      COMMAND ONLY: every other writing entry point in this repository still
+      resolves its target from ambient environment, and widening the sibling
+      guard's own sentence from DESTRUCTIVE to WRITING, which the criteria
+      lane asked for, is not done here because it would change the posture of
+      a guard this phase does not own.
 environment-warnings:
+  - warning: >-
+      TWO FLEET LANES CANNOT RUN THE PLAYWRIGHT GATE AT ONCE ON THE DEFAULT
+      PORTS. The config starts its own servers on 3000 and 3100 with
+      reuseExistingServer false, deliberately, so a concurrent worktree
+      running its suite makes the run die immediately on "http://127.0.0.1:3100
+      is already used". The recorded practice from M3-P7 is to move the ports
+      temporarily, run, then restore the tracked file and verify the diff is
+      empty. Nothing belonging to another lane may be killed to free a port.
+    evidence: >-
+      A first attempt exited 1 with that message while another worktree held
+      both ports; the run recorded in the gate evidence was made on 3200 and
+      3300 and playwright.config.ts was restored afterwards, verified with an
+      empty git diff.
+  - warning: >-
+      THE AMBIENT DATABASE_URL IN THESE CONTAINERS IS A DIFFERENT SUPABASE
+      PROJECT OF THE OWNER'S, WITH A WORKING PASSWORD, IN THE SAME REGION AS
+      PULSE, and shell environment overrides .env for Prisma. Fleet warning 1
+      already says pin the connection; what this round adds is that a HOST
+      COMPARISON IS NOT ENOUGH TO CATCH IT, because the session pooler host is
+      regional infrastructure shared by every project in that region. Any
+      future interlock on a writing command must compare the PROJECT REF as
+      well, and the ref lives in the username on a pooler and in the host on a
+      direct connection.
+    evidence: >-
+      Witnessed through the shipped command with nothing connected: passing
+      the ambient connection's OWN host as the expected host, which a
+      host-only interlock approves, and the Pulse project ref as the expected
+      ref, the run refuses on the ref. Every database command in this round
+      was pinned explicitly to a database created for it on the local stack.
   - warning: >-
       A fleet worktree's node_modules is a SYMLINK, and .gitignore's
       `node_modules/` rule matched directories only, so `git add -A` tracked

@@ -18,7 +18,9 @@ import {
   ACCOUNT_NAMESPACE,
   DESCRIPTOR_NAMESPACE,
   counterpartyIdentity,
+  isTrustedCounterpartyAccount,
 } from "../../src/modules/merchants/domain/counterparty-identity";
+import { matchRules } from "../../src/modules/merchants/domain/merchant-rule";
 import { normaliseCounterparty } from "../../src/modules/merchants/domain/normalise-counterparty";
 import { foldGroups } from "../../src/modules/overview/domain/month-projection";
 import type { CountedGroupRow } from "../../src/modules/overview/domain/month-projection";
@@ -410,5 +412,90 @@ describe("the fixture token-overlap check is committed and covered (HZ-M3P12-09)
     expect(source).toMatch(/NEVER printed/);
     // And the label really is truncated.
     expect(source).toMatch(/basename\(path\)\.slice\(0, 8\)/);
+  });
+});
+
+// FIX ROUND TWO, findings CR2-M3P12-08 and HZ-M3P12-R2-02, raised
+// independently by both clean-room lanes. The trust gate compacts and
+// uppercases INTERNALLY before testing, so it accepted an account written
+// spaced or lowercase; the boundary then stored the submitted string
+// verbatim, while the derivation only ever emits the compact uppercase form.
+// The naming was accepted and could never match a row.
+describe("the stored subject is the subject that was validated (CR2-M3P12-08)", () => {
+  const deps = (world: World) => ({
+    merchants: world.merchantsPort,
+    recompute: (ctx: HouseholdContext) =>
+      recomputeInterpretation(ctx, world.ledgerDeps),
+  });
+
+  test("a SPACED LOWERCASE account subject is stored COMPACTED, equal to the key the derivation produces", async () => {
+    const world = await ingestFixture();
+    const compact = IDENTITY_FIXTURE_ACCOUNTS.counterparty1;
+    const spacedLower = (compact.match(/.{1,4}/g) ?? []).join(" ").toLowerCase();
+    expect(spacedLower).not.toBe(compact);
+    // The gate accepts it, which is what made the old behaviour silent.
+    expect(isTrustedCounterpartyAccount(spacedLower)).toBe(true);
+
+    const outcome = await assignMerchant(context, deps(world), {
+      counterpartyText: `${ACCOUNT_NAMESPACE}${spacedLower}`,
+      merchantName: "Demo Verzekering",
+    });
+    expect(outcome.ok).toBe(true);
+
+    const derived = counterpartyIdentity({
+      description: "irrelevant",
+      counterpartyAccount: spacedLower,
+    }).key;
+    const stored = world.rules[0]?.pattern;
+    expect(stored).toBe(derived);
+    // AND IT MATCHES, which is the property that was broken: one naming, one
+    // stored rule, and the derived key resolves to it.
+    expect(
+      matchRules(derived, world.rules as never)?.merchantId,
+    ).toBe(outcome.ok ? outcome.value.merchant.id : "");
+  });
+
+  test("a DESCRIPTOR subject that the normaliser would not emit for itself is REFUSED rather than repaired", async () => {
+    const world = await ingestFixture();
+    const outcome = await assignMerchant(context, deps(world), {
+      counterpartyText: `${DESCRIPTOR_NAMESPACE}kosten demo rekeningpakket`,
+      merchantName: "Demo Bank",
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error.kind).toBe("non-canonical-counterparty");
+    }
+    expect(world.rules).toHaveLength(0);
+    expect(world.merchants).toHaveLength(0);
+  });
+
+  test("a canonical descriptor subject is still ACCEPTED, so the refusal is a refusal and not a closed door", async () => {
+    const world = await ingestFixture();
+    const canonical = normaliseCounterparty("KOSTEN DEMO REKENINGPAKKET");
+    const outcome = await assignMerchant(context, deps(world), {
+      counterpartyText: `${DESCRIPTOR_NAMESPACE}${canonical}`,
+      merchantName: "Demo Bank",
+    });
+    expect(outcome.ok).toBe(true);
+    expect(world.rules[0]?.pattern).toBe(`${DESCRIPTOR_NAMESPACE}${canonical}`);
+  });
+
+  test("every refusal kind the use case can return is rendered by the screen, so none is silent", () => {
+    const source = readFileSync(
+      join(repositoryRoot, "src/modules/merchants/application/assign-merchant.ts"),
+      "utf8",
+    );
+    const kinds = [...source.matchAll(/kind: "([a-z-]+)"/g)].map((m) => m[1]);
+    expect(kinds.length).toBeGreaterThan(0);
+    const screen = readFileSync(
+      join(repositoryRoot, "src/modules/merchants/ui/merchant-review.tsx"),
+      "utf8",
+    );
+    for (const kind of new Set(kinds)) {
+      if (kind === "EXACT") {
+        continue;
+      }
+      expect(screen, kind).toContain(`"${kind ?? ""}"`);
+    }
   });
 });

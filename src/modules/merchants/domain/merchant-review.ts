@@ -55,6 +55,13 @@ export type ReviewGroup = {
   // this field is the wire contract of the shipped form and the server action
   // reads it by this name; the comment is what says it is no longer a text.
   readonly counterpartyText?: string;
+  // WHY THIS GROUP CANNOT BE NAMED (fix round two, findings CR2-M3P12-07 and
+  // HZ-M3P12-R2-04). Withholding the form was right and leaving the row blank
+  // was not: the reader met a list item with an empty label, a row count and
+  // an amount, no control and no sentence, counted in the number the screen
+  // prints as work they are being asked to do. The screen renders this where
+  // the form would have been.
+  readonly unnameableReason?: "no-counterparty-text";
   readonly totalCents: Cents;
   readonly count: number;
 };
@@ -85,7 +92,14 @@ const groupDirection = (
 ): readonly ReviewGroup[] => {
   const groups = new Map<
     string,
-    { label: string; merchantId?: string; counterpartyText?: string; total: number; count: number }
+    {
+      label: string;
+      merchantId?: string;
+      counterpartyText?: string;
+      unnameableReason?: "no-counterparty-text";
+      total: number;
+      count: number;
+    }
   >();
   for (const row of rows) {
     const merchantId = row.merchantId;
@@ -128,7 +142,7 @@ const groupDirection = (
       // the two guards agree.
       ...(merchantId === undefined
         ? isBareIdentityKey(identity.key)
-          ? {}
+          ? { unnameableReason: "no-counterparty-text" as const }
           : { counterpartyText: identity.key }
         : { merchantId }),
       total: row.amountCents,
@@ -143,6 +157,9 @@ const groupDirection = (
       ...(entry.counterpartyText === undefined
         ? {}
         : { counterpartyText: entry.counterpartyText }),
+      ...(entry.unnameableReason === undefined
+        ? {}
+        : { unnameableReason: entry.unnameableReason }),
       totalCents: entry.total as Cents,
       count: entry.count,
     }))

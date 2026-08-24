@@ -1,7 +1,8 @@
 // THE INVOCATION POINT for the one-off re-derivation of merchant rule
 // declarations (M3-P12, decision D-46, criterion 12.17).
 //
-//   npm run rederive:merchant-rules -- --household <id> [--accept <ruleId,...>] [--dry-run]
+//   npm run rederive:merchant-rules -- --expect-host <host> --expect-ref <ref>
+//     --household <id> [--accept <ruleId,...>] [--dry-run]
 //
 // WHEN IT RUNS, and why the order is FORCED rather than preferred: AFTER the
 // code deploys. The routine imports the new derivation to compute the new
@@ -33,13 +34,36 @@
 // WHAT A BLOCKED RUN LEAVES BEHIND, said here rather than left to be
 // discovered (fix round, findings HZ-M3P12-03 and CR-M3P12-08): NOTHING. The
 // routine decides everything against an in-memory copy of the rule set and
-// issues no write at all unless the run is clean, so exit 1 means the
-// database is exactly as it was found and the printed report describes work
-// that did NOT happen. That is what makes --accept usable: an operator runs,
+// issues no write at all unless the run is clean, so a BLOCKED run leaves the
+// database exactly as it was found and the printed report describes work that
+// did NOT happen.
+//
+// AND WHAT A FAILED RUN LEAVES BEHIND, which is a different question with the
+// same exit code and used to have a different answer (fix round two, finding
+// CR2-M3P12-03). Exit 1 is also what the rejection handler sets, and the
+// apply block used to be separate awaits with nothing around them, so a
+// rejection partway through left some patterns rewritten, nothing inserted,
+// no recompute run and no report printed at all. The whole write set now goes
+// through ONE port member that the adapter runs inside a database
+// transaction, so a failure anywhere rolls back every write that preceded it
+// and the sentence above is true of a failed run as well. The recompute is
+// deliberately outside that transaction: it writes interpretation output, it
+// is idempotent, and re-running it alone is safe. That is what makes --accept usable: an operator runs,
 // is blocked, reads the rule ids off a report of unapplied work, decides, and
 // re-runs. The FIRST shape of this routine did the opposite, applying every
 // non-blocking write and the full recompute before returning exit 1, so the
 // report was about work already done.
+//
+// THE TARGET INTERLOCK (criterion 12.23, hazard H12.30). Before this command
+// reads or writes ANYTHING it requires --expect-host AND --expect-ref, and it
+// refuses unless the connection it would actually open matches both. There is
+// no override, because an override would be a second assertion of the very
+// thing being checked. The ref is not optional and a host match is not enough:
+// the session pooler host is regional infrastructure shared by every project
+// in the region, and in this fleet the ambient DATABASE_URL belongs to a
+// different project of the owner's, with a working password, in that same
+// region. See src/platform/db/target-guard.ts for where the ref lives in each
+// endpoint shape and for the one accepted equivalence gap.
 //
 // --dry-run DECIDES AND WRITES NOTHING. It is threaded into the routine
 // itself; it is not a substitution made here, which is what it used to be
@@ -50,6 +74,8 @@
 // from a real statement's text.
 
 import { householdId, userId, type HouseholdContext } from "@/platform/tenancy";
+import { resolveDbEnv } from "@/platform/db/resolve-env";
+import { assessRederiveTarget } from "@/platform/db/target-guard";
 import { recomputeInterpretation } from "@/modules/ledger/application";
 import {
   formatDecisionReport,
@@ -66,6 +92,18 @@ const argument = (name: string): string | undefined => {
 };
 
 const main = async (): Promise<number> => {
+  // THE INTERLOCK RUNS FIRST, before the household argument is even read and before
+  // any repository call. A refused run has read nothing and written nothing.
+  const target = assessRederiveTarget(
+    { DATABASE_URL: resolveDbEnv("DATABASE_URL") },
+    { host: argument("expect-host"), projectRef: argument("expect-ref") },
+  );
+  if (!target.allowed) {
+    console.error(`rederive-merchant-rules: ${target.reason}`);
+    return 3;
+  }
+  console.log(`target guard: ${target.reason}`);
+
   const household = argument("household");
   if (household === undefined || household.trim() === "") {
     console.error(
@@ -116,6 +154,12 @@ const main = async (): Promise<number> => {
   console.log(`rules-after ${report.rulesAfter}`);
   console.log(`patterns-rewritten ${report.patternsRewritten}`);
   console.log(`already-namespaced ${report.alreadyNamespaced}`);
+  console.log(
+    `already-held-by-same-merchant-twin ${report.alreadyHeldBySameMerchantTwin.length}`,
+  );
+  for (const ruleId of report.alreadyHeldBySameMerchantTwin) {
+    console.log(`  twin-holds-pattern-rule ${ruleId}`);
+  }
   console.log(`rules-added ${report.rulesAdded}`);
   console.log(`assignments-before ${report.assignmentsBefore}`);
   console.log(`assignments-after ${report.assignmentsAfter}`);
@@ -149,6 +193,17 @@ const main = async (): Promise<number> => {
     );
   }
   console.log(`promoted-on-one-row ${report.promotedOnOneRow.length}`);
+  if (report.promotedOnOneRow.length > 0) {
+    // WHAT THE COUNT MEANS, for the operator and not only for the code's
+    // reader (fix round two, finding CR2-M3P12-06). These rules were promoted
+    // on the evidence of a SINGLE transaction, so the account they now key on
+    // is that one row's scraped value, and which of several account-shaped
+    // tokens in a description the importer stored is a first-wins rule this
+    // phase pins and does not answer.
+    console.log(
+      "  these were promoted on the evidence of ONE transaction each, so the account each now keys on is that single row's scraped value",
+    );
+  }
   for (const ruleId of report.promotedOnOneRow) {
     console.log(`  promoted-on-one-row-rule ${ruleId}`);
   }
@@ -171,7 +226,28 @@ void main().then(
     process.exitCode = code;
   },
   (error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    // A DATABASE ERROR CARRIES THE FAILING ROW (fix round two, finding
+    // CR2-M3P12-04). This handler printed error.message, and for a Prisma
+    // query error that message embeds the driver's detail, which on a
+    // constraint violation names the WHOLE FAILING ROW: the rule id, the
+    // household id, the merchant id, the kind, THE PATTERN and the timestamp.
+    // A pattern is derived from a real statement's text, this repository is
+    // public, and this fleet's history is that such output reaches a note
+    // before anyone thinks about it. So the message is not printed: the
+    // error's kind and, for a Prisma error, its code, which is what an
+    // operator needs to decide whether to re-run, and nothing else. The
+    // detail is in the database log.
+    const kind = error instanceof Error ? error.constructor.name : typeof error;
+    const code =
+      typeof error === "object" && error !== null && "code" in error
+        ? String((error as { code: unknown }).code)
+        : "none";
+    console.error(
+      `rederive-merchant-rules: the run failed. error kind ${kind}, code ${code}. The message is deliberately not printed: a database error can quote the failing row, and a stored pattern is derived from a real statement. Read the database log for the detail.`,
+    );
+    console.error(
+      "  the rule writes are applied in ONE transaction, so a failure inside them wrote nothing and the table is as this run found it. Re-running is safe and converges: a rule an earlier attempt namespaced is left alone by the next.",
+    );
     process.exitCode = 1;
   },
 );

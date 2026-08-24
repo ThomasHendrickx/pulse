@@ -112,6 +112,25 @@ export type RederiveOutcomeKind =
   // second run and is what makes "already migrated" visible.
   | "descriptor-namespaced"
   | "empty-pattern-left-alone"
+  // A SAME-MERCHANT TWIN ALREADY HOLDS THE TARGET PATTERN (fix round two,
+  // findings CR2-M3P12-02 and HZ-M3P12-R2-01). The declaration table's key is
+  // (householdId, kind, pattern), so rewriting this rule's pattern would
+  // collide with a live rule of the same kind that already carries it. When
+  // that rule belongs to a DIFFERENT merchant it is a genuine ambiguity and
+  // blocks; when it belongs to the SAME merchant there is no ambiguity at
+  // all, because the two rules already say the same thing about the same
+  // merchant. The rewrite is redundant, so it is not made. The source rule is
+  // left exactly as it is, which loses nothing: every row it reached under
+  // the old key is reached by the twin under the new one, and the superset
+  // test proves that rather than assuming it. Deleting it is forbidden
+  // (decision D-39).
+  //
+  // THIS IS THE SHAPE DECISION D-46's DEPLOY WINDOW INVITES. The code deploys
+  // before this routine runs, the owner's pre-migration rules match nothing
+  // and their rows show as unresolved, so the owner names those groups again;
+  // findMerchantByName reuses the merchant, and a namespaced EXACT rule lands
+  // beside the old un-namespaced one for the same merchant.
+  | "already-held-by-same-merchant-twin"
   // Pass two.
   | "promoted"
   // A promotion whose whole evidence is ONE row (fix round, finding
@@ -182,6 +201,9 @@ export type RederiveReport = {
   readonly acceptedLostAssignments: readonly LostAssignment[];
   // Rules promoted on the evidence of exactly one row (finding HZ-M3P12-06).
   readonly promotedOnOneRow: readonly string[];
+  // Rules pass one left alone because a same-merchant twin already holds the
+  // pattern they would have been rewritten to (fix round two).
+  readonly alreadyHeldBySameMerchantTwin: readonly string[];
   // Whether the writes this report describes were ISSUED. False on a dry run
   // and false on a blocked run, which are the only two ways a report can
   // describe work that did not happen.
@@ -194,7 +216,11 @@ export type RederiveReport = {
 export type RederiveDependencies = {
   readonly merchants: Pick<
     MerchantRepositoryPort,
-    "listRules" | "listCountedTransactions" | "upsertRule" | "updateRulePattern"
+    | "listRules"
+    | "listCountedTransactions"
+    | "upsertRule"
+    | "updateRulePattern"
+    | "applyRuleWrites"
   >;
   readonly recompute: RecomputeInterpretation;
 };
@@ -230,14 +256,38 @@ const matchedBy = (
 ): readonly CountedTransaction[] =>
   rows.filter((row) => matchRules(key(row), [rule]) !== undefined);
 
+// WHICH KEY A STORED RULE IS ACTUALLY WRITTEN AGAINST (fix round two,
+// finding HZ-M3P12-R2-03). The before-set used to be computed with the
+// BASELINE key for every rule, which is right on the FIRST run and dead on
+// every run after it: once a pattern carries a namespace it can never match a
+// bare key, because EXACT compares unequal, a PREFIX cannot start with a
+// longer string and a PATTERN glob is anchored. So the before-set came back
+// EMPTY, the lost-assignment set was empty by construction, and the
+// lost-assignment half of the exit code could not be reached at all, while
+// the run still wrote and still recomputed. A guard that reports safe by
+// construction is worse than no guard, because the operator is told it
+// checked. It matters on a table that is NOT in the clean post-run state the
+// routine assumes: a partially migrated one, or a hand-edited one.
+const keyForRule = (rule: MerchantRuleLike): ((row: CountedTransaction) => string) =>
+  identityBasisOfKey(rule.pattern) === undefined ? baselineKey : identityKey;
+
 const assignmentSet = (
   rows: readonly CountedTransaction[],
   rules: readonly MerchantRuleLike[],
-  key: (row: CountedTransaction) => string,
+  key?: (row: CountedTransaction) => string,
 ): ReadonlyMap<string, { merchantId: string; ruleId: string }> => {
   const pairs = new Map<string, { merchantId: string; ruleId: string }>();
   for (const row of rows) {
-    const match = matchRules(key(row), rules);
+    // EACH RULE UNDER ITS OWN KEY when no single key is imposed, so a table
+    // holding both migrated and un-migrated patterns is read correctly rather
+    // than reported empty. The tie-break is the matcher's own: the most
+    // specific declaration wins, so the candidates are collected and handed
+    // to matchRules together per key space.
+    const match =
+      key === undefined
+        ? matchRules(baselineKey(row), rules.filter((r) => keyForRule(r) === baselineKey)) ??
+          matchRules(identityKey(row), rules.filter((r) => keyForRule(r) === identityKey))
+        : matchRules(key(row), rules);
     if (match !== undefined) {
       pairs.set(row.id, { merchantId: match.merchantId, ruleId: match.ruleId });
     }
@@ -257,7 +307,11 @@ export const rederiveMerchantRules = async (
   // resolves a merchant for INCOME and SPEND rows and for nothing else, so a
   // counted row is the only kind a rule can ever reach. Widening this read
   // would change no decision and would count rows no assignment can land on.
-  const assignmentsBefore = assignmentSet(rows, before, baselineKey);
+  // THE BEFORE-SET READS EACH STORED RULE UNDER THE KEY IT IS WRITTEN
+  // AGAINST (fix round two, finding HZ-M3P12-R2-03), so a table that is
+  // already migrated, or half migrated, produces the assignment set it really
+  // holds rather than an empty one.
+  const assignmentsBefore = assignmentSet(rows, before);
 
   const decisions: RuleDecision[] = [];
   const counts: RuleCounts[] = [];
@@ -265,6 +319,7 @@ export const rederiveMerchantRules = async (
   const acceptedConflicts: string[] = [];
   const broadened: string[] = [];
   const promotedOnOneRow: string[] = [];
+  const alreadyHeldBySameMerchantTwin: string[] = [];
   let patternsRewritten = 0;
   let alreadyNamespaced = 0;
   let rulesAdded = 0;
@@ -358,6 +413,24 @@ export const rederiveMerchantRules = async (
         pass: "one",
         basis: "descriptor",
         outcome: isAccepted ? "merchant-conflict-accepted" : "merchant-conflict",
+      });
+      continue;
+    }
+    // THE SAME-MERCHANT TWIN, DECIDED RATHER THAN FALLEN THROUGH (fix round
+    // two). This used to drop past both branches and queue an update onto a
+    // pattern another rule of the same kind already held, which the unique
+    // key refuses: the decide phase reported the run clean and the apply
+    // phase threw, which is the one thing the decide-then-apply shape exists
+    // to make impossible. The working copy models rule identity, kind and
+    // pattern, and it now acts on the constraint the real table enforces over
+    // exactly those three fields.
+    if (collision !== undefined) {
+      alreadyHeldBySameMerchantTwin.push(rule.id);
+      decisions.push({
+        ruleId: rule.id,
+        pass: "one",
+        basis: "descriptor",
+        outcome: "already-held-by-same-merchant-twin",
       });
       continue;
     }
@@ -527,12 +600,25 @@ export const rederiveMerchantRules = async (
   // never carries a lost assignment onto a transaction row.
   const applied = exitCode === 0 && input.dryRun !== true;
   if (applied) {
-    for (const update of pendingUpdates) {
-      await deps.merchants.updateRulePattern(context, update);
-    }
-    for (const insert of pendingInserts) {
-      await deps.merchants.upsertRule(context, insert);
-    }
+    // ONE CALL, ONE TRANSACTION (fix round two, finding CR2-M3P12-03). The
+    // whole write set goes through a single port member the adapter runs
+    // inside a database transaction, so a rejection anywhere rolls back every
+    // write that preceded it. Before this, the updates and inserts were
+    // separate awaits with nothing around them, and a failure partway through
+    // left the table half migrated while the command's own contract told the
+    // operator that a non-zero exit meant nothing had happened.
+    //
+    // THE RECOMPUTE IS OUTSIDE IT, deliberately and not by omission. It
+    // writes transactions.merchantId, which is INTERPRETATION output rather
+    // than a declaration (pulse-domain section 2), it is idempotent, and it
+    // is the one step that is safe to re-run on its own. Holding a
+    // transaction open across the whole recompute would put a long write lock
+    // on the transactions table for no guarantee the recompute does not
+    // already give.
+    await deps.merchants.applyRuleWrites(context, {
+      updates: pendingUpdates,
+      inserts: pendingInserts,
+    });
     await deps.recompute(context);
   }
 
@@ -546,6 +632,7 @@ export const rederiveMerchantRules = async (
     rulesAdded,
     broadened,
     promotedOnOneRow,
+    alreadyHeldBySameMerchantTwin,
     conflicts,
     acceptedConflicts,
     lostAssignments,

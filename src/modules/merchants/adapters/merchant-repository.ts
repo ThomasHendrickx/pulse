@@ -138,6 +138,60 @@ export const updateRulePattern = async (
   };
 };
 
+// M3-P12 fix round two, finding CR2-M3P12-03. THE RE-DERIVATION'S WHOLE
+// WRITE SET IN ONE TRANSACTION. Prisma's array form runs every operation in
+// a single database transaction, so a rejection anywhere, a unique-key
+// violation, a check constraint, a lost connection, rolls back every write
+// that preceded it. That is what makes the command's contract true: a
+// non-zero exit leaves the table exactly as the run found it.
+//
+// EVERY STATEMENT CARRIES householdId (CLAUDE.md non-negotiable 6). The
+// updates use updateMany so household ownership is verified inside the same
+// statement as the write, and the affected-row counts are checked after the
+// transaction commits: a foreign or vanished rule id updates zero rows,
+// which is a failure of the run rather than a silent no-op.
+export const applyRuleWrites = async (
+  context: HouseholdContext,
+  input: {
+    readonly updates: readonly { readonly ruleId: string; readonly pattern: string }[];
+    readonly inserts: readonly {
+      readonly merchantId: string;
+      readonly kind: MerchantRuleKind;
+      readonly pattern: string;
+    }[];
+  },
+): Promise<void> => {
+  if (input.updates.length === 0 && input.inserts.length === 0) {
+    return;
+  }
+  const results = await prisma.$transaction([
+    ...input.updates.map((update) =>
+      prisma.merchantRule.updateMany({
+        where: { id: update.ruleId, householdId: context.householdId },
+        data: { pattern: update.pattern },
+      }),
+    ),
+    ...input.inserts.map((insert) =>
+      prisma.merchantRule.create({
+        data: {
+          householdId: context.householdId,
+          merchantId: insert.merchantId,
+          kind: insert.kind,
+          pattern: insert.pattern,
+        },
+      }),
+    ),
+  ]);
+  const missed = results
+    .slice(0, input.updates.length)
+    .filter((result) => (result as { count: number }).count === 0).length;
+  if (missed > 0) {
+    throw new Error(
+      "applyRuleWrites: one or more rules did not belong to the household",
+    );
+  }
+};
+
 export const findTagByName = async (
   context: HouseholdContext,
   name: string,
