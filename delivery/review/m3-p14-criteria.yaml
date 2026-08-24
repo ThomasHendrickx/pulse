@@ -500,6 +500,52 @@ findings:
     fix: "Assert instead that the file contains the DR-0030 marker and that the old sentence appears only inside a paragraph marked CORRECTED, which is the property that actually matters."
     criterion-touched: "14.10"
 
+  - id: CRIT-P14-15
+    severity: high
+    title: "THE WORST SELF-PASSING GUARD. The MerchantRule delete grep, which criteria 14.13 and 15.6 both require and which holds an ABSOLUTE rule of the domain, is blind to the ordinary Prisma form of the delete it forbids"
+    where: test/application/account-registry.test.ts:495
+    evidence: |
+      Criterion 14.13: "A grep asserts that no code path in the accounts module and no
+      code path in interpretation calls any delete on a MerchantRule, which is
+      .claude/skills/pulse-domain/SKILL.md:41 held MECHANICALLY rather than promised in a
+      step." Criterion 15.6 requires the same grep.
+      The guard walks src/modules/ledger and src/modules/accounts and flags a line
+      matching /(deleteRule|deleteMany|\\bdelete\\b)[^\\n]*[Rr]ule/. The pattern requires
+      the word "delete" to appear BEFORE "Rule" ON THE SAME LINE. The Prisma client puts
+      the MODEL NAME FIRST, so the natural delete reads
+      `await tx.merchantRule.deleteMany({` and the word "Rule" is to the LEFT of
+      "deleteMany" with nothing matching to its right.
+      Probed rather than argued, running the guard's own regex line by line:
+        MISSED  await tx.merchantRule.deleteMany({
+        MISSED  await prisma.merchantRule.delete({ where: { id } });
+        MISSED  the same call with its arguments on the following lines
+        MISSED  await prisma.$executeRaw`DELETE FROM "merchant_rules" WHERE id = ...`
+        CAUGHT  await deps.merchants.deleteRule(context, ruleId);
+        CAUGHT  a prose line reading "delete the rule"
+      So the guard catches a port method whose name happens to start with delete, and a
+      comment, and misses every form the Prisma client actually offers, which is the form
+      every repository in this codebase is written in
+      (src/modules/ledger/adapters/ledger-repository.ts:173 is `tx.transferLink.deleteMany`,
+      the same shape).
+    consequence: |
+      This is the one guard in either phase that holds an ABSOLUTE rule of the domain
+      rather than a criterion's own assertion: recompute may never write to the
+      declarations layer. Decision D-49 rests on it in M3-P14 and again in M3-P15, and
+      both criteria describe it as the rule "held mechanically". It is not held. An
+      engine path added later that deletes a dead MerchantRule the ordinary way passes
+      this test, passes lint, passes typecheck, and takes away a decision the household
+      made, which is the exact surprise decision D-49 exists to prevent.
+      Under R-087 the test's name, "no interpretation code path calls any delete on a
+      MerchantRule", is a false statement about what was checked.
+    fix: |
+      Match the model and the verb in either order and across a line break: search the
+      file text (not line by line) for /merchantRule\\s*\\.\\s*delete/i and for
+      /delete[^;]{0,80}merchantRule/i and for a raw DELETE against merchant_rules, and
+      keep the deleteRule port-name arm. Then prove it by running it against an injected
+      `tx.merchantRule.deleteMany({})` before trusting it, which is the both-directions
+      discipline this phase already applied to its other two corrected guards.
+    criterion-touched: "14.13 and 15.6, and pulse-domain rule 3"
+
 criteria:
   # ---------------- M3-P14 ----------------
   - id: "14.1"
