@@ -858,3 +858,173 @@ criteria:
       repository holds", is delivered as neither.
     implementer-claim: "partial, all four arms green at the application level, NO Playwright half"
     findings: [CRIT-P14-04]
+
+  # ---------------- M3-P15 ----------------
+  - id: "15.1"
+    quote: "A RING IS CORRECTED AND THE MONEY MOVES, IN THE DIRECTION THE CLASSIFICATION ORDER ACTUALLY PRODUCES. FIRST ARM, the mis-ringed counterparty. A PLAYWRIGHT TEST registers a savings account in the POT ring by mistake ... SECOND ARM, the only construction in which a ring correction does move the spend total."
+    verdict: partial
+    evidence: |
+      SECOND ARM: MET, and in the browser. test/e2e/accounts.spec.ts:489 imports
+      test/fixtures/ar-current.csv (whose own account number BE90901100001132 passes the
+      platform check, pinned in the fast gate at test/domain/account-number.test.ts:129,
+      so the re-invention clause is satisfied by construction rather than by editing an
+      old fixture), records spend-total as CONTROL_SPEND, corrects the account to
+      RESERVE, asserts spend-total falls to a hand-written "0,00", then corrects BACK and
+      asserts spend-total returns byte identical to CONTROL_SPEND, which is the
+      rebuildability test applied to a ring. It PASSED in my run (line 9).
+      The application mirror is test/application/account-registry.test.ts:560, which adds
+      the rows-on-account count (11) and the direction.
+      FIRST ARM: application level only. test/application/account-registry.test.ts:509
+      does exactly the first arm's construction, registering the savings account in the
+      POT ring, correcting it to RESERVE, and asserting spendDelta 0 and reservesDelta
+      10000 with the criterion's own reasoning quoted at
+      test/application/account-registry.test.ts:551 through :556. No Playwright test
+      performs it: the browser correction tests are the wrong-answer journey
+      (test/e2e/accounts.spec.ts:409, whose subject account's own rows are held) and the
+      left-the-pot test above. recon-cause-unmatched falling by exactly those rows, and
+      pot-change asserted rather than merely recorded, are asserted nowhere.
+    implementer-claim: "partial, first arm application-level only"
+    reviewer-note: "Honest and correctly scoped."
+
+  - id: "15.2"
+    quote: "A ROW ON AN ACCOUNT THAT LEFT THE POT STOPS COUNTING AND STOPS BEING OFFERED. ... It further asserts that those rows are NAMED AS HELD after the correction ... and that a second correction back into the pot returns them to the counted set and FLIPS that account's month-accounts entry from held to counted, the entry REMAINING on the page."
+    verdict: met
+    evidence: |
+      test/e2e/accounts.spec.ts:489 asserts every clause: no row in any month figure
+      (spend, income and reserves-net all "0,00"), no counterparty as an unresolved
+      group, exactly one month-accounts entry with data-state held and "11 rows", then
+      the correction back with the entry still present and flipped to counted and
+      spend-total byte identical to CONTROL_SPEND. It PASSED in my run.
+      The application half, including "every one of those rows carries no flow and no
+      merchant after the recompute", is at test/application/account-registry.test.ts:596.
+      The mechanism is the clearing write at
+      src/modules/ledger/application/interpret-window.ts:203, which writes flow null for
+      every row on a non-pot account and is a null write through the port the domain
+      already defines, not a raw-column write.
+    implementer-claim: met
+
+  - id: "15.3"
+    quote: "AND THE BOOKS STILL CLOSE, WITHOUT THE GAP READ BEING BLINDED TO DO IT. ... an application test asserts that a row on a POT account whose flow is null is STILL counted as uninterpreted ... And an application test asserts that a cleared row on a non-pot account reaches NO named figure and NO screen ... and NOT listGapRows."
+    verdict: partial
+    evidence: |
+      The browser half is met: test/e2e/accounts.spec.ts:531 asserts
+      recon-cause-uninterpreted absent and recon-difference absent after the correction.
+      PASSED.
+      The CR-502 case is at test/application/held-rows.test.ts:357 and asserts the pot
+      null-flow row is still uninterpreted and still holds the verdict open, so the
+      substance is guarded, but it is asserted against figuresOf rather than against
+      monthFigures.
+      The clause "and NOT listGapRows", which the criterion singles out because its
+      omission "would let every cleared row go on being listed under a verdict that says
+      the books close", is asserted by no test that calls listGapRows. The read is
+      correctly scoped at src/modules/overview/adapters/overview-repository.ts:349; what
+      is missing is the witness. Same root as CRIT-P14-05.
+    implementer-claim: met
+    findings: [CRIT-P14-05]
+
+  - id: "15.4"
+    quote: "SCOPING THE READS MOVES NOTHING THAT EXISTS TODAY. The committed golden journey passes unchanged ... an application test in this phase's diff then asserts that the scoped projection over that same fixture returns each of those recorded values ... A third case, over a household that also holds one non-pot account carrying rows, asserts the figures differ ONLY in the fields the scoping is meant to change."
+    verdict: partial
+    evidence: |
+      FIRST HALF MET: test/e2e/golden-journey.spec.ts is untouched in the diff (it does
+      not appear in `git diff --stat` against the merge base) and it PASSED in my run
+      (line 14, 20.8s).
+      SECOND AND THIRD HALVES NOT MET: no application test in the diff asserts a recorded
+      MonthFigures baseline. `grep -rn "15\.4" test/` returns nothing. The work history
+      names captured output as the witness, which is the substitute this criterion's own
+      wording refuses. See CRIT-P15-09.
+      The restoration claim itself is sound on inspection: changeInPot is defined as the
+      sum over POT accounts at src/modules/ledger/domain/reconciliation.ts:7, the domain
+      function already skips rows outside the interpreted set, and the SQL now carries the
+      same ring. That is a reading, not a measurement, which is exactly the difference the
+      criterion legislates.
+    implementer-claim: met
+    findings: [CRIT-P15-09]
+
+  - id: "15.5"
+    quote: "NO FACT IS REWRITTEN, ANYWHERE IN THIS PHASE. A grep over the phase's diff shows no write to a raw transaction column outside the import module, and no new function in any repository updates bookingDate, amountCents, description, counterpartyName, counterpartyIban, rawLine or any dedup column. ... an application test asserts that a correction followed by two recomputes leaves every interpretation column identical to a single recompute, and that the raw columns of every affected row are byte identical before and after the whole sequence."
+    verdict: met
+    evidence: |
+      I ran the grep. The only transaction writes outside src/modules/import are the two
+      interpretation updateMany calls at
+      src/modules/ledger/adapters/ledger-repository.ts:194 and :213, writing flow and
+      merchantId. The whole diff to that file is two Flow to Flow | null widenings.
+      The new repository function this phase adds is updateAccountRole at
+      src/modules/accounts/adapters/account-repository.ts:94, which writes one column on
+      the accounts table.
+      The double-recompute test is test/application/account-registry.test.ts:341 and the
+      raw-column byte comparison across the whole sequence is at
+      test/application/account-registry.test.ts:287 and again inside :341. npm test exit 0.
+    implementer-claim: met
+
+  - id: "15.6"
+    quote: "A DEAD MERCHANT RULE IS KEPT, COUNTED AND NAMED, AND NO ENGINE DELETES IT. ... A second case corrects the ring back and asserts the rule matches again with no user action ... A grep asserts no interpretation code path calls any delete on a MerchantRule."
+    verdict: met
+    evidence: |
+      All three assertions at test/application/account-registry.test.ts:370: the
+      MerchantRule row still exists after the recompute, the affected transactions carry
+      no merchant, and the result reports the count with the account. The reverse case is
+      at test/application/account-registry.test.ts:420 and asserts the rule matches again
+      with no user action.
+      The grep is executable at test/application/account-registry.test.ts:477 rather than
+      being a sentence, walking source text for a delete against MerchantRule.
+      The mechanism that makes it true is that rows heal by themselves: interpretation
+      writes a null merchant for any row it does not count
+      (src/modules/ledger/application/interpret-window.ts:156 through :160), so no
+      declaration is ever written by an engine.
+    implementer-claim: met
+
+  - id: "15.7"
+    quote: "THE OWNER IS TOLD BEFORE THEY CONFIRM, AND THE PREVIEW IS THE SAME COMPUTATION AS THE OUTCOME. ... An application test asserts all three against the actual movement OVER A FIXTURE THAT CARRIES A SETTLEMENT-MATCHED CARD DEBIT AND A MATCHED TRANSFER PAIR as well as ordinary rows, so a preview computed by a second rule diverges rather than agrees; a Playwright test asserts every shown figure is byte identical to the movement the totals make when the change is confirmed, rendered in the reader's own language from all three catalogues."
+    verdict: partial
+    evidence: |
+      THE MECHANISM IS RIGHT. src/modules/ledger/application/preview-declaration-change.ts
+      runs the SAME domain interpretation over the proposed declaration set and writes
+      nothing, which is decision D-58 honoured rather than claimed, and
+      test/application/fake-import-world.ts:784 wires the real function rather than a
+      stub. All three quantities are produced and rendered: rows on the account with a
+      direction, the spend and reserves and income deltas, and the rule count
+      (src/modules/accounts/ui/accounts-screen.tsx:100 through :147), with the
+      would-move-nothing case saying so rather than showing a bare zero
+      (accounts-screen.tsx:146).
+      THE WITNESS IS NOT. The application test runs over ar-current.csv, which carries no
+      card import and no matched transfer pair, so the construction in which a second
+      query diverges is absent. The Playwright half asserts one phrase, not any figure,
+      in one locale. And a comment on the outcome type states the reported movement is
+      recomputed after the change when it is the preview object returned unchanged.
+      See CRIT-P15-12 and CRIT-P15-13.
+    implementer-claim: met
+    findings: [CRIT-P15-12, CRIT-P15-13]
+
+  - id: "15.8"
+    quote: "npm run typecheck, npm run lint, npm test, npm run gate:tokens and npm run gate:privacy all exit 0, and npm run test:e2e exits 0 with the accounts spec and the month-view spec both reporting their tests as passed. And the phase work history carries the captured output of the verification-first step, one block per observation and per baseline that step enumerates."
+    verdict: partial
+    evidence: |
+      The five fast gates exit 0 in my own run under the pinned engine; see the gates
+      block. npm run test:e2e does NOT exit 0 in my run; see the e2e block, and see the
+      dispatch's settled position that this gate is unreliable in this container under
+      fleet load.
+      The verification-first captures are present in delivery/work-history/m3-p14.yaml
+      with commands and outputs, one block per baseline.
+    implementer-claim: met
+    reviewer-note: "Marked partial only because the slow-gate clause is not satisfied in any run I made or that the implementer reported. Neither of us claims the suite green."
+
+  - id: "15.9"
+    quote: "THE REMEDY M3-P14'S COPY NAMES EXISTS, AND ONE JOURNEY WALKS THE WRONG ANSWER BACK. ... A Playwright test then walks the whole path in one journey."
+    verdict: met
+    evidence: |
+      test/e2e/accounts.spec.ts:409 walks the whole journey and PASSED in my run (line 8,
+      23.6s): sign up, upload a savings statement having registered nothing, answer the
+      SPENDING ring, see reserves-net "0,00" and recon-difference absent so nothing in
+      the figures differs, see the account in month-accounts with data-state counted and
+      the counted copy rendered as words, assert spend-total "55,00" and income-total
+      "251,37" from the fixture's own arithmetic, name a merchant against that account's
+      own counterparty, follow the month-accounts-link to /accounts, open the correction
+      control, see the preview state what will move, confirm, see accounts-rules-stopped,
+      then land on a month where spend and income are "0,00", the account is named held
+      with the held copy, and the verdict still reads as books closing.
+      The control M3-P14's copy names is rendered: the import screen's ring-change-link
+      is asserted at test/e2e/accounts.spec.ts:350 and the accounts screen's correct-ring
+      control is exercised here.
+    implementer-claim: met
+    reviewer-note: "The rules-stopped assertion is toBeVisible only; the criterion asks for the rule reported 'by name and count'. Recorded under CRIT-P14-13's note rather than as a second finding, since the count reaches the screen through the same copy key."
