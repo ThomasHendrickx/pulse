@@ -9038,62 +9038,132 @@ phases:
           groups at all would fail the control arm rather than pass the phase.
       - id: "14.2"
         criterion: >-
-          THE SAVINGS CASE, WHICH NO EXISTING TEST CAN CATCH. In the
-          registered arm of 14.1, with the four reserve-ring accounts
-          registered and the fixture imported, the month view for the
-          fixture's month asserts all six of: reserve-group elements number
-          exactly the distinct reserve accounts the fixture references;
-          no-reserves is absent; reserves-net renders the parked total as a
-          positive magnitude in the parked direction, byte compared against a
-          string written by hand in the spec from the fixture's own arithmetic
-          and never read back from the implementation; spend-total is byte
-          identical to a hand-written string that EXCLUDES every reserve
-          movement; spend-total in the CONTROL arm is byte identical to a
-          hand-written string that INCLUDES them, so the two arms differ by
-          exactly the household's savings PLUS its pot-to-pot transfers, which
-          together are every movement between accounts the household owns,
-          because the three pot siblings are SPEND in the control arm
-          (src/modules/ledger/domain/classify-flow.ts:102 through :107) and
-          INTERNAL in the registered arm (classify-flow.ts:73 through :77) and
-          therefore leave the spend total alongside the four reserve transfers,
-          and the spec states that decomposition in a comment and computes each
-          of the three hand-written strings, control spend-total, registered
-          spend-total and their difference, from the fixture's own arithmetic
-          and never reads one back from the implementation; and each
-          reserve-group's rendered label is byte identical to the LABEL the
-          household typed when it registered that account, with no
-          reserve-group label containing any account-shaped token, which fails
-          if the reserves join at
+          THE SAVINGS CASE, WHICH NO EXISTING TEST CAN CATCH. In the registered arm of
+          14.1, with the four reserve-ring accounts registered and the fixture
+          imported, the month view for the fixture's month asserts all six of:
+          reserve-group elements number exactly the distinct reserve accounts the
+          fixture references; no-reserves is absent; reserves-net renders the parked
+          total as a positive magnitude in the parked direction, byte compared against
+          a string written by hand in the spec from the fixture's own arithmetic and
+          never read back from the implementation; spend-total is byte identical to a
+          hand-written string that EXCLUDES every reserve movement; spend-total in the
+          CONTROL arm is byte identical to a hand-written string that INCLUDES them,
+          so the two arms differ by exactly the household's savings PLUS its
+          pot-to-pot transfers, which together are every movement between accounts the
+          household owns, because the three pot siblings are SPEND in the control arm
+          (src/modules/ledger/domain/classify-flow.ts:102 through :107) and INTERNAL
+          in the registered arm (classify-flow.ts:73 through :77) and therefore leave
+          the spend total alongside the four reserve transfers, and the spec states
+          that decomposition in a comment and computes each of the three hand-written
+          strings, control spend-total, registered spend-total and their difference,
+          from the fixture's own arithmetic and never reads one back from the
+          implementation; and each reserve-group's rendered label is byte identical to
+          the LABEL the household typed when it registered that account, with no
+          reserve-group label containing any account-shaped token, which is red if the
+          reserves read never resolves a label at all or groups without ever reaching
+          one, and which does NOT by itself tell a raw join from a normalising one at
+          this tree, for the reason recorded next. CORRECTED IN PLACE AND LOUDLY
+          (clause R-087), NOT QUIETLY REWRITTEN. Two sentences stood here and both
+          were false at this tree. The sixth assertion above used to continue "which
+          fails if the reserves join at
           src/modules/overview/adapters/overview-repository.ts:175 through :176
           compares raw stored strings, and the fixture writes its counterparty
-          accounts in the spaced surface form precisely so that a join over raw
-          values cannot pass. A SEVENTH assertion separates a normalised join
-          from a normalised GROUPING, which is the other half of the same SQL
-          statement: the reserves query groups by the raw stored column
-          (src/modules/overview/adapters/overview-repository.ts:182 groups on
-          the counterparty account and the joined label), and the stored column
-          really does hold two surface forms for one account, because the
-          delimited parse stores the cell verbatim
-          (src/modules/import/domain/parse-statement.ts:114 through :123) while
-          the PDF path compacts it
-          (src/modules/import/domain/belfius-current-account-template.ts:90).
-          So an application test over a household whose stored counterparty
-          account column carries the SAME reserve account in two surface forms,
-          one spaced and one compact, asserts exactly ONE reserve-group is
-          returned, carrying the household's typed label and the sum of both
-          rows. That fixture is deliberately mixed, because a fixture uniform
-          in one surface form passes a normalised join with a raw grouping and
-          the owner then sees one savings account twice, under the right name
-          both times, with the money split. The spec carries in its own header
-          comment, and this criterion carries in its text, the reason no
-          existing test catches this: the reconciliation identity is invariant
-          under the error, because
-          src/modules/ledger/domain/reconciliation.ts:70 through :74 add a row
-          to spendSigned or to reserveSigned and reconciliation.ts:79 through
-          :81 subtract both from income with the same sign, so differenceCents
-          is bit for bit identical whether a savings transfer is called SPEND
-          or RESERVE; test/property/reconciliation.test.ts goes on passing and
-          the month view goes on saying the books close.
+          accounts in the spaced surface form precisely so that a join over raw values
+          cannot pass", and the seventh assertion below used to ask for "an
+          application test over a household whose stored counterparty account column
+          carries the SAME reserve account in two surface forms, one spaced and one
+          compact", resting on the claim that "the stored column really does hold two
+          surface forms for one account, because the delimited parse stores the cell
+          verbatim". THE PREMISE IS FALSE. NO SHIPPED PATH CAN PUT A SPACED VALUE INTO
+          THE STORED COUNTERPARTY ACCOUNT COLUMN, so neither fixture can be built and
+          neither sentence could ever have been met by an honest implementation. The
+          delimited detector assigns a counterparty-account column only where EVERY
+          non-empty value in it matches an anchored, whitespace-free pattern
+          (src/modules/import/domain/detect-profile.ts:45, applied through the
+          values.every guard at detect-profile.ts:313), so writing the reserve rows
+          spaced does not make the join discriminate, it REMOVES the join's input by
+          leaving that column unassigned, and a column mixing the two forms is dropped
+          for exactly the same reason; the parse then stores verbatim only what that
+          detector has already accepted
+          (src/modules/import/domain/parse-statement.ts:114 through :123), which is
+          the step the old sentence read as permission and which is in fact downstream
+          of the constraint. The Belfius PDF path lifts the value with a pattern and
+          compacts it before it is stored
+          (src/modules/import/domain/belfius-current-account-template.ts:90). And
+          detection is re-run on EVERY upload
+          (src/modules/import/application/upload-statement.ts:65), so a household
+          cannot drift into a mixed column over time either, which was the only
+          mechanism ever offered for how the mixed state would arise. What was wrong
+          was never the protection, which is real and is kept below in full; what was
+          wrong was asserting that the discriminating state could be reached through
+          the product. A SEVENTH assertion therefore keeps the protection and changes
+          the witness. It separates a normalised join from a normalised GROUPING,
+          which is the other half of the same SQL statement: the reserves read joins
+          on the raw stored column
+          (src/modules/overview/adapters/overview-repository.ts:175 through :176) and
+          groups on that same raw column (overview-repository.ts:182). THE
+          DISCRIMINATING STATE IS SEEDED STRAIGHT INTO THE COLUMN, BELOW THE IMPORTER,
+          and the shipped read is EXECUTED AGAINST A REAL DATABASE with no browser in
+          the way. The test creates a household holding one reserve account whose
+          stored account number is the canonical form of the number the household
+          would type and whose label is that typed label, and writes TWO transaction
+          rows directly to the transactions table, both carrying flow RESERVE, both
+          dated inside the asserted period, both naming the SAME reserve account in
+          the counterparty account column, one in the canonical compact form and one
+          spaced in groups of four. It then calls the shipped reserves read directly
+          and asserts that exactly ONE reserve movement group comes back, that its
+          label is byte identical to the household's typed label and carries no
+          account-shaped token, and that its parked total is the sum of both rows,
+          compared against a string written by hand in the test from the seed's own
+          arithmetic and never read back from the implementation. The test runs in
+          whichever gate has a live Postgres, which is the slow gate and not the fast
+          gate; this criterion asks for no database in the fast gate. Every account
+          number the seed introduces is invented and is listed in
+          test/fixtures/allowed-identifiers.txt with a written provenance note, on the
+          same terms criterion 14.10 sets for every other identifier this phase adds.
+          THAT SINGLE ASSERTION IS RED TWICE OVER, and that is the whole reason for
+          seeding rather than for deleting the clause. It is RED ON A RAW JOIN,
+          because the spaced row matches no account row, its label falls back to the
+          stored counterparty account, and a second group appears carrying an
+          account-shaped label where the household's own name should be. It is RED ON
+          A NORMALISED JOIN WITH A RAW GROUPING KEY, because
+          overview-repository.ts:182 groups on the stored column, so two surface forms
+          are two groups even when both resolve to the right label, and the owner then
+          sees one savings account twice, under the right name both times, with the
+          money split. Only a read that normalises BOTH the join predicate and the
+          grouping key returns one group. This is strictly more protection than the
+          deleted fixture clause could ever have delivered: a fixture-level assertion
+          could have caught the join and never the grouping, since a fixture uniform
+          in one surface form passes a normalised join with a raw grouping, and a
+          fixture in two forms cannot be imported at all. AND THE PLAN SAYS PLAINLY
+          WHAT THIS TEST IS: a state that is UNREACHABLE THROUGH THE PRODUCT today,
+          tested anyway, on purpose, with the reason written down rather than left for
+          the next reader to rediscover as a puzzle. The surface form of a stored fact
+          column is a property of the SCHEMA and of the READS over it, and not a
+          property of today's importer. Nothing in Postgres constrains what goes into
+          that column; the reads at overview-repository.ts:175 through :182 are
+          correct today only because a detector two modules away happens to reject
+          everything but the compact form, and a read whose correctness lives in
+          another module is a read that breaks in silence when that module is edited.
+          An importer change is exactly the thing that would make this state reachable
+          without anyone noticing, and surviving that change is the job this test
+          holds. The claim of unreachability is itself held by a test rather than by
+          this paragraph: a fast-gate test enumerates the write paths that can reach
+          the stored counterparty account column and asserts that the reachable set is
+          upper-case, compact and account-shaped, so on the day an importer change
+          makes the seeded state reachable, something goes red on its own rather than
+          waiting for a household to notice its savings account listed twice. That may
+          be the same enumeration criterion 14.4 already requires, and this criterion
+          asks for no second artifact, only that a claim this criterion itself makes
+          is not left standing on prose alone. The spec carries in its own header
+          comment, and this criterion carries in its text, the reason no existing test
+          catches any of this: the reconciliation identity is invariant under the
+          error, because src/modules/ledger/domain/reconciliation.ts:70 through :74
+          add a row to spendSigned or to reserveSigned and reconciliation.ts:79
+          through :81 subtract both from income with the same sign, so differenceCents
+          is bit for bit identical whether a savings transfer is called SPEND or
+          RESERVE; test/property/reconciliation.test.ts goes on passing and the month
+          view goes on saying the books close.
       - id: "14.3"
         criterion: >-
           ADOPTION, NOT DUPLICATION. A test at the application level over the
