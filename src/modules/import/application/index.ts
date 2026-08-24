@@ -12,7 +12,7 @@ import {
 import { interpretForImport } from "@/modules/ledger/application";
 import { statementParser } from "../adapters/statement-parser";
 import * as repository from "../adapters/import-repository";
-import type { NewAccount } from "@/modules/accounts/application";
+import type { AccountRole } from "@/modules/accounts/application";
 import type { SourceProfileSpec } from "../domain/source-profile";
 import { confirmImport as confirmImportUseCase, type ConfirmOutcome } from "./confirm-import";
 import {
@@ -74,7 +74,13 @@ export const confirmImport = (
     readonly importId: string;
     readonly profileName: string;
     readonly spec: SourceProfileSpec;
-    readonly declaration?: NewAccount;
+    // The ring is optional here and REFUSED by the use case, never
+    // defaulted at this boundary (criterion 14.11 witness TWO).
+    readonly declaration?: {
+      readonly label: string;
+      readonly bank: string;
+      readonly role?: AccountRole;
+    };
   },
 ): Promise<ConfirmOutcome> =>
   confirmImportUseCase(context, liveDependencies, input);

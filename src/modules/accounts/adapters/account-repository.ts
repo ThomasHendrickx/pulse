@@ -105,3 +105,21 @@ export const updateAccountRole = async (
   }
   return getAccountById(context, accountId);
 };
+
+// WHETHER A STATEMENT HAS EVER BEEN IMPORTED FOR EACH ACCOUNT, for the
+// accounts screen's list. A COUNT OF IMPORTS AND NEVER AN AMOUNT: nothing on
+// that screen may be readable as how much is in savings, which is decision
+// D-60, and nothing here sums or counts money at all.
+export const listAccountsWithImportState = async (
+  context: HouseholdContext,
+): Promise<readonly (AccountRecord & { readonly hasImport: boolean })[]> => {
+  const rows = await prisma.account.findMany({
+    where: { householdId: context.householdId },
+    orderBy: { createdAt: "asc" },
+    include: { imports: { select: { id: true }, take: 1 } },
+  });
+  return rows.map((row) => ({
+    ...toRecord(row),
+    hasImport: row.imports.length > 0,
+  }));
+};

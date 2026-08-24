@@ -216,9 +216,17 @@ const ReservesBlock = async ({
   return (
     <section className="month-card month-reserves" data-testid="reserves-card">
       <header className="month-card-header">
+        {/* THE HEADING IS NOT A BALANCE (decision D-60, criterion 14.15
+            witness FIVE). This block is a MOVEMENT IN THE MONTH, and no
+            figure in v1 is accumulated across months, so its heading and
+            eyebrow must not be readable as an amount held. DR-0030's own
+            argument is that an accumulated figure derived from transfers is
+            a running sum from an assumed zero and therefore wrong by the
+            household's existing savings; a heading that implies otherwise
+            would be inventing exactly that number. */}
         <div>
-          <h2>{t("reserves")}</h2>
-          <div className="pulse-eyebrow">{t("netMovement")}</div>
+          <h2>{t("reservesHeading")}</h2>
+          <div className="pulse-eyebrow">{t("reservesEyebrow")}</div>
         </div>
         <span className="month-card-total" data-testid="reserves-net">
           <SignedAmount cents={overview.reserves.netCents} />
@@ -407,6 +415,79 @@ const ReconciliationPanel = async ({
   );
 };
 
+// EVERY ACCOUNT THAT PUT ROWS IN THIS MONTH, WITH WHETHER THOSE ROWS WERE
+// COUNTED OR HELD (M3-P14 criterion 14.15, DR-0030).
+//
+// THIS IS WHAT DR-0030 IS PAYING FOR. Accepting a savings account's
+// statement means its rows are ingested and then counted nowhere, and a
+// household that could not see that would be unable to tell HELD from
+// MISSING or from UNINTERPRETED. The frontend rule is that a screen never
+// hides an unknown.
+//
+// AND IT IS THE ONLY DETECTION EITHER PHASE HAS FOR THE OPPOSITE MISTAKE,
+// which is the dangerous one because it renders nothing: a savings account
+// answered as a SPENDING account has its interest credits taken as income,
+// its outgoings as spend and both legs of every transfer paired as
+// internal, so no cause block appears, the reserves card reads zero beside
+// its empty note and the verdict reads that the books close. Nothing on
+// this view's FIGURES differs from a correct month. Naming every account
+// with what happened to its rows is a fact the household can check, rather
+// than a warning they would learn to ignore.
+//
+// THE STATE IS WORDS THE READER SEES. data-state is the test's handle and
+// never the reader's signal, and sr-only would not do: visually hidden text
+// satisfies an assertion about text while telling the household nothing. If
+// the state is not legible on the page at 390 pixels the criterion is not
+// met however green the test is.
+//
+// IT RENDERS OUTSIDE THE RECONCILIATION PANEL. A held statement is a NORMAL
+// state; rendering it as a cause would tell the reader the books are open
+// when they are not.
+const MonthAccounts = async ({
+  overview,
+}: {
+  readonly overview: MonthOverview;
+}) => {
+  const t = await getTranslations();
+  if (overview.accountsInPeriod.length === 0) {
+    return null;
+  }
+  return (
+    <section className="month-card month-accounts" data-testid="month-accounts">
+      <header className="month-card-header">
+        <div>
+          <h2>{t("monthAccountsTitle")}</h2>
+        </div>
+      </header>
+      <ul className="month-list">
+        {overview.accountsInPeriod.map((entry) => (
+          <li
+            key={entry.accountId}
+            className="month-row month-account-row"
+            data-testid="month-account"
+            data-state={entry.state}
+          >
+            <span className="month-group-label">{entry.label}</span>
+            <span className="month-row-meta" data-testid="month-account-rows">
+              {t("monthAccountsRows", { count: entry.rowCount })}
+            </span>
+            <span className="month-account-state">
+              {entry.state === "counted"
+                ? t("monthAccountsCounted")
+                : t("monthAccountsHeld")}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="month-account-link">
+        <Link href="/accounts" data-testid="month-accounts-link">
+          {t("monthAccountsLink")}
+        </Link>
+      </p>
+    </section>
+  );
+};
+
 const EmptyState = async () => {
   const t = await getTranslations();
   // The named action is reachable where it is named (M3-P1 step 2, owner
@@ -424,6 +505,20 @@ const EmptyState = async () => {
           data-testid="empty-state-import-link"
         >
           {t("emptyImportCta")}
+        </Link>
+      </p>
+      {/* THE SECOND ROUTE INTO REGISTRATION (M3-P14 step 4). A household
+          with no imports is exactly when registering the accounts it owns
+          is most useful: register them all first and the very first upload
+          already recognises its own transfers instead of offering nine of
+          them as merchants to name. */}
+      <p>
+        <Link
+          href="/accounts"
+          className="empty-state-cta"
+          data-testid="empty-state-accounts-link"
+        >
+          {t("accountsTitle")}
         </Link>
       </p>
     </section>
@@ -533,6 +628,7 @@ export const MonthScreen = async ({
         <IncomeBlock overview={overview} />
         <SpendBlock overview={overview} locale={locale} />
         <ReservesBlock overview={overview} />
+        <MonthAccounts overview={overview} />
       </div>
     </div>
   );

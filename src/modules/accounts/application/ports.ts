@@ -41,6 +41,11 @@ export type AccountRepositoryPort = {
   // published recompute, which is the same shape as naming a merchant. No
   // path here writes a transaction row, and a correction is never a row
   // rewrite (pulse-domain section 2 rule 1, hazard H15.1).
+  // Whether a statement has ever been imported for each account. A count
+  // of imports and never an amount (decision D-60).
+  readonly listAccountsWithImportState: (
+    context: HouseholdContext,
+  ) => Promise<readonly (AccountRecord & { readonly hasImport: boolean })[]>;
   readonly updateAccountRole: (
     context: HouseholdContext,
     accountId: string,

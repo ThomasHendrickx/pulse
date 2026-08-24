@@ -62,6 +62,7 @@ const liveRepository: AccountRepositoryPort = {
   findAccountByIban: repository.findAccountByIban,
   getAccountById: repository.getAccountById,
   updateAccountRole: repository.updateAccountRole,
+  listAccountsWithImportState: repository.listAccountsWithImportState,
 };
 
 // Declaring an account is a pure declaration-layer write: the user names
@@ -83,6 +84,11 @@ export const findAccountByIban = (
   iban: string,
 ): Promise<AccountRecord | null> =>
   liveRepository.findAccountByIban(context, iban);
+
+export const listAccountsWithImportState = (
+  context: HouseholdContext,
+): Promise<readonly (AccountRecord & { readonly hasImport: boolean })[]> =>
+  liveRepository.listAccountsWithImportState(context);
 
 export const getAccountById = (
   context: HouseholdContext,

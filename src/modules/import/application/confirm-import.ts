@@ -8,7 +8,7 @@ import type { HouseholdContext } from "@/platform/tenancy";
 import { canonicalAccountNumber } from "@/platform/account-number";
 import { assignDedupKeys, zipRowsWithDedupKeys } from "../domain/dedup";
 import type { SourceProfileSpec } from "../domain/source-profile";
-import type { NewAccount } from "@/modules/accounts/application";
+import type { AccountRole } from "@/modules/accounts/application";
 import { failureReasonForParseError, findProfileBySpec } from "./upload-statement";
 import type { ImportDependencies, ImportFailureReason } from "./ports";
 
@@ -21,6 +21,24 @@ export type ConfirmOutcome =
         | "import-not-found"
         | "not-awaiting-declaration"
         | "declaration-needed"
+        // NO DEFAULTED RING (M3-P14 criterion 14.11 witness TWO). The ring
+        // answered here decides whether this statement's rows are COUNTED
+        // in the month or HELD and counted nowhere, in both directions, and
+        // nothing stands behind the answer. A defaulted ring would make
+        // that decision silently on the household's behalf, so a
+        // declaration carrying no ring is REFUSED with a name.
+        | "ring-needed"
+        // A RESERVE DECLARATION WITH NO ACCOUNT NUMBER IS REFUSED, on the
+        // reversal DR-0030 reopens (criterion 14.11 witness TWO, hazard
+        // H14.20). Such an account sits in no declared set at all
+        // (deriveDeclaredSets takes the reserve branch, finds no account
+        // number and continues), so its rows are held forever; settlement
+        // matching never sees it; and the per-household uniqueness
+        // constraint cannot deduplicate it because Postgres does not
+        // collide nulls, so the next upload of the same file makes a second
+        // one. The copy says a card is a spending account whose statement
+        // is imported, which is decision D-48 said where the owner meets it.
+        | "reserve-needs-account-number"
         | "already-confirmed";
     };
 
@@ -31,7 +49,15 @@ export const confirmImport = async (
     readonly importId: string;
     readonly profileName: string;
     readonly spec: SourceProfileSpec;
-    readonly declaration?: NewAccount;
+    // The ring is OPTIONAL IN THE TYPE and refused in the code, rather than
+    // required in the type and defaulted at the boundary: a required field
+    // pushes the choice up to whoever builds this object, and the boundary
+    // is exactly where a default gets quietly chosen.
+    readonly declaration?: {
+      readonly label: string;
+      readonly bank: string;
+      readonly role?: AccountRole;
+    };
   },
 ): Promise<ConfirmOutcome> => {
   const record = await deps.imports.getImport(context, input.importId);
@@ -104,8 +130,17 @@ export const confirmImport = async (
     if (input.declaration === undefined) {
       return { kind: "rejected", reason: "declaration-needed" };
     }
+    const role = input.declaration.role;
+    if (role === undefined) {
+      return { kind: "rejected", reason: "ring-needed" };
+    }
+    if (role === "RESERVE" && fileIban === undefined) {
+      return { kind: "rejected", reason: "reserve-needs-account-number" };
+    }
     const created = await deps.accounts.declareAccount(context, {
-      ...input.declaration,
+      label: input.declaration.label,
+      bank: input.declaration.bank,
+      role,
       ...(fileIban !== undefined ? { iban: fileIban } : {}),
     });
     accountId = created.id;

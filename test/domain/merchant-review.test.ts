@@ -666,6 +666,26 @@ describe("every rendering surface that shows descriptor text is derived, not rem
       expression: "landingAccount?.label",
       why: "The same declared account label on the landing branch of the same route.",
     },
+    {
+      file: "modules/overview/ui/month-view.tsx",
+      expression: "entry.label",
+      why: "The month-accounts entry label (M3-P14 criterion 14.15): the household's own DECLARED account label, typed by them at registration or at first sight, and read back from the accounts table by the two per-account reads. It is never parsed from a statement line, so there is no descriptor for a card number to be hiding in.",
+    },
+    {
+      file: "modules/accounts/ui/accounts-screen.tsx",
+      expression: "account.label",
+      why: "The accounts screen's own list: the same declared account label, from the same column, on the screen where the household typed it.",
+    },
+    {
+      file: "modules/accounts/ui/accounts-screen.tsx",
+      expression: "t(key, { label: params.label ?? \"\", country: params.country ?? \"\", expected: params.expected ?? \"\", actual: params.actual ?? \"\", })",
+      why: "Translated copy from t(), interpolating a declared account label and the validity refusal's own country and length values. No descriptor field reaches it; the walk sees it only because one interpolated key is named label.",
+    },
+    {
+      file: "modules/accounts/ui/accounts-screen.tsx",
+      expression: "t(\"accountsRulesStopped\", { count: rules, label: params.label ?? \"\", })",
+      why: "Translated copy from t(), interpolating the same declared account label and a count of merchant rules. Named for the same reason as the line above.",
+    },
   ];
 
   const collectSourceFiles = (dir: string): readonly string[] => {
@@ -737,7 +757,7 @@ describe("every rendering surface that shows descriptor text is derived, not rem
   }
 
   test("the walk finds surfaces at all, so a broken walk cannot pass by finding nothing", () => {
-    // TEN leaf sites in FOUR files at this head: five masked and five
+    // FOURTEEN leaf sites in FIVE files at this head: five masked and nine
     // declared exclusions. The round-1 grep recorded eight in three and did
     // not reproduce; this walk also reaches a file that grep never saw, the
     // import route, which renders TWO declared account labels rather than
@@ -748,8 +768,17 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     // FLOOR, so the recorded number could drift from the measured one with
     // nothing going red: the same mechanism this test exists to eliminate,
     // one level up. The assertion is now EXACT.
-    expect(surfaces.length).toBe(10);
-    expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(4);
+    //
+    // UPDATED BY M3-P14, which adds a fifth file (the accounts screen) and
+    // four leaf sites: the month-accounts entry label, the accounts list's
+    // own label, and two translated copy strings the walk reaches only
+    // because one of their interpolated keys is named "label". All four are
+    // the household's own DECLARED account label or copy around it, and each
+    // is on the exclusions table above with that reason. Note what did NOT
+    // change: the masked count. This phase adds no new descriptor surface,
+    // which is the fact worth reading off these three numbers together.
+    expect(surfaces.length).toBe(14);
+    expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(5);
     expect(surfaces.filter((surface) => surface.masked).length).toBe(5);
   });
 

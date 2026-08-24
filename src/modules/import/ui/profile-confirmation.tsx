@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { Amount } from "@/platform/ui/amount";
 import { maskCardNumbers } from "@/platform/ui/mask-card-number";
@@ -176,14 +177,51 @@ export const ProfileConfirmation = async ({
               <span>{t("accountBankField")}</span>
               <input type="text" name="accountBank" required />
             </label>
+            {/* THE RING QUESTION GOES ON OFFERING BOTH ANSWERS, and the
+                copy beside each states its CONSEQUENCE (M3-P14 criterion
+                14.11 witness ONE, DR-0030). Uploading is the only way into
+                Pulse today, so the order every household is actually in is
+                upload first and accounts screen later, and on that order
+                this answer is what declares the account. It decides whether
+                this statement's rows are counted in the month or held and
+                counted nowhere, in BOTH directions, and nothing else stands
+                behind it. Nothing defaults it: a declaration carrying no
+                ring is refused by name. */}
             <label className="import-field">
               <span>{t("accountRingField")}</span>
-              <select name="accountRole" required defaultValue="">
+              <select
+                name="accountRole"
+                required
+                defaultValue=""
+                data-testid="account-ring"
+              >
                 <option value="" disabled />
                 <option value="POT">{t("ringPot")}</option>
                 <option value="RESERVE">{t("ringReserve")}</option>
               </select>
             </label>
+            <p className="import-note" data-testid="ring-pot-meaning">
+              {t("ringPot")}
+              {": "}
+              {t("ringPotMeaning")}
+            </p>
+            <p className="import-note" data-testid="ring-reserve-meaning">
+              {t("ringReserve")}
+              {": "}
+              {t("ringReserveMeaning")}
+            </p>
+            {/* THE WRONG ANSWER IS RECOVERABLE AND THIS SAYS WHERE
+                (criterion 14.11 witness THREE). The control this names lives
+                on the accounts screen; criterion 15.9 walks the whole path
+                to it, which is why the two phases reach a household
+                together. */}
+            <p className="import-note" data-testid="ring-change-hint">
+              {t("importRingChangeHint")}
+              {" "}
+              <Link href="/accounts" data-testid="ring-change-link">
+                {t("importRingChangeLink")}
+              </Link>
+            </p>
           </fieldset>
         ) : null}
 

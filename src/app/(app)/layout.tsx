@@ -17,8 +17,15 @@ import { NavLink } from "@/platform/ui/nav-link";
 // TWO ROWS, PHONE FIRST (M3-P7, DR-0022, following
 // delivery/design/mobile-v02/Main.dc.html:23 through :33): the identity
 // row carries the brand, the household name and sign out; the navigation
-// row below it gives the three links a third of the width each, so every
-// target clears the tap-target minimum at 360 as well as at 390. The
+// row below it shares its width equally between the links, so every target
+// clears the tap-target minimum at 360 as well as at 390.
+//
+// CORRECTED RATHER THAN QUIETLY REWRITTEN (R-087, M3-P14). This paragraph
+// said "gives the THREE links a third of the width each". M3-P14 adds a
+// fourth, so both the count and the fraction were false the moment that
+// link landed. The stylesheet distributes the row rather than hard-coding a
+// fraction; what is pinned is the tap-target floor and the rendered line
+// count, and criterion 14.7 measures both. The
 // household identity keeps the ellipsis M3-P1 criterion 1.5 decided: it is
 // the one element in the product allowed to give way. At the one
 // breakpoint the two rows become one again.
@@ -54,6 +61,17 @@ export default async function AppLayout({
           </NavLink>
           <NavLink href="/merchants" testId="nav-merchants">
             {t("navMerchants")}
+          </NavLink>
+          {/* THE FOURTH LINK (M3-P14). The row was sized for three at a
+              third of the width each; four now share it. The label is short
+              in all three catalogues on purpose, and the width witness in
+              test/e2e/month-view.spec.ts measures every link's rendered line
+              count and border box at 390 and 360 and at the 150 and 200
+              percent text scales against the baseline captured before this
+              link existed, because a fourth link changes width and not
+              height and the existing instruments are blind to that. */}
+          <NavLink href="/accounts" testId="nav-accounts">
+            {t("navAccounts")}
           </NavLink>
         </nav>
         {/* READ AFTER THE NAVIGATION, DRAWN BESIDE THE IDENTITY (M3-P7 fix

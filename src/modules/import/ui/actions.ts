@@ -7,7 +7,7 @@
 import { redirect } from "next/navigation";
 import { requireHouseholdContext } from "@/platform/auth/context";
 import { parseAccountRole } from "@/modules/accounts/application";
-import type { NewAccount } from "@/modules/accounts/application";
+import type { AccountRole } from "@/modules/accounts/application";
 import {
   confirmImport,
   parseSourceProfileSpec,
@@ -74,12 +74,20 @@ export const confirmImportAction = async (
     redirect(`/import/${safeId}?status=declaration-needed`);
   }
 
-  let declaration: NewAccount | undefined;
+  // THE RING IS CARRIED THROUGH UNANSWERED RATHER THAN FILLED IN HERE
+  // (criterion 14.11 witness TWO). This boundary used to drop the whole
+  // declaration when the ring was missing, which reported the generic
+  // "declaration needed" and told the household nothing about which answer
+  // was missing. It must never supply one: the answer decides whether the
+  // statement's rows are counted or held.
+  let declaration:
+    | { readonly label: string; readonly bank: string; readonly role?: AccountRole }
+    | undefined;
   const label = String(formData.get("accountLabel") ?? "").trim();
   const bank = String(formData.get("accountBank") ?? "").trim();
   const role = parseAccountRole(String(formData.get("accountRole") ?? ""));
-  if (label !== "" && bank !== "" && role.ok) {
-    declaration = { label, bank, role: role.value };
+  if (label !== "" && bank !== "") {
+    declaration = { label, bank, ...(role.ok ? { role: role.value } : {}) };
   }
 
   const outcome = await confirmImport(context, {
@@ -97,9 +105,16 @@ export const confirmImportAction = async (
       // the settled result; nothing to re-ask.
       redirect(`/import/${safeId}`);
     }
+    // EVERY NAMED REFUSAL REACHES THE SCREEN THROUGH THE WHITELIST
+    // (criterion 14.11 witness TWO). A reason the server names and the
+    // whitelist does not carry is a blank screen with a query parameter on
+    // it, which is why status-keys.ts and this routing are asserted
+    // together by a test rather than kept in step by convention.
     redirect(
-      outcome.reason === "declaration-needed"
-        ? `/import/${safeId}?status=declaration-needed`
+      outcome.reason === "declaration-needed" ||
+        outcome.reason === "ring-needed" ||
+        outcome.reason === "reserve-needs-account-number"
+        ? `/import/${safeId}?status=${outcome.reason}`
         : `/import/${safeId}?status=bad-spec`,
     );
   }
