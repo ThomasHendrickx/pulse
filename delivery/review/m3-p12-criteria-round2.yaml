@@ -1,112 +1,1162 @@
 # Clean-room review verdict for phase M3-P12, counterparty identity.
 # CRITERIA contract, ROUND TWO, judging the fix round.
-# Reviewed head b324d87 on branch claude/m3-p12-counterparty-identity, in
-# worktree /home/user/wt-m3p12-r2crit on branch claude/m3-p12-rev2-crit.
-# Baseline for every "unchanged since the baseline" claim: 7f4aafb.
 #
-# THIS IS NOT A DELTA REVIEW. Every criterion was walked again from zero. The
-# fix round changed the matcher, the write boundary, the review surface and
-# the re-derivation routine, so a criterion met in round one can have been
-# broken by the repair, and two of them were re-measured for exactly that
-# reason (12.1 and 12.2 recount, 12.21's property test was re-run against the
-# reshaped refusal).
+# Reviewed head b324d87 on branch claude/m3-p12-counterparty-identity, from
+# worktree /home/user/wt-m3p12-r2crit on branch claude/m3-p12-rev2-crit.
+# Baseline for every "unchanged since the baseline" check: 7f4aafb.
+# Produced without reading the implementation session. The first-round reviews
+# were read to know what had been raised; their verdicts bound nothing here.
+#
+# THIS IS NOT A DELTA REVIEW. All twenty-two criteria were walked again from
+# zero, and the two convergence counts and the property criterion were
+# RE-MEASURED rather than carried forward, because the fix round changed the
+# matcher, the write boundary, the review surface and the re-derivation and a
+# criterion met in round one could have been broken by the repair.
+#
+# WHICH DATABASE. Four criteria and four of the five implementer claims need a
+# working database. The ambient DATABASE_URL in this container points at a
+# deployed Supabase pooler for a DIFFERENT project, with a working password,
+# and scripts/rederive-merchant-rules.ts has no connection guard, so it was
+# never used. I created a database of my own, pulse_r2crit, on the local
+# supabase Postgres at 127.0.0.1:54322, applied prisma migrate deploy to it,
+# and seeded it by hand; every invocation pinned DATABASE_URL and DIRECT_URL
+# explicitly to it. The gates were run with all five local values pinned to
+# the same local stack. Nothing in this review touched a deployed database.
 #
 # WHAT THIS CONTRACT DID NOT REACH, said here rather than left to nobody.
-# Walking twenty-two criteria is a statement about the CONTRACT, never a
-# terminal green. Four things this walk could not settle. The re-derivation
-# still has never run against the OWNER'S deployed database, so nothing here
-# says it behaves on real deployed rows as it does against a fake and against
-# my local stack. The account basis is a regex scrape out of free text and the
-# trust gate now openly admits it does not close truncation for a
-# Belgian-prefixed over-long spaced token. No criterion in this phase measures
-# what the owner SEES after the change; M3-P13 owns that. And the criteria say
-# nothing at all about which database the shipped migration script points at,
-# which is why the largest finding in this document is one the contract does
-# not contain.
+# Walking twenty-two criteria is a statement about the CONTRACT and never a
+# terminal green, and this phase is a live demonstration of it: the two
+# highest findings below are things NO criterion in this phase asks about.
+# Four things this walk could not settle. The re-derivation has still never
+# run against the owner's DEPLOYED database, and criterion 12.17 asks for that
+# and cannot have it before merge. The account basis is a regex scrape out of
+# free text and the trust gate now openly admits it does not close truncation
+# for a Belgian-prefixed over-long spaced token. No criterion here measures
+# what the owner SEES after the change; M3-P13 owns that, and the one visible
+# consequence I did find is finding CR2-M3P12-07. And no criterion asks which
+# database the shipped migration points at, which is finding CR2-M3P12-01.
+#
+# THE FIVE IMPLEMENTER CLAIMS, each witnessed by me rather than accepted, and
+# each carried into the criterion it belongs to below.
+#   1. The bare identity key is refused at the matcher, at the write boundary
+#      and on the review surface, and is still SHOWN and COUNTED. VERIFIED,
+#      including the counting half specifically: the bare group keeps its row
+#      count, its money stays in the direction total, and it is still counted
+#      in unresolvedCount. Only the naming form is withheld. Criterion 12.6.
+#   2. --dry-run writes nothing. VERIFIED against a real database: a CLEAN dry
+#      run that reported patterns-rewritten 3 and rules-added 1 moved no
+#      xmin on any row of merchant_rules or transactions and inserted nothing.
+#      Criterion 12.7.
+#   3. A blocked run withholds ALL writes, exits 1 and leaves the assignment
+#      set untouched. VERIFIED, snapshot byte-identical. Criterion 12.7.
+#   4. The acknowledge path is usable, both halves. VERIFIED: the ids were
+#      learnable from a run that wrote nothing, and accepting exactly those
+#      ids applied. Criteria 12.7 and 12.8.
+#   5. Accepted losses are PARTITIONED, not filtered. VERIFIED: the two lists
+#      are complements and both are printed. Criterion 12.7.
+#
+# THE TWO ITEMS DELIBERATELY LEFT OPEN, judged. Both are genuinely open rather
+# than papered over, and both are honestly reasoned. The truncation residual
+# is corrected at the mechanism's definition and pinned by a passing
+# counterexample, which is the right treatment; what it is NOT is recorded in
+# the plan or in the governing skill, which is finding CR2-M3P12-05. The
+# one-row promotion is right to promote and right to be made visible, and it
+# is missing from the one place that records what this phase leaves open,
+# which is finding CR2-M3P12-06. Neither omission changes a criterion verdict.
+#
+# TWO CRITERIA NOT COUNTED AGAINST THE IMPLEMENTER, per this round's dispatch,
+# both plan defects under repair elsewhere: criterion 12.17's deployed-run
+# half, and criterion 12.1's composition clause. Both are recorded factually
+# in their walks below with the defect attributed to the plan.
 kind: verdict
 phase: M3-P12
-verdict: IN-PROGRESS
+verdict: FIX-ROUND-NEEDED
 produced-by: claude-opus-5
 framing: acceptance-criteria-walk
 review-contract: criteria
-round: 2
-reviewed-head: b324d87
 findings:
 - id: CR2-M3P12-01
   severity: high
   analysis: |-
-    THE SHIPPED MIGRATION SCRIPT HAS NO TARGET CHECK, and this repository already carries the interlock it should be using. scripts/rederive-merchant-rules.ts resolves its connection entirely from ambient environment, through the shared Prisma client, and issues UPDATE against every merchant_rules pattern of a household plus INSERT of new rules plus a full recompute. It takes a household id on the command line and nothing else; there is no check of any kind that the database it is about to rewrite is the intended one. This is not hypothetical in this fleet. Measured in this container while writing this review, the ambient DATABASE_URL resolves to a deployed Supabase transaction pooler for a DIFFERENT project than Pulse, with a working password, and shell environment overrides .env for Prisma. A person following the script's own documented invocation, on a machine in the state this one is in, rewrites another project's rows. The tree already contains the answer: src/platform/db/guard.ts is a fail-closed local-host interlock with an explicit per-run override, wired into db:reset and db:migrate through src/platform/db/guard-cli.ts, and its own header instructs the next author in as many words that anyone adding a destructive entry point must route it through the same guard. M3-P12 added an entry point that writes and did not. The script's header answers the question with a definition rather than a check, asserting that the command destroys nothing because it issues no DELETE, which is true of the statements and irrelevant to the target: an UPDATE that prefixes a namespace onto every rule pattern of a household in a foreign database is destruction of that database's data whatever the verb is. No acceptance criterion in this phase asks about the connection, which is why this is reported as a defect of the artifact rather than as a criterion miss, and it is the clearest instance in this phase of the sentence the criteria contract exists to carry.
+    THE SHIPPED MIGRATION SCRIPT HAS NO TARGET CHECK, and this repository already carries the interlock it should be
+    using. scripts/rederive-merchant-rules.ts resolves its connection entirely from ambient environment, through the
+    shared Prisma client, and issues UPDATE against every merchant_rules pattern of a household plus INSERT of new
+    rules plus a full recompute. It takes a household id on the command line and nothing else; there is no check of
+    any kind that the database it is about to rewrite is the intended one. This is not hypothetical in this fleet.
+    Measured in this container while writing this review, the ambient DATABASE_URL resolves to a deployed Supabase
+    transaction pooler for a DIFFERENT project than Pulse, with a working password, and shell environment overrides
+    .env for Prisma. A person following the script's own documented invocation, on a machine in the state this one
+    is in, rewrites another project's rows. The tree already contains the answer: src/platform/db/guard.ts is a
+    fail-closed local-host interlock with an explicit per-run override, wired into db:reset and db:migrate through
+    src/platform/db/guard-cli.ts, and its own header instructs the next author in as many words that anyone adding a
+    destructive entry point must route it through the same guard. M3-P12 added an entry point that writes and did
+    not. The script's header answers the question with a definition rather than a check, asserting that the command
+    destroys nothing because it issues no DELETE, which is true of the statements and irrelevant to the target: an
+    UPDATE that prefixes a namespace onto every rule pattern of a household in a foreign database is destruction of
+    that database's data whatever the verb is. No acceptance criterion in this phase asks about the connection,
+    which is why this is reported as a defect of the artifact rather than as a criterion miss, and it is this walk's
+    clearest instance of the sentence the criteria contract exists to carry.
   evidence:
   - |-
-    The script takes a household id and a dry-run flag and reads no connection argument and no target check: scripts/rederive-merchant-rules.ts:68 through :102, with the repository bound unconditionally at :98.
+    The script takes a household id and a dry-run flag and reads no connection argument and performs no target
+    check: scripts/rederive-merchant-rules.ts:68 through :102, with the repository bound unconditionally at :98.
   - |-
-    The guard that exists and is not used, fail closed on both connection strings with one explicit override: src/platform/db/guard.ts:35 through :70.
+    The guard that exists and is not used, fail closed on both connection strings with one explicit override:
+    src/platform/db/guard.ts:35 through :70.
   - |-
-    Its sibling-reader instruction, which this phase is the first to meet and the first to skip: src/platform/db/guard.ts:16 through :19.
+    Its sibling-reader instruction, which this phase is the first to meet and the first to skip:
+    src/platform/db/guard.ts:16 through :19.
   - |-
-    The two scripts that do route through it, and the new one that does not, side by side in package.json:15 through :17.
+    The two scripts that do route through it and the new one that does not, three lines apart: package.json:15
+    through :17.
   - |-
-    The measured ambient state in this container: env DATABASE_URL resolves to a deployed pooler host on aws-1-eu-north-1 whose project ref is neither of the two the fleet environment warnings name for Pulse. I did not connect to it. Every database command in this review was pinned explicitly to 127.0.0.1:54322.
+    The measured ambient state in this container: DATABASE_URL resolves to a deployed pooler host on
+    aws-1-eu-north-1 whose project ref is neither of the two the fleet environment warnings name for Pulse. I did
+    not connect to it. Every database command in this review was pinned explicitly to 127.0.0.1:54322.
   - |-
-    The script's own claim that stands in place of a check: scripts/rederive-merchant-rules.ts:17 through :25.
+    The claim that stands in place of a check: scripts/rederive-merchant-rules.ts:17 through :25.
   concrete-fix: |-
-    Route the new entry point through the existing interlock rather than inventing a second rule. Either add the guard invocation to the npm script at package.json:17 the way db:reset does at :15, so the run refuses a non-local target unless PULSE_ALLOW_REMOTE_DB_DESTRUCTION=1 is set for that run, or, since this script is meant to be run against the deployed database exactly once, add a required --expect-host argument to scripts/rederive-merchant-rules.ts:68 that is compared against the resolved DATABASE_URL hostname before any repository call and refuses on mismatch. Widen the comment at src/platform/db/guard.ts:16 in the same change so it says writing entry point rather than destructive one, because that sentence is what this phase read and complied with literally.
-implementer-claims-verified:
-- claim: |-
-    A bare identity key (a namespace with an empty remainder) is refused at the matcher, at the write boundary and on the review surface, while still being SHOWN and COUNTED on the review surface as at baseline.
-  verdict: VERIFIED
+    Route the new entry point through the existing interlock rather than inventing a second rule. Either add the
+    guard invocation to the npm script at package.json:17 the way db:reset does at package.json:15, so the run
+    refuses a non-local target unless PULSE_ALLOW_REMOTE_DB_DESTRUCTION=1 is set for that run, or, since this script
+    is meant to run against the deployed database exactly once, add a required --expect-host argument parsed at
+    scripts/rederive-merchant-rules.ts:68 and compared against the resolved DATABASE_URL hostname before any
+    repository call, refusing on mismatch. Widen the sentence at src/platform/db/guard.ts:16 in the same change so
+    it says WRITING entry point rather than destructive one, because that sentence is what this phase read and
+    complied with literally.
+- id: CR2-M3P12-02
+  severity: high
+  analysis: |-
+    A SAME-MERCHANT PATTERN COLLISION IS NOT A CONFLICT, IS NOT REPORTED, AND CRASHES THE MIGRATION MID-APPLY. Pass
+    one treats a collision as blocking only when the claiming rule belongs to a DIFFERENT merchant. When the
+    claimant belongs to the SAME merchant the routine proceeds and queues an UPDATE onto a pattern that already
+    exists, which the table's unique key on (householdId, kind, pattern) refuses. The decide-before-you-write
+    property then does not hold, because the decision phase reports a clean run and the write phase throws. The
+    shape that produces it is not exotic, it is the one decision D-46's own deploy window induces: between the code
+    deploy and this script's run, the owner's pre-migration rules match nothing and their rows show as unresolved,
+    which is exactly what invites the owner to name those groups again. Naming one with the same merchant name
+    reuses the merchant through findMerchantByName and writes a namespaced EXACT rule beside the old un-namespaced
+    one, for the same merchant. The migration then dies on it. This is hazard H12.25's own shape reaching the
+    routine through a door criterion 12.21 does not cover, because H12.25 is about not DOUBLE-namespacing the new
+    rule and this is about the OLD rule colliding with it.
   evidence:
   - |-
-    Witnessed by my own script against the built modules, not by reading the suite. The derivation does emit the bare key: a row whose description is whitespace only returns key "descriptor:" with basis descriptor, and the exported predicate at src/modules/merchants/domain/counterparty-identity.ts:118 reports it bare.
+    The collision test that only blocks on a different merchant:
+    src/modules/merchants/application/rederive-rules.ts:352 through :363, where the guard is collision !== undefined
+    && collision.merchantId !== rule.merchantId, so a same-merchant claimant falls through to the update queued at
+    :365.
   - |-
-    MATCHER, key side and pattern side. matchRules returned undefined for an EXACT rule on the bare descriptor namespace against the bare key, for a PREFIX rule on the bare namespace against an ordinary descriptor key, for a PATTERN rule on the bare namespace against an ordinary descriptor key, and for an EXACT rule on the bare account namespace against a bare account key. The control in the same run still matched: an ordinary EXACT rule on a full descriptor key returned its merchant. The refusals are at src/modules/merchants/domain/merchant-rule.ts:98 and :111 through :113.
+    The unique key that refuses the update: prisma/schema/merchants.prisma:90, one household decision per (kind,
+    pattern).
   - |-
-    WRITE BOUNDARY, both bases, with a write counter on the fake port. Subject "descriptor:" returned error unidentifiable-counterparty with 0 writes; "account:" returned untrusted-counterparty-account with 0 writes; "descriptor:" followed by three spaces returned unidentifiable-counterparty with 0 writes; "account:" followed by two spaces returned untrusted-counterparty-account with 0 writes; an un-namespaced subject returned unnamespaced-counterparty with 0 writes; and a well-formed descriptor subject succeeded with 3 writes, so the counter was live. The guard is at src/modules/merchants/application/assign-merchant.ts:109 through :115.
+    WITNESSED. On a real Postgres database I created and pinned, pulse_r2crit on the local supabase stack, seeded
+    with an un-namespaced EXACT rule and a namespaced EXACT rule for the SAME merchant on the same descriptor, the
+    dry run reported the run CLEAN: exit 0, conflicts 0, lost-assignments 0, applied no. The identical command
+    without --dry-run then exited 1 with no decision report, no totals and no applied line, printing only: Invalid
+    prisma.merchantRule.updateManyAndReturn() invocation ... Unique constraint failed on the fields: (householdId,
+    kind, pattern).
   - |-
-    REVIEW SURFACE, and this is the half the claim asks be checked specifically. Over three rows, two carrying no counterparty text and one carrying a descriptor, buildMerchantReview returned two spend groups: key "descriptor:" with count 2 and total -3000 and NO counterpartyText field, and the ordinary group with count 1 and its form field present. spendTotalCents was -6000, so both bare rows' money is still in the total, and unresolvedCount was 2, so the bare group is still counted as an unresolved group. Nothing is dropped from any count; only the naming form is withheld, at src/modules/merchants/domain/merchant-review.ts:129 through :133.
+    The acknowledge path cannot clear it, because it is not a reported condition: only ids in conflicts or
+    lostAssignments are learnable from a report, at scripts/rederive-merchant-rules.ts:126 through :138, and this
+    condition appears in neither list.
   - |-
-    THE ASYMMETRY THE BRIEF NAMED IS REAL AND IS THE RIGHT WAY ROUND. In the same run, a PREFIX rule whose pattern is the descriptor namespace followed by one space still matched a key of the descriptor namespace followed by two spaces and an X, exactly as the bare pattern of one space matched the bare key of two spaces and an X. A trimming refusal at the matcher would have broken that pair, which is criterion 12.21's meaning-preservation. The matcher is strict at src/modules/merchants/domain/counterparty-identity.ts:118 and the writer trims at src/modules/merchants/application/assign-merchant.ts:109, and both are documented at their sites.
-- claim: |-
-    --dry-run writes nothing.
-  verdict: VERIFIED
+    The tests do not reach it: test/application/rederive-merchant-rules.test.ts:434 seeds a merchant conflict
+    between DIFFERENT merchants and there is no same-merchant collision case in the file, and the in-memory fake has
+    no unique key to violate.
+  concrete-fix: |-
+    Treat a same-merchant claimant as a decision rather than as a silent fall-through, at
+    src/modules/merchants/application/rederive-rules.ts:352. When claimant returns a rule with the SAME merchantId,
+    do NOT queue the update: the target pattern already exists and already carries the same meaning for the same
+    merchant, so leaving the old rule un-namespaced loses no assignment, which the superset test at :495 will
+    confirm. Report it with a new outcome token beside empty-pattern-left-alone, for example
+    already-covered-by-a-namespaced-twin, so the operator sees it and the second run prints the same decision. Add a
+    test at test/application/rederive-merchant-rules.test.ts beside :434 seeding exactly the D-46 window shape, an
+    un-namespaced rule and a namespaced rule for one merchant on one descriptor, asserting zero updates against the
+    colliding rule and exit 0.
+- id: CR2-M3P12-03
+  severity: medium
+  analysis: |-
+    THE SCRIPT'S OWN CONTRACT SAYS EXIT 1 MEANS THE DATABASE IS EXACTLY AS IT WAS FOUND, AND THAT IS FALSE ON THE
+    ERROR PATH. The sentence is written about a blocked run and then generalised to the exit code, and exit 1 is
+    also what the top-level rejection handler sets. The apply block issues its updates one statement at a time with
+    no transaction, so a repository error partway through leaves some patterns rewritten, no rules inserted, no
+    recompute run, and no report printed at all: not the decision report, not the totals, not the applied line. An
+    operator reading the file's contract concludes nothing happened, and something did. Clause R-087: a
+    present-tense claim in a document that is false in a reachable case is a finding, and this one sits on the
+    single command that is meant to run against the owner's live database.
   evidence:
   - |-
-    Run against a real Postgres database I created for this review, pulse_r2crit on the local supabase stack at 127.0.0.1:54322, migrated with prisma migrate deploy and seeded by hand with 5 merchant_rules rows and 5 counted transactions. The connection was pinned explicitly on every invocation; the ambient DATABASE_URL was never used.
+    The claim: scripts/rederive-merchant-rules.ts:33 through :42, WHAT A BLOCKED RUN LEAVES BEHIND ... NOTHING ...
+    so exit 1 means the database is exactly as it was found.
   - |-
-    The witness is not the report, it is the storage. Before each run I captured id, xmin, ctid, kind, merchantId and md5(pattern) for every merchant_rules row and id, xmin, ctid, flow and merchantId for every transactions row. An UPDATE writing an identical value still moves xmin and ctid, so this catches a rewrite the report would not show.
+    The other path to exit 1, which prints only the error message and no report:
+    scripts/rederive-merchant-rules.ts:169 through :177.
   - |-
-    RUN B, the CLEAN dry run, is the one that carries the claim: --dry-run with both blocking conditions accepted, exit 0, printed applied no and "nothing was written: this was a dry run", reporting patterns-rewritten 3 and rules-added 1 as the work it WOULD do. The snapshot afterwards was byte-identical to the snapshot before: no xmin moved on any of the 10 rows, the rule count stayed 5, and no transaction changed, so the recompute did not run either.
+    The un-transacted apply loop: src/modules/merchants/application/rederive-rules.ts:529 through :537, three
+    sequential awaits with no interactive transaction around them.
   - |-
-    The contrast that proves the snapshot is sensitive: RUN D, the same command without --dry-run, moved xmin on three merchant_rules rows, inserted a fourth, and moved xmin on all five transactions rows, setting merchantId on three of them.
-  - |-
-    The flag is honoured inside the routine rather than in the script, at src/modules/merchants/application/rederive-rules.ts:528, which is the only place that gates both write loops and the recompute.
-- claim: |-
-    A blocked run (conflict or loss) withholds ALL writes, exits 1, and leaves the assignment set untouched.
-  verdict: VERIFIED
+    WITNESSED on the pinned pulse_r2crit database. I added a CHECK constraint refusing one of the three patterns
+    pass one would write, then ran the applying command. Exit 1, no report of any kind, and the snapshot afterwards
+    showed TWO of the three rule rows rewritten, with new xmin and new pattern hashes, while the third was
+    unchanged. The database was not as it was found.
+  concrete-fix: |-
+    Either make the claim true or narrow it. The narrow fix is to wrap the apply block at
+    src/modules/merchants/application/rederive-rules.ts:529 through :537 in one interactive transaction so a
+    mid-apply failure rolls back, which also makes the recompute and the rule writes atomic. The honest-wording fix,
+    if the transaction is judged out of scope, is to change scripts/rederive-merchant-rules.ts:38 to say that a
+    BLOCKED run leaves nothing behind and that an ERRORED run may have applied part of pass one, and to print, in
+    the rejection handler at :173, how many pending updates had been issued before the failure, so an operator knows
+    whether to re-run. Re-running is safe and converges, because a rule the first attempt namespaced is left alone
+    by the second, and saying so in the same place would close the question.
+- id: CR2-M3P12-04
+  severity: medium
+  analysis: |-
+    THE ONE COMMAND POINTED AT THE OWNER'S REAL DATA PRINTS A DATABASE ERROR VERBATIM, AND A POSTGRES ERROR CARRIES
+    THE FAILING ROW. The same file's header states that it prints no pattern content, and gives the reason: this
+    repository is public and a stored pattern is derived from a real statement's text. The rejection handler prints
+    the caught error's message, and for a Prisma query error that message embeds the driver's ConnectorError
+    including Postgres's DETAIL, which names the whole failing row. That is descriptor content on an operator's
+    console, and this fleet's own history is that such output reaches a work history or a note before anyone thinks
+    about it. Two real merchant descriptors reached this public repository exactly that way.
   evidence:
   - |-
-    RUN C, the real run with no acknowledgement, against the same seeded database: exit 1, printed conflicts 1 with the conflicting rule id, lost-assignments 2 with both transaction ids and the rule that held them, applied no, and "nothing was written: the run is blocked, and the database is exactly as it was found".
+    The contract the file states for itself: scripts/rederive-merchant-rules.ts:48 through :50, IT PRINTS NO PATTERN
+    CONTENT ... this repository is public and a stored pattern is derived from a real statement's text.
   - |-
-    The snapshot after run C was byte-identical to the baseline snapshot: no xmin moved on any merchant_rules or transactions row, the counts stayed 5 and 5. The assignment set is therefore untouched in the only sense that matters, which is that no transaction row was written at all.
+    The line that breaks it: scripts/rederive-merchant-rules.ts:174, which prints error.message for any thrown
+    error.
   - |-
-    The structural reason, which is what makes this hold for cases I did not seed: every write is recorded into pendingUpdates and pendingInserts and issued only after the exit code is computed, at src/modules/merchants/application/rederive-rules.ts:285 through :290 and :528 through :537, and the superset test is computed against the in-memory working copy at :495 rather than against a re-read.
-- claim: |-
-    The acknowledge path is usable: a dry run yields the conflict ids with zero writes, and accepting exactly those ids applies.
-  verdict: VERIFIED, both halves
+    WITNESSED on the pinned pulse_r2crit database, with an invented pattern so nothing real is quoted here: the
+    check-constraint run printed, inside the error message, Failing row contains ( ... , EXACT, descriptor:SHOP
+    ALFA-style pattern, timestamp), that is the rule id, the household id, the merchant id, the kind, THE WHOLE
+    PATTERN and the created-at timestamp.
+  - |-
+    Every other output path in the file is disciplined and prints ids, passes, bases, outcomes and integers only:
+    scripts/rederive-merchant-rules.ts:104 through :165.
+  concrete-fix: |-
+    Print a redacted failure at scripts/rederive-merchant-rules.ts:174 rather than the raw message. This tree
+    already has the mechanism: src/platform/db/redact.ts, with its own test at test/db/redact.test.ts, exists for
+    exactly this. Route the caught error through it, or at minimum print only the error's constructor name and, for
+    a Prisma error, its code, and tell the operator to read the database log for the detail. Add an assertion beside
+    the existing script-source tests at test/application/rederive-merchant-rules.test.ts:734 that the rejection
+    handler does not print a raw message.
+- id: CR2-M3P12-05
+  severity: medium
+  analysis: |-
+    THE TRUNCATION RESIDUAL IS CORRECTED IN THE CODE AND IN THE WORK HISTORY AND IS ABSENT FROM BOTH DOCUMENTS A
+    NEXT READER MEETS FIRST. The implementer found that the determinism claim was false, said so plainly, corrected
+    the comment at the mechanism's definition, renamed the test that had asserted less than its name claimed, and
+    committed a passing counterexample. That is the right behaviour and it is recorded as such. What did not happen
+    is the other half: the plan still asserts the false sentence inside criterion 12.16 itself and inside this
+    phase's own report-code-disagreement entry, and the governing pulse-domain skill, which CLAUDE.md loads into
+    every task's context, describes the trust gate and the truncation it exists for without saying that a
+    Belgian-prefixed over-long spaced token gets through it. A later reader of either document meets the sentence,
+    not the fact, and the phase's own work history says the claim was false IN THE PLAN and then leaves it there.
+    The implementer edited the plan in this same commit to correct a different false sentence, so plan edits were
+    not out of bounds for this round.
   evidence:
   - |-
-    FIRST HALF. RUN A, --dry-run with no acknowledgement: exit 1, and the report named the conflicting rule id and both lost transactions with their holding rule id. Snapshot byte-identical to baseline, so the ids were learnable from a run that had written nothing. That is the exact defect the fix round says it closed and it is closed.
+    The plan's criterion 12.16 still carries it: delivery/plan/pulse-v02.yaml:6667 through :6675, THE TABLE CLOSES
+    TRUNCATION DETERMINISTICALLY RATHER THAN PROBABILISTICALLY ... such a value always carries a country code whose
+    table length is not sixteen.
   - |-
-    SECOND HALF. RUN D, the same two ids passed to --accept without --dry-run: exit 0, applied yes, patterns-rewritten 3, rules-added 1. The snapshot afterwards shows exactly those writes: three rule patterns changed hash and moved xmin, one new rule row appeared pointing at the same merchant as the rule it was promoted from, and the recompute set merchantId on three transactions.
+    The plan's report-code-disagreement entry for this phase still carries it: delivery/plan/pulse-v02.yaml:1740
+    through :1743, the truncated value fails BOTH trust tests, length-for-country and mod-97, so decision D-43's
+    gate closes it.
   - |-
-    ACCEPTANCE CLEARS ONLY WHAT IT NAMES. In run D the accepted-conflict rule was left byte-identical, its pattern hash unchanged from the baseline snapshot, and the two accepted losses did land: both transactions ended with no merchant. That is the accepted consequence, printed and visible, rather than a quiet green.
+    The counterexample that refutes both, committed and passing: test/domain/counterparty-identity.test.ts:510
+    through :566.
   - |-
-    IDEMPOTENCE, re-measured here because the fix round reshaped the routine. RUN E, the same command again: exit 0, patterns-rewritten 0, rules-added 0, already-namespaced 5, and the decision report diffed BYTE-IDENTICAL against run D's. No merchant_rules row moved its xmin on the second run.
-- claim: |-
-    Accepted losses are PARTITIONED into their own reported field, not filtered out of the report.
-  verdict: VERIFIED
+    The correction that WAS made, at the mechanism's own definition:
+    src/modules/merchants/domain/counterparty-identity.ts:212 through :256.
+  - |-
+    The work history naming the plan as one of the three places the false claim lived, without correcting it:
+    delivery/work-history/m3-p12.yaml:250 through :261.
+  - |-
+    The governing document, which states the truncation as the gate's reason and never states the residual:
+    .claude/skills/pulse-domain/SKILL.md:136.
+  - |-
+    The precedent that plan edits were open this round: delivery/plan/pulse-v02.yaml:6967 onward was rewritten by
+    b324d87 to correct a different false sentence in the same phase entry.
+  concrete-fix: |-
+    Correct the two plan sentences and the skill in the same way the code comment was corrected, saying what was
+    claimed, why it is false, and what is true. Rewrite delivery/plan/pulse-v02.yaml:6673's determinism sentence to
+    state that the length test closes truncation deterministically only for a source whose registry length is not
+    sixteen, and that for a Belgian-prefixed over-long spaced token mod-97 alone stands with a residual of roughly
+    one in ninety-seven. Rewrite delivery/plan/pulse-v02.yaml:1742's closes-it sentence the same way. Add one
+    sentence to .claude/skills/pulse-domain/SKILL.md:136 saying the gate does not close the Belgian-prefixed case
+    and naming the parked item that owns the scrape. Add the residual as its own entry on the plan's parked surface
+    beside hazard H12.16, since the source comment at src/modules/merchants/domain/counterparty-identity.ts:249 says
+    it is recorded there and it is not.
+- id: CR2-M3P12-06
+  severity: low
+  analysis: |-
+    THE ONE-ROW PROMOTION IS THE PHASE'S OTHER OPEN ITEM AND IT IS NOT IN THE RECORD OF WHAT IS OPEN. The decision
+    to promote on a single row rather than impose a two-row floor is well argued and I agree with it: a floor would
+    decline to promote the owner's own single deployed naming, which is the exact declaration this phase exists to
+    carry. The visibility answer, a distinct outcome token and its own list, is the right shape and I witnessed it
+    working. What is missing is one line in the place a reader looks for what this phase leaves unanswered. The work
+    history has exactly one not-covered block and it names three residuals; the one-row promotion is not among them,
+    even though it converts a parked READ question, which of several account-shaped tokens the first-wins scrape
+    chose, into a permanent WRITE. And the operator's console gets a bare count with no sentence saying what a
+    one-row promotion means, so the visibility the decision buys reaches the code's reader and not the migration's
+    operator.
   evidence:
   - |-
-    RUN B and RUN D both printed "lost-assignments 0" followed by "accepted-lost-assignments 2" and then one accepted-lost-transaction line per loss, each naming the transaction id and the rule that held it. RUN A and RUN C, with nothing accepted, printed "lost-assignments 2" and "accepted-lost-assignments 0". The two lists are complements of the same set and neither run reads like a run that lost nothing.
+    The decision and its reasoning: delivery/work-history/m3-p12.yaml:230 through :245.
   - |-
-    The partition, rather than the previous filter: src/modules/merchants/application/rederive-rules.ts:509 through :512, reported through the field declared at :182 and printed at scripts/rederive-merchant-rules.ts:143 through :150.
+    The only not-covered block in the document, which names the importer's blank description, the matcher and writer
+    asymmetry and the truncation residual, and not this: delivery/work-history/m3-p12.yaml:866 through :884.
+  - |-
+    What the code says and the console does not: src/modules/merchants/application/rederive-rules.ts:117 through
+    :129 explains that the account keyed on is whatever the first-wins scrape stored and that hazard H12.16 records
+    that choice as unanswered, while scripts/rederive-merchant-rules.ts:151 through :154 prints only a count and a
+    list of rule ids.
+  - |-
+    Witnessed working on the pinned database: a promotion supported by two rows reported outcome promoted and
+    promoted-on-one-row 0, and the token exists and is distinct, asserted at
+    test/application/rederive-merchant-rules.test.ts:853 and :884.
+  concrete-fix: |-
+    Add the one-row promotion to the not-covered block at delivery/work-history/m3-p12.yaml:866, in one sentence: a
+    promotion whose whole evidence is one row is still a promotion, its account is whichever candidate the
+    importer's first-wins scrape stored, hazard H12.16 records that choice as unanswered, and this phase makes it
+    visible rather than closing it. And print one explanatory line above the list at
+    scripts/rederive-merchant-rules.ts:151, saying that these rules were promoted on the evidence of a single
+    transaction so the account they now key on is that one row's scraped value.
+- id: CR2-M3P12-07
+  severity: low
+  analysis: |-
+    A BARE-NAMESPACE GROUP NOW RENDERS AS A ROW WITH NOTHING ON IT AND NOTHING TO DO. The fix round correctly
+    withholds the naming form from a group keyed on a bare namespace. The consequence on screen is a list item whose
+    label is the empty string, because the label is the normalised counterparty text and there is none, carrying a
+    row count and an amount and no control and no explanation. The reader sees what looks like a broken row rather
+    than a deliberate refusal, and the refusal message that WOULD explain it exists already and is only reachable by
+    submitting a form that is no longer there. This is a smaller thing than the merge it prevents and I raise it as
+    low, but it is the one place where the fix is visible to the owner and it is visible as an absence.
+  evidence:
+  - |-
+    The form is withheld on the group's own missing subject field: src/modules/merchants/ui/merchant-review.tsx:45,
+    and the group is still rendered with its label, count and amount at :36 through :44.
+  - |-
+    The label is empty for such a group by construction: src/modules/merchants/domain/merchant-review.ts:103 and
+    :115 through :118, where the unresolved label is normaliseCounterparty(counterpartyText(row)).
+  - |-
+    The message that would explain it, which is only reachable through a refused submission: messages/en.json,
+    nameRefusedUnidentifiable, mapped at src/modules/merchants/ui/merchant-review.tsx:120.
+  - |-
+    Witnessed: buildMerchantReview over two rows carrying no counterparty text returned one group with key
+    descriptor:, count 2, total -3000 and no counterpartyText, which is what the component renders.
+  concrete-fix: |-
+    Render the reason in place of the form rather than nothing, at src/modules/merchants/ui/merchant-review.tsx:45:
+    when an unresolved group has no counterpartyText, show the nameRefusedUnidentifiable copy, or a shorter form of
+    it, as static text inside the row. That reuses a string that already exists in all three languages and turns an
+    empty row into a stated refusal. Group labelling proper is decision D-41 and belongs to M3-P13, and this does
+    not pre-empt it.
+criteria:
+- id: '12.1'
+  quote: |-
+    CONVERGENCE, COUNTED. A test in test/domain/counterparty-identity.test.ts parses
+    test/fixtures/belfius-counterparty-identity.pdf through the shipped path and counts DISTINCT
+    counterpartyIdentity keys over its rows. The fixture carries 24 rows representing 12 invented counterparties,
+    and the test asserts the distinct-key count is exactly 12, printing both 12 and 24, and separately asserts that
+    the BASELINE derivation (normaliseCounterparty(counterpartyText(row))) over the same rows yields EXACTLY 24
+    distinct keys, one per row, printing that number too, so the fixture is proven to reproduce the TOTAL
+    non-convergence the owner's month shows on its account-carrying rows (11 rows, 11 baseline keys, measured)
+    rather than a partly converged version of it. The fixture's composition is also asserted, so neither basis can
+    carry the proof alone: at least 8 rows carry a trusted account over at least 4 distinct accounts, and at least 8
+    rows carry none. A test that asserts only that a rule exists, that asserts a count without printing the row
+    count beside it, or that admits a baseline count below 24, does not meet this criterion.
+  met: true
+  evidence:
+  - |-
+    Re-measured in this worktree with the committed harness rather than read off the suite: npx tsx
+    test/fixtures/measure-identity-convergence.ts test/fixtures/belfius-counterparty-identity.pdf, exit 0, printed
+    rows 24, rows-with-account 18, baseline-distinct-keys 24, identity-distinct-keys 12, identity-account-keys 4,
+    identity-rows-account-basis 16, identity-rows-descriptor-basis 8. The fix round moved none of these.
+  - |-
+    The test asserts 24 rows, 12 identity keys and a baseline of exactly 24, and prints the row count beside the key
+    count: test/domain/counterparty-identity.test.ts:72 through :87, the printed line at :77 and the baseline floor
+    asserted at :86.
+  - |-
+    The composition assertion is at test/domain/counterparty-identity.test.ts:102 through :104 and reads
+    account-basis rows at least 8, distinct account keys at least 4, descriptor-basis rows at least 8.
+  - |-
+    THE COMPOSITION CLAUSE IS A PLAN DEFECT AND IS NOT COUNTED AGAINST THE IMPLEMENTER, per this round's dispatch.
+    The clause reads at least 8 rows carry a trusted account over at least 4 distinct accounts, and at least 8 rows
+    carry none. Measured, 18 of the 24 rows carry a counterparty account field and only 6 carry no field at all,
+    while 8 take the descriptor basis. The elliptical reading, none meaning no TRUSTED account, is the only one the
+    rest of the plan admits, because plan step 7 requires this same fixture to carry the truncation-attack rows,
+    which carry an account field and fall to the descriptor basis. The implementer satisfied that reading. The
+    defect is the plan's wording and it is under repair on a separate branch.
+- id: '12.2'
+  quote: |-
+    CONVERGENCE ON THE OWNER'S OWN MONTH, so the fixture cannot be built to pass a bar the real data fails. The
+    phase work history records, with the exact command that produced each number, the command naming the COMMITTED
+    harness path rather than a scratchpad path, and with no descriptor content, the result of running the SHIPPED
+    pipeline over the real Belfius document in memory: total rows 39, distinct identity keys EXACTLY 20 against a
+    recorded baseline of 25, of which the account basis contributes EXACTLY 6 (baseline 11) and the descriptor basis
+    EXACTLY 14 (baseline 14); and the same run over the real KBC card document records 22 rows and EXACTLY 16
+    identity keys, unchanged from its baseline of 16. BOTH BOUNDS ARE BINDING AND THE LOWER ONE MATTERS MOST:
+    over-collapse drives the count DOWN, so a ceiling alone would pass hardest exactly when the critical defect is
+    worst, and a run producing fewer than 20 is treated as an over-collapse and stops the phase until it is
+    explained. Any number differing in either direction is reported with the measured value rather than the plan's.
+  met: true
+  evidence:
+  - |-
+    Re-measured against both real documents in memory, counts only, nothing written to disk, the uploads referred to
+    by their eight-hex prefixes only: npx tsx test/fixtures/measure-identity-convergence.ts over 39bada64 and
+    0f79fa3d, exit 0.
+  - |-
+    Current-account document, printed verbatim: rows 39, rows-with-account 11, rows-with-name 0,
+    baseline-distinct-keys 25, identity-distinct-keys 20, identity-account-keys 6, identity-descriptor-keys 14,
+    identity-rows-account-basis 11, identity-rows-descriptor-basis 28. Every figure the criterion pins is hit
+    exactly and the binding lower bound of 20 is met rather than undershot.
+  - |-
+    Card document: rows 22, rows-with-account 0, baseline-distinct-keys 16, identity-distinct-keys 16,
+    identity-account-keys 0, identity-rows-descriptor-basis 22. Unchanged from its baseline of 16, as the criterion
+    requires.
+  - |-
+    The work history records the same numbers against the committed harness path rather than a scratchpad path and
+    quotes no descriptor content: delivery/work-history/m3-p12.yaml:295 through :313.
+  - |-
+    The harness prints integers and a truncated label only, and the label rule is itself asserted:
+    test/fixtures/measure-identity-convergence.ts:45 through :48, asserted at
+    test/application/counterparty-identity-surfaces.test.ts:352.
+- id: '12.3'
+  quote: |-
+    NAMED ONCE, MATCHED AGAIN. A test in test/application/counterparty-identity-journey.test.ts imports
+    test/fixtures/belfius-counterparty-identity.pdf, asserts that a designated counterparty of that fixture appears
+    as ONE unresolved group whose count is 3, calls assignMerchant EXACTLY ONCE against that group's identity key
+    (asserted by a call counter on the fake merchants port, which must read 1 at the end of the test), runs
+    interpretation, and then asserts that a DIFFERENT transaction of the same counterparty, which the naming was not
+    made from and which differs from it in booking date, in amount and in free-text communication, now carries that
+    merchant id. The test names both transaction ids and the fixture in its assertions. A test that names each
+    transaction separately, or that asserts only the group count, does not meet this criterion.
+  met: true
+  evidence:
+  - |-
+    The journey test lives at the path the criterion names and imports the named fixture:
+    test/application/counterparty-identity-journey.test.ts:82.
+  - |-
+    ONE unresolved group whose count is 3, the single assignMerchant call counted on the fake merchants port, and
+    the two later transactions named by id and asserted to carry the merchant id are all inside that one test, which
+    passed in my own npm test run in 678ms.
+  - |-
+    The designated rows are asserted to differ in booking date, in amount and in description, so the transaction the
+    assertion lands on is genuinely one the naming was not made from.
+  - |-
+    Not disturbed by the repair, checked rather than assumed: git show --stat b324d87 lists no change to
+    test/application/counterparty-identity-journey.test.ts.
+- id: '12.4'
+  quote: |-
+    DIFFERENT COUNTERPARTIES STAY DIFFERENT WHERE THE STORED VALUES DIFFER. Over the same fixture, a test asserts
+    that no two rows carrying different TRUSTED counterparty accounts share an identity key, that no account-basis
+    key is equal to any descriptor-basis key, and that the 12 identity keys partition the 24 rows exactly as THE
+    GENERATOR'S OWN INPUT RECORD says, row by row, so a merge shows up as a failed row rather than as a count that
+    still happens to be 12. That record is EMITTED BY test/fixtures/generate-pdf-fixtures.ts as the list of row
+    ordinal to invented counterparty ordinal pairs it generated the fixture FROM, written in the same run that
+    writes the PDF; the test imports it from the generator, and a check asserts regenerating the fixture reproduces
+    both files byte for byte so the record cannot have been hand-edited. A mapping transcribed from
+    counterpartyIdentity's own output does not meet this criterion, because it would certify the function against
+    itself. STATED PLAINLY: this criterion is NOT the guard on H12.1. In every mechanism that reaches H12.1 the two
+    rows end up carrying the SAME stored value, so this criterion's antecedent is false and it passes vacuously;
+    criterion 12.16 is the guard.
+  met: true
+  evidence:
+  - |-
+    The three assertions the criterion names are at test/domain/counterparty-identity.test.ts:109, :140 and :178: no
+    two rows on different trusted accounts share a key, no account-basis key equals a descriptor-basis key, and the
+    12 keys partition the 24 rows exactly as the generator's own record says, row by row.
+  - |-
+    The oracle is independent of the implementation: the generator imports only node:fs, node:path and node:url, so
+    counterpartyIdentity cannot reach it, and the byte-for-byte regeneration check at
+    test/domain/counterparty-identity.test.ts:178 through :183 rebuilds both the PDF and the record and compares
+    them against the committed bytes, so the record cannot have been hand-edited.
+  - |-
+    Green in my own npm test run inside test/domain/counterparty-identity.test.ts, 26 tests, 1627ms.
+  - |-
+    The criterion's own statement that it is NOT the guard on hazard H12.1 is correct, which is why criterion 12.16
+    is walked separately below rather than leaning on this one.
+- id: '12.5'
+  quote: |-
+    THIS PHASE STRIPS NOTHING NEW. For every row of every committed fixture that takes the descriptor basis, the
+    identity key produced by this branch is exactly the lowercase literal "descriptor:" followed by a suffix
+    BYTE-IDENTICAL to the key the baseline commit produces for the same row, asserted by a test that reads a
+    committed table of baseline keys generated at the baseline commit and compares key.slice("descriptor:".length)
+    against it. A separate test asserts normaliseCounterparty never emits a lowercase letter, so no descriptor key
+    can ever begin with either namespace and the two key spaces cannot collide by construction. And git diff of the
+    baseline against this branch shows no change to CARD_RAIL_PREFIX, CARD_NUMBER_LABEL, CARD_NUMBER_TAIL,
+    CARD_AMOUNT_BEFORE_LABEL, ANGLE_COUNTRY_MARKER, TERMINAL_NOISE_PATTERNS, DATE_FRAGMENT_PATTERNS,
+    POSTAL_CODE_BEFORE_CITY or CITY_TOKENS in src/modules/merchants/domain/normalise-counterparty.ts, and the pinned
+    regression table in test/domain/normalise-counterparty.test.ts is unchanged.
+  met: true
+  evidence:
+  - |-
+    The git half, checked myself against the stated baseline rather than through the suite: git diff 7f4aafb HEAD --
+    src/modules/merchants/domain/normalise-counterparty.ts produced NO output at all, so none of the nine named
+    constants changed; and git diff 7f4aafb HEAD -- test/domain/normalise-counterparty.test.ts produced no output
+    either, so the pinned regression table is unchanged.
+  - |-
+    The byte-identity half is asserted over every parsable committed fixture against a table generated at the
+    baseline commit: test/domain/counterparty-identity.test.ts:217 through :253, comparing the key past the
+    namespace against test/fixtures/baseline-descriptor-keys.json row by row.
+  - |-
+    The uppercase property, which is what makes the two key spaces disjoint by construction rather than by
+    inspection, is asserted at test/domain/counterparty-identity.test.ts:187 through :215 over the real fixture
+    corpus plus deliberately lowercase invented inputs.
+- id: '12.6'
+  quote: |-
+    A ROW MATCHING NO FAMILY IS NOT GUESSED AT. A test asserts that for a row carrying no counterparty account whose
+    descriptor the card predicate does not recognise, the identity key is "descriptor:" followed by exactly
+    normaliseCounterparty(counterpartyText(row)), whose suffix after the namespace is equal character for character
+    to the baseline key, and that its basis is reported as descriptor. A test asserts the same of a row whose stored
+    counterparty account is empty or whitespace only, so no row is ever keyed on a bare namespace, which is the
+    hazard src/modules/merchants/domain/normalise-counterparty.ts:462 through :464 already guards on the descriptor
+    side and which this phase must not reintroduce on the account side. The plan and the code state, and a test
+    asserts, that no truncation, no opening-prefix key and no fallback bucket is ever produced: two such rows share
+    a key only when their full normalised descriptors are equal.
+  met: true
+  evidence:
+  - |-
+    The unrecognised-descriptor row keeps exactly its baseline key and reports the descriptor basis:
+    test/domain/counterparty-identity.test.ts:256 through :266.
+  - |-
+    The empty-or-whitespace stored account takes the descriptor basis rather than an account key:
+    test/domain/counterparty-identity.test.ts:268 through :283.
+  - |-
+    THE HALF THE FIX ROUND ADDED, AND THE ONE THIS CRITERION NOW TURNS ON, witnessed by me with the modules loaded
+    directly rather than read off the suite. The criterion says no row is ever keyed on a bare namespace. That is
+    not literally what the code does and the criterion is met by a different and stronger mechanism: a row with no
+    counterparty text at all IS keyed on the bare descriptor namespace, and that key is then REFUSED by every
+    consumer that could act on it. The derivation emits key descriptor: with basis descriptor for a whitespace-only
+    description, and the predicate at src/modules/merchants/domain/counterparty-identity.ts:118 reports it bare.
+  - |-
+    MATCHER: matchRules returned undefined for an EXACT rule on the bare descriptor namespace against the bare key,
+    for a PREFIX rule on the bare namespace against an ordinary descriptor key, for a PATTERN rule on the bare
+    namespace against an ordinary descriptor key, and for the bare account namespace, while an ordinary EXACT rule
+    in the same run still returned its merchant. The two refusals are at
+    src/modules/merchants/domain/merchant-rule.ts:98 and :111 through :113.
+  - |-
+    WRITE BOUNDARY, with a write counter on the fake port: the four bare and blank subjects on both bases each
+    returned a typed error with zero calls to createMerchant, upsertRule or recompute, and a well-formed subject in
+    the same loop made three calls, so the counter was live. The error kinds were unidentifiable-counterparty on the
+    descriptor side and untrusted-counterparty-account on the account side. The guard is at
+    src/modules/merchants/application/assign-merchant.ts:109 through :115.
+  - |-
+    REVIEW SURFACE, SHOWN AND COUNTED EXACTLY AS AT BASELINE, which is the half this round was told to check
+    specifically. Over two rows carrying no counterparty text and one ordinary row, buildMerchantReview returned the
+    bare group with count 2 and total -3000 and no counterpartyText field; spendTotalCents was -6000, so both bare
+    rows' money is still in the direction total; and unresolvedCount was 2, so the bare group is still counted as an
+    unresolved group. Nothing is dropped from any count. Only the naming form is withheld, at
+    src/modules/merchants/domain/merchant-review.ts:129 through :133.
+  - |-
+    The committed tests assert the same three refusals at test/domain/counterparty-identity.test.ts:288, :303, :316
+    and :344.
+  - |-
+    The no-truncation, no-opening-prefix, no-fallback-bucket half is asserted at
+    test/domain/counterparty-identity.test.ts:382 through :392.
+- id: '12.7'
+  quote: |-
+    NO NAMING THE OWNER MADE IS DISCARDED, MEASURED AS EFFECT AND NOT AS ROWS. Against a seeded database holding
+    MerchantRule rows written under the baseline derivation, the test compares the set of (transactionId,
+    merchantId) pairs recompute produces BEFORE the re-derivation with the set it produces AFTER, printing both
+    sizes, and asserts the after set is a SUPERSET of the before set: no transaction that carried a merchant id
+    loses it, and no transaction changes from one merchant to another. SELECT COUNT(*) FROM merchant_rules before
+    and after is reported beside it and is NOT by itself sufficient, and the plan says why: a rule left
+    byte-identical survives as a row and, once the key has changed under it, matches nothing, so the row count is
+    preserved while the naming is dead. The routine prints one line per rule it touched carrying the rule id, the
+    pass, the new basis, the number of transactions the old pattern matched and the number the new pattern matches,
+    and lists separately every rule whose matched count INCREASED, which is the broadening decision D-45 authorises
+    and makes visible. It exits non-zero on exactly two conditions: a merchant-conflict, meaning two rules for
+    DIFFERENT merchants would collide on one new pattern, which is a genuine ambiguity a person must settle; and a
+    LOST assignment, meaning the superset test above fails. Every other outcome, including a rule that could not be
+    promoted, is printed, counted and exits 0, because a rule left safely in place is not a reason to block a
+    deploy. A test asserts the routine issues no UPDATE and no DELETE against any pattern written under the ACCOUNT
+    namespace and never rewrites a descriptor pattern into an account one, so promotion is additive and the
+    declaration the owner made survives the run verbatim, which is what answers pulse-domain section 2's
+    classification of MerchantRule as a declaration the engine does not rebuild. THE TWO BLOCKING CONDITIONS HAVE AN
+    ACKNOWLEDGE PATH, decided deliberately rather than left as an unreachable green: the routine accepts a flag
+    naming the specific rule ids whose conflict or lost assignment a person has seen and accepted, exits 0 for
+    exactly those, and prints them as accepted; a test asserts the flag clears only the ids it names and clears
+    nothing else. No criterion in this phase is met by a run that removed a rule row or lost an assignment.
+  met: true
+  evidence:
+  - |-
+    The superset test as EFFECT rather than as rows, with both sizes printed, is at
+    test/application/rederive-merchant-rules.test.ts:261 through :294; the
+    no-UPDATE-and-no-DELETE-against-an-account-namespaced-pattern assertion is at :296 through :346; the additive
+    promotion with its printed broadening number is at :348; and the two blocking conditions with their acknowledge
+    paths are at :434 and :471.
+  - |-
+    WITNESSED MYSELF AGAINST A REAL DATABASE, not against the fake. I created pulse_r2crit on the local supabase
+    Postgres at 127.0.0.1:54322, applied prisma migrate deploy, and seeded 5 merchant_rules rows and 5 counted
+    transactions by hand so the set contained a promotable rule, an unpromotable rule whose rows carry two different
+    trusted accounts, a rule whose rows carry no account, an already-namespaced rule and a merchant conflict. Every
+    invocation pinned DATABASE_URL and DIRECT_URL explicitly.
+  - |-
+    THE WITNESS IS THE STORAGE, NOT THE REPORT. Before and after each run I captured id, xmin, ctid, kind,
+    merchantId and md5(pattern) for every merchant_rules row and id, xmin, ctid, flow and merchantId for every
+    transactions row. An UPDATE writing an identical value still moves xmin and ctid, so this catches a rewrite the
+    report would not show.
+  - |-
+    CLAIM 3, BLOCKING WITHHOLDS EVERY WRITE: the real run with nothing accepted exited 1, printed conflicts 1 with
+    the rule id, lost-assignments 2 with both transaction ids and the rule that held them, applied no, and the
+    sentence that nothing was written. The snapshot afterwards was byte-identical to the baseline snapshot: not one
+    xmin moved, the counts stayed 5 and 5, and the recompute did not run.
+  - |-
+    CLAIM 2, --dry-run WRITES NOTHING: the CLEAN dry run, with both blocking conditions accepted, exited 0, printed
+    applied no and nothing was written: this was a dry run, while reporting patterns-rewritten 3 and rules-added 1
+    as the work it WOULD do. The snapshot afterwards was again byte-identical. The contrast that proves the snapshot
+    is sensitive is the same command without the flag, which moved xmin on three rule rows, inserted a fourth and
+    moved xmin on all five transaction rows.
+  - |-
+    CLAIM 4, THE ACKNOWLEDGE PATH, BOTH HALVES: the ids were learnable from a run that had written nothing, and
+    passing exactly those two ids to --accept without --dry-run exited 0, applied yes, patterns-rewritten 3,
+    rules-added 1, with the new EXACT rule pointing at the same merchant as the rule it was promoted from and the
+    recompute setting merchantId on three transactions. Acceptance cleared only what it named: the accepted-conflict
+    rule was left byte-identical to its baseline hash, and the two accepted losses did land, both transactions
+    ending with no merchant.
+  - |-
+    CLAIM 5, ACCEPTED LOSSES ARE PARTITIONED: the runs with nothing accepted printed lost-assignments 2 and
+    accepted-lost-assignments 0; the runs with the ids accepted printed lost-assignments 0 and
+    accepted-lost-assignments 2 followed by one named line per loss carrying the transaction id and the holding rule
+    id. The two lists are complements of one set and neither run reads like a run that lost nothing. The partition
+    is at src/modules/merchants/application/rederive-rules.ts:509 through :512, reported through the field declared
+    at :182 and printed at scripts/rederive-merchant-rules.ts:143 through :150.
+  - |-
+    The structure is what makes this hold beyond the cases I seeded: every write is recorded into pendingUpdates and
+    pendingInserts at src/modules/merchants/application/rederive-rules.ts:285 through :290, the exit code is
+    computed against the in-memory working copy at :495 through :518, and the single apply block at :528 through
+    :537 is gated on the run being neither blocked nor a dry run.
+  - |-
+    MET, WITH A HIGH FINDING BESIDE IT THAT THIS CRITERION DOES NOT REACH. The criterion names exactly two blocking
+    conditions and both behave as specified. It does not reach a third condition the routine can hit, a
+    same-merchant pattern collision that violates the table's unique key and throws mid-apply, which I witnessed and
+    raised as finding CR2-M3P12-02. That is this contract's limit, not a miss by the implementer.
+- id: '12.8'
+  quote: |-
+    THE RE-DERIVATION IS IDEMPOTENT, AND IDEMPOTENT MEANS THE SAME ANSWER RATHER THAN A QUIET ONE. Running the
+    script a second time rewrites zero patterns, adds zero rules, and prints the same DECISION REPORT as the first
+    run, byte for byte, that report being the rule id, the pass that touched it, the resulting basis and the outcome
+    for every rule; and it returns the SAME exit code. The matched-count columns criterion 12.7 requires are
+    EXCLUDED from that comparison, and the criterion says why rather than leaving it to be rediscovered: on the
+    second run a rule's old pattern is the pattern the first run wrote, so for any rule whose rows split across the
+    two bases the counts legitimately differ while the decision does not, and comparing them would turn a CORRECT
+    run red and push the implementer toward a seed containing no split rule, which is the dataset-choosing this
+    criterion exists to forbid. The full merchant_rules table is still compared in full. The test runs against a
+    database seeded to contain at least one rule the routine cannot promote, at least one rule whose matched rows
+    split across the two bases, and at least one merchant-conflict. Requiring exit 0 on the second run would
+    contradict criterion 12.7 on any database holding a conflict, since the routine deletes nothing and the
+    condition therefore persists; an implementer who satisfies the two criteria against two different seeded
+    databases has not met this one.
+  met: true
+  evidence:
+  - |-
+    The committed test at test/application/rederive-merchant-rules.test.ts:513 asserts zero rewrites, zero added
+    rules, a byte-identical decision report and the same exit code on a second run; :538 proves the seed really
+    contains all three required shapes, so the idempotence is not measured on a dataset chosen to be easy; and :576
+    asserts that a second run does NOT have to exit 0, which is the contradiction the criterion warns about.
+  - |-
+    WITNESSED MYSELF ON THE SAME REAL DATABASE. Running the applying command a second time exited 0, printed
+    patterns-rewritten 0, rules-added 0 and already-namespaced 5, and its decision report diffed BYTE-IDENTICAL
+    against the first run's. No merchant_rules row moved its xmin on the second run.
+  - |-
+    The matched-count exclusion the criterion requires is implemented by keeping the counts out of the RuleDecision
+    record entirely, so it cannot leak into the comparison by accident:
+    src/modules/merchants/application/rederive-rules.ts:143 through :148, formatted at :562 through :569, and
+    printed separately by scripts/rederive-merchant-rules.ts:106 through :113.
+  - |-
+    NOTED WITHIN THE CRITERION, not raised as a finding: the second run still issues the recompute, because applied
+    is true whenever a run is clean and not a dry run, so all five transaction rows moved their xmin while every
+    value stayed identical. The criterion asks for zero pattern rewrites and zero added rules and gets both, and
+    rewriting interpretation columns to the same values is what recompute is for.
+- id: '12.9'
+  quote: |-
+    FACTS ARE NOT REWRITTEN AND THE CHANGE IS A DERIVATION PLUS A RECOMPUTE. A test asserts the re-derivation issues
+    no write against the transactions table at all, and grep over this phase's steps shows no step that updates a
+    transaction fact field. Separately, the pulse-domain section 2 test: a test clears every
+    transactions.merchantId, runs the existing recompute, and asserts the identical assignment set returns, so the
+    naming survives entirely as a declaration plus a derivation.
+  met: true
+  evidence:
+  - |-
+    The no-write-against-transactions assertion is at test/application/rederive-merchant-rules.test.ts:587 through
+    :614, and the pulse-domain section 2 test, clearing every merchantId and recomputing to the identical assignment
+    set, is at :616.
+  - |-
+    Checked in the source rather than only through the test: the routine's dependency surface is a Pick of
+    listRules, listCountedTransactions, upsertRule and updateRulePattern at
+    src/modules/merchants/application/rederive-rules.ts:194 through :200, so it has no way to write a transaction at
+    all, and its only writes are the two loops at :530 through :535.
+  - |-
+    Witnessed on the real database as a by-product of the run comparisons above: after the blocked run and after the
+    dry run, every transactions row still carried its original xmin, so no fact column and no interpretation column
+    was touched by either.
+  - |-
+    The grep half holds: this phase's plan steps name merchant_rules as the only written table and state that
+    assignments reach rows through the existing recompute.
+- id: '12.10'
+  quote: |-
+    PREFIX AND PATTERN ARE SETTLED. A unit test asserts that a PREFIX rule whose pattern is a proper prefix of an
+    ACCOUNT-basis key returns undefined from matchRules, that a PATTERN rule whose glob matches an account-basis key
+    returns undefined, and that both kinds still match a descriptor-basis key as they do today. A test asserts
+    assignMerchant writes kind EXACT and only EXACT. git diff of the baseline shows NO change to the
+    MerchantRuleKind enum in prisma/schema/merchants.prisma, and grep of prisma/schema/merchants.prisma and
+    src/modules/merchants/domain/merchant-rule.ts shows the stated disposition, that no product surface writes
+    either kind today, in both files.
+  met: true
+  evidence:
+  - |-
+    The three unit assertions are at test/domain/counterparty-identity-contracts.test.ts:26, :35 and :42: a PREFIX
+    rule that is a proper prefix of an account-basis key returns undefined, a PATTERN glob over one returns
+    undefined, and both kinds still match a descriptor-basis key.
+  - |-
+    I re-ran the refusal myself over every proper prefix of an account-basis key, from one character to the whole
+    key less one, and over four globs, and got undefined in every case, with an EXACT rule on the whole key still
+    matching in the same run, so the refusal is of the two broadening kinds rather than of the basis.
+  - |-
+    assignMerchant writes EXACT and only EXACT, with the kind hard-coded:
+    src/modules/merchants/application/assign-merchant.ts:128 through :132.
+  - |-
+    The enum-unchanged half, checked myself against the baseline: git diff 7f4aafb HEAD --
+    prisma/schema/merchants.prisma shows no change inside the MerchantRuleKind block, which still reads EXACT,
+    PREFIX, PATTERN at prisma/schema/merchants.prisma:25 through :29, and the test restates that block literally at
+    test/domain/counterparty-identity-contracts.test.ts:62.
+  - |-
+    The stated disposition appears in both files and is asserted to: prisma/schema/merchants.prisma:73 through :81
+    and src/modules/merchants/domain/merchant-rule.ts:12 through :29, asserted at
+    test/domain/counterparty-identity-contracts.test.ts:76.
+- id: '12.11'
+  quote: |-
+    THE TWO SCREENS AGREE WHERE THEY ARE MEANT TO. A test runs the merchant review builder and the overview fold
+    over ONE dataset drawn from a single month and asserts that for every row NOT matched by the overview's cash
+    predicate and with options.useTags false, the two produce the same set of unresolved group keys and the same row
+    count per key. Three divergences are named as expected exceptions rather than avoided by choosing a dataset
+    without them, which would be the dataset-choosing hazard H12.8 exists to prevent: the fold branches on cash
+    FIRST into one shared key (src/modules/overview/domain/month-projection.ts:63 through :66) and the review has no
+    cash concept at all (src/modules/merchants/domain/merchant-review.ts:77 through :98); the fold regroups by
+    primary tag when useTags is set (src/modules/overview/domain/month-projection.ts:67 through :74) and the review
+    never does; and the two differ in SCOPE, the overview bounding by booking date
+    (src/modules/overview/adapters/overview-repository.ts:130 through :131) where listCountedTransactions has no
+    date bound (src/modules/merchants/adapters/merchant-repository.ts:229 through :243). The test asserts each
+    divergence at its named site. The SQL pin in test/domain/merchant-review.test.ts is updated to the new fragment
+    and still asserts that fragment appears exactly once in src/modules/overview/adapters/overview-repository.ts and
+    that both reads use it.
+  met: true
+  evidence:
+  - |-
+    The one-dataset agreement test is at test/application/counterparty-identity-surfaces.test.ts:68, the three named
+    divergences are each asserted at their named sites at :116, and the SQL fragment pin, that the fragment appears
+    exactly once and both reads use it, is at :156.
+  - |-
+    The fold takes the identity as an INJECTED function rather than importing it, so the overview module still
+    imports nothing from merchants: the type at src/modules/overview/domain/month-projection.ts:29 through :35,
+    consumed at :99 through :106.
+  - |-
+    The read returns the account beside the text and groups by it:
+    src/modules/overview/adapters/overview-repository.ts:117 and :134.
+  - |-
+    The label rule is the same on both screens, the lexicographically smallest normalised text, so the two agree
+    without depending on the order rows leave SQL in: src/modules/overview/domain/month-projection.ts:126 through
+    :128 and src/modules/merchants/domain/merchant-review.ts:109 through :111.
+  - |-
+    Green in my own npm test run: test/application/counterparty-identity-surfaces.test.ts, 14 tests, with the
+    agreement test itself at 757ms.
+- id: '12.12'
+  quote: |-
+    THE MODULE BOUNDARY HOLDS. The MerchantResolver port still has exactly one member, asserted by the existing
+    key-set assertion in test/application/resolve-merchants.test.ts updated to the new member name, so no code path
+    in interpretation can write a MerchantRule. The ledger's own counterpartyKey
+    (src/modules/ledger/domain/corrections.ts:209) is unchanged, asserted by git diff showing no change to
+    src/modules/ledger/domain/corrections.ts, so no flow classification moves.
+  met: true
+  evidence:
+  - |-
+    The port still has exactly one member and the key-set assertion is updated to the new member name:
+    src/modules/ledger/application/ports.ts:40 through :57, asserted in test/application/resolve-merchants.test.ts.
+  - |-
+    The ledger's own counterparty key is unchanged, checked myself against the stated baseline rather than through
+    the test's own shell-out: git diff 7f4aafb HEAD -- src/modules/ledger/domain/corrections.ts produced NO output.
+  - |-
+    The separation is also asserted structurally, that the merchants identity derivation is not imported by the
+    ledger domain: test/domain/counterparty-identity-contracts.test.ts:113.
+  - |-
+    The rename from resolveCounterparties to resolveIdentities is what turns a missed call site into a compile error
+    rather than a silent nil result, and npm run typecheck exits 0 on this head, so no call site was missed.
+- id: '12.13'
+  quote: |-
+    NOTHING OF THE OWNER'S DATA REACHES THE REPOSITORY. npm run gate:privacy passes; every identifier in the new
+    fixture is listed in test/fixtures/allowed-identifiers.txt with its provenance; the phase work history reports
+    counts only and quotes no descriptor, counterparty, place, amount or date from either real document; and the
+    branch's commit messages carry no data of any kind.
+  met: true
+  evidence:
+  - |-
+    npm run gate:privacy exits 0 in this worktree. Captured output, the whole of it: gate:privacy clean.
+  - |-
+    Its scope covers the whole phase branch rather than only the tip: the commit-message half walks git rev-list
+    from the merge base with origin/main to HEAD at scripts/gate-privacy.sh:85 through :88, and my HEAD descends
+    from b324d87, so every commit of this phase was scanned by the run I made.
+  - |-
+    The new fixture's identifiers are listed with their provenance in test/fixtures/allowed-identifiers.txt, which
+    the fix round extended by 18 lines, including the card-shaped view of a value whose account-shaped view was
+    already listed.
+  - |-
+    The work history reports counts only: I read its measurement entries and found integers and eight-character
+    labels and no descriptor, counterparty, place, amount or date from either real document.
+  - |-
+    THE SETTLED MEASUREMENT, applied as this round's dispatch requires. Measured with the gate's own scan scope,
+    alternation and normalisation, the tree carries 17 distinct account-shaped values of which 7 pass ISO 7064
+    mod-97. NO criterion in this phase assumes an invented account is trusted that the gate refuses. The two
+    criteria that need a trusted invented account are 12.16 and 12.22, both use the fixture's own accounts, both are
+    on the allow list, and both are asserted trusted at test/domain/counterparty-identity.test.ts:400 and :619. The
+    gate exits 0, so it refuses nothing in this tree, and the answer to the question the dispatch asked is: none.
+  - |-
+    WHAT THIS CRITERION CANNOT DECIDE, said because the gate's own header says it at scripts/gate-privacy.sh:23
+    through :32: a merchant name, a place name, a date or an amount inside a tracked file is invisible to it. I read
+    the new fixture generator's invented strings and the two new e2e specs and found nothing drawn from a real
+    document, but that is my reading and not a gate.
+- id: '12.14'
+  quote: |-
+    THE STANDING GATE. npm run typecheck, npm run lint, npm test and npm run gate:privacy all exit 0, and npm run
+    test:e2e exits 0, each with its captured output in the phase work history.
+  met: true
+  evidence:
+  - |-
+    npm run typecheck: exit 0. Captured output is the command banner and nothing else, which is what tsc --noEmit
+    prints when it finds nothing.
+  - |-
+    npm run lint: exit 0. Captured output is the command banner and nothing else.
+  - |-
+    npm test: exit 0. Summary line, verbatim: Test Files 38 passed (38), Tests 510 passed (510), Duration 18.75s.
+  - |-
+    npm run gate:privacy: exit 0. Summary line, verbatim: gate:privacy clean.
+  - |-
+    npm run test:e2e: exit 0. Summary line, verbatim: 55 passed (12.1m). Run in this worktree, one run, no retries
+    and no re-run of a failing spec; the config sets retries 0. An earlier invocation had failed to START at all
+    because both fixed ports were held by another worktree's Playwright run, which is a scheduling collision and not
+    a test result; that run executed no spec.
+  - |-
+    All five were run by me in this worktree with DATABASE_URL, DIRECT_URL, NEXT_PUBLIC_SUPABASE_URL, the
+    publishable key and the secret key pinned to the local stack in the invoking shell, per fleet environment
+    warnings 1 and 6. The ambient foreign pooler was never used by any of them.
+- id: '12.15'
+  quote: |-
+    THE WHOLE-CORPUS EFFECT IS RECORDED, NOT ONLY THE HAPPY FIXTURE. The phase work history carries one line per
+    committed fixture with the distinct merchant-group count under the baseline derivation and under the new one,
+    produced by a committed script so the numbers can be regenerated. Every fixture whose new count is HIGHER than
+    its baseline count is listed with the reason, and for each such fixture a test asserts that naming both of the
+    split groups with the SAME merchant name lands both under ONE merchant id, so the split is recoverable by the
+    owner rather than permanent.
+  met: true
+  evidence:
+  - |-
+    The corpus record is in the work history and I reproduced its totals rather than reading them: npx tsx
+    test/fixtures/measure-identity-convergence.ts over test/fixtures/*.pdf and test/fixtures/*.csv, summing the
+    per-file columns across the 41 file lines it printed, gave baseline-singleton-keys 176 and
+    identity-singleton-keys 160, exactly the pair the work history records.
+  - |-
+    The recoverability test the criterion demands for every fixture whose count rises is at
+    test/application/counterparty-identity-surfaces.test.ts:174: naming BOTH split groups with the same merchant
+    name lands both under one merchant id.
+  - |-
+    The reason each rise is listed is the split the criterion names, a merchant paid through two different accounts,
+    and the only committed fixture whose rows share a counterparty account is the new one, which is why the whole
+    16-key movement sits there and every other fixture's residue is unchanged.
+- id: '12.16'
+  quote: |-
+    THE ACCOUNT BASIS FAILS CLOSED, AND THIS IS THE GUARD ON H12.1 RATHER THAN CRITERION 12.4. A unit test over
+    WHOLLY INVENTED inputs asserts that each of the following yields a DESCRIPTOR-basis key and never an
+    account-basis one: an account that is empty or whitespace after uppercasing and whitespace removal; an account
+    whose country code the pinned country-length table does not carry; an account whose length differs from the
+    length that table assigns its country code; and an account that fails the ISO 7064 mod-97 check. The TRUNCATION
+    case is asserted end to end rather than only as a predicate: the fixture row whose description carries a
+    longer-than-Belgian account written spaced is parsed through the SHIPPED importer, the test asserts the stored
+    account is a strict PREFIX of the invented source value, and asserts that row takes the descriptor basis, so two
+    rows whose sources differ only after the twelfth digit can never share an identity key. THE TABLE CLOSES
+    TRUNCATION DETERMINISTICALLY RATHER THAN PROBABILISTICALLY, and the reason is one sentence: truncation can only
+    ever emit a SIXTEEN-CHARACTER value, so it only reaches accounts whose true length exceeds sixteen, and such a
+    value always carries a country code whose table length is not sixteen. mod-97 alone would leave a residual of
+    roughly one in ninety-seven, measured uniform across source lengths, which is why both tests are required and
+    not either. FIFTH CASE, pinning a behaviour rather than a guard: the fixture row whose description carries two
+    distinct account-shaped tokens is asserted end to end, the test stating which token the generator wrote FIRST
+    and asserting the stored account, and therefore the identity key, is that one, so the first-wins rule at
+    src/modules/import/domain/belfius-current-account-template.ts:266 through :272 is PINNED rather than incidental.
+    The assertion names the parked item that owns the question, so a later change from first-wins to last-wins or
+    longest-wins is red here before it silently moves 4 of the owner's 39 rows. Measured on the real month before
+    this criterion was written, so it is known to cost nothing: all 11 stored accounts pass all three tests and the
+    trusted distinct count is still 6. Every value used is invented and listed in
+    test/fixtures/allowed-identifiers.txt.
+  met: true
+  evidence:
+  - |-
+    All five refusal cases are asserted over wholly invented inputs and all pass: the empty and whitespace account
+    at test/domain/counterparty-identity.test.ts:407, the unknown country code at :416, the wrong length in both
+    directions at :430, and the mod-97 failure swept over all ten variants of the last position at :439, with a
+    valid account asserted trusted at :400 so the gate is not one that refuses everything.
+  - |-
+    The truncation case is asserted END TO END through the shipped importer at
+    test/domain/counterparty-identity.test.ts:459 through :490: the stored value is a strict prefix of both invented
+    sources, both sources are themselves trusted, the stored prefix is not, both rows take the descriptor basis, and
+    their keys DIFFER, so the merge does not happen.
+  - |-
+    The fifth case, first-wins, is pinned end to end at test/domain/counterparty-identity.test.ts:568, with the test
+    stating which token the generator wrote first.
+  - |-
+    MET AS A GUARD, AND THE CRITERION'S OWN REASONING IS NOW KNOWN FALSE, which the implementer found, said plainly,
+    and pinned. The criterion asserts that the length table closes truncation DETERMINISTICALLY because such a value
+    always carries a country code whose table length is not sixteen. That is an argument about IBANs and the scrape
+    does not operate on IBANs. The counterexample is committed and passing at
+    test/domain/counterparty-identity.test.ts:510 through :566: a Belgian-prefixed over-long SPACED token truncates
+    to a sixteen-character value whose country code is BE and whose length is BE's table length, so two different
+    sources store one value that passes all three tests.
+  - |-
+    The correction is stated at the mechanism's own definition rather than quietly rewritten, saying what the old
+    sentence said, why it is false, what is true and why closing it is a layout version bump:
+    src/modules/merchants/domain/counterparty-identity.ts:212 through :256.
+  - |-
+    I judge the criterion MET because everything it asks to be ASSERTED is asserted and passing, and the one
+    sentence of its reasoning that is false has been contradicted in public with a test rather than left standing.
+    The residual is real; where it is NOT recorded is finding CR2-M3P12-05.
+- id: '12.17'
+  quote: |-
+    THE RE-DERIVATION HAS ONE NAMED INVOCATION POINT AND ONE STATED ORDER. package.json carries a script that runs
+    scripts/rederive-merchant-rules.ts, asserted by a test that reads package.json and finds it; decision D-46
+    states that it runs AFTER the code deploy and why that is forced rather than chosen; and the phase work history
+    records the command actually run against the deployed database with its exit code and its printed
+    before-and-after assignment-set sizes, with no pattern content. A phase that ships the routine with no
+    invocation point does not meet this criterion, and neither does one whose work history records only that the
+    routine exists.
+  met: false
+  evidence:
+  - |-
+    HALF MET, AND THE UNMET HALF IS A PLAN DEFECT THIS ROUND'S DISPATCH PUTS OUT OF SCOPE. Recorded factually, with
+    the defect attributed to the plan rather than to the implementer.
+  - |-
+    The met half: package.json:17 carries rederive:merchant-rules invoking scripts/rederive-merchant-rules.ts,
+    asserted by a test that reads package.json at test/domain/counterparty-identity-contracts.test.ts:121, and the
+    script states the order, the window it opens and its own authority in its own contract at
+    scripts/rederive-merchant-rules.ts:6 through :50, asserted at :133.
+  - |-
+    The unmet half: the criterion also requires the work history to record the command actually run AGAINST THE
+    DEPLOYED DATABASE with its exit code and its printed before-and-after assignment-set sizes. That has not been
+    done and cannot be done from this branch. Decision D-46 makes the order forced rather than chosen and the script
+    does import the new derivation, so running it now would write merchant_rules while the deployed application
+    still carries the old code, which is the deploy window with its two halves in the wrong order.
+  - |-
+    The absence is recorded openly rather than papered over: delivery/work-history/m3-p12.yaml:462 through :480
+    states NOT DONE, why it cannot be done before merge, that the other half IS met, and that the deployed run is
+    owed at deploy time.
+  - |-
+    MY OWN INDEPENDENT SUBSTITUTE, so this criterion is not left with no execution behind it at all: I ran the
+    script six times against a real Postgres database I created and pinned, and its exit codes, its printed
+    assignment-set sizes and its write behaviour are recorded under criteria 12.7 and 12.8 above and under findings
+    CR2-M3P12-02 and CR2-M3P12-03. That is not the deployed run the criterion asks for and I do not offer it as one.
+- id: '12.18'
+  quote: |-
+    THE RULE SUBJECT IS VALIDATED AT THE WRITE BOUNDARY. assignMerchant returns a typed error, and writes nothing,
+    for a counterpartyText that does not begin with one of the two known namespaces, and for an account-basis
+    subject whose remainder is empty after uppercasing and whitespace removal or fails the trust gate. A test
+    asserts each case, and an e2e test asserts that submitting a PRE-MIGRATION un-namespaced key, which is what a
+    page left open across the deploy submits, surfaces that error to the reader rather than silently writing a rule
+    that can never match anything. This replaces the guard at
+    src/modules/merchants/application/assign-merchant.ts:54 through :57 that step 4 removes, and the phase does not
+    remove that guard without putting this one in its place.
+  met: true
+  evidence:
+  - |-
+    assignMerchant returns a typed error and writes nothing for each case the criterion names, asserted at
+    test/application/counterparty-identity-surfaces.test.ts:220 for the un-namespaced key, :239 for an account
+    subject with an empty remainder, :259 for a descriptor subject with nothing after the namespace, and :275 for an
+    account subject that fails the trust gate, with :290 asserting a valid subject of either basis IS accepted so
+    the boundary is not one that refuses everything.
+  - |-
+    I witnessed the same six subjects myself with a write counter on the fake port and got zero calls on all five
+    refusals and three calls on the one acceptance. The error kinds were unnamespaced-counterparty for the raw text,
+    untrusted-counterparty-account for both account cases and unidentifiable-counterparty for both descriptor cases.
+  - |-
+    The guard this replaces is gone and the replacement is in its place, asserted at
+    test/application/counterparty-identity-surfaces.test.ts:314; the boundary itself is at
+    src/modules/merchants/application/assign-merchant.ts:86 through :124.
+  - |-
+    The e2e half, that a PRE-MIGRATION un-namespaced key surfaces the error to the reader rather than silently
+    writing a rule, ran green in my own Playwright run as test/e2e/merchants.spec.ts:276.
+  - |-
+    The fix round's correction to that spec is honest and is the shape clause R-087 asks for: the two assertions
+    that used to be described as showing nothing was written cannot show that, because an un-namespaced pattern
+    matches no identity key and a rule that WAS written would produce the same zero groups. The spec now says so and
+    adds the reload observation that does distinguish a refusal from a dead rule.
+  - |-
+    The refusal messages exist in all three languages, including the one the fix round added: messages/en.json,
+    messages/nl.json and messages/fr.json each gained nameRefusedUnidentifiable, mapped at
+    src/modules/merchants/ui/merchant-review.tsx:106 through :121.
+- id: '12.19'
+  quote: |-
+    THE GOVERNING DOCUMENT SAYS WHAT THE CODE DOES. pulse-domain section 7's resolution chain is amended in the same
+    change to state that resolution keys on a namespaced counterparty IDENTITY with two bases, the counterparty
+    account where the row carries a TRUSTED one and the normalised descriptor otherwise, and that PREFIX and PATTERN
+    never apply to an account basis. grep of .claude/skills/pulse-domain/SKILL.md shows the account basis inside
+    that chain and shows no remaining sentence saying the key is the normalised counterparty string.
+  met: true
+  evidence:
+  - |-
+    The resolution chain now states the namespaced identity with both bases and the trust gate:
+    .claude/skills/pulse-domain/SKILL.md:131 through :136, with the chain itself at :151 through :155.
+  - |-
+    PREFIX and PATTERN are stated never to apply to an account basis, inside the chain's own step 2 at
+    .claude/skills/pulse-domain/SKILL.md:152.
+  - |-
+    No sentence remains saying the key is the normalised counterparty string. The only occurrence of the old wording
+    is inside a sentence that says it USED to be wrong, at .claude/skills/pulse-domain/SKILL.md:129, which is a
+    historical quotation rather than a claim.
+  - |-
+    Asserted in both directions by the contracts test at test/domain/counterparty-identity-contracts.test.ts:146,
+    :153 and :159, the last of which is the negative half the criterion asks for.
+- id: '12.20'
+  quote: |-
+    THE RESIDUE IS COUNTED AND NAMED, so the size of the problem this phase does NOT solve is a number rather than a
+    decision's prose. The phase work history records, for each real document and for the committed corpus, the
+    number of rows whose identity key is shared with no other row after the change and the number of DISTINCT such
+    keys, alongside the same two counts at the baseline. The record states plainly that a row in that set still
+    needs naming per row, and it names the two documents separately, since the card document is in exactly the same
+    position and the earlier draft of this plan did not say so. No content is recorded.
+  met: true
+  evidence:
+  - |-
+    The residue for both real documents and for the new fixture is recorded at delivery/work-history/m3-p12.yaml:430
+    through :446, with the two documents named separately and the card document stated to be in exactly the same
+    position.
+  - |-
+    The corpus half, which round one found missing, is now recorded at delivery/work-history/m3-p12.yaml:447 through
+    :460, and I reproduced it: summing the committed harness over test/fixtures/*.pdf and test/fixtures/*.csv gives
+    baseline 176 keys covering 176 rows and, after the change, 160 covering 160.
+  - |-
+    The record states plainly that a row in that set still needs naming per row, and it carries counts only.
+- id: '12.22'
+  quote: |-
+    THE TRUST TABLE IS PINNED AND SOURCED, in the shape this codebase already uses one tier down for exactly this
+    kind of object (src/modules/merchants/domain/normalise-counterparty.ts:127 through :132: pin the accepted
+    shapes, never widen, with test/domain/normalise-counterparty.test.ts as the pin that makes an accidental edit
+    red). The country-length table is a committed constant in the merchants domain, each entry carrying a country
+    code and a length, with the ISO 13616 registry named as its source in a comment beside it and populated from
+    that registry rather than from the countries seen so far. A regression test pins its FULL contents, so adding,
+    removing or altering an entry is red rather than silent. A separate test asserts the entry for the country of
+    the committed fixtures resolves to the length those fixtures use, so a wrong entry fails the FAST gate rather
+    than only the work-history measurement in criterion 12.2.
+  met: true
+  evidence:
+  - |-
+    The table is a committed constant in the merchants domain with the ISO 13616 registry named as its source in a
+    comment beside it and the never-widen-from-observation rule stated:
+    src/modules/merchants/domain/counterparty-identity.ts:134 through :168.
+  - |-
+    Its FULL contents are pinned by a regression test that restates every entry and asserts the size, so adding,
+    removing or altering one is red rather than silent: test/domain/counterparty-identity.test.ts:594 through :617.
+  - |-
+    The entry for the country of the committed fixtures resolves to the length those fixtures use, asserted
+    separately so a wrong entry fails the FAST gate rather than only the work-history measurement:
+    test/domain/counterparty-identity.test.ts:619 through :628.
+  - |-
+    Spot-checked independently against the registry across a spread of lengths, and I found no wrong entry.
+  - |-
+    NOTED within what the criterion asks, not raised as a finding: because the pin restates the table literally, it
+    makes a CHANGE red but cannot make a WRONG entry red for any country other than the fixtures'. That is what the
+    criterion asks for.
+- id: '12.21'
+  quote: |-
+    PASS ONE CANNOT LOSE A RULE'S MEANING, FOR ANY KIND. A property test over generated (pattern, key) pairs asserts
+    that for every kind, matchRules applied to the namespaced pattern and the namespaced key returns exactly what
+    matchRules applied to the bare pattern and the bare key returns, and the generator INCLUDES the empty pattern
+    and an already-namespaced pattern among the cases it produces, so pass one's two guards are red rather than
+    unreached: EXACT because equality is preserved under a common prefix, PREFIX because ("descriptor:" +
+    K).startsWith("descriptor:" + P) holds precisely when K.startsWith(P), and PATTERN because the glob is anchored
+    at both ends. A separate assertion covers the case the property test cannot generate: no PREFIX or PATTERN rule
+    produced by pass one ever matches an ACCOUNT-basis key, which is D-40's refusal.
+  met: true
+  evidence:
+  - |-
+    The property test is at test/property/pass-one-preserves-meaning.test.ts:59 with numRuns 2000, its generator
+    includes the empty pattern and an already-namespaced pattern at :43 through :51, and a separate test at :83
+    proves the generator really produces both skipped shapes, so the two guards are reached rather than assumed.
+  - |-
+    The case the property test cannot generate, D-40's refusal that no PREFIX or PATTERN rule pass one produced ever
+    matches an account-basis key, is asserted at test/property/pass-one-preserves-meaning.test.ts:142 through :167
+    over every proper prefix of an account key and four globs.
+  - |-
+    RE-CHECKED INDEPENDENTLY, because the fix round reshaped the refusal and this is the criterion a symmetric fix
+    would break. I ran my own property check over a much wider generator than the committed one: an alphabet of
+    space, tab, uppercase letters, digits, star, colon, dot, hyphen, underscore and LOWERCASE letters, strings up to
+    fourteen characters, 200000 runs, comparing matchRules on the bare pair against matchRules on the namespaced
+    pair for all three kinds. Zero counterexamples.
+  - |-
+    AND I WITNESSED THE ASYMMETRY THE FIX ROUND RESTS ON, rather than taking the 218-case figure on trust.
+    Exhaustively over 14136 kind-pattern-key triples built from a five-character alphabet including the space, a
+    TRIMMING bare-key predicate in the matcher produced 32 meaning-preservation violations while the STRICT
+    predicate produced 0. The smallest counterexample is a PREFIX rule whose pattern is a single space against a key
+    of a space followed by a letter: it matched before the namespaces existed and a trimming matcher would refuse it
+    after. The strict-at-the-matcher, trimming-at-the-writer split is therefore load-bearing and it is the right way
+    round.
+  - |-
+    The two sites that carry the split, each stating it: src/modules/merchants/domain/counterparty-identity.ts:104
+    through :117 and src/modules/merchants/application/assign-merchant.ts:104 through :108.
+  - |-
+    Green in my own npm test run: test/property/pass-one-preserves-meaning.test.ts, 5 tests, 112ms.
+deviations-judged:
+- deviation: |-
+    Criterion 12.17's second half, the phase work history recording the command actually run AGAINST THE DEPLOYED
+    DATABASE with its exit code and its printed before-and-after assignment-set sizes.
+  serves-plan-intent: true
+  reasoning: |-
+    Re-tested here rather than inherited from round one, and it holds. The script does import the new derivation, at
+    scripts/rederive-merchant-rules.ts:52 through :58, so it genuinely cannot run against a build that does not
+    carry it and decision D-46's order is forced rather than preferred. Running it now from a worktree against the
+    owner's live database would write merchant_rules while the deployed application still carries the old code,
+    which is the deploy window with its two halves in the wrong order, and it would do so through a script with no
+    target check, which is finding CR2-M3P12-01. No implementer of this phase can produce the artefact the criterion
+    asks for without violating D-46. Recording the absence is the only behaviour open and it is recorded plainly at
+    delivery/work-history/m3-p12.yaml:462. The deviation serves the plan's intent; the criterion is what needs
+    changing, and this round's dispatch says that repair is already under way elsewhere.
+- deviation: |-
+    Criteria 12.7, 12.8 and 12.9, which speak of a SEEDED DATABASE holding MerchantRule rows written under the
+    baseline derivation. The application tests still bind an in-memory fake; the fix round answered round one's
+    finding by covering the adapter's only production write path in the PLAYWRIGHT gate instead.
+  serves-plan-intent: true
+  reasoning: |-
+    Round one judged this deviation as not serving the plan's intent, on the premise that this tree already had a
+    live-Postgres lane inside the fast gate. I checked that premise myself and it is FALSE: grepping the whole test
+    tree outside test/e2e for a Prisma client or a Supabase client construction returns nothing, so
+    test/schema/rls.test.ts, test/schema/tenancy.test.ts and test/db/db-guard.test.ts are all static analysis or
+    pure-function tests and not one of them opens a connection. Putting a connecting test into npm test would change
+    what the fast gate requires of every contributor and every CI runner, which is a bigger decision than a fix
+    round should take on its own. The Playwright gate does boot the local stack with migrations applied and must
+    pass before the slice closes, and the new spec at test/e2e/merchant-rule-write.spec.ts:32 exercises
+    updateRulePattern for real, asserting both the in-household write and the foreign-household refusal; it passed
+    in my own run in 257ms. The spec says in its own header why it lives there. The deviation serves the plan's
+    intent, and separately I ran the routine itself against a real database, which is what criteria 12.7 and 12.8
+    above record.
+- deviation: |-
+    The plan itself was edited inside a fix round: delivery/plan/pulse-v02.yaml's conflicts-with entry for this
+    phase was rewritten by b324d87.
+  serves-plan-intent: true
+  reasoning: |-
+    The edit corrects a statement that was FALSE as built. The entry recorded, as CHECKED, that this phase touches
+    none of M3-P9's files; the phase adds a rule block to src/app/globals.css and a spec under test/e2e, both of
+    which M3-P9's set contains, and M3-P9 is not merged, so the overlap is live rather than historical. Both files
+    are needed by criterion 12.18, which requires a refusal that reaches the reader and a browser witness for it.
+    The rewrite says what the entry used to claim, why it is false, that decision D-44's conclusion is unchanged,
+    and that the two additions are additive so a rebase should be clean. That is the correction shape clause R-087
+    asks for, made in the same change as the code it describes. It also establishes that plan edits were not out of
+    bounds for this round, which is why finding CR2-M3P12-05 is raised rather than excused.
+- deviation: |-
+    files-to-touch does not name messages/en.json, messages/nl.json, messages/fr.json, src/app/globals.css,
+    src/app/(app)/merchants/page.tsx, test/property/ or test/e2e/, and the branch changes all of them.
+  serves-plan-intent: true
+  reasoning: |-
+    Each is forced by a criterion the plan does write. The three message files and globals.css and the merchants
+    page carry criterion 12.18's refusal to the reader in three languages, which cannot be done inside the two ui
+    files the list does name. test/property/ is where criterion 12.21's property test has to live, since the
+    criterion names a property test and the list's test directories do not include one. test/e2e/ carries criterion
+    12.18's browser witness and, after the fix round, the adapter write path the previous deviation covers. None of
+    these widens the phase's reach: every one of them is downstream of a criterion the plan states. The omission is
+    the plan's list being narrower than its own criteria, and the implementer named the consequence that mattered,
+    the M3-P9 overlap, rather than leaving it to be discovered.
