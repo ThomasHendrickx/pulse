@@ -1,10 +1,53 @@
-# IN PROGRESS. Clean-room CRITERIA review, round 2, of M3-P12 at b324d87.
-# Appended as each finding is established. A partial file is deliberate, not truncation.
-type: verdict
+# Clean-room review verdict for phase M3-P12, counterparty identity.
+# CRITERIA contract, ROUND TWO, judging the fix round.
+# Reviewed head b324d87 on branch claude/m3-p12-counterparty-identity, in
+# worktree /home/user/wt-m3p12-r2crit on branch claude/m3-p12-rev2-crit.
+# Baseline for every "unchanged since the baseline" claim: 7f4aafb.
+#
+# THIS IS NOT A DELTA REVIEW. Every criterion was walked again from zero. The
+# fix round changed the matcher, the write boundary, the review surface and
+# the re-derivation routine, so a criterion met in round one can have been
+# broken by the repair, and two of them were re-measured for exactly that
+# reason (12.1 and 12.2 recount, 12.21's property test was re-run against the
+# reshaped refusal).
+#
+# WHAT THIS CONTRACT DID NOT REACH, said here rather than left to nobody.
+# Walking twenty-two criteria is a statement about the CONTRACT, never a
+# terminal green. Four things this walk could not settle. The re-derivation
+# still has never run against the OWNER'S deployed database, so nothing here
+# says it behaves on real deployed rows as it does against a fake and against
+# my local stack. The account basis is a regex scrape out of free text and the
+# trust gate now openly admits it does not close truncation for a
+# Belgian-prefixed over-long spaced token. No criterion in this phase measures
+# what the owner SEES after the change; M3-P13 owns that. And the criteria say
+# nothing at all about which database the shipped migration script points at,
+# which is why the largest finding in this document is one the contract does
+# not contain.
+kind: verdict
 phase: M3-P12
-contract: criteria
+verdict: IN-PROGRESS
+produced-by: claude-opus-5
+framing: acceptance-criteria-walk
+review-contract: criteria
 round: 2
-head: b324d87
-worktree: /home/user/wt-m3p12-r2crit
-branch: claude/m3-p12-rev2-crit
-status: in-progress
+reviewed-head: b324d87
+findings:
+- id: CR2-M3P12-01
+  severity: high
+  analysis: |-
+    THE SHIPPED MIGRATION SCRIPT HAS NO TARGET CHECK, and this repository already carries the interlock it should be using. scripts/rederive-merchant-rules.ts resolves its connection entirely from ambient environment, through the shared Prisma client, and issues UPDATE against every merchant_rules pattern of a household plus INSERT of new rules plus a full recompute. It takes a household id on the command line and nothing else; there is no check of any kind that the database it is about to rewrite is the intended one. This is not hypothetical in this fleet. Measured in this container while writing this review, the ambient DATABASE_URL resolves to a deployed Supabase transaction pooler for a DIFFERENT project than Pulse, with a working password, and shell environment overrides .env for Prisma. A person following the script's own documented invocation, on a machine in the state this one is in, rewrites another project's rows. The tree already contains the answer: src/platform/db/guard.ts is a fail-closed local-host interlock with an explicit per-run override, wired into db:reset and db:migrate through src/platform/db/guard-cli.ts, and its own header instructs the next author in as many words that anyone adding a destructive entry point must route it through the same guard. M3-P12 added an entry point that writes and did not. The script's header answers the question with a definition rather than a check, asserting that the command destroys nothing because it issues no DELETE, which is true of the statements and irrelevant to the target: an UPDATE that prefixes a namespace onto every rule pattern of a household in a foreign database is destruction of that database's data whatever the verb is. No acceptance criterion in this phase asks about the connection, which is why this is reported as a defect of the artifact rather than as a criterion miss, and it is the clearest instance in this phase of the sentence the criteria contract exists to carry.
+  evidence:
+  - |-
+    The script takes a household id and a dry-run flag and reads no connection argument and no target check: scripts/rederive-merchant-rules.ts:68 through :102, with the repository bound unconditionally at :98.
+  - |-
+    The guard that exists and is not used, fail closed on both connection strings with one explicit override: src/platform/db/guard.ts:35 through :70.
+  - |-
+    Its sibling-reader instruction, which this phase is the first to meet and the first to skip: src/platform/db/guard.ts:16 through :19.
+  - |-
+    The two scripts that do route through it, and the new one that does not, side by side in package.json:15 through :17.
+  - |-
+    The measured ambient state in this container: env DATABASE_URL resolves to a deployed pooler host on aws-1-eu-north-1 whose project ref is neither of the two the fleet environment warnings name for Pulse. I did not connect to it. Every database command in this review was pinned explicitly to 127.0.0.1:54322.
+  - |-
+    The script's own claim that stands in place of a check: scripts/rederive-merchant-rules.ts:17 through :25.
+  concrete-fix: |-
+    Route the new entry point through the existing interlock rather than inventing a second rule. Either add the guard invocation to the npm script at package.json:17 the way db:reset does at :15, so the run refuses a non-local target unless PULSE_ALLOW_REMOTE_DB_DESTRUCTION=1 is set for that run, or, since this script is meant to be run against the deployed database exactly once, add a required --expect-host argument to scripts/rederive-merchant-rules.ts:68 that is compared against the resolved DATABASE_URL hostname before any repository call and refuses on mismatch. Widen the comment at src/platform/db/guard.ts:16 in the same change so it says writing entry point rather than destructive one, because that sentence is what this phase read and complied with literally.
