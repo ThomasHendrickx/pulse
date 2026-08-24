@@ -63,3 +63,72 @@ no-findings-statement: "placeholder, draft in progress"
 # (the hemma-dev Supabase project per fleet warning 16) was never used for
 # any command in this review; every writing command below pins the
 # connection string above explicitly.
+#
+# ATTACK 1 (THE INVARIANT, criterion 14.16) -- PROBED LIVE AGAINST THE REAL
+# DATABASE, not against the fake world held-rows.test.ts uses. Wrote a
+# throwaway script (scratch-probe-1416.ts, deleted, never committed) that
+# creates real households via Prisma and drives the ACTUAL production
+# composition roots -- uploadStatement/confirmImport from
+# src/modules/import/application (liveDependencies), registerAccount and
+# correctAccountRing from src/modules/accounts/application, and reads
+# monthFigures/listGapRows/listCountedAccountRows/listHeldAccountRows
+# straight from src/modules/overview/adapters/overview-repository.ts --
+# against my own local Postgres (127.0.0.1:54822), pinning DATABASE_URL
+# and DIRECT_URL on every invocation (ambient env otherwise silently
+# redirects Prisma to the hemma-dev pooler, confirmed: the first run
+# without the pin failed with "Can't reach database server at
+# aws-1-eu-north-1.pooler.supabase.com:6543", proving the pin is load
+# bearing and not decorative).
+#
+# RESULT: all four arms of criterion 14.16 hold EXACTLY as specified,
+# against the real SQL, using invented fixture values mirroring the
+# committed ar-*.csv fixtures:
+#   ARM ONE (registered first): every one of the seven figures byte
+#     identical before/after the reserve import; held gained exactly
+#     [{label:"Buffer", rowCount:2}].
+#   ARM TWO (declared by the reserve import itself): spendSigned rose by
+#     exactly 30000 (delta -30000 signed), reserveSigned fell by exactly
+#     30000 (net-to-reserves +30000), the other five figures unchanged,
+#     held gained the same entry.
+#   ARM THREE (drawdown only, no prior outgoing): income fell 12000,
+#     net-to-reserves fell 12000, spend/changeInPot/rowCount unchanged.
+#   ARM FOUR (paid into AND drawn from): spend fell 18000 (the NET of
+#     30000 out and 12000 back), net-to-reserves rose 18000, matching the
+#     plan's pinned direction exactly.
+# In every arm changeInPotCents, differenceCents, uninterpretedCount and
+# rowCount were untouched, and monthFigures.uninterpretedCount stayed 0
+# throughout (books close) with listGapRows empty.
+#
+# THE SILENT WRONG ANSWER, END TO END, LIVE: imported the same savings
+# fixture declared POT (the mistake DR-0030/H14.18 describes), confirmed
+# its own two rows land in "counted" (not held) alongside the current
+# account, confirmed income included the savings interest (200210 vs the
+# correct 200000) and reserves read 0 -- exactly the silent-wrong-answer
+# shape the plan describes, with the ONLY difference being the
+# month-accounts element carrying the mis-ringed account under "counted".
+# Then called correctAccountRing (M3-P15's real production path, not a
+# fake) and confirmed full recovery with NO re-import: monthFigures
+# returned EXACTLY to the arm-ONE values (income 200000, spend -4000,
+# reserve -30000, changeInPot 166000), the mis-ringed account's own 2 rows
+# moved from "counted" to "held" with no third bucket and no duplicate
+# entry, and the correction's own preview/outcome
+# (previewDeclarationChange + the committed result) reported
+# rowsOnAccount:2/stop-counting, reservesDelta:+30000, incomeDelta:-210,
+# matching the actual post-recompute figures exactly (no drift between
+# the DRY RUN preview and the committed outcome, which is what criterion
+# 15.7 asks for at the application level; its BYTE-COMPARISON AGAINST THE
+# RENDERED PAGE is still the gap the work history already names).
+#
+# CONCLUSION ON ATTACK 1: the money is right. I could not make a held row
+# reach any total or any gap read, could not make a row vanish, and could
+# not make the silent-wrong-answer household get stuck -- the correction
+# path recovers exactly, with no re-import, using the SQL and application
+# code as shipped. The gap is real but narrower than "the invariant is
+# unverified": it is specifically that NONE of this is witnessed through
+# the BROWSER (a rendered page, a real sign-up, real navigation), which is
+# what criterion 14.16's Playwright half and 15.7's rendered-byte-compare
+# would have bought and do not exist. Filed as MEDIUM finding
+# HZ-M3P14-02 below (the coverage gap itself, since R-087 requires a false
+# claim to be called out and the work history does NOT claim this is
+# covered -- it says plainly "14.16's four arms have no Playwright half at
+# all" -- so this is a real, disclosed gap and not a false claim).
