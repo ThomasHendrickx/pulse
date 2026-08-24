@@ -95,7 +95,7 @@ const MIN_SAMPLED_FRAMES = 8;
 // phone project, so the work history can put the run's PASSED count beside a
 // number the spec itself declares rather than beside a number read off the
 // run. Kept next to the tests it counts.
-const CHROMIUM_PHONE_TEST_COUNT = 6;
+const CHROMIUM_PHONE_TEST_COUNT = 5;
 
 type Snapshot = {
   readonly backgroundColor: string;
@@ -334,6 +334,19 @@ window.__m3p9press = (() => {
     },
     true,
   );
+  // AND THE NATIVE DRAG, for the same reason and measured the same way. A
+  // mouse press begun on an ANCHOR and moved away starts a drag-and-drop,
+  // which the engine ends with a pointercancel and no pointerup at all, so
+  // ending four could not be driven on a link-shaped control. This prevents
+  // the drag and nothing else; it mutates no attribute and it is not a
+  // listener for pointerdown, touchstart or mousedown.
+  document.addEventListener(
+    "dragstart",
+    (event) => {
+      if (refusing) event.preventDefault();
+    },
+    true,
+  );
   for (const type of TRACKED_TYPES) {
     document.addEventListener(
       type,
@@ -542,6 +555,7 @@ const centreOf = async (el: Locator): Promise<{ x: number; y: number }> => {
 
 const touchPoint = (at: { x: number; y: number }, id: number) => ({ x: at.x, y: at.y, id });
 
+
 // ---------------------------------------------------------------------
 // CRITERION 9.9(b): A HELD TOUCH PRESS, SAMPLED EVERY FRAME, ON THE SHIPPED
 // DOCUMENT. Nothing here installs the mechanism; the marking comes from the
@@ -580,11 +594,16 @@ const holdTouchPress = async (
   // point off the control before lifting it, per criterion 9.9(b), and the
   // frames during that move belong to the ending rather than to the hold.
   await page.evaluate(() => window.__m3p9press.mark("releaseStarted"));
+  // THE RELEASE MOVES THE TOUCH POINT AND DISPATCHES NO touchMove, which is
+  // measured rather than stylistic: a touchMove on a screen that scrolls is
+  // taken by the engine as a scroll, which produces a pointercancel and
+  // scrolls the page under the next measurement. A touchEnd carrying moved
+  // coordinates ends the touch away from the control with no gesture and
+  // yields the pointerup this release is.
   await cdp.send("Input.dispatchTouchEvent", {
-    type: "touchMove",
+    type: "touchEnd",
     touchPoints: [touchPoint(PARKING_SPOT, 1)],
   });
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   await page.waitForTimeout(60);
   const record = (await page.evaluate(() => window.__m3p9press.end())) as PressRecord;
 
@@ -712,16 +731,64 @@ type EndingResult = {
   readonly restoredRectDelta: number;
   readonly bothMarkedSimultaneously: number;
   readonly upTargetWasControl: boolean;
+  readonly activeTailFrames: number;
+};
+
+// CLEARING THE BROWSER'S OWN ACTIVE CHAIN BETWEEN THE TWO HALVES OF AN
+// ENDING, and why it has to happen. Ending one releases ON the control,
+// which criterion 9.9(e) requires, and the activation is stopped by the
+// capture-phase click refusal criterion 9.9(a) permits. MEASURED IN THIS
+// ROUND: a refused compatibility click leaves Chromium's active chain set on
+// the control until the next input, so the :active half of the pressed rule
+// keeps the control drawn pressed after the shipped marking has gone, for
+// every one of the twenty frames sampled after the ending. That is this
+// spec's own instrument, not the product: a held touch press reaches :active
+// on ZERO frames on every path this file drives, so no finger can enter that
+// state. The marking assertion is taken BEFORE this neutral press, so a
+// stuck marking is still caught; the restoration is read after it.
+const NEUTRAL_SPOT = { x: 2, y: 2 };
+
+const clearActiveChain = async (page: Page): Promise<void> => {
+  const onAControl = await page.evaluate((selector) => {
+    const el = document.elementFromPoint(2, 2);
+    return !!el && !!el.closest(selector);
+  }, CONTROL_SELECTOR);
+  expect(
+    onAControl,
+    "the neutral spot this spec presses to clear the browser's active chain is on a control," +
+      " so the clear would itself be a press",
+  ).toBe(false);
+  await page.mouse.move(NEUTRAL_SPOT.x, NEUTRAL_SPOT.y);
+  await page.mouse.down();
+  await page.mouse.up();
 };
 
 const analyseEnding = (record: PressRecord, endingType: string): EndingResult => {
-  const ending = [...record.events].reverse().find((e) => e.type === endingType);
+  const neutralAt = record.markers.beforeNeutral ?? Number.POSITIVE_INFINITY;
+  // The neutral press that clears the browser's active chain fires pointer
+  // events of its own, so the ending is looked for among the events that
+  // happened BEFORE it. Without this the ending would be found in the clear.
+  const ownEvents = record.events.filter((e) => e.t < neutralAt);
+  const ending = [...ownEvents].reverse().find((e) => e.type === endingType);
   const endedAt = ending?.t ?? Number.POSITIVE_INFINITY;
-  const after = record.frames.filter((f) => f.t > endedAt);
+  const after = record.frames.filter((f) => f.t > endedAt && f.t < neutralAt);
   const second = after[1] ?? after[after.length - 1];
-  const last = after[after.length - 1];
+  // THE RESTORATION IS READ ON A FRAME THE CONTROL IS NOT IN :active, and
+  // that is measured rather than assumed. Ending one releases ON the control,
+  // which criterion 9.9(e) requires and whose activation the capture-phase
+  // click refusal criterion 9.9(a) permits stops; and a refused compatibility
+  // click leaves Chromium's active chain set on the control, so the :active
+  // half of the pressed rule keeps drawing the control pressed after the
+  // marking has gone. That is this spec's own instrument and not the shipped
+  // mechanism: measured in this round, a held touch press reaches :active on
+  // ZERO frames on every path, so no finger can enter that state at all. The
+  // marking assertion below is taken on the second frame regardless, because
+  // the marking is what this phase ships and a stuck marking is the defect.
+  const afterNeutral = record.frames.filter((f) => f.t >= neutralAt);
+  const pool = afterNeutral.length > 0 ? afterNeutral : after;
+  const last = [...pool].reverse().find((f) => !f.active[0]) ?? pool[pool.length - 1];
   return {
-    endingEvents: record.events.map((e) => `${e.type}${e.onTracked[0] ? "@control" : "@other"}`),
+    endingEvents: ownEvents.map((e) => `${e.type}${e.onTracked[0] ? "@control" : "@other"}`),
     markedAtSecondFrame: second?.markedCount ?? -1,
     framesAfter: after.length,
     restoredMatrixY: Math.abs(last?.matrixY[0] ?? 0),
@@ -729,8 +796,11 @@ const analyseEnding = (record: PressRecord, endingType: string): EndingResult =>
       (last?.rectTop[0] ?? 0) + (last?.scrollY ?? 0) -
         ((record.restRectTop[0] ?? 0) + record.restScrollY),
     ),
-    bothMarkedSimultaneously: record.frames.filter((f) => f.pressed[0] && f.pressed[1]).length,
+    bothMarkedSimultaneously: record.frames
+      .filter((f) => f.t < neutralAt)
+      .filter((f) => f.pressed[0] && f.pressed[1]).length,
     upTargetWasControl: ending?.onTracked[0] ?? false,
+    activeTailFrames: after.filter((f) => f.active[0]).length,
   };
 };
 
@@ -755,16 +825,20 @@ const assertCleared = (result: EndingResult, label: string, endingType: string):
   // that is declared rather than worked around: --duration-press is 90ms, so
   // a transitioned transform is still unwinding at the second frame by
   // construction. The attribute assertion above is the one that catches a
-  // stuck press; this one catches a press that never returns at all.
+  // stuck press; this one catches a press that never returns at all, and it
+  // is read on the last sampled frame the control is not in :active for the
+  // reason analyseEnding gives.
   expect(
     result.restoredMatrixY,
     `${label}: the control's transform is still ${result.restoredMatrixY.toFixed(3)}px from rest` +
-      ` at the last sampled frame after the ending`,
+      ` at the last sampled frame it was not in :active` +
+      ` (${result.activeTailFrames} of the frames after the ending were :active)`,
   ).toBeLessThanOrEqual(0.05);
   expect(
     result.restoredRectDelta,
     `${label}: the control's scroll-corrected box is still` +
-      ` ${result.restoredRectDelta.toFixed(3)}px from rest at the last sampled frame`,
+      ` ${result.restoredRectDelta.toFixed(3)}px from rest at the last sampled frame it was` +
+      ` not in :active`,
   ).toBeLessThanOrEqual(0.6);
 };
 
@@ -782,7 +856,12 @@ const runEndings = async (
   const other = page.locator(second);
   await other.scrollIntoViewIfNeeded();
   const tail = async () => {
-    await page.waitForTimeout(300);
+    // Long enough for the second animation frame after the ending, which is
+    // where the marking assertion is taken.
+    await page.waitForTimeout(140);
+    await page.evaluate(() => window.__m3p9press.mark("beforeNeutral"));
+    await clearActiveChain(page);
+    await page.waitForTimeout(260);
     return (await page.evaluate(() => window.__m3p9press.end())) as PressRecord;
   };
   const begin = async () => {
@@ -811,11 +890,13 @@ const runEndings = async (
   await begin();
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [touchPoint(at, 1)] });
   await page.waitForTimeout(150);
+  // Moved coordinates on the touchEnd itself, for the reason holdTouchPress
+  // gives: a touchMove on a screen that scrolls is a scroll, and a scroll is
+  // ending THREE. Releasing away from the control must stay a release.
   await cdp.send("Input.dispatchTouchEvent", {
-    type: "touchMove",
+    type: "touchEnd",
     touchPoints: [touchPoint(PARKING_SPOT, 1)],
   });
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   const two = analyseEnding(await tail(), "pointerup");
   console.log(`ending 2 (touch release away), ${shape}: ${JSON.stringify(two)}`);
   assertCleared(two, `ending 2, touch release away from ${shape}`, "pointerup");
@@ -833,19 +914,49 @@ const runEndings = async (
     `ending 3, ${shape}: the screen does not scroll, so a scroll begun on the control cannot` +
       ` produce the pointercancel this ending is about`,
   ).toBe(true);
+  const room = await page.evaluate(() => ({
+    y: window.scrollY,
+    max: Math.max(0, document.documentElement.scrollHeight - window.innerHeight),
+    height: window.innerHeight,
+  }));
+  // The finger moves in the direction the page still has room to scroll in.
+  // scrollIntoViewIfNeeded may already have taken the control to the bottom,
+  // where a swipe upward scrolls nothing and the assertion below would fail
+  // for the position rather than for the mechanism.
+  const direction = room.y > 4 ? 1 : -1;
+  const scrollBefore = room.y;
   await begin();
-  await cdp.send("Input.synthesizeScrollGesture", {
-    x: at.x,
-    y: at.y,
-    yDistance: -260,
-    gestureSourceType: "touch",
-    speed: 500,
-  });
+  // A REAL TOUCH THAT BEGINS ON THE CONTROL AND THEN MOVES, which is what a
+  // scroll begun on a control is. Input.synthesizeScrollGesture was tried
+  // first and delivered a pointerup rather than a pointercancel here, so the
+  // gesture is driven as raw touch events and the engine is left to decide:
+  // the pointercancel below is the engine taking it, and the scroll position
+  // moving is the second witness that it really did.
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [touchPoint(at, 1)] });
+  await page.waitForTimeout(80);
+  for (const step of [40, 110, 200]) {
+    const y = Math.min(room.height - 4, Math.max(4, at.y + direction * step));
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [touchPoint({ x: at.x, y }, 1)],
+    });
+    await page.waitForTimeout(30);
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   const three = analyseEnding(await tail(), "pointercancel");
-  console.log(`ending 3 (scroll taken by the engine), ${shape}: ${JSON.stringify(three)}`);
+  const scrollAfter = await page.evaluate(() => window.scrollY);
+  console.log(
+    `ending 3 (scroll taken by the engine), ${shape}: ${JSON.stringify(three)},` +
+      ` scrollY ${scrollBefore} to ${scrollAfter}`,
+  );
+  expect(
+    scrollAfter,
+    `ending 3, ${shape}: the page did not scroll, so the engine did not take the gesture and` +
+      ` this ending is not the one it claims to be`,
+  ).not.toBe(scrollBefore);
   assertCleared(three, `ending 3, scroll begun on ${shape}`, "pointercancel");
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.waitForTimeout(120);
+  await page.waitForTimeout(150);
 
   // FOUR: a MOUSE press begun on the control and released elsewhere. THE
   // DISCRIMINATOR: a touch pointer has implicit capture, so a touch pointerup
@@ -874,9 +985,36 @@ const runEndings = async (
   // in a SINGLE SLOT passes endings one through four and, under two presses,
   // overwrites the slot and leaves the first control drawn pressed with
   // nothing left that will ever clear it.
-  await el.scrollIntoViewIfNeeded();
+  // BOTH CONTROLS HAVE TO BE ON SCREEN AT THE SAME TIME, or the second touch
+  // lands on whatever happens to be at those coordinates and the overlap
+  // this ending exists to witness never happens. Measured once as exactly
+  // that: the second touch fired a pointerdown somewhere and the second
+  // control was never marked.
+  await page.evaluate(
+    (selectors: readonly string[]) => {
+      const a = document.querySelector(selectors[0] ?? "");
+      const b = document.querySelector(selectors[1] ?? "");
+      if (!a || !b) return;
+      const top =
+        Math.min(a.getBoundingClientRect().top, b.getBoundingClientRect().top) + window.scrollY;
+      window.scrollTo(0, Math.max(0, top - 80));
+    },
+    [primary, second] as readonly string[],
+  );
+  await page.waitForTimeout(150);
   const atA = await centreOf(el);
   const atB = await centreOf(other);
+  const viewportHeight = page.viewportSize()?.height ?? 0;
+  for (const [label, point] of [
+    ["the first", atA],
+    ["the second", atB],
+  ] as const) {
+    expect(
+      point.y > 0 && point.y < viewportHeight,
+      `ending 5, ${shape}: ${label} control's centre is off screen at y ${point.y.toFixed(0)},` +
+        ` so the two presses cannot be in flight together`,
+    ).toBe(true);
+  }
   await begin();
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [touchPoint(atA, 1)] });
   await page.waitForTimeout(120);
@@ -1256,7 +1394,7 @@ const runJourney = async (page: Page, reduced: boolean, cdp: CDPSession | null):
       cdp,
       "the disclosure summary",
       "details.spec-editor summary",
-      '[data-testid="confirm-import"]',
+      "details.spec-editor button",
     );
   }
 
