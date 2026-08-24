@@ -111,6 +111,38 @@
 #   12.2 (>=20, exact match on the rest) are met, independently reproduced,
 #   not merely trusted. Printed nothing but integers and the 8-hex label,
 #   consistent with the harness's own privacy contract.
+# - E2E, FIRST FULL ATTEMPT, MYSELF. Pinned all five values to the local
+#   supabase stack (127.0.0.1:54321/54322, well-known local demo anon/
+#   service-role keys, confirmed working against /auth/v1/health first).
+#   Did NOT run db:reset: this local Postgres is the fleet's shared stack,
+#   actively holding 1609+ households and 2639+ auth users from OTHER
+#   concurrent worktrees at the moment I checked, so resetting it would have
+#   destroyed other legitimate lanes' in-progress work. Ports 3000 and 3100
+#   were occupied by other worktrees at the start; waited (polling, not
+#   editing playwright.config.ts, which I may not touch) until both were
+#   free, then ran `npm run test:e2e`. Test 4, golden-journey.spec.ts:79,
+#   PASSED (26.0s). From test 10 onward nearly everything failed in
+#   200-600ms each with "Error: page.goto: net::ERR_CONNECTION_REFUSED at
+#   http://127.0.0.1:3000" - the dev server the config started (or the port
+#   itself) was taken over mid-run by another worktree's process racing back
+#   onto the port the instant it looked free; this is pure environmental
+#   contamination, not a code defect, and matches fleet warning 10's
+#   description exactly. 7 passed, 48 failed, exit 1 on this run; not
+#   counted as a criterion-14 measurement because the failure mode is
+#   provably not about this branch (see the ERR_CONNECTION_REFUSED evidence
+#   above) - a clean run was needed instead.
+# - E2E, TARGETED RE-ATTEMPT ON GOLDEN-JOURNEY, MYSELF, per the brief's
+#   specific instruction to test the conclusion rather than accept it. Ports
+#   free again; ran `npx playwright test --project=chromium -g "golden
+#   journey"` (isolated, unedited config, default ports, no port-move of my
+#   own). RUN 1: FAILED, exit 1, "Test timeout of 30000ms exceeded... waiting
+#   for getByRole('button', { name: 'Upload' })" at
+#   test/e2e/golden-journey.spec.ts:64, called from :79 through :121 - the
+#   SAME line the implementer's own report names. Machine load average at
+#   the time: 9.44 on a 4-core box (checked via `uptime`), while several
+#   other worktrees' dev/prod servers and Playwright workers were
+#   independently running (checked via `ps aux`: wt-m3p7, wt-m3p9, wt-m3p14
+#   all had live node/next/playwright processes). RUN 2 in progress.
 kind: verdict
 phase: M3-P12
 verdict: FIX-ROUND-NEEDED
