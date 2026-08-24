@@ -151,3 +151,122 @@ open-questions:
       This is a real hole in the project's most safety-critical gate and it
       deserves a phase of its own; I am recording it rather than fixing it
       because the script is not in this phase's files-to-touch.
+
+  - id: live-captures-against-a-real-database
+    what: >-
+      The remaining verification-first observations and baselines, run against
+      a REAL Postgres and not by reading. The database is the LOCAL supabase
+      stack, started in this container, with all five connection values
+      pinned explicitly in the invoking shell. The ambient DATABASE_URL was
+      never used: it resolves to a different Supabase project with a working
+      password (fleet warning 16), and nothing that writes was allowed near
+      it.
+    method: >-
+      The PHASE BASE's overview repository was materialised verbatim with
+      `git show 999d378:src/modules/overview/adapters/overview-repository.ts`
+      into an untracked file beside the current one, so that BOTH versions
+      run against the SAME seeded rows in the same process and the comparison
+      is a measurement rather than a recollection. That file was deleted
+      after the capture and is not part of the diff. Four households were
+      seeded directly through Prisma, because these are READ criteria and the
+      import pipeline is not what is under test here.
+    command: npx tsx scratch-capture/capture.mts   # with the local stack pinned
+    output: |
+      [pulse:db] DATABASE_URL present, scheme ok
+      
+      ================ BASELINE ONE: every account is a POT account ================
+      --- PHASE BASE 999d378 ---
+      MonthFigures: {"incomeSignedCents":320000,"spendSignedCents":-16550,"reserveSignedCents":0,"changeInPotCents":303450,"unresolvedCents":0,"unresolvedCount":0,"unmatchedInternalCents":0,"unmatchedInternalCount":2,"inTransitCents":0,"inTransitCount":0,"uninterpretedCount":0,"rowCount":5}
+      listGapRows: [{"gap":"unmatched-internal","text":"OVERSCHRIJVING EIGEN REKENING","accountLabel":"Current account","amountCents":-10000},{"gap":"unmatched-internal","text":"OVERSCHRIJVING EIGEN REKENING","accountLabel":"Joint account","amountCents":10000}]
+      listReserveMovements: []
+      --- THIS PHASE ---
+      MonthFigures: {"incomeSignedCents":320000,"spendSignedCents":-16550,"reserveSignedCents":0,"changeInPotCents":303450,"unresolvedCents":0,"unresolvedCount":0,"unmatchedInternalCents":0,"unmatchedInternalCount":2,"inTransitCents":0,"inTransitCount":0,"uninterpretedCount":0,"rowCount":5}
+      listGapRows: [{"gap":"unmatched-internal","text":"OVERSCHRIJVING EIGEN REKENING","accountLabel":"Current account","amountCents":-10000},{"gap":"unmatched-internal","text":"OVERSCHRIJVING EIGEN REKENING","accountLabel":"Joint account","amountCents":10000}]
+      listReserveMovements: []
+      --- THIS PHASE, the two new reads ---
+      listCountedAccountRows: [{"accountId":"00000000-0000-4000-8000-000000002020","label":"Current account","rowCount":4},{"accountId":"00000000-0000-4000-8000-000000002021","label":"Joint account","rowCount":1}]
+      listHeldAccountRows: []
+      
+      ================ BASELINE THREE / ROUTE ONE: a statement imported for a RESERVE account ================
+      --- PHASE BASE 999d378 ---
+      MonthFigures: {"incomeSignedCents":320000,"spendSignedCents":0,"reserveSignedCents":-25000,"changeInPotCents":295000,"unresolvedCents":0,"unresolvedCount":0,"unmatchedInternalCents":0,"unmatchedInternalCount":0,"inTransitCents":0,"inTransitCount":0,"uninterpretedCount":2,"rowCount":2}
+      listGapRows: [{"gap":"uninterpreted","text":"SPAREN AUGUSTUS","accountLabel":"Buffer","amountCents":25000},{"gap":"uninterpreted","text":"INTEREST","accountLabel":"Buffer","amountCents":137}]
+      listReserveMovements: [{"counterpartyIban":"BE24902200001138","label":"Buffer","parkedCents":25000,"rowCount":1}]
+      --- THIS PHASE ---
+      MonthFigures: {"incomeSignedCents":320000,"spendSignedCents":0,"reserveSignedCents":-25000,"changeInPotCents":295000,"unresolvedCents":0,"unresolvedCount":0,"unmatchedInternalCents":0,"unmatchedInternalCount":0,"inTransitCents":0,"inTransitCount":0,"uninterpretedCount":0,"rowCount":2}
+      listGapRows: []
+      listReserveMovements: [{"counterpartyIban":"BE24902200001138","label":"Buffer","parkedCents":25000,"rowCount":1}]
+      --- THIS PHASE, the two new reads ---
+      listCountedAccountRows: [{"accountId":"00000000-0000-4000-8000-000000002040","label":"Current account","rowCount":2}]
+      listHeldAccountRows: [{"accountId":"00000000-0000-4000-8000-000000002041","label":"Buffer","rowCount":2}]
+      
+      ================ ROUTE TWO: rows INTERPRETED on a pot account whose account then LEFT the pot (stale flow, no clearing) ================
+      --- PHASE BASE 999d378 ---
+      MonthFigures: {"incomeSignedCents":320000,"spendSignedCents":-16550,"reserveSignedCents":0,"changeInPotCents":303450,"unresolvedCents":0,"unresolvedCount":0,"unmatchedInternalCents":0,"unmatchedInternalCount":0,"inTransitCents":0,"inTransitCount":0,"uninterpretedCount":0,"rowCount":3}
+      listGapRows: []
+      listReserveMovements: []
+      --- THIS PHASE ---
+      MonthFigures: {"incomeSignedCents":320000,"spendSignedCents":0,"reserveSignedCents":0,"changeInPotCents":320000,"unresolvedCents":0,"unresolvedCount":0,"unmatchedInternalCents":0,"unmatchedInternalCount":0,"inTransitCents":0,"inTransitCount":0,"uninterpretedCount":0,"rowCount":1}
+      listGapRows: []
+      listReserveMovements: []
+      --- THIS PHASE, the two new reads ---
+      listCountedAccountRows: [{"accountId":"00000000-0000-4000-8000-000000002060","label":"Current account","rowCount":1}]
+      listHeldAccountRows: []
+      
+      ================ ROUTE TWO, AFTER THE CLEARING THIS ROUND ADDS ================
+      --- PHASE BASE 999d378 ---
+      MonthFigures: {"incomeSignedCents":320000,"spendSignedCents":0,"reserveSignedCents":0,"changeInPotCents":320000,"unresolvedCents":0,"unresolvedCount":0,"unmatchedInternalCents":0,"unmatchedInternalCount":0,"inTransitCents":0,"inTransitCount":0,"uninterpretedCount":2,"rowCount":1}
+      listGapRows: [{"gap":"uninterpreted","text":"Bakkerij Ochtend","accountLabel":"Was a spending account","amountCents":-4500},{"gap":"uninterpreted","text":"Warenhuis Zuid","accountLabel":"Was a spending account","amountCents":-12050}]
+      listReserveMovements: []
+      --- THIS PHASE ---
+      MonthFigures: {"incomeSignedCents":320000,"spendSignedCents":0,"reserveSignedCents":0,"changeInPotCents":320000,"unresolvedCents":0,"unresolvedCount":0,"unmatchedInternalCents":0,"unmatchedInternalCount":0,"inTransitCents":0,"inTransitCount":0,"uninterpretedCount":0,"rowCount":1}
+      listGapRows: []
+      listReserveMovements: []
+      --- THIS PHASE, the two new reads ---
+      listCountedAccountRows: [{"accountId":"00000000-0000-4000-8000-000000002060","label":"Current account","rowCount":1}]
+      listHeldAccountRows: [{"accountId":"00000000-0000-4000-8000-000000002061","label":"Was a spending account","rowCount":2}]
+    conclusions:
+      - >-
+        BASELINE ONE (criterion 14.14 case TWO, criterion 15.4 second
+        witness): over a household whose accounts are ALL pot accounts, the
+        phase base and this phase return BYTE IDENTICAL MonthFigures and
+        BYTE IDENTICAL listGapRows. Scoping the reads moves nothing that
+        exists today, measured rather than asserted.
+      - >-
+        BASELINE THREE and M3-P15 ROUTE ONE, the shipped route (a statement
+        imported for an account declared RESERVE). AT THE PHASE BASE its rows
+        carry NO flow, uninterpretedCount is 2, listGapRows returns both of
+        them labelled "uninterpreted", and a non-zero uninterpreted count
+        holds the verdict open, so the household's books never close again.
+        UNDER THIS PHASE uninterpretedCount is 0, listGapRows is empty, the
+        held read names the account with its row count, and every counted
+        figure is unchanged: income 320000 both, reserveSigned -25000 both,
+        changeInPot 295000 both, rowCount 2 both. That is criterion 14.16
+        arm ONE, measured.
+      - >-
+        M3-P15 ROUTE TWO, which no shipped path reaches at the phase base:
+        rows INTERPRETED on a pot account whose account then LEFT the pot,
+        reached by a direct declaration write against the scratch database
+        and never through shipped code. AT THE PHASE BASE the stale rows GO
+        ON COUNTING: spendSigned -16550 and rowCount 3, with no gap listed
+        and the books closing. That is hazard H15.2 observed live rather
+        than argued. Under this phase's scoped reads they are already
+        invisible to the totals (spendSigned 0, rowCount 1) even before the
+        clearing, which is what "defence in depth" means here and is why the
+        phase does not claim the verdict depends on the scoping.
+      - >-
+        AND THE CASE THE COUNTED READ'S RING RESTRICTION EXISTS FOR is
+        visible in that same block: in ROUTE TWO before the clearing, the
+        held read is EMPTY (those rows still carry a flow) and the counted
+        read reports only the current account. A counted read written
+        without its ring restriction would have reported the stale-flow rows
+        to the household as counted money on the one screen state built to
+        tell counted from held. That is hazard H14.21, and the restriction
+        is not made redundant by the flow condition.
+      - >-
+        ROUTE TWO AFTER THE CLEARING: the phase base would report
+        uninterpretedCount 2 and list both rows as gaps, which is hazard
+        H15.3, the books never closing again. Under this phase the count is
+        0, the listing is empty, and the held read names the account with 2
+        rows. The two halves criterion 15.3 asks to be separated are
+        separated, and both were observed.
