@@ -44,6 +44,17 @@ findings:
         at src/modules/merchants/application/rederive-rules.ts:536 is the
         last statement, so it never runs.
       - >-
+        WITNESS AGAINST THE REAL DATABASE, so the refusal is not inferred from
+        the schema. I called the production write path,
+        src/modules/merchants/adapters/merchant-repository.ts:121, against the
+        local Postgres with two invented rules of one merchant, one carrying
+        the pattern the other is being rewritten to. Captured output, verbatim
+        - THROWN by the production write path. prisma code: P2002. message
+        first line: Unique constraint failed on the fields:
+        (householdId,kind,pattern). The source rule's pattern was unchanged
+        afterwards, so the failure is a hard refusal rather than a partial
+        write of that one row.
+      - >-
         Nothing in the tree can see this. The fake the application tests bind
         reimplements the write rather than calling it and enforces no unique
         key (test/application/fake-import-world.ts:392 through :406), and the
@@ -452,9 +463,10 @@ criteria:
         holds, the write throws, the script's handler at
         scripts/rederive-merchant-rules.ts:173 through :176 sets exitCode 1,
         and the run has neither a merchant-conflict nor a lost assignment.
-        Witnessed by this review, captured output verbatim - THREW during
-        apply: Unique constraint failed on the fields: (householdId, kind,
-        pattern).
+        Witnessed by this review against the real local Postgres through the
+        production write path, captured output verbatim - prisma code: P2002.
+        message first line: Unique constraint failed on the fields:
+        (householdId,kind,pattern).
       - >-
         The same defect breaks the criterion's other half in the aggravated
         case: the throw lands mid-loop, so an earlier rewrite is already
