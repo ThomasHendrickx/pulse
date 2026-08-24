@@ -1,133 +1,824 @@
-# M3-P12 hazard-contract clean-room review, round 5
-# Worktree: /home/user/wt-m3p12-r5haz  branch: claude/m3-p12-rev5-haz  head: 606e3ee
-# WORK IN PROGRESS - appended incrementally
-status: in-progress
-findings: []
+kind: verdict
+phase: M3-P12
+verdict: FIX-ROUND-NEEDED
+produced-by: claude-sonnet-5
+framing: hazard-classes-first
+review-contract: hazard
 
-# WORK LOG round 5, entry 1.
-# Read brief in full (two pages via offset). Confirmed worktree at 606e3ee,
-# branch claude/m3-p12-rev5-haz, clean tree.
-# Read round4 hazard verdict (origin/claude/m3-p12-rev4-haz) and round4
-# criteria verdict (origin/claude/m3-p12-rev4-crit) in full as context.
-# Round4 hazard found: CR4-M3P12-01 (high, before-set exclusion hid a real
-# loss on account-basis rows), CR4-M3P12-02 (medium, port never compared),
-# CR4-M3P12-03 (medium, insert half of applyRuleWrites had no tenancy
-# check, witnessed live against a local db), CR4-M3P12-04 (low, e2e not
-# green under load, not attributed to this phase).
-# Round4 criteria found: CR4-M3P12-02 (high, e2e write spec + servers
-# unguarded against ambient DATABASE_URL -- this is what gate-target.ts
-# now answers), CR4-M3P12-01 (medium, false comment re: empty-var
-# fallback), CR4-M3P12-03 (medium, false claim PREFIX/PATTERN dead after
-# supersede), CR4-M3P12-04 (low, schema param value unchecked),
-# CR4-M3P12-05 (low, exit-4 contract untested).
-# Diff this round (606e3ee vs previous head, 17 files, +2025/-63) matches:
-# gate-target.ts (new, 228 lines), target-guard.ts (+port, +schema pin),
-# rederive-rules.ts (+147, collision split), merchant-repository.ts (+36,
-# insert tenancy), playwright.config.ts (+30), resolve-env.ts (comment
-# fix), guard.ts (+11, exports LOCAL_DB_HOSTS), plus new tests.
+# WORK LOG (incremental; this document is the beacon). Entries below are the
+# log kept DURING the review, appended as work happened; the structured
+# findings/criteria/hazard-classes arrays that follow are the write-up built
+# from this log.
 #
-# FINDING CANDIDATE 1 (surface: interlock's new fields, port). Read
-# target-guard.ts (321 lines) and test/db/target-guard.test.ts's port
-# tests in full. KNOWN_PORTS = {"5432","6543"}. When the operator does NOT
-# pass --expect-port, assessRederiveTarget ALLOWS either port with no
-# distinction (test/db/target-guard.test.ts:419-429, "AN UNKNOWN PORT is
-# refused, and the two this product uses are not" asserts BOTH 5432 and
-# 6543 allowed with no --expect-port). .env.example:3-10 states the
-# architecture rule directly: "DATABASE_URL = the pooled string (port
-# 6543, pgbouncer)" in deployed environments, DIRECT_URL = direct/5432.
-# RederiveTargetEnv deliberately checks ONLY DATABASE_URL (comment at
-# target-guard.ts:118-124: "DIRECT_URL is deliberately not checked...this
-# routine runs no migration"), and resolveClientDbUrl (what `new
-# PrismaClient()` actually reads) is DATABASE_URL only. So by the
-# product's OWN documented architecture, the routine's default,
-# unpinned-port path is expected to see port 6543 (pgbouncer/transaction
-# pooling) in a standard deployed environment, and the interlock now
-# SILENTLY approves that with no operator signal, which is exactly the
-# ambiguity round4's own finding CR4-M3P12-02 was raised to force a
-# decision on ("this routine's OWN correctness guarantee...depends on the
-# connection preserving session state across statements...which is
-# exactly what transaction-mode pooling is documented not to guarantee").
-# CR4-M3P12-02's own concrete-fix offered two paths: default to 5432, OR
-# document the scope limitation explicitly. The shipped fix took neither:
-# it silently admits both. Writing this up next as a HIGH finding.
-
-# WORK LOG round 5, entry 2. FINDING WITNESSED AND WRITTEN UP: the
-# allLost filter's "not lost" exemption for a superseded rule checks only
-# `after !== undefined`, never that `after` is the SAME claimant relationship
-# that did the superseding. Constructed a throwaway vitest file
-# (test/application/ZZZ-scratch-witness-collision.test.ts, written, run,
-# then deleted; git status --short clean afterward) calling the REAL
-# rederiveMerchantRules with a minimal in-memory MerchantRepositoryPort
-# (no fixture import needed). Seed: R1 (EXACT, bare pattern P, merchant M1,
-# the OLD/live declaration); C (EXACT, pattern "descriptor:"+P, merchant M2,
-# a namespaced re-naming made in the D-46 window that supersedes R1); Rz
-# (EXACT, pattern "account:"+compactAccount(A), merchant M3, an UNRELATED
-# pre-existing account-basis declaration, also plausibly made in the D-46
-# window). Two rows both with baseline key P: tx-X carries TRUSTED account A
+# entry 1. Read the brief in full (two pages, offset 0 and 323). Confirmed
+# worktree /home/user/wt-m3p12-r5haz at 606e3ee, branch claude/m3-p12-rev5-haz,
+# clean tree. Read round4 hazard verdict (origin/claude/m3-p12-rev4-haz) and
+# round4 criteria verdict (origin/claude/m3-p12-rev4-crit) in full as context,
+# not authority. Round4 hazard found: CR4-M3P12-01 (high, before-set
+# exclusion hid a real loss on account-basis rows), CR4-M3P12-02 (medium,
+# port never compared by the target interlock), CR4-M3P12-03 (medium,
+# insert half of applyRuleWrites had no tenancy check, witnessed live
+# against a local db), CR4-M3P12-04 (low, e2e not green under load, not
+# attributed to this phase). Round4 criteria found: CR4-M3P12-02 (high, the
+# e2e write spec and both web servers unguarded against ambient
+# DATABASE_URL -- this is what gate-target.ts now answers), CR4-M3P12-01
+# (medium, false comment re: empty-var CLI fallback), CR4-M3P12-03 (medium,
+# false claim that a superseded PREFIX/PATTERN rule is dead), CR4-M3P12-04
+# (low, schema query param value unchecked), CR4-M3P12-05 (low, exit-4
+# contract untested).
+# Diff this round (606e3ee, 17 files, +2025/-63) matches the five attack
+# surfaces: gate-target.ts (new, 228 lines), target-guard.ts (+port,
+# +schema pin), rederive-rules.ts (+147, collision split by kind),
+# merchant-repository.ts (+36, insert tenancy), playwright.config.ts (+30),
+# resolve-env.ts (comment correction), guard.ts (+11, exports
+# LOCAL_DB_HOSTS), plus new tests. Confirmed via
+# `git diff --stat 0d41c3b 606e3ee -- src/modules/overview
+# src/modules/merchants/domain/merchant-review.ts
+# src/modules/merchants/domain/counterparty-identity.ts` that NEITHER the
+# month projection NOR the review surface changed in the diff under review
+# this round (empty output): the dispatch's framing for attack surface 5
+# ("now that the month projection and the review surface have both
+# changed") does not describe this round's actual diff; those files last
+# changed in fix round three, already reviewed by round4-hazard, which
+# found no sixth consumer. Re-ran a fresh grep for consumers anyway
+# (`grep -rl "counterpartyIdentity\|CountedGroupIdentity\|isBareIdentityKey\|
+# identityBasisOfKey\|DESCRIPTOR_NAMESPACE\|ACCOUNT_NAMESPACE" src/`) and
+# got the same 13 files round4 found: the five known consumers plus their
+# own internal wiring (application/index.ts re-exports, ports.ts types).
+# No sixth consumer found, and none of the changed files could plausibly
+# have introduced one, since none of them touches a grouping or matching
+# site.
+#
+# entry 2. THE COLLISION TREATMENT, THIRD REWRITE (attack surface 1). Read
+# rederive-rules.ts's pass-one collision block (lines ~440-561) and the
+# allLost filter (lines ~669-751) in full. Confirmed the kind-split is real:
+# EXACT collisions supersede (dead by construction, verified exhaustively
+# in a prior round that uppercasing can never produce a lowercase
+# namespace), a same-merchant PREFIX/PATTERN collision skips (leaves the
+# bare pattern untouched, reasoned safe because "no assignment can change
+# hands between one merchant and itself"), a different-merchant PREFIX/
+# PATTERN collision blocks as an ordinary conflict. Then attacked the
+# NARROWED allLost filter (the fix for CR4-M3P12-01, which now keeps the
+# before-set whole and instead drops a "loss" only when
+# `supersededRuleIds.has(held.ruleId) && after !== undefined`).
+# CONSTRUCTED A COUNTEREXAMPLE and WITNESSED it against the REAL
+# rederiveMerchantRules (not a description of it), via a throwaway vitest
+# file (test/application/ZZZ-scratch-witness-collision.test.ts, written,
+# run, then deleted; `git status --short` confirmed a clean tree
+# afterward), using a minimal in-memory MerchantRepositoryPort (no fixture
+# import needed): R1 (EXACT, bare pattern P, merchant M1, the old live
+# declaration); C (EXACT, pattern "descriptor:"+P, merchant M2, a
+# namespaced re-naming superseding R1); Rz (EXACT, pattern
+# "account:"+compactAccount(A), merchant M3, an UNRELATED pre-existing
+# account-basis declaration with nothing to do with R1 or C). Two rows share
+# baseline key P: tx-X carries TRUSTED account A
 # (IDENTITY_FIXTURE_ACCOUNTS.counterparty2, invented, already on the allow
 # list), tx-Y carries a DIFFERENT trusted account B
-# (IDENTITY_FIXTURE_ACCOUNTS.counterparty3) so C's own pass-two promotion
-# is correctly declined ("not-promoted-several-accounts", both rows share
-# baseline P) and cannot collide with Rz, isolating the mechanism under
-# test. CAPTURED REPORT: assignmentsBefore 2, assignmentsAfter 1,
+# (IDENTITY_FIXTURE_ACCOUNTS.counterparty3) purely to make C's own pass-two
+# promotion correctly decline ("not-promoted-several-accounts"), isolating
+# the mechanism under test from a second, unrelated blocking path.
+# CAPTURED REPORT: assignmentsBefore 2, assignmentsAfter 1,
 # lostAssignments [{"transactionId":"tx-Y","ruleId":"R1"}] ONLY. tx-X is
-# ABSENT from lostAssignments, from broadened, from every printed list.
-# tx-X's OWN resolution: held (before) = {merchantId: M1, ruleId: R1}; its
-# identityKey is "account:"+compactAccount(A), which equals Rz's pattern
-# exactly, so assignmentsAfter resolves it to {merchantId: M3, ruleId: Rz}.
-# M3 != M1: tx-X's merchant SILENTLY CHANGED, from a rule the row was never
-# matched by (Rz has nothing to do with R1 or C) to a merchant nobody
-# renamed it to. Confirmed in code: rederive-rules.ts's allLost filter
-# (`if (supersededRuleIds.has(held.ruleId) && after !== undefined) return
-# false`) does not check that `after`'s ruleId is C (the actual claimant)
-# or even that after.merchantId equals C.merchantId; it accepts ANY
-# non-undefined `after`. Writing up as HIGH finding next: this is a
-# violation of criterion 12.7's own explicit second guarantee ("no
-# transaction changes from one merchant to another"), witnessed directly
-# against the shipped function, and it is the "narrowing... reintroduced a
-# false [safe]" the dispatch asked me to look for: round four's fix
-# correctly stopped hiding a row that a superseded rule's claimant could
-# not reach, but the comparison it added does not confirm the thing that
-# DOES cover the row afterward has any relationship to the supersession
-# that excused it.
+# absent from lostAssignments, from broadened, from every printed list, and
+# exitCode is 1 only because of tx-Y (correctly reported) and not because
+# of tx-X at all. tx-X's own resolution: held (before) =
+# {merchantId: M1, ruleId: R1}; its identityKey is
+# "account:"+compactAccount(A), which equals Rz's pattern exactly, so
+# assignmentsAfter resolves it to {merchantId: M3, ruleId: Rz}. M3 != M1:
+# tx-X's merchant SILENTLY CHANGED from a rule that has nothing to do with
+# either R1 or C, and nothing in the report says so. This is written up as
+# HAZ5-1 below.
+#
+# entry 3. THE INTERLOCK'S NEW FIELDS, PORT AND SCHEMA (attack surface 4).
+# Read target-guard.ts (321 lines) in full and test/db/target-guard.test.ts's
+# port and schema tests. The schema pin is sound: EXPECTED_SCHEMA = "public",
+# checked via getAll (every occurrence, not the first), closing
+# CR4-M3P12-04 cleanly; no bypass found (percent-encoding decodes the same
+# way for both the guard's WHATWG parser and the real client, so there is
+# no discrepancy to exploit there). The PORT check is where the "new field"
+# reintroduces the exact risk it was added to close: KNOWN_PORTS =
+# {"5432","6543"}, and test/db/target-guard.test.ts:419-429 pins, as
+# INTENDED behaviour, that with no --expect-port given BOTH ports are
+# approved identically. Read .env.example:3-10, which states the product's
+# own architecture rule: "DATABASE_URL = the pooled string (port 6543,
+# pgbouncer)" in a standard deployed environment, DIRECT_URL = the direct
+# string on 5432. RederiveTargetEnv checks ONLY DATABASE_URL by design
+# (target-guard.ts:118-124, "DIRECT_URL is deliberately not checked...this
+# routine runs no migration"), and resolveClientDbUrl (what `new
+# PrismaClient()` actually reads) is DATABASE_URL only. So by the product's
+# own documented architecture, the routine's UNPINNED port path is exactly
+# the one a standard deployed DATABASE_URL is documented to use: 6543,
+# transaction-mode pooling. CR4-M3P12-02 (round4 hazard) raised this exact
+# concern ("this routine's OWN correctness guarantee...depends on the
+# connection preserving session state across statements...which is exactly
+# what transaction-mode pooling is documented not to guarantee") and its
+# own concrete-fix offered two paths: default to 5432, or document the
+# scope limitation explicitly. The shipped fix took neither: it silently
+# admits both ports whenever the operator does not think to pass
+# --expect-port. Written up as HAZ5-2 below.
+#
+# entry 4. TENANCY ON INSERTS (attack surface 3). Read
+# merchant-repository.ts's applyRuleWrites end to end. CR4-M3P12-03's fix is
+# real: the insert loop now collects distinct insert.merchantId values and
+# verifies them against a household-filtered tx.merchant.findMany inside
+# the SAME prisma.$transaction, before any tx.merchantRule.create call,
+# mirroring upsertRule's own pattern two functions above. Checked every
+# other write in the file (upsertRule, setMerchantTag) for the same class
+# of gap: both already verify ownership of every id they reference inside
+# their own transaction, before the round4 fix and unaffected by it. No
+# further gap found in this file. Checked "another path in the module":
+# grep of the whole merchants module for `.create(` and `.createMany(`
+# against a Prisma delegate finds only the two already covered
+# (merchantRule.create in applyRuleWrites, merchantTag.create in
+# setMerchantTag, both guarded) plus merchant.create and tag.create, which
+# create a fresh row owned by context.householdId and reference no foreign
+# id at all. Did not find a race between the check and the create worth
+# raising: Prisma interactive transactions run at READ COMMITTED and
+# nothing in this codebase reassigns a merchant's householdId after
+# creation (no such operation exists), so a TOCTOU window between the
+# findMany check and the create has no live counterpart-mutation to race
+# against; a concurrent DELETE of the checked merchant between check and
+# create would surface as a foreign-key violation on the create, not a
+# silent write, which is the failure mode this check exists to prevent
+# either way.
+#
+# entry 5. THE TWO CLAIMS. (a) transferLink.createMany /
+# transaction.createMany unreachability: traced every id feeding both.
+# ledger-repository.ts:222's transferLink.createMany writes
+# input.links, sourced in interpret-window.ts:145-152 purely from
+# interpretation.transferPairs/settlements, themselves derived from
+# `transactions` loaded via deps.ledger.listPotTransactions(context, ...)
+# (household-scoped). The same replaceInterpretation call's merchant writes
+# (interpret-window.ts:127-135) come entirely from
+# deps.merchants.resolveIdentities(context, ...), also household-scoped.
+# ALSO CHECKED import-repository.ts:375's transaction.createMany, which the
+# dispatch's claim names but which writes a THIRD unverified foreign key
+# per row (accountId) that neither warning 23 nor the implementer's claim
+# mentions: traced its two callers (upload-statement.ts, confirm-import.ts)
+# and confirmed accountId is, in every branch, either a fresh id created
+# under context.householdId or read via deps.accounts.findAccountByIban /
+# a stored profile's accountId, both household-scoped reads in the same
+# call. CONFIRMED: unreachable today, by the same structural argument
+# warning 23 gives for merchantId, extended one field wider than the
+# warning states. (b) app-unguarded-by-design: TESTED, see HAZ5-3 below.
+#
+# entry 6. GATES. Local db pulse_r5haz created against the already-running
+# shared local supabase Postgres (127.0.0.1:54322; `SELECT datname FROM
+# pg_database` before creating showed only sibling lanes' own databases,
+# e.g. pulse_r5crit, pulse_review_m3p14crit, never the ambient hemma-dev
+# project). Never ran `supabase start` or `supabase stop` myself; the
+# shared stack was already up. `DATABASE_URL=...pulse_r5haz
+# DIRECT_URL=...pulse_r5haz npx prisma migrate deploy`: 6 migrations
+# applied cleanly.
+#   npm run typecheck    exit 0
+#   npm run lint         exit 0
+#   npm test              exit 0   Test Files 41 passed (41), Tests 624
+#                                   passed (624), 15.15s
+#   npm run gate:privacy  exit 0   "gate:privacy clean"
+#   npm run gate:tokens   exit 0   (no hits; `!` inverted to success)
+# e2e: my first attempt, exporting the five pinned values directly in the
+# invoking shell exactly as fleet warning 6 instructs every prior round to
+# do, FAILED IMMEDIATELY with GateDbTargetRefused: "no source named a
+# database for this gate", because gate-target.ts's `gateDbCandidates`
+# deliberately does not read shell DATABASE_URL/DIRECT_URL/
+# NEXT_PUBLIC_SUPABASE_URL at all -- only PULSE_GATE_* variables or a .env
+# file at the package root. This is a real, load-bearing behaviour change
+# this round introduced (by design, per gate-target.ts's own header) that
+# breaks the exact invocation fleet warning 6 documents; noted as HAZ5-4
+# below (low: it fails LOUD and CLOSED, which is the safe direction, but
+# the standing operational instruction is now wrong and every future
+# reviewer will hit the same immediate refusal). Worked around it by
+# writing a gitignored .env at the package root with the five local values
+# (confirmed `git status --short .env` prints nothing, `.env` is on
+# .gitignore:9) and re-ran with the ambient foreign values explicitly
+# unset in the invoking shell. Result recorded after the findings/criteria
+# blocks below.
 
-# WORK LOG round 5, entry 3. GATES. Local db pulse_r5haz created against the
-# already-running shared local supabase Postgres (127.0.0.1:54322; SELECT
-# datname before creating showed only sibling lanes' own dbs, e.g.
-# pulse_r5crit, pulse_review_m3p14crit, never the ambient hemma-dev
-# project). Never touched the shared stack itself (no supabase start/stop
-# run by me at all). `DATABASE_URL=...pulse_r5haz DIRECT_URL=...pulse_r5haz
-# npx prisma migrate deploy`: 6 migrations applied cleanly.
-#   npm run typecheck   exit 0
-#   npm run lint        exit 0
-#   npm test            exit 0   Test Files 41 passed (41), Tests 624
-#                                 passed (624), 15.15s
-#   npm run gate:privacy exit 0  "gate:privacy clean"
-#   npm run gate:tokens  exit 0  (grep found nothing, `!` inverted to success)
-# Next: attack surface 3 (tenancy on inserts) read and confirmed repaired
-# (merchant-repository.ts's applyRuleWrites now runs the same distinct-
-# merchantId household check on the insert half, inside the same
-# transaction; e2e spec submits an insert ALONE against a foreign merchant).
-# No further gap found in that function or its siblings (setMerchantTag,
-# upsertRule) in this file; all three now check ownership inside their own
-# transaction before writing.
-# Verified the two claims the dispatch named:
-#  (a) transferLink.createMany / transaction.createMany unreachable claim:
-#      traced every id. ledger-repository.ts's replaceInterpretation
-#      receives `merchants` from interpret-window.ts:127-135, sourced
-#      entirely from deps.merchants.resolveIdentities(context, ...), a
-#      household-scoped call; `links`' transaction ids come from
-#      interpretation.transferPairs/settlements, derived purely from
-#      `transactions` loaded via deps.ledger.listPotTransactions(context,
-#      ...), also household-scoped. import-repository.ts's ingestRows
-#      writes `accountId` into every created transaction row unchecked
-#      too (same class of gap, not named by the dispatch); traced its two
-#      callers (upload-statement.ts, confirm-import.ts) and confirmed
-#      accountId is always either newly created under context.householdId
-#      or read via a household-scoped account/profile lookup. CONFIRMED:
-#      unreachable today by the same structural argument warning 23 gives,
-#      generalised one field wider (accountId) than the warning states.
-#  (b) app-unguarded-by-design claim: found the exact citation, work-history
-#      C-M3P12-12 ("still-open-because: ...deployed app must open a
-#      deployed database, so a local-only refusal would be wrong").
-#      TESTED RATHER THAN ACCEPTED next.
+findings:
+  - id: HAZ5-1
+    severity: high
+    analysis: >-
+      THE NARROWED allLost FILTER STOPS HIDING A ROW A SUPERSEDED RULE'S
+      CLAIMANT CANNOT REACH, BUT IT ALSO STOPS FLAGGING A ROW THAT SILENTLY
+      CHANGES MERCHANT VIA A COMPLETELY UNRELATED RULE. Round four's fix for
+      CR4-M3P12-01 replaced "exclude the whole superseded rule from the
+      before-set" with a comparison-time filter: a row held by a superseded
+      rule is dismissed as "not a loss" when `after !== undefined`, i.e.
+      when SOMETHING resolves the row afterward. The reasoning given in the
+      code (rederive-rules.ts:724-737) is "If the row is still covered
+      AFTER this run, by the claimant or by anything else, then no naming
+      has been discarded: a later naming the owner made on the screen
+      simply won." That argument is sound for the CLAIMANT specifically,
+      because the claimant's pattern is by construction the row's own
+      rewritten identity, so its coverage is not a coincidence. It is NOT
+      sound for "anything else": the code never checks that `after`'s rule
+      is the claimant, or even that `after.merchantId` equals the
+      claimant's merchant. It accepts ANY non-undefined resolution as proof
+      nothing was lost. My witness (work log entry 2 above) demonstrates
+      the gap directly: a row (tx-X) held by a superseded EXACT rule
+      (merchant M1) moves to the ACCOUNT basis (because it carries a
+      trusted account), so the claimant that superseded its old rule -- a
+      DESCRIPTOR-basis rule -- can never match it at all (decision D-40
+      forbids a descriptor-namespaced pattern matching an account-
+      namespaced key). Instead the row is picked up by a THIRD, unrelated,
+      pre-existing account-basis rule (merchant M3) that has no
+      relationship whatsoever to the rule that used to cover it or to its
+      claimant. The filter sees `after !== undefined` and drops it from
+      `allLost` unconditionally. Criterion 12.7 states its own guarantee in
+      two explicit halves: "no transaction that carried a merchant id
+      loses it, and no transaction changes from one merchant to another."
+      My witness is a live, reproduced instance of the SECOND half failing
+      while the tool that exists to catch it (the superset/lost-assignment
+      check) reports clean. This is not a corner case invented against the
+      grain of the domain: an already-namespaced descriptor rule and an
+      already-namespaced account rule for the SAME underlying stale bare
+      pattern are both exactly the shape decision D-46's deploy window
+      produces (an owner naming an unresolved descriptor-basis group one
+      way and an unresolved account-basis group another way, without
+      realizing the two groups used to be one merchant's declaration),
+      which the plan's own language anticipates repeatedly for the twin/
+      claimant mechanism in general. The dispatch that commissioned this
+      round asked, in as many words, whether "the narrowing that stopped
+      hiding losses has reintroduced a false one" -- this is that false
+      one, in the more dangerous direction: not a false LOSS report (which
+      would merely block a clean run), but a false SAFE report over a real,
+      silent cross-merchant reassignment.
+    evidence:
+      - "WITNESSED against the shipped rederiveMerchantRules (606e3ee), via a throwaway vitest file (test/application/ZZZ-scratch-witness-collision.test.ts, written, run, then deleted; `git status --short` confirmed a clean tree afterward). Seed: rule R1 {merchant M1, EXACT, pattern P (bare)}; rule C {merchant M2, EXACT, pattern \"descriptor:\"+P}; rule Rz {merchant M3, EXACT, pattern \"account:\"+compactAccount(A)}. Rows tx-X {baseline key P, trusted counterparty account A = IDENTITY_FIXTURE_ACCOUNTS.counterparty2}, tx-Y {baseline key P, trusted counterparty account B = IDENTITY_FIXTURE_ACCOUNTS.counterparty3}, both invented values already listed in test/fixtures/allowed-identifiers.txt under their own provenance."
+      - "Captured report (full JSON printed by the test): assignmentsBefore 2, assignmentsAfter 1, decisions include {ruleId: R1, outcome: superseded-by-namespaced-rule} and {ruleId: C, pass: two, outcome: not-promoted-several-accounts}, supersededByNamespacedRule [\"R1\"], lostAssignments EXACTLY [{transactionId: tx-Y, ruleId: R1}], exitCode 1 (from tx-Y alone). tx-X does not appear in lostAssignments, acceptedLostAssignments, broadened, or anywhere else in the report."
+      - "src/modules/merchants/application/rederive-rules.ts:718-743 is the allLost filter; the specific line that swallows the case is :738 (`if (supersededRuleIds.has(held.ruleId) && after !== undefined) { return false; }`), which reads only whether `after` is defined, never which rule or merchant it names."
+      - "Criterion 12.7's own quoted text (\"the after set is a SUPERSET of the before set: no transaction that carried a merchant id loses it, and no transaction changes from one merchant to another\") is in this phase's plan; the second half is what this witness shows failing."
+      - "Decision D-40 (src/modules/merchants/domain/merchant-rule.ts, matchRules' account-basis refusal) is what makes the claimant structurally unable to cover tx-X once it takes the account basis, which is why the row's coverage necessarily comes from an unrelated rule rather than from the claimant the supersede reasoning is written about."
+    concrete-fix: >-
+      Narrow the exemption to what the comment already argues for: a row is
+      only exempt from being reported lost when what covers it afterward IS
+      the specific claimant that superseded its old rule (or that
+      claimant's own pass-two promotion), not merely something. Concretely,
+      thread the claimant's ruleId (already computed in pass one as
+      `collision.ruleId` or equivalent) alongside `supersededRuleIds`, as a
+      Map from superseded rule id to claimant rule id, and change the
+      allLost filter to `if (supersededRuleIds.get(held.ruleId) ===
+      after?.ruleId) return false;` (or, if pass two's own promotion of
+      the claimant should also count as coverage, compare against the
+      promoted rule's id too, which is derivable from the claimant's id).
+      Add a test seeding exactly this shape -- a superseded rule, its
+      claimant, and a THIRD, unrelated rule that also happens to cover one
+      of the superseded rule's rows on the account basis -- and assert that
+      row IS reported as a lost assignment (or, if the team judges an
+      account-basis reassignment from an unrelated declaration acceptable,
+      say so explicitly in the comment and in criterion 12.7's own text,
+      rather than leaving the guarantee's second half silently narrower
+      than its own stated wording).
+  - id: HAZ5-2
+    severity: high
+    analysis: >-
+      THE PORT CHECK CR4-M3P12-02 ADDED SILENTLY ADMITS BOTH POOLING MODES
+      BY DEFAULT, WHICH IS THE EXACT AMBIGUITY IT WAS COMMISSIONED TO
+      CLOSE. Round four's own hazard finding CR4-M3P12-02 raised port as an
+      unchecked field specifically because Supabase's pooler infrastructure
+      exposes one project's database in more than one pooling mode on
+      different ports from the SAME shared host, and because this routine's
+      write path (applyRuleWrites' prisma.$transaction, an interactive
+      multi-statement transaction) depends on the connection behaving
+      consistently across statements the way transaction-mode pooling is
+      documented not to guarantee. Its own concrete-fix named two
+      acceptable resolutions: default to 5432 (session mode, the one
+      endpoint fleet warning 5 actually documents as reachable from this
+      product's IPv4-only deployment), or explicitly document port as out
+      of scope. The shipped fix took a third path neither option named:
+      KNOWN_PORTS = {"5432","6543"}, so a connection on EITHER port is
+      approved identically whenever the operator does not pass
+      --expect-port, which test/db/target-guard.test.ts:419-429 pins as the
+      INTENDED behaviour of the fix ("AN UNKNOWN PORT is refused, and the
+      two this product uses are not"). This is not a hypothetical default:
+      .env.example:3-10 states the product's own documented architecture
+      rule in as many words -- "DATABASE_URL = the pooled string (port
+      6543, pgbouncer)" in a standard deployed environment -- and
+      RederiveTargetEnv checks only DATABASE_URL (target-guard.ts:118-124
+      says so explicitly, "DIRECT_URL is deliberately not checked"), which
+      is also the only variable `new PrismaClient()` reads
+      (resolve-env.ts's resolveClientDbUrl). So the routine's own
+      unpinned-port default path is, by this product's own documented
+      wiring, the port associated with transaction-mode pooling, and the
+      interlock built to force a decision on that ambiguity instead makes
+      the ambiguous case pass silently. An operator who runs the migration
+      exactly as documented (naming host and ref, the two REQUIRED
+      arguments) without also remembering the OPTIONAL --expect-port gets
+      no refusal, no warning, and no signal that the connection they
+      opened may not honour the atomicity guarantee criterion 12.7's
+      superset test depends on.
+    evidence:
+      - "src/platform/db/target-guard.ts:116 (`const KNOWN_PORTS: ReadonlySet<string> = new Set([\"5432\", \"6543\"]);`) and :240-254 (the port branch: when `expectation.port` is unset, the check is `!KNOWN_PORTS.has(port)`, so both 5432 and 6543 pass without a mismatch)."
+      - "test/db/target-guard.test.ts:419-429, \"AN UNKNOWN PORT is refused, and the two this product uses are not\": asserts `check(...:9999/postgres).allowed` is false AND `check(...:6543/postgres).allowed` is true, using the SAME zero-argument `check()` helper (no --expect-port), pinning silent dual-port acceptance as the shipped, intended behaviour rather than an oversight."
+      - ".env.example:3-10: \"# Connection string rule (architecture section 3): runtime uses the POOLED connection string (DATABASE_URL), migrations use the DIRECT connection string (DIRECT_URL)... On Vercel against a deployed Supabase project: DATABASE_URL = the pooled string (port 6543, pgbouncer), DIRECT_URL = the direct string (port 5432).\""
+      - "src/platform/db/target-guard.ts:118-124 (RederiveTargetEnv's comment): \"DIRECT_URL is deliberately not checked: it is the migration endpoint and this routine runs no migration.\""
+      - "src/platform/db/resolve-env.ts's resolveClientDbUrl (what `new PrismaClient()` actually reads) reads only `process.env[\"DATABASE_URL\"]`."
+      - "Round4 hazard finding CR4-M3P12-02 (origin/claude/m3-p12-rev4-haz:delivery/review/m3-p12-hazard-round4.yaml), whose own concrete-fix text is: \"Add a port to... RederiveTargetExpectation as an optional --expect-port, defaulting to 5432 (the session pooler's documented port per fleet warning 5) when not given... If the team judges port out of scope for this criterion... say so explicitly in the routine's own header... rather than leaving the gap undocumented the way it is today.\" Neither option is what the shipped code does."
+    concrete-fix: >-
+      Either default the unnamed-port case to 5432 (session mode) rather
+      than admitting both known ports, requiring --expect-port explicitly
+      to reach 6543 (mirroring how --expect-port already lets an operator
+      "reach one" deliberately per the comment at target-guard.ts:134-138);
+      or, if 6543 must stay admitted by default because some real
+      deployment topology legitimately needs it, add the missing half of
+      CR4-M3P12-02's own concrete-fix: state in target-guard.ts's own
+      header, in the same explicit voice the file already uses for its
+      other accepted risks (the percent-encoded-username exception, the
+      no-override-flag design), that a transaction-mode-pooled connection
+      is knowingly admitted and why the atomicity guarantee is believed to
+      hold there regardless (or is not depended upon). Add a test that
+      would fail under the FIRST option (an unnamed port defaulting to
+      6543 is refused) so the decision is enforced rather than merely
+      documented, matching the shape of every other accepted-risk case in
+      this same file.
+  - id: HAZ5-3
+    severity: medium
+    analysis: >-
+      "THE APPLICATION DELIBERATELY REMAINS UNGUARDED" OVERSTATES WHAT IS
+      ACTUALLY REQUIRED, AND A NARROWER GUARD THAT COSTS NOTHING AGAINST
+      THE STATED REQUIREMENT IS ALREADY BUILDABLE FROM PARTS THIS TREE
+      ALREADY HAS. The work history's open question C-M3P12-12 states
+      flatly: "npm run dev and npx next start resolve DATABASE_URL from the
+      ambient environment with no refusal... That is not a hole this
+      mechanism may close: the deployed app must open a deployed database,
+      so a local-only refusal would be wrong." This conflates two commands
+      that do not need the same posture. `npx next start` (via `npm run
+      start`, or the equivalent Vercel-managed production start) is the
+      ONLY command that ever serves real production traffic, and Next.js
+      sets NODE_ENV=production for it automatically; a local-only refusal
+      there would indeed be wrong, exactly as the claim says. `npm run dev`
+      (`next dev`) is NEVER used to serve real production traffic -- it is
+      exclusively a local development server, and Next.js sets
+      NODE_ENV=development for it automatically. Nothing about the
+      requirement "the deployed app must open a deployed database" applies
+      to `npm run dev` at all, so a guard scoped to non-production mode
+      would refuse exactly the case fleet warning 22 documents as the live,
+      unaddressed gap ("npm run dev... in a fleet container... reaches a
+      deployed project... never start the dev... server in a fleet
+      container without pinning DATABASE_URL yourself") while never firing
+      for `next start` in any deployment context, local prod-smoke
+      included (the Playwright gate's own chromium-prod project already
+      pins DATABASE_URL to local before starting next start via
+      gate-target.ts, so a redundant dev-mode-only check there would be a
+      no-op, not a break). The distinguishing predicate this needs already
+      exists and is already imported by the very file that would need it:
+      src/platform/config.ts:47's `isProduction()` (`process.env.NODE_ENV
+      === "production"`) is already read by src/platform/db/client.ts:38
+      two lines below where the client is constructed, for an unrelated
+      purpose (whether to cache the client on globalThis). The local-host
+      predicate this would also need (LOCAL_DB_HOSTS / isLocal) is already
+      exported from guard.ts for exactly this kind of reuse and is already
+      imported a second time by gate-target.ts. Composing the three -- not
+      production, DATABASE_URL present, host local -- into a refusal at
+      client construction time is a small, mechanical change reusing
+      primitives this tree already has three copies of the pattern for
+      (guard.ts, target-guard.ts, gate-target.ts), each with its own
+      documented escape hatch for a deliberate remote use. The claim that
+      closing this is "a product decision with a deployment change behind
+      it and no criterion covering it" is true of `next start` and not of
+      `next dev`, and the open question does not draw that line.
+    evidence:
+      - "delivery/work-history/m3-p12.yaml:1694-1708, open-question C-M3P12-12: \"`npm run dev` and `npx next start` resolve DATABASE_URL from the ambient environment with no refusal... That is not a hole this mechanism may close: the deployed app must open a deployed database, so a local-only refusal would be wrong.\""
+      - "package.json: \"dev\": \"next dev\", \"build\": \"prisma generate && next build\", \"start\": \"next start\" -- confirming `npm run dev` invokes `next dev` and nothing else, distinct from the build/start pair used for any production-mode serving, local or deployed."
+      - "src/platform/config.ts:47: `export const isProduction = (): boolean => process.env.NODE_ENV === \"production\";`"
+      - "src/platform/db/client.ts:36-40: `export const prisma: PrismaClient = globalForPrisma.prisma ?? constructClient(); if (!isProduction()) { globalForPrisma.prisma = prisma; }` -- the exact predicate needed is already read in this file, for a different purpose, on the two lines immediately after client construction."
+      - "src/platform/db/guard.ts:34-38: `export const LOCAL_DB_HOSTS: ReadonlySet<string> = new Set([\"127.0.0.1\", \"localhost\", \"::1\"]); // EXPORTED so the gate interlock beside this one (gate-target.ts, M3-P12 fix round four) asks the same question of a hostname that this guard asks.` -- already exported for reuse and already reused once."
+      - "Fleet environment warning 22 (this session's brief): \"npm run dev and npx next start do NOT [refuse]. They resolve the ambient DATABASE_URL with no refusal, and the ambient value in a fleet container is the owner's hemma-dev project. That is deliberate, because the deployed app must open a deployed database and a local-only refusal there would be wrong. So: never start the dev or production server in a fleet container without pinning DATABASE_URL yourself.\" -- the warning itself states the manual-discipline-only posture as a live, standing operational risk with no mechanical backstop, which a dev-mode-scoped guard would close for the dev half."
+    concrete-fix: >-
+      In src/platform/db/client.ts, before constructClient() is called,
+      add: when !isProduction(), read process.env.DATABASE_URL and refuse
+      (throw, in the same voice constructClient's own catch block already
+      logs in) unless its host is in LOCAL_DB_HOSTS, with a single
+      documented escape hatch env var (mirroring
+      PULSE_ALLOW_REMOTE_DB_DESTRUCTION's naming and posture) for the
+      deliberate case of a developer debugging against a remote database on
+      purpose. Add a test alongside test/db/db-guard.test.ts constructing
+      this predicate directly (not the full Next.js dev server, which the
+      fast gate cannot start) and asserting it refuses a non-local
+      DATABASE_URL when NODE_ENV is not "production" and does not refuse
+      when it is. If the team judges this out of scope for this phase
+      specifically, narrow C-M3P12-12's own text to say why the `next dev`
+      half is deliberately left open too, rather than resting the whole
+      open question on an argument that only covers `next start`.
+  - id: HAZ5-4
+    severity: low
+    analysis: >-
+      GATE-TARGET.TS'S NEW RESOLUTION SILENTLY BREAKS THE STANDING
+      OPERATIONAL INSTRUCTION FOR RUNNING THE E2E GATE, THOUGH IT FAILS IN
+      THE SAFE DIRECTION. Fleet environment warning 6 (present verbatim in
+      this and every prior round's dispatch) instructs: "pin all five
+      values (DATABASE_URL, DIRECT_URL, NEXT_PUBLIC_SUPABASE_URL, the
+      publishable key and the secret key) to the local stack in the
+      invoking shell." Every prior round's review (round3, round4 hazard
+      and criteria both) followed this instruction successfully. This
+      round's gate-target.ts deliberately does not read shell
+      DATABASE_URL/DIRECT_URL/NEXT_PUBLIC_SUPABASE_URL as a naming source
+      at all (by design -- its whole point is that the ambient shell value
+      is not a value anyone named for this purpose), so exporting the five
+      values directly in the shell exactly as warning 6 instructs now
+      produces an immediate GateDbTargetRefused ("no source named a
+      database for this gate") before a single test runs. This is not a
+      hazard in the sense this contract is about -- it fails LOUD and
+      CLOSED, which is the correct direction, and I confirmed it myself
+      (work log entry 6) by hitting the refusal on my first attempt and
+      working around it with a gitignored .env file, which is the gate's
+      own documented second source. It is, however, a real regression
+      against the standing dispatch instruction that every future reviewer
+      and every future implementer will hit in exactly the same way until
+      either the instruction or the mechanism changes, and it costs wall
+      clock the same way a silent failure does, except here the failure is
+      loud and the cost is a reviewer re-deriving the workaround from the
+      error message each time rather than the workaround being written
+      down anywhere.
+    evidence:
+      - "My own first e2e attempt this round: `export DATABASE_URL=... DIRECT_URL=... NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... SUPABASE_SERVICE_ROLE_KEY=...` then `npm run test:e2e`, captured in my own scratch log, printed: `GateDbTargetRefused: gate database target: no source named a database for this gate. The gate does not fall back to an ambient DATABASE_URL...` and exited before a single test ran, with a stack trace rooted at playwright.config.ts:29 calling gate-target.ts:207."
+      - "src/platform/db/gate-target.ts:163-189 (gateDbCandidates): the two sources are literally \"the PULSE_GATE_* variables\" and \"the .env file at the package root\"; there is no third source reading plain shell DATABASE_URL/DIRECT_URL/NEXT_PUBLIC_SUPABASE_URL, by the file's own stated design (:28-49, \"THE RESOLUTION ORDER, and why the ambient DATABASE_URL is not in it\")."
+      - "Fleet environment warning 6 (this session's brief, unchanged from the warning round3 and round4 reviewers both followed successfully): \"pin all five values... in the invoking shell.\""
+    concrete-fix: >-
+      Update fleet warning 6's own text (or the dispatch template that
+      carries it forward) to say that, as of this phase, a plain shell
+      export of the five values no longer satisfies the e2e gate's own
+      target guard, and that a .env file at the package root (or the
+      PULSE_GATE_* variables) is required instead. This is an orchestrator-
+      level documentation fix, not a code fix; naming it here so the next
+      reviewer does not lose the same few minutes rediscovering the
+      workaround from the refusal message.
+
+criteria:
+  - id: "12.1"
+    quote: "CONVERGENCE, COUNTED... the test asserts the distinct-key count is exactly 12, printing both 12 and 24"
+    evidence:
+      - "test/domain/counterparty-identity.test.ts is present and part of the 624-test green run (npm test, exit 0). Unchanged by this round's diff (not one of the 17 files touched); relying on the passing fast gate and round4's own direct reading of this test."
+    met: true
+  - id: "12.2"
+    quote: "CONVERGENCE ON THE OWNER'S OWN MONTH... total rows 39, distinct identity keys EXACTLY 20 against a recorded baseline of 25"
+    evidence:
+      - "This criterion asks for a phase work history record of a real-document run, not a fast-gate test. Unchanged by this round's diff. I did not re-run the measurement script against the real documents myself this round; relying on the committed record, which round4 confirmed was unchanged by that round's diff too."
+    met: true
+  - id: "12.3"
+    quote: "NAMED ONCE, MATCHED AGAIN... calls assignMerchant EXACTLY ONCE... then asserts that a DIFFERENT transaction... now carries that merchant id"
+    evidence:
+      - "test/application/counterparty-identity-journey.test.ts PASSED in my own npm test run: \"named once, matched again (criterion 12.3) > one naming of the designated counterparty reaches a later transaction it was not made from\", 450ms."
+    met: true
+  - id: "12.4"
+    quote: "DIFFERENT COUNTERPARTIES STAY DIFFERENT WHERE THE STORED VALUES DIFFER... this criterion is NOT the guard on H12.1"
+    evidence:
+      - "test/domain/counterparty-identity-contracts.test.ts (12 tests) PASSED in my own npm test run. Unchanged by this round's diff."
+    met: true
+  - id: "12.5"
+    quote: "THIS PHASE STRIPS NOTHING NEW... A separate test asserts normaliseCounterparty never emits a lowercase letter"
+    evidence:
+      - "Unchanged by this round's diff (normalise-counterparty.ts is not among the 17 files touched); relying on the passing fast gate and round4's direct verification."
+    met: true
+  - id: "12.6"
+    quote: "A ROW MATCHING NO FAMILY IS NOT GUESSED AT... no row is ever keyed on a bare namespace"
+    evidence:
+      - "Unchanged by this round's diff (counterparty-identity.ts is not among the 17 files touched); relying on round4's direct reading of isBareIdentityKey/identityRemainder and the passing fast gate."
+    met: true
+  - id: "12.7"
+    quote: "NO NAMING THE OWNER MADE IS DISCARDED, MEASURED AS EFFECT AND NOT AS ROWS... asserts the after set is a SUPERSET of the before set: no transaction that carried a merchant id loses it, and no transaction changes from one merchant to another"
+    evidence:
+      - "test/application/rederive-merchant-rules.test.ts's superset tests are present and passing (part of the 624-test green run), and this round's diff adds coverage for the CR4-M3P12-01 fix specifically (before-set kept whole, filtered at comparison)."
+      - "MY OWN WITNESS (finding HAZ5-1): constructed a case, run through the real rederiveMerchantRules, where a real merchant reassignment (M1 to M3, via a rule unrelated to the row's old rule or its claimant) is silently absent from lostAssignments. The superset property AS CODED holds (the row is in both before and after, just under different merchants, and the code never compares that), while the second half of the criterion's own quoted guarantee -- \"no transaction changes from one merchant to another\" -- fails for this row and nothing in the report says so."
+    met: false
+  - id: "12.8"
+    quote: "THE RE-DERIVATION IS IDEMPOTENT, AND IDEMPOTENT MEANS THE SAME ANSWER RATHER THAN A QUIET ONE"
+    evidence:
+      - "test/application/rederive-merchant-rules.test.ts's idempotence test is present and passing in my own npm test run. Not independently re-witnessed by me this round beyond the passing fast gate; the collision-treatment rewrite (this round's own change) does not alter the idempotence argument (pass one's rewrite is still a fixed prefix, pass two still only adds), and no counterexample surfaced during my HAZ5-1 witness."
+    met: true
+  - id: "12.9"
+    quote: "FACTS ARE NOT REWRITTEN AND THE CHANGE IS A DERIVATION PLUS A RECOMPUTE"
+    evidence:
+      - "src/modules/merchants/application/rederive-rules.ts and merchant-repository.ts's applyRuleWrites read in full this round (attack surfaces 1 and 3): no call in either writes to the transactions table; applyRuleWrites writes only merchant_rules. Unaffected by this round's diff in this respect."
+    met: true
+  - id: "12.10"
+    quote: "PREFIX AND PATTERN ARE SETTLED... matchRules refuses to apply a PREFIX or a PATTERN rule to an ACCOUNT-basis key"
+    evidence:
+      - "Unchanged by this round's diff (merchant-rule.ts is not among the 17 files touched); relying on the passing fast gate. This round's OWN new collision-kind-split (rederive-rules.ts) reads this refusal as its justification for treating PREFIX/PATTERN collisions differently from EXACT ones, and my HAZ5-1 witness used only EXACT rules, so it neither exercises nor contradicts this criterion."
+    met: true
+  - id: "12.11"
+    quote: "THE TWO SCREENS AGREE WHERE THEY ARE MEANT TO"
+    evidence:
+      - "Unchanged by this round's diff: confirmed via `git diff --stat 0d41c3b 606e3ee -- src/modules/overview src/modules/merchants/domain/merchant-review.ts` (empty output), so month-projection.ts and merchant-review.ts are exactly as round4 reviewed them. Relying on round4's direct reading and the passing fast gate."
+    met: true
+  - id: "12.12"
+    quote: "THE MODULE BOUNDARY HOLDS. The MerchantResolver port still has exactly one member"
+    evidence:
+      - "Unchanged by this round's diff (ports.ts and resolve-identities.ts are not among the 17 files touched); relying on round4's direct reading and the passing fast gate."
+    met: true
+  - id: "12.13"
+    quote: "NOTHING OF THE OWNER'S DATA REACHES THE REPOSITORY"
+    evidence:
+      - "npm run gate:privacy exit 0, \"gate:privacy clean\", in my own run this round. No real descriptor, amount, date, place or counterparty appears anywhere in this review document; every witness I built used wholly invented values from test/fixtures/generate-pdf-fixtures.ts's IDENTITY_FIXTURE_ACCOUNTS, already-listed provenance, or synthetic strings I wrote myself (M1/M2/M3, R1/C/Rz, tx-X/tx-Y), and no filename beyond the 8-hex-prefix convention was used anywhere."
+    met: true
+  - id: "12.14"
+    quote: "THE STANDING GATE. npm run typecheck, npm run lint, npm test and npm run gate:privacy all exit 0, and npm run test:e2e exits 0"
+    evidence:
+      - "My own run this round: typecheck exit 0, lint exit 0, test exit 0 (624/624), gate:privacy exit 0, gate:tokens exit 0. npm run test:e2e result is recorded after this criteria block, quoted honestly with exit code and load conditions."
+    met: false
+  - id: "12.15"
+    quote: "THE WHOLE-CORPUS EFFECT IS RECORDED, NOT ONLY THE HAPPY FIXTURE"
+    evidence:
+      - "Unchanged by this round's diff; not independently re-derived by me this round; relying on the passing fast gate and round4's confirmation."
+    met: true
+  - id: "12.16"
+    quote: "THE ACCOUNT BASIS FAILS CLOSED, AND THIS IS THE GUARD ON H12.1"
+    evidence:
+      - "Unchanged by this round's diff (counterparty-identity.ts is not among the 17 files touched). My own HAZ5-1 witness used IDENTITY_FIXTURE_ACCOUNTS.counterparty2/counterparty3, both of which pass this gate (used as trusted accounts by construction, matching round4's own use of the same fixture values), consistent with this criterion holding."
+    met: true
+  - id: "12.17"
+    quote: "THE RE-DERIVATION HAS ONE NAMED INVOCATION POINT AND ONE STATED ORDER... THE DEPLOYED RUN IS OWED BY M3-P16 AND IS NOT DROPPED HERE"
+    evidence:
+      - "package.json's rederive:merchant-rules script and scripts/rederive-merchant-rules.ts's own header stating the order are unchanged by this round's diff, beyond the exit-code test coverage this round adds (test/application/rederive-script-exit-codes.test.ts, PASSED in my own run: 6 tests). The deployed-run half remains explicitly deferred to M3-P16 per the work history's own deviation entry."
+    met: true
+  - id: "12.18"
+    quote: "THE RULE SUBJECT IS VALIDATED AT THE WRITE BOUNDARY"
+    evidence:
+      - "Unchanged by this round's diff (assign-merchant.ts is not among the 17 files touched); relying on round4's direct reading and the passing fast gate."
+    met: true
+  - id: "12.19"
+    quote: "THE GOVERNING DOCUMENT SAYS WHAT THE CODE DOES"
+    evidence:
+      - "Unchanged by this round's diff (the pulse-domain skill file is not among the 17 files touched); relying on round4's confirmation, itself relying on round3's."
+    met: true
+  - id: "12.20"
+    quote: "THE RESIDUE IS COUNTED AND NAMED"
+    evidence:
+      - "Unchanged by this round's diff; not independently re-derived by me this round."
+    met: true
+  - id: "12.21"
+    quote: "PASS ONE CANNOT LOSE A RULE'S MEANING, FOR ANY KIND"
+    evidence:
+      - "test/property/pass-one-preserves-meaning.test.ts (5 tests) PASSED in my own npm test run. This round's collision-kind-split (EXACT supersedes, PREFIX/PATTERN skip or block) sits AFTER pass one's meaning-preserving rewrite and does not touch the property this criterion pins (that the namespaced rewrite of a rule with NO collision matches exactly what the bare pattern matched); read rederive-rules.ts:440-451 to confirm the property test's own subject (the rewrite itself) is unchanged by this round's diff, only what happens when a collision is FOUND is new."
+    met: true
+  - id: "12.22"
+    quote: "THE TRUST TABLE IS PINNED AND SOURCED"
+    evidence:
+      - "Unchanged by this round's diff; not independently re-derived by me this round."
+    met: true
+  - id: "12.23"
+    quote: "THE ROUTINE REFUSES A DATABASE IT WAS NOT TOLD TO WRITE TO, AND THE REFUSAL SHIPS IN THE SAME MERGE AS THE ROUTINE... THE HOST MATCH IS NEVER SUFFICIENT ALONE"
+    evidence:
+      - "src/platform/db/target-guard.ts read in full (321 lines) this round for attack surface 4. Host, ref (both endpoint shapes), database name, an allow-listed and now value-checked schema parameter, and (new this round) port are all compared; no override flag; nothing resolved is printed on any refusal path, confirmed by reading every `reason:` string in the file."
+      - "MY OWN FINDING HAZ5-2: the criterion's own text does not name port specifically (it names host, ref, database, parameters, pathname), so I read the criterion's LITERAL text as met on the fields it actually enumerates, while flagging the port default as a hazard-class matter (the routine's own correctness guarantee, not this criterion's literal field list) rather than marking this specific criterion unmet on a field it does not name. This is the same reading round4's own review gave CR4-M3P12-02 before the fix, and I am applying it consistently now that a port check exists but defaults permissively."
+    met: true
+
+deviations-judged: []
+
+hazard-classes-addressed:
+  - class-id: H12.1
+    probed: >-
+      Full re-read of the collision-treatment rewrite (rederive-rules.ts
+      lines ~440-561 and ~669-751), attack surface 1, and the constructed
+      witness described in work log entry 2 and finding HAZ5-1, run against
+      the real function.
+    finding: HAZ5-1
+  - class-id: H12.2
+    probed: >-
+      Not re-probed fresh this round: the fixture that proves this (rather
+      than a fixture built to converge) is unchanged by this round's diff.
+      Reviewed round4's own confirmation that this criterion's evidence
+      (the real-month measurement record) is unaffected.
+    cleared-because: >-
+      Out of this round's attack surface; the fixture and the measurement
+      record are unchanged, and nothing in this round's diff touches how
+      the fixture is built or measured.
+  - class-id: H12.3
+    probed: >-
+      Directly probed by the HAZ5-1 witness: a naming the owner made (R1,
+      merchant M1) is exactly what silently stops reaching its row once the
+      collision treatment routes that row to an unrelated rule.
+    finding: HAZ5-1
+  - class-id: H12.4
+    probed: >-
+      Read merchant-repository.ts's applyRuleWrites and rederive-rules.ts
+      end to end this round (attack surfaces 1 and 3, entries 2 and 4);
+      neither writes to the transactions table, and CLAUDE.md's facts/
+      declarations boundary is unaffected by this round's changes, which
+      touch only merchant_rules writes and their guard.
+    cleared-because: >-
+      No write to a transaction fact column anywhere in this round's diff;
+      confirmed by reading every write statement in the two changed
+      adapters.
+  - class-id: H12.5
+    probed: >-
+      Read every witness I built for real-descriptor content before
+      committing this document (entry 6, npm run gate:privacy exit 0), and
+      re-read this document's own prose before each commit for an invented
+      value that could be mistaken for a real one.
+    cleared-because: >-
+      gate:privacy passed; every value in my own witnesses is either a
+      pre-listed fixture value or a synthetic string I invented myself
+      (M1/M2/M3, R1/C/Rz, tx-X/tx-Y); no filename beyond the 8-hex-prefix
+      convention appears anywhere in this document.
+  - class-id: H12.6
+    probed: >-
+      Unchanged by this round's diff (counterparty-identity.ts is not
+      among the 17 files touched); relied on round4's direct reading of
+      isBareIdentityKey/identityRemainder.
+    cleared-because: >-
+      Out of this round's attack surface; nothing in this round's diff
+      touches the bare-key guard.
+  - class-id: H12.7
+    probed: >-
+      Unchanged by this round's diff (normalise-counterparty.ts is not
+      among the 17 files touched, and no new descriptor family or
+      stripping pass was added this round, which touched only the merchant
+      rules migration routine, the two db interlocks, and the write
+      tenancy check).
+    cleared-because: >-
+      Out of this round's attack surface.
+  - class-id: H12.8
+    probed: >-
+      Confirmed via `git diff --stat 0d41c3b 606e3ee -- src/modules/overview
+      src/modules/merchants/domain/merchant-review.ts` that neither the
+      overview's SQL fold nor the review builder changed in this round's
+      diff (entry 1); both were last touched in fix round three and
+      reviewed by round4-hazard, which found the two screens' SQL/TypeScript
+      pin unchanged and consistent.
+    cleared-because: >-
+      Out of this round's attack surface; the two screens' grouping logic
+      is byte-identical to what round4 reviewed.
+  - class-id: H12.9
+    probed: >-
+      Unchanged by this round's diff; the whole-corpus split-merchant
+      recovery test is not among the files this round touched.
+    cleared-because: >-
+      Out of this round's attack surface.
+  - class-id: H12.10
+    probed: >-
+      Confirmed the MerchantResolver port still has exactly one member by
+      reading src/modules/merchants/application/index.ts, the one file in
+      this round's diff that touches the application layer's public
+      surface (a single new export line, `rederiveMerchantRules` and its
+      types, added alongside the existing exports); no port member added
+      or changed.
+    cleared-because: >-
+      This round's diff adds an export, never a port member; interpretation
+      still cannot write a MerchantRule by construction.
+  - class-id: H12.11
+    probed: >-
+      Unchanged by this round's diff; ledger/domain/corrections.ts is not
+      among the 17 files touched.
+    cleared-because: >-
+      Out of this round's attack surface.
+  - class-id: H12.12
+    probed: >-
+      Read the idempotence argument for this round's OWN new logic (the
+      kind-split collision treatment): a second run over the same working
+      state produces the same decisions, because a superseded EXACT rule's
+      bare pattern is still superseded on a second run (the claimant is
+      unchanged), and a same-merchant PREFIX/PATTERN skip is still a skip
+      (the rule is still bare, the twin still holds the same pattern). Did
+      not construct a fresh two-run witness of the new logic specifically
+      this round; relying on this reasoning plus the passing idempotence
+      test in the fast gate.
+    cleared-because: >-
+      No mechanism in this round's diff writes a rule twice or produces a
+      run-order-dependent decision by construction; reasoned rather than
+      freshly witnessed.
+  - class-id: H12.13
+    probed: >-
+      This is exactly what this round's kind-split collision treatment
+      exists to answer for PREFIX/PATTERN specifically (attack surface 1,
+      round4 criteria finding CR4-M3P12-03's root cause). Read the
+      different-merchant PREFIX/PATTERN branch (rederive-rules.ts:531-540):
+      it BLOCKS as an ordinary merchant-conflict rather than assuming
+      safety, which is the conservative answer to this hazard.
+    cleared-because: >-
+      The different-merchant PREFIX/PATTERN case blocks rather than merges;
+      confirmed by reading the branch directly. The same-merchant case is
+      what HAZ5-1 is about, which is a different hazard (H12.3/H12.18,
+      naming lost) rather than this one (two DIFFERENT merchants merged).
+  - class-id: H12.14
+    probed: >-
+      Unchanged by this round's diff (belfius-current-account-template.ts
+      is not among the 17 files touched).
+    cleared-because: >-
+      Out of this round's attack surface.
+  - class-id: H12.15
+    probed: >-
+      Unchanged by this round's diff; same reasoning as H12.6.
+    cleared-because: >-
+      Out of this round's attack surface.
+  - class-id: H12.16
+    probed: >-
+      Unchanged by this round's diff; the importer's candidate-selection
+      pin is not among the files this round touched.
+    cleared-because: >-
+      Out of this round's attack surface.
+  - class-id: H12.17
+    probed: >-
+      This round adds test coverage for the exit-code contract specifically
+      (test/application/rederive-script-exit-codes.test.ts, closing round4
+      criteria finding CR4-M3P12-05). Read the new tests: they call the
+      script's exported entry point with a real recompute that throws and
+      assert the returned code is 4, closing the gap where only a header
+      comment was pinned before.
+    cleared-because: >-
+      package.json's invocation point is unchanged and still present; the
+      exit-code contract this round strengthens is now exercised by a real
+      test rather than a string match on a comment.
+  - class-id: H12.18
+    probed: >-
+      Directly probed by the HAZ5-1 witness: R1 survives as a row (D-39
+      forbids deleting it) while its effect, for tx-X, silently moves to a
+      different merchant with no report. This is a sharper instance of the
+      hazard than a plain row-count check hiding a dead row: the effect
+      does not merely die, it is silently reassigned.
+    finding: HAZ5-1
+  - class-id: H12.19
+    probed: >-
+      Read the two blocking conditions and the acknowledge-path mechanism
+      (rederive-rules.ts:753-767, unchanged in shape by this round beyond
+      the allLost filter HAZ5-1 is about); confirmed the acknowledge flag
+      still clears exactly the ids it names.
+    cleared-because: >-
+      Unchanged by this round's diff beyond the allLost filter itself,
+      which HAZ5-1 covers separately; the acknowledge-path mechanism is
+      not what my witness attacks.
+  - class-id: H12.20
+    probed: >-
+      Unchanged by this round's diff; package.json's invocation point is
+      present (confirmed via the H12.17 probe above) and this hazard's
+      second half is explicitly not this phase's to guard per the plan's
+      own text (deferred to H16.1 in M3-P16).
+    cleared-because: >-
+      The invocation point exists; the second half is out of scope for
+      this phase by the plan's own explicit split.
+  - class-id: H12.21
+    probed: >-
+      Unchanged by this round's diff (assign-merchant.ts is not among the
+      17 files touched).
+    cleared-because: >-
+      Out of this round's attack surface.
+  - class-id: H12.22
+    probed: >-
+      Unchanged by this round's diff (the pulse-domain skill file is not
+      among the 17 files touched).
+    cleared-because: >-
+      Out of this round's attack surface.
+  - class-id: H12.23
+    probed: >-
+      Unchanged by this round's diff (the measurement harness and its
+      command are not among the 17 files touched).
+    cleared-because: >-
+      Out of this round's attack surface.
+  - class-id: H12.24
+    probed: >-
+      Unchanged by this round's diff; the residue-counting record is not
+      among the files this round touched.
+    cleared-because: >-
+      Out of this round's attack surface.
+  - class-id: H12.25
+    probed: >-
+      Read pass one's already-namespaced guard (rederive-rules.ts's early
+      continue for a pattern that already begins with a known namespace),
+      which runs BEFORE the collision block this round's diff changed;
+      confirmed the guard itself is untouched by this round.
+    cleared-because: >-
+      Not touched by this round's diff; the collision-kind-split this
+      round adds only changes what happens for a BARE pattern that
+      collides with an existing namespaced one, which is a different code
+      path from the already-namespaced guard this hazard is about.
+  - class-id: H12.26
+    probed: >-
+      Read pass one's empty-pattern guard, which also runs before the
+      collision block; confirmed untouched by this round's diff.
+    cleared-because: >-
+      Not touched by this round's diff.
+  - class-id: H12.27
+    probed: >-
+      Read the RuleDecision/RuleCounts split (unchanged by this round) and
+      the idempotence test, which passed in my own run.
+    cleared-because: >-
+      Not touched by this round's diff beyond the new collision-kind
+      decisions, which are still excluded from the idempotence comparison
+      by the same RuleDecision/RuleCounts split.
+  - class-id: H12.28
+    probed: >-
+      Unchanged by this round's diff; the country-length table is not
+      among the files this round touched.
+    cleared-because: >-
+      Out of this round's attack surface.
+  - class-id: H12.29
+    probed: >-
+      Unchanged by this round's diff; the importer's candidate-selection
+      pin is not among the files this round touched.
+    cleared-because: >-
+      Out of this round's attack surface.
+  - class-id: H12.30
+    probed: >-
+      Full read of src/platform/db/target-guard.ts (321 lines), the new
+      src/platform/db/gate-target.ts (228 lines), and their tests, attack
+      surfaces 3 and 4, plus the two claims from the dispatch (work log
+      entries 3, 5 and 6 above): the port default, the schema pin (sound),
+      the gate guard's env-mutation mechanism (checked for a reader running
+      before it: gate-target.ts's own imports, guard.ts and resolve-env.ts,
+      neither reads process.env at module scope, only inside functions
+      called after enforceGateDbTarget() runs; and the module-scope call
+      order in playwright.config.ts, where prodEnv at line 43 is computed
+      AFTER enforceGateDbTarget() at line 28 mutates process.env, so it
+      picks up the pinned values rather than racing them), and the
+      npm-run-dev/next-start claim.
+    finding: HAZ5-2
