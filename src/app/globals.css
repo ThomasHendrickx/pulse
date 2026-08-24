@@ -1337,10 +1337,24 @@
  *
  * A control looks pressed while it is being pressed, and looks unusable
  * while it cannot be used. Built only from the motion and state tokens in
- * styles/tokens.css; no literal duration, curve, colour or length appears
+ * styles/tokens.css; no literal duration, easing curve or colour appears
  * below, which criterion 9.5(c) checks with a grep the repository's own
  * token gate cannot see, because that gate matches colours and font sizes
  * only and a literal "120ms" would pass it unnoticed.
+ *
+ * CORRECTED IN FIX ROUND 1 (clause R-087, finding HZ-M3P9-05). The
+ * sentence above used to end "duration, curve, colour or LENGTH", and that
+ * last word was FALSE of the file beneath it. Five literals do appear, all
+ * of them outside the four things criterion 9.5 greps for and outside the
+ * three categories CLAUDE.md non-negotiable 4 names: four opacity values
+ * (the disabled state, the busy state, the unconfirmed marking and the low
+ * point of the busy loop) and one border-radius of 50 percent on each of
+ * the two pseudo-element marks, which is how a square box is made round
+ * rather than a length. The plan's token entry fixes this phase's token
+ * count at nine and says no further token is expected, so declaring five
+ * more here would itself have been a deviation; the three state opacities
+ * belong in styles/tokens.css the next time that file is opened, which is
+ * finding CR-M3P9-08 and is M3-P10's to take.
  *
  * WHY THE SELECTORS ARE ELEMENTS AND NOT CLASSES. Every button, every
  * anchor and the one disclosure summary in this product is a control:
@@ -1369,10 +1383,22 @@
 /* THE TRANSITION, on the controls themselves, so the reduced-motion block
  * in styles/tokens.css reaches every one of them by redefining the two
  * durations at :root. No rule below carries a duration of its own and none
- * carries a reduced-motion variant of its own. */
+ * carries a reduced-motion variant of its own.
+ *
+ * select AND textarea WERE ADDED IN FIX ROUND 1 (finding CR-M3P9-07). They
+ * are the two interactive controls the product renders that the criterion
+ * 9.2 census does not count, because neither is pressable and neither is
+ * in the nineteen: the Ring select and the spec editor's textarea, both on
+ * the CSV confirmation screen. They take the transition and the disabled
+ * appearance and NOT the pressed one, because a form field is not pressed.
+ * Without them a form disabled while its submit is in flight, which is
+ * exactly what M3-P10 builds, would leave those two looking untouched
+ * beside a submit that visibly changed. */
 button,
 a,
 summary,
+select,
+textarea,
 input[type="submit"],
 input[type="button"],
 [role="button"] {
@@ -1388,10 +1414,25 @@ input[type="button"],
  * transformable, and the trap measured while building this phase is that
  * getComputedStyle STILL REPORTS the translation matrix on one: the
  * computed value says the control moved while its own bounding box did not
- * change by a pixel. Four of the nineteen controls are bare anchors (the
- * two auth cross-links and the two links on the import result screens);
- * the others already declare a flex or inline-flex box of their own and
- * their own display rule wins over this one on specificity. The spec
+ * change by a pixel.
+ *
+ * CORRECTED IN FIX ROUND 1 (clause R-087, finding CR-M3P9-03). This
+ * comment used to say FOUR of the nineteen controls are bare anchors and
+ * name the two auth cross-links and the two links on the import result
+ * screens. Four of them are bare anchors, but only TWO of the four needed
+ * this rule: the import result screen's two anchors are direct children of
+ * .import-screen, which declares display: flex at src/app/globals.css:299,
+ * and a flex item is blockified whatever display it specifies, so those
+ * two were already transformable. The two that genuinely needed it are the
+ * auth cross-links, which sit alone inside a paragraph. The count was the
+ * whole justification offered for a bare element selector that reaches
+ * every anchor in the product, so it is corrected here rather than left to
+ * be rediscovered. The rule is kept at element scope deliberately: an
+ * anchor added later on a screen with no flex parent inherits a pressed
+ * state that moves, instead of shipping one that only reports moving.
+ *
+ * Every other control already declares a flex or inline-flex box of its
+ * own and its own display rule wins over this one on specificity. The spec
  * asserts the box moves as well as the matrix, so this rule cannot be
  * dropped silently. */
 a {
@@ -1401,23 +1442,61 @@ a {
 /* THE PRESSED APPEARANCE. It moves AND it changes surface, and it does
  * both rather than either: the movement is what survives a phone screen in
  * daylight, and the surface change is what a reader who cannot perceive
- * the movement gets. */
+ * the movement gets.
+ *
+ * IT IS NOT BUILT ON :active ALONE, AND THAT IS THE POINT OF THIS ROUND
+ * (finding HZ-M3P9-01). :active is granted by the engine's own gesture
+ * pipeline, and the input the owner's report came from is a finger.
+ * MEASURED, in this container, under the chromium-phone project's device
+ * options at 390 by 844 with isMobile and hasTouch, sampling every
+ * animation frame: a held CDP Input.dispatchTouchEvent touchStart, an
+ * Input.synthesizeTapGesture with gestureSourceType "touch" and
+ * page.touchscreen.tap each deliver pointerdown AND touchstart to the
+ * control and put it into :active for ZERO frames, while a held
+ * page.mouse.down in the same context matches :active for 22 of 28 frames
+ * and moves the box 2.000px. The same synthesized tap against a bare div
+ * outside this product, carrying nothing but its own :active rule, also
+ * matched for zero frames, so this is the container's gesture pipeline and
+ * not the stylesheet; a real Android Chrome is understood to apply :active
+ * to a tap, and iOS Safari is understood to apply it only where a touch
+ * listener exists. NONE OF THAT IS MEASURABLE HERE, which is exactly why
+ * the appearance is not left resting on it.
+ *
+ * [data-pressed] IS THE SECOND ROUTE, and it is the one the plan's
+ * verification-first step (e) pre-authorises for this condition: an
+ * attribute the control carries between pointerdown and pointerup.
+ * pointerdown fires on every touch path above, so the appearance below is
+ * reachable from a finger. THE HALF THIS PHASE DOES NOT SHIP: nothing in
+ * the product sets the attribute yet, because setting it needs a client
+ * listener and criterion 9.7 pins this phase's diff to two stylesheets,
+ * the Playwright config and one spec. The six lines that set it are
+ * written out verbatim in test/e2e/pressed-and-disabled.spec.ts, which
+ * installs them and then measures this rule under a real held touch press;
+ * M3-P10 opens the client boundary and is where they land in the product.
+ * Until they do, a finger reaches this appearance only where the engine
+ * grants :active to a touch. */
 button:active,
 a:active,
 summary:active,
 input[type="submit"]:active,
 input[type="button"]:active,
-[role="button"]:active {
+[role="button"]:active,
+[data-pressed] {
   transform: translateY(var(--press-offset));
   background-color: var(--color-surface-pressed);
 }
 
 /* Controls whose resting surface is --color-surface-inverse press to the
  * inverse pressed step instead; the ramp carries nothing darker than the
- * resting value, so the pressed step is one lighter. */
+ * resting value, so the pressed step is one lighter. Both routes, because
+ * a class-plus-attribute selector outranks the bare [data-pressed] above
+ * and a class-plus-pseudo-class outranks the bare :active list. */
 .auth-submit:active,
 .import-primary:active,
-.merchant-name-button:active {
+.merchant-name-button:active,
+.auth-submit[data-pressed],
+.import-primary[data-pressed],
+.merchant-name-button[data-pressed] {
   background-color: var(--color-surface-inverse-pressed);
 }
 
@@ -1434,6 +1513,8 @@ input[type="button"]:active,
  * grows one. */
 button:disabled,
 input:disabled,
+select:disabled,
+textarea:disabled,
 [aria-disabled="true"],
 a[aria-disabled="true"],
 summary[aria-disabled="true"] {
@@ -1443,6 +1524,31 @@ summary[aria-disabled="true"] {
   opacity: 0.55;
   cursor: default;
   text-decoration: none;
+}
+
+/* A CONTROL THAT LOOKS DISABLED MUST NOT STILL WORK. ADDED IN FIX ROUND 1
+ * (finding HZ-M3P9-02). The rule above gave [aria-disabled="true"] the
+ * whole disabled appearance, cursor: default included, and took NOTHING
+ * away: measured on the shipped screens, a link marked that way still
+ * navigated, a submit marked that way still produced a POST, and the
+ * disclosure summary still toggled open. A control that looks unusable and
+ * is fully usable is worse than one with no disabled state at all, and it
+ * is the only marking eight of the nineteen controls can carry, because a
+ * link and a summary have no disabled attribute.
+ *
+ * WHAT THIS BUYS AND WHAT IT DOES NOT, because the second half is what a
+ * later phase will get wrong. It stops POINTER activation: a tap, a click,
+ * a stylus. It does NOT stop the keyboard and it does not stop assistive
+ * technology: an aria-disabled control is still focusable and still
+ * activates on Enter or Space, and pointer-events cannot reach either. So
+ * THE PHASE THAT SETS THE ATTRIBUTE MUST ALSO REFUSE THE ACTION IN ITS
+ * HANDLER; this rule is the visual and pointer half only, and M3-P10 owns
+ * the other half. It is deliberately NOT applied to button:disabled or
+ * input:disabled: the native attribute already refuses activation from
+ * every input path, and pointer-events there would only cost the cursor
+ * the rule above sets. */
+[aria-disabled="true"] {
+  pointer-events: none;
 }
 
 /* A disabled control does not respond to hover either. The four hover
@@ -1459,20 +1565,36 @@ input:disabled:hover,
   text-decoration: none;
 }
 
-/* A disabled control does not respond to a press. */
+/* A disabled control does not respond to a press, by either route. */
 button:disabled:active,
 input:disabled:active,
-[aria-disabled="true"]:active {
+[aria-disabled="true"]:active,
+button:disabled[data-pressed],
+input:disabled[data-pressed],
+[aria-disabled="true"][data-pressed] {
   transform: none;
   background-color: var(--color-surface-disabled);
 }
 
 /* THE BUSY APPEARANCE. The control keeps its label and gains a mark drawn
  * as a pseudo-element on the control itself, so M3-P10 adds no markup for
- * it and no message key in any language. [aria-busy="true"] is what a
- * button carries; .pulse-busy is the class the link-shaped controls carry,
- * because a navigation that is under way is not an element whose contents
- * assistive technology should be told to hold back. */
+ * it and no message key in any language.
+ *
+ * CORRECTED IN FIX ROUND 1 (clause R-087, finding HZ-M3P9-04). This
+ * comment used to say "[aria-busy=\"true\"] is what a button carries;
+ * .pulse-busy is the class the link-shaped controls carry", and the
+ * selector list immediately below it contradicted that: it gives
+ * a[aria-busy="true"] and summary[aria-busy="true"] exactly the same
+ * treatment as the button. WHAT IS ACTUALLY TRUE of the four selectors
+ * below: the attribute branch covers buttons, links and the disclosure
+ * summary alike, and .pulse-busy is a SECOND, EQUIVALENT route for a
+ * control where aria-busy would be the wrong announcement to make, which
+ * is any control whose own contents are not the thing changing. Both
+ * routes are now measured by the spec on all nineteen controls, so
+ * neither can be deleted or misspelled silently; before this round nothing
+ * in the suite named .pulse-busy at all. M3-P10 chooses between them per
+ * control, and the choice is an accessibility one rather than a styling
+ * one. */
 [aria-busy="true"],
 a[aria-busy="true"],
 summary[aria-busy="true"],

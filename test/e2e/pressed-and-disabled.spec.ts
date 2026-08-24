@@ -934,6 +934,15 @@ test.describe("an aria-disabled control refuses activation", () => {
       if (request.method() === "POST") posts += 1;
     });
 
+    // WARM THE DESTINATION ROUTE FIRST. The dev server compiles a route on
+    // its first request, which took longer than the wait below and made the
+    // negative assertion pass while a navigation was still in flight: the
+    // link HAD navigated and the URL had simply not changed yet. A vacuous
+    // green on the exact assertion this test exists for is the failure this
+    // warm-up removes, and the positive control below is what caught it.
+    await page.goto("/sign-up");
+    await expect(page.getByRole("button", { name: "Create household" })).toBeVisible();
+
     await page.goto("/sign-in");
     const link = page.locator("p.auth-alt a");
     await expect(link).toBeVisible();
@@ -946,7 +955,7 @@ test.describe("an aria-disabled control refuses activation", () => {
 
     await link.evaluate((n) => n.setAttribute("aria-disabled", "true"));
     await page.mouse.click(linkCentre.x, linkCentre.y);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(2_500);
     expect(
       new URL(page.url()).pathname,
       "a link wearing the full disabled appearance still navigated",
