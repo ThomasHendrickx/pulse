@@ -1,12 +1,21 @@
 # M3-P14 and M3-P15, clean-room review, CRITERIA contract.
-# IN PROGRESS. Written incrementally; each block is appended as its evidence is captured.
+# Written incrementally and committed as it went; complete.
 schema: verdict
 phase: M3-P14+M3-P15
 contract: criteria
 reviewer: clean-room-reviewer
 head-reviewed: f41a33c
 branch: claude/m3-p14-rev-crit
-status: in-progress
+verdict: changes-requested
+status: complete
+criteria-total: 25
+criteria-met: 12
+criteria-partial: 11
+criteria-not-met: 2
+findings-total: 15
+findings-high: 4
+findings-medium: 5
+findings-low: 6
 
 setup:
   merged-main: |
@@ -15,7 +24,20 @@ setup:
     origin/main head dc8c505 "gate:privacy: tell a failed lookup apart from an unlisted value".
     Merged so the privacy gate runs here are trustworthy, per dispatch.
   worktree: /home/user/wt-m3p14-crit
-  disk-at-start: "/dev/vda 252G 36G 1.8G 96% / (fleet warning 10 applies: low headroom before e2e)"
+  disk-at-start: "/dev/vda 252G 36G 1.8G 96% / (fleet warning 10 applies; regenerable node_modules and .next were reclaimed from closed-phase worktrees to make room)"
+  database-used: |
+    pulse_review_m3p14crit, created by this review inside the local stack's Postgres at
+    127.0.0.1:54322 (container supabase_db_m1-p1-skeleton), migrated with
+    `prisma migrate deploy` and seeded with prisma/seed.ts, with DATABASE_URL, DIRECT_URL,
+    NEXT_PUBLIC_SUPABASE_URL and both keys PINNED explicitly in the invoking shell for
+    every command. The ambient DATABASE_URL points at a foreign Supabase pooler
+    (project ref yqpebyihcmounorruwdl, which is not Pulse) and no command in this review
+    was ever run with it. The review database no longer exists: a sibling lane's cleanup
+    stopped the shared stack with its data volume removed part-way through this review,
+    which destroyed it along with every other lane database on that stack. It was
+    recreated and re-migrated afterwards for the re-checks recorded below, and is left
+    for the fleet's own cleanup rather than dropped mid-flight while other lanes are
+    bringing the same stack back up.
 
 
 gates:
@@ -1074,3 +1096,138 @@ criteria:
       control is exercised here.
     implementer-claim: met
     reviewer-note: "The rules-stopped assertion is toBeVisible only; the criterion asks for the rule reported 'by name and count'. Recorded under CRIT-P14-13's note rather than as a second finding, since the count reaches the screen through the same copy key."
+
+e2e:
+  quoted-honestly: |
+    ONE FULL RUN of the Playwright gate, mine, against the pinned local stack.
+      57 passed (20.4m), 8 failed, exit 1.
+    It ran on the reviewer-local ports 3410 and 3510 rather than 3000 and 3100 because
+    two other worktrees held those, twice racing this review's own start; the config used
+    was otherwise identical to playwright.config.ts. It completed BEFORE the stack was
+    destroyed: its last four tests passed.
+    THE EIGHT, and the shape of each:
+      accounts.spec.ts:173 CONTROL ARM             - signUp never produced household-context
+      accounts.spec.ts:200 REGISTERED ARM          - toBeVisible after a submit
+      accounts.spec.ts:286 mistyped account number - accounts-status element not found
+      accounts.spec.ts:379 no ring is refused      - import-status element not found
+      auth.spec.ts:11 sign up, sign out, sign in   - Sign in heading not found
+      import.spec.ts:170 KBC card PDF plus companion - page.goto: test timeout 30000ms
+      merchants.spec.ts:129 card group labels      - signUp never produced household-context
+      navigation.spec.ts:195 desktop viewport      - signUp never produced household-context
+    FIVE OF THE EIGHT fail inside signUp, before the test reaches its subject, which is
+    the shape the dispatch records as settled for this container. Load average was between
+    13 and 19 on four cores throughout, with two other Playwright suites running.
+    THE DISPATCH'S OWN SIGNATURE OF ENVIRONMENTAL UNRELIABILITY REPRODUCED IN THIS RUN:
+    navigation.spec.ts:195 FAILED under the chromium project (test 40) and PASSED under
+    the chromium-phone project (test 63) in the SAME run.
+  re-run-in-isolation: |
+    The four failures in this phase's own spec were re-run in isolation against a freshly
+    created and freshly migrated database after the stack was rebuilt:
+      npx playwright test -g "CONTROL ARM|REGISTERED ARM|mistyped account number|declaration carrying no ring"
+      -> 4 passed (1.2m), exit 0
+    So none of the four is a defect in this phase. Recorded rather than assumed.
+  claim: |
+    I DO NOT CLAIM THE SUITE GREEN, and neither does the implementer. Criterion 14.10 and
+    criterion 15.8 both require npm run test:e2e to exit 0 and it does not, in my run or
+    in the implementer's reported run. Both criteria are marked partial for that clause
+    and for no other reason.
+
+not-witnessed:
+  - id: NW-1
+    what: "The first isolation re-run of the four accounts failures."
+    why: |
+      It was attempted while a sibling lane's cleanup was stopping the shared local
+      Supabase stack with its data volume removed. All four failed at signUp against a
+      database whose schema had vanished. That run is DISCARDED and is recorded here so
+      that nobody reads it as evidence about this phase. It was superseded by the clean
+      isolation run above, which passed 4 of 4.
+  - id: NW-2
+    what: "A second full npm run test:e2e after the stack was rebuilt."
+    why: |
+      Not re-run. The dispatch asks for ONE run and settles that the gate is unreliable in
+      this container under fleet load and is not mine to root-cause. The one run I made is
+      quoted above with its red. A second run would cost twenty minutes and, on the
+      dispatch's own settled position, would not decide anything the first did not.
+  - id: NW-3
+    what: "Whether the fast gates pass on the exact head f41a33c without origin/main merged."
+    why: |
+      The dispatch instructed the merge before any gate was run, so every gate figure in
+      this document is measured at the merge commit and not at f41a33c bare. The merge
+      brought only delivery/plan/pulse-v02.yaml and scripts/gate-privacy.sh, neither of
+      which any source file imports.
+
+reviewer-judgement-on-the-two-flagged-items:
+  third-self-passing-guard:
+    answer: "YES, and there are two of them, not one. The more serious is not the one I expected."
+    detail: |
+      CRIT-P14-15 is the serious one: the MerchantRule delete grep at
+      test/application/account-registry.test.ts:495, required by BOTH criterion 14.13 and
+      criterion 15.6 and described in both as the domain's absolute rule "held
+      MECHANICALLY". Its pattern needs the word delete to precede the word Rule on one
+      line, and the Prisma client writes the model name first, so
+      `await tx.merchantRule.deleteMany({` is invisible to it. Probed: it misses every
+      Prisma form and the raw SQL form, and catches a port method named deleteRule and a
+      prose comment. It is green against exactly the code it exists to forbid.
+      CRIT-P14-02 is the second: criterion 14.4's one-copy enumeration at
+      test/domain/account-number.test.ts:162, whose PERMITTED list is empty while a second
+      copy of the transformation sits in the tree at
+      src/modules/overview/adapters/overview-repository.ts:98 and cannot match its
+      detector. The two copies already disagree on which characters they strip.
+      CRIT-P14-06 is a third and weaker instance: an assertion that the ring predicates
+      are DEFINED, which their definitions alone satisfy.
+      Worth saying plainly: the implementer found two such guards in its own work and
+      corrected both, and wrote the correction notes into the tree
+      (test/domain/absent-flow-reads.test.ts:57 and scripts/gate-diff-tokens.sh:29). The
+      discipline is right; the coverage of it was not complete. Every guard in these two
+      phases should be run against the state it exists to catch before it is trusted, and
+      three of them were not.
+  the-navigation-decision:
+    answer: "The criterion should NOT have forced a different answer, and deciding rather than asking was correct. One consequence deserves to reach the owner as an outcome, not as a question."
+    detail: |
+      Criterion 14.7 constrains four measurable properties: rendered line count against a
+      captured baseline, tap-target floor in both dimensions, no clipping, no horizontal
+      overflow. The two-per-line wrap meets all four and the guard that measures them
+      passed in my run under both the desktop and the phone projects
+      (test/e2e/month-view.spec.ts:708, tests 27 and 50). The alternatives the criterion
+      leaves open, shorter labels or a collapsed menu, would meet it too, so the criterion
+      genuinely does not decide between them and DR-0029 puts the choice with the
+      implementer rather than the owner: the two answers do not produce different data or
+      a different risk.
+      The measurement behind it is real and is recorded in the diff rather than asserted:
+      at a quarter row the fourth link pushed "Overview" from one line to two at 390 and
+      from two to FOUR at 360 at a 200 percent text size. That is hazard H14.8 caught by
+      the instrument built for it, and it rules out the do-nothing answer.
+      The sign-out move to align-self: end is a consequence rather than a preference, and
+      it is defended by a measurement too: the focus-order spec reddened on the centred
+      form reading tops [24, 24, 72, 72, 48], and both focus-order tests passed in my run
+      at 390 and at 1280 (tests 41 and 42).
+      WHAT SHOULD REACH THE OWNER AS AN OUTCOME. To keep the wrapped nav to two
+      tap-target rows the phone nav type dropped from --text-base to --text-xs on EVERY
+      route (src/app/globals.css:236), which the implementer chose so the reconciliation
+      verdict stays above the fold criterion 7.8 pins. That is a visible change to every
+      screen in the product, made for a good reason, and it currently lives only in a
+      stylesheet comment. It belongs in the release note the owner reads, not as a
+      question and not as a decision to revisit.
+
+what-this-contract-did-not-reach:
+  statement: |
+    "All acceptance criteria met" is one input and never a terminal green, and this
+    review is one input too. Naming what it did not reach:
+    THE MECHANISM IS IN BETTER SHAPE THAN THE WITNESSES. I walked the SQL, the
+    classification order, the corrections and the projection by hand and found the
+    implementation correct everywhere I looked, including all four arms of criterion
+    14.16. Almost every finding here is about a guard that does not hold what it says it
+    holds. That asymmetry is itself a fact about these phases: the code was built
+    carefully and the instruments were built in a hurry at the end.
+    WHAT I COULD NOT REACH. I did not exercise the real overview repository against a
+    seeded household by hand for each of criterion 14.14's five cases; I established
+    that no test does and that the lane exists, not what such a test would find. I did
+    not read the fixtures against the real source documents, which is the check the
+    privacy gate's own header says no gate can make and which found the only two real
+    leaks this project has had. I did not review the plan document, which is most of the
+    diff by line count. And I did not run the phase under any Node other than 22.12.0.
+    THE DEFECT MY CONTRACT WOULD HAVE MISSED. CRIT-P14-01, the stray tracked file at the
+    repository root, is outside every criterion in both phases. Nothing in the contract
+    asks whether the tree gained a file nobody meant to add, and in a public repository
+    that is the class of thing that matters. I found it in the first minute by reading
+    `git diff --stat`, not by walking the criteria.
