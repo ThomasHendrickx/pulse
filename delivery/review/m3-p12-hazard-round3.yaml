@@ -32,7 +32,73 @@ review-contract: hazard
 # 9. Reproduced criterion 12.2's numbers and the truncation residual on the
 #    two real documents, in memory, counts only.
 
+# 10. Ran npm run test:e2e myself. THE COMMITTED PORTS WERE HELD BY OTHER FLEET
+#     LANES throughout, so the first attempt died on EADDRINUSE 3100 before a
+#     single test ran. I moved the two listen ports to 3400 and 3500 through an
+#     UNTRACKED override config that changes nothing else, ran the whole suite,
+#     then deleted that file and left the tree exactly as I found it. Result:
+#     52 passed, 3 failed, 16.1m, exit 1.
+# 11. Re-ran the three failures and reached my own conclusion on them. See
+#     criterion 12.14 and finding CR3-M3P12-09.
+# 12. Validated this document with npx tiphys validate --type verdict. The
+#     schema and all three completeness checks pass against a context carrying
+#     the phase's plan and work history; the one remaining INVALID is
+#     dual-review-decorrelation, reporting that only ONE verdict for this phase
+#     exists under delivery/review and a delegated grant needs two. That is a
+#     fact about the ROUND rather than about this document: the sibling lane's
+#     round-three verdict is on its own branch.
+# 13. Dropped my local database and removed every temporary file I made.
+
 findings:
+  - id: CR3-M3P12-09
+    severity: low
+    analysis: >-
+      THE PLAYWRIGHT GATE DOES NOT EXIT 0 ON THIS HEAD, AND I DO NOT BELIEVE
+      THE CHANGE IS WHY. Criterion 12.14 asks for exit 0. The implementer
+      recorded the gate red rather than claiming it green, which is the right
+      behaviour and is not what this finding is about. This finding exists so
+      the round carries an action item rather than an impression, because a
+      gate recorded red by two people independently is a gate nobody has seen
+      pass on this head. MY EVIDENCE THAT THE CHANGE IS NOT THE CAUSE, and it
+      does not rest on a stash. First, the failing SET MOVED between runs of
+      the same head: the implementer recorded golden-journey.spec.ts:79,
+      import.spec.ts:170 and month-view.spec.ts:275 under chromium-phone; I
+      recorded import.spec.ts:170, month-view.spec.ts:120 and
+      month-view.spec.ts:211, all under chromium. Only one is shared, and
+      golden-journey.spec.ts:79, the one the implementer concluded reproduces
+      in isolation, PASSED for me in 28.1 seconds. Second, and this is
+      decisive: month-view.spec.ts:120 and month-view.spec.ts:211 FAILED under
+      the chromium project and PASSED under chromium-phone IN THE SAME RUN,
+      against the same code, the same server and the same database, with the
+      same assertions. A defect in the code cannot pass and fail in one run.
+      Both then passed again when I re-ran them on their own. Third, every
+      failure is the same shape and none is an assertion about a value: each
+      is a 5000ms toBeVisible or toHaveText timeout waiting for a dev server
+      to finish rendering, and in import.spec.ts:170 the FAILING LINE ITSELF
+      MOVED, from the format-confirmation heading in the full run to the
+      household-context element at the sign-up step, line 181, when re-run
+      alone. A behavioural defect does not relocate. Fourth, three fleet lanes
+      were driving Playwright on this machine and this stack throughout, which
+      I confirmed from the process table, and the root filesystem was at 92
+      percent when the run started, which fleet warning 10 records as the
+      cause of exactly this failure family.
+    evidence:
+      - "MY RUN, whole suite, at the committed head: 52 passed, 3 failed, 16.1m, exit 1. Failures: [chromium] test/e2e/import.spec.ts:170, [chromium] test/e2e/month-view.spec.ts:120, [chromium] test/e2e/month-view.spec.ts:211."
+      - "THE SAME TWO TESTS PASSED IN THE SAME RUN under the other project: [chromium-phone] test/e2e/month-view.spec.ts:120 passed in 22.5s and [chromium-phone] test/e2e/month-view.spec.ts:211 passed in 24.5s."
+      - "test/e2e/golden-journey.spec.ts:79, which the implementer concluded is pre-existing and reproduces in isolation, PASSED for me in 28.1s, and test/e2e/month-view.spec.ts:275 under chromium-phone, another of the implementer's three, passed in 25.9s."
+      - "ALL THREE PASS ON RE-RUN. Two of the three passed immediately when I re-ran them together on the moved ports: month-view.spec.ts:120 in 28.5s and month-view.spec.ts:211 in 28.6s, exit 1 only because of the third. The third, import.spec.ts:170, failed that isolated run at a DIFFERENT and earlier line, test/e2e/import.spec.ts:181, the sign-up assertion, on a cold dev server; re-running the whole of test/e2e/import.spec.ts so the earlier tests warm the routes gave 4 passed, exit 0, with import.spec.ts:170 green in 15.4s."
+      - "Every failure's captured error is a timeout, never a wrong value: getByTestId('import-result') not found, getByRole('heading', { name: 'Confirm the detected format' }) not found, and on the isolated re-run getByTestId('household-context') not found at test/e2e/import.spec.ts:181, which is a DIFFERENT and earlier line than the same test failed on in the full run."
+      - "This phase's own specs passed in my run: test/e2e/merchants.spec.ts:276, the stale-page refusal witness, and test/e2e/merchant-rule-write.spec.ts:32, the adapter write path against a real database, both green, as were the two merchants.spec.ts grouping tests and the production-mode smoke spec."
+    concrete-fix: >-
+      Do not touch a test. Re-run npm run test:e2e once on a machine where no
+      other lane is driving Playwright and the root filesystem has room, on
+      the committed ports, and record the exit code in the phase work history
+      under criterion 12.14. If it exits 0 the criterion is met and this
+      finding closes with it. If a set of tests fails again on a quiet
+      machine, the shared shape is the 5000ms default assertion timeout
+      against a dev server compiling a route on first hit, and the change that
+      follows is to raise expect.timeout in playwright.config.ts with its own
+      recorded reasoning, which is a config decision rather than a test edit.
   - id: CR3-M3P12-01
     severity: high
     analysis: >-
@@ -599,8 +665,31 @@ criteria:
   quote: THE STANDING GATE. npm run typecheck, npm run lint, npm test and npm run gate:privacy all exit
     0, and npm run test:e2e exits 0, each with its captured output in the phase work history.
   evidence:
-  - PLACEHOLDER
-  met: true
+  - 'THE FIVE FAST GATES, run by me in /home/user/wt-m3p12-r3haz at f3bfd66 after npm install, since
+    node_modules was absent: npm run typecheck exit 0 (tsc --noEmit, no output); npm run lint exit 0
+    (eslint ., no output); npm test exit 0 with Test Files 39 passed (39) and Tests 554 passed (554)
+    in 25.74s; npm run gate:privacy exit 0 printing gate:privacy clean; npm run gate:tokens exit 0.'
+  - 'THE PLAYWRIGHT GATE DID NOT EXIT 0 FOR ME EITHER, which is why this criterion is NOT MET: 52
+    passed, 3 failed, 16.1m, exit 1, the three being [chromium] test/e2e/import.spec.ts:170,
+    [chromium] test/e2e/month-view.spec.ts:120 and [chromium] test/e2e/month-view.spec.ts:211.'
+  - 'MY CONCLUSION ON THE SUITE, reached independently and recorded in full as finding CR3-M3P12-09:
+    the failures are machine contention rather than this change. The decisive evidence is that
+    month-view.spec.ts:120 and month-view.spec.ts:211 FAILED under chromium and PASSED under
+    chromium-phone in the SAME run, and passed again on their own; that the implementer''s three and
+    mine share only one test; and that golden-journey.spec.ts:79, the one they concluded reproduces
+    in isolation, passed for me in 28.1s.'
+  - 'ON THE MOVED PORTS, which the brief asked me to judge: they are a confound the method
+    introduces and they do not matter. Ports appear in the committed config in exactly two places,
+    the URLs the two local servers listen on, and no spec hardcodes one: the only literal 3000 under
+    test/e2e is a fallback at test/e2e/month-view.spec.ts:291 and :798 behind a nullish coalesce on
+    baseURL, which the config always sets, so the fallback is never taken. I moved the ports myself,
+    to 3400 and 3500, because three fleet lanes held 3000 and 3100 and the committed config sets
+    reuseExistingServer:false, so an occupied port kills the run before any test starts. I witnessed
+    exactly that: EADDRINUSE 3100, no test executed. Both projects behaved normally on the moved
+    ports, including the production-mode smoke spec on 3500. What DOES matter, and it is the same
+    confound wearing a different name, is that all four runs on this head, the implementer''s and my
+    three, were made while other lanes were driving Playwright on the same machine and stack.'
+  met: false
 - id: '12.15'
   quote: 'THE WHOLE-CORPUS EFFECT IS RECORDED, NOT ONLY THE HAPPY FIXTURE. The phase work history carries
     one line per committed fixture with the distinct merchant-group count under the baseline derivation
