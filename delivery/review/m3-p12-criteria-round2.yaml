@@ -68,6 +68,33 @@
 # both plan defects under repair elsewhere: criterion 12.17's deployed-run
 # half, and criterion 12.1's composition clause. Both are recorded factually
 # in their walks below with the defect attributed to the plan.
+#
+# TWO CRITERIA NOT COUNTED AGAINST THE IMPLEMENTER, already named above, are
+# recorded factually in their walks with the defect attributed to the plan.
+#
+# DECORRELATION, recorded rather than left to be inferred. This document was
+# complete before I read the sibling hazard lane's round-two verdict, which
+# this round's dispatch permits only afterwards. Two findings converged: the
+# same-merchant unique-key collision, which I reached by running the shipped
+# script against a real database and they reached with a fake that models the
+# unique key plus a direct call on the adapter, and the bare-namespace group
+# that renders with nothing on it. One of theirs I had NOT found, the write
+# boundary storing an uncompacted account subject it validated compacted; I
+# witnessed it myself before writing it up and it is finding CR2-M3P12-08,
+# and their unaccented French string is finding CR2-M3P12-09, also witnessed
+# here. Nothing in this document is taken from that lane on trust.
+#
+# VALIDATION, captured rather than claimed. npx tiphys validate --type verdict
+# against a context assembled from this worktree's charter, the plan, this
+# phase's work history, the fleet's assurance-modes and both round-two verdict
+# documents reports exactly ONE remaining INVALID, and it is not a property of
+# this document: produced-by value claude-opus-5 occurs in 2 of the 2 verdicts
+# for phase M3-P12, so the reviews are not decorrelated on produced-by. That is
+# a dispatch fact, both lanes of this round were given to the same model
+# family, and the only way this document could clear it would be to misreport
+# which family wrote it. Every schema check, the criteria-completeness check
+# and the deviations-judged comparison against the work history all pass. The
+# precedent round-one reviews do not validate cleanly either.
 kind: verdict
 phase: M3-P12
 verdict: FIX-ROUND-NEEDED
@@ -352,6 +379,73 @@ findings:
     it, as static text inside the row. That reuses a string that already exists in all three languages and turns an
     empty row into a stated refusal. Group labelling proper is decision D-41 and belongs to M3-P13, and this does
     not pre-empt it.
+- id: CR2-M3P12-08
+  severity: medium
+  analysis: |-
+    THE WRITE BOUNDARY VALIDATES A COMPACTED SUBJECT AND STORES THE UNCOMPACTED ONE, so it can accept a subject and
+    write a rule that can never match. isTrustedCounterpartyAccount compacts and uppercases internally before
+    testing, and assignMerchant then stores the submitted string VERBATIM, with a comment saying that normalising it
+    again would uppercase the namespace. Both halves are right on their own and the pair is not: a subject carrying
+    the account in lowercase spaced groups passes the gate and is stored as written, while the derivation the
+    matcher is fed always produces the compacted uppercase form, so the two can never be equal. That is precisely
+    the outcome criterion 12.18 names in its own reasoning, silently writing a rule that can never match anything,
+    arriving through a door the criterion's enumeration does not cover: the criterion refuses an empty remainder and
+    a remainder that fails the trust gate, and this remainder passes the trust gate. Today the only writer is a
+    hidden field carrying a derived key, so this is not reachable from the shipped form without tampering; it
+    becomes reachable the moment anything else writes a subject, which is exactly what the slice-5 accepted-answer
+    path the schema reserves PREFIX and PATTERN for will do.
+  evidence:
+  - |-
+    The gate compacts before testing: src/modules/merchants/domain/counterparty-identity.ts:262 through :278, where
+    compactAccount is applied at :266 and every later test reads the compacted value.
+  - |-
+    The boundary stores the raw submission: src/modules/merchants/application/assign-merchant.ts:86, with the
+    verbatim-storage decision stated at :83 through :85 and the rule written from it at :128 through :132.
+  - |-
+    WITNESSED. Submitting an account-basis subject whose remainder is the fixture-shaped account written lowercase
+    in spaced groups was ACCEPTED, and the pattern handed to upsertRule was that string unchanged. The identity key
+    the derivation produces for the same account is the compacted uppercase form, and matchRules over the stored
+    rule against that derived key returned undefined. One naming, zero rows, no error anywhere.
+  - |-
+    The compaction that WOULD close it already exists and is exported: compactAccount at
+    src/modules/merchants/domain/counterparty-identity.ts:174, which the derivation itself uses at :303.
+  - |-
+    Independently reached by the sibling hazard lane of this same round as HZ-M3P12-R2-02, which I read only after
+    witnessing it here.
+  concrete-fix: |-
+    Store the canonical form on the account branch. At src/modules/merchants/application/assign-merchant.ts:116
+    through :124, after the trust gate passes, rebuild the pattern as the account namespace followed by
+    compactAccount of the remainder, and use that rebuilt string in the upsertRule call at :128. The descriptor
+    branch must keep storing verbatim, because normaliseCounterparty is not idempotent over an already-normalised
+    key in the way this needs. Add a test beside test/application/counterparty-identity-surfaces.test.ts:290
+    asserting that a lowercase spaced account subject is either refused or stored compacted, and that the stored
+    pattern equals the key counterpartyIdentity derives for the same account.
+- id: CR2-M3P12-09
+  severity: low
+  analysis: |-
+    THE NEW FRENCH REFUSAL STRING IS UNACCENTED WHILE ITS SIBLINGS ARE NOT. The fix round added one message to each
+    of the three catalogues so criterion 12.18's new refusal reaches the reader in their own language. The French
+    one is written with no accents at all, in a file where the three strings added immediately before it, in the
+    same phase, carry theirs. It is a user-facing string on a screen the owner reads, and unaccented French reads as
+    broken French rather than as a stylistic choice. It is small and it is a defect in shipped copy rather than in a
+    comment, which is why it is raised rather than noted.
+  evidence:
+  - |-
+    The unaccented string is messages/fr.json:127, nameRefusedUnidentifiable. Read with cat -A, its letters are
+    plain ASCII throughout: ete enregistre, operations, reconnaitre, placerait chacune de ces operations.
+  - |-
+    Its three siblings at messages/fr.json:124 through :126 are accented in the same file, with the multi-byte
+    sequences present.
+  - |-
+    It is rendered to the reader, not internal: mapped at src/modules/merchants/ui/merchant-review.tsx:120 and shown
+    as the refusal banner criterion 12.18 requires.
+  - |-
+    The English and Dutch versions of the same message are complete, so this is one string rather than a systematic
+    omission.
+  concrete-fix: |-
+    Restore the accents in messages/fr.json:127, matching the register of the three strings above it: ete becomes
+    the accented past participle, enregistre likewise, operations becomes the accented form, and reconnaitre takes
+    its circumflex. Nothing else in the file needs touching.
 criteria:
 - id: '12.1'
   quote: |-
@@ -990,6 +1084,12 @@ criteria:
     The refusal messages exist in all three languages, including the one the fix round added: messages/en.json,
     messages/nl.json and messages/fr.json each gained nameRefusedUnidentifiable, mapped at
     src/modules/merchants/ui/merchant-review.tsx:106 through :121.
+  - |-
+    MET, WITH TWO FINDINGS BESIDE IT THAT THE CRITERION'S ENUMERATION DOES NOT REACH. Everything this criterion
+    names is asserted and holds. It does not reach a subject that PASSES the trust gate and is then stored
+    uncompacted, which produces exactly the dead rule the criterion's own reasoning names, and that is finding
+    CR2-M3P12-08. It also does not reach the quality of the message it requires, and the new French string is
+    unaccented where its siblings are not, which is finding CR2-M3P12-09.
 - id: '12.19'
   quote: |-
     THE GOVERNING DOCUMENT SAYS WHAT THE CODE DOES. pulse-domain section 7's resolution chain is amended in the same
@@ -1103,8 +1203,7 @@ criteria:
     Green in my own npm test run: test/property/pass-one-preserves-meaning.test.ts, 5 tests, 112ms.
 deviations-judged:
 - deviation: |-
-    Criterion 12.17's second half, the phase work history recording the command actually run AGAINST THE DEPLOYED
-    DATABASE with its exit code and its printed before-and-after assignment-set sizes.
+    Criterion 12.17, the half requiring the phase work history to record the command actually run AGAINST THE DEPLOYED DATABASE with its exit code and its printed before-and-after assignment-set sizes.
   serves-plan-intent: true
   reasoning: |-
     Re-tested here rather than inherited from round one, and it holds. The script does import the new derivation, at
@@ -1113,50 +1212,91 @@ deviations-judged:
     owner's live database would write merchant_rules while the deployed application still carries the old code,
     which is the deploy window with its two halves in the wrong order, and it would do so through a script with no
     target check, which is finding CR2-M3P12-01. No implementer of this phase can produce the artefact the criterion
-    asks for without violating D-46. Recording the absence is the only behaviour open and it is recorded plainly at
-    delivery/work-history/m3-p12.yaml:462. The deviation serves the plan's intent; the criterion is what needs
-    changing, and this round's dispatch says that repair is already under way elsewhere.
+    asks for without violating D-46, so recording the absence is the only behaviour open, and it is recorded plainly
+    at delivery/work-history/m3-p12.yaml:462. The deviation serves the plan's intent; the criterion is what needs
+    changing, and this round's dispatch says that repair is already under way elsewhere. I ran the routine six times
+    against a database of my own instead, recorded under criteria 12.7 and 12.8, and I do not offer that as the
+    deployed run.
 - deviation: |-
-    Criteria 12.7, 12.8 and 12.9, which speak of a SEEDED DATABASE holding MerchantRule rows written under the
-    baseline derivation. The application tests still bind an in-memory fake; the fix round answered round one's
-    finding by covering the adapter's only production write path in the PLAYWRIGHT gate instead.
+    Criteria 12.7, 12.8 and 12.9, which speak of "a seeded database" holding MerchantRule rows written under the baseline derivation.
   serves-plan-intent: true
   reasoning: |-
-    Round one judged this deviation as not serving the plan's intent, on the premise that this tree already had a
+    Round one judged this deviation as NOT serving the plan's intent, on the premise that this tree already had a
     live-Postgres lane inside the fast gate. I checked that premise myself and it is FALSE: grepping the whole test
     tree outside test/e2e for a Prisma client or a Supabase client construction returns nothing, so
-    test/schema/rls.test.ts, test/schema/tenancy.test.ts and test/db/db-guard.test.ts are all static analysis or
+    test/schema/rls.test.ts, test/schema/tenancy.test.ts and test/db/db-guard.test.ts are static analysis or
     pure-function tests and not one of them opens a connection. Putting a connecting test into npm test would change
     what the fast gate requires of every contributor and every CI runner, which is a bigger decision than a fix
     round should take on its own. The Playwright gate does boot the local stack with migrations applied and must
     pass before the slice closes, and the new spec at test/e2e/merchant-rule-write.spec.ts:32 exercises
     updateRulePattern for real, asserting both the in-household write and the foreign-household refusal; it passed
-    in my own run in 257ms. The spec says in its own header why it lives there. The deviation serves the plan's
-    intent, and separately I ran the routine itself against a real database, which is what criteria 12.7 and 12.8
-    above record.
+    in my own run in 257ms and the spec says in its own header why it lives there. The deviation serves the plan's
+    intent. Separately, and because the criterion's word was chosen deliberately, I ran the whole routine against a
+    real Postgres database of my own, which is how findings CR2-M3P12-02 and CR2-M3P12-03 were found: both are
+    conditions no in-memory fake can produce, because the fake has no unique key to violate and no statement to
+    fail.
 - deviation: |-
-    The plan itself was edited inside a fix round: delivery/plan/pulse-v02.yaml's conflicts-with entry for this
-    phase was rewritten by b324d87.
+    files-to-touch, which does not name .gitignore.
   serves-plan-intent: true
   reasoning: |-
-    The edit corrects a statement that was FALSE as built. The entry recorded, as CHECKED, that this phase touches
-    none of M3-P9's files; the phase adds a rule block to src/app/globals.css and a spec under test/e2e, both of
-    which M3-P9's set contains, and M3-P9 is not merged, so the overlap is live rather than historical. Both files
-    are needed by criterion 12.18, which requires a refusal that reaches the reader and a browser witness for it.
-    The rewrite says what the entry used to claim, why it is false, that decision D-44's conclusion is unchanged,
-    and that the two additions are additive so a rebase should be clean. That is the correction shape clause R-087
-    asks for, made in the same change as the code it describes. It also establishes that plan edits were not out of
-    bounds for this round, which is why finding CR2-M3P12-05 is raised rather than excused.
+    Verified independently rather than inherited. git ls-files node_modules on this head returns nothing, git
+    check-ignore reports node_modules ignored, and the rule at .gitignore line 2 now carries no trailing slash,
+    which is the right fix rather than a special case since a fleet worktree's node_modules is a symlink and a
+    trailing slash matches directories only. Fixing the accident and closing the recurrence in one change serves
+    CLAUDE.md non-negotiable 8. The fix round's correction to this entry is the important part and it is honest: the
+    earlier wording was true of the TREE and read as true of the REPOSITORY, and the blob is still reachable in this
+    branch's pushed history. I confirmed that: git ls-tree d62b63d node_modules still returns the 120000 blob. The
+    entry now says so, names the orchestrator's decision not to rewrite history, and gives the reason, that the
+    content is a build path carrying no household data and the phase squash-merges. Serving the plan's intent, with
+    the residual stated where a reader meets it.
 - deviation: |-
-    files-to-touch does not name messages/en.json, messages/nl.json, messages/fr.json, src/app/globals.css,
-    src/app/(app)/merchants/page.tsx, test/property/ or test/e2e/, and the branch changes all of them.
+    files-to-touch, which does not name src/app/globals.css, test/e2e/, messages/en.json, messages/nl.json, messages/fr.json or src/app/(app)/merchants/page.tsx.
   serves-plan-intent: true
   reasoning: |-
-    Each is forced by a criterion the plan does write. The three message files and globals.css and the merchants
-    page carry criterion 12.18's refusal to the reader in three languages, which cannot be done inside the two ui
-    files the list does name. test/property/ is where criterion 12.21's property test has to live, since the
-    criterion names a property test and the list's test directories do not include one. test/e2e/ carries criterion
-    12.18's browser witness and, after the fix round, the adapter write path the previous deviation covers. None of
-    these widens the phase's reach: every one of them is downstream of a criterion the plan states. The omission is
-    the plan's list being narrower than its own criteria, and the implementer named the consequence that mattered,
-    the M3-P9 overlap, rather than leaving it to be discovered.
+    Every one of the six is forced by criterion 12.18, which requires a naming refusal to REACH THE READER: that
+    needs a status the route reads, a message in each of the three catalogues, a style for the banner and a browser
+    witness, and none of those can live inside the two ui files the list does name. So the omission is the plan's
+    list being narrower than its own criteria rather than the phase widening its reach. The consequence the
+    implementer chased is the one that mattered and I checked it: the plan's conflicts-with entry for M3-P9 asserted
+    as CHECKED that this phase touches none of M3-P9's files, and two of them are among these six, and M3-P9 is not
+    merged, so the overlap is live. The entry is corrected in delivery/plan/pulse-v02.yaml on this branch, stating
+    what it used to claim, why that is false, that decision D-44's conclusion is unchanged and that the two
+    additions are additive. That is the correction shape clause R-087 asks for. NOT DECLARED AND ALSO CHANGED, which
+    this entry could have named and does not: test/property/, where criterion 12.21's property test has to live
+    because the criterion names a property test and the declared test directories do not include one. Same category,
+    same justification, and it belongs in this list.
+- deviation: |-
+    Criterion 12.1's composition clause, "at least 8 rows carry none", under its strict reading.
+  serves-plan-intent: true
+  reasoning: |-
+    This round's dispatch puts this criterion out of scope for penalty and I record it factually. The reasoning is
+    correct and I re-derived it rather than accepting it: 18 of the fixture's 24 rows carry a counterparty account
+    field and only 6 carry none at all, while 8 take the descriptor basis, so the strict reading is unsatisfiable
+    against plan step 7, which requires this same fixture to carry the two truncation-attack rows; those rows carry
+    an account field and fall to the descriptor basis, so rows with no account field cap at 6 and cannot reach 8.
+    The elliptical reading, none meaning no TRUSTED account, is the only one the plan admits, and the shipped test
+    asserts exactly that at test/domain/counterparty-identity.test.ts:104. No code was contorted for the strict
+    reading and none should be. The defect is the plan's wording.
+- deviation: |-
+    Criterion 12.5's committed baseline table, test/fixtures/baseline-descriptor-keys.json.
+  serves-plan-intent: true
+  reasoning: |-
+    Not a deviation from the plan and correctly labelled as one recorded rather than taken. The substance is a
+    privacy-gate detail worth more than its size: one card-shaped view of an already-invented, already-listed value
+    was missing from the allow list, and the gate's two patterns can both match one string and produce two different
+    normalised values, so listing one form is not listing the value. It is now listed with its provenance and npm
+    run gate:privacy exits 0 in my own run. The environment warning the entry points at generalises it correctly: a
+    fixture that writes an identifier in spaced groups must be listed in EVERY form the gate's patterns can produce.
+    Serving the plan's intent.
+- deviation: |-
+    Step 13, "run the full gate before calling the slice done", read as one clean run of every gate.
+  serves-plan-intent: true
+  reasoning: |-
+    Reported rather than summarised away, which is the behaviour the process asks for, and the entry points at its
+    own gate-evidence rather than hiding the re-run inside a green. MY OWN RUN DID NOT NEED IT, which is worth
+    recording beside theirs: in this worktree npm run typecheck, npm run lint, npm test and npm run gate:privacy
+    each exited 0 on the first attempt, and npm run test:e2e passed 55 of 55 in 12.1 minutes on its first executed
+    run, with the config's retries set to 0. One earlier invocation of the e2e gate failed to START because both
+    fixed ports were held by another worktree's Playwright run; that is a scheduling collision in this container and
+    not a test result, and it executed no spec. So across two containers the phase's e2e green is a first-run green
+    once, and a green needing one spec re-run once, on a flake surface that is not this phase's code.
