@@ -12,7 +12,10 @@ import { statementParser } from "../../src/modules/import/adapters/statement-par
 import { recomputeInterpretation } from "../../src/modules/ledger/application/interpret-window";
 import {
   RederiveRecomputeError,
+  assignmentSet,
+  baselineKeyOfRow as baselineKeyOfCountedRow,
   formatDecisionReport,
+  identityKeyOfRow,
   rederiveMerchantRules,
 } from "../../src/modules/merchants/application/rederive-rules";
 import type { RederiveDependencies } from "../../src/modules/merchants/application/rederive-rules";
@@ -1620,6 +1623,81 @@ describe("CR3-M3P12-07: there is ONE write path for a declaration", () => {
 // IDENTITY keys split: one descriptor-basis row the claimant covers, and two
 // account-basis rows on DIFFERENT trusted accounts, which pass two refuses to
 // promote ("not-promoted-several-accounts") and which nothing else covers.
+// M3-P12 FIX ROUND SIX. THE TIE-BREAK BETWEEN THE TWO KEY SPACES, pinned
+// because the criterion is about to pin it and because nothing here checked
+// it: the tie-break WITHIN a space is the matcher's own specificity rule and
+// is tested elsewhere, while the choice BETWEEN the baseline space and the
+// identity space lived only in the order of a ?? in assignmentSet.
+//
+// IT IS THE BASELINE SPACE, and it has to be. The before set models what the
+// owner's declarations meant BEFORE the migration, and before the migration
+// the un-namespaced rule is the declaration. Give the identity space
+// precedence and a row both spaces reach is credited to the same rule on both
+// sides, nothing appears to change hands, and a loss that really happened is
+// hidden: that is what the H12.31 regression in this file catches, and it is
+// the reachability of the supersede exception at stake.
+describe("the before set breaks a tie between the two key spaces toward the BASELINE space", () => {
+  const SHARED_TIE = "TIE BREAK COUNTERPARTY TEXT";
+  const tieRow = (id: string, account?: string): CountedTransaction => ({
+    id,
+    flow: "SPEND",
+    amountCents: cents(-1_000),
+    description: SHARED_TIE,
+    ...(account === undefined ? {} : { counterpartyAccount: account }),
+  });
+
+  test("a row BOTH spaces reach is credited to the un-namespaced rule, so it changes hands", () => {
+    const rows = [tieRow("descriptorRow")];
+    const rules = [
+      { id: "dead", merchantId: "alpha", kind: "EXACT" as const, pattern: SHARED_TIE },
+      {
+        id: "claimant",
+        merchantId: "beta",
+        kind: "EXACT" as const,
+        pattern: `${DESCRIPTOR_NAMESPACE}${SHARED_TIE}`,
+      },
+    ];
+    // Both spaces really do reach it, which is what makes this a tie rather
+    // than a preference nothing exercises.
+    expect(baselineKeyOfCountedRow(rows[0] as CountedTransaction)).toBe(SHARED_TIE);
+    expect(identityKeyOfRow(rows[0] as CountedTransaction)).toBe(
+      `${DESCRIPTOR_NAMESPACE}${SHARED_TIE}`,
+    );
+
+    const before = assignmentSet(rows, rules);
+    const after = assignmentSet(rows, rules, identityKeyOfRow);
+    expect(before.get("descriptorRow")?.ruleId).toBe("dead");
+    expect(before.get("descriptorRow")?.merchantId).toBe("alpha");
+    expect(after.get("descriptorRow")?.merchantId).toBe("beta");
+    // Which is the whole point: the row changes hands, so the supersede
+    // exception has something to be an exception TO.
+    expect(after.get("descriptorRow")?.merchantId).not.toBe(
+      before.get("descriptorRow")?.merchantId,
+    );
+  });
+
+  test("where only ONE space reaches the row, that space answers, whichever it is", () => {
+    const rows = [tieRow("accountRow", IDENTITY_FIXTURE_ACCOUNTS.counterparty2)];
+    const onlyBare = [
+      { id: "dead", merchantId: "alpha", kind: "EXACT" as const, pattern: SHARED_TIE },
+    ];
+    // An account-basis row: the bare rule reaches it under the baseline key,
+    // which is basis-agnostic, and no namespaced rule exists at all.
+    expect(assignmentSet(rows, onlyBare).get("accountRow")?.ruleId).toBe("dead");
+    const onlyNamespaced = [
+      {
+        id: "unrelated",
+        merchantId: "gamma",
+        kind: "EXACT" as const,
+        pattern: `${ACCOUNT_NAMESPACE}${IDENTITY_FIXTURE_ACCOUNTS.counterparty2}`,
+      },
+    ];
+    expect(assignmentSet(rows, onlyNamespaced).get("accountRow")?.ruleId).toBe(
+      "unrelated",
+    );
+  });
+});
+
 describe("CR4-M3P12-01 (hazard): the superseded exclusion is narrowed to the rows the claimant reaches", () => {
   const SHARED = "SHARED COUNTERPARTY TEXT";
 

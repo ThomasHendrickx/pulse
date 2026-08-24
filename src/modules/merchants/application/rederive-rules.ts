@@ -373,9 +373,31 @@ export const assignmentSet = (
   for (const row of rows) {
     // EACH RULE UNDER ITS OWN KEY when no single key is imposed, so a table
     // holding both migrated and un-migrated patterns is read correctly rather
-    // than reported empty. The tie-break is the matcher's own: the most
-    // specific declaration wins, so the candidates are collected and handed
-    // to matchRules together per key space.
+    // than reported empty. The tie-break WITHIN a key space is the matcher's
+    // own: the most specific declaration wins, so the candidates are collected
+    // and handed to matchRules together per space.
+    //
+    // THE TIE-BREAK BETWEEN THE TWO SPACES IS THE BASELINE SPACE, and it is
+    // load bearing rather than incidental, which is why it is written down
+    // here instead of living in the order of a ?? (fix round six). The before
+    // set is a model of what the owner's declarations MEANT before the
+    // migration, and before the migration the un-namespaced rule is the
+    // declaration; the namespaced one is the naming they made afterwards, in
+    // decision D-46's deploy window. So a row both spaces reach is credited to
+    // the BARE rule, the after set credits the namespaced one, and the row
+    // changes hands, which is what makes the supersede exception reachable at
+    // all.
+    //
+    // MEASURED, NOT ARGUED, because the opposite order looks harmless. With
+    // the identity space given precedence, the deploy-window row is credited
+    // to the claimant on BOTH sides and nothing appears to change hands; the
+    // named H12.31 regression then goes red because the row an unrelated
+    // account rule took over is credited to that same unrelated rule before
+    // the run as well as after, so its loss is hidden. Over the generated
+    // worlds the reassignment shape drops from about 190 to about 40. The
+    // property's own biconditional stays GREEN under the flip, because both
+    // of its sides are computed here and move together, which is the same
+    // shape of blind spot a forged lineage pair has.
     const match =
       key === undefined
         ? matchRules(baselineKey(row), rules.filter((r) => keyForRule(r) === baselineKey)) ??
