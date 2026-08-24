@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { stripComments } from "../support/strip-comments";
 import {
   householdId,
   userId,
@@ -131,12 +132,50 @@ const totals = (world: FakeImportWorld) => {
     if (row.flow === "RESERVE") reserve += row.amountCents;
     if (row.flow === "INTERNAL") internal += row.amountCents;
   }
+  // EXTENDED FOR FINDING CR-P14C2-07. Criterion 15.1's first arm names FOUR
+  // assertions, and two of them could not be made at any level because this
+  // helper did not compute the quantities: the UNMATCHED-INTERNAL count, and
+  // POT-CHANGE. The criterion spends a sentence on why pot-change must be
+  // ASSERTED rather than merely recorded ("a value recorded without an
+  // assertion reads to the next person as a value that was checked"), and
+  // that sentence was exactly right about the state it was in.
+  //
+  // Both are computed the way the shipped SQL computes them, named at the
+  // line so the two cannot drift apart:
+  //   changeInPot        SUM(amountCents) FILTER (WHERE flow IS NOT NULL)
+  //   unmatchedInternal  INTERNAL rows carrying no matched transfer link
+  const matchedOutgoing = new Set(
+    world.links.map((link) => link.outgoingTransactionId),
+  );
+  const matchedIncoming = new Set(
+    world.links
+      .map((link) => link.incomingTransactionId)
+      .filter((id): id is string => id !== undefined),
+  );
+  let changeInPot = 0;
+  let unmatchedInternalCents = 0;
+  let unmatchedInternalCount = 0;
+  for (const row of world.transactions) {
+    if (!potIds.has(row.accountId) || row.flow === undefined) continue;
+    changeInPot += row.amountCents;
+    if (
+      row.flow === "INTERNAL" &&
+      !matchedOutgoing.has(row.id) &&
+      !matchedIncoming.has(row.id)
+    ) {
+      unmatchedInternalCents += row.amountCents;
+      unmatchedInternalCount += 1;
+    }
+  }
   return {
     incomeCents: income,
     spendCents: 0 - spend,
     netToReservesCents: 0 - reserve,
     internalCents: internal,
     heldRowCount: held,
+    changeInPotCents: changeInPot,
+    unmatchedInternalCents,
+    unmatchedInternalCount,
   };
 };
 
@@ -250,6 +289,66 @@ describe("criterion 14.12: a registration the engine cannot use is refused at th
         outcome.error.reason.kind,
     ).toBe("account-number-empty");
     expect(world.accounts).toHaveLength(0);
+  });
+});
+
+describe("criterion 14.6: no accounts-UI path reaches registration without an account number", () => {
+  test("EVERY call to the registration use case from the accounts UI passes an accountNumber", () => {
+    // THE CRITERION'S THIRD CLAUSE, which was absent and which the entry did
+    // not say was absent (finding CR-P14C2-09). The server action refuses a
+    // submission with no account number and an application test asserts that
+    // refusal; this is the MECHANICAL guard the criterion asks for beside
+    // it, so that a later UI change cannot reintroduce a numberless
+    // registration path without something going red.
+    const uiRoot = join(__dirname, "..", "..", "src", "modules", "accounts", "ui");
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (entry.endsWith(".ts") || entry.endsWith(".tsx")) files.push(full);
+      }
+    };
+    walk(uiRoot);
+
+    // A CALL, not a mention: the identifier followed by an opening
+    // parenthesis. The import statement that brings it in is not a call and
+    // is excluded by that shape.
+    const CALL = /\bregisterAccount\s*\(/g;
+    const callSites: string[] = [];
+    for (const file of files) {
+      const code = stripComments(readFileSync(file, "utf8"));
+      for (const match of code.matchAll(CALL)) {
+        // The call's argument list, to the matching close paren, bounded so
+        // a runaway scan cannot swallow the rest of the file.
+        const from = match.index ?? 0;
+        let depth = 0;
+        let end = from;
+        for (let i = from; i < Math.min(code.length, from + 2000); i += 1) {
+          const ch = code[i];
+          if (ch === "(") depth += 1;
+          else if (ch === ")") {
+            depth -= 1;
+            if (depth === 0) {
+              end = i;
+              break;
+            }
+          }
+        }
+        const args = code.slice(from, end + 1);
+        if (!/\baccountNumber\s*:/.test(args)) {
+          callSites.push(`${file.slice(file.indexOf("src/"))}: ${args.slice(0, 90)}`);
+        }
+      }
+    }
+    expect(callSites).toEqual([]);
+    // AND THE GUARD MUST HAVE FOUND SOMETHING TO CHECK. A walk that reaches
+    // no call site passes vacuously, which is the failure mode this whole
+    // round is about.
+    const total = files
+      .map((file) => [...stripComments(readFileSync(file, "utf8")).matchAll(CALL)].length)
+      .reduce((a, b) => a + b, 0);
+    expect(total, "the accounts UI calls the registration use case nowhere, so this guard proves nothing").toBeGreaterThan(0);
   });
 });
 
@@ -388,9 +487,6 @@ describe("criteria 14.9 and 15.5: interpretation is rebuildable and no fact is r
 // because "the rule is KEPT and never deleted" is the decision being
 // implemented. Matching prose would make the guard red on correct code, and a
 // guard that is red on correct code gets weakened rather than fixed.
-const stripComments = (text: string): string =>
-  text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
-
 const rulesDeletedIn = (text: string): readonly string[] => {
   const code = stripComments(text);
   return RULE_DELETE_PATTERNS.filter((pattern) => pattern.test(code)).map(
@@ -562,6 +658,12 @@ describe("criteria 14.13 and 15.6: a naming that stops applying is kept, counted
       "await prisma.$executeRawUnsafe('delete from merchant_rules');",
       "await deps.merchants.deleteRule(context, ruleId);",
       "await merchantRules.deleteMany();",
+      // ADDED IN ROUND TWO, finding CR-P14C2-03. The naive stripper this
+      // guard used treated the double slash INSIDE A STRING as a comment
+      // and discarded the rest of the line, taking the delete with it. Both
+      // shapes below were GREEN before the shared scanner replaced it.
+      'const auditUrl = "https://audit.example/rules"; await tx.merchantRule.deleteMany({ where: { householdId } });',
+      "const pattern = /a\\/\\/b/; await deps.merchants.deleteRule(context, ruleId);",
     ];
     const mustNotCatch = [
       "await tx.transferLink.deleteMany({ where: { householdId } });",
@@ -651,6 +753,84 @@ describe("criterion 15.7: the preview is the same computation as the outcome", (
     // fall here. What moves is the reserves block, which gains the row.
     expect(preview.value.spendDeltaCents).toBe(0);
     expect(preview.value.reservesDeltaCents).toBe(10000);
+
+    // WHAT THIS FIXTURE ESTABLISHES, MEASURED RATHER THAN ASSUMED, and it
+    // is NOT criterion 15.1's first arm. Finding CR-P14C2-07 said two of
+    // that arm's four assertions existed nowhere; extending the helper to
+    // make the other two showed something the finding did not reach: on
+    // THIS construction they are FALSE, and correctly so.
+    //
+    // The corrected account is the one the rows SIT ON. When it leaves the
+    // pot, its rows become HELD (DR-0030) and drop out of the pot sum
+    // altogether, so pot-change MOVES by exactly those rows and the held
+    // count rises. Asserting stillness here would have been asserting the
+    // opposite of what the product correctly does.
+    expect(before.changeInPotCents - after.changeInPotCents).toBe(10000);
+    expect(after.heldRowCount - before.heldRowCount).toBe(1);
+    // And the unmatched cause does NOT fall on this construction: the two
+    // unmatched internal legs are on other accounts and the correction does
+    // not touch them.
+    expect(after.unmatchedInternalCount).toBe(before.unmatchedInternalCount);
+  });
+
+  test("criterion 15.1 FIRST ARM: the mis-ringed COUNTERPARTY, where reserves rise, the unmatched cause falls, and spend and pot-change are byte identical", async () => {
+    // THE ARM CRITERION 15.1 ACTUALLY NAMES, written for finding
+    // CR-P14C2-07. The test above corrects the account the rows sit ON,
+    // which is a different act with a different and correct outcome. This
+    // one corrects the account the rows POINT AT, which is the case the
+    // criterion's four assertions describe: the rows stay on the pot
+    // account and keep carrying a flow, so pot-change cannot move, while
+    // the flow they carry changes from INTERNAL to RESERVE.
+    const world = makeFakeImportWorld();
+    // WRONG ANSWER FIRST: the savings account is registered in the POT ring,
+    // so the outgoing transfers to it classify as INTERNAL rather than
+    // RESERVE, and with no partner statement they are UNMATCHED.
+    await registerAccount(
+      context,
+      { accounts: world.accountsRepository, ...engineOf(world) },
+      {
+        label: "Buffer",
+        bank: "Demobank",
+        role: "POT",
+        accountNumber: RES_1,
+      },
+    );
+    await importFile(world, "ar-pot-outgoing.csv", {
+      label: "Current account",
+      bank: "Demobank",
+      role: "POT",
+    });
+    const before = totals(world);
+    expect(before.unmatchedInternalCount).toBeGreaterThan(0);
+
+    const accountId =
+      world.accounts.find((account) => account.iban === RES_1)?.id ?? "";
+    const outcome = await correctAccountRing(
+      context,
+      { accounts: world.accountsRepository, ...engineOf(world) },
+      { accountId, role: "RESERVE" },
+    );
+    expect(outcome.ok).toBe(true);
+    const after = totals(world);
+
+    // ONE: reserves-net rises by exactly the fixture's movement.
+    expect(after.netToReservesCents - before.netToReservesCents).toBe(30000);
+    // TWO: the unmatched-internal cause FALLS by exactly those rows.
+    expect(before.unmatchedInternalCount - after.unmatchedInternalCount).toBe(1);
+    expect(before.unmatchedInternalCents - after.unmatchedInternalCents).toBe(
+      -30000,
+    );
+    // THREE: spend-total is byte identical. An INTERNAL row was never in
+    // spend, so nothing can leave it.
+    expect(after.spendCents).toBe(before.spendCents);
+    // FOUR: POT-CHANGE IS BYTE IDENTICAL, asserted rather than recorded,
+    // which is the clause the criterion spends a sentence on. The rows stay
+    // on the pot account and carry a flow on both sides of the correction,
+    // so the sum of every flow-carrying pot row cannot move.
+    expect(after.changeInPotCents).toBe(before.changeInPotCents);
+    // And nothing is held: the corrected account holds no rows of its own
+    // in this fixture, which is what makes it the counterparty case.
+    expect(after.heldRowCount).toBe(before.heldRowCount);
   });
 
   test("the reported movement is MEASURED AFTER the write, not echoed from the preview", async () => {

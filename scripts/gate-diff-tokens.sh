@@ -46,8 +46,37 @@ fail=0
 # green this reported was a true statement about this tree; the widening is
 # so that it stays true of the next one.
 NAMED='aliceblue|antiquewhite|aqua|aquamarine|azure|beige|bisque|black|blanchedalmond|blue|blueviolet|brown|burlywood|cadetblue|chartreuse|chocolate|coral|cornflowerblue|cornsilk|crimson|cyan|darkblue|darkcyan|darkgoldenrod|darkgray|darkgreen|darkgrey|darkkhaki|darkmagenta|darkolivegreen|darkorange|darkorchid|darkred|darksalmon|darkseagreen|darkslateblue|darkslategray|darkslategrey|darkturquoise|darkviolet|deeppink|deepskyblue|dimgray|dimgrey|dodgerblue|firebrick|floralwhite|forestgreen|fuchsia|gainsboro|ghostwhite|gold|goldenrod|gray|green|greenyellow|grey|honeydew|hotpink|indianred|indigo|ivory|khaki|lavender|lavenderblush|lawngreen|lemonchiffon|lightblue|lightcoral|lightcyan|lightgoldenrodyellow|lightgray|lightgreen|lightgrey|lightpink|lightsalmon|lightseagreen|lightskyblue|lightslategray|lightslategrey|lightsteelblue|lightyellow|lime|limegreen|linen|magenta|maroon|mediumaquamarine|mediumblue|mediumorchid|mediumpurple|mediumseagreen|mediumslateblue|mediumspringgreen|mediumturquoise|mediumvioletred|midnightblue|mintcream|mistyrose|moccasin|navajowhite|navy|oldlace|olive|olivedrab|orange|orangered|orchid|palegoldenrod|palegreen|paleturquoise|palevioletred|papayawhip|peachpuff|peru|pink|plum|powderblue|purple|rebeccapurple|red|rosybrown|royalblue|saddlebrown|salmon|sandybrown|seagreen|seashell|sienna|silver|skyblue|slateblue|slategray|slategrey|snow|springgreen|steelblue|tan|teal|thistle|tomato|turquoise|violet|wheat|white|whitesmoke|yellow|yellowgreen'
-COLOUR="oklch\(|oklab\(|color-mix\(|#[0-9a-fA-F]{3,8}|rgba?\(|hsla?\(|:[[:space:]]*($NAMED)[[:space:];]"
+# WIDENED AGAIN IN ROUND TWO, and this time for the FILE TYPE THE GATE
+# MOSTLY READS. Two clean-room lanes found the same file blind in three more
+# ways, and the cause each time was that a pattern described CSS notation
+# while the gate is scoped to src/app and src/modules/*/ui, which are
+# overwhelmingly TSX:
+#   1. The named-colour arm was ":[[:space:]]*(NAMED)[[:space:];]", so the
+#      keyword had to follow a COLON and be followed by whitespace or a
+#      semicolon. Every JavaScript and JSX way of writing one puts a QUOTE
+#      there instead: { color: "red" }, style={{ color: "crimson" }}.
+#      Adding 148 keywords in round one did not touch this, so the comment
+#      claiming the blindness was closed was false (finding CR-P14C2-04).
+#   2. Tailwind's arbitrary-value form has no colon at all:
+#      className="text-[red] border-[navy]".
+#   3. React renders a BARE NUMBER in an inline style as a pixel length, so
+#      style={{ padding: 4 }} is a spacing literal whose source text
+#      contains no unit at all and cannot match LENGTH (finding CR-H2-04).
+#      Not reachable in this tree today, because no file under these paths
+#      uses inline styles; guarded so it stays that way.
+# POSIX BRACKET EXPRESSIONS, not regex escapes: a backslash inside [] is a
+# LITERAL backslash, and a ] must be the FIRST character to be literal. The
+# first form of this line wrote [\"'\]] and so required a backslash before a
+# closing bracket, matching nothing. Opening delimiters: quote or bracket.
+# Closing delimiters: bracket or quote.
+QUOTED="[\"'[]($NAMED)[]\"']"
+COLOUR="oklch\(|oklab\(|color-mix\(|#[0-9a-fA-F]{3,8}|rgba?\(|hsla?\(|:[[:space:]]*($NAMED)[[:space:];]|$QUOTED"
 LENGTH='[0-9.]+(px|rem|em|vw|vh|vmin|vmax|ch|ex|pt|pc|cm|mm|in|q)\b'
+# React inline style with a unitless number, which IS a pixel length.
+# The permitted exception is named rather than left implicit: the CSS
+# properties that are genuinely unitless keep their bare numbers.
+UNITLESS_OK='(lineHeight|flex|flexGrow|flexShrink|order|zIndex|opacity|fontWeight|zoom|tabSize|columnCount|widows|orphans|gridRow|gridColumn|animationIterationCount)'
+INLINE_NUM='style=\{\{[^}]*[^A-Za-z]([0-9]+)[,}[:space:]]'
 while IFS= read -r file; do
   case "$file" in
     src/app/*|src/modules/*/ui/*) ;;
@@ -73,11 +102,23 @@ while IFS= read -r file; do
     # trailing comment, which is a hole a reviewer would find and an author
     # would not: what is excepted is a value written INSIDE a comment, not a
     # value on a line that happens to carry one.
+    # THE DOUBLE SLASH IS ONLY A COMMENT WHEN IT DOES NOT FOLLOW A COLON.
+    # The previous form stripped from the first "//" anywhere on the line, so
+    # a URL in a string ate the rest of it: measured, `const probe =
+    # "https://x.example/a"; const p2 = { padding: "12px" };` reported clean
+    # (finding CR-P14C2-04, last case). Anchoring to start-of-line or
+    # whitespace leaves "https://" alone, because a colon is neither.
     code="$(printf '%s' "$line" \
-      | sed -e 's|/\*.*\*/||g' -e 's|/\*.*$||' -e 's|^[[:space:]]*\*.*$||' -e 's|//.*$||')"
+      | sed -E -e 's|/\*.*\*/||g' -e 's|/\*.*$||' -e 's|^[[:space:]]*\*.*$||' \
+               -e 's@(^|[[:space:]])//.*$@\1@')"
     [ -n "$code" ] || continue
+    inline_offender=0
+    if printf '%s' "$code" | grep -qE "$INLINE_NUM"; then
+      printf '%s' "$code" | grep -qE "$UNITLESS_OK" || inline_offender=1
+    fi
     if printf '%s' "$code" | grep -qiE "$COLOUR" || \
-       printf '%s' "$code" | grep -qiE "$LENGTH"; then
+       printf '%s' "$code" | grep -qiE "$LENGTH" || \
+       [ "$inline_offender" -eq 1 ]; then
       printf '%s: added line carries a colour literal or a px/rem/em length: %s\n' "$file" "$code" >&2
       fail=1
     fi

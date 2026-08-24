@@ -270,6 +270,69 @@ describe("criterion 14.16 arm TWO: the declaration DOES change something, and th
   });
 });
 
+describe("criterion 14.16 arm FIVE: the row that moves no money and still changes the verdict", () => {
+  test("A ZERO-AMOUNT POT-SIDE ROW referencing the account being declared RESERVE is UNRESOLVED before and RESERVE after, so unresolvedCount falls by one and the books close, with ZERO CENTS MOVED", async () => {
+    // THE FIFTH CLASSIFICATION PATH, found by a clean-room hazard lane
+    // (finding CR-H2-03) and not constructed by any of the four arms above,
+    // none of whose fixtures carries a zero-amount row.
+    //
+    // WHY IT EXISTS, read off the shipped classifier rather than reasoned:
+    // src/modules/ledger/domain/classify-flow.ts sends a row whose
+    // counterparty is NOT in the declared reserve set through the sign
+    // rules, and a zero amount is neither negative (:112) nor positive
+    // (:119), so it falls to the last line, "A zero amount has no direction
+    // to read", and is UNRESOLVED. Once the same account IS declared
+    // RESERVE, branch 1 at :78 fires FIRST, and because amountCents > 0 is
+    // false for a zero it takes the `: { flow: "RESERVE" }` arm directly and
+    // never reaches that fallback.
+    //
+    // WHY IT MATTERS TO THE OWNER, which is why it is an arm and not a note:
+    // deriveMonthFigures requires unresolvedCount === 0 for `reconciles`, so
+    // this household's books are held OPEN before the declaration by a
+    // genuine counted gap and CLOSE after it, purely because a row carrying
+    // no money stopped being a gap. A verdict that flips from "not closing"
+    // to "closing" on a row that never moved a cent is exactly the kind of
+    // surprise DR-0030 exists to prevent elsewhere.
+    const world = makeFakeImportWorld();
+    await importFile(world, "ar-pot-zero-amount.csv", {
+      label: "Current account",
+      bank: "Demobank",
+      role: "POT",
+    });
+    const before = figuresOf(world);
+
+    // THE ARM IS NOT VACUOUS: the fixture also carries an ordinary
+    // non-zero transfer to the same account, so the declaration moves real
+    // money too and the zero row's effect is isolated by subtraction rather
+    // than by being the only thing that happens.
+    expect(before.uninterpretedCount).toBe(0);
+    expect(before.unresolvedCount).toBe(1);
+    expect(before.reconciles).toBe(false);
+    expect(before.spendCents).toBe(34000);
+
+    await importFile(world, "ar-reserve-own.csv", {
+      label: "Buffer",
+      bank: "Demobank",
+      role: "RESERVE",
+    });
+    const after = figuresOf(world);
+
+    // THE VERDICT FLIPS, AND THE GAP CLOSES.
+    expect(after.unresolvedCount).toBe(0);
+    expect(after.unresolvedCents).toBe(0);
+    expect(after.reconciles).toBe(true);
+
+    // AND THE ZERO ROW MOVED NOTHING. The only money that moved is the
+    // ordinary transfer, which is arm TWO's movement exactly; if the zero
+    // row had contributed a cent to either side, these two would differ.
+    expect(before.spendCents - after.spendCents).toBe(30000);
+    expect(after.netToReservesCents - before.netToReservesCents).toBe(30000);
+    expect(after.incomeCents).toBe(before.incomeCents);
+    expect(after.changeInPotCents).toBe(before.changeInPotCents);
+    expect(after.uninterpretedCount).toBe(before.uninterpretedCount);
+  });
+});
+
 describe("criterion 14.16 arm THREE: the drawdown, which arm two's fixture deliberately excludes", () => {
   test("a POSITIVE pot-side row with no prior outgoing transfer is INCOME beforehand, and income and netToReserves BOTH fall", async () => {
     const world = makeFakeImportWorld();

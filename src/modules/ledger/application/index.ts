@@ -99,6 +99,8 @@ export const previewDeclarationChange = (
   input: {
     readonly proposedAccounts: readonly DeclaredAccount[];
     readonly subjectAccountId?: string;
+    readonly currentAccounts?: readonly DeclaredAccount[];
+    readonly only?: "merchant-rules-stopped-matching";
   },
 ): Promise<DeclarationChangePreview> =>
   previewDeclarationChangeUseCase(context, liveDependencies, input);

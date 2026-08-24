@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { stripComments } from "../support/strip-comments";
 import {
   ACCOUNT_NUMBER_LENGTHS,
   canonicalAccountNumber,
@@ -175,19 +176,33 @@ describe("one definition, enumerated (criterion 14.4)", () => {
   // spread across lines is reached; it accepts replace and replaceAll and
   // split/join; and it carries a second detector for the SQL form, because a
   // SQL copy matches no JavaScript idiom at all.
-  const stripComments = (text: string): string =>
-    text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
 
   // A separator-removing transformation in any of the forms this codebase
   // could write it in. [\s\S] rather than . so a copy that wraps is reached.
   const REMOVES_SEPARATORS: readonly RegExp[] = [
-    /\.replace(All)?\(\s*\/\[?[\\s\- ]+\]?[^)]*\/[a-z]*\s*,\s*(""|'')\s*\)/,
+    // WIDENED AFTER BEING SHOWN GREEN AGAINST THE STATE IT FORBIDS, round
+    // two, finding CR-P14C2-02. The previous form required the regex
+    // literal's character class to BEGIN with a backslash, an s, a hyphen or
+    // a space, so a NEGATED class matched nothing. That is the single most
+    // ordinary way to write an account-number normaliser:
+    //   counterpartyIban.toUpperCase().replace(/[^A-Z0-9]/g, "")
+    // A working second copy of canonicalAccountNumber in exactly that shape
+    // sat in src/modules/ledger/domain and the guard reported 17 of 17.
+    // It now matches THE ACT rather than one idiom: any replace whose
+    // pattern is a regex literal at all and whose replacement is the empty
+    // string. The proximity window below is what keeps that from firing on
+    // unrelated normalisers.
+    /\.replace(All)?\(\s*\/(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\\n])+\/[a-z]*\s*,\s*(""|'')\s*\)/,
     /\.replace(All)?\(\s*(""|'' |" "|' ')\s*,\s*(""|'')\s*\)/,
     /\.split\(\s*[^)]{0,20}\)\s*\.\s*join\(\s*(""|'')\s*\)/,
   ];
-  // The SQL form: a separator strip wrapped in upper(), on any column.
+  // The SQL form: a case fold and a separator strip in ONE expression, in
+  // EITHER nesting order and over the replace family rather than two names.
+  // Also widened for CR-P14C2-02: the previous form pinned upper(replace(
+  // and upper(regexp_replace(, so regexp_replace(upper(x), ...) and
+  // upper(translate(x, ' -', '')) both passed straight through.
   const SQL_CANONICALISATION =
-    /upper\s*\(\s*(replace|regexp_replace)\s*\(/i;
+    /upper\s*\(\s*(replace|regexp_replace|translate)\s*\(|(replace|regexp_replace|translate)\s*\(\s*upper\s*\(/i;
   const ACCOUNT_BEARING = /iban|Iban|IBAN|accountNumber|counterpartyAccount/;
 
   // PROXIMITY, NOT SAME-FILE. The first widening asked whether the file
@@ -302,10 +317,22 @@ describe("one definition, enumerated (criterion 14.4)", () => {
       'const c = (iban: string) => iban.split(" ").join("").toUpperCase();',
       'const c = (iban: string) =>\n  iban\n    .replace(/[\\s-]/g, "")\n    .toUpperCase();',
       'const sql = `upper(replace(replace(t."counterpartyIban", \' \', \'\'), \'-\', \'\'))`;',
+      // ADDED IN ROUND TWO, finding CR-P14C2-02. Every one of these was
+      // MISSED by the previous patterns, and the first is the exact shape
+      // criterion 14.4 names: an inline copy inside another module's
+      // identity derivation.
+      'const counterpartyIdentity = (counterpartyIban: string) =>\n  counterpartyIban.toUpperCase().replace(/[^A-Z0-9]/g, "");',
+      'const c = (accountNumber: string) => accountNumber.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();',
+      'const c = (iban: string) => iban.replace(/\\W/g, "").toUpperCase();',
+      'const sql = `regexp_replace(upper(t."counterpartyIban"), \'[^A-Z0-9]\', \'\', \'g\')`;',
+      'const sql = `upper(translate(t."counterpartyIban", \' -\', \'\'))`;',
     ];
     const mustNotCatch = [
+      // A replacement that is NOT the empty string is not a separator strip.
       'const label = raw.replace(/\\s+/g, " ").trim();',
       'const key = text.toUpperCase().trim();',
+      // A separator strip with no account-bearing token anywhere near it.
+      'const digits = phoneNumber.replace(/[^0-9]/g, "");',
     ];
     for (const sample of mustCatch) {
       expect(

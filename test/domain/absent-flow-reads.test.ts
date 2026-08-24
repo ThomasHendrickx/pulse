@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { stripComments } from "../support/strip-comments";
 
 // CRITERION 14.14 CASE FIVE, first assertion, and it is the structural half
 // of that criterion: the reads that can see a row with no flow are
@@ -255,20 +256,42 @@ describe("every read that can see a row with no flow is one of exactly three", (
   });
 
   test("EVERY ONE OF THE THREE READS CARRIES A RING PREDICATE IN ITS OWN WHERE CLAUSE", () => {
-    // CORRECTED AFTER BEING SHOWN GREEN AGAINST THE STATE IT FORBIDS
-    // (R-037a). This used to assert that the file text CONTAINED the strings
-    // "POT_ROW" and "NON_POT_ROW". Both are DEFINED at the top of the file,
-    // so the definitions alone satisfied that. Delete "AND ${POT_ROW}" from
-    // the WHERE of listGapRows and both identifiers remain defined and
-    // remain used elsewhere: the test stayed green, lint stayed green, and
-    // the gap listing began handing the screen held rows under a verdict
-    // that says the books close, which is hazard H14.19 exactly.
-    // Demonstrated, not argued: with that line removed, six of six passed.
+    // CORRECTED TWICE, AND BOTH CORRECTIONS ARE RECORDED RATHER THAN THE
+    // WORDING REPLACED (R-087), because each time the comment above this
+    // test asserted a property the test did not have.
     //
-    // It now reads each read's OWN body and requires the predicate to be
-    // inside it. The bodies are found by the same enclosing-declaration walk
-    // the enumeration above uses, so the two cannot drift apart.
-    const lines = readFileSync(REPOSITORY, "utf8").split("\n");
+    // ROUND ONE: it asserted the file text CONTAINED "POT_ROW" and
+    // "NON_POT_ROW". Both are DEFINED at the top of the file, so the
+    // definitions alone satisfied it and every read could lose its filter.
+    //
+    // ROUND TWO: the rewrite that replaced it claimed two further things
+    // that were also false, and a clean-room lane broke it three ways with
+    // the whole fast gate green:
+    //   ONE. "both arms are asserted" was false. POT_ROW is a LITERAL
+    //     SUBSTRING of NON_POT_ROW, so `toContain("POT_ROW")` was satisfied
+    //     by the held arm's own predicate and no edit to the counted arm
+    //     could ever redden it. The counted read could lose its ring
+    //     restriction entirely (hazard H14.21) with 489 of 489 green.
+    //   TWO. It had no comment-stripping pass. A predicate deleted from a
+    //     WHERE and left on a `-- ...` SQL comment line inside the template
+    //     is not applied by Postgres, and the guard still saw the token
+    //     (hazard H14.19).
+    //   THREE. It located the WHERE with body.search(/\bWHERE\b/), and the
+    //     FIRST match inside monthFigures is a `FILTER (WHERE ...)` in the
+    //     SELECT list, so "inside the WHERE" degenerated to "anywhere in the
+    //     query" and the predicate could be moved into an aggregate filter
+    //     (hazards H14.10 and H14.14).
+    //
+    // WHAT IT DOES NOW, and each clause exists because one of those three
+    // defeated the previous version:
+    //   - comments are stripped first, by the shared string-aware and
+    //     SQL-aware scanner in test/support/strip-comments.ts;
+    //   - the WHERE is the one that FOLLOWS the FROM, never a FILTER's;
+    //   - POT_ROW is matched as a TOKEN, so NON_POT_ROW cannot satisfy it;
+    //   - the counted arm and the held arm are asserted SEPARATELY, by the
+    //     ternary that selects between them.
+    const source = stripComments(readFileSync(REPOSITORY, "utf8"));
+    const lines = source.split("\n");
     const bodyOf = (name: string): string => {
       const start = lines.findIndex((line) =>
         new RegExp(`^(export )?const ${name}\\b`).test(line),
@@ -284,35 +307,104 @@ describe("every read that can see a row with no flow is one of exactly three", (
       return lines.slice(start, end).join("\n");
     };
 
-    // Each read, with the predicate its own WHERE must carry. The held read
-    // carries the INVERSE, which is the whole reason it can see what the
-    // other two must not.
+    // THE QUERY'S OWN WHERE, not an aggregate's. Every read here is a single
+    // flat SELECT whose row filter follows FROM "transactions" t; the FILTER
+    // (WHERE ...) forms all sit in the SELECT list ahead of it.
+    const rowFilterOf = (read: string, body: string): string => {
+      const from = body.search(/\bFROM\b/);
+      expect(from, `${read} has no FROM clause`).toBeGreaterThan(-1);
+      const after = body.slice(from);
+      const where = after.search(/\bWHERE\b/);
+      expect(where, `${read} has no WHERE clause after its FROM`).toBeGreaterThan(-1);
+      return after.slice(where);
+    };
+
+    // POT_ROW as a TOKEN. The negative lookbehind is the whole point: without
+    // it, NON_POT_ROW satisfies a search for POT_ROW.
+    const POT_TOKEN = /(?<![A-Z_])POT_ROW\b/;
+    const NON_POT_TOKEN = /\bNON_POT_ROW\b/;
+
     const expectations = [
-      { read: "monthFigures", predicate: "${POT_ROW}" },
-      { read: "listGapRows", predicate: "${POT_ROW}" },
-      { read: "accountRowCounts", predicate: "NON_POT_ROW" },
+      { read: "monthFigures", pattern: POT_TOKEN, label: "POT_ROW" },
+      { read: "listGapRows", pattern: POT_TOKEN, label: "POT_ROW" },
+      { read: "accountRowCounts", pattern: NON_POT_TOKEN, label: "NON_POT_ROW" },
     ] as const;
 
-    for (const { read, predicate } of expectations) {
+    for (const { read, pattern, label } of expectations) {
       const body = bodyOf(read);
+      const rowFilter = rowFilterOf(read, body);
       expect(
-        body.includes(predicate),
-        `${read} does not carry ${predicate} in its own body: a read that can see a row with no flow and does not filter by the ring hands the screen rows the verdict has already declared absent`,
-      ).toBe(true);
-      // And it must be in the WHERE, not merely mentioned: the predicate has
-      // to sit after the word WHERE in that same body.
-      const where = body.slice(body.search(/\bWHERE\b/));
-      expect(
-        where.includes(predicate),
-        `${read} mentions ${predicate} but not inside its WHERE clause`,
+        pattern.test(rowFilter),
+        `${read} does not carry ${label} in the WHERE that follows its FROM: a read that can see a row with no flow and does not filter by the ring hands the screen rows the verdict has already declared absent`,
       ).toBe(true);
     }
 
-    // The counted read and the held read share one body, selected by a
-    // ternary, so both arms are asserted rather than only the one the
-    // enumeration names.
-    const shared = bodyOf("accountRowCounts");
-    expect(shared).toContain("POT_ROW");
-    expect(shared).toContain("NON_POT_ROW");
+    // THE COUNTED ARM, ASSERTED ON ITS OWN. accountRowCounts serves both
+    // rings from one body through a ternary, so the held arm's NON_POT_ROW
+    // above says nothing about the counted arm. This asserts the ternary
+    // itself: the counted branch must be POT_ROW and the held branch
+    // NON_POT_ROW, in the row filter, in that order.
+    const shared = rowFilterOf("accountRowCounts", bodyOf("accountRowCounts"));
+    expect(
+      /ring\s*===\s*"counted"\s*\?\s*(?<![A-Z_])POT_ROW\s*:\s*NON_POT_ROW/.test(shared),
+      "accountRowCounts does not select POT_ROW for the counted ring and NON_POT_ROW for the held ring inside its own row filter: the counted read losing its ring restriction is hazard H14.21, and a substring match on POT_ROW cannot see it because POT_ROW is a substring of NON_POT_ROW",
+    ).toBe(true);
+  });
+
+  test("the ring-predicate guard reddens on each of the three states that defeated it, asserted here rather than assumed", () => {
+    // POINTED AT ITS OWN TARGET, in the file. Each sample is a row filter in
+    // one of the shapes a clean-room lane used to defeat the previous
+    // version, and each must be judged UNSAFE by the same predicates the
+    // test above uses. The last two must be judged SAFE, so the guard is not
+    // simply refusing everything.
+    const POT_TOKEN = /(?<![A-Z_])POT_ROW\b/;
+    const unsafe = [
+      // ONE: the counted arm loses its restriction; NON_POT_ROW still present.
+      'WHERE t."householdId" = $1 AND ${ring === "counted" ? Prisma.empty : Prisma.sql`AND ${NON_POT_ROW}`}',
+      // TWO: the predicate survives only on a SQL comment line. Written
+      // inside a template literal because that is where this codebase's SQL
+      // lives, and the stripper's SQL rule is scoped to templates.
+      stripComments(
+        "const q = Prisma.sql`WHERE t.\"householdId\" = $1\n  -- used to read AND ${POT_ROW} here\n`;",
+      ),
+    ];
+    for (const sample of unsafe) {
+      expect(
+        POT_TOKEN.test(sample),
+        `the guard's own POT_ROW token still matches a state it must refuse: ${sample}`,
+      ).toBe(false);
+    }
+    // THREE is about WHERE the token sits, not whether it is present, so it
+    // is asserted against the row-filter rule rather than the token rule: a
+    // predicate moved into a SELECT-list FILTER is not in the WHERE that
+    // follows FROM, and slicing from FROM is what makes that visible.
+    const movedIntoAggregate = [
+      'SELECT COUNT(*) FILTER (WHERE t."flow" IS NOT NULL AND ${POT_ROW})',
+      'FROM "transactions" t',
+      'WHERE t."householdId" = $1',
+      '  AND t."bookingDate" >= $2',
+    ].join("\n");
+    const rowFilter = movedIntoAggregate.slice(
+      movedIntoAggregate.search(/\bFROM\b/),
+    );
+    expect(
+      POT_TOKEN.test(rowFilter),
+      "slicing from FROM still finds POT_ROW after it was moved into a SELECT-list aggregate filter, which is the state hazards H14.10 and H14.14 name",
+    ).toBe(false);
+    expect(
+      POT_TOKEN.test(movedIntoAggregate),
+      "the sample must carry the token somewhere, or this case proves nothing",
+    ).toBe(true);
+
+    const safe = [
+      'WHERE t."householdId" = $1 AND ${POT_ROW} AND t."bookingDate" >= $2',
+      'WHERE t."householdId" = $1 AND ${ring === "counted" ? POT_ROW : NON_POT_ROW}',
+    ];
+    for (const sample of safe) {
+      expect(
+        POT_TOKEN.test(sample),
+        `the guard refuses a correct row filter: ${sample}`,
+      ).toBe(true);
+    }
   });
 });

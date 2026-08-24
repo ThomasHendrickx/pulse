@@ -126,9 +126,30 @@ export const previewDeclarationChange = async (
     readonly proposedAccounts: readonly DeclaredAccount[];
     // The account being registered or corrected, when it already has rows.
     readonly subjectAccountId?: string;
+    // The current declaration set, when the caller has already loaded it.
+    // Registration reads it to build proposedAccounts, so without this the
+    // same list is fetched twice per registration (finding CR-H2-02).
+    readonly currentAccounts?: readonly DeclaredAccount[];
+    // WHAT THE CALLER ACTUALLY READS. Omitted means every field, which is
+    // the correction path. "merchant-rules-stopped-matching" is the
+    // registration path, which discards the three money deltas and the row
+    // count; declaring it lets this function skip work that cannot change
+    // the one number that is read. THE MONEY FIELDS ARE STILL RETURNED and
+    // are still correct when the second pass ran; what the option changes is
+    // whether a pass that provably cannot alter the merchant count is paid
+    // for at all.
+    readonly only?: "merchant-rules-stopped-matching";
   },
 ): Promise<DeclarationChangePreview> => {
-  const currentAccounts = await deps.accounts.listAccounts(context);
+  // THE CALLER'S OWN NEED, declared. A REGISTRATION reads exactly one field
+  // of this preview, merchantRulesStoppedMatching, and discards the three
+  // money deltas and the row count (finding CR-H2-02). Saying so lets this
+  // function skip work that provably cannot change that one number, without
+  // weakening the CORRECTION path, which needs every field and is the path
+  // decision D-58 is about.
+  const merchantCountOnly = input.only === "merchant-rules-stopped-matching";
+  const currentAccounts =
+    input.currentAccounts ?? (await deps.accounts.listAccounts(context));
   const currentSets = deriveDeclaredSets(currentAccounts);
   const proposedSets = deriveDeclaredSets(input.proposedAccounts);
 
@@ -193,12 +214,35 @@ export const previewDeclarationChange = async (
     outgoingHistoryKeys,
     statementSettlementTotals,
   );
-  const after = totalsFor(
-    transactions,
-    input.proposedAccounts,
-    outgoingHistoryKeys,
-    statementSettlementTotals,
+  // THE SECOND INTERPRETATION PASS, AND WHEN IT IS PROVABLY UNNECESSARY.
+  //
+  // merchantRulesStoppedMatching counts texts that are counted BEFORE, that
+  // resolve to a merchant BEFORE, and that are no longer counted after. If
+  // NOTHING resolved before, that count is zero whatever the change does,
+  // because the filter below requires resolvedBefore.has(text). A caller
+  // that wants only that number therefore does not need the second pass at
+  // all in that case, and a household with no merchant rules yet is exactly
+  // that case: it is the state an owner registering their accounts for the
+  // first time is in, and the state the healing journey drives seven times
+  // in a row.
+  //
+  // The order matters and is deliberate: resolve BEFORE deciding, so the
+  // decision rests on a measured empty set rather than on an assumption
+  // about how many rules the household has.
+  const resolvedBefore = await deps.merchants.resolveCounterparties(
+    context,
+    before.countedTexts,
   );
+  const secondPassCannotChangeTheAnswer =
+    merchantCountOnly && resolvedBefore.size === 0;
+  const after = secondPassCannotChangeTheAnswer
+    ? before
+    : totalsFor(
+        transactions,
+        input.proposedAccounts,
+        outgoingHistoryKeys,
+        statementSettlementTotals,
+      );
 
   // WHICH MERCHANT RULES STOP MATCHING, asked of the ONE port interpretation
   // is allowed to reach the merchants module through (criterion 3.2): the
@@ -207,10 +251,9 @@ export const previewDeclarationChange = async (
   // after the change resolves to nothing afterwards, because interpretation
   // only ever asks about counted rows. That is one rule per text, which is
   // what assignMerchant writes.
-  const [resolvedBefore, resolvedAfter] = await Promise.all([
-    deps.merchants.resolveCounterparties(context, before.countedTexts),
-    deps.merchants.resolveCounterparties(context, after.countedTexts),
-  ]);
+  const resolvedAfter = secondPassCannotChangeTheAnswer
+    ? resolvedBefore
+    : await deps.merchants.resolveCounterparties(context, after.countedTexts);
   const stillResolved = new Set(
     after.countedTexts.filter((text) => resolvedAfter.has(text)),
   );

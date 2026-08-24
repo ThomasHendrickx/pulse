@@ -263,8 +263,36 @@ test("REGISTERED ARM: registering the seven first leaves only the outside mercha
   // CRITERION 14.8: the new gap is named, with its remedy, and the verdict
   // stops reading as books closing. Three pot siblings whose own statements
   // have not been imported are three unmatched internal legs.
-  await expect(page.getByTestId("recon-cause-unmatched")).toBeVisible();
-  await expect(page.getByTestId("recon-cause-unmatched")).toContainText("3");
+  //
+  // THREE OF THIS CRITERION'S CLAUSES WERE UNASSERTED and the comment above
+  // claimed one of them in the present tense with nothing checking it
+  // (finding CR-P14C2-08, and R-087's first shape). All four are asserted
+  // now, each against a hand-written string rather than against a value
+  // read back off the same page.
+  const unmatched = page.getByTestId("recon-cause-unmatched");
+  await expect(unmatched).toBeVisible();
+  // ONE: the count.
+  await expect(unmatched).toContainText("3");
+  // TWO: THE TOTAL, equal to the sum of those legs, READ OFF THE FIXTURE
+  // rather than reasoned about. ar-current.csv rows 0405, 0406 and 0407 are
+  // the three transfers to the household's own POT siblings, at 100,00,
+  // 150,00 and 200,00, so the flagged total is 450,00. (The first draft of
+  // this assertion said 1.000,00, from adding up the SAVINGS transfers by
+  // memory instead of opening the file; those are RESERVE rows and are not
+  // unmatched internal legs at all.) The sign prefix is deliberately not
+  // matched here: the substring is the magnitude, so this assertion says
+  // nothing about a rendering choice it is not about.
+  await expect(unmatched).toContainText("450,00");
+  // THREE: THE REMEDY IS NAMED. The criterion asks that the copy say what
+  // closes the gap rather than only that a gap exists.
+  await expect(unmatched).toContainText("the missing export arrives");
+  // FOUR: THE VERDICT STOPS READING AS BOOKS CLOSING. This is the clause the
+  // old comment asserted in prose and nothing checked.
+  await expect(page.getByTestId("recon-verdict")).toHaveText("Books do not close");
+  await expect(page.getByTestId("recon-panel")).toHaveAttribute(
+    "data-state",
+    "broken",
+  );
 });
 
 // ---------------------------------------------------------------------

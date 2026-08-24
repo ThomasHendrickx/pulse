@@ -447,3 +447,53 @@ describe("the landing account is resolved as the screens name it (finding F1)", 
     expect(world.profiles).toHaveLength(1);
   });
 });
+
+describe("criterion 14.11 witness TWO: a reserve declaration with no account number in the file is refused by name", () => {
+  test("a RESERVE declaration over a statement whose own-account column is absent is REJECTED, and no account is declared", async () => {
+    // THE REFUSAL WAS IMPLEMENTED AND WIRED TO THREE CATALOGUES AND NOTHING
+    // ASSERTED THAT IT FIRES (finding CR-P14C2-05, criterion 14.11's witness
+    // TWO). DR-0030 accepts a reserve account's own statement, and the whole
+    // value of doing so is that the opening balance arrives checked rather
+    // than typed; a reserve account admitted with NO account number cannot
+    // be matched to the transfers that reference it, so it would be a
+    // reserve in name with no way to reconcile against the pot side.
+    //
+    // The fixture is a Demobank export with the Rekening column REMOVED, so
+    // the detector assigns a counterparty-account column and no own-account
+    // column, which is the exact state confirm-import refuses.
+    const world = makeFakeImportWorld();
+    const ctx = context;
+    const uploaded = await uploadStatement(ctx, world.deps, {
+      fileName: "ar-reserve-no-account-number.csv",
+      bytes: fixture("ar-reserve-no-account-number.csv"),
+    });
+    expect(uploaded.kind).toBe("awaiting-declaration");
+    if (uploaded.kind !== "awaiting-declaration") throw new Error("unreachable");
+
+    const confirmed = await confirmImport(ctx, world.deps, {
+      importId: uploaded.importId,
+      profileName: "no-account profile",
+      spec: detectedSpec("ar-reserve-no-account-number.csv"),
+      declaration: { label: "Buffer", bank: "Demobank", role: "RESERVE" },
+    });
+
+    // REFUSED, BY NAME rather than by a generic failure.
+    expect(confirmed.kind).toBe("rejected");
+    expect(confirmed.kind === "rejected" && confirmed.reason).toBe(
+      "reserve-needs-account-number",
+    );
+    // AND NOTHING WAS DECLARED. A refusal that still created the account
+    // would leave the household holding exactly what the refusal exists to
+    // prevent.
+    expect(world.accounts).toEqual([]);
+    // The same file declared as POT is accepted, so the refusal is about the
+    // RING and not about the file being unusable.
+    const asPot = await confirmImport(ctx, world.deps, {
+      importId: uploaded.importId,
+      profileName: "no-account profile",
+      spec: detectedSpec("ar-reserve-no-account-number.csv"),
+      declaration: { label: "Current", bank: "Demobank", role: "POT" },
+    });
+    expect(asPot.kind).toBe("ingested");
+  });
+});

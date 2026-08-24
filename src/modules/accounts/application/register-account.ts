@@ -116,15 +116,30 @@ export const registerAccount = async (
   // set as it WOULD BE, so the number reported is the number the recompute
   // below actually produces rather than a second rule's guess at it.
   const current = await deps.accounts.listAccounts(context);
+  const currentDeclared = current.map((account) => ({
+    id: account.id,
+    role: account.role,
+    ...(account.iban === undefined
+      ? {}
+      : { iban: canonicalAccountNumber(account.iban) }),
+  }));
+  // REGISTRATION READS ONE FIELD OF THIS PREVIEW, and says so (finding
+  // CR-H2-02). Before this, every registration paid for a full declaration
+  // dry run whose three money deltas and row count were computed and thrown
+  // away, plus a second fetch of the account list this function had already
+  // loaded. Both are now avoided: the list is handed over, and the second
+  // interpretation pass is skipped whenever nothing resolved to a merchant
+  // before the change, which is precisely the state a household registering
+  // its accounts for the first time is in.
+  //
+  // WHAT IS NOT CHANGED: the dry run still runs BEFORE the write (decision
+  // D-58), over the declaration set as it WOULD BE, so the number reported
+  // is the number the recompute below actually produces.
   const preview = await deps.preview(context, {
+    only: "merchant-rules-stopped-matching" as const,
+    currentAccounts: currentDeclared,
     proposedAccounts: [
-      ...current.map((account) => ({
-        id: account.id,
-        role: account.role,
-        ...(account.iban === undefined
-          ? {}
-          : { iban: canonicalAccountNumber(account.iban) }),
-      })),
+      ...currentDeclared,
       { id: `pending:${iban}`, role: input.role, iban },
     ],
   });

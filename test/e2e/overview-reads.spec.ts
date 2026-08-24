@@ -270,9 +270,32 @@ test("14.2 seventh assertion: one reserve account stored in two surface forms is
   // raw join selected exactly the same rows as a normalised one. Measured by
   // a clean-room lane on a live database: raw 4, normalised 4, identical.
   //
-  // The mixed state is real rather than contrived. The delimited parse
-  // stores the cell verbatim while the PDF path canonicalises, so one
-  // household really can hold both forms for one account.
+  // CORRECTED RATHER THAN QUIETLY REWRITTEN (R-087, finding CR-P14C2-11).
+  // This paragraph used to read: "The mixed state is real rather than
+  // contrived. The delimited parse stores the cell verbatim while the PDF
+  // path canonicalises, so one household really can hold both forms for one
+  // account." THAT IS FALSE AT THIS TREE, and this branch's own
+  // test/domain/counterparty-key-invariant.test.ts asserts the opposite.
+  //
+  // WHY IT IS FALSE, traced by a clean-room lane and confirmed here. The
+  // delimited detector assigns the counterparty-account column only when
+  // EVERY value in it matches an anchored COMPACT pattern
+  // (detect-profile.ts), so a spaced cell drops the column rather than
+  // storing a spaced value; and upload-statement.ts re-detects the spec on
+  // EVERY upload and matches it against the stored profile, so a later file
+  // written spaced matches no profile and never reaches the verbatim store
+  // at all. NO SHIPPED PATH CAN PUT A SPACED VALUE IN
+  // Transaction.counterpartyIban.
+  //
+  // SO WHAT THIS TEST IS: honest defence in depth against a state the
+  // product cannot currently produce. It is seeded directly because nothing
+  // else can produce it, not because seeding is more convenient. That makes
+  // criterion 14.2's premise, that the stored column really does hold two
+  // surface forms for one account, false at this tree, and its separate
+  // fixture clause unsatisfiable through the delimited path. That is a PLAN
+  // finding and it is raised as one; the assertion below is kept because a
+  // normalised join and grouping should not depend on an import path's
+  // current behaviour staying what it is today.
   //
   // WHY THIS IS SEEDED DIRECTLY RATHER THAN WRITTEN INTO ar-current.csv, and
   // this is the half of the review's suggested fix that is NOT takeable. The

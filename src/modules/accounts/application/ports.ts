@@ -72,6 +72,17 @@ export type DeclarationChangePreviewPort = (
       readonly iban?: string;
     }[];
     readonly subjectAccountId?: string;
+    // The current declaration set, when the caller already holds it, so a
+    // registration does not fetch the same list twice (finding CR-H2-02).
+    readonly currentAccounts?: readonly {
+      readonly id: string;
+      readonly role: AccountRole;
+      readonly iban?: string;
+    }[];
+    // WHICH FIELD THE CALLER READS. Registration reads only the merchant
+    // count; declaring that lets the dry run skip a second interpretation
+    // pass that provably cannot change it.
+    readonly only?: "merchant-rules-stopped-matching";
   },
 ) => Promise<{
   readonly rowsOnAccount: number;
