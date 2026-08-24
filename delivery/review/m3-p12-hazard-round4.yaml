@@ -425,6 +425,72 @@ findings:
       itself will now make, so the fake's strength cannot again exceed the
       adapter's for this member.
 
+# 9. ATTACK SURFACE 5, THE FIFTH CONSUMER'S REPAIR, THEN THE SEARCH FOR A
+#    SIXTH. Read src/modules/overview/domain/month-projection.ts in full
+#    (the CountedGroupIdentity/CountedGroupBareKey injected types, the
+#    OverviewUnnameableReason field, and foldGroups's unresolved branch),
+#    src/modules/overview/ui/month-view.tsx's GroupLabel component, all
+#    three messages/*.json files, and src/modules/overview/adapters/
+#    overview-repository.ts's raw SQL for the grouped counted read.
+#    MONEY STAYS IN THE MONTH: the unresolved branch still sums
+#    row.totalCents into the group regardless of unnameableReason; nothing
+#    in the diff drops a row or a group.
+#    BARE-KEY GROUP NOT DOUBLE COUNTED: the fold keys every unresolved row
+#    on `text:${identity.key}`, and a bare identity key is always exactly
+#    "descriptor:" (isBareIdentityKey's own definition, unchanged by this
+#    round), so every row with no counterparty information collapses into
+#    the SAME map entry (key "text:descriptor:") and is summed once, not
+#    once per row. An account-basis bare key cannot occur (an account only
+#    ever reaches the account basis by passing the trust gate, which never
+#    admits an empty/whitespace value), so there is only one bare-key group
+#    space, not two silently competing ones.
+#    THE BOUNDARY HOLDS: grep of month-projection.ts's own imports shows
+#    only @/platform/money and @/platform/plain-date; CountedGroupIdentity
+#    and CountedGroupBareKey are structural (function-shaped) types, and the
+#    real counterpartyIdentity/isBareIdentityKey implementations are wired
+#    in one level up, at src/modules/overview/application/month-overview.ts:98-99,
+#    via src/modules/overview/application/index.ts re-exporting them from
+#    the merchants module's own published application interface. The
+#    overview module still imports nothing from merchants directly.
+#    THE TWO SCREENS AGREE ON THE UNNAMEABLE CASE: merchant-review.ts's
+#    groupDirection uses the identical predicate (isBareIdentityKey) and the
+#    identical outcome shape (unnameableReason: "no-counterparty-text");
+#    month-view.tsx and merchant-review.tsx both render through a
+#    translation key (unnameableLabel), present in all three message
+#    catalogs (messages/en.json:128, fr.json:128, nl.json:128), so no Dutch
+#    or French URL path or hardcoded string was introduced.
+#    overview-repository.ts's SQL: t."counterpartyIban" AS "counterpartyAccount"
+#    is selected alongside the existing five columns and GROUP BY 1, 2, 3,
+#    4, 5, 6 covers all six non-aggregate columns (so the new column does
+#    not silently fold into an existing group). The base query still filters
+#    WHERE t."householdId" = ${context.householdId}::uuid and every LEFT
+#    JOIN carries its own householdId match, so criterion "every table
+#    carries householdId and every query filters on it" holds here.
+#    SEARCHED FOR A SIXTH CONSUMER: grepped src/ for every file touching
+#    counterpartyText, counterpartyName or counterpartyAccount (22 files)
+#    and separately for counterpartyIdentity/CountedGroupIdentity/
+#    isBareIdentityKey/identityBasisOfKey/the namespace constants (13
+#    files). Beyond the five known consumers (matcher via resolveIdentities,
+#    the write boundary in assign-merchant.ts, merchant-review.ts, the
+#    ledger's interpret-window.ts feeding the resolver port, and now
+#    month-projection.ts), the remaining hits are: import-side files
+#    (dedup.ts, detect-profile.ts, parse-statement.ts, source-profile.ts,
+#    import-repository.ts, profile-confirmation.tsx) which read or store the
+#    fields as FACTS during import and never group or match on them;
+#    ledger-repository.ts and ledger-transaction.ts, which carry
+#    counterpartyName through as a plain field for corrections.ts's
+#    DELIBERATELY SEPARATE counterpartyKey (the sibling this phase's own
+#    warning at normalise-counterparty.ts:15-22 says must stay unmerged);
+#    mask-card-number.ts, which masks a rendered string and groups nothing;
+#    and merchants/ui/actions.ts and merchant-review.tsx, which are the UI
+#    layer calling into merchant-review.ts, not an independent consumer.
+#    DID NOT FIND A SIXTH CONSUMER. I looked specifically for a second
+#    ad-hoc grouping or matching site (a report, an export, a "top
+#    merchants" or search feature) outside these files and found none in
+#    the current tree; Pulse's scope-discipline list (CLAUDE.md) rules out
+#    exactly the features (budgets, goals, per-transaction overrides) that
+#    would be likely candidates for one.
+
 criteria: []
 deviations-judged: []
 hazard-classes-addressed: []
