@@ -1,18 +1,218 @@
 # Adversarial plan review, ROUND TWO, of delivery/plan/pulse-v02.yaml phase
 # M3-P12 criterion 12.7 and hazard classes H12.31 and H12.32, as revised by
 # c21137c and carried into this branch at 5449242. Round one of this review is
-# delivery/review/m0-p9-plan-review.yaml on the same branch.
+# delivery/review/m0-p9-plan-review.yaml on the same branch; all eleven of its
+# findings were taken.
 #
 # work-log (incremental, newest last):
 # - created this file as beacon before deep reading, per the restart that took
-#   round one to the edge
-kind: finding
-verdict: in-progress
-produced-by: claude (Opus 5, claude-opus-5)
-findings: []
-no-findings-statement: placeholder, round two in progress
+#   round one to the edge, and committed it before reading anything
 # - storage check on the revision: criterion 12.7 reads back at 14537 chars,
-#   0 newlines, 0 double spaces, no hyphen-space artifact, no em dash.
-#   Hazard ids now ...H12.18,H12.19,H12.31,H12.32,H12.20... : H12.32 inserted
-#   beside H12.31, nothing renumbered.
-# - read the whole revised criterion. Attacking the top-level invariant first.
+#   0 newlines, 0 double spaces, no hyphen-space artifact, no em dash. Hazard
+#   ids now ...H12.18,H12.19,H12.31,H12.32,H12.20...: H12.32 inserted beside
+#   H12.31, nothing renumbered. `tiphys validate --type plan` passes.
+# - read the whole revised criterion, then attacked the top-level invariant
+#   first, as dispatched.
+# - REFERENCES CHECKED RATHER THAN TAKEN ON TRUST. M3-P16 criterion 16.2 now
+#   reads 'the record carries that report's loss count, its claimant-merchant
+#   count and the exit code beside the two sizes' and 'the record names every
+#   rule id it carried and, for a lost assignment, the transaction id beside
+#   it, since criterion 12.7 accepts a loss by that pair and never by a rule
+#   alone'. Both of round one's stranded references resolve, and the new
+#   non-blocking class is captured in the deployed record rather than escaping
+#   it. H12.31 now carries a self-contained gloss of claimant and H12.32 covers
+#   the over-report direction. Round one's APR-M0P9-05 through APR-M0P9-10 are
+#   closed to my satisfaction.
+# - THE AUTHOR'S THREE ADMITTED WEAKNESSES, judged. (1) The tie-break WITHIN a
+#   key space: honestly bounded, but it is the wrong half of the problem, see
+#   R2-04, which is about precedence BETWEEN the two spaces and which the
+#   author did not name. (2) The six counts prove reach and not exploration:
+#   NOT honestly bounded, and it is this round's R2-03, because after four
+#   rounds of green-and-wrong the missing instrument is not a bigger generator
+#   but a demonstration that the property can go red at all. (3) The
+#   claimant-merchant class judged by the merchant a rule carries: honestly
+#   bounded and I raise no finding. Merchants are per household and reused by
+#   name, so a rule carrying the claimant's merchant carries the same merchant
+#   RECORD the owner's current naming points at, which is the owner-visible
+#   unit; the row is printed with the transaction id and both rule ids, and
+#   criterion 16.2 now carries the class count on the deployed run, so the
+#   widening is observed rather than assumed.
+# - ONE CORRECTION TO MY OWN ROUND ONE, verified rather than relayed. I wrote
+#   in APR-M0P9-04 that both sides of the biconditional may be computed with
+#   the routine's own exported helpers. Read at the implementation head
+#   ce3f661, the test rebuilds its maps from report.supersededBy and
+#   report.promotedFrom, which is published output, and evaluates the licence
+#   itself; the true and narrower statement is that the same rule is hand
+#   copied on both sides, so an error in the RULE goes unnoticed. The fix that
+#   finding demanded was right and the revision took it; its stated mechanism
+#   was wider than the code. Recorded here rather than quietly dropped.
+# - THE MEASUREMENT I WAS SENT, folded in as corroboration and not as a
+#   finding: with one promotion pair deliberately corrupted, the biconditional
+#   property passed while the lineage property failed and a row taken over by
+#   an unrelated merchant left the loss set. I did not run it. I did verify the
+#   textual half myself, which is what this review rests on: read at ce3f661
+#   the shipped assertion is `reported: changed && !licensed` at
+#   test/property/rederive-loss-reporting.test.ts:305, with no merchant term at
+#   all, and the revised criterion's first biconditional keeps that licence
+#   conjunct. See R2-01.
+kind: finding
+verdict: revise
+produced-by: claude (Opus 5, claude-opus-5)
+findings:
+  - id: APR2-M0P9-01
+    severity: high
+    evidence:
+      - "The invariant, quoted from criterion 12.7: 'no run may leave a transaction carrying a merchant that is neither the one it carried before nor the one carried by the claimant of the rule it previously resolved through, and every departure from that is a LOST assignment whatever else is true of it.'"
+      - "The test the criterion mandates does not say that. Its first biconditional is: 'a transaction appears in the reported LOSS set IF AND ONLY IF the merchant it carried before the run differs from the merchant it carries after AND that change is not licensed by the published lineage AND the merchant it carries after is not the claimant's own.'"
+      - "The two disagree on exactly one input, and it is the input this whole amendment exists for. Take a row that moves to a merchant which is neither the one it carried nor the claimant's, through a rule the report names in a promotion pair that is not true. The invariant calls it a lost assignment whatever else is true of it. The biconditional's second conjunct is false, because the published lineage licenses it, so the biconditional says it is NOT in the loss set; and the second biconditional does not claim it either, since that one also requires the change to be unlicensed. The row is in neither reported set and the run exits 0, which is hazard H12.31 word for word."
+      - "The licence conjunct is REDUNDANT in that biconditional and its only effect is this weakening. Under the promotion constraints the same criterion imposes, the promoted rule 'carries the SAME merchant id as its source', so a licensed change always ends at the claimant's own merchant, which the THIRD conjunct already excludes. Every row the licence conjunct removes from the loss set, the third conjunct removes anyway; the only rows it removes on its own are the ones whose licence is false."
+      - "Read at the implementation head ce3f661, the shipped property asserts `reported: changed && !licensed` (test/property/rederive-loss-reporting.test.ts:305) with no merchant term whatever, so the licence-first reading is the natural one and is what exists today."
+      - "Corroborated by a measurement I did not run and do not rest on: with one promotion pair deliberately corrupted the biconditional passed while the separate lineage property failed, and the row taken over by an unrelated merchant left the loss set."
+    concrete-edit: >-
+      In criterion 12.7, strike the licence conjunct from the FIRST
+      biconditional so it reads: "a transaction appears in the reported LOSS set
+      IF AND ONLY IF the merchant it carried before the run differs from the
+      merchant it carries after AND the merchant it carries after is not the one
+      the claimant of the rule it previously resolved through carries. THE FIRST
+      BICONDITIONAL NAMES NO LINEAGE AND THAT IS THE POINT OF IT: it is the
+      top-level invariant of this criterion written as a test, it is decided
+      from merchants alone, and a run cannot green it by publishing a
+      relationship that is not true, which is the one thing a lineage-conditioned
+      property cannot promise. The licence term is redundant here, because the
+      promotion constraints below make every licensed change end at the
+      claimant's own merchant, so the term removes no row the merchant clause
+      does not remove, except the rows whose licence is false. The lineage still
+      decides the SECOND biconditional, which only separates two non-blocking
+      outcomes that both end at the claimant's merchant, and is checked in its
+      own right by the lineage tests above."
+    analysis: >-
+      This is the round's central question and the answer is that the invariant
+      does NOT independently reject the findings it was written to reject,
+      because it is prose and no mandated test expresses it. The author's claim
+      would be true if the first biconditional were the invariant; as written it
+      is the invariant with an extra escape clause bolted to the front, and the
+      escape clause is the one the forged-lineage case walks through. The fix is
+      one deletion, it makes the mandated test and the stated invariant the same
+      sentence, and it is the difference between an amendment that closes the
+      mechanism and one that adds a paragraph above it.
+  - id: APR2-M0P9-02
+    severity: high
+    evidence:
+      - "The revised before-set clause: 'Each stored rule is read under the key space its OWN pattern is written against: a pattern carrying no known namespace against the pre-phase normalised counterparty key, a namespaced pattern against the identity key, with the matcher's own tie-break applied within each space.'"
+      - "Word search over the stored criterion text: 'basis-agnostic' 0 occurrences, 'whatever basis' 0, 'including a row' 0, 'regardless' 0. The three occurrences of 'pre-phase' are the clause above, the non-empty size assertion, and the promotion constraint. Nothing says the pre-phase key is computed for a row that will take the ACCOUNT basis after the migration."
+      - "That property is the whole reason an account-basis row is in the before set at all, and it is load-bearing rather than incidental: the pre-phase key is the normalised counterparty text of every row, so a bare rule claims rows that the namespaced claimant can never touch, which is precisely why round three's wholesale exclusion of a superseded rule hid a real loss."
+      - "An implementation that reads the criterion's words and computes the pre-phase key PER BASIS, treating it as inapplicable to a row whose basis is now the account, satisfies every word quoted above. Its before set then contains only descriptor-basis rows, and a row the owner's naming used to cover which nothing covers after the run has no before merchant, so it is not a change, so it is not a loss, and it vanishes with no count and no line."
+      - "The non-empty size assertion is specifically blind to it: 'A test asserts, over a seed of un-namespaced rules, that the before set is NON-EMPTY and that its size is the number of rows those rules reach under the pre-phase key'. It is stated over a seed of un-namespaced rules, and its size term is defined by the same reading of 'reach under the pre-phase key' that is under question, so a per-basis implementation satisfies it against its own definition."
+    concrete-edit: >-
+      Append to the before-set clause, immediately after 'with the matcher's own
+      tie-break applied within each space': "THE PRE-PHASE KEY IS BASIS-AGNOSTIC
+      AND THIS CRITERION SAYS SO RATHER THAN LEAVING IT TO BE INFERRED: it is
+      the normalised counterparty text of EVERY row, including a row that takes
+      the ACCOUNT basis after this phase, because that is what the rule was
+      compared against when the owner wrote it. That is not a detail. A bare
+      rule therefore claims two kinds of row, one the namespaced claimant
+      matches by construction and one it can NEVER match, and dropping the
+      second is how round three's wholesale exclusion hid a real loss: the row
+      leaves BOTH sides of the comparison, so nothing covering it afterwards is
+      not a change and not a loss. A test asserts, on a seed of one un-namespaced
+      rule and two rows, one taking each basis, that the before set contains
+      BOTH and resolves both to that rule's merchant."
+    analysis: >-
+      Round one's APR-M0P9-01 said the criterion left the before set undefined.
+      The revision defines it and stops one clause short, and the clause it
+      stops short of is the one that distinguishes this mechanism's third
+      failure from its second. The six shape counts do make the omission RED
+      rather than silent, because a per-basis before set puts shape five out of
+      reach, so this is a specification gap and a misdirected diagnosis rather
+      than a hole a build ships through. It is high rather than medium for the
+      diagnosis: the criterion tells the implementer in as many words that a
+      zero count means 'a generator that cannot reach a shape', so the reading
+      it hands them on the day the test goes red points at the generator and
+      away from the defect.
+  - id: APR2-M0P9-03
+    severity: high
+    evidence:
+      - "The criterion requires the six shapes to be REACHED: 'The test counts, over the worlds it generates, how many exhibited each of SIX shapes, prints the six counts and asserts each one is greater than zero, so a generator that cannot reach a shape is RED rather than vacuously green'."
+      - "Nothing anywhere requires the property to be capable of going red on a WRONG implementation. A count greater than zero says the generator visited the shape; it says nothing about whether the assertion at that shape can fail."
+      - "The criterion itself names four predicates that were green and wrong: 'round two reported losses that had not happened, round three hid a real loss, and round four hid a reassignment of a row from one merchant to an unrelated third one, and EACH ROUND PASSED ITS OWN EXAMPLES', plus the forged lineage pair that APR2-M0P9-01 walks through."
+      - "The one measurement available on this mechanism is a mutation result rather than a coverage result: a deliberately corrupted promotion pair left one property green and turned a different one red. That is what distinguishes a property with power from a property with reach, and no clause of this criterion asks for it."
+      - "The plan already uses this idiom one tier down, at criterion 12.22: 'A regression test pins its FULL contents, so adding, removing or altering an entry is red rather than silent.'"
+    concrete-edit: >-
+      Append to the counted-shapes clause: "THE COUNTS PROVE THE GENERATOR
+      REACHED EACH SHAPE AND NOT THAT THE PROPERTY CAN FAIL AT ONE, so the
+      phase work history also records the property run against FOUR deliberately
+      wrong predicates, each named here because each shipped: a predicate that
+      reports every change, which is round two; one that excludes a superseded
+      rule's whole claim from the before set, which is round three; one that
+      asks only whether the row is covered by ANYTHING after the run, which is
+      round four; and a run that publishes one promotion pair whose holder and
+      source name different merchants, which is the forged lineage. The record
+      carries, for each, which property went red and its assertion message, and
+      a mutant that leaves EVERY property green is a defect in the properties
+      and is fixed before this criterion is met. No count is a substitute: a
+      property that cannot fail passes every count it is asked for."
+    analysis: >-
+      This is the author's second admitted weakness and I do not think it is
+      honestly bounded, though I think the author has the diagnosis one step
+      off. The problem is not that the generator might be degenerate around a
+      shape; a floor on the counts would be arbitrary and would buy little. The
+      problem is that four consecutive implementations of this predicate were
+      green against their own tests, and the amendment's answer to that is a
+      seventh, eighth and ninth count. The instrument that discriminates a test
+      with power from a test with reach is a mutant, the four mutants are
+      already named in this criterion's own prose, and running them is an hour
+      of work that would have caught every round of this mechanism including the
+      one this review is about.
+  - id: APR2-M0P9-04
+    severity: medium
+    evidence:
+      - "The before set is read in two key spaces and the criterion fixes the tie-break inside each one and not between them: 'with the matcher's own tie-break applied within each space'."
+      - "A row in the seeded mixed table is claimed in BOTH spaces at once, and this is the ordinary shape rather than a corner: a superseded bare rule S matches the row under the pre-phase key while its namespaced claimant C matches the same row under the identity key. Which space wins decides whether the row's before merchant is S's or C's, and therefore whether the supersede exception is ever exercised at all."
+      - "If the identity space wins, the row is credited to the claimant before the run and to the claimant after it, nothing changes hands, and the entire exception is unreachable. If the pre-phase space wins, the row is credited to the superseded rule and the exception is what saves it. The criterion states neither."
+      - "The author named the tie-break as the first place an implementation can satisfy the words and mis-size the set. The size is the half that survives: 'its size is the number of rows those rules reach under the pre-phase key' counts ROWS reached and is therefore independent of which rule reached them, so neither tie-break question is caught by that assertion."
+    concrete-edit: >-
+      Replace 'with the matcher's own tie-break applied within each space' with:
+      "with the matcher's own tie-break applied within each space, and THE
+      PRE-PHASE SPACE IS CONSULTED FIRST, the identity space only for a row no
+      un-namespaced rule reaches. The order is fixed here because a row of the
+      seeded mixed table is claimed in both spaces at once, by the superseded
+      rule under the pre-phase key and by its claimant under the identity key,
+      and the order is what decides whether that row's before merchant is the
+      superseded rule's, which is the state this criterion's exception exists to
+      carry, or the claimant's, in which case nothing ever changes hands and the
+      exception is unreachable. A test asserts, on exactly that seed, that the
+      before merchant is the superseded rule's."
+    analysis: >-
+      The author admitted the tie-break WITHIN a space and this is the half next
+      to it. Like APR2-M0P9-02 it is made red rather than silent by the shape
+      counts, since an identity-first before set puts shapes four, five and six
+      out of reach at once, so it is medium rather than high; and like that
+      finding the red it produces reads as a generator that cannot reach a
+      shape, which is not where the defect is.
+  - id: APR2-M0P9-05
+    severity: medium
+    evidence:
+      - "The second biconditional omits the conjunct the first one carries: 'it appears in the reported CLAIMANT-MERCHANT class IF AND ONLY IF the change is unlicensed and the merchant it carries after IS the claimant's own'. There is no requirement that the merchant CHANGED."
+      - "The words 'the change' imply one, and implication is what four rounds of this mechanism died of. The prose above it does not close the gap either: 'Where the row ends at the CLAIMANT'S OWN MERCHANT through a rule outside the lineage, it is reported' also says nothing about a change."
+      - "Read literally, the common case floods the class. In the same-merchant twin shape, which is the D-46 deploy-window shape the criterion names elsewhere, the claimant's merchant IS the merchant the row already carried, so every row of such a rule that keeps its merchant through any rule outside the lineage satisfies both stated conjuncts and lands in the class."
+      - "It also makes two of the six counted shapes satisfiable by one world: shape one is 'a row whose merchant does not change at all' and shape six is 'a row of the claimant-merchant class', and under the literal reading a single unchanged row of a same-merchant twin exhibits both."
+    concrete-edit: >-
+      Replace 'it appears in the reported CLAIMANT-MERCHANT class IF AND ONLY IF
+      the change is unlicensed and the merchant it carries after IS the
+      claimant's own' with: "it appears in the reported CLAIMANT-MERCHANT class
+      IF AND ONLY IF the merchant it carried before the run DIFFERS from the
+      merchant it carries after, that change is not licensed by the published
+      lineage, and the merchant it carries after IS the one the claimant
+      carries. The first conjunct is written out rather than implied by the word
+      change, because without it a row that never moved satisfies the other two
+      whenever the claimant carries the merchant the row already had, which is
+      the same-merchant twin shape, and the class fills with rows nothing
+      happened to while shapes one and six stop being distinct."
+    analysis: >-
+      Small and cheap to fix, and it is the same class of defect as the one this
+      whole amendment is about: a clause that means one thing to its author and
+      admits another reading, in the one criterion where four rounds have shown
+      that the second reading is the one that gets built. The cost if it is left
+      is noise rather than damage, since every row involved is one that did not
+      move and the run exits 0, but a report whose largest class is rows nothing
+      happened to is a report nobody reads.
