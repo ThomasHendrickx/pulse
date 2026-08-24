@@ -1,0 +1,133 @@
+kind: verdict
+phase: M3-P12
+verdict: FIX-ROUND-NEEDED
+produced-by: claude-sonnet-5
+framing: hazard-round6-in-progress
+review-contract: hazard
+
+findings: []
+
+criteria: []
+deviations-judged: []
+hazard-classes-addressed: []
+
+# WORKING NOTES (round 6, hazard lane). Append-as-you-go per the
+# incremental-output clause. This section is scratch and will be trimmed
+# before final validation; the structured fields above are placeholders
+# until the review is complete.
+#
+# Started: investigating criterion 12.7 as amended (merchant-decided loss
+# property), the three-sentinel fix, the mutant harness, and the generator
+# shape coverage, per the round-6 dispatch's five numbered attack points.
+#
+# npm install: added 472 packages in 29s, exit 0 (default node in this
+# container is v26.7.0, not the v22 package.json engines pins; only an
+# EBADENGINE warning, not a failure).
+#
+# npm run typecheck: exit 0, no diagnostics.
+#
+# Read in full: src/modules/merchants/application/rederive-rules.ts (1068
+# lines), test/property/rederive-loss-reporting.test.ts (508 lines),
+# test/property/mutants.mts (200 lines).
+#
+# CANDIDATE FINDING (R-087, false claim in a comment nothing checks):
+# test/application/rederive-merchant-rules.test.ts:1752-1757 asserts "The
+# schema's ids are cuids: a lowercase letter followed by alphanumerics, with
+# no hyphen anywhere" and backs it with regex /^[a-z][a-z0-9]*$/. But
+# prisma/schema/merchants.prisma:52 declares MerchantRule.id as
+# `@default(uuid()) @db.Uuid`, not a cuid, and a real uuid is
+# hyphen-containing (e.g. 8-4-4-4-12 hex groups). The claim is false. The
+# actual reason a real id can never equal a `pending-<n>` placeholder is
+# STRING LENGTH/shape (36-char hyphenated uuid vs a short `pending-N`
+# token), not "no hyphen": a uuid also contains hyphens, so the stated
+# reason is backwards. The separation property the test is defending
+# (production ids can't collide with the placeholder) still holds by
+# accident of a different argument, so this is not (yet) a live collision
+# defect, but it is a false present-tense claim shipped in test code that
+# nothing checks against the real id format. Severity to decide: likely
+# medium (false claim, R-087, but the property it's defending happens to
+# still hold for an unstated reason).
+#
+# NEXT: reason carefully about claimantInSeed's uniqueness argument
+# (attack 1), look for a seed where it's ambiguous or a different-kind rule
+# should be the claimant; then run test/property/mutants.mts myself
+# (witness, not trust the work-history claim) and the full npm test suite,
+# lint, gate:privacy, gate:tokens.
+#
+# WITNESSED: npx tsx test/property/mutants.mts (self, from a clean git
+# tree). Exit 0. All four mutants caught: M1 red on FIRST biconditional, M2
+# red on FIRST, M3 red on FIRST, M4 red on FIRST AND SECOND. "restored:
+# original 33f7f7fee0ddf710, on disk 33f7f7fee0ddf710" -- matches, file
+# confirmed clean via git status --short after. This matches the work
+# history's own claim (delivery/work-history/m3-p12.yaml finding (ii)); I
+# reproduced it independently rather than trusting the record.
+#
+# ATTACK 1 (claimant uniqueness) / ATTACK 3 (fifth wrong predicate) /
+# MAJOR FINDING, HIGH SEVERITY, WITNESSED BY ME:
+#
+# claimantInSeed (test/property/rederive-loss-reporting.test.ts:124-134) and
+# the production claimant() helper (src/modules/merchants/application/
+# rederive-rules.ts:568-578) both filter candidates by `kind === kind`
+# (same kind as the source rule). I constructed a fifth mutant NOT in
+# test/property/mutants.mts: deleted the `rule.kind === kind &&` conjunct
+# from claimant() (rederive-rules.ts:576), so it matches a same-pattern
+# rule of ANY kind, not just the source's own kind. Applied via a scratch
+# python edit (verified anchor matched exactly once), restored via `cp`
+# from a saved copy immediately after each run, `git status --short`
+# confirmed clean after every restore.
+#
+# RESULT: ran `npx vitest run test/property/rederive-loss-reporting.test.ts`
+# with the mutation in place -- BOTH properties passed (2 passed, "shapes
+# reached: unchanged 524, coveredByNothing 252, takenByAStranger 107,
+# licensedByTheClaimant 195, licensedByThePromotion 66,
+# claimantMerchantClass 64"). Then ran the FULL suite
+# (`npx vitest run test/application/rederive-merchant-rules.test.ts
+# test/property/`) with the same mutation: 4 test files, 67 tests, ALL
+# PASSED, including "EVERY superseded rule is EXACT, on a run that produces
+# one" and both PREFIX-kind tests.
+#
+# WHY NOTHING CATCHES IT: seedArbitrary
+# (rederive-loss-reporting.test.ts:178-276) only ever constructs rules with
+# `kind: "EXACT"` -- grep confirms no other kind literal appears in that
+# generator. seedDeployWindowWorld (rederive-merchant-rules.test.ts:1111)
+# takes a `kind` parameter but always uses the SAME kind for both the old
+# rule and its twin/rival in every call site, so no test ever seeds a
+# cross-kind pattern collision (an EXACT rule and a PREFIX rule sharing the
+# literal same pattern string, which the schema's own unique key
+# (householdId, kind, pattern) permits to coexist). So the "same kind"
+# restriction that criterion 12.7's own prose requires of the claimant
+# check ("the claimant is a rule of the SAME KIND whose pattern is exactly
+# the namespaced form...") is asserted in
+# rederive-loss-reporting.test.ts:462-463 (`expect(dead?.kind).toBe
+# ("EXACT"); expect(claimant?.kind).toBe("EXACT")`) but that assertion is
+# VACUOUS: it can never be violated because the generator cannot produce a
+# non-EXACT rule for it to catch.
+#
+# IMPACT: not a live production bug today (assignMerchant writes EXACT
+# only; the deployed table holds zero PREFIX/PATTERN rows, per the plan's
+# own measurement). But PREFIX and PATTERN are LIVE in the matcher and
+# explicitly reserved for slice-5's accepted-answer path, so a future
+# EXACT-vs-PREFIX (or EXACT-vs-PATTERN) same-pattern coexistence is a
+# state the schema already permits. If claimant()'s kind filter were ever
+# accidentally dropped or weakened (e.g. a refactor that hoists `kind` out
+# without noticing it's load-bearing), pass one could pick a WRONG rule as
+# the claimant of a superseded EXACT rule -- attributing the exemption to
+# an unrelated PREFIX/PATTERN rule that happens to share the pattern
+# string -- and the entire test suite (67 tests + both properties) would
+# stay green. That is exactly hazard H12.31's shape (a transaction ends up
+# carrying a merchant that is neither the one it carried before nor the
+# claimant's, reported as licensed when it should be a lost assignment or
+# a claimant-merchant report), on the one mechanism the phase's own
+# criterion 12.7 says has been "wrong three times running" and is pinned
+# by a property FOR THIS REASON.
+#
+# This is attack point 1 AND attack point 3 at once: it is exactly "a rule
+# of a different kind [that] should have been the claimant" (or rather,
+# should NOT have been but nothing stops it), and it is a genuine fifth
+# wrong predicate the four committed mutants do not represent -- a
+# discovery-side defect (which rule counts as a claimant) rather than a
+# comparison-side one (what the exemption does once a claimant is known),
+# which is where all four shipped mutants live.
+#
+# File restored, verified clean: git status --short -- src/modules/
+# merchants/application/rederive-rules.ts produced no output both times.
