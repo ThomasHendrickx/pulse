@@ -1097,3 +1097,59 @@ is a route-around and not a repair. It is the plan's parked register's first
 entry now, naming the file, both line numbers and a discharge condition for
 whichever phase next owns that file. Criterion 9.7 pins this phase to one new
 file under `test/e2e/`, so repairing it here would print a second.
+
+## round three gates, at the committed head b55a31b
+
+| Gate | Exit | Summary |
+|---|---|---|
+| `npm run typecheck` | 0 | `> tsc --noEmit`, no output |
+| `npm run lint` | 0 | `> eslint .`, no output |
+| `npm test` | 0 | `Test Files 32 passed (32)`, `Tests 431 passed (431)`, 0 skipped |
+| `npm run gate:privacy` | 0 | `gate:privacy clean`; the gate moved on main at `dc8c505` and its blob here is `87b248148ee08bf013b0714a61c5a27280fe667e` |
+| `npm run gate:tokens` | 0 | no output |
+| `npm run test:e2e` | 1 | `2 failed`, `1 skipped`, `60 passed (19.4m)` |
+
+**The assertion the rename exists for is green in the gate run itself, under
+both projects:**
+
+```
+  ✓  19 [chromium]       month-view.spec.ts:1034  the dense month says exactly the same things at 1280 and at 390
+  ✓  46 [chromium-phone] month-view.spec.ts:1034  the dense month says exactly the same things at 1280 and at 390
+  press-feedback mentions anywhere in the run: 0
+```
+
+This phase's own five tests are green under `chromium-phone` and green under
+`chromium` bar the one that skips itself there by design:
+
+```
+  ✓ 32 ✓ 33  - 34 (hasTouch skip)  ✓ 35 ✓ 36   [chromium]
+  ✓ 59 ✓ 60  ✓ 61                  ✓ 62 ✓ 63   [chromium-phone]
+```
+
+THE TWO REDS ARE PRE-EXISTING AND THEY MOVE. Both are `chromium` only, both
+carry one signature, a 5s timeout on `getByTestId('import-result')` after the
+confirm click, which is a slow server action rather than an assertion about a
+value:
+
+```
+  ✘   7 [chromium] test/e2e/import.spec.ts:170
+  ✘  13 [chromium] test/e2e/month-view.spec.ts:172
+```
+
+Retried in isolation at the same head, both PASS and a THIRD, different
+pre-existing test fails with the identical signature:
+
+```
+$ npx playwright test --project=chromium test/e2e/import.spec.ts test/e2e/month-view.spec.ts
+  ✓   3 test/e2e/import.spec.ts:170        (red in the gate run)
+  ✓   7 test/e2e/month-view.spec.ts:172    (red in the gate run)
+  ✘   5 test/e2e/month-view.spec.ts:79     (green in the gate run)
+  1 failed, 17 passed (5.9m)
+```
+
+One signature landing on a different spec each run is the contention shape
+fleet warning 18 describes, not a regression. Free disk was 1.5G to 1.9G
+throughout, which is the CR-903 range the Playwright config's own comment
+documents, and two earlier attempts at this gate were killed outright during
+the production build before a single test ran (`E2E_EXIT=143`), which is why
+the run quoted here was taken with a warm `.next-prod`.

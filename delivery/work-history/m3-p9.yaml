@@ -160,6 +160,11 @@ per-step-commits:
     subject: "ui: the root layout ships the one listener that raises the pressed attribute"
   - sha: 1cdd3aa
     subject: "test: the press a finger makes, measured on the shipped document"
+  # ROUND THREE, the marker rename
+  - sha: 84fe83a
+    subject: "Merge remote-tracking branch 'origin/main' into claude/m3-p9-pressed-and-disabled"
+  - sha: b55a31b
+    subject: "ui: the press marker is a bare data attribute, not a test id"
 
 key-decisions:
   - decision: >-
@@ -417,6 +422,38 @@ key-decisions:
       that assertion stays on the second frame after the ending, untouched by
       the neutral press. The neutral spot is asserted not to be a control
       before it is pressed.
+  # ROUND THREE
+  - decision: >-
+      The marker on the shipped script is the bare attribute
+      data-press-feedback and deliberately not a data-testid, renamed at all
+      four requirement sites the amended plan names.
+    why: >-
+      The escalation this branch raised was accepted and the plan amended at
+      497ec49. It stays in the data-* family the vocabulary already uses for
+      data-pressed, and unlike an id it cannot collide with a CSS id selector
+      or a URL fragment target. Criterion 9.9(a) reads the marker out of the
+      RAW RESPONSE BODY as text rather than through a Playwright locator, so
+      any stable attribute serves the purpose exactly as well and the rename
+      costs nothing. FOUR sites and not three: step 5, criterion 9.7(c),
+      criterion 9.9(a) TWICE (the assertion sentence and the sentence about a
+      tag with that attribute and no body), and criterion 9.9's falsifying
+      clause. One occurrence of the old string survives in step 5 by design,
+      as the historical record of what the old attribute was and what it
+      broke, and it is not a requirement.
+  - decision: >-
+      The browser's active chain is cleared between the three touch paths in
+      criterion 9.9(c), the same way it is cleared between the two halves of
+      every ending.
+    why: >-
+      Re-running after the rename turned up ONE :active frame on the
+      synthesizeTapGesture path where every earlier run had zero, and it is
+      this spec's own instrument rather than the engine: the path before it
+      ends with a compatibility mouse click that this spec refuses, and a
+      refused click leaves Chromium's active chain set on the control until
+      the next input, so one frame at the head of the next path's window
+      carried :active from the previous path. Cleared, all three paths report
+      zero during the press with the shipped marking on 25 of 25 and 24 of 24
+      frames.
 
 verification-first:
   - finding: >-
@@ -889,6 +926,70 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
+  # ROUND THREE, at the committed head b55a31b
+  - gate: typecheck-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: lint-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-unit-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 431
+    passed: 431
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-privacy-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-tokens-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-e2e-round-3
+    result: red
+    wrapper-exit-code: 1
+    discovered: 63
+    passed: 60
+    failed: 2
+    skipped: 1
+    todo: 0
+    did-not-run: 0
+  - gate: suite-e2e-round-3-isolated-retry
+    result: red
+    wrapper-exit-code: 1
+    discovered: 18
+    passed: 17
+    failed: 1
+    skipped: 0
+    todo: 0
+    did-not-run: 0
 
 claims:
   - id: M3P9-C1
@@ -1257,6 +1358,33 @@ claims:
           scope collectTestids to main rather than document, which is what
           criterion 7.6's own sentence is about, but that prints a second file
           under test/e2e/.
+  - id: M3P9-C21
+    kind: remedy
+    statement: >-
+      THE RENAME CLOSED THE REGRESSION THIS BRANCH ESCALATED. The pre-existing
+      test/e2e/month-view.spec.ts:1034 is green under BOTH projects with the
+      new marker present, and no requirement site anywhere in the tree carries
+      the old attribute.
+    settled-by:
+      executed-construction:
+        command: >-
+          cd /home/user/wt-m3p9 && grep -rn 'data-testid="press-feedback"' src/
+          test/ styles/ playwright.config.ts ; npm run test:e2e
+        exit-code: 1
+        output: >-
+          The grep exits 1 with no output. The four sites now carrying the new
+          marker are src/app/layout.tsx:110 (the served attribute) and three in
+          the spec: the raw-response regex, the failure message and the live
+          document lookup. Served and matched: curl of the sign-in screen
+          returns <script data-press-feedback=""> with a 727-character body
+          registering a pointerdown listener, matched by the spec's own regex,
+          and zero occurrences of the old attribute. In the full gate run
+          month-view.spec.ts:1034 passed as test 19 under chromium and test 46
+          under chromium-phone, and the string press-feedback appears ZERO
+          times in the whole run. The gate itself exits 1 on two pre-existing
+          specs that pass on isolated retry while a third, different one fails
+          with the identical import-result timeout signature, which is the
+          contention shape and not this change.
 
 environment-warnings:
   - warning: >-
@@ -1429,4 +1557,19 @@ environment-warnings:
     evidence: >-
       SB_EXIT=0, docker ps listing eleven supabase containers healthy, and
       curl http://127.0.0.1:54321/auth/v1/health returning 200 afterwards.
+  # ROUND THREE
+  - warning: >-
+      THE PLAYWRIGHT PROD WEB SERVER IS KILLED, NOT FAILED, WHEN THE
+      PRODUCTION BUILD OVERRUNS ITS TIMEOUT. Two attempts at npm run test:e2e
+      ended with E2E_EXIT=143 and not one test executed: the config gives the
+      prod webServer a 300 second timeout that covers prisma generate plus
+      next build, and on a container at 96 percent disk with other lanes
+      running that build does not finish inside it. The log shows only the
+      prisma banner and then the exit code, which reads like a crash rather
+      than a timeout. Warm .next-prod first with a direct npm run build, then
+      start the gate.
+    evidence: >-
+      Two consecutive runs exited 143 with zero test lines in the log; a
+      direct PULSE_DIST_DIR=.next-prod npm run build exited 0 and left a 153M
+      .next-prod; the next gate run reached the tests and completed in 19.4m.
 
