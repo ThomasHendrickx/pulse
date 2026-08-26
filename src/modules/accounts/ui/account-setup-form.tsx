@@ -176,6 +176,8 @@ export const AccountSetupForm = ({
           return (
             <li key={row.key} className="account-row" data-testid="account-row">
               <p className="account-row-name">
+                {/* The catalogue's own template, with its one placeholder
+                    filled here because the row number is this island's. */}
                 {copy.rowName.replace("{row}", String(index + 1))}
               </p>
               <div className="account-field">

@@ -42,7 +42,16 @@ export const AccountsScreen = async ({
     addRow: t("accountsAddRow"),
     removeRow: t("accountsRemoveRow"),
     submit: t("accountsSubmit"),
-    rowName: t("accountsRowName"),
+    // THE RAW MESSAGE, not the formatted one, and this is a correction of a
+    // defect the production build caught (clause R-087). "Account {row}"
+    // carries an ICU variable and this component cannot supply it: the row
+    // number belongs to the client island, which owns the row list. Calling
+    // t() here asked next-intl to format a message whose variable was not
+    // provided, which the production runtime raises as
+    // FORMATTING_ERROR rather than rendering. t.raw hands over the template
+    // and the island substitutes; the string still comes from the catalogue
+    // and all three languages carry the same placeholder.
+    rowName: t.raw("accountsRowName") as string,
     errorNoRows: t("accountsErrorNoRows"),
     errorLabelMissing: t("accountsErrorLabelMissing"),
     errorBankMissing: t("accountsErrorBankMissing"),

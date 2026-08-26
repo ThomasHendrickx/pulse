@@ -83,3 +83,20 @@ regexp_replace(col, 's', '', 'g'): it stripped the letter s from both sides
 instead of stripping whitespace, and joined nothing. Corrected to the POSIX
 class [[:space:]], which carries no backslash, with the reason recorded at the
 query.
+
+## Gate runs at the committed head
+
+npm run typecheck   exit 0   (tsc --noEmit, no output)
+npm run lint        exit 0   (eslint ., no output)
+npm test            exit 0   Test Files 40 passed (40) / Tests 540 passed (540), 0 skipped
+npm run gate:tokens exit 0
+npm run gate:privacy exit 1 FIRST, then 0. The gate caught the deliberately
+  INVALID probe values criterion 14.3 asserts the four refusals over: they are
+  account-shaped and were not on the allow list. Five values added with how
+  each was derived and which of the four tests it breaks. Re-run: clean.
+
+Criterion 14.9's own grep, over the 940 lines this branch adds or changes under
+src/app and src/modules/*/ui, comment lines dropped, searching for oklch(,
+rgb(, rgba(, hsl(, hsla(, a hex colour, any number followed by px/rem/em, and
+eleven colour keywords after a colon: grep exited 1, no hits. styles/tokens.css
+appears in no diff on this branch, so no token was missing.
