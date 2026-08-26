@@ -2099,6 +2099,27 @@ gate-evidence:
     todo: 0
     did-not-run: 0
   - gate: >-
+      FIX ROUND NINE, THE SLOW GATE RUN AGAIN AT THE FINAL HEAD. The run above
+      was taken at 93306ed and three more commits followed it, so it was
+      repeated at 801bf79, the head that is pushed, on a clean committed tree
+      with no edit made while it ran. Same pin, same proof of target, same
+      config. Final line: "55 passed (10.1m)". E2E_EXIT=0. Criterion 12.14 and
+      criterion 12.18's slow-gate half therefore rest on a run at the head
+      rather than on one taken behind it.
+
+      ONE TRACKED FILE WAS MODIFIED BY THE RUN ITSELF AND NOT BY ME:
+      next-env.d.ts, whose reference path Next rewrites per build project. It
+      was restored to its branch-point content afterwards; see the environment
+      warning.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 55
+    passed: 55
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: >-
       FIX ROUND TWO, all five fast gates chained with && on the fix-round-two
       head. npm run typecheck (tsc --noEmit, no output), npm run lint (eslint
       ., no output), npm test (vitest run, 39 test files, 22.63s), npm run
@@ -3578,6 +3599,45 @@ environment-warnings:
       npx prisma migrate status without pinning named a foreign pooler host
       and returned `Error: P1001`. With the pin it named 127.0.0.1:54322 and
       returned `Database schema is up to date!`.
+  - warning: >-
+      npm run test:e2e REWRITES A TRACKED GENERATED FILE, and a git add -A
+      after it silently commits the rewrite. next-env.d.ts carries a reference
+      path that Next points at .next for the dev server and at .next-prod for
+      the production-build project, so whichever project ran last decides the
+      committed content, and the file's own second line says it should not be
+      edited. Fix round nine committed that churn by accident in one commit and
+      restored it from the branch point in the next. Anyone running the slow
+      gate should check git status --porcelain afterwards and restore this file
+      rather than staging everything.
+    evidence: >-
+      git diff after a full slow-gate run showed next-env.d.ts modified, the
+      reference path having moved between the two build directories, with no
+      other file touched. git log on the file shows it unchanged since M1-P1
+      before this round.
+  - warning: >-
+      A WORKTREE HERE CAN RESOLVE ANOTHER WORKTREE'S TOOLCHAIN. node_modules in
+      /home/user/wt-m3p12 is a symlink to a sibling worktree's install, so npx
+      resolved that sibling's tsx and its error stacks name a directory this
+      phase never touched. Nothing was written there and no install was run,
+      but a version question answered by reading this worktree's package.json
+      would be answered about a different tree.
+    evidence: >-
+      npx tsx on a scratch file failed with a stack naming
+      /home/user/wt-m3p7/node_modules/esbuild, and ls -ld node_modules shows
+      the symlink.
+  - warning: >-
+      THE AMBIENT ENVIRONMENT IN THIS CONTAINER IS NON-LOCAL AND THE SEED WOULD
+      HAVE USED IT. Measured without printing a value: the shell's
+      DATABASE_URL, DIRECT_URL and NEXT_PUBLIC_SUPABASE_URL all PARSE to a
+      non-local host and SUPABASE_SERVICE_ROLE_KEY is present, while the
+      worktree's .env parses to the local stack on all three. Since the Prisma
+      CLI takes a shell value over .env, every database command must be pinned
+      per fleet warning 1, and until fix round nine the seed hook had no
+      interlock to refuse the difference.
+    evidence: >-
+      A parse of each of the three URLs, comparing the extracted hostname
+      against the local set rather than matching a substring, classified all
+      three shell values NON-LOCAL and all three .env values LOCAL.
   - warning: >-
       The local supabase stack from an earlier phase survives a dockerd
       restart under its old project name, so `sudo dockerd` alone brought all
