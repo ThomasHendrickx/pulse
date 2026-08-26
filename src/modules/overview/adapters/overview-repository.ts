@@ -166,6 +166,17 @@ export const listSpendGroups = (
 // the comparison canonicalises instead, the same rule as the ledger's
 // declared-set lookups. The SQL form mirrors canonicalAccountNumber in
 // src/platform/account-number.ts: uppercase, every whitespace removed.
+//
+// THE WHITESPACE CLASS IS WRITTEN [[:space:]] AND NOT \s ON PURPOSE, and
+// this is a correction of a defect this phase shipped and its own journey
+// spec caught (clause R-087). These queries are Prisma tagged TEMPLATE
+// LITERALS, so the SQL text passes through JavaScript escaping first: a
+// backslash-s in the source is not a recognised JavaScript escape and
+// collapses to a bare `s`, so the join ran regexp_replace(col, 's', ...)
+// and stripped the letter s from both sides instead of stripping
+// whitespace. It joined nothing, the reserve rows rendered under their
+// account numbers, and criterion 14.1's label assertion was what said so.
+// The POSIX class carries no backslash and cannot be eaten that way.
 export const listReserveMovements = async (
   context: HouseholdContext,
   period: Period,
@@ -179,15 +190,15 @@ export const listReserveMovements = async (
     }[]
   >`
     SELECT
-      upper(regexp_replace(t."counterpartyIban", '\s', '', 'g'))
+      upper(regexp_replace(t."counterpartyIban", '[[:space:]]', '', 'g'))
                                     AS "counterpartyIban",
       a."label"                     AS "label",
       SUM(t."amountCents")::bigint  AS "totalCents",
       COUNT(*)::bigint              AS "rowCount"
     FROM "transactions" t
     LEFT JOIN "accounts" a
-      ON upper(regexp_replace(a."iban", '\s', '', 'g'))
-         = upper(regexp_replace(t."counterpartyIban", '\s', '', 'g'))
+      ON upper(regexp_replace(a."iban", '[[:space:]]', '', 'g'))
+         = upper(regexp_replace(t."counterpartyIban", '[[:space:]]', '', 'g'))
      AND a."householdId" = t."householdId"
     WHERE t."householdId" = ${context.householdId}::uuid
       AND t."flow" = 'RESERVE'::"Flow"

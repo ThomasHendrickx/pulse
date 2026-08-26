@@ -8,8 +8,17 @@
 // the row list grows and shrinks under the owner's hands, and a REFUSED
 // submission must leave the other seven rows exactly as they were typed
 // (criterion 14.3). A form that round-tripped through a redirect would clear
-// them, which is the failure the criterion names. useActionState returns the
-// refusal WITHOUT navigating, so this component's own state survives it.
+// them, which is the failure the criterion names.
+//
+// WHY THE SUBMIT IS AN onSubmit HANDLER AND NOT `<form action={...}>`, which
+// is the shape this file had first and which criterion 14.3 caught (clause
+// R-087). React RESETS a form after a form action resolves, and a reset
+// writes every field back to its defaultValue. These inputs are CONTROLLED,
+// so React's own state still held what the owner typed while the DOM showed
+// empty boxes, and nothing re-rendered to put the values back: measured, the
+// refused submission cleared all three rows on screen. Preventing the
+// default submit and calling the action inside a transition leaves the form
+// alone, so the values the owner typed are still there to correct.
 //
 // NO COPY IS DECIDED HERE. Every user-facing string arrives as a prop from
 // the server component, which read it from the catalogues, the same pattern
@@ -19,7 +28,7 @@
 // NO LITERAL COLOUR, FONT SIZE OR SPACING (CLAUDE.md non-negotiable 4). Every
 // class here is defined in src/app/globals.css against tokens.
 
-import { useActionState, useId, useState } from "react";
+import { useId, useState, useTransition } from "react";
 import {
   registerAccountsAction,
   type RegisterAccountsState,
@@ -73,10 +82,8 @@ export const AccountSetupForm = ({
 }: {
   readonly copy: AccountSetupCopy;
 }) => {
-  const [state, formAction, pending] = useActionState(
-    registerAccountsAction,
-    INITIAL,
-  );
+  const [state, setState] = useState<RegisterAccountsState>(INITIAL);
+  const [pending, startTransition] = useTransition();
   const [rows, setRows] = useState<readonly Row[]>([emptyRow(0)]);
   const [nextKey, setNextKey] = useState(1);
   const fieldPrefix = useId();
@@ -136,7 +143,16 @@ export const AccountSetupForm = ({
   };
 
   return (
-    <form action={formAction} className="account-setup-form">
+    <form
+      className="account-setup-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        startTransition(async () => {
+          setState(await registerAccountsAction(INITIAL, data));
+        });
+      }}
+    >
       {formMessage === undefined ? null : (
         <p className="account-setup-error" role="alert" data-testid="account-form-error">
           {formMessage}

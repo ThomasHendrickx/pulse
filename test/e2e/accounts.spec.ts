@@ -86,6 +86,25 @@ const ALL_EIGHT: readonly SetupRow[] = [
 
 const OUTSIDE_MERCHANTS = 3;
 
+// The seven movements to the household's own accounts, as the strings the
+// month view and the naming screen render them in. Hand-written from the
+// fixture, never read back from the implementation.
+// They are DEBITS, so the naming screen renders them signed.
+const OWN_MOVEMENT_AMOUNTS = [
+  "-300,00",
+  "-150,00",
+  "-75,00",
+  "-500,00",
+  "-200,00",
+  "-100,00",
+  "-50,00",
+] as const;
+
+// The way a Belgian statement prints an account number, which is how the
+// fixture's counterparty column is written.
+const spacedForm = (compact: string): string =>
+  compact.replace(/^(.{4})(.{4})(.{4})(.{4})$/, "$1 $2 $3 $4");
+
 const importFixture = async (page: Page, expectedAdded: string): Promise<void> => {
   await page.goto("/import");
   await page.getByLabel("Bank export file").setInputFiles(join(FIXTURES, FIXTURE));
@@ -118,25 +137,34 @@ test("REGISTERED ARM: the household's own accounts are never offered as merchant
     OUTSIDE_MERCHANTS,
   );
   const labels = await page.getByTestId("group-label").allTextContents();
+  const labelText = labels.join(" ");
   for (const account of ALL_EIGHT) {
-    for (const label of labels) {
-      expect(
-        label,
-        `the naming screen offers the registered label ${account.label}`,
-      ).not.toContain(account.label);
-      expect(
-        label,
-        "the naming screen offers a registered account number",
-      ).not.toContain(account.accountNumber);
-      // And the SPACED rendering the statement actually carries, which is
-      // what a raw string comparison would have let through.
-      expect(label).not.toContain(
-        account.accountNumber.replace(
-          /^(.{4})(.{4})(.{4})(.{4})$/,
-          "$1 $2 $3 $4",
-        ),
-      );
-    }
+    expect(
+      labelText,
+      `the naming screen offers the registered label ${account.label}`,
+    ).not.toContain(account.label);
+    expect(
+      labelText,
+      "the naming screen offers a registered account number",
+    ).not.toContain(account.accountNumber);
+    // And the SPACED rendering the statement actually carries, which is
+    // what a raw string comparison would have let through.
+    expect(labelText).not.toContain(spacedForm(account.accountNumber));
+  }
+  // The counterparty NAME the statement prints on those rows is not offered
+  // either, which is what the label of such a group would have been.
+  expect(labelText).not.toContain("EIGEN REKENING");
+  expect(labelText).not.toContain("EIGEN SPAARREKENING");
+  // And not one of the seven own movements is a group total here.
+  const registeredTotals = await page
+    .getByTestId("unresolved-group")
+    .getByTestId("group-total")
+    .allTextContents();
+  for (const amount of OWN_MOVEMENT_AMOUNTS) {
+    expect(
+      registeredTotals,
+      `${amount} is offered as a merchant group`,
+    ).not.toContain(amount);
   }
 
   // (b) THE RESERVES BLOCK. Exactly the four savings accounts, each
@@ -147,11 +175,16 @@ test("REGISTERED ARM: the household's own accounts are never offered as merchant
   await page.goto("/?month=2026-08");
   await expect(page.getByTestId("month-title")).toHaveText("August 2026");
   await expect(page.getByTestId("reserve-group")).toHaveCount(SAVINGS.length);
-  for (const savings of SAVINGS) {
-    await expect(
-      page.getByTestId("reserve-group").filter({ hasText: savings.label }),
-    ).toHaveCount(1);
-  }
+  // EXACT labels, not a substring filter: three of the four typed labels
+  // contain the word "savings", so a hasText filter would match several
+  // rows and report a pass for the wrong reason.
+  const reserveLabels = await page
+    .getByTestId("reserve-group")
+    .locator(".month-group-label")
+    .allTextContents();
+  expect([...reserveLabels].sort()).toEqual(
+    SAVINGS.map((savings) => savings.label).sort(),
+  );
   const reserveText = (
     await page.getByTestId("reserve-group").allTextContents()
   ).join(" ");
@@ -161,7 +194,9 @@ test("REGISTERED ARM: the household's own accounts are never offered as merchant
   // every own-account movement.
   await expect(page.getByTestId("spend-total")).toHaveText("98,97");
   await expect(page.getByTestId("income-total")).toHaveText("2.500,00");
-  await expect(page.getByTestId("reserves-net")).toHaveText("850,00");
+  // Signed toward the reserve: the reserves block renders the parked
+  // direction as positive.
+  await expect(page.getByTestId("reserves-net")).toHaveText("+850,00");
 
   // (d) THE RECONCILIATION PANEL names the unmatched internal legs for the
   // three spending siblings whose statements are absent, and the copy names
@@ -190,19 +225,27 @@ test("CONTROL ARM: with only the current account registered, the seven DO appear
   await expect(page.getByTestId("unresolved-group")).toHaveCount(
     OUTSIDE_MERCHANTS + SPENDING_SIBLINGS.length + SAVINGS.length,
   );
-  const labels = (await page.getByTestId("group-label").allTextContents()).join(
-    " ",
-  );
-  for (const sibling of [...SPENDING_SIBLINGS, ...SAVINGS]) {
-    const spaced = sibling.accountNumber.replace(
-      /^(.{4})(.{4})(.{4})(.{4})$/,
-      "$1 $2 $3 $4",
-    );
+  // THE SEVEN OWN MOVEMENTS ARE EACH THEIR OWN GROUP, which is what makes
+  // this the same fixture failing rather than a different one passing: each
+  // sibling account is a distinct counterparty identity, so its amount is a
+  // group total of its own on the naming screen.
+  const controlTotals = await page
+    .getByTestId("unresolved-group")
+    .getByTestId("group-total")
+    .allTextContents();
+  for (const amount of OWN_MOVEMENT_AMOUNTS) {
     expect(
-      labels.includes(sibling.accountNumber) || labels.includes(spaced),
-      `the control arm does not offer ${sibling.label} as a merchant, so the fixture cannot fail`,
-    ).toBe(true);
+      controlTotals.filter((total) => total === amount),
+      `the control arm does not offer ${amount} as a merchant group, so the fixture cannot fail`,
+    ).toHaveLength(1);
   }
+  // And they are offered under the counterparty name the statement prints,
+  // which is the naming the owner complained about being asked for.
+  const controlLabels = (
+    await page.getByTestId("group-label").allTextContents()
+  ).join(" ");
+  expect(controlLabels).toContain("EIGEN REKENING");
+  expect(controlLabels).toContain("EIGEN SPAARREKENING");
 
   // And the same movements land in the spend total.
   await page.goto("/?month=2026-08");

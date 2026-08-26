@@ -49,3 +49,37 @@ the accountsRingHasRows copy says plainly what happened and that the ring can no
 longer be changed, and a test covers that copy.
 Also flagged: test/e2e/month-view.spec.ts:1377 declares a reserve account through
 the import path this phase removes; rewritten to register instead.
+
+## Red witness for criterion 14.1's registered arm, captured
+
+WITNESS 1, the registration itself. The registered arm run against a household
+that registered ONLY the current account (one line changed in the spec, then
+reverted), which is the dangerous state the owner is in today:
+
+  Running 1 test using 1 worker
+    x  1 [chromium] > test/e2e/accounts.spec.ts:126:5 > REGISTERED ARM: ... (14.7s)
+    Error: expect(locator).toHaveCount(expected) failed
+    Locator:  getByTestId('unresolved-group')
+    Expected: 3
+    Received: 10
+  1 failed
+
+WITNESS 2, structurally different member of the same class: the accounts ARE
+registered and the comparison is what fails. The reserves join reverted to the
+raw-string form it had on main:
+
+  Error: expect(received).toEqual(expected) // deep equality
+    - "Car savings" / "Holiday savings" / "Pension savings" / "Savings"
+    + "BE08900000000007" / "BE35900000000006" / "BE62900000000005" / "BE78900000000008"
+  1 failed
+
+GREEN after both were restored: 13 passed (1.8m), the whole accounts spec.
+
+## A defect this phase shipped and its own journey spec caught
+
+The reserves join was first written with '\s' inside a Prisma tagged TEMPLATE
+LITERAL. JavaScript eats the backslash, so the SQL that reached Postgres was
+regexp_replace(col, 's', '', 'g'): it stripped the letter s from both sides
+instead of stripping whitespace, and joined nothing. Corrected to the POSIX
+class [[:space:]], which carries no backslash, with the reason recorded at the
+query.
