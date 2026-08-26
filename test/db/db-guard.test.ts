@@ -327,16 +327,39 @@ describe("a non-production server may not open a deployed database", () => {
   // resolves the connection it would actually open before matching them; when
   // that has happened, this predicate honours the fact rather than an
   // assertion. See src/platform/db/runtime-target.ts.
-  test("an INTERLOCK that has already matched this process's target is honoured, and only by name", () => {
+  // AN APPROVAL IS A STATEMENT ABOUT ONE CONNECTION (fix round twelve,
+  // CRITERIA finding CR11-M3P12-04). This test used to pass a NAME and assert
+  // that presence alone admitted a deployed target, which is what let a
+  // reviewer flip the guard by calling the register from a probe that resolved
+  // nothing and matched nothing.
+  test("an INTERLOCK approval admits the connection it names, and ONLY that one", () => {
+    const approval = {
+      source: "rederive-merchant-rules",
+      connection: REMOTE,
+    };
     const verdict = assessNonProductionDbTarget({
       NODE_ENV: undefined,
       DATABASE_URL: REMOTE,
-      interlockApproval: "rederive-merchant-rules",
+      interlockApproval: approval,
     });
     expect(verdict.allowed).toBe(true);
     expect(verdict.reason).toContain("rederive-merchant-rules");
-    // And with no interlock, the identical environment is refused, so the
-    // approval is what carries it and not the environment.
+
+    // A DIFFERENT connection, with the same approval in the process, is
+    // refused. This is the assertion the old shape could not make.
+    const other =
+      "postgresql://postgres.qqqqppppoooonnnnmmmm:pw@aws-0-eu-west-9.pooler.supabase.com:5432/postgres";
+    const wrong = assessNonProductionDbTarget({
+      NODE_ENV: undefined,
+      DATABASE_URL: other,
+      interlockApproval: approval,
+    });
+    expect(wrong.allowed).toBe(false);
+    expect(wrong.reason).toContain("DIFFERENT connection");
+    expect(wrong.reason).not.toContain("pooler.supabase.com");
+
+    // And with no approval at all, the identical environment is refused, so
+    // the approval is what carries it and not the environment.
     expect(
       assessNonProductionDbTarget({ NODE_ENV: undefined, DATABASE_URL: REMOTE })
         .allowed,
@@ -435,12 +458,33 @@ describe("a non-production server may not open a deployed database", () => {
   // own startup line 18 times in one `npm test` run, from thirteen distinct
   // files; the lazy module prints it 0 times.
   test("importing the application client constructs NOTHING, so no test opens a target nobody named", async () => {
+    // The trap-touching half below CONSTRUCTS, so the target is pinned to an
+    // INVENTED local value first. Without it this test measures the ambient
+    // environment rather than the module.
+    const env = process.env as Record<string, string | undefined>;
+    const previous = env["DATABASE_URL"];
+    env["DATABASE_URL"] = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+    try {
     const clientModule = await import("../../src/platform/db/client");
     expect(clientModule.prismaHasBeenConstructed()).toBe(false);
-    // And the binding is still there to be used: this asserts the module
-    // loaded rather than that the import silently failed.
-    expect(typeof clientModule.prisma).toBe("object");
-    expect(clientModule.prismaHasBeenConstructed()).toBe(false);
+    // AND THE BINDING IS STILL USABLE, asserted by something that TOUCHES the
+    // proxy (fix round twelve, HAZARD finding HZ11-M3P12-07). This used to
+    // read `typeof clientModule.prisma`, which is answered by the proxy's
+    // TARGET and invokes no trap at all: the target is an empty object
+    // literal, so the assertion was a statement about `{}` and passed in a
+    // process where every real property access throws. Reading a property
+    // goes through the trap, so it proves both halves at once, that the module
+    // loaded and that the lazy binding resolves. The target here is the local
+    // one pinned in beforeEach.
+    expect("account" in clientModule.prisma).toBe(true);
+    expect(clientModule.prismaHasBeenConstructed()).toBe(true);
+    } finally {
+      if (previous === undefined) {
+        delete env["DATABASE_URL"];
+      } else {
+        env["DATABASE_URL"] = previous;
+      }
+    }
   });
 
   // The source-level half, kept beside it so a refactor that reintroduces a

@@ -335,15 +335,35 @@ export const main = async (
   }
   console.log(`target guard: ${target.reason}`);
 
-  // THE APPROVAL IS RECORDED FOR THIS PROCESS, and only now that it is real.
-  // The application client refuses a non-local target in every context that is
-  // not production; this command is a tsx entry point whose whole purpose is
-  // to open a DEPLOYED database, and the thing that distinguishes it from any
-  // other script is precisely the check that just passed. See
-  // src/platform/db/runtime-target.ts for why this is a fact rather than a
-  // flag, and note that it is recorded AFTER the refusal branch above, so a
-  // blocked run approves nothing.
-  noteInterlockApproved("rederive-merchant-rules");
+  // THE APPROVAL IS RECORDED FOR THIS PROCESS, and it carries the CONNECTION
+  // it approved rather than a label (fix round twelve, CRITERIA finding
+  // CR11-M3P12-04). The application client refuses a non-local target in every
+  // context that is not production; this command is a tsx entry point whose
+  // whole purpose is to open a DEPLOYED database, and the thing that
+  // distinguishes it from any other script is precisely the check that just
+  // passed. The register re-runs that same check over the same evidence, so
+  // this call proves the work rather than asserting it, and it is made AFTER
+  // the refusal branch above, so a blocked run approves nothing.
+  //
+  // IT IS CHECKED RATHER THAN ASSUMED. If the register declines, this command
+  // stops: continuing would mean the client's own guard refusing later, at the
+  // first repository call, with a message about the ambient environment rather
+  // than about this.
+  const approved = noteInterlockApproved(
+    "rederive-merchant-rules",
+    deps.databaseUrl,
+    {
+      host: argument("expect-host"),
+      projectRef: argument("expect-ref"),
+      port: argument("expect-port"),
+    },
+  );
+  if (!approved) {
+    console.error(
+      "rederive-merchant-rules: the target interlock passed but the process register declined to record the approval, so the client would refuse at the first query. Refusing here instead, where the reason is legible.",
+    );
+    return 3;
+  }
 
   const household = argument("household");
   if (household === undefined || household.trim() === "") {

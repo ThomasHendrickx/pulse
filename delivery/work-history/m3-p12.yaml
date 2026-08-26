@@ -2008,20 +2008,39 @@ deviations:
       which describe the development-server refusal as gated on isProduction()
       being false.
     why: >-
-      BUILT NARROWER, DELIBERATELY, AND THE DIFFERENCE IS SAID HERE RATHER
-      THAN GLOSSED. The refusal is gated on NODE_ENV being exactly
-      "development". The wider predicate is not implementable without two
-      carve-outs that amount to the same thing: vitest sets NODE_ENV=test and
-      the fast gate imports this module transitively, so "not production"
-      made `npm test` refuse to run in any container whose ambient
-      DATABASE_URL is remote, which changes what the fast gate requires of
-      every contributor in order to guard a server the fast gate never starts;
-      and a tsx entry point carries no NODE_ENV at all, including the
-      re-derivation command, whose entire purpose is to open a DEPLOYED
-      database and which carries the stricter interlock criterion 12.23 asked
-      for. Both consequences were observed, not predicted. So the positive
-      form is the honest one: this guards the dev server, which is the gap
-      both lanes named, and nothing else.
+      SUPERSEDED IN FIX ROUND TEN AND CORRECTED HERE IN FIX ROUND TWELVE
+      (HAZARD finding HZ11-M3P12-04). THE WIDER PREDICATE IS WHAT SHIPPED.
+      assessNonProductionDbTarget admits production and refuses every other
+      context that names a non-local host, so this entry, which was the last
+      recorded word on the predicate, argued for a shape the code no longer
+      has, persuasively enough that a reader could have narrowed the guard
+      back.
+
+      WHAT THIS ENTRY SAID, quoted rather than deleted (clause R-087): "The
+      refusal is gated on NODE_ENV being exactly development. The wider
+      predicate is not implementable without two carve-outs that amount to the
+      same thing: vitest sets NODE_ENV=test and the fast gate imports this
+      module transitively, so not production made npm test refuse to run in any
+      container whose ambient DATABASE_URL is remote ... and a tsx entry point
+      carries no NODE_ENV at all, including the re-derivation command, whose
+      entire purpose is to open a DEPLOYED database."
+
+      WHY THAT ARGUMENT NO LONGER HOLDS, and it is because both costs were
+      REMOVED rather than traded away. The first cost rested on the fast gate
+      importing this module and thereby constructing a client. Construction is
+      now LAZY, so the fast gate imports the adapters, issues no query, and
+      constructs nothing: measured on this branch, npm test prints the client's
+      own startup line ZERO times and passes with an ambient DATABASE_URL that
+      parses to a non-local host. The second cost rested on the re-derivation
+      command having no way to say which deployed database it had proved. It
+      now records the connection it verified in src/platform/db/runtime-target.ts,
+      and the predicate admits that exact connection and no other.
+
+      WHAT REMAINS TRUE FROM THE ORIGINAL ENTRY: the deviation itself. The plan
+      clause describes the refusal as gated on isProduction() being false, and
+      what shipped is gated on NODE_ENV being exactly "production", which is
+      the same intent expressed against the variable the guard can actually
+      read.
 
 gate-evidence:
   - gate: >-
@@ -3614,7 +3633,20 @@ fix-round:
       FACT rather than a flag: its interlock already proves an explicitly named
       host and project ref against the connection it would open, and it now
       records that approval in src/platform/db/runtime-target.ts, which the
-      client honours and nothing else can set.
+      client honours.
+
+      THE CLAUSE THAT USED TO CLOSE THIS SENTENCE WAS FALSE AND IS CORRECTED IN
+      FIX ROUND TWELVE (clause R-087, CRITERIA finding CR11-M3P12-04 and HAZARD
+      finding HZ11-M3P12-02). It read "which the client honours AND NOTHING
+      ELSE CAN SET". Anything in the import graph could set it: the register
+      took a free-text label, validated nothing and recorded no target, and two
+      reviewers flipped the client's guard from probes that had resolved
+      nothing. That sentence was the whole justification for widening the
+      predicate, so it was load-bearing rather than cosmetic. What is true now:
+      the register RE-RUNS the interlock's own assessment over the caller's
+      evidence and records the CONNECTION it verified, the client admits only
+      that exact connection, and a caller allow list in
+      test/db/gate-target.test.ts makes a second caller red.
     derivation:
       command: >-
         node <sweep10.mjs> -- the union of git ls-files and git ls-files
@@ -3670,10 +3702,155 @@ fix-round:
       WHAT I DID NOT DO. I did not pin @prisma/client's lazy-connection
       behaviour, which is now less load-bearing than it was but is still what
       makes a construction that slips past an interlock harmless. I did not
-      widen the scan to non-JavaScript files. And the interlock approval
-      register is process-local and write-once by construction; I did not test
-      it under a worker-threaded runtime where "this process" and "this
-      module instance" could differ.
+      widen the scan to non-JavaScript files.
+
+      AND THE LAST SENTENCE OF THIS BLOCK WAS FALSE, corrected in fix round
+      twelve (clause R-087, HAZARD finding HZ11-M3P12-02). It read: "the
+      interlock approval register is process-local and write-once by
+      construction; I did not test it under a worker-threaded runtime where
+      this process and this module instance could differ." Both halves were
+      wrong, and the second was the sentence that made an admitted omission
+      sound BOUNDED. It is not process-local: an ESM caller and a CJS caller
+      get two copies of the module in one process, measured by the hazard lane.
+      That direction is fail closed, because a client resolved through the copy
+      carrying no approval refuses, so it was never a hole; the defect was the
+      claim. And write-once was not the protection it read as: the FIRST writer
+      won, and module-graph evaluation runs before any main(), so a caller at
+      import scope would have pre-empted the real interlock and the real
+      interlock's later call would have been a silent no-op. The register is
+      now LAST-writer-wins on purpose, with the ordering stated at its
+      definition, and every approval carries evidence this module re-verifies.
+
+  - mechanism: >-
+      A GUARD WHOSE OWN CORRECTNESS IS NEVER MEASURED IN THE ENVIRONMENT IT
+      GUARDS. Round twelve's four highs are four faces of it, and the first is
+      a production defect this branch introduced in round ten.
+
+      FACE ONE, THE SINGLETON. Round ten replaced a module-level `const` with a
+      lazy resolver and memoised it only under `if (!isProduction())`. Outside
+      production that is a singleton; inside production nothing was ever
+      written, so EVERY property read constructed a fresh PrismaClient, and the
+      proxy's get trap resolved the client TWICE per method read. Measured by
+      the criteria lane against a local stack: backends 19, 20, 21, 22 over
+      four queries under NODE_ENV=production, flat at 19 under NODE_ENV=test.
+      The hazard lane's probe made five property reads and got seven clients.
+      Against a pooled deployed database that is connection exhaustion.
+
+      FACE TWO, THE LEXER. Round ten's stripper had three states and no
+      REGEX-LITERAL state, so a quote, a backtick or a slash-star inside a
+      regex opened a phantom state. Four attacks passed: two HID a door, and
+      two INVENTED a guard, one of them by letting a real line comment survive
+      into the code-only text. The construct that does it is not hypothetical;
+      it is at src/platform/db/redact.ts:15 and the scan was walking past that
+      file every run.
+
+      FACE THREE, THE CALL. Round nine moved the guarded predicate from a
+      MENTION to a CALL and round ten's record then claimed the scan checks
+      what the program does. A call is still a spelling: a call in a function
+      nobody invokes passes, and so does an assertion written to prove a
+      REFUSAL, which is what this very test file is full of.
+
+      FACE FOUR, THE REGISTER. Round ten bought the widened non-production
+      guard with an approval register described as a fact rather than a flag.
+      It took a free-text label, validated nothing, recorded no target, and
+      exported a clear that nothing called while the module called itself
+      write-once and never cleared. Both lanes flipped the client's guard from
+      probes that had resolved nothing.
+
+      THE MECHANISM UNDER ALL FOUR is the same and it is one sentence: AN
+      INSTRUMENT WAS TRUSTED IN A CONDITION IT WAS NEVER EXERCISED IN. The
+      singleton was never exercised under production, the lexer was never
+      exercised against a regex literal, the guarded predicate was never
+      exercised against an unreachable call, and the register was never
+      exercised by a hostile caller. Every fix in this round therefore ships
+      with the exercise, not only the repair.
+    derivation:
+      command: >-
+        npx vitest run test/db/client-singleton.test.ts and
+        npx vitest run test/db/gate-target.test.ts, each run twice: once
+        against the shipped round-ten module and once against the repair
+      output: |
+        THE SINGLETON, round ten's client against the new suite:
+          NODE_ENV=production: many property and method reads construct
+            EXACTLY ONE client  -> expected 12 to be 1
+          NODE_ENV=production: calling a method adds no further construction
+            -> expected 4 to be 1
+          a method read twice is the SAME function
+            -> expected [Function bound $transaction] to be
+               [Function bound $transaction]   (all three environments)
+          the binding enumerates and round-trips a write
+            -> expected [] to include 'account' (all three environments)
+          Tests 8 failed | 8 passed (16)
+        After the repair: Tests 16 passed (16).
+        THE COUNT IN PRODUCTION IS NOW ONE PER PROCESS. A single
+        prisma.account.create(...) constructs ZERO further clients after the
+        first; round ten constructed TWO for that one call.
+
+        THE LEXER, round ten's three-state stripper against the four attacks:
+          a regex carrying a lone BACKTICK does not blank the door beneath it
+            -> expected [] to have a length of 1
+          a regex carrying SLASH-STAR does not blank the door beneath it
+            -> expected [] to have a length of 1
+          a regex SLASH-STAR closed by a real line comment does not turn that
+            comment into a guard  -> expected true to be false
+          the guard name written only inside a REGEX LITERAL does not guard
+            anything              -> expected true to be false
+          Tests 4 failed | 46 passed (50)
+        And against the REAL tracked file:
+          the real file in this tree that used to defeat the lexer lexes
+            correctly -> expected '        ...' to contain 'redacted-address'
+        After the repair: Tests 58 passed (58).
+
+        THE REGISTER, the reviewers' own probe reproduced. Against round ten:
+          register accepted the bare label: true
+          guard says allowed: true
+        Against the repair, the same probe:
+          register accepted the bare label: false
+          approval recorded: false
+          guard says allowed: false
+    not-covered: >-
+      REACHABILITY IS NOT DECIDED AND THE ROUND SAYS SO RATHER THAN NARROWING
+      THE CLAIM AGAIN. The scan proves a syntactic call in code. The cheap
+      static rule the criteria lane proposed, requiring the call at top level,
+      was tried and REJECTED ON EVIDENCE: it reddens two of this tree's three
+      real doors, because test/e2e/merchant-rule-write.spec.ts calls its guard
+      inside test.beforeAll and test/e2e/auth.spec.ts calls its inside a test
+      body. Buying a green scan by deleting real coverage is not a fix. So the
+      claim is narrowed to what it delivers, the two unreachable shapes are
+      pinned as KNOWN LIMITS so the next reader meets them as facts, and the
+      assertion that a guard RUNS is moved to behaviour. Only ONE door can be
+      executed in the fast gate, prisma/seed.ts, and it now is. The two
+      Playwright specs cannot be, and REFUSAL_PROVEN records that in their own
+      entries rather than leaving it to be inferred.
+
+      NOTHING IN THE FAST GATE REACHES THE PRISMA ADAPTER, and that is the
+      price of the laziness, stated plainly because the hazard lane asked for
+      it. npm test constructs ZERO clients, so no test in this repository
+      exercises src/modules/*/adapters against a database. What covers the
+      adapter today is exactly one thing: test/e2e/merchant-rule-write.spec.ts,
+      in the SLOW gate, which drives applyRuleWrites against the real local
+      Postgres and asserts the household filter and the transactional rollback.
+      That is the re-derivation's only production write path, so the link the
+      hazard lane cares about, that applyRuleWrites persists exactly the write
+      set the routine computed, is covered for the WRITE and not for the
+      SECOND RUN. Idempotence, the loss report and the superset property are
+      checked against the in-memory double and against nothing else in this
+      tree. The hazard lane proved all of them against a real Postgres on a
+      scratch database and the results held; THIS TREE STILL DOES NOT PROVE
+      THEM. That is a residual of this phase, it is not closed here, and the
+      lane's own concrete fix, a second slow-gate spec running the routine
+      twice through merchantRepository, is the shape of the work it would take.
+
+      npm ci REFUSES AT THIS HEAD AND IT IS NOT THIS BRANCH'S DOING. Both
+      review lanes hit it and so did I, independently, under node v22.12.0 and
+      npm 10.9.0: "Missing: @swc/helpers@0.5.23 from lock file". git diff of
+      package.json and package-lock.json between round nine's head and this one
+      is EMPTY, so the drift predates the fix rounds. I regenerated the lock
+      once to see what it would take, found the change was exactly the missing
+      nested entry plus cosmetic platform hints with ZERO dependency version
+      changes, verified npm ci --dry-run then exits 0, and then REVERTED it on
+      instruction: the tracked lockfile is byte-identical to what it was. This
+      is recorded and routed rather than fixed inside this phase.
 
 environment-warnings:
   - warning: >-

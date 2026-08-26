@@ -144,11 +144,16 @@ export type NonProductionDbGuardEnv = {
   readonly NODE_ENV?: string | undefined;
   readonly DATABASE_URL?: string | undefined;
   readonly PULSE_ALLOW_REMOTE_DB_IN_DEV?: string | undefined;
-  // The name of an interlock in THIS process that has resolved the connection
-  // it would open and matched it against a target the operator named on a
-  // command line. Not a flag: see ./runtime-target for why the difference is
-  // the whole point. Undefined means no interlock has run.
-  readonly interlockApproval?: string | undefined;
+  // AN APPROVAL IS A PAIR, NOT A NAME (fix round twelve, CRITERIA finding
+  // CR11-M3P12-04). What used to be here was the NAME of an interlock, and
+  // presence alone admitted any target, so an approval obtained for one
+  // database admitted a different one and a caller that had resolved nothing
+  // could produce it. The approval now carries the exact connection string an
+  // interlock re-verified, and this predicate admits only when the connection
+  // it is being asked about IS that one.
+  readonly interlockApproval?:
+    | { readonly source: string; readonly connection: string }
+    | undefined;
 };
 
 export const assessNonProductionDbTarget = (
@@ -161,10 +166,26 @@ export const assessNonProductionDbTarget = (
         "production: this is the server that serves real traffic and the deployed database is the target it exists to open",
     };
   }
-  if (env.interlockApproval !== undefined) {
+  const approval = env.interlockApproval;
+  if (approval !== undefined) {
+    // THE COMPARISON IS THE POINT. Presence used to be enough, so the guard
+    // skipped its host check without re-establishing what was being opened.
+    if (
+      env.DATABASE_URL !== undefined &&
+      env.DATABASE_URL !== "" &&
+      env.DATABASE_URL === approval.connection
+    ) {
+      return {
+        allowed: true,
+        reason: `${approval.source} resolved THIS connection and matched it against a host and project ref named on its own command line`,
+      };
+    }
+    // An approval for a different connection is not an approval for this one,
+    // and saying so is more useful than falling silently through to the host
+    // check, which would refuse with a reason about ambient values.
     return {
-      allowed: true,
-      reason: `${env.interlockApproval} resolved this process's connection and matched it against a target named on its own command line`,
+      allowed: false,
+      reason: `an interlock approval recorded by ${approval.source} exists in this process, but it names a DIFFERENT connection from the one about to be opened. Refusing: an approval is a statement about one database. The resolved values are deliberately not printed: this repository is public.`,
     };
   }
   if (env.PULSE_ALLOW_REMOTE_DB_IN_DEV === "1") {

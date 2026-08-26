@@ -7,20 +7,53 @@
 // tool invokes on your behalf.
 //
 // AND THE INSTRUMENT THAT ENFORCES IT HAS LIMITS, STATED HERE RATHER THAN LEFT
-// TO BE DISCOVERED (fix round ten, HAZARD finding CR9-M3P12-HZ-04). The
+// TO BE DISCOVERED (fix round ten, HAZARD finding CR9-M3P12-HZ-04; CORRECTED
+// AND EXTENDED in fix round twelve under HAZARD finding HZ11-M3P12-06). The
 // sentence above is what this repository INTENDS; the scan in
-// test/db/gate-target.test.ts is what it can actually check, and the two are
-// not the same size. What the scan reads is every tracked or untracked,
-// non-ignored file with a JavaScript or TypeScript extension, and what it
-// looks for is three literal construction shapes. So it does NOT see: a door
-// opened from a shell script, a SQL file or a CLI invocation; a door reached
-// TRANSITIVELY through a module it has exempted, which is why the exemptions
-// carry reasons rather than only paths; a service-role key that arrives under
-// any name other than SUPABASE_SERVICE_ROLE_KEY; or a client constructed
-// through an identifier computed at runtime rather than written literally.
-// Those four are the standing residue. Anyone adding a door of one of those
-// shapes gets no help from the scan and must route it through this file by
-// hand.
+// test/db/gate-target.test.ts is what it can actually check.
+//
+// WHAT THIS PARAGRAPH USED TO SAY AND WHY IT WAS WRONG, quoted rather than
+// deleted (clause R-087). It listed four gaps and closed with "Those four are
+// the standing residue." A reviewer then witnessed three more, two of which a
+// person writing ordinary TypeScript could produce without meaning anything by
+// it: an ALIASED import, `import { PrismaClient as PC }` then `new PC()`; a
+// TYPE ARGUMENT between the name and the parenthesis, `new PrismaClient<T>()`;
+// and a SECOND construction below a guarded one, because only the first match
+// of each kind was examined. The defect was the claim of completeness as much
+// as the gaps. All three are now closed, and this paragraph no longer says the
+// list is complete.
+//
+// WHAT THE SCAN READS: every tracked or untracked, non-ignored file with a
+// JavaScript or TypeScript extension, lexed to code with strings, both kinds
+// of comment and regular-expression literals removed, then matched against
+// three construction shapes and, per shape, one guard call.
+//
+// WHAT IT STILL DOES NOT SEE, as far as anyone has established:
+//
+//   A DOOR OPENED FROM A NON-JAVASCRIPT FILE: a shell script, a SQL file, a
+//   CLI invocation.
+//
+//   A DOOR REACHED TRANSITIVELY through a module the scan exempts. This is not
+//   theoretical: it is what fix round ten's second high finding was, and it is
+//   why each exemption carries a written reason rather than only a path.
+//
+//   A SERVICE-ROLE KEY ARRIVING UNDER ANY NAME other than the literal
+//   SUPABASE_SERVICE_ROLE_KEY, which is half that predicate.
+//
+//   A CLIENT CONSTRUCTED THROUGH AN IDENTIFIER COMPUTED AT RUNTIME rather than
+//   written literally.
+//
+//   WHETHER A GUARD CALL ACTUALLY RUNS. The scan proves a syntactic call in
+//   code. A call inside a function nobody invokes passes, and so does
+//   `expect(() => assertGateDbTargetIsLocal()).toThrow()`. Reachability is not
+//   decidable here at a reasonable cost, and the top-level rule that was
+//   proposed for it reddens two of this tree's three real doors, both of which
+//   call their guard inside a callback. The assertion that a guard RUNS is
+//   made instead by EXECUTING the door and watching it refuse; the
+//   REFUSAL_PROVEN table in test/db/gate-target.test.ts is where each door
+//   says whether that has been done for it and, where it has not, why.
+//
+// THIS LIST IS NOT CLAIMED TO BE COMPLETE. Three rounds have each added to it.
 //
 // THE WORDING WIDENED IN FIX ROUND EIGHT, and the old sentence is quoted here
 // rather than deleted (clause R-087). It read "no test, no script and no gate
