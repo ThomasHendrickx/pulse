@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LinkPending } from "@/platform/ui/link-pending";
 import { getTranslations } from "next-intl/server";
 import { IMPORT_STATUS_KEYS, isKnownImportStatus, type KnownImportStatus } from "./status-keys";
 
@@ -29,7 +30,12 @@ export const ImportStatusLine = async ({
     <p className="import-status" data-testid="import-status">
       {SETUP_LINKED.has(status)
         ? t.rich(key, {
-            setup: (chunks) => <Link href="/accounts">{chunks}</Link>,
+            setup: (chunks) => (
+              <Link href="/accounts">
+                {chunks}
+                <LinkPending />
+              </Link>
+            ),
           })
         : t(key)}
     </p>

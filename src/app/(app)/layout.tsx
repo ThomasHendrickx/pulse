@@ -3,6 +3,7 @@ import { signOutAction } from "@/platform/auth/actions";
 import { requireHouseholdContext } from "@/platform/auth/context";
 import { getHousehold } from "@/platform/auth/household";
 import { NavLink } from "@/platform/ui/nav-link";
+import { SubmitButton } from "@/platform/ui/submit-button";
 
 // The authenticated shell. The household context is resolved once, here at
 // the route boundary, and everything below receives it explicitly.
@@ -73,9 +74,9 @@ export default async function AppLayout({
             landed on the one destructive control in the shell. Grid
             placement in the stylesheet draws it back up on that row. */}
         <form action={signOutAction}>
-          <button type="submit" className="app-signout">
+          <SubmitButton className="app-signout">
             {t("signout")}
-          </button>
+          </SubmitButton>
         </form>
       </header>
       <main className="app-main">{children}</main>

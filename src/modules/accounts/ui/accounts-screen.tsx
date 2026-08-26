@@ -1,4 +1,5 @@
 import { getTranslations } from "next-intl/server";
+import { SubmitButton } from "@/platform/ui/submit-button";
 import type { HouseholdContext } from "@/platform/tenancy";
 import { listAccounts } from "../application";
 import { AccountSetupForm, type AccountSetupCopy } from "./account-setup-form";
@@ -133,17 +134,16 @@ export const AccountsScreen = async ({
                       ? t("ringSpending")
                       : t("ringSavings")}
                   </span>
-                  <button
-                    type="submit"
+                  <SubmitButton
                     name="ring"
                     value={account.role === "POT" ? "RESERVE" : "POT"}
                     className="accounts-ring-switch"
-                    data-testid="switch-account-ring"
+                    testId="switch-account-ring"
                   >
                     {account.role === "POT"
                       ? t("accountsMakeSavings")
                       : t("accountsMakeSpending")}
-                  </button>
+                  </SubmitButton>
                 </form>
               </li>
             ))}
