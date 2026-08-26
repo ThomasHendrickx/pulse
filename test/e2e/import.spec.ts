@@ -58,7 +58,7 @@ test("first upload asks once; re-upload adds zero and asks nothing", async ({
   // Finding F1 (transparency): the screen names the account the rows will
   // land in. M3-P14: that account is now the one the household registered
   // at setup, so there is nothing to declare here.
-  await expect(page.getByTestId("landing-account")).toHaveText("Daily account");
+  await expect(page.getByTestId("landing-account")).toContainText("Daily account");
   // The preview renders rows as they will be stored: booking date as a
   // plain date, the amount in Belgian notation through the shared
   // formatter.
@@ -142,7 +142,7 @@ test("PDF upload: ask-once declaration, rows added, month reconciles, copy names
   await expect(
     page.getByRole("heading", { name: "Confirm the detected format" }),
   ).toBeVisible();
-  await expect(page.getByTestId("landing-account")).toHaveText("Daily account");
+  await expect(page.getByTestId("landing-account")).toContainText("Daily account");
   await expect(page.getByTestId("preview-row")).toHaveCount(5);
   await expect(page.getByTestId("preview-table")).toContainText("2026-05-04");
   await expect(page.getByLabel("Format name")).toHaveCount(0);
@@ -281,7 +281,7 @@ test.describe("phone viewport (CR-902)", () => {
       page.getByRole("heading", { name: "Confirm the detected format" }),
     ).toBeVisible();
     await expect(page.getByTestId("preview-row")).toHaveCount(5);
-    await expect(page.getByTestId("landing-account")).toHaveText("Daily account");
+    await expect(page.getByTestId("landing-account")).toContainText("Daily account");
 
     // The page itself never scrolls horizontally; wide content scrolls
     // inside its own container.

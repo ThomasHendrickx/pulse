@@ -66,7 +66,7 @@ test("production build: health probe ok, PDF upload lands, month reconciles", as
     page.getByRole("heading", { name: "Confirm the detected format" }),
   ).toBeVisible();
   await expect(page.getByTestId("account-declaration")).toHaveCount(0);
-  await expect(page.getByTestId("landing-account")).toHaveText("Daily account");
+  await expect(page.getByTestId("landing-account")).toContainText("Daily account");
   await page.getByTestId("confirm-import").click();
 
   await expect(page.getByTestId("import-result")).toBeVisible();

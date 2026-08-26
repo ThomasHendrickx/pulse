@@ -128,20 +128,29 @@ test("golden journey: three files, two profiles, one month view whose books clos
     "8",
   );
 
-  // File 2: the second pot account, same profile, registered at setup. It carries
-  // the OTHER leg of the 300,00 transfer, which heals A's unmatched leg.
+  // File 2: the second pot account, same profile, registered at setup. It
+  // carries the OTHER leg of the 300,00 transfer, which heals A's unmatched
+  // leg.
+  //
+  // NO QUESTIONS ARE ASKED (M3-P14). Before this phase the account was
+  // unknown until its own file introduced it, so this upload stopped at the
+  // confirmation screen to declare it. Now the account is registered and
+  // the profile is spec-identical to file 1's, so the upload resolves both
+  // and ingests straight through, which is the whole point of asking once
+  // at setup.
   await page.goto("/import");
   await page
     .getByLabel("Bank export file")
     .setInputFiles(join(FIXTURES, "gj-pot-b.csv"));
   await page.getByRole("button", { name: "Upload" }).click();
+  await expect(page.getByTestId("import-result")).toBeVisible();
+  await expect(page.getByTestId("landing-account")).toContainText(
+    "Second account",
+  );
+  await expect(page.getByTestId("rows-added")).toHaveText("2");
   await expect(
     page.getByRole("heading", { name: "Confirm the detected format" }),
-  ).toBeVisible();
-  await page.getByLabel("Format name").fill("Demobank current account");
-  await page.getByTestId("confirm-import").click();
-  await expect(page.getByTestId("import-result")).toBeVisible();
-  await expect(page.getByTestId("rows-added")).toHaveText("2");
+  ).toHaveCount(0);
 
   // File 3: the card (profile 2: no counterparty-account column, no
   // sequence numbers, line items plus the settlement mirror row).
