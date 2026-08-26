@@ -2413,6 +2413,73 @@ gate-evidence:
     todo: 0
     did-not-run: 0
 
+  - gate: >-
+      FIX ROUND NINE, the six fast gates, each run separately in
+      /home/user/wt-m3p12 at head 93306ed with its own exit code captured on
+      its own line rather than inferred from a chain. Node v26.7.0, npm 11.19.0.
+      node_modules is a symlink to a sibling worktree's install, pre-existing;
+      nothing was written there and no install was run.
+      npm run typecheck -> 0 (tsc --noEmit, no output).
+      npm run lint -> 0 (eslint ., no output).
+      npm test -> 0.
+      npm run gate:privacy -> 0 ("gate:privacy clean").
+      npm run gate:tokens -> 0 (negated grep, no match).
+      npm run test:mutants -> 0, run twice, six wrong predicates caught, SELF
+      died as its entry expects, restored checksum equals the original
+      (5970de574e530bc7) on both runs.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 665
+    passed: 665
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: >-
+      FIX ROUND NINE, THE SLOW GATE, which is the run criteria 12.14 and 12.18
+      were both waiting on. npm run test:e2e, run in /home/user/wt-m3p12 on the
+      CLEAN COMMITTED TREE at head 93306ed, with git status --porcelain empty
+      before it started and no edit made to any tracked file while it ran.
+      Three projects: chromium, chromium-prod and chromium-phone. Duration 10.3
+      minutes. Final line: "55 passed (10.3m)". E2E_EXIT=0.
+
+      THE TARGET WAS PROVEN BEFORE THE RUN AND NOT ASSUMED. The five
+      PULSE_GATE_* variables were exported in the invoking shell only, built
+      from the worktree's own .env, and every one of the three endpoint values
+      was PARSED and its hostname compared against the local set before it was
+      used; the two keys travel with the pin. No value is quoted here or
+      anywhere in this document. The container's ambient DATABASE_URL,
+      DIRECT_URL and NEXT_PUBLIC_SUPABASE_URL all parse to a NON-LOCAL host and
+      were deliberately not used; the gate's own interlock refuses them by
+      construction.
+
+      THE DENOMINATOR IS THE CONFIG'S OWN. npx playwright test --list against
+      the committed config printed "Total: 55 tests in 8 files" and exited 0
+      before the run, so the 55 that passed is the full enumeration rather than
+      a number the run chose. Nothing skipped, nothing todo, nothing did not
+      run.
+
+      ONE RUN WAS DISCARDED AND IT IS RECORDED RATHER THAN OMITTED. A first
+      attempt at the same head was killed by a tool-level ten-minute limit at
+      50 of 55 with no failure. It was not a red run and it is not counted; the
+      run above is a fresh one from the beginning, backgrounded so nothing
+      external could truncate it.
+
+      WHAT THIS RUN DOES NOT COVER: it is the LOCAL configuration. The
+      deploy-verify configuration was not run, deliberately, because it points
+      the suite at a deployed application and this round is about not reaching
+      a target nobody named. The auth spec's new deploy-verify skip is
+      therefore witnessed here only in the direction that matters locally, that
+      the spec still RUNS and passes rather than being skipped away.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 55
+    passed: 55
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+
 claims:
   - id: C-M3P12-01
     kind: coverage
@@ -3063,6 +3130,309 @@ fix-round:
       an unrelated declaration is now reported as a change. That is a report
       an operator clears with a flag, and it is the error this predicate
       should make.
+
+  - mechanism: >-
+      A CHECK WHOSE DENOMINATOR IS A LOCATION RATHER THAN A DEFINITION. Fix
+      round nine's high finding, CRITERIA CR7-M3P12-01, is that prisma/seed.ts
+      opens a Prisma client and a Supabase SERVICE-ROLE admin client with no
+      interlock of any kind, and creates an auth user through the admin API.
+      That is the finding. THE MECHANISM is the instrument that was supposed to
+      make such a file impossible: test/db/gate-target.test.ts titled itself
+      "EVERY door in test/ and scripts/ is guarded" and called itself "THE
+      STANDING ANSWER to can anything still reach a database nobody named",
+      while walking exactly two hard-coded roots. An inclusion list silently
+      excludes everything it does not name. This one was not defeated by a
+      later edit: it was already defeated the day it shipped, because
+      prisma/seed.ts is older than the scan and sits one level from the
+      repository root, in neither walked directory. The mechanism's rule, now
+      recorded at the instrument's own definition, is that a scan asserting a
+      universal takes the TRACKED TREE as its denominator and names its
+      EXCLUSIONS out loud with a reason each, because a scan that names its
+      inclusions is unauditable by construction. The sibling instruments that
+      share the mechanism are named there too: src/platform/db/guard.ts, whose
+      own header already carries a sibling-reader note, and
+      src/platform/db/target-guard.ts.
+
+      WHY IT IS NOT ACADEMIC HERE. The seed is the registered Prisma seed hook
+      (the prisma.seed field of package.json), so it runs inside npm run
+      db:reset and npm run db:migrate. The guard those two scripts DO run,
+      src/platform/db/guard-cli.ts, builds its environment from DATABASE_URL
+      and DIRECT_URL and nothing else. The Supabase API URL and the service
+      role key are checked by nothing on that path, so an operator who did
+      precisely what the fleet warning instructs, pin the connection strings to
+      the local stack, would reset a LOCAL database and create an auth user in
+      whichever project the ambient Supabase variables named. Measured in this
+      container without printing a value: the shell's DATABASE_URL, DIRECT_URL
+      and NEXT_PUBLIC_SUPABASE_URL all PARSE to a NON-LOCAL host, and
+      SUPABASE_SERVICE_ROLE_KEY is present.
+    derivation:
+      command: >-
+        node <sweep.mjs> -- git ls-files, filtered to .ts .tsx .mts .cts .mjs
+        .cjs .js .jsx, line comments dropped and quoted spans blanked, then the
+        two door patterns the scan applies: /new\s+PrismaClient\s*\(/ and
+        /SUPABASE_SERVICE_ROLE_KEY/ beside /createClient\s*\(/
+      output: |
+        BEFORE THE FIX (scanned files: 174), every door in the tracked tree
+        with its guarded flag:
+          prisma  prisma/seed.ts                        false
+          admin   prisma/seed.ts                        false
+          prisma  src/platform/db/client.ts             false
+          admin   test/e2e/auth.spec.ts                 true
+          prisma  test/e2e/merchant-rule-write.spec.ts  true
+        UNGUARDED PRISMA: prisma/seed.ts, src/platform/db/client.ts
+        UNGUARDED ADMIN:  prisma/seed.ts
+
+        AFTER THE FIX, the same command over the same denominator:
+          prisma  prisma/seed.ts                        true
+          admin   prisma/seed.ts                        true
+          prisma  src/platform/db/client.ts             false
+          admin   test/e2e/auth.spec.ts                 true
+          prisma  test/e2e/merchant-rule-write.spec.ts  true
+        UNGUARDED ADMIN: none. UNGUARDED PRISMA: src/platform/db/client.ts
+        only, which is the ONE allow-list entry and carries a written reason:
+        it is the application's own runtime client, never invoked by a test or
+        a script, and it carries a DIFFERENT interlock, assessDevServerDbTarget
+        in ./guard, because production is the one target it may legitimately
+        open. Calling the gate interlock there would refuse production.
+
+        THIS REPRODUCES THE REVIEWER'S SWEEP INDEPENDENTLY rather than
+        inheriting it: the reviewer reported prisma/seed.ts as both kinds of
+        unguarded door and no other unguarded door outside the two walked roots
+        except the application client, and that is exactly what this sweep
+        returns.
+    not-covered: >-
+      THE DENOMINATOR READS TRACKED FILES ONLY, so an untracked file in a
+      working tree is outside it by construction. That is deliberate rather
+      than an oversight: an untracked file cannot reach a reviewer, a branch or
+      a deploy.
+
+      IT READS SOURCE EXTENSIONS ONLY, so a door opened from a shell script, a
+      SQL file or a config file would not appear in it. Swept separately by
+      hand over every tracked .sh, .sql, .toml, .yml and .yaml outside
+      delivery/, for psql, DATABASE_URL, a supabase invocation, createUser and
+      service_role: no hit. .claude/hooks/session-start.sh was read in full and
+      installs tooling only.
+
+      IT READS TWO DOOR SHAPES. A third client library would be invisible to
+      it, so a broader one-off sweep was run for `new Pool(`, `new Client(`, a
+      postgres.js call, knex and drizzle; the only hit was a redaction regex in
+      src/platform/db/redact.ts, which opens nothing. I did not find a way for
+      a door to be constructed dynamically from a computed identifier in this
+      tree, and I did not prove none can be: the scan reads literal
+      constructor text and such a construction would pass it unseen. No such
+      construction exists today, checked by reading every hit above.
+
+      AND THE SCAN STILL CANNOT SEE A DOOR IN A DEPENDENCY. Nothing here reads
+      node_modules, which in this worktree is a symlink to a sibling
+      worktree's install; that is pre-existing and nothing was written there.
+  - mechanism: >-
+      EXEMPTING A VALUE BY WHERE IT SITS RATHER THAN BY WHAT IT IS, the same
+      mechanism one level down (CRITERIA finding CR7-M3P12-02, third leak).
+      measurementLabel returns a file's basename for a committed fixture,
+      because a committed fixture's name is already public in this tree, and a
+      placeholder for anything else. It decided "committed" by asking whether
+      the resolved path STARTED WITH the fixture directory. That is a location.
+      Any file dropped into the fixture directory, or into any subdirectory
+      below it, inherited the exemption whether the tree carried it or not, so
+      a real upload copied there for one measurement run would have printed its
+      own file name. The exemption is now membership of the tracked tree, which
+      IS the provenance the header already claimed.
+    derivation:
+      command: grep -rn "measurementLabel" test/ scripts/
+      output: |
+        Four printing call sites, all of which now pass an ordinal:
+          test/fixtures/measure-fixture-token-overlap.ts:109, :114, :123
+          test/fixtures/measure-identity-convergence.ts:172, :178, :181, :222
+        and the pins in test/application/counterparty-identity-surfaces.test.ts
+        at :376, :395, :397, :405, :406, :478, :480. Every printing path goes
+        through the one function; no call site formats a path itself.
+    not-covered: >-
+      The tracked-tree test resolves through git, so with git absent, or a path
+      outside a repository, the set is EMPTY and every file is labelled as an
+      outside file. That is the fail-closed direction and it is deliberate, but
+      it means the harness prints placeholders rather than fixture names in
+      that state, which looks like a defect and is not. Nothing pins that
+      behaviour today.
+  - mechanism: >-
+      A GUARD SCOPED TO THE PLACE THE LAST VIOLATION APPEARED (CRITERIA finding
+      CR7-M3P12-03), which is the same mechanism as the two above. The
+      governing-document pin sliced pulse-domain section 7 and asserted the
+      forbidden phrase occurs exactly once INSIDE THAT SLICE. Criterion 12.19's
+      second clause is about the FILE, not the section, so a reintroduction one
+      section away passed while the document carried two occurrences. It now
+      counts over the whole document AND separately requires the single
+      occurrence to sit in section 7 and to be the pinned historical sentence,
+      which is strictly stronger than the slice was and costs nothing, since
+      the slice was already computed.
+    derivation:
+      command: >-
+        grep -n "normalised counterparty string" .claude/skills/pulse-domain/SKILL.md
+      output: |
+        One occurrence, inside section 7, and it is the historical sentence the
+        test pins by full text. The document is correct today; what was wrong
+        was that the guard would not have noticed the next one unless it landed
+        in one particular section. The two sibling pins in the same describe
+        block already read the whole document, so the narrow one was the odd
+        member.
+    not-covered: >-
+      The check is over ONE document, .claude/skills/pulse-domain/SKILL.md,
+      because that is the document criterion 12.19 names. A stale sentence
+      saying the same thing in CLAUDE.md, in another skill or in the plan is
+      outside it and nothing checks for one.
+  - mechanism: >-
+      A DISCRIMINATOR THAT READS THE WHOLE REPORT AS ONE STRING (CRITERIA
+      finding CR7-M3P12-04). The mutant harness decided its outcome from two
+      questions asked of the entire captured output: does "AssertionError:"
+      appear anywhere, and does any FAIL line name a property. A run in which
+      one property raised an assertion and the OTHER died of a runtime error
+      answered yes to both and printed the same sentence a clean double catch
+      prints, so half the instrument crashing was indistinguishable from the
+      whole instrument working. The repair is to stop reading the report as one
+      string: it is split at its FAIL lines and each failing test is asked
+      SEPARATELY whether an assertion fired, with a fifth outcome named for the
+      collapse.
+
+      TWO SIBLING WEAKNESSES IN THE SAME FILE, fixed in the same change because
+      they are the same shape, an outcome nothing exercises. The self-check
+      expects "dies", and "dies" is also what vitest returns when the property
+      file is missing and what execFileSync produces when the runner cannot
+      launch, so SELF passed in two states that prove nothing about the
+      discriminator; the harness now requires the UNMUTATED property file to
+      run GREEN before any mutation, which makes every later "dies" mean the
+      mutation. And the anchor check proved an anchor was FOUND without ever
+      comparing the result to the source, so a mutant whose replacement had
+      drifted back to equal its anchor left the file untouched, scored "green",
+      and was reported as "a defect in the properties", a confident and wrong
+      diagnosis; a byte-identical result is now reported as a stale mutant.
+    derivation:
+      command: npm run test:mutants
+      output: |
+        baseline: test/property/rederive-loss-reporting.test.ts passes unmutated
+        M1 reports every change (round two)                 caught, FIRST
+        M2 excludes a superseded claim from the before set  caught, FIRST
+        M3 asks only whether the row is covered afterwards  caught, FIRST
+        M6 consults the IDENTITY space first                caught, FIRST
+        M5 takes a claimant of ANY kind                     caught, FIRST and SECOND
+        M4 publishes a forged promotion pair                caught, FIRST and SECOND
+        SELF breaks the module so the file DIES             died, as expected
+        restored: original 5970de574e530bc7, on disk 5970de574e530bc7
+        MUTANTS_EXIT=0
+    not-covered: >-
+      THE FIVE BRANCHES ARE DRIVEN FROM CANNED TRANSCRIPTS, so if vitest
+      changes the SHAPE of its output the unit tests keep passing against the
+      old shape while the harness misreads the new one. Only the SELF entry is
+      immune, because it reads a real run. The two partial-run transcripts
+      added this round were CAPTURED from a real two-test failure rather than
+      composed, for that reason. HAZARD finding CR7-M3P12-03 asked instead for
+      a second LIVE self-check exercising the "unattributed" branch; that is
+      answered here by the pure-module extraction plus its unit coverage rather
+      than by a SELF2, and the residue above is what the extraction does not
+      buy. Recorded at the harness's own definition so it is not rediscovered.
+  - mechanism: >-
+      A SKIP CONDITIONED ON THE ABSENCE OF A CREDENTIAL RATHER THAN ON THE MODE
+      (CRITERIA finding CR7-M3P12-05, low). test/e2e/auth.spec.ts asserted a
+      local Supabase target unconditionally once its own skip had been
+      evaluated, and that skip fired only when the URL or the service role key
+      was ABSENT. In deploy-verify mode the gate's interlock is deliberately
+      skipped and the environment legitimately carries a DEPLOYED URL and key,
+      so the absence skip did not fire, the assertion did, and a spec that is
+      supposed to skip would have reddened the stage. The direction was safe, a
+      refusal rather than a write, but it was a red gate on a correct run and
+      nothing in the fast gate could see it. It now skips on the deploy-verify
+      marker FIRST, the way test/e2e/merchant-rule-write.spec.ts already did,
+      and the ordering is pinned in test/db/gate-target.test.ts so the fast gate
+      catches a regression the slow gate would have to discover.
+    derivation:
+      command: grep -rn "PLAYWRIGHT_BASE_URL" test/e2e/ playwright*.ts
+      output: |
+        Both specs that open a door of their own now carry the marker before
+        their local-target assertion: test/e2e/auth.spec.ts and
+        test/e2e/merchant-rule-write.spec.ts. No other spec opens a client, so
+        no other spec needs the skip.
+    not-covered: >-
+      NOT WITNESSED IN DEPLOY-VERIFY MODE. I did not run the deploy-verify
+      config, because doing so points the suite at a DEPLOYED application, and
+      this round is about not touching a target nobody named. The fix is
+      witnessed only in the fast gate, by the source-order pin going red
+      against the previous spec and green against the new one, and in the local
+      slow gate, where the auth spec still RUNS rather than being skipped away
+      by the new marker. Whether the deploy-verify stage is now green is owed
+      to whoever next runs it.
+  - mechanism: >-
+      A PRESENT-TENSE CLAIM ABOUT BEHAVIOUR THAT NOTHING CHECKS (CRITERIA
+      finding CR7-M3P12-06, low, and clause R-087's second named shape).
+      readDotEnvValue joins process.cwd(), while every comment describing it in
+      src/platform/db/ called it "the .env file at the package root". The two
+      coincide for every npm script in this repository, so nothing sanctioned
+      was ever wrong, but the operator instructions told a person to create a
+      file at a location the code does not read.
+
+      THE WORKING DIRECTORY IS THE CORRECT READING AND WAS NOT CHANGED. The
+      Prisma CLI resolves its own .env relative to the invocation, and criterion
+      12.23 calls an interlock that resolves differently from the command it
+      guards decorative, so resolving from the module's own location would be
+      the defect rather than the fix. The comments were corrected instead, the
+      old wording quoted rather than deleted, and a test now pins WHICH of the
+      two locations is meant plus refuses the old wording as a live claim.
+    derivation:
+      command: grep -rn "at the package root" --include=*.ts src/ test/ scripts/
+      output: |
+        Before: six hits, five of them live claims, in
+        src/platform/db/resolve-env.ts and src/platform/db/gate-target.ts,
+        including the refusal text an operator reads when the gate finds no
+        target.
+        After: the phrase survives only inside a quotation of the old wording,
+        and test/db/db-guard.test.ts asserts that no unquoted occurrence
+        remains in gate-target.ts, resolve-env.ts or guard-cli.ts.
+    not-covered: >-
+      The wording pin reads three files in src/platform/db/ by name. The same
+      claim in a comment elsewhere, in a delivery document or in the plan is
+      outside it. And the location test proves the reader does not CLIMB from a
+      subdirectory; it does not prove the Prisma CLI resolves identically from
+      a subdirectory, which was not measured this round and is not relied on by
+      anything, since every npm script here runs from the package root.
+  - mechanism-lookup: >-
+      TWO ENTRIES OF tuition/mechanism-index.yaml GOVERN THIS ROUND, looked up
+      before the code was written rather than after (clause mechanism-lookup).
+      The index read is the one vendored at
+      @tiphys/kernel/tuition/mechanism-index.yaml.
+
+      ONE: "Deciding what another program will do by pattern-matching the text
+      of a file it consumes". This IS the door scan: a regex over a source file
+      deciding whether that file constructs a database client, which is a
+      different function from what the runtime actually does. The rule offers
+      three tiers and forbids widening the pattern round after round; the third
+      is to DERIVE the denominator by walking the consuming program's closed
+      vocabulary once and PUBLISHING the walk, and it ends "name what remains
+      unguarded rather than chasing it". THIS ROUND SATISFIES IT BY THE THIRD
+      TIER. The walk is published in full above, before and after, rather than
+      summarised; the denominator is derived from git ls-files rather than from
+      an inclusion list somebody remembered to extend; the two door SHAPES are
+      pinned rather than widened, and the sweep for other client libraries was
+      run once and its result recorded rather than turned into more patterns;
+      and the not-covered block names what remains unguarded, including the
+      dynamically constructed client the regex would not see.
+
+      TWO: "Parsing another program's reporter output". This IS the mutant
+      scoring, which reads vitest's output to decide whether an assertion
+      fired. The rule is to PIN THE FORMAT AS A CONTROLLED INPUT rather than
+      widening the parse, on the ground that a format-agnostic regex is a union
+      of the formats known on the day. THIS ROUND SATISFIES IT ONLY IN PART,
+      and says so rather than claiming the entry is discharged. The parse was
+      NARROWED rather than widened, which is the direction the rule asks for:
+      it now reads one failing test's own block instead of the whole report.
+      But the reporter is still the DEFAULT one, not forced, so the format is
+      an uncontrolled input. What was done instead is weaker and is recorded as
+      such: the two new transcripts were CAPTURED from a real two-test failure
+      rather than composed, so they are the format as it actually is today, and
+      the residue is written at the harness's own definition. Forcing a
+      reporter is the fix the entry actually asks for and it is NOT done here;
+      it is handed on as an open question.
+
+      NO OTHER ENTRY OF THE INDEX WAS REACHED. Checked entry by entry: no claim
+      file, no lease, no append-only log, no worktree removal, no force delete,
+      no error classification and no path whose type must be established was
+      touched by this round.
 
 environment-warnings:
   - warning: >-

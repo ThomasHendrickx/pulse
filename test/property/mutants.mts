@@ -186,7 +186,16 @@ const digest = (text: string): string =>
 
 const runProperty = (): { failed: boolean; report: string } => {
   try {
-    execFileSync("npx", ["vitest", "run", propertyFile], {
+    // THE REPORTER IS NAMED RATHER THAN INHERITED. The mechanism index entry
+    // "Parsing another program's reporter output" says to PIN the format as a
+    // controlled input rather than to widen the parse, on the ground that a
+    // format-agnostic regex is a union of the formats known on the day. This
+    // is the weak form of that: naming the default stops a later reporter
+    // added to vitest.config.ts from silently changing what this parses. THE
+    // STRONG FORM IS NOT DONE and is handed on as an open question: reading a
+    // machine-readable reporter instead of the human one would remove the
+    // parse entirely.
+    execFileSync("npx", ["vitest", "run", "--reporter=default", propertyFile], {
       cwd: root,
       encoding: "utf-8",
       stdio: "pipe",

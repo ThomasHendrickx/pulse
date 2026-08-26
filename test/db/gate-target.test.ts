@@ -430,7 +430,7 @@ describe("the mechanism is actually installed", () => {
     {
       path: "src/platform/db/client.ts",
       reason:
-        "the APPLICATION's own runtime client, not a gate door: it is the single PrismaClient the Next.js server holds, it is never invoked by a test or a script, and it carries its own interlock instead, assessDevServerDbTarget in ./guard, which refuses a non-production server pointed at a deployed database. Calling the gate interlock here would refuse production, which is the one target this client legitimately opens.",
+        "the APPLICATION's own runtime client, not a gate door: it is the single PrismaClient the Next.js server holds. No test and no script CONSTRUCTS it. The one test that imports it, test/application/rederive-script-exit-codes.test.ts, replaces the module with a stub through vi.mock, and test/schema/tenancy.test.ts names it only inside generated source strings it writes to a scratch directory. It carries its own interlock instead, assessDevServerDbTarget in ./guard, which refuses a non-production server pointed at a deployed database. Calling the gate interlock here would refuse PRODUCTION, which is the one target this client legitimately opens, so the exemption is a different guard rather than no guard.",
     },
   ];
 
