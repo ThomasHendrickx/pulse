@@ -172,6 +172,34 @@ const registerAll = async (page: Page): Promise<void> => {
 // telling you nothing. That is a test that passes for the wrong reason on
 // the assertion this whole phase turns on, so the wait is on a marker the
 // page renders in every state rather than on the groups themselves.
+// THE ENTRY'S OWN TEXT, WITH ITS ROW ELEMENTS REMOVED (criterion 14.15
+// witness SEVEN's last clause). The entry now renders the held rows under
+// it, so a test aimed at the entry's own HEADINGS must not be failable by an
+// invented row descriptor: witness FIVE's balance-word check runs over this
+// reduced text rather than over everything under the entry, and the
+// "nothing else" assertion needs the same reduction.
+//
+// The clone happens in the page so the real DOM is untouched, and innerText
+// rather than textContent so the reader's own view is what is read.
+const reducedEntryText = async (
+  page: Page,
+  label: string,
+): Promise<string> => {
+  const entry = page.getByTestId("month-account").filter({ hasText: label });
+  await expect(entry).toHaveCount(1);
+  const text = await entry.evaluate((element) => {
+    const clone = element.cloneNode(true) as HTMLElement;
+    for (const row of clone.querySelectorAll('[data-testid="held-row"]')) {
+      row.remove();
+    }
+    document.body.append(clone);
+    const inner = clone.innerText;
+    clone.remove();
+    return inner;
+  });
+  return text.replace(/\s+/g, " ").trim();
+};
+
 const groupLabels = async (page: Page): Promise<string[]> => {
   await page.goto("/merchants");
   await expect(page.getByTestId("unresolved-count")).toBeVisible({
@@ -400,7 +428,7 @@ test("uploading a savings statement first is admitted, its rows are HELD, and th
 
   // ADMITTED, with the same row count it reports for any other file.
   await expect(page.getByTestId("import-result")).toBeVisible();
-  await expect(page.getByTestId("rows-added")).toHaveText("3");
+  await expect(page.getByTestId("rows-added")).toHaveText("4");
 
   // AND THE MONTH NAMES THEM AS HELD rather than showing nothing.
   await page.goto("/?month=2026-08");
@@ -411,7 +439,7 @@ test("uploading a savings statement first is admitted, its rows are HELD, and th
   await expect(entry).toHaveAttribute("data-state", "held");
   // THE STATE IS WORDS THE READER SEES, not an attribute a test can read.
   await expect(entry).toContainText("kept and counted in no month");
-  await expect(entry).toContainText("3 rows");
+  await expect(entry).toContainText("4 rows");
 
   // AND THE BOOKS STILL CLOSE: a held statement is a normal state, not a
   // cause, and it is not an uninterpreted gap.
@@ -453,7 +481,7 @@ test("THE WRONG ANSWER, WALKED BACK: a savings statement answered as a spending 
   page,
 }) => {
   await signUp(page, "ar-wrong-ring");
-  await uploadFile(page, "ar-savings.csv", "Buffer", "POT", "3");
+  await uploadFile(page, "ar-savings.csv", "Buffer", "POT", "4");
 
   // NOTHING ON THE MONTH VIEW'S FIGURES DIFFERS FROM A CORRECT MONTH: the
   // interest is income, the outgoing is spend, the verdict reads that the
@@ -469,12 +497,16 @@ test("THE WRONG ANSWER, WALKED BACK: a savings statement answered as a spending 
   await expect(entry).toHaveAttribute("data-state", "counted");
   await expect(entry).toContainText("counted in this month's income and spend");
   // THE FIXTURE'S OWN ARITHMETIC, by hand. Answered as a SPENDING account,
-  // the savings statement's three rows are classified like any other pot
-  // account's: the +250,00 deposit is INCOME, the -55,00 transfer out is
-  // SPEND, the +1,37 interest is INCOME. So spend is 55,00 and income is
-  // 251,37, and nothing about either figure says a savings account produced
-  // them.
-  await expect(page.getByTestId("spend-total")).toHaveText("55,00");
+  // the savings statement's four rows are classified like any other pot
+  // account's, because the household registered NOTHING and every
+  // counterparty on the file sits in no declared set: the +250,00 deposit is
+  // INCOME, the -55,00 payment out is SPEND, the -40,00 transfer to the
+  // household's SECOND savings account is SPEND like any other outgoing row
+  // (it can only be a reserve movement once that account is declared, and
+  // this journey declares nothing), and the +1,37 interest is INCOME. So
+  // spend is 95,00 and income is 251,37, and nothing about either figure
+  // says a savings account produced them.
+  await expect(page.getByTestId("spend-total")).toHaveText("95,00");
   await expect(page.getByTestId("income-total")).toHaveText("251,37");
 
   // A naming made in the wrong state, which is what that state invites.
@@ -615,7 +647,7 @@ test("both states are rendered as words in each of the three languages, and the 
   // One HELD account (a savings statement answered correctly) and one
   // COUNTED account (an ordinary current account), so both states are on
   // the page at once and each language is checked against both.
-  await uploadFile(page, "ar-savings.csv", "Buffer", "RESERVE", "3");
+  await uploadFile(page, "ar-savings.csv", "Buffer", "RESERVE", "4");
   await uploadFile(page, "ar-current.csv", "Current account", "POT", "11");
 
   const expectations = [
@@ -638,6 +670,10 @@ test("both states are rendered as words in each of the three languages, and the 
       // defensive prose and satisfy a check; saying "This month only"
       // instead is shorter, fits a phone better, and needs no denial.
       balanceWords: ["balance", "total saved", "saved so far", "holdings"],
+      // THE HELD ENTRY'S OWN TEXT, with its row elements removed: the
+      // account label, the period row count and the state copy, and nothing
+      // else (criterion 14.15 witness SEVEN's last clause).
+      reduced: "Buffer 4 rows kept and counted in no month",
     },
     {
       locale: "nl",
@@ -646,6 +682,7 @@ test("both states are rendered as words in each of the three languages, and the 
       heading: "Deze maand opzijgezet",
       eyebrow: "Alleen deze maand",
       balanceWords: ["saldo", "tegoed", "totaal gespaard"],
+      reduced: "Buffer 4 rijen bewaard en telt in geen enkele maand mee",
     },
     {
       locale: "fr",
@@ -654,6 +691,7 @@ test("both states are rendered as words in each of the three languages, and the 
       heading: "Mis de côté ce mois-ci",
       eyebrow: "Ce mois-ci uniquement",
       balanceWords: ["solde", "avoir", "total \u00e9pargn\u00e9"],
+      reduced: "Buffer 4 lignes conserv\u00e9 et compt\u00e9 dans aucun mois",
     },
   ] as const;
 
@@ -696,6 +734,27 @@ test("both states are rendered as words in each of the three languages, and the 
       ).toBe(false);
     }
 
+    // THE HELD ENTRY'S OWN TEXT IS NOT A BALANCE EITHER, and it is read
+    // WITH ITS ROW ELEMENTS REMOVED (criterion 14.15 witness SEVEN). The
+    // entry now renders the statement's held rows under it, so a check
+    // aimed at this element's headings must not be failable by an invented
+    // row descriptor that happens to carry a balance word in one of the
+    // three languages. Reduced, the entry carries the account label, the
+    // period row count and the state copy and NOTHING ELSE, which is the
+    // half of the no-sum boundary that a money-shaped count cannot see: a
+    // total written in words rather than in figures would land here.
+    const reduced = await reducedEntryText(page, "Buffer");
+    expect(
+      reduced,
+      `the held entry's own text carries something beyond its label, its row count and its state in ${expectation.locale}`,
+    ).toBe(expectation.reduced);
+    for (const word of expectation.balanceWords) {
+      expect(
+        reduced.toLowerCase().includes(word.toLowerCase()),
+        `the held entry reads as a balance in ${expectation.locale}: "${word}"`,
+      ).toBe(false);
+    }
+
     // AND IT RENDERS OUTSIDE THE RECONCILIATION PANEL, with the verdict
     // still reading as books closing: a held statement is a normal state
     // and rendering it as a cause would say the books are open when they
@@ -705,6 +764,163 @@ test("both states are rendered as words in each of the three languages, and the 
     ).toHaveCount(0);
     await expect(page.getByTestId("recon-cause-uninterpreted")).toHaveCount(0);
   }
+});
+
+// ---------------------------------------------------------------------
+// CRITERION 14.15 WITNESS SEVEN: the three rows DR-0030 buys are on the
+// screen, each with its own amount, and there is NO SUM OF THEM.
+// ---------------------------------------------------------------------
+//
+// WHAT THIS EXISTS TO FAIL. An implementation that ingests the savings
+// statement, holds its rows and renders a label, a count and a state word
+// passes every other witness of criterion 14.15 while the household still
+// cannot see its savings interest, its transfer between two of its own
+// savings accounts, or a payment it made straight out of savings. That
+// implementation has delivered the IMPORT and not the DECISION.
+//
+// WHY THESE THREE. Every OTHER row a reserve statement carries has a
+// counterpart row on a pot account, so registering the account was already
+// enough to make it visible and importing the statement adds nothing the
+// household can see. These three have no counterpart anywhere, and they are
+// the whole of what DR-0030 buys.
+//
+// THE FIXTURE IS test/fixtures/ar-savings.csv, NAMED BY PATH, and the
+// application half at test/application/held-rows.test.ts asserts it holds
+// one of each BY THE SHAPE that distinguishes them, since none of the three
+// is a marked category in the data.
+
+// EVERY AMOUNT BELOW IS WRITTEN BY HAND FROM THE FIXTURE'S OWN ARITHMETIC
+// and never read back from the implementation. The file's four rows, in the
+// order it prints them:
+//     +250,00  from the household's POT current account   the deposit
+//      -55,00  to a counterparty it does not own          PAID OUT
+//      -40,00  to its SECOND savings account              BETWEEN RESERVES
+//       +1,37  from the bank                              INTEREST
+// The product renders money one way everywhere (src/platform/ui/amount.tsx):
+// Belgian locale, "." for thousands and "," for decimals, no plus sign.
+const HELD_ROWS = [
+  { text: "Eigen rekening Zicht", amount: "250,00" },
+  { text: "Eigen rekening Tweede", amount: "-55,00" },
+  { text: "Eigen spaarrekening Vakantie", amount: "-40,00" },
+  { text: "Demobank NV", amount: "1,37" },
+] as const;
+
+// THE THREE THIS WITNESS PINS, by their shape rather than by their name.
+const INTEREST = HELD_ROWS[3];
+const BETWEEN_RESERVES = HELD_ROWS[2];
+const PAID_OUT = HELD_ROWS[1];
+
+// THE PRODUCT'S ONE MONEY FORMAT, as a pattern. The lookarounds stop a
+// longer digit run from yielding a spurious match inside itself; the period
+// row count is a bare integer and carries no decimal comma, so it cannot
+// inflate the count this pattern is used for.
+const MONEY = /(?<![\d.,])-?\d{1,3}(?:\.\d{3})*,\d{2}(?![\d.,])/g;
+
+const moneyStringsIn = (text: string): readonly string[] =>
+  text.match(MONEY) ?? [];
+
+test("WITNESS SEVEN: a reserve statement's interest, its transfer to another savings account and its payment out are each on the screen with their own amount, and the entry carries no sum of them", async ({
+  page,
+}) => {
+  await signUp(page, "ar-witness-seven");
+  // THE HOUSEHOLD HOLDS THE POT ACCOUNT TOO, and that is not decoration: a
+  // row whose counterparty is a POT account satisfies none of the three
+  // shapes, because that row is one registration already made visible. The
+  // fixture carries one so the three are a discrimination and not a
+  // property of an absence.
+  await register(page, {
+    number: "BE90901100001132",
+    ring: "POT",
+    label: "Current account",
+  });
+  await register(page, {
+    number: "BE24902200001138",
+    ring: "RESERVE",
+    label: "Buffer",
+  });
+  // THE SECOND RESERVE ACCOUNT. A movement between two of the household's
+  // own reserve accounts needs the household to hold a second one, and its
+  // number passes the platform validity test criterion 14.12 turns into a
+  // refusal at this very form: this registration succeeding is that check
+  // passing on the shipped path.
+  await register(page, {
+    number: "BE25902200005582",
+    ring: "RESERVE",
+    label: "Holiday fund",
+  });
+
+  // The account is already registered, so the import ADOPTS it and ingests
+  // with no ring question, which is criterion 14.3's mechanism working.
+  await uploadFile(page, "ar-savings.csv", "Buffer", null, "4");
+  await page.goto("/?month=2026-08");
+
+  const entry = page.getByTestId("month-account").filter({ hasText: "Buffer" });
+  await expect(entry).toHaveCount(1);
+  await expect(entry).toHaveAttribute("data-state", "held");
+
+  // THE THREE ROWS, EACH KEYED ON ITS OWN RENDERED IDENTITY rather than on
+  // the entry merely carrying three rows: each is located by its own
+  // descriptor and then asserted to carry its own amount.
+  for (const row of [INTEREST, BETWEEN_RESERVES, PAID_OUT]) {
+    const rendered = entry
+      .getByTestId("held-row")
+      .filter({ hasText: row.text });
+    await expect(
+      rendered,
+      `the held entry does not render a row for "${row.text}": a reserve statement is the only source of this row and holding it without showing it delivers the import and not the decision`,
+    ).toHaveCount(1);
+    expect(
+      moneyStringsIn(await rendered.innerText()),
+      `the row "${row.text}" does not render exactly its own amount`,
+    ).toEqual([row.amount]);
+  }
+
+  // AND EVERY ROW THE HELD READ RETURNED RENDERS EXACTLY ONE MONEY-FORMATTED
+  // STRING OF ITS OWN, not only the three above. This is what makes the
+  // count below EXACT rather than nearly exact: the held read returns every
+  // row on the account in the period, and this witness's own premise is that
+  // the file carries more than the three. Without it an implementation can
+  // balance the count by dropping the amount from an unpinned row while
+  // adding a subtotal, and land on the same total having done both.
+  const rows = entry.getByTestId("held-row");
+  await expect(rows).toHaveCount(HELD_ROWS.length);
+  for (const row of HELD_ROWS) {
+    const rendered = rows.filter({ hasText: row.text });
+    await expect(rendered).toHaveCount(1);
+    expect(moneyStringsIn(await rendered.innerText())).toEqual([row.amount]);
+  }
+
+  // NO SUM, ASSERTED BY COUNTING RATHER THAN BY SUBTRACTING, because a
+  // subtraction has to describe what it subtracts and that description is
+  // exactly where a subtotal hides. The money-formatted strings rendered
+  // ANYWHERE under this entry, nested elements included, number exactly the
+  // rows the held read returned. A subtotal is one string more than there
+  // are rows, so it goes RED wherever it is placed: above the rows, beside
+  // them, in a footer, or AS ONE MORE ROW LINE, which is the ordinary markup
+  // for a total inside a list of rows.
+  const underTheEntry = moneyStringsIn(await entry.innerText());
+  expect(
+    underTheEntry,
+    "the money-formatted strings under the held entry do not number exactly its rows: decision D-60 forbids any figure that reads as a balance or a total held, and this is the act that first puts money on this element",
+  ).toEqual(HELD_ROWS.map((row) => row.amount));
+
+  // AND THE PERIOD ROW COUNT THE ENTRY RENDERS IS THE SAME NUMBER, which is
+  // what ties the count under witness ONE to the rows under this one.
+  await expect(entry.getByTestId("month-account-rows")).toHaveText(
+    `${HELD_ROWS.length} rows`,
+  );
+
+  // THE ENTRY'S OWN TEXT, WITH ITS ROW ELEMENTS REMOVED, carries the account
+  // label, the period row count and the state copy and NOTHING ELSE. This is
+  // the other half of the no-sum boundary: the count above catches a figure
+  // that is money-formatted, and this catches one that is not.
+  const reduced = await reducedEntryText(page, "Buffer");
+  expect(reduced).toBe("Buffer 4 rows kept and counted in no month");
+
+  // NOTHING HERE IS A CAUSE OF A BROKEN VERDICT: a held statement is a
+  // normal state.
+  await expect(page.getByTestId("recon-verdict")).toHaveText("Books close");
+  await expect(page.getByTestId("recon-cause-uninterpreted")).toHaveCount(0);
 });
 
 // ---------------------------------------------------------------------

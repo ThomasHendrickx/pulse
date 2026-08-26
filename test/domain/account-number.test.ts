@@ -127,25 +127,94 @@ describe("the deterministic validity test (DR-0028)", () => {
     expect(isValidAccountNumber("DE89370400440532013000")).toBe(true);
   });
 
+  // THE SECOND RESERVE ACCOUNT of the savings statement, named once so both
+  // tests below say the same thing about the same value (criterion 14.15
+  // witness SEVEN).
+  const SECOND_RESERVE = "BE25902200005582";
+
+  // EVERY ACCOUNT NUMBER M3-P14 INVENTED, in the three bank-code groups its
+  // provenance note in test/fixtures/allowed-identifiers.txt records: 901
+  // for the pot ring, 902 for the reserve ring, 903 for the ring-correction
+  // arms.
+  const PHASE_ACCOUNT_NUMBERS = [
+    "BE90901100001132",
+    "BE66901100002243",
+    "BE42901100003354",
+    "BE18901100004465",
+    "BE24902200001138",
+    "BE97902200002249",
+    "BE73902200003360",
+    "BE49902200004471",
+    SECOND_RESERVE,
+    "BE55903300001144",
+    "BE31903300002255",
+    "BE07903300003366",
+    "BE80903300004477",
+  ] as const;
+
   test("every account number this phase's fixtures introduce passes the check", () => {
     // Criterion 14.1's clause: a fixture invented the way every existing
     // fixture in this repository was invented mostly does not pass, so this
     // reddens at the fixture rather than in the middle of a Playwright run.
-    for (const value of [
-      "BE90901100001132",
-      "BE66901100002243",
-      "BE42901100003354",
-      "BE18901100004465",
-      "BE24902200001138",
-      "BE97902200002249",
-      "BE73902200003360",
-      "BE49902200004471",
-      "BE55903300001144",
-      "BE31903300002255",
-      "BE07903300003366",
-      "BE80903300004477",
-    ]) {
+    for (const value of PHASE_ACCOUNT_NUMBERS) {
       expect(isValidAccountNumber(value)).toBe(true);
+    }
+  });
+
+  test("and every account number M3-P14 invented is found by WALKING its fixtures, so the list above cannot go stale in silence", () => {
+    // THE LIST ABOVE IS A LITERAL AND A LITERAL GOES STALE. This walks the
+    // fixture files this phase introduced, pulls out every account-shaped
+    // token whose BANK CODE is one of the three groups M3-P14 invented, and
+    // requires the literal above to name exactly that set and every member
+    // of it to pass the shipped check. A fixture number added later in the
+    // same groups reddens here without anyone remembering the list.
+    //
+    // WHY THE BANK CODE AND NOT EVERY TOKEN, said plainly rather than left
+    // as an unexplained filter. These fixtures also reference counterparty
+    // accounts borrowed from the OLDER fixture blocks in
+    // test/fixtures/allowed-identifiers.txt, which were invented before any
+    // criterion required validity and mostly do not pass: the re-measurement
+    // this phase ran at its own base found 7 of 17 distinct account-shaped
+    // values in the tree passing. Criterion 14.11 witness FOUR re-invents
+    // only the numbers a criterion requires to be REGISTERED, and says the
+    // rest are left alone. An outside merchant's counterparty is never
+    // registered and never reaches the form's refusal, so requiring it to
+    // pass would be asserting something the plan deliberately does not ask
+    // for.
+    //
+    // WHAT THIS DOES NOT COVER, therefore: a NEW invalid counterparty
+    // borrowed from outside the three groups, and any fixture outside the
+    // ar- family. Both are covered by the privacy gate's allow list, which
+    // is a different property (known, not valid).
+    const dir = join(__dirname, "..", "fixtures");
+    const files = readdirSync(dir).filter(
+      (name) => name.startsWith("ar-") && name.endsWith(".csv"),
+    );
+    // NOT VACUOUS, asserted rather than assumed: a walk that found no files,
+    // or files carrying no account numbers in these groups, would satisfy
+    // every assertion below by finding nothing.
+    expect(files.length).toBeGreaterThan(0);
+    const found = new Set<string>();
+    for (const name of files) {
+      const text = readFileSync(join(dir, name), "utf8");
+      for (const match of text.matchAll(/\bBE[0-9]{2}(90[123])[0-9]{9}\b/g)) {
+        found.add(match[0]);
+      }
+    }
+    expect(found.size).toBeGreaterThan(0);
+    // The second reserve account criterion 14.15 witness SEVEN adds really
+    // is in there, so this is pointed at the thing that witness introduced
+    // and not merely at the file set that was already here.
+    expect(found.has(SECOND_RESERVE)).toBe(true);
+    for (const value of found) {
+      expect(
+        isValidAccountNumber(value),
+        `${value} is in one of M3-P14's own invented groups and fails the platform check, which criterion 14.12 makes a refusal at the registration form`,
+      ).toBe(true);
+      expect(
+        (PHASE_ACCOUNT_NUMBERS as readonly string[]).includes(value),
+        `${value} is in the fixtures and not on this test's own list, so the list has gone stale`,
+      ).toBe(true);
     }
   });
 });

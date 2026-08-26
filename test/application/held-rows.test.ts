@@ -470,3 +470,133 @@ describe("criterion 14.15 witness ONE and criterion 14.14 case FIVE, at the row 
     expect(figures.heldEntries).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------
+// CRITERION 14.15 WITNESS SEVEN: the three rows DR-0030 buys, in the
+// fixture, found by the SHAPE that distinguishes them.
+// ---------------------------------------------------------------------
+//
+// WHY THESE THREE AND NOT ANY THREE ROWS. Every other row a reserve
+// statement carries has a counterpart row on a pot account, so registering
+// the account was already enough to make it visible and importing the
+// statement adds nothing the household can see. These three have NO
+// counterpart row on any pot account, and they are the whole of what DR-0030
+// buys: interest credited on the reserve account, a movement between two of
+// the household's own reserve accounts, and a payment made straight out of
+// one.
+//
+// WHY THE TEST READS SHAPES AND NOT NAMES. None of the three is a marked
+// category in the data and no test can read the word "interest" off a row:
+// prisma/schema/import.prisma carries a booking date, an amount, a
+// counterparty name, a counterparty account number, a description and a
+// reference, and no marker of any kind. The shapes below are the
+// discriminator the PRODUCT itself uses, since
+// src/modules/ledger/domain/classify-flow.ts decides on membership of the
+// declared sets and on nothing else, so this asserts the property the engine
+// reads rather than a name the schema does not carry.
+//
+// THE FIXTURE IS NAMED BY PATH AND IS SHARED WITH M3-P15's CRITERION 15.9,
+// which uploads this same statement file so the two phases cannot drift onto
+// different files. The repository's OTHER savings upload, in
+// test/e2e/month-view.spec.ts, is not it.
+const SAVINGS_STATEMENT = "ar-savings.csv";
+const SECOND_RESERVE = "BE25902200005582";
+const POT_CURRENT = "BE90901100001132";
+
+describe("criterion 14.15 witness SEVEN: the fixture carries the three rows a reserve statement is the only source of", () => {
+  test("one interest credit, one movement between two of the household's own reserve accounts, and one payment made straight out of savings", async () => {
+    const world = makeFakeImportWorld();
+    // THE HOUSEHOLD HOLDS ALL THREE ACCOUNTS BEFORE THE STATEMENT ARRIVES,
+    // because every shape below is stated RELATIVE TO THIS HOUSEHOLD: "a
+    // counterparty that belongs to no account of this household" means
+    // nothing until the household has accounts. The pot account matters as
+    // much as the two reserve ones: a row whose counterparty is a POT
+    // account satisfies none of the three, and without it the deposit row
+    // would masquerade as a second interest credit.
+    for (const account of [
+      { label: "Current account", accountNumber: POT_CURRENT, role: "POT" as const },
+      { label: "Buffer", accountNumber: RESERVE, role: "RESERVE" as const },
+      { label: "Vakantie", accountNumber: SECOND_RESERVE, role: "RESERVE" as const },
+    ]) {
+      const registered = await registerAccount(
+        context,
+        { accounts: world.accountsRepository, ...world.engine },
+        { bank: "Demobank", ...account },
+      );
+      expect(registered.ok, `${account.label} was refused`).toBe(true);
+    }
+
+    await importFile(world, SAVINGS_STATEMENT);
+
+    // THE ROWS OF THE STATEMENT'S OWN ACCOUNT, which are the held ones.
+    const buffer = world.accounts.find((a) => a.label === "Buffer");
+    expect(buffer).toBeDefined();
+    const rows = world.transactions.filter(
+      (row) => row.accountId === buffer?.id,
+    );
+    // NOT VACUOUS: the file really did ingest, and it carries MORE than the
+    // three rows this witness pins, which is the premise the money-string
+    // count in the Playwright half rests on.
+    expect(rows.length).toBeGreaterThan(3);
+    // AND EVERY ONE OF THEM IS HELD, which is what makes them rows only this
+    // statement can show.
+    expect(rows.every((row) => row.flow === undefined)).toBe(true);
+
+    const ownNumbers = new Set(
+      world.accounts.map((account) => account.iban ?? ""),
+    );
+    const belongsToHousehold = (row: (typeof rows)[number]): boolean =>
+      row.counterpartyIban !== undefined && ownNumbers.has(row.counterpartyIban);
+
+    // SHAPE ONE, THE INTEREST CREDIT: exactly one POSITIVE row whose
+    // counterparty is absent or belongs to no account of this household.
+    const interest = rows.filter(
+      (row) => row.amountCents > 0 && !belongsToHousehold(row),
+    );
+    expect(interest).toHaveLength(1);
+
+    // SHAPE TWO, THE MOVEMENT BETWEEN TWO OF THE HOUSEHOLD'S OWN RESERVE
+    // ACCOUNTS: exactly one row whose counterparty is the SECOND registered
+    // reserve account.
+    const betweenReserves = rows.filter(
+      (row) => row.counterpartyIban === SECOND_RESERVE,
+    );
+    expect(betweenReserves).toHaveLength(1);
+
+    // SHAPE THREE, THE PAYMENT MADE STRAIGHT OUT OF SAVINGS: exactly one
+    // NEGATIVE row whose counterparty belongs to no account of this
+    // household.
+    const paidOut = rows.filter(
+      (row) => row.amountCents < 0 && !belongsToHousehold(row),
+    );
+    expect(paidOut).toHaveLength(1);
+
+    // AND THE THREE ARE THREE DIFFERENT ROWS, asserted rather than assumed:
+    // the shapes are mutually exclusive by their signs and by the
+    // membership test, but a fixture that collapsed two of them would still
+    // satisfy each clause above on its own.
+    const ids = new Set([
+      interest[0]?.id,
+      betweenReserves[0]?.id,
+      paidOut[0]?.id,
+    ]);
+    expect(ids.size).toBe(3);
+
+    // THE ROW WHOSE COUNTERPARTY IS A POT ACCOUNT SATISFIES NONE OF THE
+    // THREE, and the fixture carries one so that this is a real
+    // discrimination rather than a property of an absence: that row is one
+    // registration already made visible, and it is not what DR-0030 buys.
+    const againstPot = rows.filter(
+      (row) => row.counterpartyIban === POT_CURRENT,
+    );
+    expect(againstPot).toHaveLength(1);
+    expect(ids.has(againstPot[0]?.id)).toBe(false);
+
+    // EVERY ROW OF THE PINNED FILE CARRIES A NON-ZERO AMOUNT. M3-P15's
+    // criterion 15.9 uploads this same file and derives an identity that a
+    // zero-amount row would break, since such a row classifies UNRESOLVED;
+    // it asks for the shape to be pinned over the WHOLE file rather than
+    // over the three rows above, and this is where the file is read.
+    expect(rows.every((row) => row.amountCents !== 0)).toBe(true);
+  });
+});
