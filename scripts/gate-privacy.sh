@@ -107,7 +107,17 @@ else
   # it decides whether two statements belong to one card. Case is folded
   # so a mask written x or X or * is one value.
   norm() { tr -d ' -' | tr 'x*' 'XX' | tr 'a-z' 'A-Z'; }
-  known="$(grep -vE '^[[:space:]]*(#|$)' "$ALLOW" | norm | sort -u)"
+  # THE ALLOW LIST IS MATERIALISED ONCE, TO A FILE, rather than re-piped
+  # through a subshell for every hit. Two reasons, and the second is the
+  # one that matters. It is cheaper. And a lookup must be able to tell
+  # "this value is not listed" from "the lookup itself failed": grep says
+  # the first with exit 1 and the second with exit 2 or more, and a
+  # pipeline that only asks "did it exit non-zero" reports a clean tree as
+  # dirty whenever the machine refuses a fork. Measured under fleet load:
+  # one run in six reported an identifier that IS on the list.
+  knownfile="$(mktemp)"
+  trap 'rm -f "$knownfile"' EXIT
+  grep -vE '^[[:space:]]*(#|$)' "$ALLOW" | norm | sort -u > "$knownfile"
   for f in $(git ls-files); do
     [ -f "$f" ] || continue
     # SKIPPED PATHS, and why each is safe to skip. The lockfile and the
@@ -140,8 +150,18 @@ else
     for hit in $( { grep -Eoh "$IBAN|$PAN" "$f" 2>/dev/null; \
                     grep -Eoh "$MASKED" "$f" 2>/dev/null | grep -E '[Xx*]'; \
                   } | norm | sort -u); do
-      printf '%s\n' "$known" | grep -qxF "$hit" || \
+      # EXIT 1 IS "NOT LISTED". ANYTHING ABOVE 1 IS THE LOOKUP FAILING,
+      # and the two must never be reported as the same thing: the first is
+      # a finding about the tree, the second is a finding about the
+      # machine, and a gate that confuses them teaches its reader to
+      # ignore it.
+      if grep -qxF -- "$hit" "$knownfile"; then
+        continue
+      elif [ $? -gt 1 ]; then
+        report "gate:privacy could not complete its allow-list lookup while reading $f. This is the gate failing, not the tree: re-run it. Do not read this as a clean tree and do not read it as a dirty one."
+      else
         report "$f: identifier shape not on the allow list. Add it to $ALLOW with a note on where it came from, or replace it with an invented value. Never add a value taken from a real statement."
+      fi
     done
   done
 fi
