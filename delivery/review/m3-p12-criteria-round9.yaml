@@ -1,0 +1,957 @@
+# M3-P12 CRITERIA REVIEW, ROUND NINE. Clean-room reviewer, CRITERIA contract.
+# Worktree /home/user/wt-m3p12-r9crit on claude/m3-p12-rev9-crit at the implementer's
+# head 2d82402. Tree clean at the start and byte-identical at the end.
+#
+# NOT A DELTA REVIEW. All 23 acceptance criteria are walked below.
+#
+# ONE THING BEFORE THE LOG, because it changes how two entries read: MY DISPATCH
+# BRIEF CARRIES A STALE COPY OF THE PHASE CONTRACT. The branch's own
+# delivery/plan/pulse-v02.yaml has already corrected at least two passages the brief
+# still carries in their old form: criterion 12.16's truncation-determinism
+# rationale, corrected at delivery/plan/pulse-v02.yaml:7884, and the conflicts-with
+# entry for M3-P9, corrected at delivery/plan/pulse-v02.yaml:8329. I reviewed against
+# the ARTIFACT'S plan rather than the brief's snapshot, and TWO FINDINGS I HAD
+# DRAFTED against the brief's text were withdrawn on reading the branch. What the
+# branch has NOT amended is files-to-touch, which is the deviation my dispatch names
+# as known and authorised, and which I judge as such below.
+#
+# BEACON LOG, appended as the work happened.
+#
+# t1  start: read brief in full, 597 lines. 23 acceptance criteria, 12.1 through
+#     12.23. Beginning environment check.
+#
+# t2  env: local supabase stack IS up (project id m1-p1-skeleton). docker exec
+#     psql on supabase_db_m1-p1-skeleton returns PostgreSQL 17.6. Pinned
+#     DATABASE_URL and DIRECT_URL parse to hostname 127.0.0.1 port 54322,
+#     NEXT_PUBLIC_SUPABASE_URL to 127.0.0.1:54321. Verified by URL parse, not by
+#     substring.
+#
+# t3  env: the AMBIENT shell carries a FOREIGN deployed pooler, aws-1-eu-
+#     north-1.pooler.supabase.com, a different project ref, plus a foreign
+#     SUPABASE_SERVICE_ROLE_KEY. There is no .env in the worktree, only
+#     .env.example, so an unpinned command here resolves to that foreign deployed
+#     project. Every command below was run with the pinned local values or with
+#     env -i.
+#
+# t4  env: npm ci exit 0, 364 packages. node on PATH is v26.7.0 while package.json
+#     engines requires 22.x; every gate below was run under node v22.12.0. Disk
+#     2.8G free of 252G, 93 percent used, which fleet warning 10 names as the
+#     cause of moving chromium crashes in e2e; none occurred.
+#
+# t5  CLAIM 1, the seed refuses a non-local target: VERIFIED by four runs of npx
+#     tsx prisma/seed.ts with wholly invented non-local values, each in a scrubbed
+#     environment so nothing ambient leaked. A, non-local database and non-local
+#     API: threw GateDbTargetRefused from src/platform/db/gate-target.ts:334 at
+#     prisma/seed.ts:61, exit 1, before new PrismaClient(). B, THE MIXED CASE, a
+#     LOCAL database with a NON-LOCAL Supabase API: threw from
+#     src/platform/db/gate-target.ts:315 at prisma/seed.ts:78, exit 1, and the
+#     local households row count was 1674 before and 1674 after, so nothing was
+#     written. C, DATABASE_URL absent: refused, exit 1. D, fully local: proceeded
+#     and printed the seeded household line, exit 0, so the guard is not vacuously
+#     refusing everything. No override path exists on either assert: no argv read
+#     and no PULSE_ALLOW_* read.
+#
+# t6  GATES, all run by me at 2d82402 under node v22.12.0 with the local stack
+#     pinned. npm run typecheck exit 0. npm run lint exit 0. npm test exit 0, Test
+#     Files 43 passed (43), Tests 665 passed (665), 15.83s, zero skipped. npm run
+#     gate:privacy exit 0, printed gate:privacy clean. npm run gate:tokens exit 0.
+#     npm run test:mutants exit 0, ending restored: original 5970de574e530bc7, on
+#     disk 5970de574e530bc7.
+#
+# t7  SLOW GATE, run by me: npm run test:e2e exit 0, 55 passed (10.1m), first
+#     attempt. Run with PULSE_GATE_* pins and with the ambient DATABASE_URL and
+#     SUPABASE_* names UNSET, which is what src/platform/db/gate-target.ts now
+#     requires. git status immediately after shows next-env.d.ts UNCHANGED, so the
+#     round-eight commit that restored that generated file left it matching what
+#     the run regenerates.
+#
+# t8  CLAIM 2, first half, the denominator: VERIFIED. git ls-files returns 314
+#     tracked files; under the scan's own extension filter the count is 174. The
+#     old two-directory denominator, test/ plus scripts/ under the same filter, is
+#     58, being 57 under test/ and 1 under scripts/. The 58 to 174 figure is
+#     exactly right.
+#
+# t9  CLAIM 2, second half, the scan is not vacuous: PARTLY VERIFIED, with a hole
+#     that is finding CR9-M3P12-01. Six probes, every one reverted. P1, an
+#     UNTRACKED file carrying a bare new PrismaClient() and a $queryRaw: GREEN, 33
+#     passed, because the denominator is the tracked tree. P2, the same file
+#     staged: RED. P3, the same tracked file with the guard NAME in a line comment
+#     and no call: GREEN again. P4, the two real guard CALLS deleted from
+#     prisma/seed.ts with the import left in place: the whole fast gate GREEN, 43
+#     files and 665 tests, and npm run lint exit 0 with two warnings only. P4b,
+#     the import removed as well: RED on two tests. P5, the call kept but moved
+#     AFTER new PrismaClient(): GREEN. P6, client.ts made to stop constructing a
+#     client: the staleness test went RED. Tree restored: git write-tree equals
+#     HEAD tree 96112bb7abfd485e0ad0071c19ba9a1095536e91 and git diff HEAD is
+#     empty.
+#
+# t10 CLAIM 3, the exemption: the exemption is substantively honest and its stated
+#     REASON is false in two clauses, which is finding CR9-M3P12-02. The staleness
+#     test CAN retire an exemption that has stopped being a door, witnessed by
+#     probe 6.
+#
+# t11 CLAIM 4 and criterion 12.2: I reproduced 12.2 MYSELF over the two real
+#     documents, in memory, counts only, from the committed harness, exit 0.
+#     Current-account document: rows 39, rows-with-account 11, baseline-distinct-
+#     keys 25, identity-distinct-keys 20, identity-account-keys 6, identity-
+#     descriptor-keys 14. Card document: rows 22, rows-with-account 0, baseline-
+#     distinct-keys 16, identity-distinct-keys 16. Every figure the criterion pins
+#     matches exactly, in both directions.
+#
+# t12 MY OWN SWEEP, read rather than grepped. Door surface in the tracked tree:
+#     three Prisma constructions, two Supabase service-role admin clients, two
+#     anon-key ssr clients at src/middleware.ts:17 and src/platform/auth/supabase-
+#     server.ts:13, and the prisma CLI behind src/platform/db/guard-cli.ts. No
+#     node-postgres, no postgres.js, no knex, no drizzle in package.json; no psql,
+#     supabase CLI or prisma migrate invocation in any tracked source file. The
+#     three execFileSync calls in the new test code run git, npx tsx and npx
+#     vitest. I also ran the whole fast gate with an INVENTED unreachable
+#     DATABASE_URL and DIRECT_URL: 43 files and 665 tests still passed, exit 0, so
+#     no fast-gate test opens a live database at all. The only unguarded door I
+#     found is the one already exempted.
+#
+# t13 DIFF-LEVEL CHECKS I RAN MYSELF rather than reading a claim:
+#     src/modules/merchants/domain/normalise-counterparty.ts and
+#     test/domain/normalise-counterparty.test.ts are BYTE-IDENTICAL between the
+#     baseline 7f4aafb and this head, which settles criterion 12.5's git-diff half
+#     and moots the baseline table's provenance.
+#     src/modules/ledger/domain/corrections.ts is byte-identical to the merge-
+#     base, which settles criterion 12.12's half. prisma/schema/merchants.prisma
+#     changes comments only, with no enum declaration added or removed, which
+#     settles criterion 12.10's half.
+#
+# t14 VERDICT: 23 of 23 criteria met, one HIGH finding, one MEDIUM, three LOW.
+#     FIX-ROUND-NEEDED, because the schema forbids APPROVE beside a finding this
+#     review ranked high and because the high finding is in the safety machinery
+#     this round exists to check.
+#
+# t15 AND WHAT THIS CONTRACT DID NOT REACH, left to nobody. Walking the criteria
+#     could not have found the high finding: no criterion of this phase asks
+#     whether the door scan can detect its own guard being removed, and the scan
+#     is not named by any acceptance criterion at all. I found it because the
+#     dispatch told me to prove the scan red against a real open door, which is an
+#     instruction and not a criterion. A phase can satisfy all 23 of these and
+#     still ship that hole.
+#
+# END OF LOG. The structured verdict follows.
+kind: verdict
+phase: M3-P12
+verdict: FIX-ROUND-NEEDED
+produced-by: claude
+framing: criteria-contract
+review-contract: criteria
+findings:
+- id: CR9-M3P12-01
+  severity: high
+  analysis: >-
+    THE SCAN THAT ROUND EIGHT BUILT CANNOT SEE THE GUARD IT INSTALLED BEING REMOVED. Round
+    eight's own lesson, written into fleet warning 18 and into the scan's header, is that
+    a guard's stated scope is not its reach and that one must prove it RED against a real
+    open door before trusting it green. I did that, and it stayed green against the most likely
+    regression there is.
+  evidence:
+  - >-
+    THE ASYMMETRY. The scan decides whether a file IS a door by reading code with comments
+    dropped and quoted spans blanked, at test/db/gate-target.test.ts:468, and the header at
+    test/db/gate-target.test.ts:460 says so in as many words: PROSE IS NOT A DOOR, the scan
+    reads CODE. But it decides whether that door is GUARDED by reading the RAW file, at test/db/gate-target.test.ts:473
+    for the Prisma door and test/db/gate-target.test.ts:483 for the Supabase admin door. A
+    mention of the assert's NAME anywhere in the file, in an import, in a comment or in a
+    string, satisfies the guarded predicate. The header's claim is therefore true of one half
+    of the scan and false of the other, and it is the half that decides pass or fail.
+  - >-
+    WITNESSED, PROBE 4. I deleted BOTH real guard calls from prisma/seed.ts, leaving the import
+    statement and the forty-line comment above them exactly as they are. The seed is then
+    wholly unguarded: it constructs a Prisma client and a service-role admin client from the
+    environment with nothing checking either. The ENTIRE FAST GATE STAYED GREEN: npx vitest
+    run reported Test Files 43 passed (43), Tests 665 passed (665), and npm run lint exited
+    0 with two no-unused-vars WARNINGS, which eslint does not fail on. Not one instrument
+    in the tree noticed.
+  - >-
+    WITNESSED, PROBE 5. I restored the calls and instead MOVED the database assertion to sit
+    AFTER new PrismaClient() rather than before it, which is the exact thing the dedicated
+    test at test/db/gate-target.test.ts:519 says it pins, its comment reading Order is the
+    whole point: refuse before a client exists. The scan stayed green: 33 passed. The reason
+    is that BOTH sides of that comparison resolve to prose. seed.indexOf at test/db/gate-target.test.ts:524
+    finds the assert name in the IMPORT at prisma/seed.ts:6, and seed.indexOf at test/db/gate-target.test.ts:525
+    finds the literal new PrismaClient() inside the backticked comment at prisma/seed.ts:46.
+    Neither operand ever reaches the code.
+  - >-
+    WITNESSED, PROBE 3, the same defect on a fresh door. A tracked file carrying a bare new
+    PrismaClient() and a $queryRaw goes RED as it should. Adding one line comment naming assertGateDbTargetIsLocal,
+    with no call, turns it GREEN: 33 passed.
+  - >-
+    AND THE CONTROL, so this is a hole and not a scan that never fires. Probe 2, the same
+    tracked file with no mention of the assert at all, went RED with expected [ scripts/zz-probe-door.ts
+    (prisma) ] to deeply equal []. Probe 4b, prisma/seed.ts with the import removed as well
+    as the calls, went RED on two tests. The scan works; what it cannot see is a door whose
+    file still names its guard.
+  - >-
+    EVERY PROBE WAS REVERTED. After the last one git write-tree returned 96112bb7abfd485e0ad0071c19ba9a1095536e91,
+    equal to HEAD's tree, and git diff HEAD was empty.
+  concrete-fix: >-
+    Compute guarded from the SAME code-only text the door predicate uses, and require a CALL
+    rather than a mention. In test/db/gate-target.test.ts:473 and :483 replace raw.includes(name)
+    with a test against source for the name followed by an open parenthesis, for example /assertGateDbTargetIsLocal\s*\(/.test(source),
+    where source is the codeOnly value already computed at test/db/gate-target.test.ts:468.
+    Then fix the ordering test the same way: at test/db/gate-target.test.ts:519 through :530,
+    run codeOnly over the seed before taking either indexOf, and search for the CALL form
+    assertGateDbTargetIsLocal( and assertGateApiTargetIsLocal( rather than the bare names,
+    so the import and the header comment cannot satisfy either operand. Add my probe 4 and
+    probe 5 as the regression: a fixture string of a door whose guard name appears only in
+    an import or a comment must be reported unguarded, and a door whose call sits after its
+    client must fail the order test.
+- id: CR9-M3P12-02
+  severity: medium
+  analysis: >-
+    THE ONE EXEMPTION IS SUBSTANTIVELY RIGHT AND ITS STATED REASON IS FALSE IN TWO CLAUSES.
+    The exemption itself I judge honest: the application's own runtime client must be able
+    to open production, so the gate interlock cannot be called there, and that half of the
+    reason is true. The two clauses beside it are not, and clause R-087 makes a false present-tense
+    claim in a document a finding rather than a note.
+  evidence:
+  - >-
+    CLAUSE ONE, No test and no script CONSTRUCTS it, at test/db/gate-target.test.ts:433. A
+    script does. scripts/rederive-merchant-rules.ts:108 imports @/modules/ledger/application
+    and :109 through :115 imports @/modules/merchants/application; those pull in src/modules/ledger/adapters/ledger-repository.ts:13
+    and src/modules/merchants/adapters/merchant-repository.ts:14, both of which import @/platform/db/client,
+    whose module body constructs the client at src/platform/db/client.ts:51. That is import
+    time, so it happens BEFORE the script's own interlock runs.
+  - >-
+    WITNESSED. I ran the shipped command against a wholly invented non-local DATABASE_URL
+    with a mismatched host and ref. Its first line of output was [pulse:db] DATABASE_URL present,
+    scheme ok, which is emitted by src/platform/db/client.ts:13 through :15, and only THEN
+    came the interlock's refusal and exit 3. The client module had already been evaluated.
+    This is not a breach of criterion 12.23, which requires refusal before any repository
+    CALL and gets it, since Prisma connects lazily; it is a refutation of the exemption's
+    stated reason, which is the sentence a future reader will act on.
+  - >-
+    CLAUSE TWO, It carries its own interlock instead, assessDevServerDbTarget, which refuses
+    a non-production server pointed at a deployed database. That guard's FIRST branch, at
+    src/platform/db/guard.ts:129, returns allowed for anything whose NODE_ENV is not exactly
+    development, with the reason a test run or a script is not the thing this guard is about.
+    Every script, every vitest run and every tsx one-off is non-production and is checked
+    by NOTHING. The exemption's closing sentence, that the exemption is a different guard
+    rather than no guard, is true only for next dev.
+  - >-
+    THE ONE THING THAT DOES WORK, recorded so the fix is scoped and not a rewrite: the staleness
+    test CAN retire an exemption that has stopped being a door. WITNESSED, probe 6: I made
+    src/platform/db/client.ts:40 stop constructing a client and the test at test/db/gate-target.test.ts:511
+    went RED with the allow list carries no stale entry: every exemption is still a door.
+    Reverted; tree byte-identical.
+  concrete-fix: >-
+    Correct the exemption reason at test/db/gate-target.test.ts:433 to say what is true: that
+    no test and no script contains the CONSTRUCTOR, that scripts/rederive-merchant-rules.ts
+    does cause this module to be evaluated transitively at import time and therefore constructs
+    the client before its own interlock runs, that construction opens no socket because Prisma
+    connects lazily, and that assessDevServerDbTarget checks nothing unless NODE_ENV is exactly
+    development, so on the script path the exemption is a deliberate absence of a guard rather
+    than a different one. If the transitive construction is judged worth closing rather than
+    documenting, the smaller change is to move the two repository imports in scripts/rederive-merchant-rules.ts
+    behind a dynamic import performed after assessRederiveTarget has returned allowed, so
+    the client module is never evaluated on a refused run.
+- id: CR9-M3P12-03
+  severity: low
+  analysis: >-
+    The scan's denominator is the TRACKED tree, so a door that has been written but not yet
+    staged is invisible to it. That is a defensible reading of what belongs to the repository,
+    but the fast gate is normally run BEFORE git add, which is the moment the author most
+    wants to be told.
+  evidence:
+  - >-
+    The denominator is git ls-files at test/db/gate-target.test.ts:414 through :421. I verified
+    it myself: 314 tracked files, 174 under the scan's extension filter, against 58 for the
+    old test/ plus scripts/ walk. The 58 to 174 claim is exactly right.
+  - >-
+    WITNESSED, probe 1. An UNTRACKED scripts/zz-probe-door.ts carrying a bare new PrismaClient()
+    and a $queryRaw left the scan GREEN, 33 passed. git add on the same bytes turned it RED.
+    Reverted; tree byte-identical.
+  concrete-fix: >-
+    Union the tracked list with the untracked, not-ignored list, so a door is seen the moment
+    it exists on disk. In test/db/gate-target.test.ts:414 through :421 add a second execFileSync
+    of git with the arguments ls-files, -z, --others, --exclude-standard, concatenate the
+    two results and de-duplicate before the extension filter. The denominator assertion at
+    test/db/gate-target.test.ts:493 needs no change; add one assertion that a file present
+    on disk but not staged is included.
+- id: CR9-M3P12-04
+  severity: low
+  analysis: >-
+    The scan is titled EVERY door in the tracked tree and its header defines a door as a file
+    that constructs a client. Two files in the tree construct a Supabase client that reaches
+    the project's data and match neither of the scan's two patterns, so the title is still
+    wider than the definition. Nothing in the tree reaches either one from a test or a script
+    today, which is why this is low and not higher.
+  evidence:
+  - >-
+    The two patterns are new PrismaClient( and the conjunction of SUPABASE_SERVICE_ROLE_KEY
+    with createClient(, at test/db/gate-target.test.ts:469 and :482 through :485. An anon-key
+    client built with createServerClient from @supabase/ssr matches neither.
+  - >-
+    The two files are src/middleware.ts:17 and src/platform/auth/supabase-server.ts:13. Both
+    open whatever project NEXT_PUBLIC_SUPABASE_URL names. Under the slow gate they are covered,
+    because enforceGateDbTarget assigns that variable at src/platform/db/gate-target.ts:287
+    through :294 before any server starts, which is a real mechanism and not an accident.
+  - >-
+    MY OWN SWEEP FOUND NOTHING ELSE. package.json declares no node-postgres, no postgres.js,
+    no knex and no drizzle. No tracked source file invokes psql, the supabase CLI or a prisma
+    migrate command; the three execFileSync calls in the new test code, at test/application/counterparty-identity-surfaces.test.ts:333,
+    test/fixtures/measure-identity-convergence.ts:110 and test/property/mutants.mts:198, run
+    git, npx tsx and npx vitest. And I ran the whole fast gate with an INVENTED unreachable
+    DATABASE_URL and DIRECT_URL: 43 files and 665 tests still passed, exit 0, so no fast-gate
+    test opens a live database at all.
+  concrete-fix: >-
+    Either narrow the title or widen the definition. Widening is one line: in the door loop
+    at test/db/gate-target.test.ts:466 through :492 add a third kind, supabase-anon, matched
+    by /create(Server|Browser)Client\s*\(/ over the code-only source, and add src/middleware.ts
+    and src/platform/auth/supabase-server.ts to ALLOWED_UNGUARDED at test/db/gate-target.test.ts:426
+    with the reason that they are application runtime, carry the anon key rather than a service-role
+    key, and are pinned for the gate by enforceGateDbTarget. The staleness test then keeps
+    both entries honest for free.
+- id: CR9-M3P12-05
+  severity: low
+  analysis: >-
+    Two of this phase's out-of-declaration file sets are not in the work history's own deviations
+    block, while eight other files-to-touch deviations are declared there with care. My dispatch
+    names the plan-level authorisation as in flight and tells me to judge the work, which
+    I do and which is sound; this finding is about the RECORD, because an undeclared deviation
+    is invisible to the deviations-judged machinery that R-057b exists to drive.
+  evidence:
+  - >-
+    The deviations block runs from delivery/work-history/m3-p12.yaml:1748 to :1992 and carries
+    16 entries, eight of them naming files-to-touch. Searching that block for prisma/seed
+    and for test/property returns zero occurrences of either.
+  - >-
+    Both are really touched. git diff 1c24ead HEAD --name-only lists prisma/seed.ts, +48 lines,
+    and five new files under test/property/: mutants.mts, mutant-scoring.ts, mutant-scoring.test.ts,
+    pass-one-preserves-meaning.test.ts and rederive-loss-reporting.test.ts. Neither prisma/seed.ts
+    nor test/property/ appears in the phase's files-to-touch at delivery/plan/pulse-v02.yaml:7330
+    through :7354 or in its extras at :7355 through :7361.
+  - >-
+    The contrast is what makes it a finding rather than a nit: the same block declares .gitignore,
+    src/app/globals.css, test/e2e/, the three message catalogues, src/app/(app)/merchants/page.tsx,
+    src/modules/overview/, playwright.config.ts, src/platform/db/gate-target.ts, src/platform/db/guard.ts,
+    src/platform/db/guard-cli.ts and src/platform/db/resolve-env.ts. Two sets were missed
+    by a record that caught eleven.
+  concrete-fix: >-
+    Add two entries to the deviations block at delivery/work-history/m3-p12.yaml:1748. One
+    for prisma/seed.ts, saying that it is not in files-to-touch, that the round-eight interlock
+    had to land there because it was the one unguarded door in the tree and the scan that
+    claimed otherwise read two directories, and that the plan amendment bringing the declaration
+    into line is in flight. One for test/property/, saying the same and naming the five files,
+    since criteria 12.7 and 12.21 both name a property test in that directory by path and
+    the declaration does not carry the directory.
+criteria:
+- id: '12.1'
+  quote: >-
+    CONVERGENCE, COUNTED. A test in test/domain/counterparty-identity.test.ts parses test/fixtures/belfius-counterparty-identity.pdf
+    through the shipped path and counts DISTINCT counterpartyIdentity keys over its rows.
+    The fixture carries 24 rows representing 12 invented counterparties, and the test asserts
+    the distinct-key count is exactly 12, printing both 12 and 24, and separately asserts
+    that the BASELINE derivation yields EXACTLY 24 distinct keys. The fixture's composition
+    is also asserted: at least 8 rows carry a trusted account over at least 4 distinct accounts,
+    and at least 8 rows take the DESCRIPTOR basis.
+  met: true
+  evidence:
+  - >-
+    WITNESSED IN THE ARTIFACT. The test is at test/domain/counterparty-identity.test.ts:72
+    and asserts rows length 24 at :79, identity keys 12 at :80 and baseline keys 24 at :86,
+    with both numbers printed by the console.log at :76. The composition test at test/domain/counterparty-identity.test.ts:89
+    asserts account-basis rows at least 8 at :102, distinct accounts at least 4 at :103 and
+    descriptor-basis rows at least 8 at :104.
+  - >-
+    MY OWN REPRODUCTION, not carried. I ran the committed harness against the fixture: npx
+    tsx test/fixtures/measure-identity-convergence.ts test/fixtures/belfius-counterparty-identity.pdf,
+    exit 0, printing rows 24, baseline-distinct-keys 24, identity-distinct-keys 12, identity-account-keys
+    4, identity-descriptor-keys 8, identity-rows-account-basis 16, identity-rows-descriptor-basis
+    8. The descriptor-basis count is exactly 8, which is the arithmetic the criterion fixes.
+  - >-
+    npm test in my own run: exit 0, Test Files 43 passed (43), Tests 665 passed (665), zero
+    skipped.
+- id: '12.2'
+  quote: >-
+    CONVERGENCE ON THE OWNER'S OWN MONTH. The phase work history records, with the exact command
+    that produced each number naming the COMMITTED harness path, and with no descriptor content,
+    the result of running the SHIPPED pipeline over the real Belfius document in memory: total
+    rows 39, distinct identity keys EXACTLY 20 against a recorded baseline of 25, of which
+    the account basis contributes EXACTLY 6 (baseline 11) and the descriptor basis EXACTLY
+    14 (baseline 14); and the same run over the real KBC card document records 22 rows and
+    EXACTLY 16 identity keys, unchanged from its baseline of 16. BOTH BOUNDS ARE BINDING.
+  met: true
+  evidence:
+  - >-
+    I REPRODUCED EVERY NUMBER MYSELF rather than reading the record. The two real documents
+    are present in this container. I ran the committed harness, in memory, counts only, nothing
+    written to disk: npx tsx test/fixtures/measure-identity-convergence.ts <the two real documents>,
+    exit 0. Current-account document: rows 39, rows-with-account 11, rows-with-name 0, baseline-distinct-keys
+    25, identity-distinct-keys 20, identity-account-keys 6, identity-descriptor-keys 14, identity-rows-account-basis
+    11, identity-rows-descriptor-basis 28, identity-singleton-keys 12. Card document: rows
+    22, rows-with-account 0, baseline-distinct-keys 16, identity-distinct-keys 16, identity-account-keys
+    0, identity-descriptor-keys 16. Every figure the criterion pins matches exactly, in both
+    directions, and 20 is not below its floor.
+  - >-
+    The record is at delivery/work-history/m3-p12.yaml:1055 and names the committed harness
+    path, not a scratchpad path. It carries counts only. The harness labels the two documents
+    document-1 and document-2 in argument order and derives no label from any outside file
+    name, which is what my own run printed.
+- id: '12.3'
+  quote: >-
+    NAMED ONCE, MATCHED AGAIN. A test in test/application/counterparty-identity-journey.test.ts
+    imports the fixture, asserts that a designated counterparty appears as ONE unresolved
+    group whose count is 3, calls assignMerchant EXACTLY ONCE against that group's identity
+    key (asserted by a call counter on the fake merchants port, which must read 1 at the end),
+    runs interpretation, and then asserts that a DIFFERENT transaction of the same counterparty,
+    differing in booking date, amount and free-text communication, now carries that merchant
+    id.
+  met: true
+  evidence:
+  - >-
+    The call counter is at test/application/counterparty-identity-journey.test.ts:88 through
+    :98 and is asserted to read 1 at :179. The single unresolved group and its count of 3
+    are asserted at :155 and :160. The three designated rows are asserted to share one counterparty
+    account and to differ in description, booking date and amount at :117 through :127. The
+    two transactions the naming was NOT made from are asserted by id at :186 and :187, and
+    the one it was made from at :185.
+  - Green in my own npm test run, exit 0.
+- id: '12.4'
+  quote: >-
+    DIFFERENT COUNTERPARTIES STAY DIFFERENT WHERE THE STORED VALUES DIFFER. A test asserts
+    that no two rows carrying different TRUSTED counterparty accounts share an identity key,
+    that no account-basis key equals any descriptor-basis key, and that the 12 identity keys
+    partition the 24 rows exactly as THE GENERATOR'S OWN INPUT RECORD says, row by row. A
+    check asserts regenerating the fixture reproduces both files byte for byte.
+  met: true
+  evidence:
+  - >-
+    The injectivity assertion is at test/domain/counterparty-identity.test.ts:127, and the
+    account-versus-descriptor disjointness at :136. The row-by-row partition against the generator's
+    input record IDENTITY_FIXTURE_ROW_TO_COUNTERPARTY is at :140 through :176, with the drift
+    case at :163 and the merge case at :171. The byte-for-byte regeneration check is at :178.
+  - >-
+    The oracle is the generator's INPUT record, imported from test/fixtures/generate-pdf-fixtures.ts,
+    not a transcription of counterpartyIdentity's output, so the function is not certified
+    against itself.
+- id: '12.5'
+  quote: >-
+    THIS PHASE STRIPS NOTHING NEW. For every row of every committed fixture that takes the
+    descriptor basis, the identity key is the lowercase literal descriptor namespace followed
+    by a suffix BYTE-IDENTICAL to the key the baseline commit produces. A separate test asserts
+    normaliseCounterparty never emits a lowercase letter. And git diff of the baseline against
+    this branch shows no change to the nine named stripping constants in src/modules/merchants/domain/normalise-counterparty.ts,
+    and the pinned regression table in test/domain/normalise-counterparty.test.ts is unchanged.
+  met: true
+  evidence:
+  - >-
+    I RAN THE GIT DIFF MYSELF. git diff 7f4aafb HEAD --stat -- src/modules/merchants/domain/normalise-counterparty.ts
+    test/domain/normalise-counterparty.test.ts returns EMPTY: both files are byte-identical
+    between the baseline commit and this head. No named constant can have changed, and the
+    pinned regression table is unchanged, because the files are the same bytes.
+  - >-
+    The byte-identity of the normaliser also settles the provenance question the pin's own
+    comment raises: whether test/fixtures/baseline-descriptor-keys.json was generated at 7f4aafb
+    is moot when the generating function has not moved. The comparison test is at test/domain/counterparty-identity.test.ts:217
+    and the no-lowercase assertion at :187.
+- id: '12.6'
+  quote: >-
+    A ROW MATCHING NO FAMILY IS NOT GUESSED AT. A test asserts that for a row carrying no
+    counterparty account whose descriptor the card predicate does not recognise, the identity
+    key is the descriptor namespace followed by exactly normaliseCounterparty(counterpartyText(row))
+    and its basis is descriptor. A test asserts the same of a row whose stored counterparty
+    account is empty or whitespace only, so no row is ever keyed on a bare namespace. A test
+    asserts no truncation, no opening-prefix key and no fallback bucket.
+  met: true
+  evidence:
+  - >-
+    test/domain/counterparty-identity.test.ts:256 for the unrecognised descriptor, :268 for
+    the empty-or-whitespace stored account, and :382 for the no-truncation, no-prefix, no-bucket
+    assertion. The bare-namespace family at :285 through :380 goes further than the criterion
+    asks: it witnesses that the descriptor branch CAN emit a bare namespace (:288), that the
+    matcher refuses a bare key (:303) and a bare PATTERN (:316), and that the review surface
+    offers no naming form for such a group (:344).
+- id: '12.7'
+  quote: >-
+    NO NAMING THE OWNER MADE IS DISCARDED, MEASURED AS EFFECT AND NOT AS ROWS. The before
+    and after (transactionId, merchantId) sets are compared and the after set must be a SUPERSET,
+    with exactly one admitted exception, the claimant licence. The whole of it is pinned by
+    ONE property-style test in test/property/rederive-loss-reporting.test.ts stating TWO biconditionals,
+    the first decided FROM MERCHANT IDENTITY ALONE. Six shapes are counted and each asserted
+    greater than zero. The properties are run against FOUR deliberately wrong predicates and
+    the fourth must go red on the FIRST biconditional.
+  met: true
+  evidence:
+  - >-
+    THE FOUR MUTANTS, RUN BY ME. npm run test:mutants exit 0. Its output names M1 reports
+    every change (round two), red on FIRST biconditional; M2 excludes a superseded rule's
+    whole claim from the before set (round three), red on FIRST; M3 asks only whether the
+    row is covered by ANYTHING after the run (round four), red on FIRST; M4 publishes one
+    promotion pair whose holder and source name DIFFERENT merchants (the forged lineage),
+    red on FIRST and on the SECOND lineage check. M3 is the one the criterion requires to
+    redden on the FIRST biconditional and it does. Two further mutants M5 and M6 and a SELF
+    discriminator entry are carried beyond what the criterion asks, and the SELF entry shows
+    the harness scoring a died run as died rather than as caught. The run ends restored: original
+    5970de574e530bc7, on disk 5970de574e530bc7.
+  - >-
+    The six shape counters are at test/property/rederive-loss-reporting.test.ts:404, incremented
+    at :472, :474, :477, :479, :482 and :484, printed at :492 and each asserted greater than
+    zero at :494 through :497. The two biconditionals are the subject of the test at :400.
+  - Green in my own npm test run, exit 0, 665 tests.
+- id: '12.8'
+  quote: >-
+    THE RE-DERIVATION IS IDEMPOTENT, AND IDEMPOTENT MEANS THE SAME ANSWER. A second run rewrites
+    zero patterns, adds zero rules, prints the same DECISION REPORT byte for byte and returns
+    the SAME exit code, with the matched-count columns excluded and the full merchant_rules
+    table still compared. The test runs against a seed containing at least one unpromotable
+    rule, at least one rule whose rows split across the two bases, and at least one merchant-conflict.
+  met: true
+  evidence:
+  - >-
+    test/application/rederive-merchant-rules.test.ts:659 is the byte-for-byte second-run test,
+    :684 asserts the seed really contains all three shapes so the idempotence is not measured
+    on an easy dataset, and :722 asserts a second run does NOT have to exit 0 because the
+    conflict persists, which is the contradiction the criterion warns against. The lineage
+    exclusion from the compared report is asserted separately at :1819.
+  - Green in my own npm test run.
+- id: '12.9'
+  quote: >-
+    FACTS ARE NOT REWRITTEN AND THE CHANGE IS A DERIVATION PLUS A RECOMPUTE. A test asserts
+    the re-derivation issues no write against the transactions table at all, and grep over
+    this phase's steps shows no step that updates a transaction fact field. Separately, a
+    test clears every transactions.merchantId, runs the existing recompute, and asserts the
+    identical assignment set returns.
+  met: true
+  evidence:
+  - >-
+    test/application/rederive-merchant-rules.test.ts:732 is the criterion 12.9 describe block
+    and :733 is the no-write-against-transactions test, which snapshots the facts and compares.
+    Green in my own npm test run.
+  - >-
+    The subject is the in-memory fake repository rather than a live Postgres. That is declared
+    as a deviation in delivery/work-history/m3-p12.yaml:1768 and I judge it below: the port
+    is the only surface on which issues no write is observable at all.
+- id: '12.10'
+  quote: >-
+    PREFIX AND PATTERN ARE SETTLED. A unit test asserts that a PREFIX rule whose pattern is
+    a proper prefix of an ACCOUNT-basis key returns undefined from matchRules, that a PATTERN
+    rule whose glob matches an account-basis key returns undefined, and that both kinds still
+    match a descriptor-basis key. A test asserts assignMerchant writes kind EXACT and only
+    EXACT. git diff shows NO change to the MerchantRuleKind enum, and grep of both files shows
+    the stated disposition.
+  met: true
+  evidence:
+  - >-
+    I RAN THE GIT DIFF MYSELF. git diff 1c24ead HEAD -- prisma/schema/merchants.prisma produces
+    only comment changes: filtering its added and removed lines for enum, EXACT, PREFIX and
+    PATTERN declarations returns nothing, so the MerchantRuleKind enum is untouched.
+  - >-
+    The disposition sentence, that no product surface writes either kind today, is present
+    in both files: prisma/schema/merchants.prisma carries it in the corrected pattern comment,
+    and src/modules/merchants/domain/merchant-rule.ts:1 through :14 carries the resolver header.
+    The D-40 refusal is asserted at test/property/pass-one-preserves-meaning.test.ts:142.
+- id: '12.11'
+  quote: >-
+    THE TWO SCREENS AGREE WHERE THEY ARE MEANT TO. A test runs the merchant review builder
+    and the overview fold over ONE dataset and asserts the same unresolved group keys and
+    the same row count per key, with three named divergences asserted at their named sites
+    rather than avoided by choosing a dataset without them. The SQL pin is updated to the
+    new fragment and still asserts it appears exactly once and that both reads use it.
+  met: true
+  evidence:
+  - >-
+    test/application/counterparty-identity-surfaces.test.ts:71 is the agreement test, :119
+    asserts the three divergences at their named sites, and :159 is the SQL-fragment-appears-exactly-once
+    pin. Green in my own npm test run.
+- id: '12.12'
+  quote: >-
+    THE MODULE BOUNDARY HOLDS. The MerchantResolver port still has exactly one member, asserted
+    by the existing key-set assertion in test/application/resolve-merchants.test.ts updated
+    to the new member name. The ledger's own counterpartyKey is unchanged, asserted by git
+    diff showing no change to src/modules/ledger/domain/corrections.ts.
+  met: true
+  evidence:
+  - >-
+    I RAN THE GIT DIFF MYSELF. git diff 1c24ead HEAD --stat -- src/modules/ledger/domain/corrections.ts
+    returns EMPTY: the file is byte-identical to the baseline, so no flow classification can
+    have moved.
+  - >-
+    The port key-set assertion is in test/application/resolve-merchants.test.ts, which this
+    branch modifies (79 lines changed) and which is green in my own npm test run.
+- id: '12.13'
+  quote: >-
+    NOTHING OF THE OWNER'S DATA REACHES THE REPOSITORY. npm run gate:privacy passes; every
+    identifier in the new fixture is listed in test/fixtures/allowed-identifiers.txt with
+    its provenance; the phase work history reports counts only and quotes no descriptor, counterparty,
+    place, amount or date from either real document; and the branch's commit messages carry
+    no data of any kind.
+  met: true
+  evidence:
+  - >-
+    I RAN IT. npm run gate:privacy exit 0, printing gate:privacy clean. That is the gate that
+    decides the identifier allow list and the commit-message half.
+  - >-
+    I READ THE 31 COMMIT SUBJECTS on this branch myself, git log 1c24ead..HEAD. None carries
+    an amount, a counterparty, a date from a row, or an account or card number. The work-history
+    measurement blocks I read at delivery/work-history/m3-p12.yaml:1055 and :1246 carry counts
+    only, and the two real documents are referred to by their 8-hex prefixes at delivery/work-history/m3-p12.yaml:3584,
+    which is the form fleet warning 9 requires.
+  - >-
+    A LIMIT I STATE RATHER THAN LEAVE IMPLIED, and it is the gate's own limit: gate:privacy
+    cannot see a merchant name, a place name, a date or an amount sitting inside a file, because
+    those look exactly like invented ones. I read the new fixture generator and the identifier
+    allow list rather than relying on the gate, and found no string I could tie to a real
+    document, but this criterion cannot be closed by any instrument in the tree.
+- id: '12.14'
+  quote: >-
+    THE STANDING GATE. npm run typecheck, npm run lint, npm test and npm run gate:privacy
+    all exit 0, and npm run test:e2e exits 0, each with its captured output in the phase work
+    history.
+  met: true
+  evidence:
+  - >-
+    EVERY GATE RUN BY ME IN THIS WORKTREE AT 2d82402, under node v22.12.0 which is what package.json
+    engines requires, with the local Docker stack pinned. npm run typecheck exit 0. npm run
+    lint exit 0. npm test exit 0, Test Files 43 passed (43), Tests 665 passed (665), duration
+    15.83s, zero skipped. npm run gate:privacy exit 0, gate:privacy clean. npm run gate:tokens
+    exit 0. npm run test:mutants exit 0.
+  - >-
+    THE SLOW GATE, RUN BY ME: npm run test:e2e exit 0, 55 passed (10.1m). Run with PULSE_GATE_*
+    pins and with the ambient DATABASE_URL, DIRECT_URL and SUPABASE_* names UNSET, which is
+    what src/platform/db/gate-target.ts now requires; the ambient values in this container
+    belong to a different deployed project. git status immediately after the run shows next-env.d.ts
+    UNCHANGED, so the round-eight commit that restored that generated file left it matching
+    what the run regenerates.
+- id: '12.15'
+  quote: >-
+    THE WHOLE-CORPUS EFFECT IS RECORDED, NOT ONLY THE HAPPY FIXTURE. The phase work history
+    carries one line per committed fixture with the distinct merchant-group count under the
+    baseline derivation and under the new one, produced by a committed script. Every fixture
+    whose new count is HIGHER is listed with the reason, and for each such fixture a test
+    asserts that naming both split groups with the SAME merchant name lands both under ONE
+    merchant id.
+  met: true
+  evidence:
+  - >-
+    The recoverability test is at test/application/counterparty-identity-surfaces.test.ts:177
+    and is green in my own npm test run. The per-fixture record is produced by the committed
+    harness test/fixtures/measure-identity-convergence.ts, which I ran myself over the committed
+    fixture and over both real documents, so the numbers are regenerable by anyone with the
+    repository.
+- id: '12.16'
+  quote: >-
+    THE ACCOUNT BASIS FAILS CLOSED, AND THIS IS THE GUARD ON H12.1 RATHER THAN CRITERION 12.4.
+    A unit test over WHOLLY INVENTED inputs asserts that an empty or whitespace account, an
+    account whose country code the table does not carry, an account whose length differs from
+    the table's entry, and an account failing ISO 7064 mod-97 each yield a DESCRIPTOR-basis
+    key. The TRUNCATION case is asserted end to end through the SHIPPED importer. FIFTH CASE:
+    the two-token row is asserted end to end and first-wins is PINNED.
+  met: true
+  evidence:
+  - >-
+    All six assertions are present and green in my own npm test run: test/domain/counterparty-identity.test.ts:400
+    is the control that a valid account IS trusted so the refusals are refusals, :407 empty
+    or whitespace, :416 unknown country code, :430 wrong length in both directions, :439 mod-97,
+    :459 the truncation case end to end through the shipped importer, and :568 the first-wins
+    pin naming the parked item.
+  - >-
+    THE CRITERION'S OWN DETERMINISM RATIONALE WAS FALSE AND HAS ALREADY BEEN CORRECTED IN
+    THE ARTIFACT'S PLAN, which I record because my dispatch brief carries the stale text.
+    The brief's copy asserts that a truncated value always carries a country code whose table
+    length is not sixteen. It does not: BE's own table length IS sixteen. The branch's plan
+    at delivery/plan/pulse-v02.yaml:7884 already quotes the false sentence, states WHY THAT
+    IS FALSE, and records the residual of roughly one in ninety-seven as real and open. The
+    counterexample is pinned as a test at test/domain/counterparty-identity.test.ts:510, which
+    asserts that two invented sources differing only in a fourth group store ONE identical
+    trusted value and produce ONE identity key, and which reddens if the source comment is
+    rewritten back to the determinism claim. The residual is sized on the owner's own rows
+    at delivery/work-history/m3-p12.yaml:1246: zero rows reach it today.
+- id: '12.17'
+  quote: >-
+    THE RE-DERIVATION HAS ONE NAMED INVOCATION POINT AND ONE STATED ORDER. package.json carries
+    a script that runs scripts/rederive-merchant-rules.ts, asserted by a test that reads package.json
+    and finds it; and decision D-46 states that it runs AFTER the code deploy and why, with
+    the script's own header carrying that same order and reason. THE DEPLOYED RUN IS OWED
+    BY M3-P16 AND IS NOT DROPPED HERE.
+  met: true
+  evidence:
+  - >-
+    package.json carries rederive:merchant-rules invoking tsx scripts/rederive-merchant-rules.ts,
+    and the test that reads package.json and finds it is at test/domain/counterparty-identity-contracts.test.ts:130.
+    Green in my own npm test run.
+  - >-
+    The script's own header carries the order and the reason at scripts/rederive-merchant-rules.ts:9
+    through :18, in the file itself rather than only in a plan.
+  - >-
+    The deployed run is recorded as owed rather than as done at delivery/work-history/m3-p12.yaml:1749,
+    which is what the criterion's own closing paragraph requires.
+- id: '12.18'
+  quote: >-
+    THE RULE SUBJECT IS VALIDATED AT THE WRITE BOUNDARY. assignMerchant returns a typed error,
+    and writes nothing, for a counterpartyText that does not begin with one of the two known
+    namespaces, and for an account-basis subject whose remainder is empty after compaction
+    or fails the trust gate. A test asserts each case, and an e2e test asserts that submitting
+    a PRE-MIGRATION un-namespaced key surfaces that error to the reader.
+  met: true
+  evidence:
+  - >-
+    The four refusals and the control are at test/application/counterparty-identity-surfaces.test.ts:223
+    (pre-migration un-namespaced key, writes NOTHING), :242 (account subject empty after compaction),
+    :262 (descriptor subject with nothing after the namespace), :278 (account subject failing
+    the trust gate) and :293 (a valid subject of either basis IS accepted, so the refusals
+    are refusals). The test at :317 asserts the guard this replaces is gone and the replacement
+    is in its place.
+  - >-
+    The browser witness is test/e2e/merchants.spec.ts, new in this branch, and the reader-facing
+    rendering is covered at test/application/counterparty-identity-surfaces.test.ts:580, which
+    asserts every refusal kind the use case can return is rendered by the screen. THE E2E
+    HALF IS WITNESSED BY MY OWN SLOW-GATE RUN: npm run test:e2e exit 0, 55 passed.
+- id: '12.19'
+  quote: >-
+    THE GOVERNING DOCUMENT SAYS WHAT THE CODE DOES. pulse-domain section 7's resolution chain
+    is amended in the same change to state that resolution keys on a namespaced counterparty
+    IDENTITY with two bases and that PREFIX and PATTERN never apply to an account basis. grep
+    shows the account basis inside that chain and no remaining sentence saying the key is
+    the normalised counterparty string.
+  met: true
+  evidence:
+  - >-
+    I READ THE FILE. .claude/skills/pulse-domain/SKILL.md:129 states that what a rule matches
+    on is the counterparty IDENTITY and quotes the old sentence as a correction rather than
+    leaving it standing; :133 states the account basis; :136 states the three trust tests;
+    :147 states that PREFIX and PATTERN never apply to an account-basis key; :151 states the
+    account basis normalises nothing; and :153 states the write-boundary validation. The only
+    occurrence of the old wording is the explicitly quoted correction at :129, which is clause
+    R-087's form and not a remaining assertion.
+  - >-
+    It goes further than the criterion asks, which I record because it matters: :138 states
+    the truncation residual the length test cannot close, on the governing document rather
+    than only in the plan.
+- id: '12.20'
+  quote: >-
+    THE RESIDUE IS COUNTED AND NAMED. The phase work history records, for each real document
+    and for the committed corpus, the number of rows whose identity key is shared with no
+    other row after the change and the number of DISTINCT such keys, alongside the same two
+    counts at the baseline. It names the two documents separately. No content is recorded.
+  met: true
+  evidence:
+  - >-
+    The harness prints exactly those counts and I ran it myself: for the current-account document
+    baseline-singleton-keys 21 and baseline-singleton-rows 21 against identity-singleton-keys
+    12 and identity-singleton-rows 12; for the card document baseline-singleton-keys 12 and
+    baseline-singleton-rows 12 against identity-singleton-keys 12 and identity-singleton-rows
+    12. The two documents are printed separately, as document-1 and document-2.
+  - >-
+    The record in the work history is at delivery/work-history/m3-p12.yaml:1055 and carries
+    counts only.
+- id: '12.22'
+  quote: >-
+    THE TRUST TABLE IS PINNED AND SOURCED. The country-length table is a committed constant
+    in the merchants domain, each entry carrying a country code and a length, with the ISO
+    13616 registry named as its source in a comment beside it. A regression test pins its
+    FULL contents. A separate test asserts the entry for the country of the committed fixtures
+    resolves to the length those fixtures use.
+  met: true
+  evidence:
+  - >-
+    test/domain/counterparty-identity.test.ts:594 pins the FULL contents of IBAN_LENGTH_BY_COUNTRY
+    and :619 asserts the entry for the fixtures' country resolves to the length they use,
+    so a wrong entry fails the FAST gate rather than only the work-history measurement. Both
+    green in my own npm test run.
+- id: '12.21'
+  quote: >-
+    PASS ONE CANNOT LOSE A RULE'S MEANING, FOR ANY KIND. A property test over generated (pattern,
+    key) pairs asserts that for every kind, matchRules applied to the namespaced pattern and
+    key returns exactly what matchRules applied to the bare pattern and key returns, and the
+    generator INCLUDES the empty pattern and an already-namespaced pattern. A separate assertion
+    covers the case the property test cannot generate: D-40's refusal.
+  met: true
+  evidence:
+  - >-
+    test/property/pass-one-preserves-meaning.test.ts:59 is the property, :83 asserts the generator
+    really does produce the two skipped shapes so the guards are reached rather than assumed,
+    :99 and :129 witness the two guards, and :142 is D-40's refusal, the case the property
+    cannot generate. All green in my own npm test run.
+- id: '12.23'
+  quote: >-
+    THE ROUTINE REFUSES A DATABASE IT WAS NOT TOLD TO WRITE TO, AND THE REFUSAL SHIPS IN THE
+    SAME MERGE AS THE ROUTINE. It requires an explicit target host AND project ref, resolves
+    the connection the way the command it guards resolves it, and refuses fail closed and
+    total on every named case, with one matching case PER ENDPOINT SHAPE. THE INTERLOCK HAS
+    NO OVERRIDE FLAG. No connection string, password or host is printed on any path. THIS
+    CRITERION WAS ADDED AFTER THIS PHASE'S IMPLEMENTATION WAS BUILT.
+  met: true
+  evidence:
+  - >-
+    IT IS NO LONGER MERELY OWED: it is built and it ships in this head. src/platform/db/target-guard.ts
+    with test/db/target-guard.test.ts, wired as the first thing scripts/rederive-merchant-rules.ts
+    does. The declared deviation at delivery/work-history/m3-p12.yaml:1855 records that this
+    is the next change the criterion names as owing it.
+  - >-
+    EVERY ENUMERATED REFUSAL CASE IS COVERED, as a table at test/db/target-guard.test.ts:95
+    through :140: no target given at all, host given but empty, ref given but empty, connection
+    absent, connection empty, connection unparseable, host mismatched on both shapes, ref
+    mismatched with the ref in the USERNAME, ref mismatched with the ref in the HOST, and
+    no ref in either field. The same-region case a host-only interlock would approve is at
+    :152. The ref-differs assertion is per shape at :37 and :47, and the matching case is
+    per shape at :75 and :80.
+  - >-
+    THE NO-OVERRIDE HALF IS ASSERTED IN BOTH DIRECTIONS: test/db/target-guard.test.ts:198
+    asserts no argument of any name makes a mismatch proceed, :230 asserts the module exports
+    no override symbol and its source names no escape hatch, and :323 asserts that the override
+    which clears the SIBLING guard does not clear this one, through the shipped command. The
+    refusal-before-any-repository-call half is at :282 and :303, and the no-printing half
+    at :163 and :495.
+  - >-
+    I RAN THE SHIPPED COMMAND MYSELF against a wholly invented non-local target with a mismatched
+    host and ref: npx tsx scripts/rederive-merchant-rules.ts --expect-host wrong.example.invalid
+    --expect-ref zzwrongref --household <a seed id>, exit 3, printing only that the resolved
+    connection's host is not the host given on the command line and that the resolved value
+    is deliberately not printed. No connection string, password, host or ref appeared.
+deviations-judged:
+- deviation: >-
+    Criterion 12.17, the half requiring the phase work history to record the command actually
+    run AGAINST THE DEPLOYED DATABASE with its exit code and its printed before-and-after
+    assignment-set sizes.
+  serves-plan-intent: true
+  reasoning: >-
+    The criterion resolves this against the implementer in its own text: the deployed run
+    is owed by M3-P16, whose entry condition IS the deploy, and decision D-46 forbids the
+    routine running before the code deploys. Recording it as owed is the only answer that
+    does not break the decision the same criterion pins. The other half, the named invocation
+    point, IS met: the test that reads package.json and finds the script is at test/domain/counterparty-identity-contracts.test.ts:130
+    and is green in my own run.
+- deviation: >-
+    Criteria 12.7, 12.8 and 12.9, which speak of "a seeded database" holding MerchantRule
+    rows written under the baseline derivation.
+  serves-plan-intent: true
+  reasoning: >-
+    It buys something the literal reading cannot. Criterion 12.9 asks that the routine issue
+    no write against the transactions table, which is observable on a port and invisible against
+    a real Postgres without a query log. The tree's application tests already seed test/application/fake-import-world.ts,
+    so this is the standing convention rather than a convenience, and it is declared rather
+    than assumed.
+- deviation: files-to-touch, which does not name .gitignore.
+  serves-plan-intent: true
+  reasoning: >-
+    The edit repaired a tracked node_modules symlink that published an absolute container
+    path into a public repository, and widened the ignore pattern that let it through. Fixing
+    the accident without closing the hole would have left the hole. The record also states
+    plainly that the blob remains reachable in the branch's own pushed history and that the
+    route taken, no rewrite because the phase squash-merges, is the orchestrator's decision
+    rather than this implementer's.
+- deviation: >-
+    files-to-touch, which does not name src/app/globals.css, test/e2e/, messages/en.json,
+    messages/nl.json, messages/fr.json or src/app/(app)/merchants/page.tsx.
+  serves-plan-intent: true
+  reasoning: >-
+    Every one of the six is criterion 12.18's doing: a refusal that must REACH THE READER
+    needs a status the route reads, a component that renders it, a message in each of the
+    three catalogues, a style for the banner and a browser witness. The criterion cannot be
+    met inside the declared set. I read the globals.css change myself: it adds two rule blocks
+    using design tokens only, no literal colour, font size or spacing, so it does not breach
+    the fourth non-negotiable. The entry also corrects the plan's conflicts-with statement
+    for M3-P9 rather than leaving a false checked claim standing, which I verified at delivery/plan/pulse-v02.yaml:8329.
+- deviation: >-
+    Criterion 12.1's composition clause, "at least 8 rows carry none", under its strict reading.
+  serves-plan-intent: true
+  reasoning: >-
+    This is the plan's defect and not the implementation's, and leaving the code alone is
+    right. Under the strict reading the criterion collides with the step that requires the
+    same fixture to carry the truncation-attack rows, which DO carry an account field and
+    fall to the descriptor basis. My own harness run confirms the arithmetic: rows-with-account
+    18 against identity-rows-account-basis 16, so exactly 8 rows take the descriptor basis
+    while only 6 carry no account field at all. The shipped test asserts the descriptor-basis
+    reading, which is the only one the plan admits.
+- deviation: Criterion 12.5's committed baseline table, test/fixtures/baseline-descriptor-keys.json.
+  serves-plan-intent: true
+  reasoning: >-
+    Adding an already-invented value to the identifier allow list with its provenance is exactly
+    what the privacy rule prescribes, and recording it because the fix round changed the file
+    beside it is more than the rule asks. npm run gate:privacy exits 0 in my own run.
+- deviation: >-
+    Step 13, "run the full gate before calling the slice done", read as one clean run of every
+    gate.
+  serves-plan-intent: true
+  reasoning: >-
+    Declaring the re-run rather than summarising it away is the honest form, and the failure
+    is recorded in its own gate-evidence entry rather than folded into a pass. My own slow-gate
+    run needed no re-run at all: npm run test:e2e exit 0, 55 passed, first attempt.
+- deviation: Criterion 12.23, added to the plan AFTER this implementation was built.
+  serves-plan-intent: true
+  reasoning: >-
+    The criterion names the next change to this phase as the one that owes it, and this is
+    that change, so building it is right rather than deferring it again. The declared consequence
+    is stated rather than hidden: because the interlock refuses a connection carrying no project
+    ref in either field, and a local Postgres connection carries none, the script cannot be
+    run against a local database at all. That is what the criterion specifies, and I confirmed
+    the refusal myself by running the shipped command against an invented non-local target,
+    exit 3.
+- deviation: >-
+    files-to-touch, which does not name src/platform/db/guard-cli.ts or src/platform/db/resolve-env.ts.
+  serves-plan-intent: true
+  reasoning: >-
+    src/platform/db/ IS in files-to-touch, so both files are inside the declared set; naming
+    the guard-cli edit anyway is more than the rule asks. The edit is required by criterion
+    12.23's own words, that the interlock must resolve the environment the way the command
+    it guards resolves it and that an interlock which does not is decorative. Sharing src/platform/db/resolve-env.ts
+    between the two is the only reading that makes the equivalence structural rather than
+    coincidental.
+- deviation: Criterion 12.17, the deployed run.
+  serves-plan-intent: true
+  reasoning: >-
+    Same judgement as the first entry, and recording it twice costs nothing: owed by M3-P16,
+    forbidden here by decision D-46.
+- deviation: >-
+    Criterion 12.23's consequence: the routine cannot be rehearsed against any database an
+    operator can create.
+  serves-plan-intent: true
+  reasoning: >-
+    It follows from the criterion's own requirement that a project ref be matched, and the
+    criterion is right to require it: fleet warning 5 records the session pooler as the only
+    IPv4-reachable endpoint, and on it a matching host proves the REGION and not the project.
+    Naming the cost is the correct treatment; engineering around it would reintroduce the
+    hole. The routine's behaviour is instead exercised by its tests and by process-level refusal
+    tests, which I ran and which are green.
+- deviation: files-to-touch, which does not name src/modules/overview/.
+  serves-plan-intent: true
+  reasoning: >-
+    The phase's own step 4 requires the overview's grouped counted read and the fold to key
+    on the identity, and the declaration names two files inside that module rather than the
+    module itself. The work is squarely inside the plan's intent and the gap is in the declaration.
+- deviation: >-
+    files-to-touch, which does not name playwright.config.ts, src/platform/db/gate-target.ts
+    or src/platform/db/guard.ts.
+  serves-plan-intent: true
+  reasoning: >-
+    The two platform files are inside src/platform/db/, which IS declared. playwright.config.ts
+    is not, and it is the only place the gate's unnamed-target refusal can be installed, since
+    the config is what spawns both web servers and is loaded in every worker. I verified that
+    it is the installation point myself: playwright.config.ts:28 calls enforceGateDbTarget
+    at module scope, and my own slow-gate run refused nothing only because I named the target
+    through the PULSE_GATE_* variables.
+- deviation: >-
+    Criterion 12.23, which requires the interlock to resolve the environment "the way the
+    command it guards resolves it" and describes that reading as ".env only for a variable
+    the shell does not carry OR carries empty".
+  serves-plan-intent: true
+  reasoning: >-
+    The equivalence is implemented by sharing src/platform/db/resolve-env.ts between the interlock
+    and guard-cli rather than by two copies that agree today, which is the only form that
+    stays true. The one accepted gap, a percent-encoded username, is documented as fail closed
+    and is asserted at test/db/target-guard.test.ts:186; a blocked run and a round trip is
+    the right direction to fail in.
+- deviation: >-
+    CRITERIA finding CR5-M3P12-11, which asks that a pass-two promotion adding no rule get
+    its own outcome token.
+  serves-plan-intent: true
+  reasoning: >-
+    A review finding carried into the record with its disposition, rather than silently dropped
+    or silently implemented, is the behaviour this process wants. It changes no code and hides
+    nothing.
+- deviation: >-
+    CRITERIA finding CR5-M3P12-05 and the dispatch that accepted it, both of which describe
+    the development-server refusal as gated on isProduction() being false.
+  serves-plan-intent: true
+  reasoning: >-
+    Correcting an earlier review's description in the record rather than inheriting it is
+    clause R-087 applied to a reviewer's own output, which is right. I verified the actual
+    gate myself: it is NODE_ENV not equal to development at src/platform/db/guard.ts:129,
+    not isProduction(). The correction is accurate, and it is the same sentence that makes
+    finding CR9-M3P12-02 possible.
