@@ -1021,6 +1021,66 @@ claims:
 
     which surfaced two hits the line-based form had split. Every hit is
     settled below.
+  settled-in-fix-round-three: |
+    THE CLAUSE'S OWN COMMAND, run exactly as written, over the lines THIS
+    ROUND ADDED rather than over the whole file, because the earlier hits are
+    settled below and re-listing them would bury the new ones:
+
+      git diff ce4f739..HEAD -- delivery/work-history/m3-p14.yaml \
+        | grep "^+" | grep -vE "^\+\+\+" \
+        | grep -nEi 'cannot be|impossible|needs a|is covered|catches|would catch|recovers|anyway|always|never|no way to'
+
+    Four hits. And the same pattern over the whitespace-flattened additions,
+    which surfaced no fifth:
+
+      git diff ce4f739..HEAD -- delivery/work-history/m3-p14.yaml \
+        | grep "^+" | tr '\n' ' ' | tr -s ' ' \
+        | grep -oEi '.{70}(cannot be|...|no way to).{70}'
+
+  settled-in-fix-round-three-hits:
+    - hit: >-
+        "THE NO-SUM BOUNDARY IS ASSERTED BY COUNTING, never by subtracting"
+        (fix-round-three, witness-seven and the-no-sum-boundary blocks)
+      settlement: >-
+        A description of what the assertion DOES, and it is checkable in the
+        spec: the assertion compares two arrays, the money strings under the
+        entry and the four rows' amounts, and performs no arithmetic on
+        either. Shown red four ways under
+        fix-round-three-subtotal-witness above.
+    - hit: >-
+        "COUNTS PER ACCOUNT and never an amount" (fix-round-three,
+        witness-seven-what-was-built)
+      settlement: >-
+        A quotation of the PLAN's step 8, marked as a quotation in the
+        surrounding sentence, and the block's whole point is that criterion
+        14.15 witness SEVEN supersedes it.
+    - hit: >-
+        "written into the spec by hand from the file's arithmetic and never
+        read back from the implementation" (fix-round-three,
+        the-amounts-are-hand-written)
+      settlement: >-
+        Checkable rather than asserted: the four strings are a literal
+        HELD_ROWS array at the top of the witness SEVEN spec in
+        test/e2e/accounts.spec.ts, and nothing in that test reads an amount
+        off the page to build an expectation. `grep -n "HELD_ROWS"
+        test/e2e/accounts.spec.ts` returns eight lines: the definition at
+        :801, the three pinned rows derived from it at :809 through :811, and
+        four uses at :886, :887, :905 and :910.
+    - hit: >-
+        "a test aimed at a heading cannot be failed by an invented row
+        descriptor" (fix-round-three, the-no-sum-boundary, the-other-half)
+      settlement: >-
+        RESTATED, because the unqualified form is stronger than what the code
+        does. What holds: the reduced text is built by cloning the entry and
+        removing every element carrying data-testid="held-row" before reading
+        innerText, so a descriptor inside a properly handled row does not
+        reach the balance-word check. What does NOT hold: a descriptor in a
+        row that LOST its handle would reach it. That state is not silent
+        either, because the money count then sees one string more than there
+        are handled rows, which is exactly the untagged-row-line witness
+        above going red. So the two checks cover each other rather than
+        either being airtight alone, and no single sentence about one of them
+        should be read as covering the pair.
   settled:
     - hit: >-
         "a model names, it never decides identity" (line 18)
@@ -2731,9 +2791,15 @@ fix-round-three:
       the account label, the period row count and the state copy and NOTHING
       ELSE, by exact string comparison after whitespace normalisation, in all
       three locales. Witness FIVE's balance-word check was moved onto that
-      same reduced text, so a test aimed at a heading cannot be failed by an
-      invented row descriptor that happens to carry a balance word in one of
-      the three languages.
+      same reduced text, so an invented row descriptor that happens to carry
+      a balance word in one of the three languages does not reach a check
+      aimed at the entry's own headings. QUALIFIED UNDER THE CLAIM CLAUSE
+      rather than left as written: that holds for a descriptor inside a
+      properly handled row, because the reduction removes elements by their
+      row handle. A descriptor in a row that LOST its handle would reach it,
+      and what catches that is the money count going one over, which is the
+      untagged-row-line witness below. The two checks cover each other;
+      neither is airtight alone.
 
   the-second-reserve-account:
     value-and-provenance: >-
@@ -3068,3 +3134,133 @@ fix-round-three-subtotal-witness:
     THE FAST GATE COULD NOT HAVE CAUGHT THIS and did not: it has no DOM and
     no computed style. The slow gate did, on its first run, which is the
     argument for running it rather than reasoning about it.
+
+fix-round-three-canonical-slow-gate:
+  note: >-
+    TWO RUNS ARE RECORDED AND THE FIRST IS KEPT rather than replaced by the
+    better number, because the first is the evidence for a regression this
+    round introduced and only the slow gate could see.
+  the-environment-and-how-it-was-pinned: >-
+    The container's AMBIENT variables again pointed DATABASE_URL, DIRECT_URL
+    and NEXT_PUBLIC_SUPABASE_URL at the owner's REAL remote project, which is
+    the environment finding recorded earlier in this file. The local Supabase
+    stack was not running when this round started; its containers were
+    already configured and came back up on their own once the docker daemon
+    was started, and nothing was created, reset or dropped. Every run below
+    pinned all three variables at 127.0.0.1 in the invoking shell and ran a
+    PRE-FLIGHT first that parses each URL and compares its HOST, refusing to
+    start on anything that is not local. The pre-flight prints OK or FAIL and
+    never a value. It checks the parsed host rather than a substring on
+    purpose: a credential or a database name can carry the word "localhost"
+    while the host is remote, and validating the SHAPE of a target instead of
+    its IDENTITY is the error family this file already records five members
+    of.
+    PRE-FLIGHT, before both runs:
+      OK   DATABASE_URL is local
+      OK   DIRECT_URL is local
+      OK   NEXT_PUBLIC_SUPABASE_URL is local
+      EXIT=0
+    `npx prisma migrate status` against that stack: "Database schema is up to
+    date!". This phase adds no migration.
+
+  run-1-the-one-that-found-the-regression:
+    started: 2026-08-26T06:49:52Z
+    conditions: 4.6G free at 88 percent, load average 1.90, cold production build.
+    result: "83 tests, 9 failed, 74 passed (15.3m), EXIT 1"
+    what-failed-and-why: >-
+      NINE, and eight of them are ONE cause. Four month-view tests in each of
+      the two projects reported "track count at 390" and "track count at 360"
+      offenders naming the month-account rows, at three tracks. The first
+      version of this round's held entry made the month row a FLEX COLUMN so
+      the head and the row list could stack. The phone geometry helper reads
+      getComputedStyle(row).gridTemplateColumns on every .month-row and
+      refuses more than two tracks; a real grid container resolves that to
+      used pixel values, two tokens, but a NON-grid box hands back the
+      specified value and "minmax(0, 1fr) auto" splits into THREE tokens on
+      whitespace. Fixed by making the head and the row list span both tracks
+      instead of turning the row into a flex column, and the reason is
+      recorded beside the rule in src/app/globals.css.
+    the-ninth: >-
+      The CONTROL ARM test, first in the run, failed in signUp on
+      `expect(getByTestId("household-context")).toHaveText(...)` with a
+      5000ms timeout and "element(s) not found". It is the first page the
+      dev server compiles in a run and it passed in run 2 in the same
+      position. Recorded as a cold-start timing failure and NOT as a defect,
+      and recorded rather than dropped because that is a judgement a reviewer
+      should be able to disagree with.
+    WHAT THIS RUN IS NOT: >-
+      IT IS NOT A CLEAN CANONICAL RUN AND IS NOT OFFERED AS ONE. Partway
+      through it, the subtotal red-witness experiment edited
+      src/modules/overview/ui/month-view.tsx three times and restored it,
+      which the dev server hot-reloads. That was careless and it is written
+      down rather than left out. The nine failures all predate or are
+      independent of those edits (the eight track-count failures are the
+      flex-column CSS, which was in the tree from the start of the run, and
+      the ninth is the first test in the run), but the run as a whole cannot
+      be quoted as a canonical result and run 2 is the one that is.
+
+  run-2-the-canonical-one:
+    started: 2026-08-26T07:14:57Z
+    conditions: >-
+      4.3G free at 89 percent, working tree CLEAN and committed before the
+      run, no edit of any kind made to src/ or test/ while it ran, ports 3000
+      and 3100 both verified free after sweeping three orphaned dev servers
+      left by the witness runs.
+    command: npm run test:e2e
+    result: "83 tests, 83 passed (14.3m), EXIT 0"
+    the-tests-this-round-added-or-changed: >-
+      WITNESS SEVEN passed at 17.1s in run 1 and again in run 2. The four
+      month-view phone tests that run 1 reddened all passed in run 2 in both
+      projects. The locale test, the 14.11 witness ONE test and the 15.9
+      journey, whose hand-written strings moved when the savings fixture
+      gained a row, all passed.
+    what-a-green-run-does-and-does-not-settle: >-
+      It settles criterion 14.10's and criterion 15.8's last clause at this
+      head, and it settles that witness SEVEN renders on a real page against
+      a real database. IT DOES NOT SETTLE CR-H2-01, the one canonical EXIT 1
+      on the healing journey that nobody has ever reproduced. This is the
+      sixth clean observation against that one red one. A green run is not
+      evidence that a rare failure has been fixed.
+
+fix-round-three-fast-gates-at-this-head:
+  when: 2026-08-26, after the canonical slow gate came back EXIT 0, on a clean tree.
+  captured: |
+    ### npm run typecheck            EXIT=0
+    ### npm run lint                 EXIT=0
+    ### npm run test                 EXIT=0
+        Test Files  39 passed (39)
+             Tests  505 passed (505)
+        Duration  6.87s
+        SKIPPED: zero. The reporter prints no skipped line and none of the
+        39 files is skipped; the count is stated because a bare "N pass,
+        exit 0" starts an investigation here rather than ending one.
+    ### npm run gate:privacy         EXIT=0   gate:privacy clean
+    ### npm run gate:tokens          EXIT=0   (no match under src/modules/*/ui)
+    ### npm run gate:diff-tokens     EXIT=0   gate:diff-tokens clean (src/app and src/modules/*/ui, added lines only)
+    ### npm run gate:work-history    EXIT=0   gate:work-history clean (every delivery yaml parses)
+    ### npm run gate:criteria-count  EXIT=0   gate:criteria-count clean
+    ### npm run test:e2e             EXIT=0   83 tests, 83 passed (14.3m)
+  the-three-axes: >-
+    TOOLCHAIN: node v26.7.0 resolved from /opt/nvm/versions/node/v26.7.0/bin
+    in the shell that ran every command, npm only, dependencies installed
+    with `npm ci` from the committed lockfile (EXIT 0) because this worktree
+    had no node_modules at the start of the round.
+    BUILD STATE: the fast gate needs no build; the slow gate built the
+    production bundle inside its own webServer, into .next-prod.
+    INVOCATION: exactly the commands above, from /home/user/wt-m3p14, with
+    the local-stack variables pinned in the invoking shell for the slow gate
+    and the pre-flight green before it started.
+  the-diff-scoped-token-grep-criterion-14-10-asks-for: >-
+    npm run gate:diff-tokens is that grep, committed as a script so it can be
+    re-run and shown red. EXIT 0 on this tree. Its coverage was re-probed
+    this round against nine shapes and eight are caught; the ninth, a bare
+    number in an ordinary object literal that is not a React style prop, is
+    correctly out of scope. The captured probe output is under
+    fix-round-three-finding-probes above. THE TWO NAMED EXCEPTIONS, unchanged:
+    a token DEFINITION in styles/tokens.css, and a value written inside a CSS
+    comment. This round added lines to src/app/globals.css and one of them is
+    a value inside a comment, the 360px the geometry rule explains itself in.
+  tokens-added-this-round: >-
+    NONE. Every value the held rows needed was already a token: --space-1,
+    --space-2, --space-4, --space-6, --text-sm and --color-ink-muted.
+
