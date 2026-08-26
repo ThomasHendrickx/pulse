@@ -157,6 +157,15 @@ export const listSpendGroups = (
 ): Promise<readonly CountedGroupRow[]> =>
   countedGroups(context, period, "SPEND");
 
+// THE RESERVES JOIN CANONICALISES BOTH SIDES (M3-P14, criterion 14.1 and
+// 14.4). It used to compare the stored strings raw, so a savings account
+// registered compact and a transfer row whose counterparty column the
+// source printed SPACED joined to nothing and the row rendered under its
+// account number instead of the label the household typed. The stored fact
+// column is never rewritten to fix that (pulse-domain section 2, rule 1);
+// the comparison canonicalises instead, the same rule as the ledger's
+// declared-set lookups. The SQL form mirrors canonicalAccountNumber in
+// src/platform/account-number.ts: uppercase, every whitespace removed.
 export const listReserveMovements = async (
   context: HouseholdContext,
   period: Period,
@@ -170,13 +179,16 @@ export const listReserveMovements = async (
     }[]
   >`
     SELECT
-      t."counterpartyIban"          AS "counterpartyIban",
+      upper(regexp_replace(t."counterpartyIban", '\s', '', 'g'))
+                                    AS "counterpartyIban",
       a."label"                     AS "label",
       SUM(t."amountCents")::bigint  AS "totalCents",
       COUNT(*)::bigint              AS "rowCount"
     FROM "transactions" t
     LEFT JOIN "accounts" a
-      ON a."iban" = t."counterpartyIban" AND a."householdId" = t."householdId"
+      ON upper(regexp_replace(a."iban", '\s', '', 'g'))
+         = upper(regexp_replace(t."counterpartyIban", '\s', '', 'g'))
+     AND a."householdId" = t."householdId"
     WHERE t."householdId" = ${context.householdId}::uuid
       AND t."flow" = 'RESERVE'::"Flow"
       AND t."counterpartyIban" IS NOT NULL

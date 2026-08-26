@@ -54,6 +54,7 @@
 //   assumption; the year-scoped key does not depend on it for dedup
 //   correctness (criterion 2.3's overlap witness).
 
+import { canonicalAccountNumber } from "@/platform/account-number";
 import { err, ok, type Result } from "@/platform/result";
 import type { Cents } from "@/platform/money";
 import { isValidPlainDate, plainDate, type PlainDate } from "@/platform/plain-date";
@@ -87,7 +88,14 @@ const TRANSACTION_START =
 // Belgian IBANs are two letters, two digits, twelve digits.
 const DESCRIPTION_IBAN = /\b([A-Z]{2}\d{2}(?:\s?\d{4}){3})\b/g;
 
-const compactIban = (text: string): string => text.replace(/\s/g, "");
+// THE PLATFORM CANONICAL FORM, not a local one (M3-P14, criterion 14.4).
+// This helper used to be a private `text.replace(/\s/g, "")` here, and it
+// was NAMED by that criterion as the second whitespace-removal in the tree.
+// It is replaced rather than kept as an exception: the platform form adds
+// an uppercase that this call site cannot observe (DESCRIPTION_IBAN and
+// BAND_LINE both match uppercase letters only), so the two agree on every
+// input this template can produce, and one form is one form.
+const compactIban = canonicalAccountNumber;
 
 const parseBelgianDate = (text: string): PlainDate | undefined => {
   const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(text);
