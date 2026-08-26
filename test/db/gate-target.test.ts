@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
@@ -342,69 +343,138 @@ describe("the mechanism is actually installed", () => {
   });
 
   // THE STANDING ANSWER to "can anything still reach a database nobody
-  // named", and it now SCANS instead of naming one file (fix round five,
-  // CRITERIA finding CR5-M3P12-08). The assertion above states a universal
-  // and checked a single hard-coded path, so a second spec opening a client
-  // would not have reddened it, and a Supabase admin client was not covered
-  // at all though one exists and writes. This walks every file under test/
-  // and scripts/ and requires each door to be guarded by the interlock that
-  // matches it.
-  const walk = (dir: string): string[] =>
-    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        return entry.name === "node_modules" ? [] : walk(full);
-      }
-      return entry.isFile() && /\.(ts|tsx)$/.test(entry.name) ? [full] : [];
-    });
+  // named".
+  //
+  // ITS DENOMINATOR IS NOW A DEFINITION AND NOT A LOCATION (fix round eight,
+  // CRITERIA finding CR7-M3P12-01). It used to walk two hard-coded roots,
+  // test/ and scripts/, while its title claimed EVERY door. THAT CLAIM WAS
+  // FALSE THE DAY IT SHIPPED, and this comment says so in place rather than
+  // deleting the sentence (clause R-087): prisma/seed.ts opens a Prisma
+  // client AND a Supabase service-role admin client, it is older than the
+  // scan, it sits one level from the repository root, and the scan never read
+  // it. An inclusion list silently excludes everything it does not name, so
+  // the walk is replaced by the TRACKED TREE and the exclusions are named
+  // out loud below, each with a reason.
+  //
+  // A door is a FILE THAT CONSTRUCTS A CLIENT, which is an identity, rather
+  // than a file that lives where doors have historically been written, which
+  // is a shape. Matching the shape is the standing error this repository has
+  // now recorded sixteen times.
+  const trackedSourceFiles = (): string[] =>
+    execFileSync("git", ["ls-files", "-z"], {
+      cwd: projectRoot,
+      encoding: "utf-8",
+      maxBuffer: 32 * 1024 * 1024,
+    })
+      .split("\0")
+      .filter((name) => name !== "" && /\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/.test(name));
 
-  test("EVERY door in test/ and scripts/ is guarded, whatever kind of client opens it", () => {
-    const files = [
-      ...walk(join(projectRoot, "test")),
-      ...walk(join(projectRoot, "scripts")),
-    ];
-    // The scan is only worth what it covers, so it says how much it read.
-    expect(files.length).toBeGreaterThan(30);
+  // THE EXCLUSIONS, each one a path and a reason. Nothing else is exempt, and
+  // a test below refuses an entry that has stopped being a door, so this list
+  // cannot quietly grow into a second inclusion list.
+  const ALLOWED_UNGUARDED: ReadonlyArray<{
+    readonly path: string;
+    readonly reason: string;
+  }> = [
+    {
+      path: "src/platform/db/client.ts",
+      reason:
+        "the APPLICATION's own runtime client, not a gate door: it is the single PrismaClient the Next.js server holds, it is never invoked by a test or a script, and it carries its own interlock instead, assessDevServerDbTarget in ./guard, which refuses a non-production server pointed at a deployed database. Calling the gate interlock here would refuse production, which is the one target this client legitimately opens.",
+    },
+  ];
 
-    // PROSE IS NOT A DOOR. This tree talks about `new PrismaClient()` in
-    // comments and in test titles more often than it calls it, so the scan
-    // reads CODE: line comments are dropped and quoted spans are blanked
-    // before the patterns are applied. Without this the scanner reports the
-    // sentence explaining the guard as a violation of it.
-    const codeOnly = (source: string): string =>
-      source
-        .split("\n")
-        .map((line) => line.replace(/\/\/.*$/, ""))
-        .join("\n")
-        .replace(/"[^"\n]*"|'[^'\n]*'|`[^`]*`/g, '""');
+  // A SECOND EXCLUSION WAS REMOVED RATHER THAN CARRIED OVER, and this note is
+  // here instead of a silent deletion (clause R-087). The two-directory walk
+  // skipped test/db/gate-target.test.ts by path, on the stated ground that
+  // "this file NAMES both interlocks in order to test them". That ground was
+  // already false when it was written: this file names them only inside
+  // string literals and comments, both of which codeOnly blanks, so the
+  // scanner never saw it as a door and the skip protected nothing. The
+  // staleness test below is what surfaced it, which is the point of having a
+  // staleness test.
 
-    const unguardedPrisma: string[] = [];
-    const unguardedAdmin: string[] = [];
-    for (const file of files) {
-      const raw = readFileSync(file, "utf-8");
+  const codeOnly = (source: string): string =>
+    source
+      .split("\n")
+      .map((line) => line.replace(/\/\/.*$/, ""))
+      .join("\n")
+      .replace(/"[^"\n]*"|'[^'\n]*'|`[^`]*`/g, '""');
+
+  type Door = {
+    readonly path: string;
+    readonly kind: "prisma" | "supabase-admin";
+    readonly guarded: boolean;
+  };
+
+  // PROSE IS NOT A DOOR. This tree talks about `new PrismaClient()` in
+  // comments and in test titles more often than it calls it, so the scan
+  // reads CODE: line comments are dropped and quoted spans are blanked before
+  // the patterns are applied.
+  const scanDoors = (): Door[] => {
+    const doors: Door[] = [];
+    for (const path of trackedSourceFiles()) {
+      const raw = readFileSync(join(projectRoot, path), "utf-8");
       const source = codeOnly(raw);
-      // This file NAMES both interlocks in order to test them, and the
-      // scanner would otherwise read itself as a door.
-      if (file.endsWith(join("test", "db", "gate-target.test.ts"))) {
-        continue;
-      }
-      if (
-        /new\s+PrismaClient\s*\(/.test(source) &&
-        !raw.includes("assertGateDbTargetIsLocal")
-      ) {
-        unguardedPrisma.push(file);
+      if (/new\s+PrismaClient\s*\(/.test(source)) {
+        doors.push({
+          path,
+          kind: "prisma",
+          guarded: raw.includes("assertGateDbTargetIsLocal"),
+        });
       }
       if (
         /SUPABASE_SERVICE_ROLE_KEY/.test(source) &&
-        /createClient\s*\(/.test(source) &&
-        !raw.includes("assertGateApiTargetIsLocal")
+        /createClient\s*\(/.test(source)
       ) {
-        unguardedAdmin.push(file);
+        doors.push({
+          path,
+          kind: "supabase-admin",
+          guarded: raw.includes("assertGateApiTargetIsLocal"),
+        });
       }
     }
-    expect({ unguardedPrisma, unguardedAdmin }).toEqual({
-      unguardedPrisma: [],
-      unguardedAdmin: [],
-    });
+    return doors;
+  };
+
+  test("the scan's denominator is the TRACKED TREE, not a list of directories", () => {
+    const files = trackedSourceFiles();
+    // The scan is only worth what it reads, so it says how much it read.
+    expect(files.length).toBeGreaterThan(100);
+    // THE ANCHOR THAT WOULD HAVE FAILED THE OLD DENOMINATOR: a door one level
+    // from the repository root, in neither walked directory. If this file
+    // stops being read, the scan has narrowed again.
+    expect(files).toContain("prisma/seed.ts");
+    // And the two roots the old walk knew about are still inside it.
+    expect(files.some((name) => name.startsWith("test/"))).toBe(true);
+    expect(files.some((name) => name.startsWith("scripts/"))).toBe(true);
+  });
+
+  test("EVERY door in the tracked tree is guarded, whatever kind of client opens it and wherever it sits", () => {
+    const exempt = new Set(ALLOWED_UNGUARDED.map((entry) => entry.path));
+    const unguarded = scanDoors()
+      .filter((door) => !door.guarded && !exempt.has(door.path))
+      .map((door) => `${door.path} (${door.kind})`);
+    expect(unguarded).toEqual([]);
+  });
+
+  test("the allow list carries no stale entry: every exemption is still a door", () => {
+    const doors = scanDoors();
+    for (const entry of ALLOWED_UNGUARDED) {
+      expect(entry.reason.length).toBeGreaterThan(60);
+      expect(doors.some((door) => door.path === entry.path)).toBe(true);
+    }
+  });
+
+  test("prisma/seed.ts, the door the old two-directory walk could not see, is guarded on BOTH of its clients", () => {
+    const seed = read("prisma", "seed.ts");
+    expect(seed).toContain("assertGateDbTargetIsLocal");
+    expect(seed).toContain("assertGateApiTargetIsLocal");
+    // Order is the whole point: refuse before a client exists.
+    expect(seed.indexOf("assertGateDbTargetIsLocal")).toBeLessThan(
+      seed.indexOf("new PrismaClient()"),
+    );
+    expect(seed.indexOf("assertGateApiTargetIsLocal")).toBeLessThan(
+      seed.indexOf("createClient("),
+    );
   });
 });
