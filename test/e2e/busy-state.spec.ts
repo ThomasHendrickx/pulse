@@ -234,6 +234,7 @@ const pressAndMeasure = async (
   name: string,
   control: Locator,
 ): Promise<PressResult> => {
+  console.log(`[busy-state] pressing ${name}`);
   const before = await collectTestidText(page);
   await armMeasurement(control);
   const clickAt = Date.now();
@@ -331,7 +332,7 @@ const signUpFreshAndMeasure = async (
 };
 
 test.describe("the busy state", () => {
-  test.setTimeout(300_000);
+  test.setTimeout(180_000);
 
   test("every submit control acknowledges the press before the server answers", async ({
     page,
@@ -355,7 +356,11 @@ test.describe("the busy state", () => {
     await expect(page.getByTestId("registered-account")).toHaveCount(2);
 
     // 3. the ring switch, on the account no fixture belongs to
-    const savingsRow = page.getByTestId("registered-account").filter({ hasText: "Savings" });
+    // Filtered on the LABEL cell rather than on the row's text: the row's
+    // own switch control carries the word "savings" in its label too.
+    const savingsRow = page.getByTestId("registered-account").filter({
+      has: page.getByTestId("registered-account-label").getByText("Savings", { exact: true }),
+    });
     results.push(
       await pressAndMeasure(page, probe, "ring switch submit", savingsRow.getByTestId("switch-account-ring")),
     );
@@ -368,8 +373,17 @@ test.describe("the busy state", () => {
     );
     await expect(page.getByRole("heading", { name: "Confirm the detected format" })).toBeVisible();
 
-    // 5. the preview-again submit, inside the disclosure it lives in
-    await page.getByRole("group").filter({ hasText: "Format spec" }).first().click().catch(() => undefined);
+    // 5. the preview-again submit, inside the disclosure it lives in.
+    //
+    // THE FORMAT NAME IS FILLED FIRST, and that is a real finding rather
+    // than test housekeeping: the preview-again control shares a form with
+    // a REQUIRED text field, so with that field empty the browser refuses
+    // the submission, no request is sent and NO BUSY STATE APPEARS. That is
+    // correct (nothing was submitted, so nothing is in flight), and it is
+    // measured here rather than asserted: the first run of this spec
+    // recorded requests=0 and no DOM change on this control alone, with
+    // every other control at single-digit milliseconds.
+    await page.getByLabel("Format name").fill("Demobank current account");
     const disclosure = page.locator("details.spec-editor");
     await disclosure.locator("summary").click();
     results.push(

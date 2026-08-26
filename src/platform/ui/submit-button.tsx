@@ -24,18 +24,35 @@ import { useFormStatus } from "react-dom";
 //
 // THE BUSY STATE IS FORM-WIDE AND THAT IS A CHOICE, not an oversight
 // (criterion 10.3, which allows either answer and forbids guessing).
-// useFormStatus reports one boolean for the form and does not say which
-// control was pressed; measured, its `action` field is a bound server
-// reference that is NOT identity-equal to the same action passed to this
-// leaf as a prop, so per-control attribution through it is not available.
-// The alternative, a local armed flag set in onClick, goes stale: press A,
-// let it settle, then press B, and A is still armed and lights up too.
-// So the rule is: while a form is in flight EVERY submit control in it is
-// busy and none of them is pressable. That satisfies "the pressed control
-// carries the busy affordance" and "no control in the form is pressable
-// while it is in flight", and it never lights up a control belonging to a
-// press that is over. Exactly one form in the product has two submit
-// controls (src/modules/import/ui/profile-confirmation.tsx).
+//
+// WHAT WAS MEASURED, because the plan required this question to be answered
+// rather than assumed. Driving a real press on the one form in the product
+// that has two submit controls
+// (src/modules/import/ui/profile-confirmation.tsx) and reading useFormStatus
+// out of both leaves at once:
+//
+//   pressed the overriding control (formAction prop present)
+//     that leaf:  pending true, action identical to its formAction prop TRUE
+//     other leaf: pending true, action identical to its (absent) prop FALSE
+//
+// So attribution IS reachable, and only in one direction: a control that
+// OVERRIDES its form's action can recognise its own submission by comparing
+// status.action with the action it was handed. A control that does not
+// override has no action of its own to compare against, so it could only be
+// attributed by threading the form's own action down into the leaf, which
+// is a prop every caller would have to remember to pass and would silently
+// mis-attribute if it forgot.
+//
+// THE CHOICE, AND THE ALTERNATIVE THAT WAS REJECTED. A local armed flag set
+// in onClick goes stale: press A, let it settle, then press B, and A is
+// still armed and lights up beside it. So the rule here is: while a form is
+// in flight EVERY submit control in it is busy and none of them is
+// pressable. That satisfies "the pressed control carries the busy
+// affordance" and "no control in the form is pressable while it is in
+// flight", it never lights up a control belonging to a press that is over,
+// and it needs no prop a caller can forget. The cost is one extra mark on
+// the one two-control form, whose second control sits inside a collapsed
+// disclosure.
 //
 // THE MINIMUM VISIBLE DURATION, which the plan does not settle and which
 // this leaf does (decision recorded in the phase work history). There is
