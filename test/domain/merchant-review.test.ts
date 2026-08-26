@@ -8,6 +8,10 @@ import { recomputeInterpretation } from "../../src/modules/ledger/application/in
 import { assignMerchant } from "../../src/modules/merchants/application/assign-merchant";
 import { listMerchantReview } from "../../src/modules/merchants/application/merchant-review";
 import { counterpartyText } from "../../src/modules/merchants/domain/merchant-review";
+import {
+  counterpartyIdentity,
+  identityBasisOfKey,
+} from "../../src/modules/merchants/domain/counterparty-identity";
 import { normaliseCounterparty } from "../../src/modules/merchants/domain/normalise-counterparty";
 import { foldGroups } from "../../src/modules/overview/domain/month-projection";
 import type { CountedGroupRow } from "../../src/modules/overview/domain/month-projection";
@@ -237,12 +241,22 @@ describe("criterion 6.2: over-stripping is refused", () => {
 });
 
 describe("the key space is closed under the pipeline, which is what makes a stored rule match (hazard H6.4)", () => {
-  // assign-merchant.ts normalises the submitted subject AGAIN before storing
-  // it, and the review form submits the already-normalised key, so a key the
-  // pipeline would strip further becomes a stored EXACT rule that matches
-  // NOTHING while every total stays right. This is the invariant, asserted
-  // over every group the fixture produces rather than over one example.
-  test("normalising any group's submitted subject returns that subject unchanged", async () => {
+  // CORRECTED IN M3-P12, LOUDLY RATHER THAN QUIETLY (clause R-087). This
+  // block used to say "assign-merchant.ts normalises the submitted subject
+  // AGAIN before storing it", and asserted that normalising any submitted
+  // subject returns it unchanged. Both halves are now FALSE and the second
+  // one would be actively harmful if left: assignMerchant stores the subject
+  // VERBATIM since M3-P12, because the subject is a counterparty identity
+  // key whose namespace is lowercase and normalising it would upper-case the
+  // namespace into a string no derivation can produce.
+  //
+  // The invariant the old test was protecting is real and survives in the
+  // form below: what must be a fixed point of the pipeline is the DESCRIPTOR
+  // SUFFIX, since that is the part the derivation recomputes on every read.
+  // An account-basis subject is not normalised at any point, by anything, so
+  // there is nothing for it to be closed under; what guards it instead is
+  // the trust gate.
+  test("every group's submitted subject is a namespaced identity key, and its descriptor suffix is a fixed point of the pipeline", async () => {
     const world = await importedWorld();
     const review = await reviewOf(world);
     const subjects = [...review.income, ...review.spend]
@@ -250,7 +264,12 @@ describe("the key space is closed under the pipeline, which is what makes a stor
       .filter((subject): subject is string => subject !== undefined);
     expect(subjects.length).toBeGreaterThan(0);
     for (const subject of subjects) {
-      expect(normaliseCounterparty(subject), subject).toBe(subject);
+      const basis = identityBasisOfKey(subject);
+      expect(basis, subject).toBeDefined();
+      if (basis === "descriptor") {
+        const suffix = subject.slice("descriptor:".length);
+        expect(normaliseCounterparty(suffix), subject).toBe(suffix);
+      }
     }
   });
 
@@ -345,12 +364,15 @@ describe("criterion 6.3: no card number in a key, in a rendered label, or on eit
       merchantName: null,
       primaryTag: null,
       counterpartyText: counterpartyText(row),
+      counterpartyAccount:
+        row.counterpartyIban === undefined ? null : row.counterpartyIban,
       isCash: false,
       totalCents: row.amountCents as Cents,
       rowCount: 1,
     }));
     const folded = foldGroups(rows, {
       useTags: false,
+      identity: counterpartyIdentity,
       normalise: normaliseCounterparty,
     });
     const carryingMonth: string[] = [];
@@ -450,10 +472,14 @@ describe("criterion 6.3: no card number in a key, in a rendered label, or on eit
       if (group.counterpartyText === undefined) {
         continue;
       }
-      // The submitted subject is the UNMASKED normalised text. Masking it
-      // would produce an EXACT rule that matches nothing (hazard H6.4).
+      // The submitted subject is the UNMASKED identity key. Masking it would
+      // produce an EXACT rule that matches nothing (hazard H6.4). Every row
+      // of this card fixture carries no counterparty account, so every
+      // subject here is descriptor-basis and its suffix is the label.
       expect(group.counterpartyText).not.toContain("****");
-      expect(group.counterpartyText).toBe(normaliseCounterparty(group.label));
+      expect(group.counterpartyText).toBe(
+        `descriptor:${normaliseCounterparty(group.label)}`,
+      );
     }
   });
 });

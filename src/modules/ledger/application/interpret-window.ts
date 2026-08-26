@@ -7,7 +7,7 @@
 
 import type { PlainDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
-import { counterpartyText } from "@/modules/merchants/application";
+import { counterpartyIdentity } from "@/modules/merchants/application";
 import { INTERPRETATION_WINDOW_PADDING_DAYS } from "../domain/constants";
 import { counterpartyKey } from "../domain/corrections";
 import { interpretLedger } from "../domain/interpret";
@@ -101,29 +101,40 @@ export const interpretWindow = async (
     const flow = interpretation.flows.get(transactionId);
     return flow === "INCOME" || flow === "SPEND";
   };
-  // The counterparty-source rule has ONE definition (decision D-11), and it
-  // is the merchants module's, reached through that module's published
-  // application interface rather than copied here. This file used to carry
-  // its own copy of the expression, which meant the ledger and the merchant
-  // review could silently disagree about which text a transaction resolves
-  // under while both looked right in isolation.
-  const merchantText = (transaction: LedgerTransaction): string =>
-    counterpartyText(transaction);
-  const countedTexts = [
+  // WHAT A TRANSACTION RESOLVES UNDER has ONE definition (decision D-11,
+  // and from M3-P12 decision D-37), and it is the merchants module's,
+  // reached through that module's published application interface rather
+  // than copied here. This file used to carry its own copy of the
+  // expression, which meant the ledger and the merchant review could
+  // silently disagree about which text a transaction resolves under while
+  // both looked right in isolation. It is now the counterparty IDENTITY: the
+  // counterparty account where the row carries a trusted one, the normalised
+  // descriptor otherwise, and DISTINCT IDENTITY KEYS are what cross the port.
+  const merchantKey = (transaction: LedgerTransaction): string =>
+    counterpartyIdentity({
+      description: transaction.description,
+      ...(transaction.counterpartyName === undefined
+        ? {}
+        : { counterpartyName: transaction.counterpartyName }),
+      ...(transaction.counterpartyIban === undefined
+        ? {}
+        : { counterpartyAccount: transaction.counterpartyIban }),
+    }).key;
+  const countedKeys = [
     ...new Set(
       transactions
         .filter((transaction) => isCounted(transaction.id))
-        .map(merchantText),
+        .map(merchantKey),
     ),
   ];
-  const resolvedMerchants = await deps.merchants.resolveCounterparties(
+  const resolvedMerchants = await deps.merchants.resolveIdentities(
     context,
-    countedTexts,
+    countedKeys,
   );
   const merchants = transactions.map((transaction) => ({
     transactionId: transaction.id,
     merchantId: isCounted(transaction.id)
-      ? (resolvedMerchants.get(merchantText(transaction)) ?? null)
+      ? (resolvedMerchants.get(merchantKey(transaction)) ?? null)
       : null,
   }));
 

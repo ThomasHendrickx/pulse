@@ -103,6 +103,7 @@ const countedGroups = async (
       merchantName: string | null;
       primaryTag: string | null;
       counterpartyText: string;
+      counterpartyAccount: string | null;
       isCash: boolean;
       totalCents: bigint;
       rowCount: bigint;
@@ -113,6 +114,7 @@ const countedGroups = async (
       m."name"                                              AS "merchantName",
       pt."name"                                             AS "primaryTag",
       ${COUNTERPARTY_TEXT_SQL}                              AS "counterpartyText",
+      t."counterpartyIban"                                  AS "counterpartyAccount",
       (t."description" ~* ${CASH_SQL_PATTERN})              AS "isCash",
       SUM(t."amountCents")::bigint                          AS "totalCents",
       COUNT(*)::bigint                                      AS "rowCount"
@@ -129,13 +131,14 @@ const countedGroups = async (
       AND t."flow" = ${flow}::"Flow"
       AND t."bookingDate" >= ${plainDateToDbDate(period.from)}
       AND t."bookingDate" <= ${plainDateToDbDate(period.to)}
-    GROUP BY 1, 2, 3, 4, 5
+    GROUP BY 1, 2, 3, 4, 5, 6
   `;
   return rows.map((row) => ({
     merchantId: row.merchantId,
     merchantName: row.merchantName,
     primaryTag: row.primaryTag,
     counterpartyText: row.counterpartyText,
+    counterpartyAccount: row.counterpartyAccount,
     isCash: row.isCash,
     totalCents: cents(Number(row.totalCents)),
     rowCount: Number(row.rowCount),

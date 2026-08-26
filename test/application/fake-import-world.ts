@@ -7,7 +7,7 @@
 
 import { statementParser } from "../../src/modules/import/adapters/statement-parser";
 import { interpretForImport } from "../../src/modules/ledger/application/interpret-window";
-import { resolveCounterparties } from "../../src/modules/merchants/application/resolve-counterparties";
+import { resolveIdentities } from "../../src/modules/merchants/application/resolve-identities";
 import type { MerchantRuleLike } from "../../src/modules/merchants/domain/merchant-rule";
 import type {
   MerchantRecord,
@@ -387,6 +387,23 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       merchants.push(merchant);
       return merchant;
     },
+    // M3-P12: pass one of the re-derivation rewrites a pattern in place.
+    // Household ownership is checked here the same way the adapter checks it.
+    updateRulePattern: async (context, input) => {
+      const existing = rules.find(
+        (rule) =>
+          rule.householdId === context.householdId && rule.id === input.ruleId,
+      );
+      if (existing === undefined) {
+        throw new Error(
+          "updateRulePattern: rule does not belong to the household",
+        );
+      }
+      declarationWriteCount += 1;
+      const updated = { ...existing, pattern: input.pattern };
+      rules[rules.indexOf(existing)] = updated;
+      return updated;
+    },
     upsertRule: async (context, input) => {
       // Finding CR-401, mirrored from the adapter: the merchant the rule
       // points at must belong to the calling household.
@@ -510,6 +527,9 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
           ...(stored.counterpartyName === undefined
             ? {}
             : { counterpartyName: stored.counterpartyName }),
+          ...(stored.counterpartyIban === undefined
+            ? {}
+            : { counterpartyAccount: stored.counterpartyIban }),
           ...(stored.merchantId === undefined
             ? {}
             : { merchantId: stored.merchantId }),
@@ -640,8 +660,8 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
     // interpretation's whole merchants surface is this one read-only
     // function (criterion 3.2).
     merchants: {
-      resolveCounterparties: (context, texts) =>
-        resolveCounterparties(context, { merchants: merchantsPort }, texts),
+      resolveIdentities: (context, identityKeys) =>
+        resolveIdentities(context, { merchants: merchantsPort }, identityKeys),
     },
   };
 

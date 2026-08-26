@@ -7319,11 +7319,21 @@ phases:
           environment warnings: npm run typecheck, npm run lint, npm test,
           npm run gate:privacy, then npm run test:e2e.
     files-to-touch:
-      - src/modules/merchants/domain/normalise-counterparty.ts
+      - >-
+        src/modules/merchants/domain/counterparty-identity.ts (the ONE
+        exported pure derivation step 2 adds, this phase's own subject; it is
+        a NEW file beside the normaliser and not an edit to it)
       - src/modules/merchants/domain/merchant-review.ts
       - src/modules/merchants/domain/merchant-rule.ts
       - src/modules/merchants/application/assign-merchant.ts
       - src/modules/merchants/application/resolve-counterparties.ts
+      - >-
+        src/modules/merchants/application/resolve-identities.ts (the resolver
+        after step 4 renames the port member, replacing what
+        resolve-counterparties.ts did)
+      - >-
+        src/modules/merchants/application/rederive-rules.ts (the two-pass
+        re-derivation step 5 adds, which the committed script below invokes)
       - src/modules/merchants/application/ports.ts
       - src/modules/merchants/application/index.ts
       - src/modules/merchants/adapters/merchant-repository.ts
@@ -7334,7 +7344,48 @@ phases:
       - src/modules/overview/domain/month-projection.ts
       - src/modules/merchants/ui/actions.ts
       - src/modules/merchants/ui/merchant-review.tsx
+      - >-
+        src/app/(app)/merchants/page.tsx (the thin route reads the status the
+        assignment action redirects with, so a refused naming reaches the
+        screen instead of being swallowed at the boundary, criterion 12.18)
+      - >-
+        src/app/globals.css (the refusal banner criterion 12.18 surfaces and
+        the muted line a group that cannot be named renders in place of the
+        naming form; CLAUDE.md rule 4 puts both in the stylesheet with tokens
+        rather than in the component)
+      - >-
+        messages/en.json (the refusal lines criterion 12.18 surfaces to the
+        reader and the label an unnameable group carries; a phase that adds a
+        user-facing line adds it to all THREE catalogues in the same change,
+        because CLAUDE.md rule 2 admits no untranslated string and M3-P1's
+        catalog parity test reddens on a key present in one catalogue and
+        absent from another, so the two entries below are not optional and
+        this reason will recur in every phase that adds copy)
+      - messages/nl.json
+      - messages/fr.json
+      - >-
+        src/modules/overview/application/ (the third of step 4's four places
+        reaches the fold through injected dependencies rather than an import,
+        which is the module boundary pulse-domain section 9 draws, so the
+        derivation and the bare-key floor are wired in here and the domain
+        stays import-free)
+      - >-
+        src/modules/overview/ui/month-view.tsx (the fifth consumer, found in
+        fix round three: a group that carries no counterparty text renders no
+        label at all on the month view, and it takes the same copy its
+        sibling review screen took for the same rows)
+      - >-
+        playwright.config.ts (the target enforcement at module scope, before
+        any server is spawned, plus the pinned target spread into both
+        webServer env blocks; an e2e run opens a database and criterion
+        12.23's rule is not a rule if the suite is exempt from it)
       - prisma/schema/merchants.prisma
+      - >-
+        prisma/seed.ts (the registered seed hook opens a Prisma client and a
+        service-role admin client out of the environment with no target
+        assertion of its own, so the interlock this phase ships has to reach
+        it, and the scan that holds every such door to the rule reads the
+        tracked tree rather than test/ and scripts/ only)
       - package.json (the named invocation point for the re-derivation)
       - .claude/skills/pulse-domain/SKILL.md (section 7's resolution chain)
       - src/platform/db/ (the target interlock, criterion 12.23)
@@ -7343,6 +7394,24 @@ phases:
       - test/application/
       - test/db/
       - test/fixtures/
+      - >-
+        test/property/ (pass one preserving every kind's meaning, criterion
+        12.21, and the loss-reporting biconditionals, criterion 12.7, both of
+        which are stated over generated worlds rather than examples)
+      - >-
+        test/e2e/ (the pre-migration submission an open page makes across the
+        deploy, criterion 12.18, and the target assertion the specs that open
+        a project of their own carry beside it)
+      - >-
+        .gitignore (NOT REACH AND THE ENTRY SAYS SO. This branch's own add -A
+        sweep tracked a node_modules symlink whose single line is an absolute
+        container path, which is a machine-local path published into a public
+        repository; the ignore rule is widened from a directory-only form to
+        one that also matches the symlink, and the blob is untracked, on this
+        branch because this branch is what created it. It is declared so that
+        the declaration equals the diff, and it is glossed as a repair rather
+        than as identity work so that no later phase reads it as a precedent
+        for carrying unrelated edits.)
     extras:
       - scripts/rederive-merchant-rules.ts
       - test/fixtures/allowed-identifiers.txt
@@ -7484,42 +7553,269 @@ phases:
           when their full normalised descriptors are equal.
       - id: "12.7"
         criterion: >-
-          NO NAMING THE OWNER MADE IS DISCARDED, MEASURED AS EFFECT AND NOT
-          AS ROWS. Against a seeded database holding MerchantRule rows written
-          under the baseline derivation, the test compares the set of
-          (transactionId, merchantId) pairs recompute produces BEFORE the
-          re-derivation with the set it produces AFTER, printing both sizes,
-          and asserts the after set is a SUPERSET of the before set: no
-          transaction that carried a merchant id loses it, and no transaction
-          changes from one merchant to another. SELECT COUNT(*) FROM
-          merchant_rules before and after is reported beside it and is NOT by
-          itself sufficient, and the plan says why: a rule left byte-identical
-          survives as a row and, once the key has changed under it, matches
-          nothing, so the row count is preserved while the naming is dead. The
-          routine prints one line per rule it touched carrying the rule id,
-          the pass, the new basis, the number of transactions the old pattern
-          matched and the number the new pattern matches, and lists separately
-          every rule whose matched count INCREASED, which is the broadening
-          decision D-45 authorises and makes visible. It exits non-zero on
-          exactly two conditions: a merchant-conflict, meaning two rules for
-          DIFFERENT merchants would collide on one new pattern, which is a
-          genuine ambiguity a person must settle; and a LOST assignment,
-          meaning the superset test above fails. Every other outcome,
-          including a rule that could not be promoted, is printed, counted and
-          exits 0, because a rule left safely in place is not a reason to
-          block a deploy. A test asserts the routine issues no UPDATE and no
-          DELETE against any pattern written under the ACCOUNT namespace and
-          never rewrites a descriptor pattern into an account one, so
-          promotion is additive and the declaration the owner made survives
-          the run verbatim, which is what answers pulse-domain section 2's
-          classification of MerchantRule as a declaration the engine does not
-          rebuild. THE TWO BLOCKING CONDITIONS HAVE AN ACKNOWLEDGE
-          PATH, decided deliberately rather than left as an unreachable green:
-          the routine accepts a flag naming the specific rule ids whose
-          conflict or lost assignment a person has seen and accepted, exits 0
-          for exactly those, and prints them as accepted; a test asserts the
-          flag clears only the ids it names and clears nothing else. No criterion in this phase is met by a run that
-          removed a rule row or lost an assignment.
+          NO NAMING THE OWNER MADE IS DISCARDED, MEASURED AS EFFECT AND NOT AS ROWS.
+          Against a seeded database holding MerchantRule rows written under the
+          baseline derivation, the test compares the set of (transactionId,
+          merchantId) pairs that holds BEFORE the re-derivation with the set that
+          holds AFTER it, printing both sizes, and asserts the after set is a
+          SUPERSET of the before set: no transaction that carried a merchant id
+          loses it, and no transaction changes from one merchant to another. THE
+          BEFORE SET IS NOT WHAT THE SHIPPED RECOMPUTE PRODUCES, and this criterion
+          fixes it here rather than leaving it to the routine, because the shipped
+          matcher is handed identity keys only, so a before set produced that way
+          over a seed of baseline rules is EMPTY BY CONSTRUCTION and makes every
+          clause below vacuous while the run still writes. Each stored rule is read
+          under the key space its OWN pattern is written against: a pattern carrying
+          no known namespace against the pre-phase normalised counterparty key, a
+          namespaced pattern against the identity key, with the matcher's own
+          tie-break applied within each space, and THE PRE-PHASE SPACE IS CONSULTED
+          FIRST, the identity space only for a row no un-namespaced rule reaches.
+          The order is fixed here rather than left open because a row of the seeded
+          mixed table is claimed in BOTH spaces at once, by the superseded rule
+          under the pre-phase key and by its claimant under the identity key, and
+          the order is what decides whether that row's before merchant is the
+          superseded rule's, which is the state this criterion's exception exists to
+          carry, or the claimant's, in which case nothing ever changes hands and the
+          exception is unreachable; a test asserts on exactly that seed that the
+          before merchant is the superseded rule's. THE PRE-PHASE KEY IS
+          BASIS-AGNOSTIC AND THIS CRITERION SAYS SO RATHER THAN LEAVING IT TO BE
+          INFERRED: it is the normalised counterparty text of EVERY row, including a
+          row that takes the ACCOUNT basis after this phase, because that text is
+          what the rule was compared against when the owner wrote it. That is not a
+          detail. A bare rule therefore claims two kinds of row, one the namespaced
+          claimant matches by construction and one it can NEVER match, and dropping
+          the second is how round three's wholesale exclusion hid a real loss: the
+          row leaves BOTH sides of the comparison, so nothing covering it afterwards
+          is not a change and not a loss. A test asserts, on a seed of one
+          un-namespaced rule and two rows, one taking each basis, that the before
+          set contains BOTH and resolves both to that rule's merchant. The after set
+          is read under the identity key alone and against the rule set the run
+          WOULD write, so a run that blocks compares the state it would have
+          produced rather than one it did. A test asserts, over a seed of
+          un-namespaced rules, that the before set is NON-EMPTY and that its size is
+          the number of rows those rules reach under the pre-phase key, so an
+          implementation whose before set is empty is RED here rather than green
+          everywhere. THAT SUPERSET PROPERTY HAS EXACTLY ONE ADMITTED EXCEPTION, AND
+          THE EXCEPTION IS WRITTEN HERE RATHER THAN LEFT TO THE CODE, because the
+          routine has carried one in a comment since its third rewrite while this
+          criterion admitted none, so every fix round re-derived from scratch what a
+          supersede means, got it slightly differently, and had nothing to check a
+          repair against. THE EXCEPTION, AND THERE IS NO OTHER. Where pass one
+          leaves a rule in place because a NAMESPACED rule of the same kind already
+          holds the pattern that rule would have been rewritten to, that namespaced
+          rule is the CLAIMANT of the superseded one, and a transaction that
+          resolved through the superseded rule before the run may come out of the
+          run resolving through the claimant instead and carrying the claimant's
+          merchant; that is not a lost assignment, is not reported as one, and does
+          not block. THE TEST IS DESCENT AND NEVER COVERAGE: the rule holding the
+          row AFTER the run must BE that specific claimant, or must be the rule
+          carrying that claimant's own promotion into the account key space, which
+          is the only other way one claim reaches a row whose basis changed under
+          it. Coverage by any other rule, however it arose, is NOT licensed, and it
+          splits on the merchant that other rule carries. Where the row ends at a
+          merchant that is neither the one it carried before nor the one the
+          claimant carries, or ends covered by nothing at all, it is a LOST
+          assignment: reported with the transaction id and the id of the rule that
+          HELD the assignment, blocking, and clearing only through the acknowledge
+          path below. Where the row ends at the CLAIMANT'S OWN MERCHANT through a
+          rule outside the lineage, it is reported, printed and counted under its
+          own name as the CLAIMANT-MERCHANT class, carrying the transaction id, the
+          id of the rule that held it and the id of the rule that holds it now, and
+          the run exits 0. THE CLAIMANT-MERCHANT CLASS IS NOT A LOST ASSIGNMENT AND
+          A RUN THAT REPORTS THE TWO UNDER ONE NAME DOES NOT MEET THIS CRITERION,
+          and what it costs is stated rather than estimated, because it is not one
+          flag: this is the ordinary shape of a MIXED-BASIS group, where the
+          claimant's promotion is declined because one row of the group carries no
+          trusted account while the account half of that same counterparty is held
+          by the owner's own later naming, so the row already carries that merchant
+          under the deployed code and nothing moved. Criterion 12.1 requires the
+          phase's own fixture to carry both bases and criterion 12.15 prescribes
+          naming both halves of a split group as the owner's recovery path, so this
+          arrives on an ordinary run rather than in a corner, and blocking it would
+          stop an ordinary migration on a loss that did not happen while spending
+          the acceptance ceremony criterion 16.2 imposes, which is an owner decision
+          recorded in the work history, on the outcome that is not a loss. REJECTED,
+          and recorded so the next round does not reopen it: extending the licence
+          with a third published relation for a rule already holding the account
+          pattern of a row the claimant matched. It buys nothing this class does
+          not, since the row ends at the claimant's own merchant either way, and it
+          would add a third relation to verify inside the one mechanism this
+          amendment exists to stop rewriting. IN BOTH ADMITTED CASES THE MERCHANT
+          THE ROW ENDS AT IS THE CLAIMANT'S OWN, which is the invariant to read this
+          whole criterion by: no run may leave a transaction carrying a merchant
+          that is neither the one it carried before nor the one carried by the
+          claimant of the rule it previously resolved through, and every departure
+          from that is a LOST assignment whatever else is true of it. THE EXCEPTION
+          IS FOR AN EXACT COLLISION AND FOR NO OTHER KIND, since the argument that
+          an un-namespaced pattern is already dead is an argument about EQUALITY and
+          holds for neither other kind. A same-merchant PREFIX or PATTERN collision
+          SKIPS and records no claimant, because the twin carries the same merchant
+          and no row the twin takes over can change hands; where a THIRD rule takes
+          such a row instead, which a live un-namespaced PREFIX or PATTERN rule
+          makes possible, the change is REPORTED rather than licensed, and the
+          criterion says so plainly rather than claiming the change cannot occur,
+          because an implementer who believes it cannot will write an assertion
+          where a report belongs. A different-merchant PREFIX or PATTERN collision
+          BLOCKS as an ordinary merchant-conflict on the ordinary acknowledge path.
+          A run that records a claimant for a PREFIX or a PATTERN rule, or that
+          admits the licence for one, does not meet this criterion. THE CHECK
+          COMPARES PUBLISHED IDENTITIES AND NEVER RE-DERIVES ONE. The routine
+          already knows which rule superseded which and which rule carries whose
+          promotion, and it PUBLISHES both relations as pairs of rule ids, never as
+          patterns: the superseded rule to its claimant, and a rule carrying an
+          account-basis promotion to the descriptor rule that promotion was made
+          from. A promotion this run inserts is named by a placeholder whose
+          correspondence this criterion fixes rather than a code comment: it is the
+          one-based position of that insert in the batch the routine hands to its
+          write port, in that order, and its form is one no database id of this
+          schema can take, asserted by construction in the way criterion 12.5
+          asserts non-collision for the two key namespaces. THE PUBLISHED LINEAGE IS
+          NOT PART OF THE DECISION REPORT CRITERION 12.8 COMPARES BYTE FOR BYTE,
+          stated here so it is not rediscovered as a red second run: a promotion is
+          named by its placeholder on the run that inserts it and by its database id
+          on every run after, so the lineage legitimately differs between two runs
+          whose DECISIONS are identical, which is hazard H12.27's shape exactly. The
+          comparison reads those ids and decides descent from them alone. A
+          predicate asking whether the row is covered by ANYTHING after the run, or
+          one that re-derives which rule could have covered it, does not meet this
+          criterion however green it runs, and this sentence is here because that
+          reading shipped once and hid a reassignment. THE PUBLISHED LINEAGE IS NOT
+          SELF-CERTIFYING EITHER, AND BOTH RELATIONS ARE CHECKED, because the
+          licence reads both and a verification covering one leaves the other as the
+          escape hatch. A test checks every published claimant pair against the
+          seeded table: the claimant is a rule of the same kind whose pattern is
+          exactly the namespaced form of the superseded rule's pattern. A test
+          checks every published promotion pair the same way: the source is a
+          descriptor-namespaced rule this run could promote, the promoted rule
+          carries the SAME merchant id as its source, and its pattern is the account
+          namespace followed by the one trusted compacted account carried by every
+          row the source matched under the pre-phase key; and each placeholder is
+          resolved against the write batch the routine ISSUED rather than against
+          the report's own account of itself, because the licence is granted by an
+          identity comparison and a placeholder only the report can resolve is not
+          an identity. A run that publishes a pair failing any of that does not meet
+          this criterion, and licensing a change through a pair it published but did
+          not make is the same defect as inventing a claimant. SELECT COUNT(*) FROM
+          merchant_rules before and after is reported beside it and is NOT by itself
+          sufficient, and the plan says why: a rule left byte-identical survives as
+          a row and, once the key has changed under it, matches nothing, so the row
+          count is preserved while the naming is dead. The routine prints one line
+          per rule it touched carrying the rule id, the pass, the new basis, the
+          number of transactions the old pattern matched and the number the new
+          pattern matches, and lists separately every rule whose matched count
+          INCREASED, which is the broadening decision D-45 authorises and makes
+          visible. It exits non-zero on exactly two conditions: a merchant-conflict,
+          meaning two rules for DIFFERENT merchants would collide on one new
+          pattern, which is a genuine ambiguity a person must settle; and a LOST
+          assignment as defined above. Every other outcome, including a rule that
+          could not be promoted, a rule superseded by a claimant and a row reported
+          in the claimant-merchant class, is printed, counted and exits 0, because a
+          rule left safely in place is not a reason to block a deploy. A test
+          asserts the routine issues no UPDATE and no DELETE against any pattern
+          written under the ACCOUNT namespace and never rewrites a descriptor
+          pattern into an account one, so promotion is additive and the declaration
+          the owner made survives the run verbatim, which is what answers
+          pulse-domain section 2's classification of MerchantRule as a declaration
+          the engine does not rebuild. THE TWO BLOCKING CONDITIONS HAVE AN
+          ACKNOWLEDGE PATH, decided deliberately rather than left as an unreachable
+          green: the routine accepts a flag naming a merchant-conflict by RULE ID
+          and a lost assignment by the PAIR of rule id and transaction id, exits 0
+          for exactly those, and prints them as accepted. THE PAIR IS THE
+          GRANULARITY FOR A LOSS AND A BARE RULE ID IS NOT, because one rule can
+          hold a real loss on one row and an ordinary claimant-merchant report on
+          another, so a flag that clears a rule clears rows the person never saw,
+          which is the shape M3-P16's hazard H16.3 names. A test asserts that
+          accepting one pair leaves every other reported row of the same rule
+          blocking, that no flag form clears a lost assignment by rule alone, and
+          that the flag clears only what it names. THE WHOLE OF THE ABOVE IS PINNED
+          BY ONE PROPERTY-STYLE TEST AND NOT BY THREE EXAMPLES. A generated-world
+          test in test/property/rederive-loss-reporting.test.ts states it as TWO
+          biconditionals over generated rule sets and transaction rows: a
+          transaction appears in the reported LOSS set IF AND ONLY IF the merchant
+          it carried before the run differs from the merchant it carries after AND
+          the merchant it carries after is not the one carried by the claimant of
+          the rule it previously resolved through. THE FIRST BICONDITIONAL NAMES NO
+          LINEAGE AND THAT IS THE POINT OF IT: it is this criterion's top-level
+          invariant written as a test, it is decided FROM MERCHANT IDENTITY ALONE,
+          and a run therefore cannot green it by publishing a relationship that is
+          not true, which is the one thing a lineage-conditioned property can never
+          promise. The licence term is redundant there and its only effect is to
+          weaken: the promotion constraints above make every licensed change end at
+          the claimant's own merchant, which the merchant conjunct already excludes,
+          so the term removes no row that conjunct does not remove EXCEPT the rows
+          whose licence is false. THE ASSERTION IS WRITTEN IN MERCHANTS AND NOT IN
+          THE LICENCE, and this criterion fixes that rather than leaving it to a
+          reading, because an implementer reading the earlier draft wrote an
+          assertion of the form reported equals changed and not licensed, which
+          carries no merchant term at all and cannot express the invariant above: a
+          test whose reported term is decided by anything other than the two
+          merchant identities does not meet this criterion. The SECOND biconditional
+          is where the lineage still decides, because it separates two non-blocking
+          outcomes that both end at the claimant's merchant, and it is checked in
+          its own right by the lineage tests above: a transaction appears in the
+          reported CLAIMANT-MERCHANT class IF AND ONLY IF the merchant it carried
+          before the run DIFFERS from the merchant it carries after, that change is
+          not licensed by the published lineage, and the merchant it carries after
+          IS the one the claimant carries. That first conjunct is written out rather
+          than implied by the word change, because without it a row that never moved
+          satisfies the other two whenever the claimant carries the merchant the row
+          already had, which is the same-merchant twin shape, so the class would
+          fill with rows nothing happened to and shapes one and six below would stop
+          being distinct. BOTH SIDES OF BOTH BICONDITIONALS ARE COMPUTED FROM THE
+          GENERATED WORLD AND NEVER FROM THE ROUTINE. The merchant a row carried
+          before and after is decided by a resolver the test writes against the seed
+          and the captured writes, or by the generator's own record of which rule
+          was intended to hold which row; the licence is decided by the test's own
+          reading of the published lineage. A test that imports the routine's
+          assignment-set helper, its identity-key helper or its lineage predicate to
+          compute either side does not meet this criterion, for the reason criterion
+          12.4 already gives, that it would certify the function against itself, and
+          because this predicate has been wrong three times running. The test
+          counts, over the worlds it generates, how many exhibited each of SIX
+          shapes, prints the six counts and asserts each one is greater than zero,
+          so a generator that cannot reach a shape is RED rather than vacuously
+          green: a row whose merchant does not change at all; a row whose coverage
+          ends at nothing; a row that ends held by a rule which is neither the
+          claimant nor the carrier of the claimant's promotion and whose merchant is
+          neither the row's old one nor the claimant's; a row whose merchant changes
+          and whose change is LICENSED because it ends held by the claimant itself;
+          a row whose merchant changes and whose change is LICENSED because it ends
+          held by the rule carrying that claimant's promotion; and a row of the
+          claimant-merchant class. THE LAST THREE ARE THE ONES THAT NEED A CLAIMANT
+          TO EXIST, and they are counted for that reason: the first three are all
+          reachable in worlds carrying no claimant at all, so a generator that never
+          builds one satisfies them while leaving the words AND THAT CHANGE IS NOT
+          LICENSED unexercised, and against such a generator the biconditional
+          collapses to reported if and only if changed, which is round two's
+          implementation exactly. The generated worlds include one in which a
+          superseded rule's rows SPLIT across the two bases, since that split is
+          what makes the promotion link load-bearing rather than decorative, and it
+          is counted like the rest. THE COUNTS PROVE THE GENERATOR REACHED EACH
+          SHAPE AND NOT THAT THE PROPERTY CAN FAIL AT ONE, so the phase work history
+          also records the properties run against FOUR deliberately wrong
+          predicates, each named here because each of them shipped: one that reports
+          every change, which is round two; one that excludes a superseded rule's
+          whole claim from the before set, which is round three; one that asks only
+          whether the row is covered by ANYTHING after the run, which is round four;
+          and a run that publishes one promotion pair whose holder and source name
+          DIFFERENT merchants, which is the forged lineage. The record carries, for
+          each, which property went red and its assertion message, and the fourth
+          must go red on the FIRST biconditional, which is what striking the licence
+          conjunct buys and is how a reader checks that the strike was actually
+          made. A mutant that leaves EVERY property green is a defect in the
+          properties and is fixed before this criterion is met. No count substitutes
+          for this: a property that cannot fail passes every count it is asked for.
+          THREE EXAMPLE-BASED TESTS AIMED AT THREE KNOWN SHAPES DO NOT MEET THIS
+          CRITERION, and the reason is measured rather than stylistic: this
+          mechanism has been rewritten three times, round two reported losses that
+          had not happened, round three hid a real loss, and round four hid a
+          reassignment of a row from one merchant to an unrelated third one, and
+          EACH ROUND PASSED ITS OWN EXAMPLES. The biconditionals are what make a
+          fourth shape a corollary rather than a fifth round. No criterion in this
+          phase is met by a run that removed a rule row, that lost an assignment, or
+          that left a transaction carrying a merchant which is neither the one it
+          carried before nor the one carried by the claimant of the rule it
+          previously resolved through.
       - id: "12.8"
         criterion: >-
           THE RE-DERIVATION IS IDEMPOTENT, AND IDEMPOTENT MEANS THE SAME
@@ -7951,6 +8247,25 @@ phases:
           because a condition it can never clear returns a non-zero exit
           forever and no acknowledge path exists.
         addressed-by: criterion 12.7
+      - id: H12.31
+        statement: >-
+          A transaction that carried one merchant before the run carries a DIFFERENT
+          merchant after it, through a rule that is neither the claimant of the rule
+          it previously resolved through (the namespaced rule of the same kind that
+          already held the pattern the old rule would have been rewritten to) nor
+          the carrier of that claimant's promotion, and the run reports no loss and
+          exits 0, so the reassignment reaches the owner's month with nothing having
+          gone red.
+        addressed-by: criterion 12.7
+      - id: H12.32
+        statement: >-
+          A change the lineage does license, or a row that ends at the claimant's
+          own merchant and therefore never moved under the deployed code, is
+          reported as a LOST assignment and BLOCKS, so an ordinary mixed-basis
+          migration stops on a loss that did not happen and is cleared by an
+          acknowledge flag the owner must ratify, which spends the path M3-P16's
+          hazard H16.3 exists to keep expensive.
+        addressed-by: criterion 12.7
       - id: H12.20
         statement: >-
           The routine is shipped with nowhere to run from, so it cannot be
@@ -8051,12 +8366,27 @@ phases:
         M3-P11 also src/modules/merchants/ui/actions.ts): runs strictly
         BEFORE all three, never beside them, per decision D-44.
       - >-
-        M3-P9 (no shared file: M3-P9's set is styles/tokens.css,
-        src/app/globals.css, src/app/layout.tsx, playwright.config.ts and
-        test/e2e/, and this phase touches none of them): recorded as checked
-        rather than left to be assumed, since decision D-44 rests on it. The
-        root layout entered M3-P9's set with its press listener; this phase's
-        set is unchanged and still does not meet it.
+        M3-P9 (TWO SHARED FILES, corrected in the M3-P12 fix round under
+        finding HZ-M3P12-10). This entry used to say that M3-P9's set is
+        styles/tokens.css, src/app/globals.css, playwright.config.ts and
+        test/e2e/, and that this phase touches none of them, recorded as
+        checked. That statement is FALSE as built: M3-P12 changes
+        src/app/globals.css, adding the rule that draws the naming-refusal
+        banner criterion 12.18 requires, and adds a spec under test/e2e/,
+        which is the same criterion's browser witness. Both belong where they
+        are and neither is avoidable: a refusal that criterion 12.18 requires
+        to reach the reader needs a style and a rendered witness. M3-P9 is
+        NOT merged, so the overlap is live rather than historical. What
+        decision D-44 rests on now: M3-P12 still runs strictly BEFORE M3-P9
+        and never beside it, which was D-44's conclusion, and the two shared
+        files are an ordinary merge surface rather than the empty one this
+        entry claimed. M3-P12's additions to both are ADDITIVE, one CSS rule
+        block and one new spec file, so a rebase of M3-P9 onto a merged
+        M3-P12 is expected to be clean; whoever schedules M3-P9 should
+        nonetheless read this rather than the sentence that stood here.
+        M3-P9's set also gained src/app/layout.tsx with its press listener
+        after this entry was first written; this phase does not touch that
+        file, so the root layout is not part of the overlap.
     parallelizable: false
     citations:
       - R-005
@@ -8464,40 +8794,39 @@ phases:
           reviewer's own, so the number is written down to be reproduced rather
           than trusted.
       - text: >-
-          Give an account number ONE canonical form and put it where every
-          consumer may reach it. The ledger domain imports nothing from other
-          modules by rule (.claude/skills/pulse-domain/SKILL.md:168, and the
-          note recording that choice at
-          src/modules/ledger/domain/ledger-transaction.ts:25 through :27), so
-          the form lives beside the other shared value types in src/platform,
-          as decision D-47 records, and is a pure function with its own unit
-          test. Registration normalises what the owner typed BEFORE storing
-          it, because Account.iban is a declaration and normalising a
-          declaration on the way in is allowed; every COMPARISON against a
-          transaction's counterparty account normalises both sides at
-          comparison time, because that column is a fact and is never
-          rewritten (.claude/skills/pulse-domain/SKILL.md:39). That includes
-          the declared-set derivation
-          and the reserves SQL join at
-          src/modules/overview/adapters/overview-repository.ts:175 through
-          :176. Pin the single definition with a test the way the merchants
-          module pins its own normaliser, so a second copy cannot appear. The
-          same platform module carries the DETERMINISTIC validity test DR-0028
-          settles, the pinned country-length table and the ISO 7064 mod-97
-          check, because a canonical form that cannot say whether a string is
-          an account number can only be applied blindly, and because the owner
-          types seven of these by hand from paper documents on a phone-first
-          product, where a transposed pair of digits is expected rather than
-          unlikely. Decision D-57 records that M3-P14 owns that module and that
-          M3-P12 imports it rather than expressing the same transformation a
-          second time. And the import path's own declaration at
-          src/modules/import/application/confirm-import.ts:93 through :99
-          stores the canonical form too, so Account.iban holds ONE form
-          tree-wide and the per-household uniqueness constraint at
-          prisma/schema/accounts.prisma:28 is a real backstop rather than a
-          nominal one; the stored FACT column on the transaction is untouched,
-          because that is a fact and every comparison normalises both sides at
-          comparison time.
+          Give an account number ONE canonical form and put it where every consumer
+          may reach it. The ledger domain imports nothing from other modules by rule
+          (.claude/skills/pulse-domain/SKILL.md:168, and the note recording that
+          choice at src/modules/ledger/domain/ledger-transaction.ts:25 through :27),
+          so the form lives beside the other shared value types in src/platform, as
+          decision D-47 records, and is a pure function with its own unit test.
+          Registration normalises what the owner typed BEFORE storing it, because
+          Account.iban is a declaration and normalising a declaration on the way in is
+          allowed; every COMPARISON against a transaction's counterparty account
+          normalises both sides at comparison time, because that column is a fact and
+          is never rewritten (.claude/skills/pulse-domain/SKILL.md:39). That includes
+          the declared-set derivation and BOTH halves of the reserves SQL read, the
+          join predicate at src/modules/overview/adapters/overview-repository.ts:175
+          through :176 and the grouping key at overview-repository.ts:182, which
+          groups by ordinal over the SELECT list at overview-repository.ts:170 and
+          :171 and is therefore normalised by normalising that SELECT expression;
+          criterion 14.2 is red on either half left raw. Pin the single definition
+          with a test the way the merchants module pins its own normaliser, so a
+          second copy cannot appear. The same platform module carries the
+          DETERMINISTIC validity test DR-0028 settles, the pinned country-length table
+          and the ISO 7064 mod-97 check, because a canonical form that cannot say
+          whether a string is an account number can only be applied blindly, and
+          because the owner types seven of these by hand from paper documents on a
+          phone-first product, where a transposed pair of digits is expected rather
+          than unlikely. Decision D-57 records that M3-P14 owns that module and that
+          M3-P12 imports it rather than expressing the same transformation a second
+          time. And the import path's own declaration at
+          src/modules/import/application/confirm-import.ts:93 through :99 stores the
+          canonical form too, so Account.iban holds ONE form tree-wide and the
+          per-household uniqueness constraint at prisma/schema/accounts.prisma:28 is a
+          real backstop rather than a nominal one; the stored FACT column on the
+          transaction is untouched, because that is a fact and every comparison
+          normalises both sides at comparison time.
       - text: >-
           Build the registration surface. A route under the authenticated
           shell that lists every account the household has registered with its
@@ -8792,126 +9121,385 @@ phases:
           groups at all would fail the control arm rather than pass the phase.
       - id: "14.2"
         criterion: >-
-          THE SAVINGS CASE, WHICH NO EXISTING TEST CAN CATCH. In the
-          registered arm of 14.1, with the four reserve-ring accounts
-          registered and the fixture imported, the month view for the
-          fixture's month asserts all six of: reserve-group elements number
-          exactly the distinct reserve accounts the fixture references;
-          no-reserves is absent; reserves-net renders the parked total as a
-          positive magnitude in the parked direction, byte compared against a
-          string written by hand in the spec from the fixture's own arithmetic
-          and never read back from the implementation; spend-total is byte
-          identical to a hand-written string that EXCLUDES every reserve
-          movement; spend-total in the CONTROL arm is byte identical to a
-          hand-written string that INCLUDES them, so the two arms differ by
-          exactly the household's savings PLUS its pot-to-pot transfers, which
-          together are every movement between accounts the household owns,
-          because the three pot siblings are SPEND in the control arm
-          (src/modules/ledger/domain/classify-flow.ts:102 through :107) and
-          INTERNAL in the registered arm (classify-flow.ts:73 through :77) and
-          therefore leave the spend total alongside the four reserve transfers,
-          and the spec states that decomposition in a comment and computes each
-          of the three hand-written strings, control spend-total, registered
-          spend-total and their difference, from the fixture's own arithmetic
-          and never reads one back from the implementation; and each
-          reserve-group's rendered label is byte identical to the LABEL the
-          household typed when it registered that account, with no
-          reserve-group label containing any account-shaped token, which fails
-          if the reserves join at
+          THE SAVINGS CASE, WHICH NO EXISTING TEST CAN CATCH. In the registered arm of
+          14.1, with the four reserve-ring accounts registered and the fixture
+          imported, the month view for the fixture's month asserts all six of:
+          reserve-group elements number exactly the distinct reserve accounts the
+          fixture references; no-reserves is absent; reserves-net renders the parked
+          total as a positive magnitude in the parked direction, byte compared against
+          a string written by hand in the spec from the fixture's own arithmetic and
+          never read back from the implementation; spend-total is byte identical to a
+          hand-written string that EXCLUDES every reserve movement; spend-total in the
+          CONTROL arm is byte identical to a hand-written string that INCLUDES them,
+          so the two arms differ by exactly the household's savings PLUS its
+          pot-to-pot transfers, which together are every movement between accounts the
+          household owns, because the three pot siblings are SPEND in the control arm
+          (src/modules/ledger/domain/classify-flow.ts:102 through :107) and INTERNAL
+          in the registered arm (classify-flow.ts:73 through :77) and therefore leave
+          the spend total alongside the four reserve transfers, and the spec states
+          that decomposition in a comment and computes each of the three hand-written
+          strings, control spend-total, registered spend-total and their difference,
+          from the fixture's own arithmetic and never reads one back from the
+          implementation; and each reserve-group's rendered label is byte identical to
+          the LABEL the household typed when it registered that account, with no
+          reserve-group label containing any account-shaped token, which is red if the
+          reserves read never resolves a label at all or groups without ever reaching
+          one, and which does NOT by itself tell a raw join from a normalising one at
+          this tree, for the reason recorded next. CORRECTED IN PLACE AND LOUDLY
+          (clause R-087), NOT QUIETLY REWRITTEN. Two sentences stood here and both
+          were false at this tree. The sixth assertion above used to continue "which
+          fails if the reserves join at
           src/modules/overview/adapters/overview-repository.ts:175 through :176
           compares raw stored strings, and the fixture writes its counterparty
-          accounts in the spaced surface form precisely so that a join over raw
-          values cannot pass. A SEVENTH assertion separates a normalised join
-          from a normalised GROUPING, which is the other half of the same SQL
-          statement: the reserves query groups by the raw stored column
-          (src/modules/overview/adapters/overview-repository.ts:182 groups on
-          the counterparty account and the joined label), and the stored column
-          really does hold two surface forms for one account, because the
-          delimited parse stores the cell verbatim
-          (src/modules/import/domain/parse-statement.ts:114 through :123) while
-          the PDF path compacts it
-          (src/modules/import/domain/belfius-current-account-template.ts:90).
-          So an application test over a household whose stored counterparty
-          account column carries the SAME reserve account in two surface forms,
-          one spaced and one compact, asserts exactly ONE reserve-group is
-          returned, carrying the household's typed label and the sum of both
-          rows. That fixture is deliberately mixed, because a fixture uniform
-          in one surface form passes a normalised join with a raw grouping and
-          the owner then sees one savings account twice, under the right name
-          both times, with the money split. The spec carries in its own header
-          comment, and this criterion carries in its text, the reason no
-          existing test catches this: the reconciliation identity is invariant
-          under the error, because
-          src/modules/ledger/domain/reconciliation.ts:70 through :74 add a row
-          to spendSigned or to reserveSigned and reconciliation.ts:79 through
-          :81 subtract both from income with the same sign, so differenceCents
-          is bit for bit identical whether a savings transfer is called SPEND
-          or RESERVE; test/property/reconciliation.test.ts goes on passing and
-          the month view goes on saying the books close.
+          accounts in the spaced surface form precisely so that a join over raw values
+          cannot pass", and the seventh assertion below used to ask for "an
+          application test over a household whose stored counterparty account column
+          carries the SAME reserve account in two surface forms, one spaced and one
+          compact", resting on the claim that "the stored column really does hold two
+          surface forms for one account, because the delimited parse stores the cell
+          verbatim". THE PREMISE IS FALSE. NO SHIPPED PATH CAN PUT A SPACED VALUE INTO
+          THE STORED COUNTERPARTY ACCOUNT COLUMN, so neither fixture can be built and
+          neither sentence could ever have been met by an honest implementation. The
+          delimited detector assigns a counterparty-account column only where EVERY
+          non-empty value in it matches an anchored, whitespace-free pattern
+          (src/modules/import/domain/detect-profile.ts:45, applied through the
+          values.every guard at detect-profile.ts:313), so writing the reserve rows
+          spaced does not make the join discriminate, it REMOVES the join's input by
+          leaving that column unassigned, and a column mixing the two forms is dropped
+          for exactly the same reason; the parse then stores verbatim only what that
+          detector has already accepted
+          (src/modules/import/domain/parse-statement.ts:114 through :123), which is
+          the step the old sentence read as permission and which is in fact downstream
+          of the constraint. The Belfius PDF path lifts the value with a pattern and
+          compacts it before it is stored
+          (src/modules/import/domain/belfius-current-account-template.ts:90). And
+          detection is re-run on EVERY upload
+          (src/modules/import/application/upload-statement.ts:65), so a household
+          cannot drift into a mixed column over time either, which was the only
+          mechanism ever offered for how the mixed state would arise. What was wrong
+          was never the protection, which is real and is kept below in full; what was
+          wrong was asserting that the discriminating state could be reached through
+          the product. The first six assertions address hazard class H14.1; the
+          seventh below addresses H14.22 from the read side, and that is recorded in
+          the hazard table so that trimming this criterion again cannot silently drop
+          a hazard class's only guard. A SEVENTH assertion therefore keeps the
+          protection and changes the witness. It separates a normalised join from a
+          normalised GROUPING, which is the other half of the same SQL statement: the
+          reserves read joins on the raw stored column
+          (src/modules/overview/adapters/overview-repository.ts:175 through :176) and
+          groups on that same raw column (overview-repository.ts:182). THE
+          DISCRIMINATING STATE IS SEEDED STRAIGHT INTO THE COLUMN, BELOW THE IMPORTER,
+          and the shipped read is EXECUTED AGAINST A REAL DATABASE with no browser in
+          the way. The test creates a household holding TWO reserve accounts with
+          DIFFERENT account numbers and DIFFERENT typed labels, each stored in the
+          canonical form of the number the household would type, AND a POT current
+          account, and writes THREE transaction rows directly to the transactions
+          table. EVERY SEEDED ROW SITS ON THE POT ACCOUNT, because the reserves read
+          joins the row's OWN account and this phase's ring scoping excludes a row
+          seeded on the reserve account itself before the join predicate is ever
+          reached; a seed that comes back empty because of the ring predicate is red
+          for a reason that has nothing to do with normalisation, and every red this
+          assertion claims is a red of the JOIN or of the GROUPING. Two of the three
+          rows name the FIRST reserve account in the counterparty account column, one
+          in the canonical compact form and one spaced in groups of four, and the
+          third names the second reserve account. AND TWO FURTHER ROWS name two
+          DIFFERENT counterparty account numbers the household has NOT registered,
+          seeded below the importer for the same declared reason as the spaced row,
+          because a row that FAILS TO JOIN is the only row on which the canonical form
+          of the stored column and the joined account's own column differ, and without
+          one every candidate key is still one-to-one with every other. All five rows
+          carry flow RESERVE, sit on the POT account and are dated inside the asserted
+          period. The test then calls the shipped reserves read directly and asserts
+          that exactly FOUR reserve movement groups come back; that the two groups
+          keyed to a REGISTERED account carry labels byte identical to those accounts'
+          typed labels and carry no account-shaped token; that the two groups keyed to
+          an UNREGISTERED counterparty are SEPARATE groups and not one, each keyed by
+          the canonical form of its own stored value and each taking that same value
+          as its label through the fallback at
+          src/modules/overview/adapters/overview-repository.ts:187; that NO group's
+          key is null; and that the first registered group's parked total is the sum
+          of its two rows while every other group's is its single row, each compared
+          against a string written by hand in the test from the seed's own arithmetic
+          and never read back from the implementation. The test runs in whichever gate
+          has a live Postgres, which is the slow gate and not the fast gate; this
+          criterion asks for no database in the fast gate. Every account number the
+          seed introduces is invented and is listed in
+          test/fixtures/allowed-identifiers.txt with a written provenance note, on the
+          same terms criterion 14.10 sets for every other identifier this phase adds.
+          THAT ASSERTION IS RED FOUR WAYS OVER, and that is the whole reason for
+          seeding rather than for deleting the clause. It is RED ON A RAW JOIN,
+          because the spaced row matches no account row, its label falls back to the
+          stored counterparty account, and a second group appears carrying an
+          account-shaped label where the household's own name should be. It is RED ON
+          A NORMALISED JOIN WITH A RAW GROUPING KEY, because
+          overview-repository.ts:182 groups on the stored column, so two surface forms
+          are two groups even when both resolve to the right label, and the owner then
+          sees one savings account twice, under the right name both times, with the
+          money split. AND IT IS RED A THIRD WAY, and the seed's two axes are what
+          make it so, each closing a DIFFERENT candidate key. CORRECTED IN PLACE AND
+          LOUDLY (clause R-087), NOT QUIETLY REWRITTEN. This paragraph used to say
+          that the seed carries two reserve accounts because a read that "GROUPS ON
+          THE JOINED ACCOUNT'S OWN COLUMN, or on the joined label alone" is red over
+          it. THE FIRST HALF OF THAT WAS FALSE, and it was this criterion's own
+          inherited error and not an implementer's: step 3 stores the declared account
+          number canonical, so on every row that JOINS, the joined account's own
+          column is byte identical to the canonical form of the stored counterparty
+          account, and a read grouping by that column, or by the account's primary
+          key, returns the right groups under the right keys and passes every
+          assertion. A SECOND ACCOUNT cannot separate them, because the two
+          expressions differ only on a row that does not join. What each axis actually
+          buys is this, and THIS SENTENCE HAS ITSELF BEEN CORRECTED IN PLACE AND
+          LOUDLY (clause R-087), NOT QUIETLY REWRITTEN. It used to say that the second
+          reserve account with a distinct typed label "kills grouping on the joined
+          LABEL alone, which would otherwise merge two reserve accounts a household
+          happened to give the same label into one line with their money summed". THAT
+          REASON WAS FALSE TOO, and false in the same way as the sentence above it:
+          with DISTINCT labels a grouping on the joined label agrees with a normalised
+          grouping key on every registered row, so the second account cannot tell
+          those two apart either. WHAT KILLS GROUPING ON THE JOINED LABEL IS THE SAME
+          UNJOINED PAIR, whose joined label is null on both rows and which a label
+          grouping collapses into one group where this assertion requires two. What
+          the second reserve account buys is the PER-ACCOUNT SPLIT, which is real and
+          is what the first six assertions rest on: without it a read returning one
+          group per household rather than one per account is invisible. So the two
+          rows naming UNREGISTERED counterparties carry three kills between them,
+          grouping on the joined account's IDENTITY, its own column or its primary key
+          alike, grouping on the joined LABEL, and the inner join named next; each of
+          the first two collapses every reserve row whose counterparty matches no
+          registered account into a single group whose key and label are both null,
+          against a key the read declares as a string
+          (src/modules/overview/adapters/overview-repository.ts:186). AND THERE ARE
+          TWO SUCH ROWS AND NOT ONE ON PURPOSE, because two is what makes the COUNT
+          discriminate as well as the key: with a single unregistered row the wrong
+          read and the right read both return three groups and only the key assertion
+          separates them, while with two the wrong read returns three against the four
+          this assertion names. A later reader trimming that pair back to one is
+          removing the count's discrimination, not a duplicate row. AND IT IS RED A
+          FOURTH WAY, ON AN INNER JOIN, which returns only the two registered groups
+          and silently drops every reserve movement the household makes toward
+          anything it has not registered; the seed could not tell a left join at
+          overview-repository.ts:175 from an inner one until it carried a row that
+          fails to join, and this phase is editing that very join. Only a read that
+          normalises BOTH the join predicate and the grouping key returns the two
+          groups under the two canonical keys this assertion names. The join predicate
+          compares column to column (overview-repository.ts:176), so that
+          transformation is expressed in SQL inside that file and cannot import the
+          platform function. THIS CRITERION THEREFORE CREATES A SECOND COPY OF THE
+          CANONICAL FORM OUTSIDE THE PLATFORM MODULE, which criterion 14.4's
+          enumeration otherwise forbids, and criterion 14.4 is amended in the same
+          commit to carry that copy as a named, permitted and pinned entry rather than
+          to be widened in silence by whoever meets this criterion first. The copy is
+          held to the platform form's BEHAVIOUR and not only to its character class: a
+          test asserts the two agree over an enumerated corpus carrying at least one
+          value that is NOT account shaped, because criterion 14.4 requires the
+          platform form to return such a string unchanged rather than mangled while an
+          unguarded SQL expression upper-cases it and strips its separators, which
+          merges two descriptors differing only in case or spacing into one group and
+          mangles the value the read hands back; either the SQL copy carries the same
+          shape guard, or that test records, with its reason, the input class on which
+          the two are allowed to differ. AND THE CLAUSE THIS REPLACES HAD NO
+          DISCRIMINATING POWER AT ALL, which the first amendment understated by
+          calling it half: the only fixture the delimited path can import is uniform
+          and compact, and against a uniform compact fixture a fully raw read passes
+          the join and the grouping alike, so the deleted clause could not have caught
+          either half. AND THE TEST SAYS PLAINLY WHAT IT IS, IN ITS OWN HEADER COMMENT
+          AND NOT ONLY HERE, because the reader who would delete it is reading the
+          test and has no reason to open a delivery artifact. That header states four
+          things: that the seeded state is UNREACHABLE THROUGH THE PRODUCT today; the
+          two citations that make it unreachable,
+          src/modules/import/domain/detect-profile.ts:45 and the values.every guard at
+          detect-profile.ts:313; that the state is seeded below the importer on
+          purpose; and the NAME of the write-path enumeration test that holds the
+          unreachability claim, and the write-path enumeration's own header names the
+          seeded test back, so the reference is mutual rather than one-directional.
+          ONE DIRECTION IS MECHANICAL AND THE OTHER IS PROSE, and this criterion says
+          which: the write-path enumeration, which already reads source files as text,
+          asserts that the seeded test exists at its recorded path and that its header
+          carries the unreachability statement, so deleting the seeded test reddens
+          the FAST gate; deleting the enumeration then leaves the seeded test's header
+          naming a file that is gone, which is a dangling reference a reader meets and
+          no gate reads. A test carrying this argument only by reference to the plan
+          does not meet this clause. The reason is written down rather than left for
+          the next reader to rediscover as a puzzle: The surface form of a stored fact
+          column is a property of the SCHEMA and of the READS over it, and not a
+          property of today's importer. Nothing in Postgres constrains what goes into
+          that column; the reads at overview-repository.ts:175 through :182 are
+          correct today only because a detector two modules away happens to reject
+          everything but the compact form, and a read whose correctness lives in
+          another module is a read that breaks in silence when that module is edited.
+          An importer change is exactly the thing that would make this state reachable
+          without anyone noticing, and surviving that change is the job this test
+          holds. The claim of unreachability is itself held by a test rather than by
+          this paragraph: a fast-gate test enumerates the write paths that can reach
+          the stored counterparty account column and asserts that the reachable set is
+          upper-case, compact and account-shaped, so on the day an importer change
+          makes the seeded state reachable, something goes red on its own rather than
+          waiting for a household to notice its savings account listed twice. THAT
+          TEST IS A NAMED ARTIFACT THIS CRITERION REQUIRES, and it is NOT criterion
+          14.4's enumeration, which pins the canonical form's call sites and the
+          validity predicate's definitions and says nothing whatever about which
+          values can reach the column. It DISCOVERS the writers of that column by
+          walking src/ rather than by naming files, and the discovered set is asserted
+          by EXACT EQUALITY against a set WRITTEN BY HAND IN THE TEST, a literal
+          naming the producers known when it is written and never derived from the
+          walk itself, on the same terms every hand-written string in this phase is
+          pinned, because an expected set computed from the discovery satisfies exact
+          equality against any discovered set including the empty one, so a discovery
+          that finds nothing, or finds one where there are two, is RED rather than
+          vacuously green: a test whose only assertion is that no undiscovered writer
+          lacks a gate passes by discovering nothing. THE WALK'S OWN COVERAGE IS
+          ASSERTED TOO, because src/ carries exactly one top-level file,
+          src/middleware.ts, and that is the file a glob-shaped walk drops where its
+          double star requires a directory segment; the test asserts that the file set
+          it walked contains that file; it fails when a writer appears that no shape
+          gate covers; it asserts each gate's BEHAVIOUR rather than its source text,
+          by EXECUTING the gate against values rather than by matching its spelling,
+          so that the gate must ACCEPT an upper-case compact account number and REJECT
+          the same number spaced, the same number carrying a lower-case country code,
+          and the same number carrying a tab or a non-breaking space, with the gate
+          exported or the detector called for the purpose, which
+          src/modules/import/domain/detect-profile.ts:79 already permits since it is
+          exported and takes bytes. A SOURCE-TEXT ASSERTION ON THE GATE DOES NOT MEET
+          THIS CLAUSE, because the importer change this test exists to survive is a
+          widening of the gate's CHARACTER CLASS at
+          src/modules/import/domain/detect-profile.ts:45, which changes no writer,
+          adds no file and alters no write shape, and which leaves every spelling such
+          an assertion matches intact: a pattern matching the opening characters of
+          that regular expression, or a substring check on the values.every guard at
+          detect-profile.ts:313, both pass a detector rewritten to admit a spaced
+          value, and that is precisely the guard the dispatch contract records as
+          green and worthless; and it carries a red-witness note recording the state
+          it was shown red against, which includes a producer written in a shape that
+          is NOT a literal property assignment, because a text-scanning discovery sees
+          only the shapes it was written for and an object SPREAD or a computed key is
+          invisible to all of them, a shape this repository's own test doubles already
+          use; where such a shape cannot be discovered at all, the note records that
+          limit in the test rather than leaving it for the next reader to meet as a
+          gap. A test that NAMES its producers instead of discovering them does not
+          meet this clause, because exactly that test was written in this phase, was
+          shown GREEN against a producer a clean-room lane added to
+          src/modules/import/domain/parse-statement.ts, and had to be corrected under
+          R-087 afterwards. A load-bearing sentence that requires nothing is the
+          museum piece this paragraph argues against. The spec carries in its own
+          header comment, and this criterion carries in its text, the reason no
+          existing test catches any of this: the reconciliation identity is invariant
+          under the error, because src/modules/ledger/domain/reconciliation.ts:70
+          through :74 add a row to spendSigned or to reserveSigned and
+          reconciliation.ts:79 through :81 subtract both from income with the same
+          sign, so differenceCents is bit for bit identical whether a savings transfer
+          is called SPEND or RESERVE; test/property/reconciliation.test.ts goes on
+          passing and the month view goes on saying the books close.
       - id: "14.3"
         criterion: >-
           ADOPTION, NOT DUPLICATION. A test at the application level over the
-          in-memory fakes registers an account by account number with no
-          import, then runs the upload and confirm path for a file whose own
-          account number is that account written in a DIFFERENT surface form
-          (spaced against compact, and a lower-case country code), and asserts
-          that the household holds exactly one account afterwards, that the
-          ingested rows carry that account's id, and that declareAccount was
-          not called. A second case asserts the reverse order, import first
-          then a registration attempt for the same account number, is refused
-          with a named error rather than creating a second account, and that
-          the screen tells the owner the account is already registered. A
-          third case asserts that an account declared through the IMPORT path
-          stores its account number in the canonical form, so that a subsequent
-          registration of the same account in any surface form is refused by
-          the application check AND would collide on the per-household
-          uniqueness constraint at prisma/schema/accounts.prisma:28, which is
-          what makes that constraint a real backstop rather than a nominal one.
-          Any criterion or code path that creates a second account for an
-          account number already registered fails this phase.
+          in-memory fakes registers an account by account number with no import, then
+          runs the upload and confirm path for a file whose own account number is that
+          account in the ONLY surface form the detector can admit, upper case and
+          compact, while the REGISTRATION side carries the varied form, spaced and
+          with a lower-case country code. CORRECTED IN PLACE AND LOUDLY (clause
+          R-087), NOT QUIETLY REWRITTEN, and carried here from criterion 14.2 rather
+          than left standing one criterion away from its own refutation. This case
+          used to ask for "a file whose own account number is that account written in
+          a DIFFERENT surface form (spaced against compact, and a lower-case country
+          code)", and THAT FILE IS UNBUILDABLE. The own-account column is assigned by
+          the SAME loop and the SAME guard as the counterparty column:
+          src/modules/import/domain/detect-profile.ts:313 gates the whole body, which
+          assigns the counterparty column at detect-profile.ts:324 and :328 and the
+          own-account column at detect-profile.ts:326, against the anchored,
+          whitespace-free, upper-case-only pattern at detect-profile.ts:45. So a
+          spaced cell or a lower-case country code leaves that column unassigned, the
+          parsed row carries no own account number, the file's account-number list is
+          empty (src/modules/import/domain/parse-statement.ts:150 and :165 through
+          :166) and the confirm path reads no file account number at all
+          (src/modules/import/application/confirm-import.ts:84), so the case would
+          measure the empty-identifier branch rather than adoption. Registration is
+          the side a household types and is the only side of this comparison a shipped
+          path can vary, which is why it is the side that carries the varied form. The
+          test's own comments state which side carries which form, because a comment
+          claiming the FILE is spaced is a claim the detector refutes, and a comment
+          of exactly that kind has already been written in this phase against a
+          fixture whose own-account cell is in fact compact. The case then asserts
+          that the household holds exactly one account afterwards, that the ingested
+          rows carry that account's id, and that declareAccount was not called. A
+          second case asserts the reverse order, import first then a registration
+          attempt for the same account number, is refused with a named error rather
+          than creating a second account, and that the screen tells the owner the
+          account is already registered. A third case asserts that an account declared
+          through the IMPORT path stores its account number in the canonical form, so
+          that a subsequent registration of the same account in any surface form is
+          refused by the application check AND would collide on the per-household
+          uniqueness constraint at prisma/schema/accounts.prisma:28, which is what
+          makes that constraint a real backstop rather than a nominal one. Any
+          criterion or code path that creates a second account for an account number
+          already registered fails this phase.
       - id: "14.4"
         criterion: >-
-          ONE CANONICAL FORM, WITNESSED WHERE IT MATTERS. A grep over src
-          shows exactly one definition of the canonical account-number
-          function and every consumer imports it: a unit test enumerates the
-          call sites and fails on a second definition, in the manner the
-          merchants module already pins its normaliser. A domain test asserts
-          the function is idempotent, that the spaced, compact and mixed-case
-          renderings of one account number produce one identical result, and
-          that a string that is not an account number is returned unchanged
-          rather than mangled. A ledger domain test asserts that a transaction
-          whose stored counterparty account is written spaced classifies as
-          RESERVE against a reserve account registered in compact form, and as
-          INTERNAL against a pot account registered in compact form. This
-          criterion exists because it was measured rather than supposed: every
-          one of the 26 account-shaped tokens in the owner's own
-          current-account document is written spaced, and the delimited parse
-          stores such a cell verbatim
-          (src/modules/import/domain/parse-statement.ts:114 through :123)
-          while the PDF path compacts it
+          ONE CANONICAL FORM, WITNESSED WHERE IT MATTERS. A grep over src shows
+          exactly one definition of the canonical account-number function and every
+          consumer imports it: a unit test enumerates the call sites and fails on a
+          second definition, in the manner the merchants module already pins its
+          normaliser. A domain test asserts the function is idempotent, that the
+          spaced, compact and mixed-case renderings of one account number produce one
+          identical result, and that a string that is not an account number is
+          returned unchanged rather than mangled. A ledger domain test asserts that a
+          transaction whose stored counterparty account is written spaced classifies
+          as RESERVE against a reserve account registered in compact form, and as
+          INTERNAL against a pot account registered in compact form. This criterion
+          exists because it was measured rather than supposed: every one of the 26
+          account-shaped tokens in the owner's own current-account document is written
+          spaced, and the PDF path is where those spaced tokens actually enter, lifted
+          by pattern and compacted before they are stored
           (src/modules/import/domain/belfius-current-account-template.ts:90).
-          The unit test that enumerates the call sites is written so that a
-          SECOND implementation of the same transformation reddens it wherever
-          it lives, including one written inline inside another module's
-          identity derivation: it asserts that no file under src/ other than
-          the platform module contains an uppercase plus whitespace-removal
-          expression applied to an account-bearing field. That is what stops
-          M3-P12's counterpartyIdentity, which lands after this pin has already
-          gone green, from growing a private copy that agrees on the day it is
-          written and is edited by a different phase afterwards. The same
-          enumeration test pins the VALIDITY PREDICATE and not only the
-          canonical form, because a second copy of the country-length table or
-          of the ISO 7064 loop matches no whitespace-and-uppercase grep: it
-          asserts that the pinned country-length table and the mod-97
-          implementation each have exactly one definition under src/, in the
-          platform module, and that every consumer imports it. And the
-          whitespace-removal helper that ALREADY exists outside the platform
-          module, compactIban at
-          src/modules/import/domain/belfius-current-account-template.ts:90,
-          used at :169 and :267, is NAMED by this phase and is either replaced
-          by the platform form or recorded in the test as the one permitted
-          exception with its reason, so the enumeration is a list a reader can
-          check rather than a grep that passes by accident.
+          CORRECTED IN PLACE AND LOUDLY (clause R-087), NOT QUIETLY REWRITTEN, and
+          carried here from criterion 14.2. This sentence used to read "and the
+          delimited parse stores such a cell verbatim
+          (src/modules/import/domain/parse-statement.ts:114 through :123) while the
+          PDF path compacts it", and THE DELIMITED PATH CANNOT STORE A SPACED CELL,
+          for the reason criterion 14.2 records in full: parse-statement.ts:114
+          through :123 writes verbatim only what
+          src/modules/import/domain/detect-profile.ts:313 has already accepted against
+          the anchored, whitespace-free pattern at detect-profile.ts:45. Until this
+          correction two criteria in one phase read the same three lines in opposite
+          directions, and the plan is the document a reviewer holds against the tree.
+          What this criterion's canonical form defends is therefore the PDF path and a
+          FUTURE importer change, not a delimited cell that exists today, and the
+          ledger domain test above asserts over a CONSTRUCTED transaction rather than
+          an imported one for exactly that reason. The unit test that enumerates the
+          call sites is written so that a SECOND implementation of the same
+          transformation reddens it wherever it lives, including one written inline
+          inside another module's identity derivation: it asserts that no file under
+          src/ other than the platform module contains an uppercase plus
+          whitespace-removal expression applied to an account-bearing field. That is
+          what stops M3-P12's counterpartyIdentity, which lands after this pin has
+          already gone green, from growing a private copy that agrees on the day it is
+          written and is edited by a different phase afterwards. The same enumeration
+          test pins the VALIDITY PREDICATE and not only the canonical form, because a
+          second copy of the country-length table or of the ISO 7064 loop matches no
+          whitespace-and-uppercase grep: it asserts that the pinned country-length
+          table and the mod-97 implementation each have exactly one definition under
+          src/, in the platform module, and that every consumer imports it. And the
+          whitespace-removal helper that ALREADY exists outside the platform module,
+          compactIban at
+          src/modules/import/domain/belfius-current-account-template.ts:90, used at
+          :169 and :267, is NAMED by this phase and is either replaced by the platform
+          form or recorded in the test as a permitted exception with its reason. THE
+          PERMITTED LIST IS CLOSED BY THIS CRITERION AND NOT BY WHOEVER MEETS IT
+          FIRST. Every entry on it is named here and it carries NO entry this
+          criterion does not name. This criterion names two candidates and the list
+          carries whichever of them exist in the tree: the SQL copy of the canonical
+          form that criterion 14.2's normalising reserves join and grouping key
+          require inside src/modules/overview/adapters/overview-repository.ts, which
+          that criterion makes mandatory and which cannot import the platform function
+          because the join compares column to column; and compactIban, if it survives
+          replacement by the platform form. A LIST CARRYING ONE OF THE TWO BECAUSE THE
+          OTHER WAS REPLACED MEETS THIS CRITERION, because a cardinality would fail a
+          tree in which an implementer did the better thing and deleted the private
+          helper. And a THIRD copy is never added to this list by whoever needs it: it
+          is an amendment to THIS criterion, made in the commit that needs it and
+          named here. An entry appearing on that list which this criterion does not
+          name FAILS this criterion, because a list that grows in silence when another
+          criterion is met is a grep that passes by accident with extra steps. That is
+          what keeps the enumeration a list a reader can check.
       - id: "14.5"
         criterion: >-
           REGISTRATION HEALS ROWS THAT ARE ALREADY THERE. A third test in the
@@ -9248,8 +9836,8 @@ phases:
         criterion: >-
           EVERY ACCOUNT THAT PUT ROWS IN THIS MONTH IS NAMED, WITH WHETHER
           THOSE ROWS WERE COUNTED OR HELD. This is what DR-0030 is paying for
-          and it is a criterion rather than a step. Six assertions. ONE, THE
-          MONTH VIEW SAYS SO. An element with data-testid month-accounts
+          and it is a criterion rather than a step. Seven assertions. ONE,
+          THE MONTH VIEW SAYS SO. An element with data-testid month-accounts
           renders one entry per account that has rows in the requested period,
           fed by the TWO reads the ACCEPT step names, the counted read for pot
           accounts and the held read for the rest, so an account can appear in
@@ -9340,6 +9928,117 @@ phases:
           15.9 reports the rules so written. A phase that surfaces only the
           held side has built the easy half, and this witness is what makes the
           difference a fact on the screen rather than a warning nobody reads.
+          SEVEN, THE THREE ROWS DR-0030 BUYS ARE IN THE FIXTURE AND ON THE
+          SCREEN, EACH WITH ITS AMOUNT. A reserve account's own statement
+          carries three things that no pot account can ever show, and they are
+          exactly the rows with NO COUNTERPART ROW ON ANY POT ACCOUNT:
+          interest credited on a reserve account, a movement between two of
+          the household's own reserve accounts, and a payment made directly
+          out of a reserve account. Decision D-55 names the first two in the
+          prose of its rejected options and the third nowhere, and a decision
+          record carries the reasoning while a criterion is what makes a thing
+          get made, which is why all three are pinned here. THE FIXTURE THIS
+          CRITERION RENDERS MUST CARRY ALL THREE, and an application test
+          asserts the fixture holds one of each BY THE SHAPE THAT
+          DISTINGUISHES THEM, since none of the three is a marked category in
+          the data and no test can read the word interest off a row
+          (prisma/schema/import.prisma:114 through :121 carries a booking
+          date, an amount, a counterparty name, a counterparty account number,
+          a description and a reference, and no marker of any kind): exactly
+          one POSITIVE row whose counterpartyIban is absent or belongs to no
+          account of this household, which is the interest credit; exactly one
+          row whose counterpartyIban is the SECOND registered reserve account,
+          which is the movement between two of the household's own reserve
+          accounts; and exactly one NEGATIVE row whose counterpartyIban
+          belongs to no account of this household, which is the payment made
+          straight out of savings. A row whose counterpartyIban belongs to a
+          POT account satisfies none of the three, because that row is one
+          registration already made visible and is not what DR-0030 buys; the
+          shapes are the discriminator the product itself uses
+          (src/modules/ledger/domain/classify-flow.ts:62 through :77 decides
+          on membership of the declared sets and on nothing else), so the test
+          asserts the property the engine reads rather than a name the schema
+          does not carry. A Playwright test then asserts that each of the
+          three renders UNDER THE HELD ENTRY for its account with BOTH its
+          descriptor, the counterparty text the product already projects for a
+          row (src/modules/overview/adapters/overview-repository.ts:286), AND
+          ITS OWN AMOUNT, rendered the way the product renders money
+          everywhere else, keyed on each row's own rendered identity in the
+          manner witness THREE sets and never on the entry merely carrying
+          three rows. Each amount is asserted against a string written by hand
+          in the spec from the fixture's own arithmetic and never read back
+          from the implementation. WHY THESE THREE AND NOT ANY THREE ROWS.
+          Every other row a reserve statement carries has a counterpart row on
+          a pot account, so registering the account was already enough to make
+          it visible and importing the statement adds nothing the household
+          can see; these three are precisely the ones registration could never
+          reach, and they are the whole of what DR-0030 buys. An
+          implementation that ingests the statement, holds its rows and
+          renders a label, a count and a state word passes every other witness
+          of this criterion while the household still cannot see its savings
+          interest, its transfer between two of its own savings accounts, or a
+          payment it made straight out of savings: that implementation has
+          delivered the IMPORT and not the DECISION, and this witness is what
+          fails it. NO TOTAL AND NO ACCUMULATED FIGURE IS ADDED HERE, ASSERTED
+          RATHER THAN STATED, because this witness is the act that first puts
+          money on the month view's per-account element and a boundary
+          defended by a sentence is a boundary the next round reads as settled
+          and stops checking. The amounts are per row and the entry carries NO
+          SUM OF THEM, ASSERTED BY COUNTING RATHER THAN BY SUBTRACTING,
+          because a subtraction has to describe what it subtracts and that
+          description is exactly where a subtotal hides. A Playwright test
+          COUNTS the money-formatted strings rendered anywhere under the held
+          entry, nested elements included, and asserts TWO things: that the
+          count is EXACTLY the number of rows the held read returned for that
+          account, which is the same period row count the entry renders under
+          witness ONE; and that EVERY ROW THE HELD READ RETURNED renders
+          exactly one money-formatted string of its own, not only the three
+          rows this witness pins. The second is what makes the first exact
+          rather than nearly exact, because the held read returns every row on
+          that account in the period and this witness's own premise is that
+          the file carries more than the three: without it an implementation
+          can balance the count by dropping the amount from an unpinned row
+          while adding a subtotal, and land on the same total having done
+          both. A
+          subtotal is one money-formatted string more than there are rows, so
+          it goes RED wherever it is placed: above the rows, beside them, in a
+          footer, or AS ONE MORE ROW LINE, which is the ordinary markup for a
+          total inside a list of rows and the placement an exclusion written
+          over the row handle would have swallowed along with the rows. No
+          exclusion has to be described for that to hold. It is satisfiable
+          with what this phase already ships, which is why it is asked for
+          here: witness THREE requires the rows to be individually keyed and
+          the product has ONE mandatory money format, so the count is a DOM
+          query and one regular expression; the period row count is a count
+          and not money, so it does not carry that format and cannot inflate
+          the total. SEPARATELY, and over the entry's own text with its row
+          elements removed, a test asserts that text carries the account
+          label, the period row count and the state copy and nothing else, and
+          witness FIVE's balance-word test is extended to run over THAT SAME
+          REDUCED TEXT in each of the three locales rather than over
+          everything under the entry, so it reads the entry's own headings and
+          never the fixture's row descriptors: a test aimed at a heading must
+          not be failable by an invented descriptor that happens to carry a
+          balance word in one of the three languages. The accounts screen
+          carries neither, which witness TWO asserts on its own surface, and
+          nothing crosses the requested period, which witness ONE bounds and
+          witness FIVE's grep covers. With those two assertions in place
+          witness TWO and decision D-60 are held rather than reopened: what
+          D-60 forbids is a figure accumulated across months and a label that
+          reads as an amount held, and three per-row amounts inside one
+          requested period on the screen whose month is the thing being shown
+          are neither. AND THE
+          SECOND RESERVE ACCOUNT IS INVENTED ON THE TERMS ALREADY SET. A
+          movement between two reserve accounts needs the household to hold a
+          SECOND one, so the fixture declares it; its account number passes
+          the platform validity test of criterion 14.12, asserted by a
+          fast-gate unit test rather than by inspection, and it is added to
+          test/fixtures/allowed-identifiers.txt with a written provenance note
+          in the same commit that introduces it, on the same terms witness
+          FOUR of criterion 14.11 sets. That clause is here because most of
+          this repository's committed account numbers predate that check,
+          which is the measurement step 1 baseline FOUR records and which that
+          step requires to be re-measured rather than copied.
       - id: "14.16"
         criterion: >-
           THE HELD ROW CHANGES NOTHING, AND THE DECLARATION CHANGES EXACTLY
@@ -9595,6 +10294,14 @@ phases:
           reported to the household as counted money on the one screen state
           built to tell counted from held.
         addressed-by: criterion 14.15
+      - id: H14.22
+        statement: >-
+          The reserves read compares and groups the stored counterparty account raw,
+          so on the day a value reaches that column in any form but the canonical one
+          the household sees one savings account listed twice, under the right name
+          both times, with its money split, and the reconciliation identity is
+          unchanged throughout.
+        addressed-by: criterion 14.2
     migrations: >-
       none. The Account model already carries label, bank, role and an
       optional account number with a per-household uniqueness constraint
@@ -10089,12 +10796,145 @@ phases:
           the SPENDING ring, which is the answer no engine signal distinguishes
           from a correct one and which criterion 14.15 witness SIX exists to
           make visible, see that account named in month-accounts with
-          data-state counted and its rows in the month's spend, follow the link
+          data-state counted and its rows in the month's spend AND AT LEAST
+          ONE CREDIT OF THAT ACCOUNT IN THE MONTH'S INCOME, which is the floor
+          that stops the income half below from passing over a statement that
+          never carried a credit, follow the link
           M3-P14's copy renders to the accounts screen, correct that account's
           ring to savings with the control that copy named, and land on a month
-          view where those rows are held and named by criterion 14.15, the
-          spend total has fallen by exactly them against a hand-written string,
-          and the verdict still reads as books closing. The journey also names
+          view where those rows are held and named by criterion 14.15, where
+          ALL FOUR TOTALS THE CORRECTION MOVES HAVE MOVED AND EACH IS PINNED
+          ON BOTH SIDES OF THE ACT, and where the verdict still reads as books
+          closing. THE FOUR TOTALS, BECAUSE A CORRECTION THAT CLEARS ROWS
+          MOVES FOUR AND AN EARLIER FORM OF THIS CRITERION PINNED ONE. They
+          are read off the aggregate rather than off intuition, and each is
+          named with the filter that makes it move. ONE, the spend total has
+          fallen by exactly the rows of that account the wrongly ringed state
+          counted as spend
+          (src/modules/overview/adapters/overview-repository.ts:217). TWO, the
+          income total has fallen by exactly the rows of that account the
+          wrongly ringed state counted as INCOME, of which AT LEAST ONE IS THE
+          INTEREST CREDIT criterion 14.15 witness SEVEN pins. That half is
+          named over the CLASS and not over the category interest, because on
+          a non-card account whose counterparties sit in no declared set the
+          sign alone decides (src/modules/ledger/domain/classify-flow.ts:102
+          through :121), so EVERY credit on that account is INCOME and the
+          total falls by all of them (overview-repository.ts:216); naming the
+          category would pin a number the fixture only produces when its sole
+          credit is the interest, and that is the mirror of the lump this
+          clause was rewritten to remove. THREE, pot-change has fallen by
+          exactly the NET of every row of that account the wrongly ringed
+          state had stamped with a flow, because changeInPot sums every row
+          that carries one (overview-repository.ts:219) and a cleared row
+          carries none. That is the OPPOSITE of criterion 15.1's first arm,
+          where the rows are reclassified and keep a flow either way so
+          pot-change cannot move; the two cases read the same citation to
+          opposite conclusions and this clause says which case it is in. FOUR,
+          the row count has fallen by exactly the number of those rows,
+          because rowCount counts every row carrying a flow
+          (overview-repository.ts:231) and they clear with the rest. EACH OF
+          THE FOUR IS RECORDED BEFORE THE CORRECTION AND ASSERTED AGAIN AFTER
+          IT, so the criterion pins the value on both sides of the act and not
+          only the size of the fall, all eight strings written by hand in the
+          spec from the fixture's own arithmetic and never read back from the
+          implementation, which is the shape every other figure in this
+          journey is asserted in. AND THE INCOME ASSERTION CARRIES A FLOOR,
+          because it is the one figure here that can be green over nothing:
+          the spec asserts the income recorded BEFORE the correction is
+          STRICTLY GREATER than the income asserted after it, so a statement
+          carrying no credit makes this criterion RED rather than passing with
+          two equal hand-written strings and nothing measured. The spend half
+          cannot fail that way, since the journey separately asserts the
+          account's rows are in the month's spend beforehand, and the clause
+          above now asserts a credit of that account in the month's income
+          beforehand for the same reason. The income half is not decoration. A
+          savings account answered toward the spending ring has its interest
+          credits taken as INCOME by the sign rule
+          (src/modules/ledger/domain/classify-flow.ts:121), which is exactly
+          the state criterion 14.15 witness SIX exists to make visible, so a
+          criterion pinning only the spend side leaves an implementation free
+          to correct the ring, hold the outgoing rows, and go on reporting the
+          household's own savings interest as income it earned, with the spend
+          assertion green throughout. AND RESERVES-NET IS RECORDED TOO AND
+          ASSERTED BYTE IDENTICAL ACROSS THE CORRECTION. This journey
+          registers NOTHING before uploading, so the second reserve account
+          criterion 14.15 witness SEVEN declares is not declared here and the
+          reserve-to-reserve row on the statement is an ordinary outgoing row
+          in the wrongly ringed state, entering spend and clearing with the
+          rest. A run that had inherited witness SEVEN's whole HOUSEHOLD
+          rather than its STATEMENT FILE would classify that row RESERVE
+          before the correction (src/modules/ledger/domain/classify-flow.ts:62
+          through :68) and move a fifth figure this journey pins nothing
+          about, and the byte-identical assertion is what turns that into a
+          red test instead of a silent difference. THE IDENTITY HOLDS ACROSS
+          THE CORRECTION, AND THE CRITERION SAYS WHY RATHER THAN LEAVING IT TO
+          BE REDISCOVERED. differenceCents is changeInPot minus the quantity
+          income minus spend minus net-to-reserves
+          (src/modules/overview/domain/month-projection.ts:201), and the four
+          movements above are not four independent facts: pot-change falls by
+          the signed net of the same rows whose credits leave income and whose
+          debits leave spend, so the three sums move TOGETHER and their
+          combination is unchanged, reserves-net does not move at all,
+          differenceCents therefore stays where it was, and the uninterpreted
+          count does not rise because the cleared rows now sit on an account
+          the ring scoping of decision D-56 removed from that count. THE
+          DERIVATION RESTS ON ONE PREMISE, AND THE CRITERION ASSERTS IT RATHER
+          THAN ASSUMING IT. Expanded over the aggregate's own filters,
+          differenceCents is the signed sum of the month's INTERNAL and
+          UNRESOLVED rows, which the code says of itself
+          (src/modules/overview/domain/month-projection.ts:166 through :168),
+          so the derivation above holds exactly when every flowed row on the
+          corrected account is INCOME or SPEND. Registering nothing closes ONE
+          of the other three routes by construction and leaves the other two
+          to be closed by assertion, and the criterion says which is which
+          rather than claiming a clean sweep. THE RESERVE ROUTE IS CLOSED BY
+          CONSTRUCTION: the household registered nothing, so the declared
+          reserve set is empty and no row on that statement can take the
+          reserve arm (src/modules/ledger/domain/classify-flow.ts:62 through
+          :68). THE INTERNAL ROUTE IS NOT, AND THIS IS WHY RECON-DIFFERENCE IS
+          PINNED AS WELL AS THE SHAPE. The declared POT set is not empty on
+          this journey: it holds the wrongly ringed account's OWN number,
+          because the import declared that account in the pot ring, so a row
+          on that statement whose counterpartyIban is that same number
+          classifies INTERNAL (src/modules/ledger/domain/classify-flow.ts:73
+          through :77), the non-zero shape clause below does not exclude such
+          a row, and the byte-identical recon-difference assertion is the only
+          thing that catches it. The two guards are therefore complementary
+          rather than belt and braces. THE UNRESOLVED ROUTE IS CLOSED BY THE
+          SHAPE CLAUSE: a row whose amount is ZERO classifies UNRESOLVED
+          (src/modules/ledger/domain/classify-flow.ts:125), and criterion
+          14.15 witness SEVEN's shapes speak of a POSITIVE row and a NEGATIVE
+          row and so do not exclude one. THIS JOURNEY THEREFORE PINS THE
+          SHAPE: every row of the pinned statement file carries a NON-ZERO
+          amount, asserted over the whole file rather than over the three rows
+          witness SEVEN names, which puts the UNRESOLVED route out of the
+          journey by construction; and recon-difference is recorded before the
+          correction and asserted byte identical after it alongside the four,
+          so the identity this paragraph derives is a red test and not only an
+          argument. WHAT THAT CLOSES IS A STATED DIAGNOSIS AND NOT A HIDDEN
+          DEFECT, and the criterion says which rather than overstating the
+          repair. A zero-amount row on that account would already have held
+          the books OPEN before the correction, because reconciles requires
+          unresolvedCount to be zero
+          (src/modules/overview/domain/month-projection.ts:208 through :213),
+          and the four pinned strings and the row count would still be written
+          correctly from the fixture's own arithmetic. What such a row would
+          break is this paragraph's derivation, and with it the diagnosis the
+          next sentence offers. The verdict still reads as books closing for
+          the reason the identity gives and not by luck, and a run in which
+          differenceCents does move has cleared some of those rows and not
+          others, which this paragraph turns into a diagnosis rather than a
+          surprise. THE FIXTURE COUPLING
+          IS MECHANICAL AND NOT MERELY STATED, WHICH IS WHAT CRITERION 14.15
+          WITNESS SEVEN IS DEPENDED ON FOR. The savings statement this journey
+          uploads is THE STATEMENT FILE of the fixture witness SEVEN pins,
+          NAMED BY PATH in this spec so the two phases cannot drift onto
+          different files, and the repository's other savings upload
+          (test/e2e/month-view.spec.ts:1377) is not it. Without witness
+          SEVEN's interest credit in that file there is no income movement to
+          assert at all; with the floor above, a spec that reached for another
+          statement goes RED rather than passing over nothing. The journey
+          also names
           one merchant against that account's own counterparties BEFORE the
           correction, which is what the wrongly ringed state invites since
           those counterparties reach the merchant review screen as unresolved
@@ -10506,24 +11346,30 @@ phases:
           does not meet this criterion.
       - id: "16.2"
         criterion: >-
-          NO ASSIGNMENT IS LOST AND A BLOCKING EXIT IS NEVER MADE GREEN
-          QUIETLY. The recorded after size is greater than or equal to the
-          recorded before size, which is criterion 12.7's superset property
-          observed on the deployed data rather than on a seed. WHERE --accept
-          APPEARS IN ANY INVOCATION OF THE ROUTINE, INCLUDING A DRY RUN, the
-          record names every rule id it carried, the blocking condition each of
-          those ids was reported under BY AN INVOCATION MADE WITHOUT --accept,
-          the exit code of that unaccepted invocation, and the owner's
-          acceptance of each id by reference to a dated entry in the phase work
-          history carrying the rule ids and nothing else. A record whose only
-          reported invocation carried --accept does not meet this criterion,
-          whatever its exit code. THE CRITERION IS KEYED ON THE FLAG AND NEVER
-          ON THE EXIT CODE, and the reason is the whole of it: an exit code is
-          something the invocation can choose, so an obligation conditioned on
-          a non-zero exit is an obligation an implementer can walk around by
-          choosing the invocation that never produces one. Where no invocation
-          carried --accept the record says so and carries the exit code of the
-          run it made.
+          NO ASSIGNMENT IS LOST AND A BLOCKING EXIT IS NEVER MADE GREEN QUIETLY. The
+          recorded after size is greater than or equal to the recorded before size,
+          which is a strictly WEAKER observation than criterion 12.7's superset
+          property and is recorded as one, because a row changing hands removes one
+          pair and adds one and is therefore size-neutral, so the size comparison
+          cannot see either the change criterion 12.7 licenses or the reassignment
+          hazard H12.31 names. The superset property itself is observed on the
+          deployed data only through the routine's own lineage-based loss report, so
+          the record carries that report's loss count, its claimant-merchant count
+          and the exit code beside the two sizes. WHERE --accept APPEARS IN ANY
+          INVOCATION OF THE ROUTINE, INCLUDING A DRY RUN, the record names every
+          rule id it carried and, for a lost assignment, the transaction id beside
+          it, since criterion 12.7 accepts a loss by that pair and never by a rule
+          alone, the blocking condition each of those ids was reported under BY AN
+          INVOCATION MADE WITHOUT --accept, the exit code of that unaccepted
+          invocation, and the owner's acceptance of each id by reference to a dated
+          entry in the phase work history carrying the rule ids and nothing else. A
+          record whose only reported invocation carried --accept does not meet this
+          criterion, whatever its exit code. THE CRITERION IS KEYED ON THE FLAG AND
+          NEVER ON THE EXIT CODE, and the reason is the whole of it: an exit code is
+          something the invocation can choose, so an obligation conditioned on a
+          non-zero exit is an obligation an implementer can walk around by choosing
+          the invocation that never produces one. Where no invocation carried
+          --accept the record says so and carries the exit code of the run it made.
       - id: "16.3"
         criterion: >-
           THE DEPLOY ORDER IS OBSERVED RATHER THAN ASSUMED, AND THE INSTRUMENT
@@ -11858,7 +12704,27 @@ decisions:
       ordering is otherwise free, and its work is confined to domain,
       application, adapters and test except for the one component it shares
       with M3-P8, M3-P10 and M3-P11, which its conflicts-with entry sequences.
-      It shares NO file with M3-P9, checked rather than assumed. M3-P13 runs
+      ONE PREMISE OF THIS DECISION WAS FALSE AND IS CORRECTED IN PLACE RATHER
+      THAN DELETED, clause R-087. WHAT THIS DECISION USED TO SAY: "It shares
+      NO file with M3-P9, checked rather than assumed." It was false from the
+      phase branch's THIRD working commit, 62612ad on 2026-08-23, and it
+      survived all nine of that phase's fix rounds. Three of M3-P9's five are
+      shared: src/app/globals.css, playwright.config.ts and test/e2e/.
+      THE CONCLUSION THIS DECISION REACHED IS UNCHANGED, and only its premise
+      moves. M3-P12 still runs strictly BEFORE M3-P9 and never beside it,
+      which is the severity ordering stated above, under which M3-P12 runs
+      before M3-P8 through M3-P11, M3-P9 INCLUDED, through D-19's tie-break.
+      What the sharing changes is the MERGE SURFACE and not the sequence:
+      three files that were claimed empty are an ordinary one, and M3-P9 is
+      not merged, so the overlap is live rather than historical. M3-P12's own
+      conflicts-with entry carries the file-by-file account and is corrected
+      on that phase's branch rather than here, so this decision states the
+      conclusion and does not restate the detail. WHY THE OLD PREMISE WAS BAD
+      IS NOT THAT IT SPOKE OF FILES: a declared disjoint file set was never
+      structural either, it was a property of a declaration that drifted from
+      its branch with nothing checking it. It was bad because it was asserted
+      and unpinned, which is the subject of the parked entry on declarations
+      going unchecked. M3-P13 runs
       LAST, after M3-P8 through M3-P11, because it consumes M3-P9's tokens,
       M3-P10's submit leaf and M3-P11's predicted row, and because it edits
       the same component and the same two stylesheets all of them edit.
@@ -12856,3 +13722,137 @@ parked:
       builds. Parked because the cost of not having it is bounded and stated
       (criterion 14.6 measures it) and because M3-P15 is what makes a wrong
       binding recoverable. Revisit after M3-P15 merges.
+  - item: >-
+      Nothing checks a phase's files-to-touch against the diff. Every phase in
+      this plan is on the honour system, and the amendment that found it did
+      not close it.
+    reason: >-
+      RECORDED WHERE THE NEXT PERSON FINDS IT, because it was found by reading
+      M3-P12's declaration against its branch and would otherwise live in one
+      message. THE NUMBERS ARE MEASURED RATHER THAN SAMPLED, in an entry whose
+      whole subject is unmeasured claims. M3-P12's declaration covered 46 of
+      the 69 non-delivery paths its branch touches and failed to cover 23,
+      src/app/globals.css, playwright.config.ts, all three message
+      catalogues, the whole of src/modules/overview/application/ and the
+      phase's own counterparty-identity.ts among them. THE DRIFT DID NOT CREEP
+      IN OVER NINE ROUNDS, IT WAS THERE FROM THE FIRST COMMIT: the earliest
+      uncovered path is src/modules/merchants/domain/counterparty-identity.ts,
+      which lands in 502da43, the branch's FIRST commit, one of only two files
+      that commit adds and 226 of its lines. It is the file this phase exists
+      to add, its one exported pure derivation, and the declaration never
+      named it through all NINE fix rounds and several clean-room reviews. The
+      conflicts-with entry's claim of a disjoint file set with M3-P9 was
+      falsified two commits later, by 62612ad on 2026-08-23, and stood into
+      that phase's late rounds; it is corrected on the phase branch.
+      THE PLAN CANNOT CATCH THAT ITSELF: five criteria mention files-to-touch
+      and four of them do so in prose, the exception being criterion 7.10,
+      which carries a mechanical path list that is hand-typed and can drift
+      from the declaration independently. Nor can the repository: there is no
+      .github directory, package.json carries gate:tokens and gate:privacy
+      only, and scripts/gate-privacy.sh contains no occurrence of
+      files-to-touch. THE MECHANISM EXISTS AND IS SIMPLY NOT WIRED UP. The
+      kernel ships a scope auditor whose stated purpose is to make "every
+      changed path is on the phase's declared list, or a declared extra" a
+      check with an exit code, derived from the diff rather than trusted to a
+      prose deviation section; the fleet gate registry declares it as a
+      required gate with a precondition matching this repository's own branch
+      naming; it reads its input from delivery/plan/phase-declarations/, one
+      generated document per phase, emitted by tiphys plan project. Pulse has
+      never generated that directory on any ref, so the gate has no input and
+      has never run. WHAT IT WOULD ACTUALLY HAVE DONE, stated so that the
+      record does not undersell what is not being switched on. On the first
+      defect it would have gone RED, with an exit code and not a printed
+      line, at the branch's FIRST commit: a touched path with no
+      declaration entry is a violation, and the auditor returns red status
+      with the offending paths named. What DR-0031 relaxed is the OTHER arm,
+      an entry the branch ADDS to its own declaration, which is allowed and
+      printed by name so that a declaration amendment can land with the phase
+      that needs it and be signed off by a reader rather than refused. The
+      second defect it would not have reached in either arm: this gate audits
+      paths and never reads conflicts-with, so nothing mechanical was ever
+      going to catch a false sentence about phase collision. TWO THINGS THIS
+      AMENDMENT DID BY HAND THAT THE GATE WOULD HAVE DONE, recorded so the
+      manual run is repeatable. The set difference was computed in BOTH
+      directions with the schema's own convention, a literal path or a
+      trailing-slash directory prefix: touched-but-undeclared is now EMPTY,
+      and declared-but-untouched is now EMPTY, where before this amendment
+      the first held 23 entries and the second held
+      src/modules/merchants/domain/normalise-counterparty.ts. That last one
+      was removed rather than glossed, because criterion 12.5 pins its
+      constants byte-for-byte against the baseline and the branch does not
+      touch the file at all: a declaration naming a file the phase must not
+      change invites the edit the criterion forbids. TWO FACTS ABOUT THE
+      M3-P12 AND M3-P9 PAIR SIT HERE RATHER THAN IN EITHER PHASE'S
+      CONFLICTS-WITH, because they are facts about how the two were RUN and
+      not amendments to what either declares, and because M3-P12's own entry
+      is corrected on that phase's branch and says the rest. FIRST, THE
+      ORDERING WAS ALREADY VIOLATED IN PRACTICE. D-44 puts M3-P12 strictly
+      before M3-P9 and never beside it, and the two branches ran CONCURRENTLY
+      on all three shared files: M3-P9's commits run 2026-08-23 to
+      2026-08-24, M3-P12's from 2026-08-23 onward, and M3-P12 first touched
+      src/app/globals.css, test/e2e/ and playwright.config.ts inside that
+      window. It was harmless, and harmless for a measured reason rather than
+      by luck, and the reason is stated as measured rather than as tidy. The
+      changed regions are disjoint. In src/app/globals.css M3-P12's change is
+      purely additive, 29 lines added and 0 deleted by git diff --numstat.
+      Under test/e2e/ IT IS NOT: the one spec file this phase adds and its 98
+      added lines in merchants.spec.ts are additive, but auth.spec.ts is 30
+      added and 2 DELETED. The conclusion survives anyway, and survives for a
+      better reason than additivity, which is that auth.spec.ts is a file
+      M3-P9 does not touch at all: M3-P9's only path under test/e2e/ is the
+      one spec it adds. A trial three-way merge was RUN, pinned to the two
+      heads it was measured over, because both branches are unmerged and live
+      and this claim moves with either of them: git merge-tree --write-tree
+      over M3-P12 at 2d82402 and M3-P9 at 3470624 exits 0 and prints one tree
+      oid with no conflict section, and any further commit to either branch
+      touching src/app/globals.css, playwright.config.ts or test/e2e/ retires
+      that measurement. The ordering is therefore a rule
+      for any FURTHER round on either branch rather than a description of what
+      has been done. SECOND, THE ORDERING IS ONE-SIDED WHERE IT IS WRITTEN. It
+      is stated in D-44 and in M3-P12's entry, while M3-P9's own
+      conflicts-with names M3-P10, M3-P8 and M3-P4 and does not mention
+      M3-P12 at all, so the reader who would violate it, the one dispatching
+      M3-P9, meets it nowhere; M3-P14's entry has the same hole in the same
+      direction. Both reciprocal entries are ROUTED rather than taken, because
+      this amendment is confined to one phase's declaration, one decision and
+      this register. AND ONE PRECEDENT REFUSAL THAT HAS TO LIVE HERE
+      RATHER THAN IN A GLOSS, because tiphys plan project strips a
+      parenthetical gloss by design and the only reader with an exit code
+      never sees one. M3-P12 carries one unrelated repair, .gitignore,
+      because that branch created the defect it repairs, a tracked
+      node_modules symlink whose content is an absolute container path in a
+      public repository. It is declared so the declaration equals the diff.
+      It is NOT a precedent: a phase that did not create a defect does not
+      repair it on its branch. Parked rather than planned deliberately: no
+      wiring is built here and no phase is added for it, because deciding
+      where the check runs and what it costs a round is the orchestrator's
+      call and not a plan amendment's, and switching it on mid-flight would
+      redden in-progress branches for declarations rather than for defects.
+      Discharged when either a phase owns the wiring or the plan records the
+      decision not to have it.
+  - item: >-
+      An implementer is amending the plan from its phase branch, and the two
+      copies of one entry were corrected twice, differently, before anyone
+      noticed there were two.
+    reason: >-
+      THE FACT, measured rather than inferred. The M3-P12 phase branch carries
+      209 inserted and 675 deleted lines of delivery/plan/pulse-v02.yaml, made
+      during that phase's fix rounds. Among them is a correction of M3-P12's
+      own conflicts-with entry for M3-P9, written under findings HZ-M3P12-10
+      and CR4-M3P12-02. A separate plan-amendment round, working from the copy
+      on main, corrected the SAME entry independently and reached the opposite
+      conclusion about ordering before the duplication was found; that second
+      correction was withdrawn and the entry restored to main's text so the
+      phase branch's version is the only one that lands, which is why this
+      register carries the fact and that entry does not. THE POINT IS NOT THE
+      WASTED ROUND. It is that the plan had two live heads at once, that
+      neither writer could see the other's, and that the divergence was found
+      by a person comparing them rather than by anything in the process, which
+      is the same shape as the parked entry above one register up. It also
+      means a brief written from main is stale wherever a phase branch has
+      edited the plan, which is how the second correction came to be
+      commissioned at all. RECORDED, NOT SOLVED. No fix is proposed here and
+      no phase is added, because whether an implementer may amend the plan at
+      all, and through what route if not, is a role-boundary decision and not
+      a plan amendment's to make. Discharged when the plan records that
+      decision, in either direction.

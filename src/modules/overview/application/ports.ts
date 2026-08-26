@@ -8,6 +8,7 @@ import type { PlainDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
 import type { Clock } from "@/platform/clock";
 import type {
+  CountedGroupIdentity,
   CountedGroupRow,
   GapRow,
   RawMonthFigures,
@@ -57,8 +58,12 @@ export type OverviewRepositoryPort = {
 export type OverviewDependencies = {
   readonly overview: OverviewRepositoryPort;
   readonly clock: Clock;
-  // The merchants module's published normalisation, injected so the
-  // domain fold stays import-free: unresolved rows group under the SAME
-  // key the merchant review screen uses.
+  // M3-P12: the counterparty IDENTITY derivation, injected so the domain
+  // fold stays import-free and unresolved rows group under the SAME key the
+  // merchant review screen uses. It replaces the normaliser the same way the
+  // review builder's own key changed, so the two screens keep agreeing.
+  readonly counterpartyIdentity: CountedGroupIdentity;
+  // Still injected beside it: the fold labels an unresolved group with the
+  // normalised counterparty text, which M3-P12 does not change.
   readonly normaliseCounterparty: (text: string) => string;
 };
