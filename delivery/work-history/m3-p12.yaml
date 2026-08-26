@@ -2590,6 +2590,43 @@ gate-evidence:
     todo: 0
     did-not-run: 0
 
+  - gate: >-
+      FIX ROUND TWELVE, the full gate at head 28f8179 in /home/user/wt-m3p12,
+      each exit code captured on its own line. Node v22.12.0 and npm 10.9.0,
+      which is what package.json engines asks for and what both review lanes
+      used; earlier rounds ran under v26.7.0 and the change is recorded rather
+      than silent. npm run typecheck 0; npm run lint 0; npm test 0 with 45
+      files and 716 tests, zero skipped and zero todo; npm run gate:privacy 0
+      ("gate:privacy clean"); npm run gate:tokens 0; npm run test:mutants 0,
+      six wrong predicates caught, SELF died as its entry expects, restored
+      checksum equal to the original.
+
+      THE SLOW GATE, npm run test:e2e, on the clean committed tree at 28f8179
+      with the five PULSE_GATE_* names pinned from the worktree's own .env
+      after each of the three endpoints was PARSED and its hostname checked
+      against the local set. "55 passed (10.5m)", E2E_EXIT=0, nothing skipped.
+      Afterwards git status was read and staged by path; next-env.d.ts, which
+      the run regenerates, was restored rather than committed.
+
+      npm ci WAS NOT PART OF THIS GATE AND COULD NOT BE. It exits 1 at this
+      head with "Missing: @swc/helpers@0.5.23 from lock file", reproduced
+      independently here and by both review lanes. The install used was
+      npm install with the tracked lockfile left byte-identical.
+
+      ENVIRONMENT EVENT, recorded because it interrupted the round: this
+      worktree's node_modules was a SYMLINK into a sibling worktree, and that
+      sibling's node_modules was deleted from outside this session part-way
+      through. The dangling symlink was removed from THIS worktree only, no
+      sibling was touched, and a real install was made here instead.
+    result: green
+    wrapper-exit-code: 0
+    discovered: 55
+    passed: 55
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+
 claims:
   - id: C-M3P12-01
     kind: coverage
@@ -3818,10 +3855,13 @@ fix-round:
       body. Buying a green scan by deleting real coverage is not a fix. So the
       claim is narrowed to what it delivers, the two unreachable shapes are
       pinned as KNOWN LIMITS so the next reader meets them as facts, and the
-      assertion that a guard RUNS is moved to behaviour. Only ONE door can be
-      executed in the fast gate, prisma/seed.ts, and it now is. The two
-      Playwright specs cannot be, and REFUSAL_PROVEN records that in their own
-      entries rather than leaving it to be inferred.
+      assertion that a guard RUNS is moved to behaviour. One door IS executed
+      in the fast gate now, prisma/seed.ts, spawned with a bad target on two
+      paths and required to refuse. I DID NOT FIND A WAY to execute the two
+      Playwright specs there, because running one means starting the gate's two
+      web servers; I did not prove that no way exists, and REFUSAL_PROVEN
+      carries that as a stated gap in their own entries rather than leaving it
+      to be inferred.
 
       NOTHING IN THE FAST GATE REACHES THE PRISMA ADAPTER, and that is the
       price of the laziness, stated plainly because the hazard lane asked for
@@ -3840,6 +3880,20 @@ fix-round:
       THEM. That is a residual of this phase, it is not closed here, and the
       lane's own concrete fix, a second slow-gate spec running the routine
       twice through merchantRepository, is the shape of the work it would take.
+
+      THE FAST GATE NOW CONSTRUCTS ONE CLIENT, NOT ZERO, AND THE CHANGE IS
+      DELIBERATE. Round ten recorded zero, and that number was the evidence
+      for the laziness claim. It is now ONE, from a single test in
+      test/db/db-guard.test.ts which touches the proxy on purpose against an
+      INVENTED LOCAL target pinned inside the test. The reason is HAZARD
+      finding HZ11-M3P12-07: the assertion standing behind "the lazy binding
+      is still usable" was `typeof clientModule.prisma`, which a Proxy answers
+      from its TARGET without invoking any trap, so it was a statement about an
+      empty object literal and passed in a process where every real property
+      access throws. Proving the binding resolves requires resolving it. The
+      zero-construction property is still asserted, in the same test, before
+      the trap is touched, and the count is attributable to one named test
+      rather than to a module importing something.
 
       npm ci REFUSES AT THIS HEAD AND IT IS NOT THIS BRANCH'S DOING. Both
       review lanes hit it and so did I, independently, under node v22.12.0 and
