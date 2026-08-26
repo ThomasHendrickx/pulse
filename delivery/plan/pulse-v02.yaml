@@ -520,6 +520,40 @@
 #   re-invents only the fixture numbers a criterion requires to be registered.
 #   The status of D-55 goes to the owner as a question; the decision text is
 #   restructured so the answer replaces one part and nothing else.
+# - DR-0030 LANDED AND REVERSED THE REFUSAL. The owner decided on 2026-08-26
+#   that Pulse ACCEPTS a reserve account's own statement in v1, and the plan
+#   is folded to that answer. D-55 is rewritten as a decision put to the owner
+#   and answered rather than a constraint the engine imposed; the import
+#   refusal, its machine reason and its catalogue entries are gone, and the
+#   ring control offers both rings, which is now REQUIRED rather than optional
+#   because the household saying what the account IS at the moment it first
+#   appears is what closes the silent-pot trap.
+#   THE MECHANISM IS A VERDICT AND NOT A DERIVED NULL, which the decision
+#   record states in as many words: the month closes because held is a verdict
+#   and null is not. So the Flow enum gains HELD (a migration, where both
+#   phases previously declared none), interpretation stops loading pot
+#   accounts only and stamps HELD on every row whose account is not a pot
+#   account, and BOTH copies of the reconciliation identity are told to
+#   exclude it, the SQL projection at overview-repository.ts:219 and :231 and
+#   the domain accumulator at reconciliation.ts:60 through :66, since a HELD
+#   row is non-null and would otherwise enter changeInPot and rowCount and
+#   break the identity by exactly its own sum. Those three land together,
+#   which decision D-60 records as non-negotiable.
+#   D-56 IS WITHDRAWN, and the reason is recorded rather than the scoping
+#   quietly left in place: with a verdict, a null flow means the same thing on
+#   every ring, that ingest committed the row and interpretation never ran, so
+#   narrowing either gap read by ring would hide a genuine gap on the ring
+#   where it is hardest to notice. The household that imported a reserve
+#   statement before this ships needs no scoping either: its rows heal on the
+#   next recompute, and the existing cause copy, which promised that Pulse
+#   includes them when interpretation next covers the period, becomes a true
+#   sentence where before it was false forever.
+#   WHAT THE OWNER IS BUYING is written as a criterion rather than as prose:
+#   the interest a reserve account earns, a movement between two of the
+#   household's own reserve accounts, and anything paid directly out of one,
+#   each visible by name and amount, because an implementation that accepts
+#   the import and leaves those three invisible has not delivered DR-0030. No
+#   third phase and no M3-P17: both phases lengthen instead.
 # - FIX ROUND on the M0-P6 iteration (phases M3-P14 and M3-P15), taken after
 #   the adversarial plan review returned FIX-ROUND-NEEDED with seven high,
 #   seven medium and one low finding. Every finding is answered in place; the
@@ -7544,17 +7578,24 @@ phases:
       and registering an account recomputes, so rows already imported that
       reference it are reclassified with no fact rewritten. The case this
       phase exists for is the one the product cannot express at all today: a
-      reserve account, whose statements v1 never imports, which this phase
-      turns from a sentence in a skill into a rule the confirm path enforces
-      and a gap read that no longer holds a month open for rows the engine was
-      never going to interpret.
+      reserve account. Its statement is ACCEPTED under DR-0030 and its own rows
+      are INTERPRETED with the verdict HELD, present and attributed to their
+      account and no part of this month's income, spending or net to reserves,
+      shown on a surface that says so in all three languages, so that the three
+      things only a savings statement carries become visible: the interest it
+      earns, a movement between two of the household's own reserve accounts,
+      and anything paid directly out of one.
     grounding: >-
       The owner's scenario, quoted in standing-context: ten accounts, one
       uploaded first, its transfers to the other nine offered as merchants.
       The pulse-domain skill is the authority and answers it already: section
-      1 for the three rings and for the sentence that reserve accounts are
-      registered for their IBAN only and their statements are not imported in
-      v1 (.claude/skills/pulse-domain/SKILL.md:20 and :22), section 2 for
+      1 for the three rings (.claude/skills/pulse-domain/SKILL.md:20), whose
+      next sentence, that reserve accounts are registered for their IBAN only
+      and their statements are not imported in v1
+      (.claude/skills/pulse-domain/SKILL.md:22), is SUPERSEDED by DR-0030 and
+      is corrected by this phase in the same commit, because a skill that is
+      always in context and contradicts the shipped behaviour is a trap for
+      whoever reads it next. Section 2 for
       facts versus declarations and its three absolute rules
       (.claude/skills/pulse-domain/SKILL.md:37 through :41),
       section 3 for the classification order
@@ -7581,9 +7622,9 @@ phases:
       declareAccount in src and there is no accounts route under src/app, so a
       household cannot name an account it has not imported. For a reserve
       account this is decisive rather than inconvenient, because
-      .claude/skills/pulse-domain/SKILL.md:22 says its statements are not
-      imported: on the path the domain describes the account is never
-      declared, deriveDeclaredSets adds nothing for it
+      .claude/skills/pulse-domain/SKILL.md:22 said, at 75ec85d and before
+      DR-0030 superseded it, that its statements are not imported: on the path
+      the domain described the account is never declared, deriveDeclaredSets adds nothing for it
       (src/modules/ledger/domain/ledger-transaction.ts:56 through :61), the
       reserve arm of classification never fires
       (src/modules/ledger/domain/classify-flow.ts:62), and every euro moved to
@@ -7740,63 +7781,66 @@ phases:
           criterion 14.8 measures that the gap is named with its remedy rather
           than left as a bare alarm.
       - text: >-
-          Close the state this phase would otherwise make frictionless, and
-          close it in the ORDER a household is actually in. Decision D-55: a
-          reserve account's statements are not imported in v1
-          (.claude/skills/pulse-domain/SKILL.md:22), and this phase ENFORCES
-          that rule rather than documenting it. The confirm path refuses an
-          import whose own account number resolves to an account in the reserve
-          ring, AND refuses a declaration naming the reserve ring, with one new
-          machine reason added to the existing union
-          (src/modules/import/application/ports.ts:72 through :81) and
-          translated in all three catalogues like every other reason. THE RING
-          QUESTION STAYS ON THE IMPORT SCREEN
-          (src/modules/import/ui/profile-confirmation.tsx:181 through :184),
-          and this step reverses the narrowing an earlier draft of this plan
-          made, because uploading is the only way into Pulse today and the
+          ACCEPT the reserve account's statement, INTERPRET its rows as HELD,
+          and show them. Decision D-55, rewritten to DR-0030: no refusal is
+          added anywhere and the earlier draft of this plan that added one is
+          reversed. Four pieces, and they land together for the reason decision
+          D-60 gives. ONE, THE ORDER. The ring control goes on offering BOTH
+          rings (src/modules/import/ui/profile-confirmation.tsx:181 through
+          :184), the confirm path rejects a declaration carrying no ring rather
+          than defaulting one, and the copy beside each answer states its
+          consequence, because uploading is the only way into Pulse today, the
           order every household is in is upload first and accounts screen
-          later. On that order
+          later, and on that order
           src/modules/import/application/confirm-import.ts:95 through :99
-          declares the account from the owner's answer, so a control offering
-          the pot ring alone does not stop a savings account being declared, it
-          declares it a spending account SILENTLY: its transfers then take
-          src/modules/ledger/domain/classify-flow.ts:73 through :77 and become
-          INTERNAL, the partner legs pair because the savings statement was
-          imported, the reserves block renders zero with its empty note
+          declares the account from that answer with nothing standing behind
+          it. Restoring the savings answer is what closes the silent trap: a
+          control offering the pot ring alone would declare a savings account a
+          spending account SILENTLY, its transfers taking
+          src/modules/ledger/domain/classify-flow.ts:73 through :77 as INTERNAL
+          and pairing, the reserves block reading zero with its empty note
           (src/modules/overview/ui/month-view.tsx:223 and :249 through :253)
-          and the verdict reads that the books close over a month in which the
-          household saved. The ring is a QUESTION ABOUT THE ACCOUNT and not a
-          destination the screen offers, so the screen goes on asking it and
-          the reserve answer produces the named refusal with its copy: a
-          savings account's statement is not imported in v1, the accounts
-          screen is where a savings account is registered, and the screen links
-          to it. What this phase removes is the silence, not the question. The
-          existing reserve upload at test/e2e/month-view.spec.ts:1377 is
-          rewritten to register that account on the accounts screen instead of
-          uploading its statement, with its reserve-group and reserves-net
-          assertions unchanged. Decision D-56, separately: a row on an account
-          that is not a pot account is not an uninterpreted gap, so BOTH reads
-          that can see such a row take pot accounts only, the uninterpreted
-          COUNT at src/modules/overview/adapters/overview-repository.ts:230 and
-          listGapRows at overview-repository.ts:263 through :310, whose WHERE
-          at :295 admits a null flow and which carries no ring filter today.
-          Scoping one and not the other leaves the repository handing the
-          screen rows the verdict has already declared absent, which is the
-          screen hiding an unknown that decision D-55 rejects in its own text.
-          Scoping them HERE rather than in M3-P15 is what heals a household
-          that imported a reserve statement before this phase instead of
-          leaving its month open until the next one; and because those rows
-          then sit in no total and no gap list, the accounts screen NAMES them,
-          stating for each account whose ring means Pulse does not interpret it
-          how many imported rows are held there uncounted, in copy present in
-          all three catalogues. The scoping is by the account's ring and never
-          by dropping the null-flow condition, because a null flow on a POT
-          account is a row ingest committed and interpretation never reached,
-          and it must go on holding the verdict open and go on being listed,
-          which is finding CR-502 recorded in the comment at
+          and the books closing over a month in which the household saved. TWO,
+          THE VERDICT, which is decision D-59. The Flow enum gains HELD
+          (prisma/schema/import.prisma:18 through :24, a migration this phase
+          owns), interpretation stops building its window from the pot accounts
+          alone (src/modules/ledger/application/interpret-window.ts:37 through
+          :39) and covers every account, stamping HELD on every row whose
+          account is not a pot account. A reserve statement's rows are then
+          interpreted rather than half interpreted, which is why the month
+          closes over them and why no read has to be narrowed to keep them out
+          of a gap. THREE, THE IDENTITY, which is decision D-60 and is the
+          dangerous half. changeInPot at
+          src/modules/overview/adapters/overview-repository.ts:219 and rowCount
+          at :231 filter on flow IS NOT NULL, and the domain copy at
+          src/modules/ledger/domain/reconciliation.ts:60 through :66 skips only
+          an undefined flow, so a HELD row would enter all three and break the
+          identity by exactly its own sum. Both copies exclude HELD, by a flow
+          filter rather than a ring join, and they land in the same change as
+          the enum member and the interpretation switch, because stamping HELD
+          before the projections exclude it would silently move a figure every
+          household already trusts. FOUR, THE SURFACE, which is what DR-0030 is
+          paying for. The month view renders the held rows of the requested
+          period, grouped by account, with descriptor and amount, saying they
+          are held on that account and are no part of this month's income or
+          spending, in English, Dutch and French. That surface is what makes
+          the three things only a savings statement carries visible: the
+          interest a reserve account earns, a movement between two of the
+          household's own reserve accounts, and anything paid directly out of
+          one, none of which has a counterpart row on any pot account.
+          Criterion 14.11 measures the order, criterion 14.14 that no read is
+          narrowed and that a legacy null row heals, criterion 14.15 the
+          surface and the three things, and criterion 14.16 the identity.
+          NOTHING IS SCOPED BY RING: decision D-56 is withdrawn, and criterion
+          14.14 fails if either gap read is narrowed, because after this phase
+          a null flow means the same thing on every ring, that ingest committed
+          the row and interpretation never ran, which is finding CR-502 and
+          must go on holding the verdict open (the comment recording it at
           src/modules/overview/adapters/overview-repository.ts:237 through
-          :242. Criterion 14.11 measures the reserve-statement rule and the
-          order; criterion 14.14 measures the two gap reads.
+          :242). The existing reserve upload at
+          test/e2e/month-view.spec.ts:1377 goes on uploading its statement and
+          its reserve-group, reserves-net and no-reserves assertions stand
+          unchanged.
       - text: >-
           Decide and implement what happens to a MerchantRule the owner
           already wrote against a counterparty that turns out to be their own
@@ -7843,8 +7887,15 @@ phases:
       - src/modules/overview/adapters/overview-repository.ts
       - src/modules/ledger/domain/ledger-transaction.ts
       - src/modules/import/application/confirm-import.ts
-      - src/modules/import/application/ports.ts
       - src/modules/import/ui/profile-confirmation.tsx
+      - prisma/schema/import.prisma (the Flow enum gains HELD)
+      - prisma/migrations/ (the enum migration)
+      - src/modules/ledger/application/interpret-window.ts
+      - src/modules/ledger/domain/reconciliation.ts
+      - src/modules/ledger/domain/classify-flow.ts
+      - src/modules/overview/application/month-overview.ts
+      - src/modules/overview/application/ports.ts (the held read)
+      - .claude/skills/pulse-domain/SKILL.md (section 1, superseded by DR-0030)
       - src/app/globals.css
       - styles/tokens.css
       - messages/en.json
@@ -8166,74 +8217,59 @@ phases:
           merchant name, a place name, a date or an amount inside a file.
       - id: "14.11"
         criterion: >-
-          A SAVINGS ACCOUNT'S STATEMENT IS REFUSED IN THE ORDER A HOUSEHOLD IS
+          THE SAVINGS STATEMENT IS ACCEPTED, IN THE ORDER A HOUSEHOLD IS
           ACTUALLY IN, AND NOTHING IS DECLARED SILENTLY. Four witnesses, and
-          the phase fails if any one is missing. ONE, THE REFUSAL ON AN
-          ACCOUNT ALREADY REGISTERED. A Playwright test registers a reserve
-          account on the accounts screen, uploads a statement whose own account
-          number is that account written in a different surface form, and
-          asserts that the confirm step fails with the new machine reason, that
-          the household's transaction count is unchanged, and that the
-          household still holds exactly one account. The message rendered comes
-          from all three catalogues, names correcting the ring on the accounts
-          screen as what changes it, AND STATES WHAT THAT COSTS: an account
-          moved to the pot ring stops appearing in the reserves block and its
-          transfers stop counting as money set aside. A remedy named without
-          its price is the same shape of surprise this round exists to remove,
-          so a message naming the remedy alone fails this witness. An
-          application test asserts the confirm path returns that same reason
-          for a declaration naming the reserve ring even when the form is
-          bypassed, so the rule is the server's and not the screen's. TWO, THE
-          QUESTION IS STILL ASKED. A grep asserts the ring control at
-          src/modules/import/ui/profile-confirmation.tsx:181 through :184 still
-          offers both rings, because the ring is a question about the account
-          and not a destination the screen offers, and a Playwright test
-          asserts that answering it with the reserve ring produces the refusal
-          of witness ONE rather than an account. The existing reserve upload at
-          test/e2e/month-view.spec.ts:1377 is rewritten in this phase to
-          register that account on the accounts screen instead, with its
-          reserve-group count and its reserves-net and no-reserves assertions
-          unchanged and still passing; and because that fixture's account
-          number predates criterion 14.12's check and the verification-first
-          step measures how many committed fixture numbers fail it, the phase
-          re-invents that number to a value the platform validity test accepts,
-          updates every reference to it in the sibling fixture in the same
-          commit, adds the new entries to test/fixtures/allowed-identifiers.txt
-          with a written provenance note and removes the superseded ones. Only
-          the fixture account numbers a criterion requires to be REGISTERED are
-          re-invented; the rest of the tree's invented numbers are left alone,
-          and the phase work history says which were changed and why. THREE,
-          THE ORDER EVERY HOUSEHOLD IS IN. A Playwright test signs up,
-          registers NOTHING, and uploads a statement whose own account is a
-          savings account, which is the first thing a household does because
-          uploading is the only way into Pulse today. It asserts that the
-          import confirmation screen renders, beside the ring question, a line
-          of catalogue copy present in all three catalogues saying that a
-          savings account's statement is not imported in v1 and naming the
-          accounts screen as where a savings account is registered, with a link
-          to it; that answering the ring question with the reserve ring refuses
-          the import and creates no account; and that no path through this
-          screen declares an account in the pot ring without the owner having
-          answered the ring question, asserted by an application test that the
-          confirm path rejects a declaration carrying no ring with a named
-          error rather than defaulting one. The witness exists because the
-          silent alternative reconciles: an account declared POT makes its
-          transfers INTERNAL
-          (src/modules/ledger/domain/classify-flow.ts:73 through :77), the
-          legs pair because the statement was imported, and the month view
-          renders a zero reserves total with its empty note
-          (src/modules/overview/ui/month-view.tsx:223 and :249 through :253)
-          above a verdict that the books close, for a household that saved
-          money that month. FOUR, THE ROWS ALREADY ON DISK ARE NAMED. A
-          household that imported a savings statement BEFORE this phase keeps
-          those rows, and after criterion 14.14 scopes both gap reads they
-          appear in no total and no gap list, so the accounts screen states,
-          for each account whose ring means Pulse does not interpret it, the
-          account and how many imported rows are held there uncounted, in copy
-          present in all three catalogues; a Playwright test over a household
-          seeded in that state asserts the line renders with the right count. A
-          verdict that the books close over rows no screen mentions is the
-          screen hiding an unknown that decision D-55 rejects in its own text.
+          the phase fails if any one is missing. ONE, THE ORDER EVERY HOUSEHOLD
+          IS IN. A Playwright test signs up, registers NOTHING, and uploads a
+          statement whose own account is a savings account, which is the first
+          thing a household does because uploading is the only way into Pulse
+          today. It asserts that the import confirmation screen asks the ring
+          question with BOTH answers available; that the copy beside each
+          answer states its consequence in copy present in all three
+          catalogues, a spending account's rows being counted in this month's
+          income and spend and a savings account's rows being held and counted
+          nowhere while transfers into it show as money set aside; that
+          answering with the savings ring ADMITS the import, creates the
+          account in the reserve ring and ingests its rows, with the import
+          result reporting the same row count it reports for any other file
+          (src/modules/import/ui/import-result.tsx:54 through :56); and that
+          the month view then names those rows as held per criterion 14.15
+          rather than showing nothing. TWO, NO DEFAULTED RING AND NO REFUSAL.
+          An application test asserts the confirm path rejects a declaration
+          carrying no ring with a named error rather than choosing one, and a
+          grep asserts no code path in the import module supplies a default
+          ring, because the answer decides whether a statement's rows are
+          counted or held and nothing stands behind it. A second grep asserts
+          the confirm path adds NO refusal keyed on the reserve ring and that
+          the import failure vocabulary
+          (src/modules/import/application/ports.ts:72 through :81) gains no
+          member, which is DR-0030 held mechanically against the earlier draft
+          of this plan. THREE, THE WRONG ANSWER IS RECOVERABLE AND THE SCREEN
+          SAYS WHERE. The same spec asserts the import screen names the
+          accounts screen as where an account's ring is changed, with a link to
+          it, and criterion 15.9 walks that path to the control in the tree
+          where the control exists; M3-P14's conflicts-with records M3-P15 as a
+          shipping prerequisite for exactly this reason, because the answer
+          given on a first upload now decides whether a statement is counted or
+          held and no refusal stands behind it. FOUR, THE COMMITTED FIXTURE
+          THAT PREDATES THE VALIDITY CHECK. The existing reserve upload at
+          test/e2e/month-view.spec.ts:1377 goes on uploading its statement, and
+          its reserve-group count and its reserves-net and no-reserves
+          assertions are unchanged and still passing; but the savings account
+          criteria 14.1 and 14.5 require to be REGISTERED through the form
+          criterion 14.12 guards must pass the platform validity test, and the
+          verification-first step measures how many committed fixture numbers
+          fail it. So the phase re-invents each fixture account number that a
+          criterion requires to be registered to a value the validity test
+          accepts, updates every reference to it in the sibling fixtures in the
+          same commit, adds the new entries to
+          test/fixtures/allowed-identifiers.txt with a written provenance note
+          and removes the superseded ones. Only those numbers are re-invented;
+          the rest of the tree's invented numbers are left alone, and the phase
+          work history says which were changed and why. A criterion that
+          required an invented account to be registered while that account
+          fails the check is unsatisfiable, and this witness is what stops the
+          cheap way out, weakening criterion 14.12 to a warning.
       - id: "14.12"
         criterion: >-
           A REGISTRATION THE ENGINE CANNOT USE IS REFUSED AT THE FORM, NOT
@@ -8276,38 +8312,118 @@ phases:
           assumes namings made before registration exist.
       - id: "14.14"
         criterion: >-
-          THE TWO READS THAT CAN SEE A NEVER-INTERPRETED ROW ARE SCOPED THE
-          SAME WAY. Executed at the phase base and recorded by the
-          verification-first step, a grep for a null-flow condition in the
-          overview repository returns the uninterpreted COUNT at
+          NO READ IS NARROWED BY RING, A NULL FLOW STILL MEANS ONE THING, AND A
+          LEGACY ROW HEALS. Decision D-56 is WITHDRAWN by DR-0030 and this
+          criterion is what keeps it withdrawn rather than half applied. Four
+          cases, all at the application level over the real repository. ONE, NO
+          NARROWING. A grep records every occurrence under src/ of a test for
+          an absent flow in a database query, in BOTH styles this codebase
+          writes, the SQL string flow" IS NULL matched case-insensitively
+          because Postgres accepts lower case, and the Prisma client form in
+          which the same condition is written as a null flow inside a where
+          clause. The test asserts each occurrence sits in one of exactly TWO
+          reads, the uninterpreted COUNT at
           src/modules/overview/adapters/overview-repository.ts:230 and
-          listGapRows at overview-repository.ts:263 through :310, whose WHERE
-          at :295 admits a null flow and which joins accounts only for a label.
-          Four cases, all at the application level over the real repository.
-          ONE: over a household holding a non-pot account whose rows carry a
-          null flow, uninterpretedCount excludes those rows AND listGapRows
-          returns no gap row for any of them, so the count and the listing
-          agree; the month's verdict reads as reconciling. TWO: over a
-          household whose accounts are ALL pot accounts, every field of
-          MonthFigures is byte identical to the values the verification-first
-          step captured from the phase base, written into the test by hand from
-          that captured output and never read back from the implementation, and
-          listGapRows returns the same rows it returned at the base. THREE: a
-          row on a POT account with a null flow is STILL counted as
-          uninterpreted, STILL returned by listGapRows and STILL holds the
-          verdict open, so neither read may be scoped by dropping its null-flow
-          condition, which is finding CR-502 held rather than undone
-          (src/modules/overview/adapters/overview-repository.ts:237 through
-          :242). FOUR: the two reads are scoped by the same predicate, asserted
-          by a test that flips one account's ring and requires the count and
-          the listing to change together; a phase in which the count excludes a
-          row the listing still returns, or the reverse, fails this criterion,
-          because the cause block is gated on the count
-          (src/modules/overview/ui/month-view.tsx:354) while the rows under it
-          come from the listing
-          (src/modules/overview/application/month-overview.ts:167), and the two
-          disagreeing is how a household is shown a green verdict over money
-          the repository is still handing the screen.
+          listGapRows at overview-repository.ts:263 through :310, and that
+          NEITHER carries a filter on the account's ring. A phase that scoped
+          either fails here, because after this phase a null flow means the
+          same thing on every ring, that ingest committed the row and
+          interpretation never ran, which is finding CR-502 and must go on
+          holding the verdict open and go on being listed (the comment
+          recording it at overview-repository.ts:237 through :242). TWO, A HELD
+          ROW IS NOT A NULL ROW. Over a household holding an imported reserve
+          statement, every one of its rows carries the flow HELD, none carries
+          a null flow, uninterpretedCount is zero, listGapRows returns none of
+          them, and the month's verdict reads as books closing. THREE, A NULL
+          ROW IS STILL A GAP, ON EVERY RING. Over a household holding one
+          null-flow row on a POT account and one on a RESERVE account, both are
+          counted by uninterpretedCount, both are returned by listGapRows, and
+          the verdict is held open by either alone; the reserve one is a gap
+          for the same reason the pot one is, that interpretation has not run,
+          and treating it as held would hide a genuine gap on the ring where it
+          is hardest to notice. FOUR, THE LEGACY HOUSEHOLD HEALS. Over a
+          household seeded in the state a pre-DR-0030 import leaves, a reserve
+          account whose rows carry a null flow, the test runs the recompute the
+          ledger already publishes and asserts that every one of those rows now
+          carries HELD, that uninterpretedCount falls to zero, that the verdict
+          reads as books closing, that the held surface of criterion 14.15
+          names them, and that no raw column on any of those rows changed,
+          which is the rebuildability rule the domain sets
+          (.claude/skills/pulse-domain/SKILL.md:35). Before that recompute the
+          month reports an uninterpreted gap, and the test asserts the existing
+          cause copy renders, because under DR-0030 its promise that Pulse
+          includes those rows when interpretation next covers the period is now
+          a TRUE sentence where before it was false forever.
+      - id: "14.15"
+        criterion: >-
+          THE THREE THINGS ONLY A SAVINGS STATEMENT CARRIES ARE VISIBLE, BY
+          NAME AND AMOUNT. This is what DR-0030 is paying for and it is a
+          criterion rather than a step: an implementation that accepts the
+          import and leaves these three invisible has not delivered the
+          decision. One new fixture, a reserve account's own statement, whose
+          rows include all three shapes and nothing that could stand in for
+          them: an INTEREST CREDIT posted by the bank with no counterparty
+          account; a MOVEMENT TO ANOTHER of the household's own reserve
+          accounts; and a PAYMENT MADE DIRECTLY OUT of the reserve account to
+          an outside party. None has a counterpart row on any pot account, and
+          the spec says so in its header, because that is why registration
+          alone could never have shown them. Five assertions. ONE: an element
+          with data-testid held-rows renders, grouped by account, one row per
+          held transaction of the requested period, each carrying its
+          descriptor and its amount, and a Playwright test asserts each of the
+          three shapes appears with the amount the fixture gives it, byte
+          compared against strings written by hand in the spec from the
+          fixture's own arithmetic. TWO: the block states, in words the reader
+          can see rather than in an attribute, that these rows are held on that
+          account and are no part of this month's income or spending; the state
+          copy is the signal and a test asserts the visible text of the block
+          contains it. THREE: it renders OUTSIDE the reconciliation panel, a
+          grep asserting it is not one of the cause blocks and a test asserting
+          the verdict still reads as books closing while it is on the page,
+          because a held statement is a normal state and rendering it as a
+          cause would tell the reader the books are open when they are not.
+          FOUR: every string this criterion introduces is present in
+          messages/en.json, messages/nl.json and messages/fr.json, English
+          written first, with a test asserting no key is missing from any
+          catalogue and a Playwright arm asserting the block renders in the
+          reader's own language. FIVE, DECISION D-61: the block is bounded by
+          the requested period and accumulates nothing, no heading, eyebrow or
+          label on it or on the reserves card reads as an amount held rather
+          than a movement in the month, a test asserts the rendered strings of
+          both carry no word from a hand-written list of balance words in each
+          language, and a grep asserts no read the phase adds sums or counts
+          outside the requested period.
+      - id: "14.16"
+        criterion: >-
+          THE IDENTITY DOES NOT MOVE WHEN HELD ROWS ARRIVE, AND BOTH COPIES OF
+          IT ARE TOLD. Decision D-60 is the dangerous half of making held a
+          verdict, because a HELD row is non-null and would enter changeInPot
+          at src/modules/overview/adapters/overview-repository.ts:219 and
+          rowCount at :231 and the domain accumulator at
+          src/modules/ledger/domain/reconciliation.ts:60 through :66, breaking
+          income minus spend minus net to reserves equals the change in the pot
+          by exactly the held rows' sum. Three witnesses. ONE, THE PROJECTION.
+          A household holds a pot account and a reserve account, the reserve
+          one REGISTERED before either import so that the declaration set is
+          identical across the act being measured; the month is computed FIRST
+          with only the pot statement imported and every field of MonthFigures
+          is recorded; the reserve account's own statement is then imported
+          with no other change, and the test asserts that incomeCents,
+          spendCents, netToReservesCents, changeInPotCents, differenceCents,
+          uninterpretedCount and rowCount are each byte identical to the
+          recorded values, that reconciles is still true, and that the
+          held-rows element of criterion 14.15 has appeared naming the new
+          rows. TWO, THE DOMAIN COPY. A property test over the ledger domain
+          asserts that adding any number of HELD rows to an interpretation
+          leaves income, spend, net to reserves, the change in the pot and the
+          difference bit for bit identical, so the domain function and the SQL
+          projection cannot drift the way this codebase has already watched one
+          rule drift between its two copies. THREE, THE ORDER. A test asserts
+          the enum member, the interpretation switch and both identity
+          corrections are present together: a tree in which rows carry HELD
+          while either projection still counts them fails, and the criterion
+          states why, that stamping HELD before the projections exclude it
+          would move a figure every household already trusts.
     hazard-classes:
       - id: H14.1
         statement: >-
@@ -8364,11 +8480,11 @@ phases:
         addressed-by: criterion 14.10
       - id: H14.10
         statement: >-
-          A household registers a savings account and then uploads its
-          statement, the rows land uninterpreted because interpretation loads
-          pot accounts only, and the month never closes again while the cause
-          copy promises a healing that cannot arrive.
-        addressed-by: criterion 14.11
+          A savings statement is accepted but its rows are left half
+          interpreted, carrying a null flow because interpretation still loads
+          pot accounts only, so they count as uninterpreted and the month never
+          closes again.
+        addressed-by: criterion 14.14
       - id: H14.11
         statement: >-
           The owner mistypes one character of an account number, registration
@@ -8391,20 +8507,53 @@ phases:
         addressed-by: criterion 14.11
       - id: H14.14
         statement: >-
-          Only the uninterpreted count is scoped and the gap listing is not,
-          so the verdict declares rows absent that the repository is still
-          handing the screen, or the reverse, and a household is shown a green
-          month over money the software decided not to look at.
+          A read that tests for an absent flow is narrowed by the account's
+          ring, which DR-0030 removed the reason for, so a row that ingest
+          committed and interpretation never reached is hidden on the reserve
+          ring instead of holding the verdict open.
         addressed-by: criterion 14.14
       - id: H14.15
         statement: >-
           An invented fixture account number fails the mod-97 check that this
-          phase turns into a refusal, so a criterion requiring that account to
-          be registered cannot pass and the cheap way out is to weaken the
-          refusal, which restores the mistyped-account hazard in full.
+          phase turns into a refusal at the registration form, so a criterion
+          requiring that account to be registered cannot pass and the cheap way
+          out is to weaken the refusal, which restores the mistyped-account
+          hazard in full.
         addressed-by: criterion 14.11
+      - id: H14.16
+        statement: >-
+          The statement is accepted and its rows are then invisible, so the
+          interest a savings account earns, a movement between two of the
+          household's own reserve accounts and a payment made directly from one
+          are all still absent from Pulse, and the decision is recorded as
+          delivered while the household gained nothing.
+        addressed-by: criterion 14.15
+      - id: H14.17
+        statement: >-
+          A held row is non-null and reaches the change in the pot, the row
+          count or one of the four totals, so accepting a savings statement
+          silently moves a figure the household already trusted and the
+          reconciliation identity stops holding.
+        addressed-by: criterion 14.16
+      - id: H14.18
+        statement: >-
+          The held verdict is stamped before the projections learn to exclude
+          it, or the enum member ships without the interpretation switch, so
+          the tree passes its own tests in a state where a figure has already
+          moved.
+        addressed-by: criterion 14.16
     migrations: >-
-      none. The Account model already carries label, bank, role and an
+      ONE, AND THE EARLIER FORM OF THIS PHASE SAID NONE. DR-0030 makes held a
+      VERDICT rather than a derived null (decision D-59), so the Flow enum
+      gains a member, HELD (prisma/schema/import.prisma:18 through :24). That
+      is a Prisma enum migration and nothing else: no new column, no new table,
+      no backfill, because interpretation is rebuildable by design and the next
+      recompute stamps every affected row
+      (.claude/skills/pulse-domain/SKILL.md:35). It lands in the same change as
+      the interpretation switch and the two identity corrections decision D-60
+      names, because stamping HELD before the projections exclude it would move
+      a figure every household already trusts. THE ACCOUNTS SIDE STILL NEEDS
+      NOTHING. The Account model already carries label, bank, role and an
       optional account number with a per-household uniqueness constraint
       (prisma/schema/accounts.prisma:10 through :31), so registration needs no
       new column, no new table and no enum change. Normalising a declaration
@@ -8483,11 +8632,14 @@ phases:
       (src/modules/accounts/adapters/account-repository.ts:26 through :70),
       while the import form does let a first declaration pick a ring
       (src/modules/import/ui/profile-confirmation.tsx:180 through :184), so a
-      wrong first answer is permanent. M3-P14 narrows that form to the pot ring
-      only under decision D-55, which removes one direction of the mistake and
-      leaves the other exactly as it was: an account that is really a savings
-      account, declared POT at a first import or registered POT on the accounts
-      screen, is still wrong forever without this phase. SECOND, a correction cannot be a
+      wrong first answer is permanent. DR-0030 sharpens that rather than
+      softening it: the ring control goes on offering both rings and no refusal
+      stands behind the answer, so the ring given on a first upload decides
+      whether that statement's rows are counted or HELD, in both directions. A
+      savings account declared POT has its own rows counted as ordinary income
+      and spend; a current account declared RESERVE has its own rows held and
+      counted nowhere. Both are wrong forever without this phase, which is why
+      M3-P14's conflicts-with names this one a shipping prerequisite. SECOND, a correction cannot be a
       declaration edit plus a recompute until something owns the rows that
       leave the pot. Interpretation loads pot accounts only
       (src/modules/ledger/application/interpret-window.ts:37 through :39) and
@@ -8508,14 +8660,14 @@ phases:
       src/modules/overview/domain/month-projection.ts:179 through :184 makes a
       non-zero count hold the books open, so a household that ever imported a
       reserve statement saw its books never close. M3-P14 scopes that one read
-      to pot accounts under decision D-56, together with the gap LISTING at
-      overview-repository.ts:263 through :310, which is the second read that
-      admits a null flow and which an earlier draft of this plan wrongly said
-      did not exist; so at THIS phase's base a cleared row already has a
-      landing place in both. The reads that remain each filter on the flow
-      column and therefore cannot see a cleared row, and scoping them here is
-      defence in depth against a clearing that misses a row rather than the
-      mechanism the verdict depends on. Both halves were READ at
+      under DR-0030 by giving the row a VERDICT instead. M3-P14 makes
+      interpretation cover every account and stamp HELD on every row whose
+      account is not a pot account (decision D-59), and excludes HELD from the
+      four totals, from changeInPot and from rowCount (decision D-60), so at
+      THIS phase's base a row that leaves the pot has somewhere to land that is
+      not a gap. No read is narrowed by ring in either phase and decision D-56
+      is withdrawn: what this phase must prove is that a row re-stamped HELD
+      reaches no figure and no counted screen, which is criterion 15.3. Both halves were READ at
       75ec85d and not executed, which is why step 1 is verification-first.
     steps:
       - kind: verification-first
@@ -8531,7 +8683,8 @@ phases:
           code path. Record: the flow column on those rows; whether they appear
           in the month's spend or income totals; whether they appear on the
           merchant review screen; the value of the uninterpreted count, which
-          after M3-P14's gap-read scoping should exclude them; and whether the
+          after M3-P14's held verdict should be zero rather than counting
+          them; and whether the
           month view reports that the books close. In the same session and
           before any edit, CAPTURE the baseline criterion 15.4 asserts against:
           the full MonthFigures of a household whose accounts are ALL pot
@@ -8552,30 +8705,40 @@ phases:
           :69). It writes nothing to any transaction row, and no code path
           added by this phase may update a raw transaction column at all.
       - text: >-
-          Make interpretation own every transaction in the household rather
-          than only the ones it counts. Interpretation continues to CLASSIFY
-          pot accounts only, and additionally CLEARS the interpretation
-          columns of rows on accounts that are not pot accounts, using the
-          null write the port already defines as the way an assignment that no
-          rule supports stops applying
-          (src/modules/ledger/application/ports.ts:51 through :57). A row on a
-          reserve account therefore ends with no flow and no merchant, which
-          is the honest statement that the pot-side row is the only side v1
-          interprets (.claude/skills/pulse-domain/SKILL.md:22 and :98). This
+          Make the ring correction MOVE ROWS BETWEEN COUNTED AND HELD.
+          M3-P14 already made interpretation cover every account and stamp the
+          verdict HELD on every row whose account is not a pot account
+          (decision D-59), so this phase adds no new interpretation state; what
+          it adds is that a CORRECTION re-runs that interpretation over the
+          proposed declaration set, so an account leaving the pot has its rows
+          re-stamped from INCOME, SPEND, INTERNAL or RESERVE to HELD, and an
+          account entering the pot has its rows re-stamped from HELD to
+          whatever classification gives them. The merchant assignment on a row
+          that becomes HELD is cleared by the null write the port already
+          defines as the way an assignment no rule supports stops applying
+          (src/modules/ledger/application/ports.ts:51 through :57), because a
+          held row is not a counted row. Nothing here writes a fact column, and
+          a held row carries a VERDICT rather than no flow, which is why the
+          month goes on closing over it (.claude/skills/pulse-domain/SKILL.md:22 and :98). This
           is an interpretation write and touches no fact column, and it needs
           no schema change because Transaction.flow is already nullable
           (prisma/schema/import.prisma:135).
       - text: >-
-          Scope the remaining month reads to pot accounts, so that clearing a
-          row cannot reach a figure or a list by any route. BOTH reads that
-          can see a row with no flow were scoped in M3-P14 under decision
-          D-56, the uninterpreted count at
+          Confirm the month reads need nothing further, and say so rather
+          than scoping by reflex. Decision D-56 is WITHDRAWN by DR-0030: the
+          two reads that test for an absent flow, the uninterpreted count at
           src/modules/overview/adapters/overview-repository.ts:230 and
-          listGapRows at overview-repository.ts:263 through :310, and neither
-          is touched again here; what this phase scopes is the counted reads,
-          the month aggregate, the reserves read and the merchant review's
-          read, which each join the accounts table and take pot accounts only.
-          Each of those already filters on the flow column, so a correctly
+          listGapRows at overview-repository.ts:263 through :310, are NOT
+          narrowed by ring in either phase, because after M3-P14 a null flow
+          means one thing on every ring and narrowing would hide a genuine gap,
+          which criterion 14.14 holds. The counted reads, the month aggregate,
+          the reserves read and the merchant review's read need no ring join
+          either, because each already filters on the flow column and M3-P14
+          excluded HELD from the four totals, from changeInPot and from
+          rowCount under decision D-60. What this phase must PROVE is that a
+          row re-stamped HELD by a correction reaches none of them, which is
+          criterion 15.3, and the proof is a test rather than a join. Each of
+          those reads already filters on the flow column, so a correctly
           cleared row is invisible to them anyway: the scoping is defence in
           depth against a clearing that misses a row, and the phase says so
           rather than claiming the verdict depends on it. Decision D-50 records why
@@ -8691,19 +8854,29 @@ phases:
           in any month figure, that none of their counterparties appears as an
           unresolved-group, and that reserve movements from the OTHER side are
           unaffected. An application test asserts the same at the use-case
-          level and additionally that every one of those rows carries no flow
-          and no merchant after the recompute.
+          level and additionally that every one of those rows carries the
+          verdict HELD and no merchant after the recompute, that NONE of them
+          carries a null flow, because a correction must RE-INTERPRET rather
+          than un-interpret and a null would hold the month open, and that each
+          appears in the held surface criterion 14.15 introduces with its
+          descriptor and its amount, so a household watching its rows leave the
+          spend total can see where they went.
       - id: "15.3"
         criterion: >-
-          AND THE BOOKS STILL CLOSE, WITHOUT THE GAP READ BEING BLINDED TO DO
-          IT. In the state of 15.2, after the correction, the month view's
+          AND THE BOOKS STILL CLOSE, BECAUSE THE ROWS CARRY A VERDICT AND NOT
+          A NULL. In the state of 15.2, after the correction, the month view's
           verdict reads as books closing, the uninterpreted count renders zero,
-          recon-difference is absent and no cause block is rendered. Two
-          further cases stop that from being bought too cheaply. An application
-          test asserts that a row on a POT account whose flow is null is STILL
-          counted as uninterpreted and STILL holds the verdict open, so nothing
-          done here may be a blanket removal of the null-flow count, which is
-          finding CR-502 held rather than undone
+          recon-difference is absent and no cause block is rendered, and the
+          reason is that the rows were re-stamped HELD rather than cleared to
+          nothing. Three further cases stop that from being bought too cheaply.
+          An application test asserts that a row re-stamped HELD reaches NO
+          named figure and NO counted screen: not income, spend, reserves or
+          changeInPot, not rowCount, not the merchant review's counted read,
+          not the reserves block, and not listGapRows. A second asserts that a
+          row on a POT account whose flow is null is STILL counted as
+          uninterpreted and STILL holds the verdict open, so nothing done here
+          may be a blanket removal of the null-flow count, which is finding
+          CR-502 held rather than undone
           (src/modules/overview/adapters/overview-repository.ts:237 through
           :242). And an application test asserts that a cleared row on a
           non-pot account reaches NO named figure and NO screen: not income,
@@ -8713,7 +8886,7 @@ phases:
           :310), which is the read that hands the reconciliation panel its
           rows and whose omission from this list would let every cleared row
           go on being listed under a verdict that says the books close. The reason the first half is reachable
-          at all is the gap-read scoping M3-P14 made under decision D-56
+          at all is the held VERDICT M3-P14 introduced under decision D-59
           (src/modules/overview/domain/month-projection.ts:179 through :184
           still makes a non-zero uninterpreted count hold the books open, and
           that is unchanged); the clearing this phase adds is what the second
@@ -8820,23 +8993,33 @@ phases:
           than costless.
       - id: "15.9"
         criterion: >-
-          THE REMEDY M3-P14'S REFUSALS NAME EXISTS, AND ONE JOURNEY WALKS FROM
-          THE REFUSAL TO IT. M3-P14 ships a refusal whose stated remedy is the
-          ring correction, and a registration a household cannot undo, and
-          neither the correction nor any undo exists in that phase's tree, so
-          this phase carries the witness. A grep asserts the accounts screen
-          renders the ring-correction control that M3-P14's refusal copy names.
-          A Playwright test then walks the whole path in one journey: upload a
-          savings statement, answer the ring question with the reserve ring,
-          read the refusal, follow its link to the accounts screen, register
-          the savings account there, correct a second account's ring with the
-          control the message named, and land on a month view whose figures are
-          the ones criteria 15.1 and 15.2 pin. The test fails if the refusal
-          message names a control the screen does not render, and it fails if
-          the accounts screen offers no way to change the ring of an account
-          registered under the wrong one. This is the criterion M3-P14 cannot
-          hold in its own tree, and decision D-53 and M3-P14's conflicts-with
-          record why the two phases reach a household together.
+          THE WRONG RING ANSWERED ON A FIRST UPLOAD IS RECOVERABLE, AND ONE
+          JOURNEY WALKS IT BACK. Under DR-0030 no refusal stands behind the
+          ring question, so the answer a household gives on its first upload
+          decides whether that statement is counted or held, and neither a ring
+          correction nor any undo exists in M3-P14's tree
+          (src/modules/accounts/application/ports.ts:23 through :38 publishes
+          no update and no delete until this phase adds one). So this phase
+          carries the witness. A grep asserts the accounts screen renders the
+          ring-correction control that M3-P14's import copy names. A Playwright
+          test then walks the whole path in one journey: sign up, register
+          nothing, upload a savings statement, answer the ring question with
+          the SPENDING ring, which is the mistake nothing else catches, and
+          observe its rows counted in the month's income and spend; follow the
+          link M3-P14's copy renders to the accounts screen; correct that
+          account's ring to savings with the control that copy named; and land
+          on a month view where those rows are HELD and named in the held
+          surface of criterion 14.15 with their descriptors and amounts, where
+          the spend total has fallen by exactly them against a hand-written
+          string, where the interest credit that had been counted as INCOME
+          (src/modules/ledger/domain/classify-flow.ts:121) is no longer in the
+          income total, and where the verdict still reads as books closing. The
+          test fails if M3-P14's copy names a control this screen does not
+          render, and it fails if the accounts screen offers no way to change
+          the ring of an account declared under the wrong one. This is the
+          criterion M3-P14 cannot hold in its own tree, and decision D-53 and
+          M3-P14's conflicts-with record why the two phases reach a household
+          together.
     hazard-classes:
       - id: H15.1
         statement: >-
@@ -8885,13 +9068,17 @@ phases:
         addressed-by: criterion 15.8
       - id: H15.8
         statement: >-
-          M3-P14 reaches a household without this phase, so an owner meets a
-          refusal whose stated remedy is a control the product does not have,
-          and an account registered under the wrong ring can be neither
-          corrected nor removed nor re-registered.
+          M3-P14 reaches a household without this phase, so an account
+          declared under the wrong ring on a first upload can be neither
+          corrected nor removed nor re-registered, its statement is counted or
+          held on the strength of one answer with no way back, and the copy
+          naming the remedy points at a control the product does not have.
         addressed-by: criterion 15.9
     migrations: >-
-      none. Account.role already exists as a declared column
+      none IN THIS PHASE. The Flow enum member HELD that this phase's
+      corrections re-stamp rows to arrives with M3-P14 under decision D-59, and
+      this phase adds no column and no enum member of its own. Account.role
+      already exists as a declared column
       (prisma/schema/accounts.prisma:15) so a correction is an update to a
       declaration, and Transaction.flow is already nullable
       (prisma/schema/import.prisma:135) so clearing an interpretation needs no
@@ -10015,10 +10202,12 @@ decisions:
       FORWARD: the two reads that can see a row the engine never interprets,
       the uninterpreted count at overview-repository.ts:230 and the gap listing
       at overview-repository.ts:263 through :310, are both scoped in M3-P14
-      under decision D-56, because scoping them earlier heals a household
-      already in that state and scoping only one of them would make the
-      reconciliation panel disagree with its own rows; what M3-P15 scopes is
-      the rest. The claim is not left as
+      under decision D-56, WHICH DR-0030 HAS SINCE WITHDRAWN: a reserve row now
+      carries the verdict HELD rather than a null flow, so no gap read is
+      narrowed by ring in either phase and the sentence that follows describes
+      a scoping this plan no longer makes. What survives of it is the
+      projection work, which under decision D-60 excludes HELD from the totals
+      by a flow filter rather than by a ring join. The claim is not left as
       an argument: criterion 15.4 requires the committed golden journey to pass
       with every asserted string untouched, and requires a second test
       asserting that the scoped projection over a committed fixture returns,
@@ -10049,11 +10238,12 @@ decisions:
       interpretation write, it touches no fact, and it needs no migration
       because Transaction.flow is already nullable
       (prisma/schema/import.prisma:135). It is only safe once the GAP READ is
-      scoped, which M3-P14 does under decision D-56, and criterion 15.3 is the
-      one that fails if the two halves are separated or if the scoping is
-      bought by removing the null-flow count altogether, which would undo
-      finding CR-502 and let a pot row that ingest committed and interpretation
-      never reached vanish behind a green panel.
+      given a VERDICT rather than left null, which M3-P14 does under decisions
+      D-59 and D-60, and criterion 15.3 is the one that fails if a correction
+      un-interprets a row instead of re-interpreting it, or if the books are
+      made to close by removing the null-flow count altogether, which would
+      undo finding CR-502 and let a pot row that ingest committed and
+      interpretation never reached vanish behind a green panel.
   - id: D-52
     statement: >-
       M3-P14 AND M3-P15 ARE DISPATCHED BEFORE M3-P12 AND M3-P13, AND THE
@@ -10112,8 +10302,10 @@ decisions:
       the code. THE FIX ROUND ADDS FOUR DECISIONS AND STILL NO DECISION
       RECORD. D-55, whether a reserve account's statement may be imported: the
       domain already says it may not and the engine already cannot interpret
-      it, so the options are not comparable. D-56, which phase scopes the gap
-      read and in what shape: settled by which read can see the row, and by
+      it, so the options are not comparable, and DR-0030 has since answered
+      that question the other way, which is recorded in D-55 rather than
+      re-litigated here. D-56, which phase scopes the gap read and in what
+      shape, now withdrawn by DR-0030: settled by which read can see the row, and by
       which phase's landing heals a household already in the state. D-57, which
       phase owns the account-number validity test: DR-0028 already decided the
       predicate and M3-P14 runs first, so reaching for a settled decision one
@@ -10131,122 +10323,87 @@ decisions:
       replaced whole without touching the rule, the price or the enforcement.
   - id: D-55
     statement: >-
-      A SAVINGS ACCOUNT'S STATEMENTS ARE NOT IMPORTED IN v1. Read this
-      decision in four parts: THE RULE, THE STATUS OF THE RULE, WHAT THE
-      HOUSEHOLD LOSES, and HOW IT IS ENFORCED. The second part is under an
-      open question with the owner and is written so it can be replaced
-      whole, without touching the other three.
-      THE RULE. Pulse registers a savings account for its account number and
-      does not ingest its statement. A confirm whose file resolves to an
-      account in the reserve ring is refused, and so is a confirm whose
-      declaration names the reserve ring, with one machine reason translated
-      in all three catalogues.
-      THE STATUS OF THE RULE, and this is the part the owner is being asked
-      about. It is CHOSEN, not forced. The engine as it stands cannot
-      interpret those rows, because interpretation builds its window from the
-      pot accounts alone
-      (src/modules/ledger/application/interpret-window.ts:37 through :39) and
-      a reserve account sits in neither declared set
-      (src/modules/ledger/domain/ledger-transaction.ts:56 through :61), so
-      every row of an imported reserve statement keeps a null flow. But the
-      construction that would ADMIT such an import without holding a month
-      open is specified by this same plan: M3-P15 step 3 clears the
-      interpretation columns of rows on non-pot accounts, and M3-P14 scopes
-      both gap reads so a cleared row has a landing place (decision D-56).
-      What would remain is one named non-counted surface saying those rows are
-      held on a savings account and enter no total. That is a screen and three
-      catalogue entries, not a domain change. v1 DECLINES it; it is not unable
-      to do it. Recorded this way because a decision recorded as forced is
-      never revisited and a decision recorded as chosen is. This plan does not
-      build the alternative and no phase here is written against it.
-      WHAT THE HOUSEHOLD LOSES, stated so the owner does not discover it. A
-      savings statement carries rows that no pot-side row describes and that
-      registration can never supply: the interest the bank credits to the
-      account, a transfer between two of the household's own savings accounts,
-      and anything paid directly out of savings. None of those has a pot-side
-      leg, so none of them can double count, and under this rule none of them
-      is in Pulse at all. Nor is any balance: the reserves block is what the
-      household MOVED to savings in the month, never what is IN savings and
-      never what savings earned. The owner's scenario is four bank accounts,
-      four savings accounts and two credit cards; this rule declines four of
-      those ten documents and decision D-48 already excludes the two cards
-      from registration.
-      HOW IT IS ENFORCED, and the order matters more than the state. Uploading
-      is the only way into Pulse today, so the order every household is in is
+      PULSE ACCEPTS A RESERVE ACCOUNT'S OWN STATEMENT IN v1 AND INTERPRETS ITS
+      ROWS AS HELD. This decision was PUT TO THE OWNER AND ANSWERED, recorded
+      as DR-0030 on 2026-08-26; it is not a constraint the engine imposed, and
+      the earlier form of D-55, which refused such an import, is superseded in
+      full. Read it in four parts: THE RULE, THE STATUS OF THE RULE, WHAT THE
+      HOUSEHOLD GETS, and HOW IT LANDS.
+      THE RULE. A statement whose own account is in the reserve ring is
+      imported like any other. Its rows are stored as facts like any other row
+      and are INTERPRETED, with the verdict HELD: present, attributed to their
+      account, and deliberately no part of this month's income, spending or
+      net to reserves. The month still closes over them, and the reason is the
+      whole point of the choice: a null flow holds the books open and a
+      VERDICT does not.
+      THE STATUS OF THE RULE. Chosen by the owner, from two options both of
+      which were costed. The refusal was rejected because it answers "how much
+      have we set aside" with silence permanently, and because three things a
+      household owns would be invisible with no row anywhere able to stand in
+      for them. Nothing here is forced by the engine: the engine could do
+      either, and the owner picked.
+      WHAT THE HOUSEHOLD GETS, and this is what the criteria are written
+      against rather than against prose. Three things that exist ONLY on a
+      savings statement, each with no counterpart row on any pot account, so
+      that registration alone could never have shown them: the INTEREST a
+      reserve account earns; a MOVEMENT BETWEEN TWO of the household's own
+      reserve accounts, which touches no pot account at all; and ANYTHING PAID
+      DIRECTLY OUT of a reserve account. Criterion 14.15 requires all three to
+      be visible on a surface, by name and amount. An implementation that
+      accepts the import and leaves those three invisible has not delivered
+      this decision, and the criterion says so in those words.
+      HOW IT LANDS, and the order matters more than the state. Uploading is
+      the only way into Pulse today, so the order every household is in is
       upload first and accounts screen later, and on that order
       src/modules/import/application/confirm-import.ts:95 through :99 declares
       the account from the owner's answer to the ring question. THE RING
-      QUESTION THEREFORE STAYS ON THE IMPORT SCREEN
-      (src/modules/import/ui/profile-confirmation.tsx:181 through :184). An
-      earlier draft of this decision narrowed that control to the pot ring, on
-      the reasoning that a screen must not offer a choice the server always
-      refuses. That reasoning was wrong here and is reversed: the ring is a
-      question about the account, not a destination the screen offers, and
-      removing the savings answer does not stop a savings account being
-      declared, it declares it a spending account SILENTLY, whereupon its
-      transfers become INTERNAL
+      CONTROL THEREFORE OFFERS BOTH RINGS
+      (src/modules/import/ui/profile-confirmation.tsx:181 through :184).
+      Restoring that choice is REQUIRED and not optional: an earlier draft
+      narrowed the control to the pot ring on the reasoning that a screen must
+      not offer a choice the server always refuses, and with the refusal gone
+      that premise is gone too, while the narrowing itself would declare a
+      savings account a spending account SILENTLY, whereupon its transfers
+      become INTERNAL
       (src/modules/ledger/domain/classify-flow.ts:73 through :77), the
       reserves block renders zero with its empty note
       (src/modules/overview/ui/month-view.tsx:223 and :249 through :253) and
-      the books close over a month in which the household saved. That state is
-      quieter and worse than the one this decision exists to remove, which at
-      least fails loudly. So the question is asked, the savings answer is
-      refused, and the refusal says three things: that a savings account's
-      statement is not imported in v1, that the accounts screen is where a
-      savings account is registered, with a link to it, and WHAT THE REMEDY
-      COSTS, namely that moving the account to the pot ring stops it appearing
-      in the reserves block and stops its transfers counting as money set
-      aside. A remedy named without its price is the same shape of surprise
-      this round exists to remove. Criterion 14.11 measures all of it.
-      REJECTED: admitting the import and letting the rows sit invisible, which
-      is a screen hiding an unknown
-      (.claude/skills/pulse-frontend/SKILL.md:105) and leaves an uploaded file
-      with nothing to show for it. THE COST TO THE TREE, stated so nobody
-      discovers it: the existing reserve upload at
-      test/e2e/month-view.spec.ts:1377 performs this act today, so M3-P14
-      rewrites it to register that account instead, and criterion 14.11
-      requires its reserve assertions to be unchanged and still passing.
+      the books close over a month in which the household saved. The household
+      being able to say what the account IS, at the moment it first appears,
+      is what closes that trap. The confirm path rejects a declaration
+      carrying no ring rather than defaulting one, and the copy beside each
+      answer states its consequence. Criterion 14.11 measures the order.
   - id: D-56
     statement: >-
-      THE GAP READ IS SCOPED TO POT ACCOUNTS IN M3-P14 RATHER THAN M3-P15, AND
-      IT IS SCOPED BY THE ACCOUNT'S RING AND NEVER BY DROPPING THE NULL-FLOW
-      COUNT. Three questions, each settled by what the reads actually do.
-      WHICH READS, and the answer is TWO, corrected in the second fix round
-      after one executed grep for a null-flow condition in src/ returned three
-      lines rather than one. The named sums, changeInPot and rowCount each
-      filter on the flow column
-      (src/modules/overview/adapters/overview-repository.ts:217 through :235),
-      the counted read filters on flow (overview-repository.ts:130), and the
-      merchant review's read takes INCOME and SPEND only
-      (src/modules/merchants/adapters/merchant-repository.ts:231 through :234),
-      so a row with no flow is already invisible to every one of them. The two
-      that DO see it are both in the overview repository: the uninterpreted
-      COUNT at overview-repository.ts:230, and listGapRows at
-      overview-repository.ts:263 through :310, whose WHERE at :295 admits a
-      null flow and which joins accounts only for a label, with no ring filter.
-      Both are scoped, by the same predicate, in this phase. Scoping one and
-      not the other is not a smaller version of the fix, it is a different and
-      worse defect: the cause block is gated on the count
-      (src/modules/overview/ui/month-view.tsx:354) while the rows beneath it
-      come from the listing
-      (src/modules/overview/application/month-overview.ts:167), so a scoped
-      count with an unscoped listing makes the block vanish with its rows while
-      the repository goes on returning them, and the household is shown a green
-      verdict over money the software has quietly decided not to look at. That
-      is the state decision D-55 rejects in its own text, which is why the
-      accounts screen names those rows and their count instead. WHICH PHASE: M3-P14, because that is where a household can first
-      reach the state deliberately, and, decisively, because scoping it there
-      heals a household that imported a reserve statement BEFORE this round
-      instead of leaving its month open until the next phase lands. M3-P15 then
-      scopes the remaining reads as defence in depth against a clearing that
-      misses a row, which decision D-50 and criterion 15.4 cover, and says so
-      rather than claiming the verdict depends on it. WHAT SHAPE: the count is
-      narrowed by the account's ring and never by removing the null-flow
-      filter, because a null flow on a POT account is a row that ingest
-      committed and interpretation never reached, which must go on holding the
-      verdict open and go on being listed. That is finding CR-502, recorded in
-      the comment at overview-repository.ts:237 through :242, and criteria
-      14.14 and 15.3 each carry a case that goes red if it is undone.
+      WITHDRAWN BY DR-0030. THE GAP READS ARE NOT SCOPED BY RING, AND THE
+      REASON THEY WOULD HAVE BEEN IS GONE. This decision previously scoped the
+      uninterpreted COUNT at
+      src/modules/overview/adapters/overview-repository.ts:230 and listGapRows
+      at overview-repository.ts:263 through :310 to pot accounts, so that a
+      reserve statement's rows, which kept a null flow forever, would not hold
+      a month open. Under DR-0030 those rows are INTERPRETED and carry the
+      verdict HELD, so neither read sees them and neither needs narrowing. The
+      scoping is withdrawn rather than left standing, because a scoping whose
+      reason has gone is a hole: AFTER this phase a null flow means one thing
+      only, on a pot account and on a reserve account alike, that ingest
+      committed the row and interpretation never ran, which is finding CR-502
+      and must go on holding the verdict open and go on being listed
+      (the comment recording it at overview-repository.ts:237 through :242).
+      Scoping either read by ring would hide exactly that, on the ring where
+      it is hardest to notice. WHAT COVERS THE HOUSEHOLD THAT IMPORTED A
+      RESERVE STATEMENT BEFORE THIS SHIPS: nothing needs to, and that is the
+      second thing the verdict buys. Their rows carry a null flow today and
+      the next recompute stamps them HELD, interpretation now covering reserve
+      accounts; until then their month reports an uninterpreted gap, which is
+      TRUE, and the cause copy already tells them Pulse includes those rows
+      when interpretation next covers the period, which under DR-0030 becomes
+      a true sentence where before it was false forever. Criterion 14.14
+      measures both halves: that no read is scoped by ring, and that a legacy
+      null row becomes HELD on the next recompute with no fact rewritten.
+      THE THREE NULL-FLOW CONDITIONS STILL MATTER and are still enumerated,
+      at overview-repository.ts:230, :280 and :295, two reads carrying three
+      conditions; what changed is that the criterion now requires them to be
+      LEFT ALONE and to agree, rather than requiring them to be narrowed.
   - id: D-57
     statement: >-
       M3-P14 OWNS THE PLATFORM ACCOUNT-NUMBER MODULE INCLUDING DR-0028'S
@@ -10308,6 +10465,73 @@ decisions:
       told an amount moved into reserves while a different amount silently left
       the books. Criterion 15.7 holds all three against the actual movement
       over a fixture on which a second rule diverges rather than agrees.
+  - id: D-59
+    statement: >-
+      HELD IS A VERDICT ON THE Flow ENUM, NOT A DERIVED NULL, AND THAT COSTS A
+      MIGRATION. DR-0030's sentence "the month still closes, because held is a
+      verdict and null is not" is a mechanism and not a figure of speech, and
+      this decision records what it commits the plan to. The Flow enum
+      (prisma/schema/import.prisma:18 through :24) GAINS a member, HELD.
+      Interpretation stops loading pot accounts only
+      (src/modules/ledger/application/interpret-window.ts:37 through :39) and
+      covers every account in the household, stamping HELD on every row whose
+      account is not a pot account. So a reserve statement's rows are
+      interpreted rather than half interpreted, and no read anywhere has to be
+      narrowed to keep them out of a gap. REJECTED, deriving held from the
+      account's ring while leaving the flow null: it was the earlier shape of
+      this plan and it works, but it makes every read that tests for an absent
+      flow a read that must also join accounts and be scoped by ring, it makes
+      the correctness of the month depend on all of them being scoped the same
+      way and on no fourth one appearing, and it leaves a null flow meaning
+      two different things on two different rings, which is precisely what
+      made the reads hard to reason about. A verdict makes a null flow mean
+      exactly one thing again. WHAT IT COSTS, stated rather than discovered: a
+      migration, which both phases previously declared they had none of, and a
+      backfill that is NOT written, because interpretation is rebuildable by
+      design and the next recompute stamps the rows (the rebuildability rule
+      at .claude/skills/pulse-domain/SKILL.md:35). M3-P14 owns the migration
+      and the interpretation change, because M3-P14 is the phase that accepts
+      the statement and a phase that accepted it without them would ship the
+      open month DR-0030 exists to prevent.
+  - id: D-60
+    statement: >-
+      A HELD ROW IS OUTSIDE THE RECONCILIATION IDENTITY, AND BOTH COPIES OF
+      THAT IDENTITY MUST BE TOLD. This is the one place where making held a
+      verdict is more dangerous than leaving it null, so it is a decision
+      rather than a step. changeInPot is SUM(amountCents) FILTER (WHERE flow
+      IS NOT NULL) at
+      src/modules/overview/adapters/overview-repository.ts:219 and rowCount is
+      the same shape at :231, so a HELD row, being non-null, would enter both
+      and break income minus spend minus net to reserves equals the change in
+      the pot, by exactly the held rows' sum. The domain copy has the same
+      hole: src/modules/ledger/domain/reconciliation.ts:60 through :66 skips a
+      transaction only when its flow is undefined and adds every other one to
+      changeInPot. BOTH are corrected in M3-P14, the SQL projection and the
+      domain function, and the correction is a flow filter rather than a ring
+      join because with a verdict the two are equivalent and the filter needs
+      no join and sits beside the filters already there. Criterion 14.16 is
+      the witness and it is red if a held row reaches any of the four totals
+      or the change in the pot. THE ORDER IS NOT NEGOTIABLE: the enum member,
+      the interpretation change and these two corrections land together, since
+      stamping HELD before the projections exclude it would silently move a
+      figure every household already trusts.
+  - id: D-61
+    statement: >-
+      v1 SHOWS THIS MONTH'S HELD ROWS AND NO SAVINGS BALANCE. DR-0030 buys
+      visibility of three things a savings statement carries and nothing more:
+      the interest, the reserve to reserve movement, and the payment made
+      directly from a reserve account. The held surface therefore renders THE
+      ROWS OF THE REQUESTED PERIOD, grouped by account, with their descriptor
+      and their amount, and it is bounded by that period like every other
+      figure on the month view. It does NOT accumulate across months, it does
+      not render a balance, and no heading, eyebrow or label on it or on the
+      reserves card may read as an amount held rather than a movement, which
+      is a copy change this phase makes. A statement's closing balance is the
+      only honest source of a balance and v1 does not persist balances
+      (decision D-6 verifies them at parse time and stores nothing), so
+      showing one is a schema change and is PARKED. This decision is the
+      boundary that keeps DR-0030 from turning into a savings dashboard nobody
+      asked for.
 open-questions:
   - DR-0002
   - DR-0023
