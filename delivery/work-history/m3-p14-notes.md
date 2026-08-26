@@ -100,3 +100,33 @@ src/app and src/modules/*/ui, comment lines dropped, searching for oklch(,
 rgb(, rgba(, hsl(, hsla(, a hex colour, any number followed by px/rem/em, and
 eleven colour keywords after a colon: grep exited 1, no hits. styles/tokens.css
 appears in no diff on this branch, so no token was missing.
+
+## The mandated claim grep, and how each hit is settled
+
+  grep -nEi 'cannot be|impossible|needs a|is covered|catches|would catch|recovers|anyway|always|never|no way to' delivery/work-history/m3-p14.yaml
+
+Ten hits, run line-based and again over the whitespace-flattened text.
+
+  Lines 4 through 62 are inside the VERBATIM prompt block. They are the
+  dispatcher's words and the coordinator's, recorded as R-052a requires; they
+  are not claims this phase makes.
+  Line 180 is "the stored counterparty column is a FACT and is never rewritten
+  to fix an interpretation", which quotes pulse-domain section 2 rule 1 and now
+  names claim C-14.8-no-fact-writes beside it, whose executed construction is
+  the application test asserting the accounts repository names exactly one
+  Prisma model.
+  Line 413 is inside CAPTURED test output: it is the name of the test in the
+  red witness, adjacent to the command that produced it and its exit code.
+
+No hit is an unsettled assertion.
+
+## Other catalogue and style checks
+
+Catalogue parity across en, nl and fr is mechanically enforced by
+test/app/catalog-parity.test.ts over deep leaf paths, and it passes with the 40
+keys this phase adds, so "present in all three catalogues" is checked rather
+than asserted.
+
+Em dashes: `git diff af3b5cb..HEAD | grep '^+' | grep -c '—'` returns 0, and
+so do the same counts over the commit messages on this branch and over both
+work-history files.

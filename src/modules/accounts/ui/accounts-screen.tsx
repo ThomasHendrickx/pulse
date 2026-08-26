@@ -108,8 +108,14 @@ export const AccountsScreen = async ({
                 {/* A CARD CARRIES NO ACCOUNT NUMBER (decision D-48): it is
                     listed by its label and its ring, which is what the
                     household can recognise it by. */}
+                {/* NOT .pulse-amount. That class is the money treatment and
+                    carries "no exceptions" in its own rule; an account
+                    number is not an amount, and borrowing the class would
+                    make the one rule about money mean something else. The
+                    monospaced, slashed-zero rendering an account number
+                    wants is its own class in the stylesheet. */}
                 <span
-                  className="accounts-list-number pulse-amount"
+                  className="accounts-list-number"
                   data-testid="registered-account-number"
                 >
                   {account.iban ?? t("accountsCardNoNumber")}

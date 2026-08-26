@@ -1,0 +1,656 @@
+kind: work-history
+phase: M3-P14
+prompt: |
+  You are the tiphys IMPLEMENTER for Pulse phase M3-P14, account setup. Work only in the worktree /home/user/wt-m3p14 (branch `claude/m3-p14-account-setup`, branched from main at af3b5cb, with the phase's plan already carried onto it). Never touch /home/user/pulse or any other worktree.
+
+  Read your brief first, in full, and follow it exactly:
+  /tmp/claude-0/-home-user-pulse/e8dfc624-eaf2-5480-bcf2-af6a168fb888/scratchpad/briefs/impl-m3p14.md
+
+  Read the phase in delivery/plan/pulse-v02.yaml on your branch. Nine criteria, 14.1 through 14.9. Read the skills the task touches: `.claude/skills/pulse-domain`, `.claude/skills/pulse-frontend`, `.claude/skills/pulse-typescript`. Read CLAUDE.md.
+
+  WHAT THIS IS, IN THE OWNER'S WORDS, so you can tell a good implementation from a compliant one:
+
+    "In the scenario: I have 4 bank accounts, 4 saving accounts and 2 credit cards. When I upload 1 bank account first, that one contains transfers to other accounts. Now Pulse asks me to name them as merchants, but they are not merchants. What do I need to do to get to that final state?"
+
+    "Can't we make it that when you make a new account, we just ask to give all account numbers and say pot or saving? We explicitly say credit card is not needed to give up front."
+
+  So: at setup the household enters every account number once, each with a label and a ring (pot or savings). Cards are explicitly not asked for; a card is declared when its statement arrives. After setup, a transfer to one of the household's own accounts is never offered as a merchant to name.
+
+  CONTEXT YOU NEED, ALREADY ON MAIN. Merchant resolution now keys on a namespaced counterparty IDENTITY: the counterparty account where the row carries a trusted one, the normalised descriptor otherwise (src/modules/merchants/domain/counterparty-identity.ts). The trust gate is mod-97 plus a pinned country-length table. That same validity test is what criterion 14.3 requires for hand-typed numbers, and criterion 14.4 requires ONE canonical form and ONE validity test, not a second copy. Find the existing one and import it.
+
+  A WARNING THAT WILL COST YOU A ROUND IF YOU IGNORE IT. The invented account numbers already committed in test/fixtures/allowed-identifiers.txt were NOT built to satisfy mod-97: I measured 19 account-shaped values, 12 of which fail the check. Any fixture account your tests REGISTER must pass the validity test, so you will need to generate valid invented numbers and add them to test/fixtures/allowed-identifiers.txt with their provenance in the same change. Do not weaken the validity test to accommodate an existing fixture.
+
+  THE JOURNEY THE PHASE SHIPS ON is criterion 14.1, two arms in one spec: a registered arm where setup enters all eight accounts and the imported current-account statement's transfers to the other seven never appear as merchant groups, and a control arm where setup enters only the current account and those seven DO appear. The control is what proves the fixture can fail. Build that first, watch the registered arm go red before you build the feature, and keep the red witness.
+
+  HOUSE RULES, NON-NEGOTIABLE.
+  - npm only. Never pnpm, never yarn.
+  - English everywhere in code, types, comments, commits, file and folder names, URL paths, DB columns, API routes. Dutch and French exist only as translated user-facing content, and every user-facing string needs all three.
+  - Amounts are integer cents. Never a float, never a JS number for a monetary total in the database.
+  - No literal colours, font sizes or spacing in components. Design tokens only. A missing token is added to tokens.css first.
+  - Facts are immutable. Imported rows are never updated to fix an interpretation. Criterion 14.8 checks this.
+  - Every table carries householdId and every query filters on it.
+  - No em dashes anywhere.
+  - No data in a commit message: no amount, no counterparty, no date from a row, no account or card number, not even an invented one.
+  - Scope discipline: no queue, cron, event bus, caching, state management library, component library, per-transaction override, goal or budget feature. If the phase seems to need one, stop and say so.
+
+  GATES, all of which must exit 0 before you report done:
+    npm run typecheck && npm run lint && npm test && npm run gate:tokens && npm run gate:privacy
+  then npm run test:e2e. Quote the summary line and exit code of each.
+
+  WRITE THE WORK HISTORY the brief specifies, recording what you did, the red witness for the journey, and any criterion you could not meet with the reason. Validate it:
+    export NVM_DIR=/opt/nvm && . /opt/nvm/nvm.sh
+    cd /home/user/pulse-fleet && npx tiphys validate --type work-history --context /home/user/wt-m3p14 <your work history file>
+
+  Commit on `claude/m3-p14-account-setup` and push with `git push -u origin claude/m3-p14-account-setup`. Retry a failed push 4 times at 2s, 4s, 8s, 16s.
+
+  A NOTE ON PACE, which is an instruction from the owner and not a nicety. They have been kept waiting by process while nothing they could touch changed. Build the nine criteria properly and stop there. Do not add instrumentation, mutant scoring, measurement harnesses or extra guards beyond what the nine criteria ask for. A tenth good idea is a backlog line in your report, not a commit.
+
+  REPORT BACK: criteria met out of nine, the red witness for 14.1's registered arm before and after, each gate's exit code, anything you could not meet and why, and the pushed sha.
+
+  [MID-TASK COURSE CORRECTION FROM THE COORDINATOR, received while step 2 was being written, quoted in full:]
+
+  Interrupting with one thing that must reach you before you write step 2, plus three cheap ones. The plan review is in and the phase is fit to build: the reviewer traced the owner's scenario through the code and confirmed it works. These are corrections, not a redesign.
+
+  PR7-001, HIGH, AND IT CHANGES WHAT YOU BUILD. The plan's step 2, criterion 14.3 and criterion 14.4 tell you to build a canonical account form, a pinned country-length table and an ISO 7064 mod-97 check in `src/platform`. **All three already exist and are shipped on main.** I verified it myself in `src/modules/merchants/domain/counterparty-identity.ts`: `IBAN_LENGTH_BY_COUNTRY` at :149, `compactAccount` at :174, `mod97` at :179, and `isTrustedCounterpartyAccount` at :262, whose body is exactly the four refusals step 2 describes. The plan cannot see them because it is grounded at 75ec85d, before M3-P12 merged at e87e841.
+
+  So do NOT write a second copy. MOVE the existing definitions into the platform module and re-export or re-import them at every current call site, so criterion 14.4's "exactly one definition under src/" is true by construction rather than vacuous. That criterion is otherwise the one thing in this phase that can be green while two live copies of the money-critical validity test drift apart. The merchants files and their tests that a real dedup must touch are not in the phase's files-to-touch list; treat that as an omission in the plan, touch them, and say so in your work history.
+
+  This also settles the fixture warning I gave you at dispatch. The 12 invented account numbers that fail mod-97 fail against THIS implementation, so any fixture account your tests register must be regenerated valid and added to test/fixtures/allowed-identifiers.txt with provenance.
+
+  PR7-002, medium. Step 5 says one new machine reason, but criterion 14.5 needs two different messages: the account is not registered, and the account is a savings account whose statement is not imported. `ImportFailureReason` at ports.ts:71-81 is a payload-free union and status-keys.ts:6-10 maps one tag to one message key, so one tag cannot carry two texts. Add two reasons, each with copy in English, Dutch and French.
+
+  PR7-003, medium, and it is the one that decides whether this phase's last real guard is a guard at all. Criterion 14.2 says the ring explanation renders BEFORE the ring control. As written that is DOM order, which a collapsed disclosure, a tooltip or visually-hidden text all satisfy while the reader sees nothing. The explanation is the ONLY thing standing between the owner and a savings account silently marked as spending, which produces a month that looks entirely correct and is wrong. Assert it is actually visible, with no interaction, at 390px. If the copy cannot be visible at 390 with eight rows on screen, say so rather than hiding it, and tell me.
+
+  PR7-004, medium. Step 6's premise is wrong. It says a savings account marked as spending at setup has no statement of its own, but the phase's own import gate accepts that statement, because the account is registered POT and D-55 only refuses accounts registered as savings. The account then has rows, and D-51 refuses the ring change permanently. So the trap is reachable by one mistake plus one natural action. Do not build new machinery for it. Make the refusal copy say plainly what has happened and that the ring can no longer be changed, and cover that copy in a test.
+
+  ONE MORE THING THE REVIEWER FOUND, not a finding but it will break your gate: `test/e2e/month-view.spec.ts:1377` declares a fixture as a reserve account through the import path this phase removes. It must be rewritten to register instead. Its reserve assertions stay as they are.
+
+  The pace instruction stands unchanged. Nine criteria, nothing beyond them. These four corrections are inside that scope, not additions to it.
+
+  Address this before completing your current task.
+
+files-touched:
+  - src/platform/account-number.ts
+  - src/modules/accounts/domain/account-registration.ts
+  - src/modules/accounts/application/register-accounts.ts
+  - src/modules/accounts/application/change-account-ring.ts
+  - src/modules/accounts/application/ports.ts
+  - src/modules/accounts/application/index.ts
+  - src/modules/accounts/adapters/account-repository.ts
+  - src/modules/accounts/ui/account-setup-form.tsx
+  - src/modules/accounts/ui/accounts-screen.tsx
+  - src/modules/accounts/ui/actions.ts
+  - src/modules/accounts/ui/status-keys.ts
+  - src/modules/accounts/ui/index.ts
+  - src/app/(app)/accounts/page.tsx
+  - src/app/(app)/import/page.tsx
+  - src/app/(app)/import/[id]/page.tsx
+  - src/app/(app)/layout.tsx
+  - src/app/globals.css
+  - src/modules/import/application/confirm-import.ts
+  - src/modules/import/domain/belfius-current-account-template.ts
+  - src/modules/import/domain/detect-profile.ts
+  - src/modules/import/ui/actions.ts
+  - src/modules/import/ui/import-status-line.tsx
+  - src/modules/import/ui/profile-confirmation.tsx
+  - src/modules/import/ui/status-keys.ts
+  - src/modules/ledger/domain/classify-flow.ts
+  - src/modules/ledger/domain/corrections.ts
+  - src/modules/ledger/domain/ledger-transaction.ts
+  - src/modules/ledger/domain/pair-transfers.ts
+  - src/modules/ledger/adapters/ledger-repository.ts
+  - src/modules/ledger/application/index.ts
+  - src/modules/merchants/domain/counterparty-identity.ts
+  - src/modules/overview/adapters/overview-repository.ts
+  - src/modules/overview/ui/month-view.tsx
+  - messages/en.json
+  - messages/nl.json
+  - messages/fr.json
+  - test/domain/account-number.test.ts
+  - test/domain/merchant-review.test.ts
+  - test/domain/belfius-pdf-template.test.ts
+  - test/domain/belfius-template-structure.test.ts
+  - test/application/account-setup.test.ts
+  - test/application/fake-import-world.ts
+  - test/application/ingest.test.ts
+  - test/application/interpret.test.ts
+  - test/application/reparse.test.ts
+  - test/application/resolve-merchants.test.ts
+  - test/application/pdf-upload.test.ts
+  - test/application/rederive-merchant-rules.test.ts
+  - test/application/kbc-settlement.test.ts
+  - test/application/kbc-fix-round-2.test.ts
+  - test/application/counterparty-identity-journey.test.ts
+  - test/application/counterparty-identity-surfaces.test.ts
+  - test/e2e/accounts.spec.ts
+  - test/e2e/setup-accounts.ts
+  - test/e2e/phone-helpers.ts
+  - test/e2e/month-view.spec.ts
+  - test/e2e/navigation.spec.ts
+  - test/e2e/import.spec.ts
+  - test/e2e/golden-journey.spec.ts
+  - test/e2e/merchants.spec.ts
+  - test/e2e/pressed-and-disabled.spec.ts
+  - test/e2e/prod-smoke.spec.ts
+  - test/fixtures/setup-current.csv
+  - test/fixtures/allowed-identifiers.txt
+  - test/fixtures/generate-pdf-fixtures.ts
+  - test/fixtures/gj-current.csv
+  - test/fixtures/gj-pot-b.csv
+  - test/fixtures/mv-cancel-a.csv
+  - test/fixtures/mv-cancel-b.csv
+  - test/fixtures/mv-gapped-a.csv
+  - test/fixtures/mv-gapped-b.csv
+  - test/fixtures/mv-transit-a.csv
+  - test/fixtures/mv-transit-b.csv
+  - test/fixtures/mixed-accounts.csv
+  - test/fixtures/generic-debit-credit.csv
+  - test/fixtures/generic-debits-only.csv
+  - test/fixtures/belfius-statement-a.pdf
+  - test/fixtures/belfius-statement-b-overlap.pdf
+  - test/fixtures/belfius-settlement-companion.pdf
+  - test/fixtures/belfius-settlement-companion-refund.pdf
+  - test/fixtures/belfius-inline-shapes.pdf
+  - test/fixtures/belfius-nonreconciling.pdf
+  - delivery/work-history/m3-p14.yaml
+  - delivery/work-history/m3-p14-notes.md
+
+key-decisions:
+  - decision: >-
+      The canonical account form, the pinned country-length table and the ISO
+      7064 mod-97 implementation were MOVED from
+      src/modules/merchants/domain/counterparty-identity.ts into
+      src/platform/account-number.ts, and every consumer imports them. The
+      merchants module keeps the names IBAN_LENGTH_BY_COUNTRY and
+      compactAccount as aliases and keeps isTrustedCounterpartyAccount as a
+      thin delegation.
+    why: >-
+      Criterion 14.4 asks for exactly one definition under src/ of each, in
+      the platform module. All three already existed in merchants, shipped by
+      M3-P12 after the plan was grounded, so writing a second copy in platform
+      would have made the criterion green while two live copies of a
+      money-critical validity test drifted apart. The platform module is also
+      the only place the ledger domain may import from, and four modules need
+      the form.
+  - decision: >-
+      Every COMPARISON against a transaction's stored counterparty account
+      canonicalises both sides at comparison time; only the DECLARATION is
+      stored canonical.
+    why: >-
+      The stored counterparty column is a FACT and is never rewritten to fix
+      an interpretation (pulse-domain section 2, rule 1; that this branch
+      keeps that rule is settled by claim C-14.8-no-fact-writes below, with
+      its captured command). One account reaches
+      this tree spaced on the delimited path and compact on the PDF path, so a
+      raw string comparison answers "different account" for one account
+      written two ways. The rule and its seven sibling call sites are recorded
+      at the canonical form's definition.
+  - decision: >-
+      The accounts module's dependency on the ledger (the published recompute
+      and the has-imported-rows read) is a PORT, bound in
+      src/modules/accounts/ui/actions.ts rather than in the accounts
+      composition root.
+    why: >-
+      The ledger's composition root already imports the accounts module's
+      published interface, so binding the reverse edge in the accounts index
+      would make two module indexes import each other at evaluation time. This
+      is the same shape and the same reason as
+      src/modules/merchants/ui/actions.ts, which binds recompute there for
+      exactly this reason.
+  - decision: >-
+      The setup form submits through an onSubmit handler inside a transition
+      rather than through a React form action.
+    why: >-
+      React resets a form after a form action resolves, and a reset writes
+      every field back to its defaultValue. The inputs are controlled, so
+      React's state still held what the owner typed while the DOM showed empty
+      boxes and nothing re-rendered to put the values back. Measured: a
+      refused submission cleared all three rows on screen, which is exactly
+      what criterion 14.3 forbids.
+  - decision: >-
+      The confirmation screen declares an account only for a file with NO
+      own-account column, and the role it writes is fixed to POT rather than
+      read from a control.
+    why: >-
+      The ring is answered at setup and a second place to answer it is a
+      second place to answer it wrongly (criterion 14.5). A file with no
+      own-account column is a card (decision D-48), and a card is a pot
+      account by definition (pulse-domain section 1 puts current accounts and
+      cards in the pot ring), so the value is forced by the shape rather than
+      inferred from a name.
+  - decision: >-
+      The shell's navigation links use --text-xs and --space-1 vertical
+      padding at phone widths, and the main region's top gap is --space-6
+      rather than --space-8; the desk width keeps --text-base and its own
+      padding.
+    why: >-
+      A fourth navigation link narrows every link in the row from a third of
+      the width to a quarter, and at a 200 percent device text size the
+      longest label then broke onto a third line. Measured at 390: three links
+      stood 88px tall and four at --text-base stood 127px, which pushed the
+      reconciliation verdict from 679px to 718px against the 700px fold
+      criterion 7.8 holds it to. After the change the verdict measures 688px.
+      The tokens.css note for --text-xs names the nav among the things that
+      token is for, and no new token was needed.
+  - decision: >-
+      The detector's account-shape test runs over the canonical form.
+    why: >-
+      A Belgian statement prints account numbers in groups of four, and the
+      shape test required the compact form, so a column of spaced account
+      numbers was not recognised as an account column at all and fell through
+      to be read as free text. Canonicalising only ADDS recognitions, because
+      canonicalisation is the identity on a compact uppercase value. Criterion
+      14.1's reserve-label assertion is written against a fixture whose
+      counterparty column is spaced, which is how a statement prints it.
+  - decision: >-
+      Two account numbers already committed in fixtures were recomputed in
+      place, bodies unchanged, and the PDF fixtures regenerated from the
+      builder.
+    why: >-
+      From this phase the household TYPES every account number at setup and a
+      number failing the ISO 7064 check is refused, so a fixture whose own
+      account fails the check can no longer be registered at all and its spec
+      cannot import it. Only the two check digits changed on each; both are
+      listed in test/fixtures/allowed-identifiers.txt with that reason.
+  - decision: >-
+      A household that has registered nothing is redirected from /import to
+      /accounts, and the month view's empty state names setup as well as
+      import.
+    why: >-
+      The plan's step 3 asks for it in those words, and it is what keeps the
+      simple world simple: accounts used to be discovered one statement at a
+      time. The consequence is recorded as a deviation, because it changes an
+      assertion M3-P1's criterion 1.1 shipped.
+
+deviations:
+  - plan-clause: >-
+      files-to-touch, which lists neither the merchants module nor its tests
+      nor the import module's profile detector.
+    why: >-
+      Criterion 14.4's "exactly one definition under src/" could only be made
+      true by MOVING the three definitions out of
+      src/modules/merchants/domain/counterparty-identity.ts, which the plan
+      could not see because it is grounded before M3-P12 merged; the
+      coordinator confirmed this as finding PR7-001 and directed the move.
+      src/modules/import/domain/detect-profile.ts was needed because criterion
+      14.1 requires a fixture whose counterparty column is written spaced, and
+      the detector refused to recognise such a column at all. Both are
+      recorded here rather than fixed by editing the declaration on this
+      branch.
+  - plan-clause: >-
+      step 5, "refused with one new machine reason on the existing union
+      (src/modules/import/application/ports.ts:72 through :81)".
+    why: >-
+      Two reasons were added, not one, and they went on the CONFIRM REJECTION
+      union in confirm-import.ts rather than on ImportFailureReason. Criterion
+      14.5 needs two different messages and a payload-free tag carries one
+      text each (coordinator finding PR7-002). The union at ports.ts:72-81 is
+      ImportFailureReason, which routes through markImportFailed and writes a
+      FAILED import row; the path the plan's own pointers name
+      (src/modules/import/ui/actions.ts:93 through :102 and
+      src/modules/import/ui/status-keys.ts) is the rejection union, which
+      writes nothing, and criterion 14.5 requires that no row is ingested and
+      no account created.
+  - plan-clause: >-
+      step 6, "a savings account marked spending at setup has no statement of
+      its own".
+    why: >-
+      That premise does not hold against this phase's own import gate, which
+      refuses only an account registered in the savings ring: an account
+      registered POT by mistake imports normally, gains rows, and the ring
+      change is then refused for good (coordinator finding PR7-004). No new
+      machinery was built for it; the refusal copy says plainly what has
+      happened and that the ring can no longer be changed, in all three
+      languages, and an e2e test reads that copy.
+  - plan-clause: >-
+      the phase's silence about the empty state's existing import link.
+    why: >-
+      Step 3 requires a household that has registered nothing to be sent to
+      the accounts screen before the import screen will accept a file, and the
+      empty state's call to action lands on /import. M3-P1's criterion 1.1
+      asserted that click reaches the file input. That assertion is now
+      written in two halves: with nothing registered the click lands on the
+      accounts screen, and once an account is registered it lands on the
+      import screen with the file input visible. The change is marked in place
+      in test/e2e/navigation.spec.ts rather than deleted.
+
+per-step-commits:
+  - sha: d8b84ee
+    subject: "plan: carry the account setup phase onto the build branch"
+  - sha: 06f7aab
+    subject: "accounts: one canonical account form and one validity test in platform"
+  - sha: 30069a6
+    subject: "tests: register the account a statement belongs to before confirming it"
+  - sha: 3aed6dc
+    subject: "fixtures: account numbers a household can actually register"
+  - sha: ec1eb5f
+    subject: "tests: the canonical form, the four refusals and the setup rebuild"
+  - sha: ec1764a
+    subject: "e2e: setup before import, and the owner's scenario in two arms"
+  - sha: f209f6d
+    subject: "accounts: fix the reserves join and the setup form's cleared rows"
+  - sha: e862c89
+    subject: "e2e: the shipped specs read the post-setup world"
+  - sha: 6cd3551
+    subject: "e2e: the consequence of leaving cards out of setup, and the invalid probes"
+  - sha: 3a60be2
+    subject: "accounts: hand the setup form the catalogue template, not a formatted string"
+
+verification-first:
+  - finding: >-
+      declareAccount has exactly ONE caller in src, and there is no accounts
+      route. Captured: `grep -rn 'declareAccount' src/` returns
+      src/modules/import/application/confirm-import.ts:96 (the call),
+      src/modules/import/application/index.ts:8 and :59 (the binding),
+      src/modules/import/application/ports.ts:247 (the port) and
+      src/modules/accounts/application/index.ts:27 (the definition). `find
+      src/app -ipath '*account*'` printed nothing. So an account could come
+      into existence only through the file that introduced it, which is the
+      verified root cause the plan states.
+    contradicts-plan: false
+  - finding: >-
+      Merchant resolution runs over INCOME and SPEND rows only.
+      src/modules/ledger/application/interpret-window.ts:100 defines isCounted
+      as flow === "INCOME" || flow === "SPEND", and it gates both the distinct
+      key set at :126 and the per-row assignment at :136. Everything else
+      carries no merchant.
+    contradicts-plan: false
+  - finding: >-
+      Measured over the privacy gate's own scan scope, alternation and
+      normalisation, the tree carries 24 distinct account-shaped values, of
+      which 13 pass the validity test (country in the pinned table, the length
+      that table assigns, and mod-97 equal to 1) and 11 fail. The plan's
+      figure was 17 distinct, 7 passing and 10 failing, and the dispatch
+      message said 19 with 12 failing. The phase read its own number off its
+      own run, as the plan's verification-first step directs.
+    contradicts-plan: false
+  - finding: >-
+      The canonical account form, the pinned ISO 13616 country-length table
+      and the ISO 7064 mod-97 implementation ALREADY EXISTED on main, in
+      src/modules/merchants/domain/counterparty-identity.ts, added by M3-P12
+      after this plan was grounded at 75ec85d. The plan's step 2 and criteria
+      14.3 and 14.4 describe building them in src/platform. They were MOVED
+      rather than copied, on the coordinator's direction (finding PR7-001), so
+      that criterion 14.4's "exactly one definition under src/" is true by
+      construction. A unit test enumerates the call sites and asserts one
+      definition of each.
+    contradicts-plan: false
+  - finding: >-
+      The reserves join at src/modules/overview/adapters/overview-repository.ts
+      compared the stored strings raw, and the ledger's declared sets, the
+      reserve drawdown, the transfer-leg match and the import path's
+      registered-account lookup all did the same. A Belgian statement prints
+      account numbers spaced and the delimited parser stores the cell
+      verbatim, so any of these answers "different account" for one account
+      written two ways.
+    contradicts-plan: false
+  - finding: >-
+      The delimited profile detector's account-shape test required the COMPACT
+      form, so a column of spaced account numbers was not recognised as an
+      account column at all. Criterion 14.4 states that the delimited parse
+      stores such a cell verbatim, which is true of the PARSER, but the SPEC
+      has to name that column first and detection is what names it. The test
+      now runs over the canonical form, which only adds recognitions.
+    contradicts-plan: false
+claims:
+  - id: C-14.1-two-arms
+    kind: coverage
+    statement: >-
+      The two arms of criterion 14.1 differ by exactly the household's own
+      movements, and the registered arm reddens without the feature: with only
+      the current account registered the naming screen offers 10 unresolved
+      groups where 3 are expected.
+    settled-by:
+      executed-construction:
+        command: >-
+          PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 npx playwright test
+          --project=chromium test/e2e/accounts.spec.ts -g "REGISTERED ARM"
+          (with registerAccounts(page, ALL_EIGHT) changed to
+          registerAccounts(page, [CURRENT]), then reverted)
+        exit-code: 1
+        output: |
+          Running 1 test using 1 worker
+            x  1 [chromium] > test/e2e/accounts.spec.ts:126:5 > REGISTERED ARM: the household's own accounts are never offered as merchants (14.7s)
+            Error: expect(locator).toHaveCount(expected) failed
+            Locator:  getByTestId('unresolved-group')
+            Expected: 3
+            Received: 10
+          1 failed
+  - id: C-14.1-second-member
+    kind: coverage
+    statement: >-
+      The same criterion also reddens under a structurally different member of
+      the class: the eight accounts ARE registered and the reserves join is
+      the raw-string comparison main shipped, at which point the four savings
+      rows render under their account numbers instead of the labels the
+      household typed.
+    settled-by:
+      executed-construction:
+        command: >-
+          PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 npx playwright test
+          --project=chromium test/e2e/accounts.spec.ts -g "REGISTERED ARM"
+          (with the reserves join reverted to a."iban" = t."counterpartyIban",
+          then restored)
+        exit-code: 1
+        output: |
+          Error: expect(received).toEqual(expected) // deep equality
+            - "Car savings" / "Holiday savings" / "Pension savings" / "Savings"
+            + "BE08900000000007" / "BE35900000000006" / "BE62900000000005" / "BE78900000000008"
+          1 failed
+  - id: C-14.4-one-definition
+    kind: coverage
+    statement: >-
+      Under src/ there is one definition of the canonical account form, one of
+      the pinned country-length table and one implementation of the mod-97
+      arithmetic, all three in the platform module, and the two remaining
+      whitespace-removals in the tree are the platform form itself and the
+      ledger's refund key, which is the one permitted exception with its
+      reason recorded.
+    settled-by:
+      executed-construction:
+        command: npx vitest run test/domain/account-number.test.ts
+        exit-code: 0
+        output: |
+          Test Files  1 passed (1)
+               Tests  16 passed (16)
+  - id: C-14.8-no-fact-writes
+    kind: coverage
+    statement: >-
+      The accounts module writes declaration rows only. Its repository names
+      exactly one Prisma model, the account, and completing setup calls the
+      ledger's published recompute once, after which running recompute twice
+      more leaves every interpretation column identical.
+    settled-by:
+      executed-construction:
+        command: npx vitest run test/application/account-setup.test.ts
+        exit-code: 0
+        output: |
+          Test Files  1 passed (1)
+               Tests  14 passed (14)
+          including "the accounts module's repository exports no function that
+          updates a transaction", "a valid submission of EIGHT accounts
+          registers eight and recomputes exactly ONCE" and "running recompute
+          twice afterwards leaves every interpretation column identical".
+
+  - id: C-14.9-no-literals
+    kind: universal
+    statement: >-
+      No line this phase adds or changes under src/app/ or src/modules/*/ui
+      carries a colour literal in any notation or a px, rem or em length,
+      outside a CSS or JSX comment, and no new token was needed.
+    settled-by:
+      counter-experiment: >-
+        The added lines were extracted with `git diff -U0 af3b5cb..HEAD --
+        src/app src/modules/accounts/ui src/modules/import/ui
+        src/modules/overview/ui src/modules/merchants/ui`, comment lines
+        dropped, and the remainder searched for oklch(, rgb(, rgba(, hsl(,
+        hsla(, a hex colour of 3 to 8 digits, any number followed by px, rem
+        or em, and eleven colour keywords after a colon. 940 added lines were
+        searched and grep exited 1, finding none. styles/tokens.css appears in
+        no diff on this branch, so nothing needed a token that did not exist.
+  - id: C-privacy-human-read
+    kind: coverage
+    statement: >-
+      Every new fixture line and every new line of user-facing copy on this
+      branch was read back line by line before commit, because the privacy
+      gate cannot see a merchant name, a place name, a date or an amount
+      inside a file.
+    settled-by:
+      executed-construction:
+        command: >-
+          git diff af3b5cb..HEAD -- test/fixtures/setup-current.csv
+          messages/en.json messages/nl.json messages/fr.json | grep -c '^+'
+        exit-code: 0
+        output: |
+          The one new fixture is 12 lines and was written by hand for this
+          phase: its account numbers are the invented run 900000000001 to
+          900000000008 with computed check digits, its two counterparty
+          accounts were already committed with their provenance, its merchant
+          names are the invented ones the existing fixtures already use
+          (Acme Salaris BV, Supermarkt Noord, Cafe Zomer) and its amounts were
+          chosen to make the two arms' arithmetic legible. Every catalogue
+          line added is product copy about rings, cards and refusals and
+          carries no counterparty, amount or date. No real statement was open
+          while any of it was written.
+  - id: C-pressed-set-gap
+    kind: open-question
+    statement: >-
+      The accounts screen's own controls are not in the pressed-feedback
+      control set that test/e2e/pressed-and-disabled.spec.ts sweeps. That
+      spec's journey now walks the accounts screen to register an account, but
+      takes no measurement there, so the new screen contributes nothing to
+      M3-P9's set. I did not close it in this phase.
+    still-open-because: >-
+      Closing it means adding measurements to a spec whose control set is
+      M3-P9's contract and whose enumeration is asserted in both directions,
+      and criterion 14.9 pins this phase to the gates it names. The gap is
+      recorded at the enumeration in that file so the next phase to own it
+      meets the fact.
+  - id: C-fold-margin
+    kind: open-question
+    statement: >-
+      At 390 by 844 under a 200 percent device text size the reconciliation
+      verdict now measures 688px against the 700px bound criterion 7.8 sets,
+      where three navigation links left it at 679px. The margin is 12px and
+      the measurement is deterministic in this container; a different font
+      stack could move it.
+    still-open-because: >-
+      The budget above main is shared between the shell header and the main
+      region, and this phase spent part of it on a fourth navigation link. It
+      was bought back from the nav's type size and padding and from the main
+      region's top gap; buying more would mean changing where the sign-out
+      control sits, which is M3-P7's finding HZ-M3P7-05 and not this phase's
+      to reopen.
+
+environment-warnings:
+  - warning: >-
+      The container's ambient DATABASE_URL, DIRECT_URL,
+      NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY point at another
+      project and override .env for `next dev` as well as for Prisma, and the
+      resulting failure is a silent "signup-failed" redirect rather than a
+      connection error. The anon key is NOT ambient, so the app used this
+      project's key against the other project's host.
+    evidence: >-
+      `npm run dev` started without pinning produced `POST /sign-up 303` then
+      `GET /sign-up?status=signup-failed 200` for every sign-up, while the
+      same credentials posted straight to http://127.0.0.1:54321/auth/v1/signup
+      returned an access token. Restarting the dev server with all five values
+      sourced from .env fixed it. Fleet warnings 1 and 6 say this; what they
+      do not say is what the symptom looks like.
+  - warning: >-
+      Playwright's first navigation against a freshly started `next dev`
+      compiles the route on demand, and a sign-up can take over 8 seconds
+      before the shell renders, which is longer than the default 5 second
+      expect timeout. A spec that fails once on the household-context
+      assertion and passes on re-run is measuring compilation, not the
+      product.
+    evidence: >-
+      The dev log recorded `POST /sign-up 303 in 5097ms` and `GET / 200 in
+      3427ms` on the first run; warming the six routes with curl and re-running
+      the identical test passed in 9.4s.
+  - warning: >-
+      A Prisma `$queryRaw` tagged template is a JavaScript template literal
+      first, so a regular-expression escape written with a backslash is eaten
+      before the SQL is built: '\s' inside such a query reaches Postgres as
+      's'. Use a POSIX class such as [[:space:]] instead.
+    evidence: >-
+      The reserves join written with the backslash form stripped the letter s
+      from both sides of its comparison and matched nothing; the four savings
+      rows rendered under their account numbers, and criterion 14.1's label
+      assertion is what said so.
+  - warning: >-
+      React 19 resets a form after a form action resolves, and the reset
+      writes CONTROLLED inputs back to empty without re-rendering them, so the
+      component's state and the DOM disagree afterwards. A form that must keep
+      what the user typed across a refused submission calls the action from an
+      onSubmit handler inside a transition instead.
+    evidence: >-
+      With `<form action={formAction}>` the setup form's three rows survived a
+      refused submission but every field read empty; the Playwright assertion
+      reported `Expected: "POT" Received: ""` on a select whose React state
+      still held POT.
+
+gate-evidence:
+  # All six run at the committed head, in the worktree /home/user/wt-m3p14,
+  # under Node v26.8.0 with node_modules symlinked from the primary clone and
+  # `npx prisma generate` already run. THE E2E RUN IS THE ONE WITH THREE AXES
+  # WORTH STATING: the toolchain is that Node, the build state is the
+  # production bundle the config builds inside its own webServer plus the dev
+  # server beside it, and the invocation is `npm run test:e2e` with the five
+  # local-stack values pinned over the container's ambient foreign ones. An
+  # unpinned run is not the same run: it reported two failures that were both
+  # a test process reading another project's Supabase.
+  - gate: typecheck
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: lint
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-fast
+    result: green
+    wrapper-exit-code: 0
+    discovered: 540
+    passed: 540
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-tokens
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-privacy
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-e2e
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
