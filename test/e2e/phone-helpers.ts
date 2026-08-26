@@ -142,18 +142,17 @@ export const navLinkLineCounts = (
       '[data-testid="main-nav"] a',
     )) {
       const testId = link.getAttribute("data-testid") ?? "";
-      const rect = link.getBoundingClientRect();
-      const style = getComputedStyle(link);
-      const lineHeight = parseFloat(style.lineHeight);
-      const fontSize = parseFloat(style.fontSize);
-      // A computed lineHeight of "normal" parses to NaN; the usual
-      // approximation is 1.2 times the font size, and the ratio is what
-      // this measurement compares, not the absolute number.
-      const line = Number.isFinite(lineHeight) ? lineHeight : fontSize * 1.2;
-      const padding =
-        parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
-      const textHeight = rect.height - (Number.isFinite(padding) ? padding : 0);
-      counts[testId] = Math.max(1, Math.round(textHeight / line));
+      // THE LINE BOXES OF THE TEXT ITSELF, not the height of the link's
+      // box. CORRECTED (clause R-087): the first version of this helper
+      // divided the link's rect height by its line height, and flex
+      // stretches every link in a row to the tallest one, so every link
+      // reported the same number whatever its label did. The assertion
+      // built on it could not have failed. A Range over the text node
+      // reports one client rect per LINE BOX, which is the quantity
+      // criterion 14.7 names.
+      const range = document.createRange();
+      range.selectNodeContents(link);
+      counts[testId] = Math.max(1, range.getClientRects().length);
     }
     return counts;
   });

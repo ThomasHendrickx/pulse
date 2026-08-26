@@ -106,11 +106,21 @@ const uploadPotFile = async (
   await page.goto("/import");
   await page.getByLabel("Bank export file").setInputFiles(join(FIXTURES, file));
   await page.getByRole("button", { name: "Upload" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Confirm the detected format" }),
-  ).toBeVisible();
-  await page.getByLabel("Format name").fill("Demobank current account");
-  await page.getByTestId("confirm-import").click();
+  // TWO LANDINGS, BOTH CORRECT (M3-P14). The FIRST file of a household
+  // stops at the confirmation screen because its format has no name yet.
+  // The SECOND file of the same format lands straight on the result: its
+  // account was registered at setup and a spec-identical profile already
+  // exists, so nothing is left to ask. Before this phase the second file
+  // always stopped, because its account was unknown until it introduced
+  // itself, which is exactly what setup removes.
+  const confirming = page.getByRole("heading", {
+    name: "Confirm the detected format",
+  });
+  await expect(confirming.or(page.getByTestId("import-result"))).toBeVisible();
+  if ((await confirming.count()) > 0) {
+    await page.getByLabel("Format name").fill("Demobank current account");
+    await page.getByTestId("confirm-import").click();
+  }
   await expect(page.getByTestId("import-result")).toBeVisible();
   await expect(page.getByTestId("rows-added")).toHaveText(expectedAdded);
 };

@@ -515,6 +515,93 @@ test("a card statement, which carries no own-account column, is accepted and dec
   );
 });
 
+// Criterion 14.6, the second half: the CONSEQUENCE of leaving cards out of
+// setup, witnessed rather than asserted. Before the card statement is
+// imported the settlement debit is honest aggregate SPEND against the
+// issuer; after it, the debit is INTERNAL and the card's own line items are
+// the counted spend. Over the committed golden-journey fixtures, zero new
+// fixtures.
+//
+// FIXTURE ARITHMETIC, by hand. gj-current.csv, August: +2.500,00 salary,
+// -12,50, -86,47 and -950,00 outside spend, -300,00 to the second registered
+// account (INTERNAL) and -850,00 settling the card. gj-card.csv: -450,00,
+// -250,00 and -150,00 line items plus the +850,00 mirror credit.
+//   before the card:  spend = 12,50 + 86,47 + 950,00 + 850,00 = 1.898,97
+//   after the card:   spend = 12,50 + 86,47 + 950,00
+//                           + 450,00 + 250,00 + 150,00 = 1.898,97
+// The TOTAL is the same, which is the whole point of the card-settlement
+// correction: the month must not count the settlement and the line items
+// both. What changes is WHICH rows carry it, and that is what this asserts.
+test("a card is not entered at setup, and importing its statement moves the settlement debit out of spend", async ({
+  page,
+}) => {
+  await signUpFresh(page, "acc-card-consequence");
+  await registerAccounts(page, [
+    { label: "Daily account", bank: "Demobank", accountNumber: "BE68539007547034", ring: "POT" },
+    { label: "Second account", bank: "Demobank", accountNumber: "BE59539007547099", ring: "POT" },
+  ]);
+  // The setup screen says the card is not wanted here, which is the whole
+  // reason this state is reachable at all.
+  await expect(page.getByTestId("cards-not-here")).toBeVisible();
+
+  await page.goto("/import");
+  await page
+    .getByLabel("Bank export file")
+    .setInputFiles(join(FIXTURES, "gj-current.csv"));
+  await page.getByRole("button", { name: "Upload" }).click();
+  await page.getByLabel("Format name").fill("Demobank current account");
+  await page.getByTestId("confirm-import").click();
+  await expect(page.getByTestId("rows-added")).toHaveText("8");
+
+  // BEFORE. One aggregate spend row against the issuer, carrying the whole
+  // settlement, and not one card line item anywhere.
+  await page.goto("/?month=2026-08");
+  await expect(page.getByTestId("spend-total")).toHaveText("1.898,97");
+  const issuerRow = page
+    .getByTestId("spend-group")
+    .filter({ hasText: "KREDIETKAART" });
+  await expect(issuerRow).toHaveCount(1);
+  await expect(issuerRow.getByTestId("group-total")).toHaveText("850,00");
+  for (const item of ["PIZZA NAPOLI", "ELEKTRO CITY", "BOEKHANDEL DE MAAN"]) {
+    await expect(
+      page.getByTestId("spend-group").filter({ hasText: item }),
+    ).toHaveCount(0);
+  }
+
+  // The card arrives, and is declared at first sight because its statement
+  // carries no account number.
+  await page.goto("/import");
+  await page
+    .getByLabel("Bank export file")
+    .setInputFiles(join(FIXTURES, "gj-card.csv"));
+  await page.getByRole("button", { name: "Upload" }).click();
+  await expect(page.getByTestId("account-declaration")).toBeVisible();
+  await page.getByLabel("Format name").fill("Card statement");
+  await page.getByLabel("Label").fill("Credit card");
+  await page.getByLabel("Bank").fill("Demokaart");
+  await page.getByTestId("confirm-import").click();
+  await expect(page.getByTestId("rows-added")).toHaveText("4");
+
+  // AFTER. The debit is INTERNAL: it is in no group and no total, and the
+  // card's own line items are the counted spend. The whole main region is
+  // checked, so the settlement cannot hide in any block.
+  await page.goto("/?month=2026-08");
+  await expect(page.getByTestId("spend-total")).toHaveText("1.898,97");
+  await expect(
+    page.getByTestId("spend-group").filter({ hasText: "KREDIETKAART" }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("main")).not.toContainText("850,00");
+  for (const [item, total] of [
+    ["PIZZA NAPOLI", "450,00"],
+    ["ELEKTRO CITY", "250,00"],
+    ["BOEKHANDEL DE MAAN", "150,00"],
+  ] as const) {
+    const group = page.getByTestId("spend-group").filter({ hasText: item });
+    await expect(group).toHaveCount(1);
+    await expect(group.getByTestId("group-total")).toHaveText(total);
+  }
+});
+
 test("the ring control is gone from the import confirmation screen", async () => {
   // A grep, because the criterion asks for one: the ring is answered at
   // setup and a second place to answer it is a second place to answer it
