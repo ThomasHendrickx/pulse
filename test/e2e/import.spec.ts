@@ -1,8 +1,23 @@
 import { expect, test } from "@playwright/test";
 import { join } from "node:path";
+import {
+  FIXTURE_ACCOUNT_A,
+  registerCurrentAccount,
+} from "./setup-accounts";
 
-// Criterion 1.5: upload a first file, get asked to declare the account
-// (label, bank, ring) and confirm the detected profile over a five-row
+// M3-P14: the household registers the account a statement belongs to at
+// SETUP, before importing it, and the ring is answered there rather than on
+// this screen. A CARD still declares itself here at first sight, with a
+// label and a bank and no ring, because a card statement carries no account
+// number and a card is a pot account by definition (decision D-48).
+//
+// BELFIUS_PDF_ACCOUNT is the own account of the committed Belfius PDF
+// fixtures, invented and listed with its provenance in
+// test/fixtures/allowed-identifiers.txt.
+const BELFIUS_PDF_ACCOUNT = "BE72012345678944";
+
+// Criterion 1.5: upload a first file, confirm the detected profile over a
+// five-row
 // preview, complete, re-upload the same file, and assert zero new rows
 // with no questions asked. Runs against the dev server with a fresh
 // household per run (unique sign-up email), so imports from earlier runs
@@ -24,6 +39,10 @@ test("first upload asks once; re-upload adds zero and asks nothing", async ({
   await page.getByRole("button", { name: "Create household" }).click();
   await expect(page.getByTestId("household-context")).toHaveText(unique);
 
+  // Setup first: the account this file belongs to is registered before it
+  // is imported.
+  await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+
   // First upload: the file is parsed and the conversation starts.
   await page.goto("/import");
   await expect(page.getByRole("heading", { name: "Import" })).toBeVisible();
@@ -36,20 +55,18 @@ test("first upload asks once; re-upload adds zero and asks nothing", async ({
     page.getByRole("heading", { name: "Confirm the detected format" }),
   ).toBeVisible();
   await expect(page.getByTestId("preview-row")).toHaveCount(5);
-  // Finding F1 (transparency): the account is not known yet, and the
-  // screen says so before asking for the declaration.
-  await expect(page.getByTestId("landing-new")).toBeVisible();
+  // Finding F1 (transparency): the screen names the account the rows will
+  // land in. M3-P14: that account is now the one the household registered
+  // at setup, so there is nothing to declare here.
+  await expect(page.getByTestId("landing-account")).toHaveText("Daily account");
   // The preview renders rows as they will be stored: booking date as a
   // plain date, the amount in Belgian notation through the shared
   // formatter.
   await expect(page.getByTestId("preview-table")).toContainText("2026-08-03");
   await expect(page.getByTestId("preview-table")).toContainText("2.500,00");
-  await expect(page.getByTestId("account-declaration")).toBeVisible();
+  await expect(page.getByTestId("account-declaration")).toHaveCount(0);
 
   await page.getByLabel("Format name").fill("Demobank current account");
-  await page.getByLabel("Label").fill("Daily account");
-  await page.getByLabel("Bank").fill("Demobank");
-  await page.getByLabel("Ring").selectOption("POT");
   await page.getByTestId("confirm-import").click();
 
   // Completed: six rows in, none previously known, INTO the named
@@ -109,6 +126,8 @@ test("PDF upload: ask-once declaration, rows added, month reconciles, copy names
   await expect(page.getByTestId("empty-state")).toBeVisible();
   await expect(page.getByTestId("empty-state")).toContainText("PDF");
 
+  await registerCurrentAccount(page, BELFIUS_PDF_ACCOUNT, "Daily account", "Belfius");
+
   // The import screen's own copy names PDF as well.
   await page.goto("/import");
   await expect(page.getByRole("heading", { name: "Import" })).toBeVisible();
@@ -123,16 +142,12 @@ test("PDF upload: ask-once declaration, rows added, month reconciles, copy names
   await expect(
     page.getByRole("heading", { name: "Confirm the detected format" }),
   ).toBeVisible();
-  await expect(page.getByTestId("landing-new")).toBeVisible();
+  await expect(page.getByTestId("landing-account")).toHaveText("Daily account");
   await expect(page.getByTestId("preview-row")).toHaveCount(5);
   await expect(page.getByTestId("preview-table")).toContainText("2026-05-04");
   await expect(page.getByLabel("Format name")).toHaveCount(0);
   await expect(page.locator(".spec-editor")).toHaveCount(0);
-  await expect(page.getByTestId("account-declaration")).toBeVisible();
-
-  await page.getByLabel("Label").fill("Daily account");
-  await page.getByLabel("Bank").fill("Belfius");
-  await page.getByLabel("Ring").selectOption("POT");
+  await expect(page.getByTestId("account-declaration")).toHaveCount(0);
   await page.getByTestId("confirm-import").click();
 
   // Import detail: all nine fixture rows added into the declared account.
@@ -180,6 +195,10 @@ test("KBC card PDF plus companion account PDF: two ask-once declarations, June r
   await page.getByRole("button", { name: "Create household" }).click();
   await expect(page.getByTestId("household-context")).toHaveText(unique);
 
+  // The current account this household owns, registered at setup. The CARD
+  // is deliberately not entered there.
+  await registerCurrentAccount(page, BELFIUS_PDF_ACCOUNT, "Daily account", "Belfius");
+
   // The card statement: recognised layout, so no format question, only
   // the account declaration. The preview's first row is the
   // month-straddling row, shown under its TRANSACTION date (PR2-004).
@@ -197,9 +216,10 @@ test("KBC card PDF plus companion account PDF: two ask-once declarations, June r
   await expect(page.getByLabel("Format name")).toHaveCount(0);
   await expect(page.getByTestId("account-declaration")).toBeVisible();
 
+  // A card is declared here, with no ring: the ring is answered at setup
+  // and a card is a pot account by definition.
   await page.getByLabel("Label").fill("Credit card");
   await page.getByLabel("Bank").fill("KBC");
-  await page.getByLabel("Ring").selectOption("POT");
   await page.getByTestId("confirm-import").click();
 
   await expect(page.getByTestId("import-result")).toBeVisible();
@@ -215,10 +235,7 @@ test("KBC card PDF plus companion account PDF: two ask-once declarations, June r
   await expect(
     page.getByRole("heading", { name: "Confirm the detected format" }),
   ).toBeVisible();
-  await expect(page.getByTestId("account-declaration")).toBeVisible();
-  await page.getByLabel("Label").fill("Daily account");
-  await page.getByLabel("Bank").fill("Belfius");
-  await page.getByLabel("Ring").selectOption("POT");
+  await expect(page.getByTestId("account-declaration")).toHaveCount(0);
   await page.getByTestId("confirm-import").click();
 
   await expect(page.getByTestId("import-result")).toBeVisible();
@@ -254,6 +271,8 @@ test.describe("phone viewport (CR-902)", () => {
     await page.getByRole("button", { name: "Create household" }).click();
     await expect(page.getByTestId("household-context")).toHaveText(unique);
 
+    await registerCurrentAccount(page, BELFIUS_PDF_ACCOUNT, "Daily account", "Belfius");
+
     await page.goto("/import");
     await page.getByLabel("Bank export file").setInputFiles(PDF_FIXTURE);
     await page.getByRole("button", { name: "Upload" }).click();
@@ -262,7 +281,7 @@ test.describe("phone viewport (CR-902)", () => {
       page.getByRole("heading", { name: "Confirm the detected format" }),
     ).toBeVisible();
     await expect(page.getByTestId("preview-row")).toHaveCount(5);
-    await expect(page.getByTestId("account-declaration")).toBeVisible();
+    await expect(page.getByTestId("landing-account")).toHaveText("Daily account");
 
     // The page itself never scrolls horizontally; wide content scrolls
     // inside its own container.
@@ -271,10 +290,7 @@ test.describe("phone viewport (CR-902)", () => {
     );
     expect(scrollWidth, "no horizontal scroll on the PDF confirm step").toBeLessThanOrEqual(390);
 
-    // And the declaration is usable at this width, end to end.
-    await page.getByLabel("Label").fill("Daily account");
-    await page.getByLabel("Bank").fill("Belfius");
-    await page.getByLabel("Ring").selectOption("POT");
+    // And the confirm step is usable at this width, end to end.
     await page.getByTestId("confirm-import").click();
     await expect(page.getByTestId("rows-added")).toHaveText("9");
   });

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { join } from "node:path";
+import { ensureRegistered, FIXTURE_ACCOUNT_A } from "./setup-accounts";
 
 // General navigation (M3-P1, criterion 1.1, owner feedback DR-0002 item 1).
 // Written BEFORE the nav existed: the red witness for this phase. Two
@@ -8,8 +9,8 @@ import { join } from "node:path";
 //   1. Empty household: the shell header carries the nav, and the empty
 //      state's call to action is a real link whose click lands on /import,
 //      instead of copy that only names the import screen.
-//   2. Seeded household (mv-partial.csv, 4 rows): the three header links
-//      navigate between /, /import and /merchants, the aria-current="page"
+//   2. Seeded household (mv-partial.csv, 4 rows): the header links
+//      navigate between /, /import, /merchants and /accounts, the aria-current="page"
 //      marker follows the route, and the nav is present on all three
 //      routes.
 //
@@ -25,6 +26,10 @@ const NAV_LINKS = [
   { testId: "nav-overview", path: "/", label: "Overview" },
   { testId: "nav-import", path: "/import", label: "Import" },
   { testId: "nav-merchants", path: "/merchants", label: "Merchants" },
+  // M3-P14's fourth link. The nav is asserted BY NAME rather than by count
+  // (fleet environment warning), so a later phase appending a fifth adds a
+  // row here instead of turning this red.
+  { testId: "nav-accounts", path: "/accounts", label: "Accounts" },
 ] as const;
 
 const signUp = async (page: Page, prefix: string): Promise<void> => {
@@ -36,12 +41,20 @@ const signUp = async (page: Page, prefix: string): Promise<void> => {
   await expect(page.getByTestId("household-context")).toHaveText(unique);
 };
 
+// M3-P14: setup first, then the file. The ring is answered at setup and no
+// longer on the confirmation screen.
 const uploadPotFile = async (
   page: Page,
   file: string,
   label: string,
   expectedAdded: string,
 ): Promise<void> => {
+  await ensureRegistered(page, {
+    label,
+    bank: "Demobank",
+    accountNumber: FIXTURE_ACCOUNT_A,
+    ring: "POT",
+  });
   await page.goto("/import");
   await page.getByLabel("Bank export file").setInputFiles(join(FIXTURES, file));
   await page.getByRole("button", { name: "Upload" }).click();
@@ -49,9 +62,6 @@ const uploadPotFile = async (
     page.getByRole("heading", { name: "Confirm the detected format" }),
   ).toBeVisible();
   await page.getByLabel("Format name").fill("Demobank current account");
-  await page.getByLabel("Label").fill(label);
-  await page.getByLabel("Bank").fill("Demobank");
-  await page.getByLabel("Ring").selectOption("POT");
   await page.getByTestId("confirm-import").click();
   await expect(page.getByTestId("import-result")).toBeVisible();
   await expect(page.getByTestId("rows-added")).toHaveText(expectedAdded);
@@ -82,7 +92,35 @@ test("empty household: the nav is in the shell and the empty state links to impo
   await expect(page.getByTestId("empty-state")).toBeVisible();
   await expectNavOn(page, "/");
 
-  // The empty state's call to action is a real link and lands on /import.
+  // M3-P14, AND THIS ASSERTION CHANGED RATHER THAN BEING QUIETLY DROPPED
+  // (clause R-087). Before this phase the empty state's one call to action
+  // landed on /import and the file input was there. A household that has
+  // registered NOTHING is now sent to the accounts screen before the import
+  // screen will accept a file, because accounts used to be discovered one
+  // statement at a time and every account a statement had not yet
+  // introduced was offered as a merchant. So the empty state names setup
+  // first, and the import link, followed by a household with nothing
+  // registered, lands on the accounts screen.
+  await expect(page.getByTestId("empty-state-accounts-link")).toBeVisible();
+  await page.getByTestId("empty-state-accounts-link").click();
+  await expect(page).toHaveURL(/\/accounts$/);
+  await expect(page.getByTestId("accounts-screen")).toBeVisible();
+  await expectNavOn(page, "/accounts");
+
+  await page.goto("/");
+  await page.getByTestId("empty-state-import-link").click();
+  await expect(page).toHaveURL(/\/accounts$/);
+  await expect(page.getByTestId("accounts-screen")).toBeVisible();
+
+  // ONCE AN ACCOUNT IS REGISTERED, the import screen is reachable and the
+  // file input is there, which is the half M3-P1 criterion 1.1 asserted.
+  await ensureRegistered(page, {
+    label: "Daily account",
+    bank: "Demobank",
+    accountNumber: FIXTURE_ACCOUNT_A,
+    ring: "POT",
+  });
+  await page.goto("/");
   await page.getByTestId("empty-state-import-link").click();
   await expect(page).toHaveURL(/\/import$/);
   await expect(page.getByLabel("Bank export file")).toBeVisible();
@@ -93,6 +131,14 @@ test("import sub-route: the import link stays current on the confirm step (CR-60
   page,
 }) => {
   await signUp(page, "nav-subroute");
+
+  // M3-P14: setup first, so the import screen accepts the file at all.
+  await ensureRegistered(page, {
+    label: "Daily account",
+    bank: "Demobank",
+    accountNumber: FIXTURE_ACCOUNT_A,
+    ring: "POT",
+  });
 
   // Upload a file and stop at the confirm step, which lives on the real
   // sub-route /import/<id> (the redirect in the upload action), the exact
