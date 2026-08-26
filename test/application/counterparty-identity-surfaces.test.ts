@@ -410,6 +410,37 @@ describe("the measurement harness is covered by the fast gate (plan step 1)", ()
       }
     }
   });
+
+  // THE THIRD LEAK IN THE SAME FUNCTION (fix round nine, CRITERIA finding
+  // CR7-M3P12-02). The committed-fixture branch tested a path PREFIX, so the
+  // exemption was inherited by anything sitting at or below the fixture
+  // directory whether the tree carried it or not. A real upload copied there
+  // for one measurement run printed its own file name. The exemption is now
+  // membership of the tracked tree, which is the provenance the header claims
+  // and not the location it was standing in for.
+  test("an UNTRACKED file under the fixture directory is an outside file, and so is anything in a subdirectory", async () => {
+    const { measurementLabel, UNLABELLED } = await import(
+      "../fixtures/measure-identity-convergence"
+    );
+    // Every value here is invented. None of these paths is in the tree.
+    const notCommitted = [
+      "test/fixtures/be68539007547034-2026-06-statement.pdf",
+      "test/fixtures/BE68539007547034-2026-06-statement.pdf",
+      "test/fixtures/uploads/be68539007547034-2026-06-statement.pdf",
+      "test/fixtures/uploads/deeper/Statement June 2026.pdf",
+    ];
+    for (const path of notCommitted) {
+      expect(measurementLabel(path)).toBe(UNLABELLED);
+      expect(measurementLabel(path, 3)).toBe("document-3");
+      for (const fragment of ["BE68", "be68", "5390", "Statement", "June"]) {
+        expect(measurementLabel(path, 3)).not.toContain(fragment);
+      }
+    }
+    // THE CONTROL, so the four refusals above are refusals and not a function
+    // that now refuses everything: a fixture the tree really carries keeps its
+    // basename.
+    expect(measurementLabel("test/fixtures/kbc-card.csv")).toBe("kbc-card.csv");
+  });
 });
 
 // FIX ROUND, finding HZ-M3P12-09. The privacy check that gate:privacy cannot

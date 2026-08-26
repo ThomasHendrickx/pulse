@@ -25,6 +25,7 @@
 // cannot disagree with the product: there is one implementation and this
 // file measures it.
 
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -77,6 +78,17 @@ const FIXTURE_DIRECTORY = resolve(fileURLToPath(new URL(".", import.meta.url)));
 //   it is in this repository, so every byte of that name is already public and
 //   reviewable in the tree.
 //
+//   AND THAT PROVENANCE IS NOW TESTED RATHER THAN INFERRED FROM A PATH
+//   PREFIX (fix round nine, CRITERIA finding CR7-M3P12-02, third leak). The
+//   branch used to ask whether the resolved path STARTED WITH the fixture
+//   directory, which is a location and not a provenance: any file dropped
+//   into the fixture directory, or into any subdirectory below it, returned
+//   its FULL basename whether the tree carried it or not, and a real upload
+//   copied there for a measurement run would have printed its own name. It
+//   now asks git whether the path is TRACKED, which is the actual claim the
+//   paragraph above makes. An untracked file in the fixture directory is an
+//   outside file and is labelled like one.
+//
 //   ANY OTHER PATH is labelled by its ORDINAL POSITION in the invocation,
 //   which the operator chose and which carries no byte of the file name. It
 //   distinguishes several documents in one run, which is what the label is
@@ -85,8 +97,34 @@ const FIXTURE_DIRECTORY = resolve(fileURLToPath(new URL(".", import.meta.url)));
 //   A caller that supplies no ordinal gets UNLABELLED. Fail closed.
 export const UNLABELLED = "unlabelled";
 
+// Resolved once per process and cached. FAIL CLOSED on every failure shape:
+// no git, not a repository, a path outside the tree. An empty set labels
+// everything as an outside file, which prints a placeholder rather than a
+// name, and a placeholder is the safe direction.
+let trackedFixtures: ReadonlySet<string> | undefined;
+
+const committedFixturePaths = (): ReadonlySet<string> => {
+  if (trackedFixtures === undefined) {
+    try {
+      trackedFixtures = new Set(
+        execFileSync("git", ["ls-files", "-z", "--", "."], {
+          cwd: FIXTURE_DIRECTORY,
+          encoding: "utf-8",
+          maxBuffer: 32 * 1024 * 1024,
+        })
+          .split("\0")
+          .filter((name) => name !== "")
+          .map((name) => resolve(FIXTURE_DIRECTORY, name)),
+      );
+    } catch {
+      trackedFixtures = new Set<string>();
+    }
+  }
+  return trackedFixtures;
+};
+
 export const measurementLabel = (path: string, ordinal?: number): string => {
-  if (resolve(path).startsWith(`${FIXTURE_DIRECTORY}/`)) {
+  if (committedFixturePaths().has(resolve(path))) {
     return basename(path);
   }
   return ordinal === undefined ? UNLABELLED : `document-${ordinal}`;

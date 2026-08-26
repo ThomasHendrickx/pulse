@@ -39,6 +39,19 @@ const unowned = `
 Caused by: AssertionError: expected 1 to be 2
 `;
 
+// HALF THE INSTRUMENT CRASHING, in the shape vitest really prints it (fix
+// round nine, CRITERIA finding CR7-M3P12-04). This transcript was CAPTURED
+// from a real run of a two-test file, one test asserting and one calling a
+// function that does not exist, and trimmed to the lines the scoring reads.
+// Under the whole-report scoring this returned "caught" on both properties and
+// printed the same sentence a clean double catch prints.
+const partial = `
+ FAIL  test/property/rederive-loss-reporting.test.ts > CRITERION 12.7 > ${FIRST_PROPERTY}
+AssertionError: expected 1 to be 2 // Object.is equality
+ FAIL  test/property/rederive-loss-reporting.test.ts > CRITERION 12.7 > ${SECOND_PROPERTY}
+TypeError: globalThis.nope is not a function
+`;
+
 describe("the mutant harness scores an outcome by identity, not by exit code", () => {
   test("GREEN: the property file passed, so the mutant was not caught", () => {
     expect(scoreMutantRun(false, passing).outcome).toBe("green");
@@ -75,6 +88,42 @@ describe("the mutant harness scores an outcome by identity, not by exit code", (
     const scoring = scoreMutantRun(true, unowned);
     expect(scoring.outcome).toBe("unattributed");
     expect(scoring.properties).toEqual([]);
+  });
+
+  // THE FIFTH OUTCOME, AND THE FOUR NAMES DID NOT COVER IT. One property
+  // asserts, the other dies of a runtime error. This is NOT a catch: the
+  // second property proved nothing, and reporting it as one hides a broken
+  // instrument behind a working one.
+  test("PARTIAL: one property asserted while another failing test produced no assertion", () => {
+    const scoring = scoreMutantRun(true, partial);
+    expect(scoring.outcome).toBe("partial");
+    // The property that really did assert is still attributed, and the one
+    // that died is NOT credited with a catch it did not make.
+    expect(scoring.properties).toEqual(["FIRST biconditional"]);
+    expect(scoring.message).toContain("no assertion at all");
+  });
+
+  // AND A DEAD BLOCK ALONE IS STILL "dies", not "partial": partial needs one
+  // of each, so the two outcomes cannot absorb one another.
+  test("a run in which EVERY failing test died is dies, not partial", () => {
+    const bothDied = `
+ FAIL  test/property/rederive-loss-reporting.test.ts > CRITERION 12.7 > ${FIRST_PROPERTY}
+TypeError: globalThis.nope is not a function
+ FAIL  test/property/rederive-loss-reporting.test.ts > CRITERION 12.7 > ${SECOND_PROPERTY}
+TypeError: globalThis.nope is not a function
+`;
+    expect(scoreMutantRun(true, bothDied).outcome).toBe("dies");
+  });
+
+  // AN ASSERTION IN THE PREAMBLE BELONGS TO NOBODY. Before the split, an
+  // "AssertionError:" printed anywhere in stdout, including by a test's own
+  // console output, made a dying run look like a catch.
+  test("an AssertionError printed OUTSIDE any failing test's block does not rescue a dead run", () => {
+    const noise = `
+stdout | some other test
+the words AssertionError: appear here as text
+${died}`;
+    expect(scoreMutantRun(true, noise).outcome).toBe("dies");
   });
 
   // AND THE ATTRIBUTION READS FAILURE LINES, NOT THE WHOLE REPORT. A passing

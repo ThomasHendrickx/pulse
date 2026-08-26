@@ -199,11 +199,46 @@ const runProperty = (): { failed: boolean; report: string } => {
 };
 
 // THE SCORING IS A PURE FUNCTION IN ITS OWN MODULE (fix round nine, HAZARD
-// finding CR7-M3P12-02), so all four of its branches are reachable from the
+// finding CR7-M3P12-02), so all FIVE of its branches are reachable from the
 // fast gate rather than only from a run of this harness. The SELF entry below
 // still exercises the crash branch LIVE, because a canned report cannot show
 // that a real crash produces no AssertionError; the two checks are
 // complementary rather than duplicates.
+//
+// WHAT THAT ANSWERS AND WHAT IT DOES NOT, said plainly rather than left for a
+// tenth round to work out. HAZARD finding CR7-M3P12-03 asked for a second LIVE
+// self-check, a SELF2 that makes an assertion fire outside both named
+// properties so the "unattributed" branch is exercised the way SELF exercises
+// "dies". It is answered here by the extraction instead: every branch,
+// unattributed included, is driven from test/property/mutant-scoring.test.ts
+// with canned reports, so no branch is code nothing takes. THE RESIDUE IS
+// REAL AND IS NOT CLOSED: the canned reports are transcripts somebody wrote
+// down, so if vitest changes the SHAPE of its output the unit tests keep
+// passing against the old shape while this harness misreads the new one. Only
+// SELF is immune to that, because it reads a real run. The two partial-run
+// transcripts added in fix round nine were captured from real runs for that
+// reason rather than composed.
+
+// THE POSITIVE PRECONDITION, RUN BEFORE ANY MUTATION (fix round nine, CRITERIA
+// finding CR7-M3P12-04). The SELF entry expects "dies", and "dies" is any
+// non-zero exit with no assertion, which is ALSO what vitest returns when the
+// property file has been renamed or deleted, and what execFileSync produces
+// when the runner cannot launch at all. In both of those states SELF passes
+// while proving nothing about the discriminator. So the harness first runs the
+// property file UNMUTATED and requires it GREEN. A red or missing baseline is a
+// broken harness reported as one, and it makes every later "dies" mean the
+// mutation rather than the weather.
+{
+  const baseline = runProperty();
+  if (baseline.failed) {
+    console.error(
+      "BASELINE IS NOT GREEN. The property file must pass against the unmutated module before any mutant means anything: a run that cannot launch, or a file that is missing, dies exactly as a mutated module does and would score every entry as expected while proving nothing.",
+    );
+    console.error(baseline.report);
+    process.exit(1);
+  }
+  console.log(`baseline: ${propertyFile} passes unmutated\n`);
+}
 
 let failures = 0;
 try {
@@ -216,6 +251,18 @@ try {
         );
       }
       mutated = mutated.replace(from, to);
+    }
+    // A NO-OP EDIT IS A STALE MUTANT, NOT A DEFECT IN THE PROPERTIES (fix
+    // round nine, CRITERIA finding CR7-M3P12-04). The anchor check above
+    // proves the anchor was FOUND; it never compared the result with the
+    // source, so a mutant whose replacement had drifted back to equal its
+    // anchor left the file untouched, scored "green", and was reported as
+    // "a defect in the properties, not a passing mutant", which is a
+    // confident and wrong diagnosis.
+    if (mutated === original) {
+      throw new Error(
+        `${mutant.id}: its edits left the source BYTE-IDENTICAL, so this entry mutates nothing. The mutant record is stale and must be repaired before it is trusted.`,
+      );
     }
     writeFileSync(target, mutated);
     const { failed, report } = runProperty();
@@ -242,6 +289,12 @@ try {
           "  AN ASSERTION FIRED BUT NEITHER PROPERTY OWNS IT: the failure could not be attributed to a named property, so the record would say nothing about which check caught this.",
         );
         break;
+      case "partial":
+        console.log(
+          "  HALF THE INSTRUMENT CRASHED: one property asserted while another failing test produced no assertion at all. This is NOT a catch, because the test that died proved nothing.",
+        );
+        console.log(`  ${message}`);
+        break;
       case "caught":
         console.log(`  red on: ${properties.join(" and ")}`);
         console.log(`  ${message}`);
@@ -257,7 +310,7 @@ try {
 
 if (failures > 0) {
   console.log(
-    `\n${failures} mutant(s) were not CAUGHT by an assertion: left green, died, or unattributed.`,
+    `\n${failures} mutant(s) were not CAUGHT by an assertion: left green, died, unattributed, or partial.`,
   );
   process.exitCode = 1;
 }
