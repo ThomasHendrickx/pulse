@@ -2,6 +2,8 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { stripComments } from "../support/strip-comments";
+import { detectSourceProfile } from "../../src/modules/import/domain/detect-profile";
+import { parseStatement } from "../../src/modules/import/domain/parse-statement";
 import {
   ACCOUNT_NUMBER_LENGTHS,
   canonicalAccountNumber,
@@ -433,5 +435,130 @@ describe("one definition, enumerated (criterion 14.4)", () => {
       /%\s*97\b/.test(readFileSync(file, "utf8")),
     );
     expect(definitions).toEqual([PLATFORM_MODULE]);
+  });
+});
+
+// ---------------------------------------------------------------------
+// THE OUTSIDE COUNTERPARTY IS AN OUTSIDE COUNTERPARTY, ASSERTED RATHER THAN
+// GLOSSED (criterion 14.15 witness SEVEN, third shape).
+// ---------------------------------------------------------------------
+//
+// WHY THIS EXISTS. Witness SEVEN's third shape is "exactly one NEGATIVE row
+// whose counterpartyIban belongs to no account of this household", which is
+// the payment made straight out of savings. The row that carries it in
+// test/fixtures/ar-savings.csv names BE07903300003366, and the whole shape
+// depends on that number never becoming an account of a household in any
+// fixture. If it ever did, the row would become a SECOND movement between
+// two of the household's own accounts, the fixture would carry none of the
+// third shape, and the money-string count in the Playwright half would stay
+// green because the row still renders exactly one amount. The witness would
+// stop witnessing the thing it exists for, silently.
+//
+// A NOTE ON AN ALLOW LIST IS NOT A GUARD. test/fixtures/allowed-identifiers.txt
+// now says this number is an outside counterparty and is not an account of
+// any household; this is what makes that true.
+describe("the outside counterparty of the payment out is never a household account", () => {
+  const OUTSIDE_COUNTERPARTY = "BE07903300003366";
+  const FIXTURES = join(__dirname, "..", "fixtures");
+
+  // WHERE THIS NUMBER IS ALLOWED TO APPEAR, by file and by role, written by
+  // hand. Anything else is a new use nobody has looked at.
+  const PERMITTED = [
+    {
+      file: "fixtures/ar-savings.csv",
+      role: "the COUNTERPARTY of the payment made straight out of savings, which is witness SEVEN's third shape",
+    },
+    {
+      file: "fixtures/allowed-identifiers.txt",
+      role: "the privacy allow list, where the number's provenance and this role are written down",
+    },
+    {
+      file: "domain/account-number.test.ts",
+      role: "the validity list and this guard's own subject",
+    },
+  ] as const;
+
+  test("no committed CSV fixture declares it as the file's OWN account, read through the shipped detector and parser", () => {
+    // THE PRODUCT'S OWN PATH, not a column-index rule of this test's own:
+    // an account is declared from the file's own-account identifiers
+    // (src/modules/import/application/confirm-import.ts reads exactly this
+    // list), so asking the shipped parser what those are is asking the
+    // question that actually decides.
+    const files = readdirSync(FIXTURES).filter((name) => name.endsWith(".csv"));
+    // NOT VACUOUS: a walk that found no files, or files none of which
+    // declared any own account, would satisfy the assertion by finding
+    // nothing.
+    expect(files.length).toBeGreaterThan(0);
+    const declared = new Set<string>();
+    let parsed = 0;
+    for (const name of files) {
+      const bytes = new TextEncoder().encode(
+        readFileSync(join(FIXTURES, name), "utf8"),
+      );
+      const spec = detectSourceProfile(bytes);
+      if (!spec.ok) {
+        continue;
+      }
+      const statement = parseStatement(bytes, spec.value);
+      if (!statement.ok) {
+        continue;
+      }
+      parsed += 1;
+      for (const iban of statement.value.accountIbans) {
+        declared.add(canonicalAccountNumber(iban));
+      }
+    }
+    expect(parsed).toBeGreaterThan(0);
+    expect(
+      declared.size,
+      "no committed CSV fixture declares an own account, so this assertion would pass by finding nothing",
+    ).toBeGreaterThan(0);
+    expect(
+      declared.has(OUTSIDE_COUNTERPARTY),
+      `${OUTSIDE_COUNTERPARTY} is declared as a file's OWN account, so it is an account of a household and the payment-out row of ar-savings.csv is no longer a payment out: criterion 14.15 witness SEVEN's third shape has no row`,
+    ).toBe(false);
+    // AND THE WALK REALLY REACHES THE FILE THIS IS ABOUT, so a detector
+    // change that silently stopped parsing it cannot make this green.
+    expect(declared.has("BE24902200001138")).toBe(true);
+  });
+
+  test("every textual occurrence of it in the test tree sits on the permitted list, so a registration written anywhere reddens", () => {
+    // THE OTHER DECLARATION PATH. A fixture is not the only way this number
+    // could become a household account: a test can register it through the
+    // accounts use case or the accounts form. That is a source-level act, so
+    // this is a source-level scan.
+    const root = join(__dirname, "..");
+    const walk = (dir: string): readonly string[] => {
+      const out: string[] = [];
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) {
+          out.push(...walk(full));
+        } else {
+          out.push(full);
+        }
+      }
+      return out;
+    };
+    const found: string[] = [];
+    for (const file of walk(root)) {
+      let text: string;
+      try {
+        text = readFileSync(file, "utf8");
+      } catch {
+        continue;
+      }
+      if (!text.includes(OUTSIDE_COUNTERPARTY)) {
+        continue;
+      }
+      found.push(file.slice(root.length + 1));
+    }
+    // NOT VACUOUS: the number is really in the tree, so a broken walk that
+    // found nothing fails here rather than passing.
+    expect(found.length).toBeGreaterThan(0);
+    expect(
+      [...found].sort(),
+      "an occurrence of the outside counterparty outside the permitted list: if this is a registration, witness SEVEN's third shape has just lost its row",
+    ).toEqual(PERMITTED.map((entry) => entry.file).sort());
   });
 });

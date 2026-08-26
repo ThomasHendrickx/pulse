@@ -793,14 +793,29 @@ test("both states are rendered as words in each of the three languages, and the 
 // and never read back from the implementation. The file's four rows, in the
 // order it prints them:
 //     +250,00  from the household's POT current account   the deposit
-//      -55,00  to a counterparty it does not own          PAID OUT
+//      -55,00  to an outside company it does not own      PAID OUT
 //      -40,00  to its SECOND savings account              BETWEEN RESERVES
 //       +1,37  from the bank                              INTEREST
 // The product renders money one way everywhere (src/platform/ui/amount.tsx):
 // Belgian locale, "." for thousands and "," for decimals, no plus sign.
+//
+// THE PAID-OUT ROW'S PAYEE IS AN OUTSIDE COMPANY AND ITS NAME SAYS SO, which
+// is a correctness rule and not a cosmetic one. That row's descriptor used to
+// read "Eigen rekening Tweede", OWN ACCOUNT SECOND, against a counterparty
+// account number the allow list glossed ambiguously enough to be either an
+// outside payee or a second current account of the household. Witness SEVEN's
+// third shape is a payment made to someone the household does NOT own, and a
+// descriptor inviting the opposite reading is an invitation for a later phase
+// to register that number as a household account. On the day it did, this row
+// would silently become a SECOND movement between two of the household's own
+// accounts, the fixture would carry none of the third shape, and the money
+// count would stay green because the row still renders one amount. The
+// counterparty is now pinned as an outside counterparty in
+// test/fixtures/allowed-identifiers.txt and that pin is asserted by
+// test/domain/account-number.test.ts rather than only stated.
 const HELD_ROWS = [
   { text: "Eigen rekening Zicht", amount: "250,00" },
-  { text: "Eigen rekening Tweede", amount: "-55,00" },
+  { text: "Acme Dakwerken BV", amount: "-55,00" },
   { text: "Eigen spaarrekening Vakantie", amount: "-40,00" },
   { text: "Demobank NV", amount: "1,37" },
 ] as const;
