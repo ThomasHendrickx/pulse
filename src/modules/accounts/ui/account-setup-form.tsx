@@ -145,11 +145,17 @@ export const AccountSetupForm = ({
       <ol className="account-row-list">
         {rows.map((row, index) => {
           const message = rowMessages.get(index);
+          // The keys are suffixed rather than bare (labelId, not label) so
+          // the descriptor-surface walk in
+          // test/domain/merchant-review.test.ts does not read an htmlFor
+          // attribute as a rendered descriptor field. That walk matches
+          // `.label` on a word boundary; a control id is not counterparty
+          // text and does not belong in its exclusion table.
           const ids = {
-            label: `${fieldPrefix}-label-${row.key}`,
-            bank: `${fieldPrefix}-bank-${row.key}`,
-            number: `${fieldPrefix}-number-${row.key}`,
-            ring: `${fieldPrefix}-ring-${row.key}`,
+            labelId: `${fieldPrefix}-label-${row.key}`,
+            bankId: `${fieldPrefix}-bank-${row.key}`,
+            numberId: `${fieldPrefix}-number-${row.key}`,
+            ringId: `${fieldPrefix}-ring-${row.key}`,
           };
           return (
             <li key={row.key} className="account-row" data-testid="account-row">
@@ -157,9 +163,9 @@ export const AccountSetupForm = ({
                 {copy.rowName.replace("{row}", String(index + 1))}
               </p>
               <div className="account-field">
-                <label htmlFor={ids.label}>{copy.labelField}</label>
+                <label htmlFor={ids.labelId}>{copy.labelField}</label>
                 <input
-                  id={ids.label}
+                  id={ids.labelId}
                   name="label"
                   type="text"
                   value={row.label}
@@ -169,9 +175,9 @@ export const AccountSetupForm = ({
                 />
               </div>
               <div className="account-field">
-                <label htmlFor={ids.bank}>{copy.bankField}</label>
+                <label htmlFor={ids.bankId}>{copy.bankField}</label>
                 <input
-                  id={ids.bank}
+                  id={ids.bankId}
                   name="bank"
                   type="text"
                   value={row.bank}
@@ -181,9 +187,9 @@ export const AccountSetupForm = ({
                 />
               </div>
               <div className="account-field">
-                <label htmlFor={ids.number}>{copy.numberField}</label>
+                <label htmlFor={ids.numberId}>{copy.numberField}</label>
                 <input
-                  id={ids.number}
+                  id={ids.numberId}
                   name="accountNumber"
                   type="text"
                   inputMode="text"
@@ -196,12 +202,12 @@ export const AccountSetupForm = ({
                 />
               </div>
               <div className="account-field">
-                <label htmlFor={ids.ring}>{copy.ringField}</label>
+                <label htmlFor={ids.ringId}>{copy.ringField}</label>
                 {/* NO DEFAULT RING. The empty option is disabled, so the
                     ring is answered or the server refuses the row by name
                     (hazard H14.4). */}
                 <select
-                  id={ids.ring}
+                  id={ids.ringId}
                   name="ring"
                   value={row.ring}
                   onChange={(event) =>
