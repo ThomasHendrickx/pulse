@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
+  assertGateApiTargetIsLocal,
   assertGateDbTargetIsLocal,
   assessGateDbTarget,
   enforceGateDbTarget,
@@ -304,6 +305,42 @@ describe("a test that opens a client of its own refuses for itself", () => {
       GateDbTargetRefused,
     );
     expect(() => assertGateDbTargetIsLocal({})).toThrow(GateDbTargetRefused);
+  });
+
+  // THE CALLERS STOPPED BEING ONLY TESTS in fix round eight, so the refusal
+  // stopped saying "this test". A refusal that misnames its cause sends the
+  // reader looking in the wrong file.
+  test("the refusal NAMES ITS CALLER, and still names a test when nobody says otherwise", () => {
+    expect(() =>
+      assertGateDbTargetIsLocal({ DATABASE_URL: REMOTE }, "prisma/seed.ts"),
+    ).toThrow(/prisma\/seed\.ts opens a database client of its own/);
+    expect(() =>
+      assertGateApiTargetIsLocal({ NEXT_PUBLIC_SUPABASE_URL: REMOTE_API }, "prisma/seed.ts"),
+    ).toThrow(/prisma\/seed\.ts opens a Supabase admin client of its own/);
+    expect(() => assertGateDbTargetIsLocal({ DATABASE_URL: REMOTE })).toThrow(
+      /this test opens a database client of its own/,
+    );
+  });
+
+  // AND THE VALUE IS STILL NEVER PRINTED, on the path that now interpolates.
+  test("naming the caller did not start printing the target", () => {
+    for (const opener of ["prisma/seed.ts", "this test"]) {
+      try {
+        assertGateDbTargetIsLocal({ DATABASE_URL: REMOTE }, opener);
+        throw new Error("expected a refusal");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        expect(message).not.toContain(REMOTE);
+        expect(message).not.toContain("pooler.supabase.com");
+      }
+      try {
+        assertGateApiTargetIsLocal({ NEXT_PUBLIC_SUPABASE_URL: REMOTE_API }, opener);
+        throw new Error("expected a refusal");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        expect(message).not.toContain(REMOTE_API);
+      }
+    }
   });
 });
 

@@ -2,8 +2,18 @@
 // whatever the shell happens to hold (M3-P12 fix round four, finding
 // CRITERIA finding CR4-M3P12-02).
 //
-// THE RULE THIS FILE ENFORCES: no test, no script and no gate in this
-// repository may open a database nobody named.
+// THE RULE THIS FILE ENFORCES: nothing in this repository may open a database
+// nobody named. Not a test, not a script, not a gate, and not a hook another
+// tool invokes on your behalf.
+//
+// THE WORDING WIDENED IN FIX ROUND EIGHT, and the old sentence is quoted here
+// rather than deleted (clause R-087). It read "no test, no script and no gate
+// in this repository may open a database nobody named", and the instrument
+// that enforced it walked test/ and scripts/. Both were an inventory of where
+// doors had been written, not a definition of one, and both missed
+// prisma/seed.ts: a registered Prisma hook, older than the guard, one level
+// from the repository root, opening a Prisma client AND a service-role admin
+// client with no interlock at all. The rule is now stated by what a door IS.
 //
 // WHAT WENT WRONG. This phase added test/e2e/merchant-rule-write.spec.ts,
 // whose whole content is direct writes through `new PrismaClient()`. That
@@ -276,32 +286,44 @@ export const enforceGateDbTarget = (
   return verdict.pinned;
 };
 
-// WHAT A TEST THAT OPENS A SUPABASE ADMIN CLIENT MUST CALL (fix round five,
+// WHAT ANYTHING THAT OPENS A SUPABASE ADMIN CLIENT MUST CALL (fix round five,
 // CRITERIA finding CR5-M3P12-08). A service-role key against a project API is
 // a door to a database exactly as a connection string is, and the sign-up
-// spec opens one. The API URL is an http URL, so only its host is checked.
+// spec opens one, as does prisma/seed.ts, which uses it to CREATE A USER. The
+// API URL is an http URL, so only its host is checked.
+//
+// `opener` names the caller in the refusal. It was added in fix round eight
+// because the callers stopped being only tests: the sentence "this test opens
+// a Supabase admin client" is wrong in front of an operator who ran the seed,
+// and a refusal that misnames its cause costs the reader the minutes the
+// refusal was supposed to save.
 export const assertGateApiTargetIsLocal = (
   env: Record<string, string | undefined> = process.env,
+  opener = "this test",
 ): void => {
   const value = env["NEXT_PUBLIC_SUPABASE_URL"];
   if (!present(value) || !localVerdict(value, false).ok) {
     throw new GateDbTargetRefused(
-      "this test opens a Supabase admin client of its own, and NEXT_PUBLIC_SUPABASE_URL is absent or is not a local stack. Refusing to write to a project nobody named. The resolved value is deliberately not printed: this repository is public.",
+      `${opener} opens a Supabase admin client of its own, and NEXT_PUBLIC_SUPABASE_URL is absent or is not a local stack. Refusing to write to a project nobody named. The resolved value is deliberately not printed: this repository is public.`,
     );
   }
 };
 
-// WHAT A TEST THAT OPENS A CLIENT ITSELF MUST CALL. The config's enforcement
-// covers every run through `playwright test`, and this covers the case the
-// config cannot: a spec imported by some other runner, now or later. It reads
-// exactly what `new PrismaClient()` reads.
+// WHAT ANYTHING THAT OPENS A CLIENT ITSELF MUST CALL. The config's enforcement
+// covers every run through `playwright test`, and this covers the cases the
+// config cannot: a spec imported by some other runner, and any script or hook
+// that constructs its own client, now or later. It reads exactly what
+// `new PrismaClient()` reads, which is process.env and nothing else.
+//
+// See the `opener` note on the sibling above for why the caller is named.
 export const assertGateDbTargetIsLocal = (
   env: Record<string, string | undefined> = process.env,
+  opener = "this test",
 ): void => {
   const value = env["DATABASE_URL"];
   if (!present(value) || !localVerdict(value, true).ok) {
     throw new GateDbTargetRefused(
-      "this test opens a database client of its own, and DATABASE_URL is absent or is not a local stack. Refusing to write to a database nobody named. The resolved value is deliberately not printed: this repository is public.",
+      `${opener} opens a database client of its own, and DATABASE_URL is absent or is not a local stack. Refusing to write to a database nobody named. The resolved value is deliberately not printed: this repository is public.`,
     );
   }
 };
