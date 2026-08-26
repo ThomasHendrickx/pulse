@@ -89,8 +89,9 @@ const TRANSACTION_START =
 const DESCRIPTION_IBAN = /\b([A-Z]{2}\d{2}(?:\s?\d{4}){3})\b/g;
 
 // THE PLATFORM CANONICAL FORM, not a local one (M3-P14, criterion 14.4).
-// This helper used to be a private `text.replace(/\s/g, "")` here, and it
-// was NAMED by that criterion as the second whitespace-removal in the tree.
+// This helper used to be a private whitespace-removal written out by hand
+// here, and it was NAMED by that criterion as the second such derivation in
+// the tree.
 // It is replaced rather than kept as an exception: the platform form adds
 // an uppercase that this call site cannot observe (DESCRIPTION_IBAN and
 // BAND_LINE both match uppercase letters only), so the two agree on every
