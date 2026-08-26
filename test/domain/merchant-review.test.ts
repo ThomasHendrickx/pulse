@@ -489,9 +489,16 @@ describe("criterion 6.10, the SQL half: the merchant-source rule is written ONCE
     );
   });
 
-  test("both SQL reads use the shared fragment rather than their own copy", () => {
+  test("every SQL read that projects the descriptor uses the shared fragment rather than its own copy", () => {
+    // THREE USES AT THIS HEAD, and the count is exact rather than a floor so
+    // that a fourth read growing its own COALESCE is caught by the test
+    // above (which pins the raw form to ONE occurrence) rather than passing
+    // here. M3-P14 criterion 14.15 witness SEVEN added the third: the held
+    // read projects each held row's descriptor, because a reserve
+    // statement's interest credit has no counterpart row on any pot account
+    // and the household could otherwise never see it.
     const uses = repositorySource.match(/\$\{COUNTERPARTY_TEXT_SQL\}/g) ?? [];
-    expect(uses).toHaveLength(2);
+    expect(uses).toHaveLength(3);
   });
 
   // CORRECTED RATHER THAN QUIETLY RENAMED (clause R-087, fix round 2,
@@ -774,12 +781,25 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     // own label, and two translated copy strings the walk reaches only
     // because one of their interpolated keys is named "label". All four are
     // the household's own DECLARED account label or copy around it, and each
-    // is on the exclusions table above with that reason. Note what did NOT
-    // change: the masked count. This phase adds no new descriptor surface,
-    // which is the fact worth reading off these three numbers together.
-    expect(surfaces.length).toBe(14);
+    // is on the exclusions table above with that reason.
+    //
+    // CORRECTED IN PLACE, NOT QUIETLY REWRITTEN (clause R-087). This comment
+    // used to end "Note what did NOT change: the masked count. This phase
+    // adds no new descriptor surface, which is the fact worth reading off
+    // these three numbers together." THAT IS NO LONGER TRUE and the sentence
+    // is kept here rather than deleted so the next reader can see that it
+    // changed. Criterion 14.15 witness SEVEN made this phase render the HELD
+    // ROWS of a reserve statement under their account's entry, each with the
+    // counterparty text the product projects for a row, which IS a
+    // descriptor surface and the first one this phase adds. It is MASKED, so
+    // the masked count rises from five to six and the leaf count from
+    // fourteen to fifteen while the number of declared exclusions is
+    // unchanged at nine. That is the fact worth reading off these three
+    // numbers now: a new descriptor reached the screen and it went through
+    // the masking rule rather than around it.
+    expect(surfaces.length).toBe(15);
     expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(5);
-    expect(surfaces.filter((surface) => surface.masked).length).toBe(5);
+    expect(surfaces.filter((surface) => surface.masked).length).toBe(6);
   });
 
   test("every unmasked descriptor surface is a DECLARED exclusion with a reason", () => {

@@ -23,7 +23,7 @@ import type {
   RawMonthFigures,
   ReserveMovementGroup,
 } from "../domain/month-projection";
-import type { AccountRowCount, Period } from "../application/ports";
+import type { AccountRowCount, HeldRow, Period } from "../application/ports";
 
 // The cash marker for SQL, derived from the ledger's published pattern
 // list so there is ONE list (see the sibling note at the patterns'
@@ -402,9 +402,9 @@ const parseGapKind = (value: string): GapRow["gap"] => {
 //
 // THE HELD READ is the THIRD test of an absent flow in this repository, and
 // it carries the INVERSE ring predicate of the other two: rows with no flow
-// on accounts that are NOT pot accounts, counted per account over the
-// requested period. That is the held state, and criterion 14.14 case FIVE
-// enumerates exactly three such reads and fails on a fourth.
+// on accounts that are NOT pot accounts, over the requested period. That is
+// the held state, and criterion 14.14 case FIVE enumerates exactly three
+// such reads and fails on a fourth.
 //
 // THE COUNTED READ carries NO null-flow condition at all, which is why it
 // sits OUTSIDE that enumeration rather than widening it: it is rows WITH a
@@ -424,18 +424,26 @@ const parseGapKind = (value: string): GapRow["gap"] => {
 // report it to the household as counted money on the one screen state built
 // to tell counted from held.
 //
-// BOTH RETURN COUNTS PER ACCOUNT, never an amount and never a sum outside
-// the requested period, which is decision D-60: no figure in v1 is
-// accumulated across months, and a count of statements held is not a
-// balance.
+// THEY ARE TWO SEPARATE FUNCTIONS AND USED TO BE ONE, AND THAT IS RECORDED
+// RATHER THAN QUIETLY CHANGED. Until criterion 14.15 witness SEVEN landed
+// they shared one body and chose their ring predicate with a ternary, which
+// is why the fast-gate guard at test/domain/absent-flow-reads.test.ts had to
+// assert the ternary's own shape: a clean-room lane had shown that POT_ROW
+// is a literal substring of NON_POT_ROW, so a token search over the shared
+// body could not tell the counted arm's predicate from the held arm's
+// (finding CR-P14C2-01, hazard H14.21). They now return different shapes, so
+// the shared body is gone and the guard asserts each function's own row
+// filter separately, which is a stronger form of the same check.
+//
+// THE COUNTED READ RETURNS A COUNT PER ACCOUNT, never an amount and never a
+// sum outside the requested period, which is decision D-60.
 //
 // Written in raw SQL rather than through the Prisma client deliberately: it
 // is the style the other two absent-flow reads use and the style criterion
 // 14.14 case FIVE's enumeration was built for.
-const accountRowCounts = async (
+const countedAccountRows = async (
   context: HouseholdContext,
   period: Period,
-  ring: "counted" | "held",
 ): Promise<readonly AccountRowCount[]> => {
   const rows = await prisma.$queryRaw<
     readonly {
@@ -451,12 +459,8 @@ const accountRowCounts = async (
     FROM "transactions" t
     ${ACCOUNT_JOIN}
     WHERE t."householdId" = ${context.householdId}::uuid
-      AND ${ring === "counted" ? POT_ROW : NON_POT_ROW}
-      AND ${
-        ring === "counted"
-          ? Prisma.sql`t."flow" IS NOT NULL`
-          : Prisma.sql`t."flow" IS NULL`
-      }
+      AND ${POT_ROW}
+      AND t."flow" IS NOT NULL
       AND t."bookingDate" >= ${plainDateToDbDate(period.from)}
       AND t."bookingDate" <= ${plainDateToDbDate(period.to)}
     GROUP BY 1, 2
@@ -469,17 +473,72 @@ const accountRowCounts = async (
   }));
 };
 
+// THE HELD READ RETURNS THE ROWS, one per held transaction, and the screen
+// derives the entry's period row count from their number (criterion 14.15
+// witness SEVEN). A reserve account's own statement carries three things no
+// pot account can ever show and which have NO counterpart row on any pot
+// account: interest credited on it, a movement between two of the
+// household's own reserve accounts, and a payment made straight out of it.
+// An implementation that ingests the statement, holds its rows and renders a
+// label, a count and a state word passes every other witness of that
+// criterion while the household still cannot see its savings interest.
+//
+// THE DESCRIPTOR IS THE SAME PROJECTION THE GAP LISTING USES, so a held row
+// and an uninterpreted row are named to the reader the same way and witness
+// THREE can key on each row's own rendered identity.
+//
+// NO SUM AND NO TOTAL IS RETURNED. Decision D-60 forbids any figure that
+// reads as a balance or as an amount held; per-row amounts inside the
+// requested period are neither, and the read carries no aggregate at all.
+const heldAccountRows = async (
+  context: HouseholdContext,
+  period: Period,
+): Promise<readonly HeldRow[]> => {
+  const rows = await prisma.$queryRaw<
+    readonly {
+      accountId: string;
+      label: string;
+      id: string;
+      bookingDate: Date;
+      text: string;
+      amountCents: number;
+    }[]
+  >`
+    SELECT
+      t."accountId"            AS "accountId",
+      a."label"                AS "label",
+      t."id"                   AS "id",
+      t."bookingDate"          AS "bookingDate",
+      ${COUNTERPARTY_TEXT_SQL} AS "text",
+      t."amountCents"          AS "amountCents"
+    FROM "transactions" t
+    ${ACCOUNT_JOIN}
+    WHERE t."householdId" = ${context.householdId}::uuid
+      AND ${NON_POT_ROW}
+      AND t."flow" IS NULL
+      AND t."bookingDate" >= ${plainDateToDbDate(period.from)}
+      AND t."bookingDate" <= ${plainDateToDbDate(period.to)}
+    ORDER BY a."label" ASC, t."bookingDate" ASC, t."id" ASC
+  `;
+  return rows.map((row) => ({
+    accountId: row.accountId,
+    label: row.label,
+    id: row.id,
+    bookingDate: plainDateFromDbDate(row.bookingDate),
+    text: row.text,
+    amountCents: cents(row.amountCents),
+  }));
+};
+
 export const listCountedAccountRows = (
   context: HouseholdContext,
   period: Period,
-): Promise<readonly AccountRowCount[]> =>
-  accountRowCounts(context, period, "counted");
+): Promise<readonly AccountRowCount[]> => countedAccountRows(context, period);
 
 export const listHeldAccountRows = (
   context: HouseholdContext,
   period: Period,
-): Promise<readonly AccountRowCount[]> =>
-  accountRowCounts(context, period, "held");
+): Promise<readonly HeldRow[]> => heldAccountRows(context, period);
 
 export const hasAnyTransactions = async (
   context: HouseholdContext,

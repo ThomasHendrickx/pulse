@@ -14,9 +14,15 @@ import {
 } from "./month-overview";
 import type { OverviewDependencies } from "./ports";
 
-export type { MonthAccountEntry, MonthOverview, MonthSection } from "./month-overview";
+export type {
+  MonthAccountEntry,
+  MonthAccountRow,
+  MonthOverview,
+  MonthSection,
+} from "./month-overview";
 export type {
   AccountRowCount,
+  HeldRow,
   OverviewDependencies,
   OverviewRepositoryPort,
   Period,

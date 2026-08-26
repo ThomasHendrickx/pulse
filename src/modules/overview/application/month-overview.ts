@@ -7,6 +7,7 @@
 import type { HouseholdContext } from "@/platform/tenancy";
 import type { Cents } from "@/platform/money";
 import { cents } from "@/platform/money";
+import type { PlainDate } from "@/platform/plain-date";
 import {
   brusselsDayOf,
   dayOfMonth,
@@ -78,6 +79,24 @@ export type MonthAccountEntry = {
   // "held": the rows are kept and counted in no month (DR-0030).
   readonly state: "counted" | "held";
   readonly rowCount: number;
+  // THE HELD ROWS THEMSELVES, empty on a counted entry (criterion 14.15
+  // witness SEVEN). A reserve statement's interest credit, its movement to
+  // another of the household's own reserve accounts and its payment made
+  // straight out of savings have NO counterpart row on any pot account, so
+  // registering the account could never have made them visible and only
+  // rendering them can. rowCount is their number and is never computed
+  // separately, so the count on the entry and the rows under it cannot
+  // disagree.
+  //
+  // NO SUM OF THESE IS CARRIED ANYWHERE, which is decision D-60.
+  readonly rows: readonly MonthAccountRow[];
+};
+
+export type MonthAccountRow = {
+  readonly id: string;
+  readonly bookingDate: PlainDate;
+  readonly text: string;
+  readonly amountCents: Cents;
 };
 
 export const getMonthOverview = async (
@@ -117,22 +136,46 @@ export const getMonthOverview = async (
     deps.overview.listCountedAccountRows(context, period),
     deps.overview.listHeldAccountRows(context, period),
   ]);
-  const entry = (
-    row: AccountRowCount,
-    state: "counted" | "held",
-  ): MonthAccountEntry => ({
+  const countedEntry = (row: AccountRowCount): MonthAccountEntry => ({
     accountId: row.accountId,
     label: row.label,
-    state,
+    state: "counted",
     rowCount: row.rowCount,
+    rows: [],
   });
+  // The held read returns ROWS; the entries are those rows grouped by their
+  // account, and each entry's row count is the length of its own group. One
+  // read, one number, so the count the entry renders and the rows rendered
+  // under it are the same fact (criterion 14.15 witness SEVEN).
+  const heldEntries: MonthAccountEntry[] = [];
+  const heldByAccount = new Map<string, MonthAccountRow[]>();
+  for (const row of heldAccounts) {
+    let group = heldByAccount.get(row.accountId);
+    if (group === undefined) {
+      group = [];
+      heldByAccount.set(row.accountId, group);
+      heldEntries.push({
+        accountId: row.accountId,
+        label: row.label,
+        state: "held",
+        rowCount: 0,
+        rows: group,
+      });
+    }
+    group.push({
+      id: row.id,
+      bookingDate: row.bookingDate,
+      text: row.text,
+      amountCents: row.amountCents,
+    });
+  }
   // Sorted by label so the element reads the same way twice. The two reads
   // carry complementary ring predicates, so this concatenation cannot
   // produce two entries for one account; criterion 14.15 witness ONE
   // asserts that rather than assuming it.
   const accountsInPeriod: readonly MonthAccountEntry[] = [
-    ...countedAccounts.map((row) => entry(row, "counted")),
-    ...heldAccounts.map((row) => entry(row, "held")),
+    ...countedAccounts.map(countedEntry),
+    ...heldEntries.map((held) => ({ ...held, rowCount: held.rows.length })),
   ].sort(
     (a, b) =>
       a.label.localeCompare(b.label) || (a.accountId < b.accountId ? -1 : 1),

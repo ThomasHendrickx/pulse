@@ -51,7 +51,7 @@ const collectSources = (dir: string): readonly string[] => {
 const THE_THREE_READS = [
   "the uninterpreted count (monthFigures)",
   "the gap listing (listGapRows)",
-  "the held read (accountRowCounts)",
+  "the held read (heldAccountRows)",
 ] as const;
 
 type Occurrence = {
@@ -77,7 +77,7 @@ type Occurrence = {
 const NAMES: Readonly<Record<string, Occurrence["read"]>> = {
   monthFigures: "the uninterpreted count (monthFigures)",
   listGapRows: "the gap listing (listGapRows)",
-  accountRowCounts: "the held read (accountRowCounts)",
+  heldAccountRows: "the held read (heldAccountRows)",
 };
 
 const readContaining = (
@@ -255,10 +255,10 @@ describe("every read that can see a row with no flow is one of exactly three", (
     expect(repository).toContain('t."flow" IS NOT NULL');
   });
 
-  test("EVERY ONE OF THE THREE READS CARRIES A RING PREDICATE IN ITS OWN WHERE CLAUSE", () => {
-    // CORRECTED TWICE, AND BOTH CORRECTIONS ARE RECORDED RATHER THAN THE
-    // WORDING REPLACED (R-087), because each time the comment above this
-    // test asserted a property the test did not have.
+  test("EVERY ONE OF THE THREE READS CARRIES A RING PREDICATE IN ITS OWN WHERE CLAUSE, AND SO DOES THE COUNTED READ", () => {
+    // CORRECTED THREE TIMES NOW, AND EVERY CORRECTION IS RECORDED RATHER
+    // THAN THE WORDING REPLACED (R-087), because twice the comment above
+    // this test asserted a property the test did not have.
     //
     // ROUND ONE: it asserted the file text CONTAINED "POT_ROW" and
     // "NON_POT_ROW". Both are DEFINED at the top of the file, so the
@@ -273,23 +273,35 @@ describe("every read that can see a row with no flow is one of exactly three", (
     //     could ever redden it. The counted read could lose its ring
     //     restriction entirely (hazard H14.21) with 489 of 489 green.
     //   TWO. It had no comment-stripping pass. A predicate deleted from a
-    //     WHERE and left on a `-- ...` SQL comment line inside the template
-    //     is not applied by Postgres, and the guard still saw the token
-    //     (hazard H14.19).
-    //   THREE. It located the WHERE with body.search(/\bWHERE\b/), and the
-    //     FIRST match inside monthFigures is a `FILTER (WHERE ...)` in the
+    //     WHERE and left on a SQL double-hyphen comment line inside the
+    //     template is not applied by Postgres, and the guard still saw the
+    //     token (hazard H14.19).
+    //   THREE. It located the WHERE by the first occurrence of the word, and
+    //     the FIRST match inside monthFigures is a FILTER (WHERE ...) in the
     //     SELECT list, so "inside the WHERE" degenerated to "anywhere in the
     //     query" and the predicate could be moved into an aggregate filter
     //     (hazards H14.10 and H14.14).
     //
-    // WHAT IT DOES NOW, and each clause exists because one of those three
-    // defeated the previous version:
+    // ROUND THREE, THIS ROUND, IS NOT A CORRECTION OF A FALSE CLAIM. The
+    // counted read and the held read USED TO SHARE ONE FUNCTION BODY and
+    // chose their predicate with a ternary, which is why round two had to
+    // assert that ternary's own spelling to reach the counted arm at all.
+    // Criterion 14.15 witness SEVEN made the held read return ROWS while the
+    // counted read still returns a COUNT, so they are two functions now and
+    // each is asserted on its OWN row filter. That is strictly stronger: the
+    // counted arm no longer depends on a regular expression matching one
+    // spelling of a ternary, and a counted read rewritten in any shape at
+    // all still has to carry POT_ROW in the WHERE that follows its FROM.
+    //
+    // WHAT IT DOES NOW, and each clause exists because one of those states
+    // defeated a previous version:
     //   - comments are stripped first, by the shared string-aware and
     //     SQL-aware scanner in test/support/strip-comments.ts;
     //   - the WHERE is the one that FOLLOWS the FROM, never a FILTER's;
     //   - POT_ROW is matched as a TOKEN, so NON_POT_ROW cannot satisfy it;
-    //   - the counted arm and the held arm are asserted SEPARATELY, by the
-    //     ternary that selects between them.
+    //   - the counted read is asserted on its own body, and it is asserted
+    //     to carry POT_ROW and NOT to carry NON_POT_ROW, so swapping the two
+    //     reads' predicates reddens rather than passing.
     const source = stripComments(readFileSync(REPOSITORY, "utf8"));
     const lines = source.split("\n");
     const bodyOf = (name: string): string => {
@@ -327,7 +339,13 @@ describe("every read that can see a row with no flow is one of exactly three", (
     const expectations = [
       { read: "monthFigures", pattern: POT_TOKEN, label: "POT_ROW" },
       { read: "listGapRows", pattern: POT_TOKEN, label: "POT_ROW" },
-      { read: "accountRowCounts", pattern: NON_POT_TOKEN, label: "NON_POT_ROW" },
+      { read: "heldAccountRows", pattern: NON_POT_TOKEN, label: "NON_POT_ROW" },
+      // THE COUNTED READ. It carries no absent-flow condition, so it is
+      // correctly absent from the enumeration above and its ring restriction
+      // has no other guard anywhere in the fast gate. Losing it is hazard
+      // H14.21, which a clean-room lane constructed with the whole fast gate
+      // green (finding CR-P14C2-01 witness ONE).
+      { read: "countedAccountRows", pattern: POT_TOKEN, label: "POT_ROW" },
     ] as const;
 
     for (const { read, pattern, label } of expectations) {
@@ -339,16 +357,32 @@ describe("every read that can see a row with no flow is one of exactly three", (
       ).toBe(true);
     }
 
-    // THE COUNTED ARM, ASSERTED ON ITS OWN. accountRowCounts serves both
-    // rings from one body through a ternary, so the held arm's NON_POT_ROW
-    // above says nothing about the counted arm. This asserts the ternary
-    // itself: the counted branch must be POT_ROW and the held branch
-    // NON_POT_ROW, in the row filter, in that order.
-    const shared = rowFilterOf("accountRowCounts", bodyOf("accountRowCounts"));
+    // THE TWO RINGS ARE NOT INTERCHANGEABLE, asserted from the other side as
+    // well rather than left implied. POT_TOKEN's lookbehind already refuses
+    // to match NON_POT_ROW, so a counted read whose predicate was SWAPPED
+    // reddens above; this says the same thing forwards, so a reader can check
+    // the claim instead of deriving it from a lookbehind.
     expect(
-      /ring\s*===\s*"counted"\s*\?\s*(?<![A-Z_])POT_ROW\s*:\s*NON_POT_ROW/.test(shared),
-      "accountRowCounts does not select POT_ROW for the counted ring and NON_POT_ROW for the held ring inside its own row filter: the counted read losing its ring restriction is hazard H14.21, and a substring match on POT_ROW cannot see it because POT_ROW is a substring of NON_POT_ROW",
-    ).toBe(true);
+      NON_POT_TOKEN.test(
+        rowFilterOf("countedAccountRows", bodyOf("countedAccountRows")),
+      ),
+      "the counted read carries NON_POT_ROW in its row filter: the two reads' ring predicates are complementary and the counted one is rows on POT accounts",
+    ).toBe(false);
+    expect(
+      POT_TOKEN.test(rowFilterOf("heldAccountRows", bodyOf("heldAccountRows"))),
+      "the held read carries a bare POT_ROW in its row filter: the held state is rows on accounts OUTSIDE the pot",
+    ).toBe(false);
+
+    // AND THE HELD READ RETURNS ROWS RATHER THAN AN AGGREGATE, which
+    // criterion 14.15 witness SEVEN depends on: the entry renders each held
+    // row's own amount, and a COUNT could carry none. Asserted on the body so
+    // an edit that folds it back to a count reddens here rather than
+    // silently emptying the one screen state DR-0030 is paying for.
+    expect(
+      /COUNT\(\*\)/.test(bodyOf("heldAccountRows")),
+      "the held read aggregates: criterion 14.15 witness SEVEN renders each held row's descriptor and its own amount, which a count cannot carry",
+    ).toBe(false);
+    expect(bodyOf("heldAccountRows")).toContain('t."amountCents"');
   });
 
   test("the ring-predicate guard reddens on each of the three states that defeated it, asserted here rather than assumed", () => {
@@ -359,8 +393,17 @@ describe("every read that can see a row with no flow is one of exactly three", (
     // simply refusing everything.
     const POT_TOKEN = /(?<![A-Z_])POT_ROW\b/;
     const unsafe = [
-      // ONE: the counted arm loses its restriction; NON_POT_ROW still present.
-      'WHERE t."householdId" = $1 AND ${ring === "counted" ? Prisma.empty : Prisma.sql`AND ${NON_POT_ROW}`}',
+      // ONE: the counted read loses its ring restriction entirely, which is
+      // hazard H14.21. Under the shared-body shape this state was invisible,
+      // because POT_ROW is a substring of NON_POT_ROW and the held arm's own
+      // predicate satisfied a search for it; the reads are two functions now,
+      // so the counted read's own row filter carries no POT_ROW token at all.
+      'WHERE t."householdId" = $1 AND t."flow" IS NOT NULL AND t."bookingDate" >= $2',
+      // ONE-B, a structurally different member of the same class: the
+      // restriction is not removed but SWAPPED for the other ring, so the
+      // counted read would report a held row to the household as counted
+      // money on the one screen state built to tell counted from held.
+      'WHERE t."householdId" = $1 AND ${NON_POT_ROW} AND t."flow" IS NOT NULL',
       // TWO: the predicate survives only on a SQL comment line. Written
       // inside a template literal because that is where this codebase's SQL
       // lives, and the stripper's SQL rule is scoped to templates.

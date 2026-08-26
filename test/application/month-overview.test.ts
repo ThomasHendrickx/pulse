@@ -11,6 +11,7 @@ import type {
   AccountRowCount,
   CountedGroupRow,
   GapRow,
+  HeldRow,
   OverviewDependencies,
   OverviewRepositoryPort,
   Period,
@@ -47,7 +48,7 @@ type MonthData = {
   readonly figures?: RawMonthFigures;
   readonly gaps?: readonly GapRow[];
   readonly counted?: readonly AccountRowCount[];
-  readonly held?: readonly AccountRowCount[];
+  readonly held?: readonly HeldRow[];
 };
 
 const fakeWorld = (byMonth: Record<string, MonthData>) => {

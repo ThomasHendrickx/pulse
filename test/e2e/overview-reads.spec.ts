@@ -14,6 +14,20 @@ import {
 } from "@/modules/overview/adapters/overview-repository";
 import { deriveMonthFigures } from "@/modules/overview/domain/month-projection";
 
+// THE HELD READ RETURNS ROWS, NOT COUNTS (criterion 14.15 witness SEVEN), so
+// the per-account shape these cases assert is folded here rather than read
+// back off the implementation. Each case still asserts the ROWS as well
+// wherever the row identity is the point.
+const heldPerAccount = (
+  rows: readonly { readonly label: string }[],
+): readonly { readonly label: string; readonly rowCount: number }[] => {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    counts.set(row.label, (counts.get(row.label) ?? 0) + 1);
+  }
+  return [...counts].map(([label, rowCount]) => ({ label, rowCount }));
+};
+
 // THE READS, EXECUTED, AGAINST A REAL DATABASE.
 //
 // WHY THIS FILE EXISTS AND WHY IT IS IN THE PLAYWRIGHT LANE. Criterion 14.14
@@ -145,8 +159,13 @@ test("14.14 case ONE: a non-pot account's null-flow rows are excluded from the c
   expect(deriveMonthFigures(raw).reconciles).toBe(true);
   // And the held read names them, so they are not merely absent.
   const held = await listHeldAccountRows(context, PERIOD);
-  expect(held).toEqual([
-    expect.objectContaining({ label: "Buffer", rowCount: 2 }),
+  expect(heldPerAccount(held)).toEqual([{ label: "Buffer", rowCount: 2 }]);
+  // AND THE ROWS THEMSELVES, with the descriptor the screen renders and the
+  // row's own amount: witness SEVEN's interest credit is one of these, and a
+  // read that returned only a count could not carry it.
+  expect(held.map((row) => [row.text, row.amountCents])).toEqual([
+    ["SPAREN AUGUSTUS", 25000],
+    ["RENTE AUGUSTUS", 137],
   ]);
 });
 
@@ -222,11 +241,10 @@ test("14.14 case FIVE, second assertion: the ROWS partition by the ring of their
   expect(raw.uninterpretedCount).toBe(1);
   expect(gaps.map((row) => row.accountLabel)).toEqual(["Current account"]);
   // The RESERVE row: absent from both, present in the held read.
-  expect(held).toEqual([
-    expect.objectContaining({ label: "Buffer", rowCount: 1 }),
-  ]);
+  expect(heldPerAccount(held)).toEqual([{ label: "Buffer", rowCount: 1 }]);
   // A held read written with NO ring filter returns both rows and fails here.
-  expect(held.reduce((total, entry) => total + entry.rowCount, 0)).toBe(1);
+  expect(held).toHaveLength(1);
+  expect(held[0]?.text).toBe("SPAREN AUGUSTUS");
 });
 
 test("14.15 witness ONE: an account outside the pot holding a cleared row AND a stale-flow row renders exactly ONE entry, held", async () => {
@@ -249,9 +267,7 @@ test("14.15 witness ONE: an account outside the pot holding a cleared row AND a 
   expect(counted).toEqual([
     expect.objectContaining({ label: "Current account", rowCount: 1 }),
   ]);
-  expect(held).toEqual([
-    expect.objectContaining({ label: "Buffer", rowCount: 1 }),
-  ]);
+  expect(heldPerAccount(held)).toEqual([{ label: "Buffer", rowCount: 1 }]);
   // And it reaches no figure: spend is zero, not 55,00.
   const figures = deriveMonthFigures(await monthFigures(context, PERIOD));
   expect(figures.spendCents).toBe(0);
@@ -435,8 +451,8 @@ test("15.4 third case: a household that also holds a non-pot account carrying ro
   // What differs is the held read, which is the field the scoping exists for
   // and the one this test can tell a working scoping from a no-op by.
   expect(await listHeldAccountRows(a.context, PERIOD)).toEqual([]);
-  expect(await listHeldAccountRows(b.context, PERIOD)).toEqual([
-    expect.objectContaining({ label: "Buffer", rowCount: 1 }),
+  expect(heldPerAccount(await listHeldAccountRows(b.context, PERIOD))).toEqual([
+    { label: "Buffer", rowCount: 1 },
   ]);
 });
 

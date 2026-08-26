@@ -467,15 +467,59 @@ const MonthAccounts = async ({
             data-testid="month-account"
             data-state={entry.state}
           >
-            <span className="month-group-label">{entry.label}</span>
-            <span className="month-row-meta" data-testid="month-account-rows">
-              {t("monthAccountsRows", { count: entry.rowCount })}
-            </span>
-            <span className="month-account-state">
-              {entry.state === "counted"
-                ? t("monthAccountsCounted")
-                : t("monthAccountsHeld")}
-            </span>
+            <div className="month-account-head">
+              <span className="month-group-label">{entry.label}</span>
+              <span className="month-row-meta" data-testid="month-account-rows">
+                {t("monthAccountsRows", { count: entry.rowCount })}
+              </span>
+              <span className="month-account-state">
+                {entry.state === "counted"
+                  ? t("monthAccountsCounted")
+                  : t("monthAccountsHeld")}
+              </span>
+            </div>
+            {entry.rows.length === 0 ? null : (
+              // THE HELD ROWS THEMSELVES (criterion 14.15 witness SEVEN).
+              //
+              // WHAT THIS IS FOR. A reserve statement carries three things
+              // that no pot account can ever show, and they are exactly the
+              // rows with NO counterpart row on any pot account: interest
+              // credited on the account, a movement between two of the
+              // household's own reserve accounts, and a payment made
+              // straight out of it. Every OTHER row on that statement has a
+              // counterpart on a pot account, so registering the account was
+              // already enough to make it visible. These three are the whole
+              // of what DR-0030 buys, and a screen that rendered a label, a
+              // count and a state word would leave the household unable to
+              // see its own savings interest.
+              //
+              // AND THERE IS NO TOTAL HERE, WHICH IS DECISION D-60. Each row
+              // renders its OWN amount and the entry carries no sum of them,
+              // in a footer, beside the rows or as one more row line. A
+              // Playwright test COUNTS the money-formatted strings under this
+              // entry and requires the count to equal the number of rows the
+              // held read returned, so a subtotal is one string too many
+              // wherever it is put.
+              <ul className="month-held-list">
+                {entry.rows.map((row) => (
+                  <li
+                    key={row.id}
+                    className="month-held-row"
+                    data-testid="held-row"
+                  >
+                    {/* The UNNORMALISED counterparty text, so no strip
+                        pattern has run on it: masked here for the same
+                        reason the gap rows above are (M3-P6 fix round 1,
+                        finding CR-M3P6-03). */}
+                    <span className="month-held-text">
+                      {maskCardNumbers(row.text)}
+                    </span>
+                    <span className="month-row-meta">{row.bookingDate}</span>
+                    <Amount cents={row.amountCents} />
+                  </li>
+                ))}
+              </ul>
+            )}
           </li>
         ))}
       </ul>
