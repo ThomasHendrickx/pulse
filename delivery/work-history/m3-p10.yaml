@@ -1,12 +1,709 @@
 kind: work-history
 phase: M3-P10
 prompt: |
-  PLACEHOLDER, replaced before submission.
-files-touched: []
-per-step-commits: []
-key-decisions: []
-verification-first: []
-deviations: []
-gate-evidence: []
-claims: []
-environment-warnings: []
+  You are the tiphys IMPLEMENTER for Pulse phase M3-P10, the busy state. Work
+  only in the worktree /home/user/wt-m3p10 (branch `claude/m3-p10-busy-state`,
+  branched from main at 8d99dfd). Never touch /home/user/pulse or any other
+  worktree.
+
+  Read your brief first, in full, and follow it exactly:
+  /tmp/.../briefs/impl-m3p10.md
+
+  Read the phase M3-P10 in delivery/plan/pulse-v02.yaml. Read the skills this
+  touches: `.claude/skills/pulse-frontend`, `.claude/skills/pulse-typescript`.
+  Read CLAUDE.md.
+
+  THIS IS THE OWNER'S OWN FEEDBACK, TWICE OVER. First they said: "the total
+  lack of feedback I get when I press something, buttons don't feel like
+  buttons, and after pressing, nothing happens in the UI until the full server
+  cycle comes back." Phase M3-P9 answered the first half, the press itself, and
+  shipped. The owner then tested the deployed result and said:
+
+    "I still don't see a loading or 'being busy loading' animation or
+    something. I see the button press interaction, then nothing, and then the
+    new state gets loaded after 500ms to 1s."
+
+  So this phase is the gap between the press ending and the server answering.
+  It is the second half of a complaint the owner has now made twice, about a
+  product they are trying to use. Judge your work by whether that gap is
+  visibly filled on a phone, not by whether the criteria are green.
+
+  ONE THING THE PLAN CANNOT KNOW, and you must handle it as a recorded
+  deviation rather than a question. The phase says "all seven submit controls".
+  That count was written before phase M3-P14 merged, which shipped a new
+  accounts setup screen at src/app/(app)/accounts with its own submit controls,
+  and M3-P14's implementer explicitly recorded that those controls fall outside
+  the pressed-feedback control set. Enumerate the submit controls that actually
+  exist at your branch head, cover all of them with the shared busy leaf, and
+  record the difference from the plan's seven in your work history as a plan
+  deviation with the reason. Do not leave the newest screen in the product as
+  the one place a press still goes quiet.
+
+  WHAT MATTERS MOST, in order:
+  1. The change is VISIBLE on a phone within the gap it is meant to fill, which
+     the owner measured at 500ms to 1s. A busy state that appears after 800ms
+     has not fixed anything. Whatever you build, prove when it becomes visible,
+     and prove it on the `chromium-phone` Playwright project, because the
+     complaint came from a phone.
+  2. It must not flash. A control that shows a busy state for 40ms on a fast
+     action reads as a glitch. If the plan does not settle that, settle it and
+     record what you chose and why.
+  3. Every user-facing string needs English, Dutch and French.
+
+  HOUSE RULES, NON-NEGOTIABLE. npm only. English everywhere. Design tokens
+  only. Amounts are integer cents, householdId on every table and query. No em
+  dashes. No data in a commit message. Scope discipline: DR-0025 and DR-0026
+  are M3-P11, not this one.
+
+  GATES, all of which must exit 0 before you report done:
+    npm run typecheck && npm run lint && npm test && npm run gate:tokens && npm run gate:privacy
+  then npm run test:e2e. Quote each summary line and exit code.
+
+  WRITE THE WORK HISTORY the brief specifies, with the red witness for the busy
+  state and every plan deviation recorded. Commit on
+  `claude/m3-p10-busy-state` and push.
+
+  PACE: build the criteria, cover every control that exists, stop there.
+
+  REPORT BACK: criteria met out of total, the measured time from press to the
+  busy state becoming visible on the phone project, the control count you
+  covered against the plan's seven, each gate's exit code, anything you could
+  not meet and why, and the pushed sha.
+files-touched:
+  - src/platform/ui/submit-button.tsx (new, the shared client submit leaf)
+  - src/platform/ui/link-pending.tsx (new, the client navigation marker leaf)
+  - src/platform/ui/nav-link.tsx
+  - src/modules/import/ui/upload-form.tsx
+  - src/modules/import/ui/profile-confirmation.tsx
+  - src/modules/import/ui/import-result.tsx
+  - src/modules/import/ui/import-status-line.tsx
+  - src/modules/merchants/ui/merchant-review.tsx
+  - src/modules/accounts/ui/accounts-screen.tsx
+  - src/modules/accounts/ui/account-setup-form.tsx
+  - src/modules/overview/ui/month-view.tsx
+  - src/app/(app)/layout.tsx
+  - src/app/(auth)/sign-in/page.tsx
+  - src/app/(auth)/sign-up/page.tsx
+  - eslint.config.mjs
+  - playwright.config.ts
+  - test/e2e/busy-state.spec.ts (new, the one new spec criterion 10.7 allows)
+  - test/e2e/pressed-and-disabled.spec.ts (M3-P9's enumeration amended for the two renamed step controls, per criterion 9.2(a))
+  - test/app/client-boundary.test.ts (new, the fast-gate closure guard criterion 10.6(e) requires)
+  - delivery/work-history/m3-p10.yaml
+  - delivery/work-history/m3-p10-notes.md
+
+per-step-commits:
+  - sha: "785e611"
+    subject: >-
+      busy state: one client submit leaf and one link pending leaf, used on every control
+  - sha: "f291670"
+    subject: >-
+      busy state: the closure guard, the production phone project and the measurement spec
+  - sha: "d7db0ff"
+    subject: >-
+      busy state: correct the attribution note with what was measured, and fill the required field before measuring the control behind it
+  - sha: "c5ab8be"
+    subject: >-
+      busy state: amend the pressed-feedback enumeration for the two renamed step controls
+
+key-decisions:
+  - decision: >-
+      The busy state is FORM-WIDE: while a form is in flight every submit
+      control in it carries aria-busy and none of them is pressable.
+    why: >-
+      Criterion 10.3 allows either answer and forbids guessing, so the
+      question was measured rather than assumed. Reading useFormStatus out of
+      both leaves of the one two-control form during a real press shows that
+      attribution is available in ONE direction only: the control that
+      overrides its form's action recognises its own submission by comparing
+      status.action with the action it was handed (identical true), and the
+      control that does not override has no action of its own to compare with
+      (identical false). Attributing the second one would mean threading the
+      form's own action into every leaf as a prop that a caller can forget
+      and that mis-attributes silently when forgotten. The rejected
+      alternative, a local armed flag set in onClick, goes stale: press A,
+      let it settle, press B, and A lights up beside it. The form-wide rule
+      does not light a control belonging to a press that is over, because
+      the busy predicate is the form's own pending flag and nothing else; the
+      spec checks the other end of that with
+      expect(page.locator('[aria-busy="true"]')).toHaveCount(0) once the last
+      response has settled. The cost is one extra mark on the one two-control
+      form whose second control sits inside a collapsed disclosure.
+  - decision: >-
+      THERE IS NO MINIMUM VISIBLE DURATION on the busy state, and no timer of
+      any kind.
+    why: >-
+      The plan does not settle this and the dispatch asked for it to be
+      settled. A minimum-duration floor is a timer that holds a busy state on
+      screen after the work is finished, which is a second kind of lie about
+      what the server is doing. It exists to stop a busy state flickering back
+      to rest in place on a fast action, and that shape does not occur here:
+      every server action in the product ends in redirect(), verified by
+      grep -n "redirect" over the four action files (import 8 sites, merchants
+      2, accounts, auth), so a busy control is replaced by a new document
+      rather than flickering back. The busy control also carries the opacity
+      transition M3-P9 shipped, so the state fades rather than snapping. The
+      one surface where a fast round trip does return to the same form is the
+      accounts setup island on a REFUSED submission, which is a validation
+      round trip rather than a 40ms no-op, and it is recorded here rather than
+      papered over with a timer.
+  - decision: >-
+      The two month step controls were given data-testid values
+      (month-step-previous, month-step-next).
+    why: >-
+      Criterion 10.5(a) requires the navigating set to be matched by
+      something a spec can bind to, explicitly forbids binding to the glyph
+      child (a punctuation mark), and explicitly permits this phase to add the
+      testids because month-view.tsx is in its files-to-touch. The values are
+      pinned here so a later phase renaming them turns the spec red.
+  - decision: >-
+      The navigation marker carries data-link-pending and NOT data-testid.
+    why: >-
+      Same measured reason M3-P9 recorded at src/app/layout.tsx for
+      data-press-feedback: the helper collectTestids in
+      test/e2e/month-view.spec.ts sweeps every data-testid in the document and
+      then requires a non-zero bounding rect from everything it collects, so a
+      transient marker in that sweep is a race waiting to happen. Criterion
+      10.5 binds to the attribute, which serves it exactly as well.
+  - decision: >-
+      The closure walk treats a module carrying the "use server" directive as
+      a boundary it records and does not enter, which is a SIXTH rule beside
+      the five criterion 10.6(e) lists.
+    why: >-
+      A server action module is not included in a client bundle; the bundler
+      replaces its exports with references. MEASURED IN THE PRODUCTION BUNDLE
+      THIS PHASE BUILDS rather than taken from documentation: grepping
+      .next-prod/static/ for symbols that exist only below the accounts ui
+      layer returns 0 files for validateAccountRegistration, listAccounts,
+      changeAccountRing, AccountsSetupDependencies, createAccounts, prisma,
+      @prisma/client and PrismaClient, while control probes that DO belong to
+      the client island (addRow, removeRow, account-setup-form) return 1 to 2
+      files each. The failure-kind literals already-registered,
+      checksum-failed and duplicate-in-submission also appear in one client
+      chunk, and that is NOT the application module leaking: the island's own
+      switch over the failure kinds carries those strings itself. Without this
+      rule the walk follows src/modules/accounts/ui/actions.ts into the
+      accounts application layer and reports a leak the bundle does not have.
+      The residue is stated at the rule and here: a "use server" module ALSO
+      imported for a value that is not an action would slip through, nothing
+      in the tree does that today, and the walk pins by name which modules it
+      treats as action boundaries so a new one shows up as a failing
+      assertion.
+  - decision: >-
+      The navigating controls covered are thirteen, not the plan's seven: the
+      nine the plan's own categories now contain at this head, plus the two
+      back-to-import links on the import result and the two alternate-auth
+      links.
+    why: >-
+      The dispatch's instruction was to leave no press quiet. Those four are
+      one child element each and cost nothing. Criterion 10.5's measured set
+      is still the nine, asserted by name, so the criterion is evaluated
+      against exactly what it names.
+verification-first:
+  - finding: >-
+      (a) THE MEASUREMENT TECHNIQUE. A server action is a POST whose headers
+      carry next-action, and a Playwright route handler that counts it, holds
+      it with a Node timer and then calls route.continue() unchanged works
+      under the development project AND under the production-mode project; the
+      delay-then-fetch-then-fulfil fallback the plan allows was not needed.
+      Captured, per press, from the handler itself: requests 1 and the first
+      release 2030 to 2064 milliseconds after the click, against a 2000
+      millisecond delay. The identifying predicate is written at the handler:
+      request.method() === "POST" && headers["next-action"] !== undefined. No
+      test-only delay was added to product code.
+    contradicts-plan: false
+  - finding: >-
+      (b) WHAT useFormStatus REPORTS FOR THE TWO-CONTROL FORM. Measured with a
+      temporary console probe in the leaf, not committed, driving a real press
+      on src/modules/import/ui/profile-confirmation.tsx. Pressing the
+      overriding control, both leaves reporting at once, verbatim:
+      {"pending":true,"method":"get","actionType":"function","identicalToProp":true,"hasFormActionProp":true,"dataKeys":["importId","profileName","spec"]}
+      and
+      {"pending":true,"method":"get","actionType":"function","identicalToProp":false,"hasFormActionProp":false,"dataKeys":["importId","profileName","spec"]}.
+      So the pending state CAN be attributed, in one direction: a control that
+      overrides its form's action recognises its own submission by identity,
+      and a control that does not override has no action of its own to compare
+      with. The phase takes the form-wide answer, which criterion 10.3
+      explicitly admits, and the reason is recorded at the leaf. This answer
+      also corrects a sentence this phase's own first draft of that comment
+      carried, which asserted the identity comparison did not work; that was
+      written before the measurement and was false (clause R-087).
+    contradicts-plan: false
+  - finding: >-
+      (c) WHETHER useLinkStatus EVER REPORTS PENDING FOR THESE LINKS. Against
+      the development server, where viewport prefetching is off, all NINE
+      navigating controls took the marker branch: captured verbatim,
+      [{"name":"empty-state-accounts-link","branch":"marker"},{"name":"empty-state-import-link","branch":"marker"},{"name":"nav-merchants","branch":"marker"},{"name":"nav-accounts","branch":"marker"},{"name":"nav-import","branch":"marker"},{"name":"nav-overview","branch":"marker"},{"name":"unresolved-pill","branch":"marker"},{"name":"month-step-previous","branch":"marker"},{"name":"month-step-next","branch":"marker"}].
+      The production-mode branch record is the chromium-phone-prod run of the
+      same spec, quoted in the gate evidence below, and the two are compared
+      there as criterion 10.5(c) requires.
+    contradicts-plan: false
+  - finding: >-
+      (d) WHETHER ANY LOADING BOUNDARY EXISTS UNDER src/app AT THE PHASE BASE.
+      None. `find src/app -name "loading.*" | wc -l` returns 0, so a prefetched
+      dynamic route has no framework-supplied fallback to render and whichever
+      branch the production build takes for a navigating control is the
+      framework's prefetching behaviour and this phase's marker, nothing else.
+    contradicts-plan: false
+  - finding: >-
+      (e) THE EXACT "use client" FILE LIST AT THE PHASE BASE (8d99dfd), from
+      `grep -rln '^"use client"' src/`: src/modules/accounts/ui/account-setup-form.tsx
+      and src/platform/ui/nav-link.tsx. TWO files, and one of them is under a
+      module's ui directory rather than under src/platform/ui. A plain
+      `grep -rln "use client" src/` returns a third path, src/app/layout.tsx,
+      and that is a FALSE POSITIVE: the string occurs there inside a prose
+      comment M3-P9 wrote about why that file is a script and not a client
+      component. The list this phase's guard uses is the directive at the top
+      of a file, not the string anywhere in it.
+    contradicts-plan: true
+    stopped-and-reported: >-
+      Not stopped. Criterion 10.6(a) reads "at most three files, all of them
+      under src/platform/ui/", and 10.6(b) reads "no file under any module's
+      ui/ directory carries use client", and both were already untrue at the
+      base because M3-P14 merged after this plan section was written. The
+      dispatching orchestrator's instruction named exactly this class in
+      advance and told me to record it as a deviation rather than raise it as
+      a question, which is what the deviations list below does. Removing
+      M3-P14's client island is not this phase's work and would undo criterion
+      14.3.
+  - finding: >-
+      (f) src/modules/ledger/ui/actions.ts IS STILL BEHIND NO RENDERED
+      CONTROL. Its one export is recomputeAction (line 15), and a grep across
+      src/ and test/ for that identifier and for the module's ui path returns
+      only imports of @/modules/ledger/APPLICATION from four other modules and
+      no importer of the ui action at all. So this phase touches three action
+      surfaces and not four, and the merchant naming form's instance shape is
+      unchanged: one form per unresolved group, rendered at
+      src/modules/merchants/ui/merchant-review.tsx:47, with the hidden
+      counterpartyText field still carrying the UNMASKED value at :50.
+    contradicts-plan: false
+  - finding: >-
+      (g) THE PRODUCTION-MODE SERVER STARTS AND SERVES THE SPEC'S JOURNEY WITH
+      NO FROZEN CLOCK. playwright.config.ts strips PULSE_FIXED_NOW from that
+      server's environment by the app's own production guard, so the spec
+      reaches its month through the month view's own query parameter
+      (?month=2026-08 and ?month=2026-07) rather than through whatever month
+      the clock gives. The evidence is the chromium-phone-prod rows of the
+      full suite quoted in the gate evidence below, which include the month
+      step controls.
+    contradicts-plan: false
+  - finding: >-
+      MECHANISM LOOKUP, as clause mechanism-lookup requires. The index at
+      node_modules/@tiphys/kernel/tuition/mechanism-index.yaml has NO entry
+      for a busy state, a pending state or a client boundary. Three entries do
+      govern the closure guard this phase adds and each is satisfied
+      deliberately. "Deciding what another program will do by pattern-matching
+      the text of a file it consumes" asks for the accepted shapes to be
+      PINNED and the walk to FAIL CLOSED rather than for the pattern to be
+      widened, and for the residue to be named: the walk enters only relative
+      and @/ specifiers, resolves by a fixed candidate list, throws on
+      anything it cannot resolve, and names its two recorded non-entries
+      (bare packages, and "use server" modules) by assertion so a new one is
+      visible. "Asserting a CI step is wired" asks a class witness to redden
+      under at least two structurally different members, which is why the red
+      witness below is a direct type-only import AND a transitive leak through
+      a barrel re-export rather than the same shape twice. "A guard's own
+      failure path" asks that the success path be total, which is why an
+      unresolvable specifier throws rather than being skipped.
+    contradicts-plan: false
+deviations:
+  - plan-clause: >-
+      The phase intent and step 3: "all seven submit controls", enumerated as
+      the upload submit, the preview-again and confirm submits, the merchant
+      naming submit, the sign-in and sign-up submits and the sign-out submit.
+    why: >-
+      NINE submit controls exist at this branch head. The plan section was
+      written against 89ed187; M3-P14 merged afterwards and shipped the
+      accounts screen, which adds the ring-switch submit
+      (src/modules/accounts/ui/accounts-screen.tsx) and the setup register
+      submit (src/modules/accounts/ui/account-setup-form.tsx). The dispatching
+      orchestrator instructed that this be recorded as a deviation rather than
+      raised as a question, and that the newest screen not be left as the one
+      place a press still goes quiet. Eight of the nine render through the
+      shared leaf. The ninth, the setup register submit, does not, and the
+      reason is mechanical: that form submits through an onSubmit handler and
+      a transition rather than through a form action, so useFormStatus reports
+      nothing for it. It carries the same aria-busy vocabulary from the
+      transition's own pending flag, and the reason is recorded at the line.
+      Criterion 10.2(a)'s set assertion in the spec therefore names nine
+      controls, not seven, and fails on a missing one in both directions.
+  - plan-clause: >-
+      Step 4 and criterion 10.5(a): "the seven navigating controls",
+      enumerated as nav-overview, nav-import, nav-merchants, unresolved-pill,
+      empty-state-import-link and the two month step controls.
+    why: >-
+      NINE exist in the plan's own categories at this head: M3-P14 added a
+      fourth shell link (nav-accounts) and a second empty-state call to action
+      (empty-state-accounts-link). The spec measures all nine and asserts the
+      set by name. Four further Links exist outside the plan's categories and
+      are covered by the same leaf without being measured: the two
+      back-to-import links on the import result and the two alternate-auth
+      links. They are recorded here rather than left as an unstated
+      difference.
+  - plan-clause: >-
+      Criterion 10.6(a), "grep -rln 'use client' src/ returns AT MOST three
+      files, all of them under src/platform/ui/", and 10.6(b), "no file under
+      any module's ui/ directory carries use client".
+    why: >-
+      FOUR files carry the directive at the final tree and one of them,
+      src/modules/accounts/ui/account-setup-form.tsx, is under a module's ui
+      directory. That file is M3-P14's and was already there at this phase's
+      base; both halves of the criterion were untrue before this phase touched
+      anything. This phase adds two client files, both under src/platform/ui,
+      which is the part of the criterion it can satisfy and does. The letter
+      of 10.6(a) and 10.6(b) is NOT met and is recorded as unmet rather than
+      reinterpreted. The substance behind it, that no domain type, no
+      application function, no repository and no message catalogue reaches the
+      browser, is met and is now enforced by a closure walk in the fast gate
+      that covers all four files rather than by a grep over three.
+  - plan-clause: >-
+      Criterion 10.6(e), the five rules for the closure walk.
+    why: >-
+      A sixth rule was added: a module whose own directive is "use server" is
+      recorded as a boundary and not entered. Its justification, its cost and
+      its residue are written at the rule in test/app/client-boundary.test.ts
+      and in the key decisions above. Without it the walk reports a leak that
+      exists in no bundle.
+  - plan-clause: >-
+      Criterion 10.9(b), the whole-worktree grep for probes built from the
+      real statements.
+    why: >-
+      RECORDED AS NOT WITNESSED, which is the branch the criterion itself
+      provides. The real uploads are present in this container, but this
+      agent's environment refused the read of them (the action was blocked
+      before the extraction ran), so the probes could not be built here. What
+      was done instead, and it is weaker: a shape grep over every added line
+      of the phase diff for identifier, card-number, thousands-form amount and
+      date shapes, which returned 0 hits over 1296 added lines (exit 1). That
+      does not see a merchant name or a place name, which is exactly the hole
+      fleet warning 12 records, so half (b) stays NOT WITNESSED and is a
+      review-time task.
+  - plan-clause: >-
+      The plan's branch name for this phase, claude/m3-p10-pending-feedback.
+    why: >-
+      The dispatch names claude/m3-p10-busy-state and created the worktree on
+      it. The branch the work is on is the dispatched one. Flagged because
+      clause R-031 makes the branch name load-bearing for the scope auditor.
+  - plan-clause: >-
+      Criterion 10.7, "Two files outside the surfaces and the test rig may be
+      touched, and only these two: playwright.config.ts and eslint.config.mjs".
+    why: >-
+      Both are touched and nothing else outside the surfaces is, but the test
+      rig grew by TWO files rather than one: test/e2e/busy-state.spec.ts,
+      which is the single new spec criterion 10.7 allows, and
+      test/app/client-boundary.test.ts, which criterion 10.6(e) requires to
+      run in the FAST gate and therefore cannot live under test/e2e. The two
+      criteria are read together here rather than one being chosen over the
+      other.
+gate-evidence:
+  - gate: typecheck
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: lint
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-fast
+    result: green
+    wrapper-exit-code: 0
+    discovered: 544
+    passed: 544
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-tokens
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-privacy
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-e2e-run-1
+    result: red
+    wrapper-exit-code: 1
+    discovered: 90
+    passed: 85
+    failed: 4
+    skipped: 1
+    todo: 0
+    did-not-run: 0
+  - gate: suite-e2e-run-2
+    result: green
+    wrapper-exit-code: 0
+    discovered: 90
+    passed: 89
+    failed: 0
+    skipped: 1
+    todo: 0
+    did-not-run: 0
+claims:
+  - id: M3P10-C1
+    kind: coverage
+    statement: >-
+      Every submit control that exists in the product at this branch head is
+      covered by the busy state, and each of the nine was measured under a
+      2000 millisecond server delay for its interval, its state at one second,
+      its request count under a double press and the stability of everything
+      else on screen.
+    settled-by:
+      executed-construction:
+        command: >-
+          export PATH=/opt/node22/bin:$PATH && cd /home/user/wt-m3p10 &&
+          set -a; . ./.env; set +a && npm run test:e2e
+        exit-code: 0
+        output: >-
+          "1 skipped, 89 passed (23.1m)", exit 0, at the committed head
+          c5ab8be, under all four projects including the new
+          chromium-phone-prod one. The one skipped test is M3-P9's touch
+          measurement under the desktop project, which skips itself where
+          hasTouch is not set and runs under chromium-phone. THE SET
+          ASSERTION the spec makes before it measures anything is
+          expect(results.map(r => r.name)).toEqual([...nine names...]), which
+          fails on a missing control and on an extra one alike. The
+          chromium-phone-prod numbers, which are the build the owner presses,
+          verbatim from the run: sign-up 4.80ms, register accounts 3.10ms,
+          ring switch 2.30ms, upload 3.60ms, preview-again 3.10ms, confirm
+          3.20ms, merchant naming 2.30ms, sign-out 2.40ms, sign-in 2.60ms;
+          every one kind attributes:disabled on the pressed control,
+          appearanceChanged true, requests 1 after two presses 100ms apart,
+          response released 2027 to 2055ms after the click, aria-busy true and
+          not pressable and mark drawn at 1000ms, and every data-testid and
+          its trimmed text identical before the press and one second into it.
+          The same nine under chromium (desktop, development) 3.80 to 9.70ms
+          and under chromium-phone (development) 3.90 to 10.00ms. The merchant
+          naming median over FIVE DIFFERENT rows: 2.2ms under
+          chromium-phone-prod, 4.4ms under both development projects. The nine
+          navigating controls take the marker branch in BOTH the production
+          and the development run, so no control has a pending state only in
+          the environment nobody uses.
+  - id: M3P10-C2
+    kind: remedy
+    statement: >-
+      The interval measurement is capable of failing, and the numbers it
+      reports are caused by this phase's leaf rather than by an unrelated
+      mutation.
+    settled-by:
+      executed-construction:
+        command: >-
+          A standalone Playwright script run from /home/user/wt-m3p10 against
+          the same delayed development server, with this phase's leaf replaced
+          by the plain server-rendered button it replaces on two structurally
+          different controls (a form with one control and a file input; a form
+          rendered once per unresolved row). Not committed; the tree was
+          restored and typecheck and lint re-run clean afterwards.
+        exit-code: 0
+        output: >-
+          CONTROL RUN A (upload submit, plain server-rendered button):
+          {"clickAt":847.6,"firstAt":null,"kind":null,"discarded":4} requests 1
+          CONTROL RUN B (merchant naming submit, plain server-rendered button):
+          {"clickAt":1156.4,"firstAt":null,"kind":null,"discarded":4} requests 1
+          No surviving record within 2000 milliseconds of the click on either,
+          while the route handler still counted the request, so the press did
+          submit and the screen did nothing. discarded 4 on both is the
+          observer's filter doing work: records DID arrive inside the form and
+          every one of them was outside the pressed control's subtree.
+  - id: M3P10-C3
+    kind: remedy
+    statement: >-
+      The widened hardcoded-string lint glob matches the files this phase
+      adds, rather than matching nothing.
+    settled-by:
+      executed-construction:
+        command: >-
+          A bare JSX text node temporarily added to
+          src/platform/ui/submit-button.tsx, then npm run lint; the edit was
+          reverted and git diff --stat on that path prints nothing.
+        exit-code: 1
+        output: >-
+          /home/user/wt-m3p10/src/platform/ui/submit-button.tsx
+          89:17  error  Missing JSX expression container around literal
+          string: "RED WITNESS"  react/jsx-no-literals
+          1 problem (1 error, 0 warnings), exit 1. With the edit reverted,
+          npm run lint exits 0.
+  - id: M3P10-C4
+    kind: remedy
+    statement: >-
+      The client-boundary closure guard reddens under a real leak, and under
+      two structurally different members of the class rather than the same
+      shape twice.
+    settled-by:
+      executed-construction:
+        command: >-
+          Two temporary edits, each run through npx vitest run
+          test/app/client-boundary.test.ts and then reverted. Witness A: a
+          type-only import of @/platform/tenancy directly in the leaf.
+          Witness B: a new helper under src/platform/ui whose only line is an
+          export-from re-export of @/modules/accounts/application, imported by
+          the leaf, so the forbidden path is reached transitively through a
+          barrel rather than named in the client file at all.
+        exit-code: 1
+        output: >-
+          WITNESS A: 1 failed | 3 passed. FAIL "imports no household context
+          type". WITNESS B: 3 failed | 1 passed. FAIL "reaches no application,
+          domain, adapter or auth module, transitively", whose diff names
+          src/modules/accounts/application/index.ts, ports.ts,
+          change-account-ring.ts and register-accounts.ts; FAIL "imports no
+          household context type"; FAIL "records the packages and the action
+          modules it did not enter". With both reverted: 4 passed, and
+          git status shows no residue.
+  - id: M3P10-C5
+    kind: remedy
+    statement: >-
+      The closure walk follows a multi-line import, which it did not on its
+      first version.
+    settled-by:
+      executed-construction:
+        command: >-
+          npx vitest run test/app/client-boundary.test.ts against the first
+          version of the walk, whose specifier pattern was bounded by
+          [^\n;]*? and therefore matched only single-line imports.
+        exit-code: 1
+        output: >-
+          FAIL "records the packages and the action modules it did not enter":
+          expected [] to deeply equal [ "src/modules/accounts/ui/actions.ts" ].
+          The walk had never opened the one multi-line import in
+          src/modules/accounts/ui/account-setup-form.tsx, and the three other
+          assertions passed while it had not looked. The bound is now the
+          statement terminator rather than the line break, the correction is
+          written at the pattern rather than the sentence quietly deleted
+          (clause R-087), and all four assertions pass afterwards.
+  - id: M3P10-C6
+    kind: universal
+    statement: >-
+      For each of the eight submit controls other than the merchant naming
+      submit, the collection of every data-testid on screen and its trimmed
+      text is identical immediately before the press and one second after it
+      while the server is still held, so this phase predicts nothing.
+    settled-by:
+      counter-experiment: >-
+        The spec captures both collections itself and compares them by deep
+        equality per control, so a control that renders a predicted value
+        turns the run red rather than being argued about. The measurement is
+        real rather than vacuous because the SAME collection call, on the same
+        controls, is what the pressed control's own busy state does NOT show
+        up in: the busy mark is a pseudo-element and carries no testid, which
+        is why nothing has to be exempted by name and why a predicted merchant
+        name WOULD show up. The refuting experiment would be to render any
+        predicted text before the response is released; a grep for
+        useOptimistic over src/ exits 1, so no such render exists to try.
+  - id: M3P10-C7
+    kind: open-question
+    statement: >-
+      Criterion 10.9(b), the whole-worktree grep for probes built from the
+      real statements, is NOT WITNESSED by this phase.
+    still-open-because: >-
+      The real uploads are present in this container but this agent's
+      environment refused to read them, so the probe set could not be built
+      here. The weaker check that was run, a shape grep over every added line
+      of the phase diff for identifier, card-number, thousands-form amount and
+      date shapes, returned 0 hits over 1296 added lines and exits 1; it does
+      not see a merchant name or a place name, which is precisely the hole
+      fleet warning 12 records. Someone with permission to read the uploads
+      should build the probes and grep this branch.
+  - id: M3P10-C8
+    kind: open-question
+    statement: >-
+      Criterion 10.6(a) and 10.6(b) are UNMET at the letter and this phase did
+      not make them met.
+    still-open-because: >-
+      Four files carry the client directive at the final tree, one of them
+      under a module's ui directory: src/modules/accounts/ui/account-setup-form.tsx,
+      which M3-P14 shipped before this phase started and which criterion 14.3
+      depends on. Removing it is a redesign of another phase's screen. The
+      substance the two halves exist to protect is met and is now enforced
+      over all four files by the closure walk in the fast gate. Whether the
+      criterion should be amended to name the accounts island, or the island
+      should be reshaped, is a question for the plan rather than for this
+      branch.
+  - id: M3P10-C9
+    kind: open-question
+    statement: >-
+      The one surface where a busy state can appear and clear without the
+      document being replaced is the accounts setup island on a REFUSED
+      submission, and no minimum visible duration guards it.
+    still-open-because: >-
+      Every server action in the product ends in redirect(), so on every other
+      surface the busy control is replaced rather than returning to rest in
+      place. That island calls its action inside a transition and re-renders
+      the same form when the submission is refused, so a very fast refusal
+      would show the busy state briefly and clear it. A validation round trip
+      is not a 40 millisecond no-op, so this was left as it is rather than
+      answered with a timer that would hold a busy state on screen after the
+      work was done; it is recorded so the next reader can decide with the
+      trade-off in front of them rather than discovering it.
+environment-warnings:
+  - warning: >-
+      THE WORKTREE ARRIVED WITH NO node_modules AND NO .env, unlike the M3-P9
+      dispatch which said node_modules was symlinked. Both had to be created
+      before anything could run: npm ci (about a gigabyte), and a local .env
+      pinning the five values fleet warning 6 names. .env is gitignored and
+      was not committed.
+    evidence: >-
+      `ls node_modules` printed nothing; `ls -a | grep env` returned only
+      .env.example and next-env.d.ts.
+  - warning: >-
+      package.json declares engines node 22.x and the container's nvm default
+      is Node 26, so `. /opt/nvm/nvm.sh` selects an interpreter npm warns
+      about (EBADENGINE) for every project command. /opt/node22/bin/node is
+      present and is what every npm, next and playwright command in this phase
+      ran under; nvm's Node 26 is for tiphys only. This is fleet warning 1 in
+      its "more than one toolchain" form and it is worth stating with the
+      path, because the two shells look identical from the outside.
+    evidence: >-
+      `npm ci` under Node 26 printed "npm warn EBADENGINE required: { node:
+      '22.x' } current: { node: 'v26.8.0-alpha.0.0.0' }"; `export
+      PATH=/opt/node22/bin:$PATH && node -v` prints v22.22.2.
+  - warning: >-
+      `pkill -f "playwright test"` KILLS THE SHELL THAT RUNS IT, because that
+      shell's own command line contains the pattern. The failure looks like an
+      unexplained exit 144 from a command that did nothing. Use a pattern the
+      invoking command line does not match, for example
+      `pkill -f "playwright[ ]test"`.
+    evidence: >-
+      Two consecutive invocations returned exit 144 with no output and the
+      backgrounded command they were chained with never started.
+  - warning: >-
+      A PLAYWRIGHT ROUTE HANDLER THAT HOLDS A REQUEST OUTLIVES THE TEST
+      TIMEOUT. A first run of this phase's spec sat for more than fourteen
+      minutes against a five minute per-test timeout: a locator click that
+      did not succeed was waiting inside a test whose route handler was
+      holding requests, and neither the timeout nor the reporter produced a
+      line. The diagnosis came from the DEV SERVER's request log rather than
+      from Playwright, which is where to look first for this shape.
+    evidence: >-
+      run1 printed only "Running 1 test using 1 worker" for the whole run;
+      the dev server log's last line was the GET that rendered the screen the
+      run was stuck on.
+  - warning: >-
+      A SUBMIT CONTROL SHARING A FORM WITH A REQUIRED FIELD SENDS NOTHING WHEN
+      THAT FIELD IS EMPTY, and therefore shows no busy state, correctly. A
+      spec that presses such a control before filling the field measures a
+      press that never submitted and reads it as a missing feature. Fill the
+      required fields first, or measure a control whose form has none.
+    evidence: >-
+      The preview-again control recorded requests 0 and no DOM change while
+      every other control in the same run recorded requests 1 and 4 to 9
+      milliseconds.

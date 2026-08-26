@@ -172,3 +172,78 @@ exactly the mutation the first version of criterion 10.2 would have accepted.
     $ grep -c '<identifier|card|thousands-amount|date shapes>' over every
       added line of the phase diff -> 0 hits over 1296 lines, exit 1   (10.9b, weaker)
 
+## THE PRODUCTION-BUILD PHONE MEASUREMENT, which is the one the phase exists for
+
+chromium-phone-prod, 390 by 844, against `npm run build && npx next start`,
+each control's server action held 2000ms by the route handler:
+
+    sign-up submit             2.30 - 4.80 ms   (see the table below)
+    register accounts submit   3.10 ms
+    ring switch submit         2.30 ms
+    upload submit              3.60 ms
+    preview-again submit       3.10 ms
+    confirm submit             3.20 ms
+    merchant naming submit     2.30 ms
+    sign-out submit            2.40 ms
+    sign-in submit             2.60 ms
+    sign-up submit             4.80 ms
+
+Every one: kind attributes:disabled ON THE PRESSED CONTROL, appearanceChanged
+true inside the observer callback that stopped the clock, requests 1 after two
+presses 100ms apart, response released 2027 to 2055 ms after the click, busy
+at 1000ms, not pressable at 1000ms, busy mark drawn, and every data-testid and
+its text identical before the press and one second into it.
+
+    naming intervals [2.4, 2.2, 2.1, 2.3, 2.1] median 2.2ms  (five DIFFERENT rows)
+
+    navigation branches, chromium-phone-prod (prefetching ON):
+      all nine take the MARKER branch.
+    navigation branches, chromium-phone (development, prefetching OFF):
+      all nine take the MARKER branch.
+
+The two runs agree, which is what criterion 10.5(c) asks to be compared: no
+control takes the marker branch in development and neither branch in
+production.
+
+The owner measured the dead gap at 500ms to 1s. It is now 2 to 5 milliseconds
+on the build they press.
+
+## The four failures of the first full run, and what they were
+
+    ✘ 55, 56 [chromium] and ✘ 86, 87 [chromium-phone]
+      test/e2e/pressed-and-disabled.spec.ts, both describes
+      Error: the swept control set is not the enumeration
+        - "a.month-nav|‹"                       + "a[data-testid=month-step-next]"
+        - "a.month-nav|›"                       + "a[data-testid=month-step-previous]"
+
+Exactly two identities, no addition and no removal, still twenty-one controls.
+M3-P9's sweep identifies a control by its testid or, where it has none, by its
+selector and text; the two month step controls had none and were identified by
+their glyph child. Criterion 10.5(a) forbids a spec binding to that glyph and
+explicitly permits this phase to give those two controls testids. The
+enumeration was amended and the sweep left alone, which is what criterion
+9.2(a) requires when the two disagree.
+
+## clause claim-grep, run against the final work history, and every hit settled
+
+    $ grep -nEi 'cannot be|impossible|needs a|is covered|catches|would catch|recovers|anyway|always|never|no way to' delivery/work-history/m3-p10.yaml
+    6:  branched from main at 8d99dfd). Never touch /home/user/pulse or any other
+    586:          The walk had never opened the one multi-line import in
+    686:      backgrounded command they were chained with never started.
+    703:      press that never submitted and reads it as a missing feature. Fill the
+
+Re-run over the whitespace-flattened text, because prose wraps and a phrase can
+straddle a line break, adds one further hit: "is covered by the busy state" in
+claim M3P10-C1.
+
+Settlements, one per hit:
+- line 6 is inside the PROMPT, recorded verbatim under R-052a. It is the
+  dispatcher's sentence, not a claim of mine.
+- "is covered by the busy state" is claim M3P10-C1, whose settled-by carries
+  the command and the captured suite output beside it.
+- "the walk had never opened the one multi-line import" is claim M3P10-C5,
+  whose settled-by carries the exact vitest failure that established it.
+- "the backgrounded command they were chained with never started" and
+  "a press that never submitted" are environment warnings, each with its
+  `evidence` field carrying the captured observation beside it.
+
