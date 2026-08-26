@@ -1,0 +1,847 @@
+# Clean-room review, HAZARD contract, phase M3-P12 (counterparty identity,
+# severity critical). ROUND ELEVEN.
+#
+# Head reviewed: a1c17d5 on claude/m3-p12-counterparty-identity, reviewed in an
+# isolated worktree at /home/user/wt-m3p12-r11h on branch
+# claude/m3-p12-rev11-haz. git status carried nothing but this file for the
+# whole round; every probe file created under scripts/ was deleted in the same
+# command that ran it, and git status was re-read after each.
+#
+# HEADER DISCLOSURES. DR-0003: Claude-family verdict, review-contract hazard,
+# framing destructive-paths. Round nine's two verdicts were read as CONTEXT
+# only; nothing below rests on them and every claim carries a command this
+# lane ran.
+#
+# CONTRACT ORDER. Started from the phase's declared hazard classes and from
+# the four attack directions the dispatch named. The acceptance criteria were
+# read LAST, and the criteria walk below is a record of what this lane could
+# witness, not the frame the review was built on.
+#
+# DATABASE SAFETY. Every command that could reach a database was run with
+# DATABASE_URL and DIRECT_URL pinned in the invoking shell and the PARSED HOST
+# printed before the command. The ambient environment in this container
+# resolves to a DEPLOYED pooler belonging to another project (fleet warning 1),
+# confirmed by parsing it and printing host and port only. Nothing in this
+# round touched it. Two probes needed a writable database: they ran against a
+# scratch database created and dropped on the LOCAL Postgres
+# (127.0.0.1:54322), never against the shared `postgres` database that another
+# review lane was using at the time. Two probes needed a NON-LOCAL target:
+# both used an invented ref on an unresolvable .invalid host, so a guard
+# failure would have reached nothing.
+#
+# NO DATA. No account number, no descriptor, no amount, no date and no
+# counterparty from either real document appears in this file. The invented
+# values used in the probes are deliberately NOT reproduced here, because this
+# file is in the tree and gate:privacy compares identifier shapes against
+# test/fixtures/allowed-identifiers.txt.
+#
+# DISK. The container was at 3.0G free on arrival and reached 100% during
+# dependency install; 1.4G was recovered by clearing the npm cache, which is
+# regenerable and belongs to no worktree. No other worktree was touched. This
+# lane's own .next and .next-prod were removed before the slow gate.
+#
+# ============================================================
+# GATES, RUN BY THIS LANE AT a1c17d5, Node v22.12.0 via nvm
+# ============================================================
+# node_modules was absent on arrival. `npm ci` FAILS at this head
+# (EXIT=1, "npm ci can only install packages when your package.json and
+# package-lock.json are in sync ... Missing: @swc/helpers@0.5.23 from lock
+# file"; the lock pins @swc/helpers 0.5.15 at package-lock.json:7751 while
+# next requires >=0.5.17 at :7865). Installed with
+# `npm install --no-package-lock` so the tracked lock file was not rewritten;
+# git status stayed clean. Recorded as finding HZ11-M3P12-08.
+# `npx prisma generate` was run first (v6.19.3).
+#
+#   npm run typecheck   -> EXIT=0   (tsc --noEmit, no output)
+#   npm run lint        -> EXIT=0   (eslint ., no output)
+#   npm test            -> EXIT=0   Test Files 43 passed (43)
+#                                   Tests 681 passed (681), 20.74s
+#   npm run gate:privacy-> EXIT=0   "gate:privacy clean"
+#   npm run gate:tokens -> EXIT=0   (the ! grep returns no match)
+#   npm run test:e2e    -> EXIT=0   55 passed (10.1m), both the chromium and
+#                                   the chromium-phone project, including
+#                                   test/e2e/merchants.spec.ts:129 (M3-P6 card
+#                                   grouping on a phone), :276 (criterion
+#                                   12.18's browser witness) and every M3-P7
+#                                   phone-width month-view spec.
+#     THE SLOW GATE WAS RUN ONCE, AFTER WAITING. The first attempt failed
+#     immediately with 'http://127.0.0.1:3100 is already used': another
+#     review lane's Playwright run held both ports and the same local
+#     database. Nothing of that lane was killed; this lane polled until the
+#     ports freed and then ran. Target pinned through PULSE_GATE_* rather
+#     than by writing a .env into the worktree, so the tree stayed clean.
+#     Fleet warning 17 did NOT bite: git status after the run carried only
+#     this file, next-env.d.ts unchanged.
+#
+# THE FAST GATE WAS ALSO RUN AGAINST A NON-LOCAL AMBIENT TARGET, because that
+# is round five's stated cost and the dispatch asked for the claim to be
+# tested rather than the tests. With DATABASE_URL and DIRECT_URL pointed at an
+# invented ref on an unresolvable .invalid pooler host:
+#   npm run test        -> EXIT=0   Test Files 43 passed (43)
+#                                   Tests 681 passed (681), 19.66s
+#   grep -c "pulse:db.*DATABASE_URL present"  -> 0
+#   grep -c "not production and DATABASE_URL points at a non-local host" -> 0
+# So the claim holds and it is measured: the widened guard costs the fast gate
+# nothing, because the fast gate constructs ZERO Prisma clients. That result
+# is also the ground of finding HZ11-M3P12-05: no test in this repository ever
+# reaches the Prisma adapter, so every guarantee about the re-derivation is
+# proven against an in-memory double.
+
+# VALIDATION, recorded rather than summarised. The command the dispatch names
+# reports four INVALIDs that are all the same thing: `--context` is read as a
+# directory holding plan.yaml, work-history.yaml, assurance-modes.yaml and
+# charter.yaml at its ROOT, and this repository keeps them under delivery/plan,
+# delivery/work-history and the fleet root. Re-run against a context directory
+# of symlinks with exactly those names resolved (built in the scratchpad, the
+# worktree untouched), the document passes the schema and passes
+# verdict-criteria-complete, verdict-deviations-judged,
+# verdict-hazard-classes-addressed and verdict-finding-references-resolve.
+# ONE INVALID REMAINS AND THIS LANE CANNOT CLEAR IT: dual-review-decorrelation
+# reports 'only 1 verdict document(s) exist under delivery/review for phase
+# M3-P12, and a delegated grant requires two independent clean-room reviews of
+# the exact head'. The criteria lane's round eleven verdict is on its own
+# branch and is not in this tree, which is what a clean room means. It clears
+# when the orchestrator brings the two together.
+
+kind: verdict
+phase: M3-P12
+verdict: FIX-ROUND-NEEDED
+produced-by: claude-opus
+framing: destructive-paths
+review-contract: hazard
+
+findings:
+  - id: HZ11-M3P12-01
+    severity: high
+    evidence:
+      - "src/platform/db/client.ts:87 through :97. client() reads globalForPrisma.prisma, and assigns it back only inside `if (!isProduction())` at :93. In PRODUCTION the cache is therefore NEVER populated, so every call to client() runs constructClient() and `new PrismaClient()` at :76."
+      - "src/platform/db/client.ts:103 through :116. The Proxy holds no instance of its own. Its get trap calls client() inside Reflect.get and AGAIN inside .bind(client()), so a function-valued property costs two constructions."
+      - "WITNESSED. A probe under scripts/ (created, run, deleted; git status clean after) read five properties off the exported binding while counting the module's own `[pulse:db] DATABASE_URL ...` startup line. NODE_ENV=production: after 1 model read constructions = 1; after 2 = 2; after 3 = 3; after 1 method read = 5; after 2 method reads = 7; 'cached on globalThis at end? false'. NODE_ENV unset: 1, 1, 1, 1, 1; 'cached on globalThis at end? true'."
+      - "REGRESSION, not pre-existing. The version before this branch's client rewrite ends `export const prisma: PrismaClient = globalForPrisma.prisma ?? constructClient();` followed by `if (!isProduction()) { globalForPrisma.prisma = prisma; }` (git show of the prior revision of src/platform/db/client.ts). A module binding holds one instance for the life of the process in EVERY environment, production included. The lazy rewrite removed the only memo production had."
+      - "TWO CLAIMS IN THE FILE ARE NOW FALSE (clause R-087). src/platform/db/client.ts:6 says 'One PrismaClient per process.' src/platform/db/client.ts:99 through :102 says 'EXPORTED WITH THE SAME TYPE AND THE SAME SHAPE AS BEFORE ... behave exactly as they did.'"
+      - "COST. src/platform/db/target-guard.ts:225 records that port 5432 is 'the endpoint where one client connection is one server connection'. Fleet warning 5 records the session pooler as the only endpoint reachable from an IPv4 environment, which is what the deployed application uses. Each construction carries its own connection pool, and the startup diagnostic (client.ts:43 through :48) prints once per property access."
+      - "NOTHING IN THE TREE SEES IT. The fast gate constructs zero clients, measured above, so no test exercises the production branch of client() at all."
+    concrete-fix: >-
+      Memoise the constructed client in a module-level variable regardless of
+      NODE_ENV, keeping the globalThis cache as the additional dev-server hot
+      reload cache rather than as the only one: `let instance: PrismaClient |
+      undefined;` set inside client() before the isProduction() branch, and
+      returned on every later call. In the same edit, call client() ONCE per
+      get-trap invocation and bind to that value rather than calling it twice.
+      Then pin it: a test that sets NODE_ENV=production, reads several
+      properties off the binding, and asserts the module's construction count
+      is 1. The two false comment claims at client.ts:6 and :99 through :102
+      are corrected in the same change, quoting what they said, per clause
+      R-087.
+    analysis: >-
+      Production is the one environment this phase deliberately leaves
+      unguarded, on the stated ground that it is the server that serves real
+      traffic. It is also the only environment the lazy rewrite made worse,
+      and it is the environment holding the owner's real household finances.
+      The defect is invisible to every instrument this phase built: the door
+      scan exempts this file, the fast gate never constructs a client, and the
+      slow gate's production web server serves a handful of pages against a
+      local Postgres that will not exhaust anything. It surfaces first on the
+      deployed app under load.
+
+  - id: HZ11-M3P12-02
+    severity: high
+    evidence:
+      - "src/platform/db/runtime-target.ts:43 through :47. noteInterlockApproved is a plain exported function taking a free-text label. It compares nothing, resolves nothing, and validates nothing. src/platform/db/guard.ts:164 through :169 then returns allowed for ANY non-production process whose approval is set."
+      - "src/platform/db/runtime-target.ts:25 states 'Only code inside this process that has actually done that work can call this.' That sentence is FALSE and this finding is raised loudly under clause R-087."
+      - "WITNESSED. scripts/zz-probe4.ts (created, run, deleted; git status clean after) imported exactly what scripts/rederive-merchant-rules.ts imports, called noteInterlockApproved(\"zz-probe4, which checked absolutely nothing\") having resolved nothing and matched nothing, then read prisma.account with DATABASE_URL pointing at a NON-LOCAL host and NODE_ENV unset. Output: 'approval after : zz-probe4, which checked absolutely nothing' then '[pulse:db] DATABASE_URL present, scheme ok' then 'prisma.account => object'. No refusal."
+      - "CONTROL, same environment, same file, without the noteInterlockApproved line: 'prisma.account => THREW [pulse:db] this process is not production and DATABASE_URL points at a non-local host'."
+      - "NOTHING CONSTRAINS THE CALLERS. grep over the tracked tree for noteInterlockApproved returns exactly two hits outside its own definition: a comment at scripts/rederive-merchant-rules.ts:113 and the call at scripts/rederive-merchant-rules.ts:346. No test names the symbol at all, so a second caller is red nowhere."
+      - "THE DOOR SCAN CANNOT SEE THIS SHAPE. test/db/gate-target.test.ts:577 through :592 defines a door as `new PrismaClient(`, `createClient(` or `create(Server|Browser)Client(`. A module that reaches the database through the shared binding plus one call to noteInterlockApproved matches none of them, and the shared binding is the one door the scan exempts (test/db/gate-target.test.ts:454 through :457), on the stated ground that 'the interlock it carries is assessNonProductionDbTarget'."
+      - "WRITE-ONCE HOLDS, and it is not the protection it reads as. A second call is ignored (witnessed: 'approval is still: <the first source>'). The consequence is that the FIRST writer wins, and module-graph evaluation runs before any main(), so a caller at import scope silently pre-empts the real interlock and the real interlock's later call becomes a no-op that nothing reports."
+    concrete-fix: >-
+      Make the register take evidence instead of a label. Have
+      noteInterlockApproved accept the resolved connection string and the
+      operator's expectation, re-run assessRederiveTarget inside
+      runtime-target.ts, and record the approval only if that assessment
+      passes; the label then names the caller rather than standing in for the
+      work. Failing that, at minimum add to test/db/gate-target.test.ts a scan
+      of the tracked tree for a CALL to noteInterlockApproved with an
+      allow-list of exactly one path and a reason, in the shape
+      ALLOWED_UNGUARDED already has, plus a test asserting that an approval
+      written by any other caller does not make assessNonProductionDbTarget
+      return allowed. Correct runtime-target.ts:25 in the same change,
+      quoting what it said.
+    analysis: >-
+      This is hazard H12.30's shape reopened one module over. The interlock
+      that criterion 12.23 bought is real and it works; what round ten added
+      beside it is a one-line, unguarded, process-wide off switch for the
+      client's own guard, reachable by any module in the import graph, with no
+      test, no scan and no reviewer instrument pointed at it. The exemption of
+      src/platform/db/client.ts from the door scan is justified in the tree by
+      the guard this switch disarms.
+
+  - id: HZ11-M3P12-03
+    severity: high
+    evidence:
+      - "test/db/gate-target.test.ts:509 through :558. The codeOnly lexer has three states, line comment, block comment and quoted string, and no state for a REGULAR EXPRESSION LITERAL. A regex literal is therefore scanned as ordinary code, and any quote character inside it opens a string state."
+      - "THE BACKTICK IS THE CROSS-LINE VECTOR. A template-literal state runs to the next backtick anywhere in the FILE (the newline break at :541 is guarded by `ch !== \"`\"`). A regex literal holding an odd number of backticks therefore blanks everything from that point to the next backtick or to end of file."
+      - "THE CONSTRUCT IS IN THE TRACKED TREE TODAY. src/platform/db/redact.ts:15 is `.replace(/`[^`]*`/g, \"<redacted>\")`, three backticks. Running the lexer verbatim over that file renders line 16 entirely blank."
+      - "WITNESSED, DIRECTION ONE, A DOOR HIDDEN. codeOnly and doorsInSource were copied verbatim into a scratchpad probe and driven from strings. Source: a regex line holding an odd number of backticks, then `const client = new PrismaClient();`. Result: doors: []. Control, the same file without the regex line: doors: [{kind: prisma, guarded: false}]."
+      - "WITNESSED, DIRECTION TWO, AN UNGUARDED DOOR REPORTED GUARDED. Source: the same regex line, then a template literal whose PROSE contains 'assertGateDbTargetIsLocal()', then a second such regex line, then `const client = new PrismaClient();`. Result: doors: [{kind: prisma, guarded: true, guardsBeforeConstructing: true}]. The prose is lexed as code because the swallow consumed the template's opening backtick."
+      - "WITNESSED, DIRECTION THREE, A DOOR INVENTED FROM PROSE. Source: the regex line, then a template literal whose prose contains 'new PrismaClient()'. Result: an unguarded door is reported for a file that has none, which contradicts the header claim at test/db/gate-target.test.ts:485 through :487 that 'PROSE IS NOT A DOOR'."
+      - "A CALL IS NOT AN EXECUTED CALL. The guarded side is `new RegExp(`\\b${entry.guard}\\s*\\(`).exec(source)` at test/db/gate-target.test.ts:628. Witnessed green on two shapes that guard nothing: `const unused = () => assertGateDbTargetIsLocal();` above a constructor, and `expect(() => assertGateDbTargetIsLocal()).toThrow();` above a constructor. Both report guarded: true, guardsBeforeConstructing: true. The second is the realistic one: test/db/gate-target.test.ts itself is full of calls written to assert a REFUSAL."
+      - "ONLY THE FIRST CONSTRUCTION PER KIND IS EXAMINED (test/db/gate-target.test.ts:626). Witnessed: a guard call, then two `new PrismaClient()` constructions, reports one door, guarded and in order."
+    concrete-fix: >-
+      Add a regex-literal state to codeOnly, entered on a `/` that is not `//`
+      or `/*` and that follows a token position where a regex may legally
+      start, and exited on the closing unescaped `/`; and make the
+      template-literal state refuse to run past end of file, treating an
+      unterminated one as a lexer failure that FAILS the scan loudly rather
+      than blanking the remainder. Separately, require the guard call to be at
+      statement position in the module's own top-level or in the enclosing
+      function of the construction rather than anywhere in the file, or accept
+      the weaker check and say so in the header instead of claiming a CALL.
+      Add the five probe strings above to the 'the shapes that used to pass'
+      describe block so they stay red.
+    analysis: >-
+      Fleet warning 18 is written about exactly this instrument: a guard's
+      stated scope is not its reach, and a scan claiming EVERY must have its
+      denominator read before it is believed. Round ten fixed the denominator
+      and the mention-versus-call defect on the guarded side, and left the
+      lexer able to manufacture both a missing door and a present guard out of
+      ordinary source text. The construct that does it is already in the tree.
+
+  - id: HZ11-M3P12-04
+    severity: medium
+    evidence:
+      - "delivery/work-history/m3-p12.yaml:2007 through :2024, the EIGHTEENTH and LAST declared deviation, states in the present tense: 'The refusal is gated on NODE_ENV being exactly \"development\". The wider predicate is not implementable without two carve-outs that amount to the same thing.'"
+      - "src/platform/db/guard.ts:154 through :205. assessNonProductionDbTarget gates on `env.NODE_ENV === \"production\"` returning allowed and refuses everything else that is non-local. The wider predicate IS what shipped, and src/platform/db/guard.ts:100 through :136 quotes and retracts the very argument the deviation still advances."
+      - "The deviation is not superseded anywhere: it is the last entry in the deviations block, so it is this branch's final recorded word on the predicate, and it contradicts the tip."
+      - "This lane measured the cost the deviation calls unpayable and it is not paid: npm test EXIT=0, 681 tests, with a non-local ambient DATABASE_URL and zero client constructions."
+    concrete-fix: >-
+      Rewrite that deviation to state what shipped: the predicate is 'not
+      production', the two costs it names were removed rather than traded
+      away, laziness removes the first and the runtime approval register
+      removes the second, and quote the superseded sentence rather than
+      deleting it, in the shape the rest of this branch uses for an R-087
+      correction.
+    analysis: >-
+      The work history is what the next implementer reads to learn why a
+      predicate has the shape it has. This one argues, with observed evidence
+      behind it, for a predicate the code no longer has, and the argument is
+      persuasive enough that a reader could narrow the guard back.
+
+  - id: HZ11-M3P12-05
+    severity: medium
+    evidence:
+      - "MEASURED: npm test constructs ZERO Prisma clients (grep -c of the module's own startup line over a full run: 0). No test in this repository reaches src/modules/merchants/adapters/merchant-repository.ts against a database."
+      - "delivery/work-history/m3-p12.yaml declares this for criteria 12.7, 12.8 and 12.9: 'The seeded subject is the in-memory fake repository ... not a live Postgres.' The declaration is honest; the residue it leaves is that idempotence, the atomic write set, the loss report and the superset property are all properties of the ROUTINE checked against a MODEL of the adapter."
+      - "test/application/rederive-merchant-rules.test.ts:659 through :681 compares world.rules, an in-memory array, before and after."
+      - "THIS LANE CLOSED THE GAP AND IT HOLDS. On a scratch database created and dropped on the local Postgres, migrated with prisma migrate deploy, seeded with invented rows and rules and driven through the REAL merchantRepository: run one exit 0, patterns rewritten 2, rules added 1, applied true, assignmentsBefore 3, assignmentsAfter 3, lost 0; run two exit 0, rewritten 0, added 0, TABLE IDENTICAL true, DECISION REPORT BYTE-IDENTICAL true, EXIT CODE SAME true; run three identical again. A dry run reported exit 0, applied false, table unchanged."
+      - "AND A BLOCKED RUN WRITES NOTHING, also against the real adapter: a seed producing a genuine loss reported exit 1, applied false, and the merchant_rules table was byte-identical before and after across three consecutive runs."
+      - "So the finding is not that the routine is wrong. It is that the tree does not prove any of this against the thing that will actually run, and hazard H12.12 is about a real second run against a real database."
+    concrete-fix: >-
+      Add one database-backed test that runs rederiveMerchantRules twice
+      through merchantRepository against the local stack and asserts the
+      second run rewrites zero patterns, adds zero rules, leaves merchant_rules
+      byte-identical and prints the same decision report; run it in the slow
+      gate, where a database is already pinned by enforceGateDbTarget, rather
+      than in the fast gate, so the fast gate keeps its zero-client property.
+      test/e2e/merchant-rule-write.spec.ts is the precedent and the place.
+    analysis: >-
+      The in-memory double is the right default for the application layer and
+      the deviation says so. What it cannot cover is the one thing the
+      adapter adds: that applyRuleWrites persists exactly the write set the
+      routine computed, so that the second run sees the state the first run
+      believed it wrote. That link is the whole of idempotence in production.
+
+  - id: HZ11-M3P12-06
+    severity: medium
+    evidence:
+      - "src/platform/db/gate-target.ts:15 through :23 enumerates what the scan does not see and closes 'Those four are the standing residue.' It names a shell or SQL or CLI door, a door reached transitively through an exempted module, a service-role key arriving under another name, and 'a client constructed through an identifier computed at runtime rather than written literally'."
+      - "WITNESSED, a fifth residue that is written literally. `import { PrismaClient as PC } from \"@prisma/client\"; const c = new PC();` -> doorsInSource returns []. The identifier is a literal, not computed, so it falls outside every clause of the stated list."
+      - "WITNESSED, a sixth. `const c = new PrismaClient<{ log: [] }>();` -> doorsInSource returns []. The pattern at test/db/gate-target.test.ts:581 is /new\\s+PrismaClient\\s*\\(/ and a type argument sits between the name and the parenthesis."
+      - "WITNESSED, a seventh, recorded here rather than in HZ11-M3P12-03 because it is a denominator question rather than a lexer one: only the FIRST construction of each kind in a file is examined, so a second unguarded construction below a guarded one is invisible."
+    concrete-fix: >-
+      Widen the construction pattern to allow a type argument list, add a
+      pattern for a constructor called through a local alias by resolving
+      `PrismaClient as X` from the import line, iterate ALL matches of the
+      construction pattern rather than the first, and rewrite the residue
+      paragraph to say what it now cannot see. If any of those is judged not
+      worth building, the paragraph must say so: the defect this finding
+      names is the sentence claiming the list is complete, not the gaps
+      themselves.
+    analysis: >-
+      A stated residue list is the reader's only account of how far to trust a
+      green scan. This one is short by three shapes, two of which a person
+      writing ordinary TypeScript could produce without meaning anything by it.
+
+  - id: HZ11-M3P12-07
+    severity: low
+    evidence:
+      - "test/db/db-guard.test.ts:441 asserts `expect(typeof clientModule.prisma).toBe(\"object\")` and the comment above it says 'the binding is still there to be used: this asserts the module loaded rather than that the import silently failed.'"
+      - "typeof on a Proxy is answered by the TARGET and invokes no trap. WITNESSED: a probe reading `typeof prisma` printed 'object' with prismaHasBeenConstructed() still false immediately after, and the same assertion passes in a process where every real property access throws (witnessed under a non-local target, where typeof returned 'object' and prisma.account threw)."
+      - "The target is `{} as PrismaClient` at src/platform/db/client.ts:103, so the assertion is a statement about an empty object literal."
+    concrete-fix: >-
+      Replace it with an assertion that touches the trap and proves both
+      halves at once, for example that `\"account\" in clientModule.prisma`
+      is true and that prismaHasBeenConstructed() is true immediately after,
+      run in a case where the target is pinned local; and keep the existing
+      zero-construction assertion on a property that does NOT touch the trap,
+      which is what the surrounding test is actually for.
+    analysis: >-
+      Small, but it is the one behavioural assertion standing behind the
+      claim that the lazy binding is still usable, and it is answered by a
+      part of the Proxy that has nothing to do with the client.
+
+  - id: HZ11-M3P12-08
+    severity: low
+    evidence:
+      - "npm ci at this head EXIT=1: 'npm ci can only install packages when your package.json and package-lock.json or npm-shrinkwrap.json are in sync ... Missing: @swc/helpers@0.5.23 from lock file'."
+      - "package-lock.json:7751 pins \"@swc/helpers\": \"0.5.15\" while package-lock.json:7865 records a peer requirement of \">=0.5.17\"."
+      - "This lane worked around it with npm install --no-package-lock so the tracked lock was not rewritten. Not attributed to this phase: git log on package-lock.json shows its last touch predates the fix rounds."
+    concrete-fix: >-
+      Run npm install once on the branch and commit the regenerated
+      package-lock.json, so a clean checkout can npm ci. If the lock is
+      deliberately frozen, add npm ci to the standing gate line so the drift
+      is red at the moment it appears rather than at the next clean clone.
+    analysis: >-
+      It costs whoever next clones this branch the discovery, and it means the
+      gate everyone quotes has never been run from a reproducible install.
+
+criteria:
+  - id: "12.1"
+    quote: "CONVERGENCE, COUNTED. A test in test/domain/counterparty-identity.test.ts parses test/fixtures/belfius-counterparty-identity.pdf through the shipped path and counts DISTINCT counterpartyIdentity keys over its rows."
+    evidence:
+      - "test/domain/counterparty-identity.test.ts:80 expect(identityKeys.size).toBe(12); :86 expect(baselineKeys.size).toBe(24); :102 and :104 assert at least 8 account-basis and at least 8 descriptor-basis rows."
+      - "npm test EXIT=0, 681 tests, this file included."
+      - "The composition clause's strict reading is declared as a plan defect in the work history and the shipped test asserts 8 DESCRIPTOR-BASIS rows, which is the reading the criterion's own arithmetic forces."
+    met: true
+  - id: "12.2"
+    quote: "CONVERGENCE ON THE OWNER'S OWN MONTH ... total rows 39, distinct identity keys EXACTLY 20 against a recorded baseline of 25 ..."
+    evidence:
+      - "NOT WITNESSED by this lane. The real documents were not read: this review had no need to touch them and the measurement is a work-history artifact rather than a code property. test/fixtures/measure-identity-convergence.ts is committed, which is the half that makes the number reproducible."
+    met: false
+  - id: "12.3"
+    quote: "NAMED ONCE, MATCHED AGAIN ... calls assignMerchant EXACTLY ONCE against that group's identity key (asserted by a call counter on the fake merchants port, which must read 1 at the end of the test)."
+    evidence:
+      - "test/application/counterparty-identity-journey.test.ts:163 calls assignMerchant once and :179 asserts expect(ruleWrites).toBe(1)."
+      - "npm test EXIT=0."
+    met: true
+  - id: "12.4"
+    quote: "DIFFERENT COUNTERPARTIES STAY DIFFERENT WHERE THE STORED VALUES DIFFER ... the 12 identity keys partition the 24 rows exactly as THE GENERATOR'S OWN INPUT RECORD says, row by row."
+    evidence:
+      - "test/domain/counterparty-identity.test.ts:174 and :175 assert both directions of the row-to-counterparty mapping have size 12."
+      - "The criterion states of itself that it is not the guard on H12.1. This lane confirms that reading: the truncation merge leaves both rows carrying the SAME stored value, so this criterion's antecedent is false there."
+    met: true
+  - id: "12.5"
+    quote: "THIS PHASE STRIPS NOTHING NEW ... git diff of the baseline against this branch shows no change to CARD_RAIL_PREFIX, CARD_NUMBER_LABEL, CARD_NUMBER_TAIL, CARD_AMOUNT_BEFORE_LABEL, ANGLE_COUNTRY_MARKER, TERMINAL_NOISE_PATTERNS, DATE_FRAGMENT_PATTERNS, POSTAL_CODE_BEFORE_CITY or CITY_TOKENS."
+    evidence:
+      - "WITNESSED by this lane. Each of the nine constants was hashed at origin/main and at HEAD in src/modules/merchants/domain/normalise-counterparty.ts. All nine: unchanged."
+    met: true
+  - id: "12.6"
+    quote: "A ROW MATCHING NO FAMILY IS NOT GUESSED AT ... no truncation, no opening-prefix key and no fallback bucket is ever produced."
+    evidence:
+      - "src/modules/merchants/domain/counterparty-identity.ts:317 returns the descriptor namespace followed by normaliseCounterparty(counterpartyText(row)) with nothing removed."
+      - "isBareIdentityKey exists at src/modules/merchants/domain/counterparty-identity.ts:118 and the trust gate at :262 through :278 refuses an empty compact value before any key is built."
+      - "npm test EXIT=0 with test/domain/counterparty-identity.test.ts included."
+    met: true
+  - id: "12.7"
+    quote: "NO NAMING THE OWNER MADE IS DISCARDED, MEASURED AS EFFECT AND NOT AS ROWS ... a transaction appears in the reported LOSS set IF AND ONLY IF ..."
+    evidence:
+      - "test/property/rederive-loss-reporting.test.ts is committed and passes in the fast gate."
+      - "WITNESSED against the REAL adapter on a scratch database: a seed producing two genuine losses reported exit 1, applied false, lostAssignments 2, and wrote nothing. Accepting by RULE ID through the conflict flag left exit 1 and both losses blocking. Accepting ONE pair left exit 1 with 1 still blocking and 1 accepted. A pair naming a transaction that is not lost cleared nothing (accepted 0). Accepting BOTH pairs reached exit 0, applied true, accepted 2."
+      - "So the acceptance path is pair-granular as the criterion demands, and could not be made to wave through a loss the operator had not named."
+    met: true
+  - id: "12.8"
+    quote: "THE RE-DERIVATION IS IDEMPOTENT, AND IDEMPOTENT MEANS THE SAME ANSWER RATHER THAN A QUIET ONE."
+    evidence:
+      - "test/application/rederive-merchant-rules.test.ts:659 through :681 compares the decision report and the full rule table across two runs, and :722 pins that a second run need not exit 0."
+      - "WITNESSED against the REAL adapter and a real Postgres: run two rewrote 0, added 0, produced a byte-identical decision report and the same exit code, and left merchant_rules identical; run three the same."
+      - "The subject of the shipped test is an in-memory double, declared as a deviation. See finding HZ11-M3P12-05."
+    met: true
+  - id: "12.9"
+    quote: "FACTS ARE NOT REWRITTEN AND THE CHANGE IS A DERIVATION PLUS A RECOMPUTE."
+    evidence:
+      - "src/modules/merchants/application/rederive-rules.ts:1044 through :1063: the only write is deps.merchants.applyRuleWrites with updates and inserts, followed by the existing recompute outside the transaction."
+      - "WITNESSED indirectly: across every probe run on a real database, the transactions table was never written by the routine; only merchant_rules changed."
+      - "npm test EXIT=0 with the port-level assertion in the fast gate."
+    met: true
+  - id: "12.10"
+    quote: "PREFIX AND PATTERN ARE SETTLED ... matchRules refuses to apply a PREFIX or a PATTERN rule to an ACCOUNT-basis key."
+    evidence:
+      - "npm test EXIT=0; the unit assertions live in test/domain/normalise-counterparty.test.ts and test/domain/counterparty-identity-contracts.test.ts."
+      - "Not independently re-derived by this lane beyond reading src/modules/merchants/domain/counterparty-identity.ts:283 through :293, which is the basis predicate the refusal reads."
+    met: true
+  - id: "12.11"
+    quote: "THE TWO SCREENS AGREE WHERE THEY ARE MEANT TO."
+    evidence:
+      - "test/application/counterparty-identity-surfaces.test.ts is committed and asserts the three named divergences at their sites (its SQL pins at :140 through :171 read the fragment by regex)."
+      - "npm test EXIT=0."
+    met: true
+  - id: "12.12"
+    quote: "THE MODULE BOUNDARY HOLDS. The MerchantResolver port still has exactly one member ... The ledger's own counterpartyKey is unchanged."
+    evidence:
+      - "test/application/resolve-merchants.test.ts is committed and passes."
+      - "This lane did not independently diff src/modules/ledger/domain/corrections.ts against the baseline."
+    met: true
+  - id: "12.13"
+    quote: "NOTHING OF THE OWNER'S DATA REACHES THE REPOSITORY. npm run gate:privacy passes ..."
+    evidence:
+      - "WITNESSED: npm run gate:privacy EXIT=0, 'gate:privacy clean'."
+      - "Fleet warning 12 and CLAUDE.md non-negotiable 8 both record that the gate cannot see a merchant name, a place name, a date or an amount inside a file. This lane read no real document, so it adds no evidence on the half the gate cannot check."
+    met: true
+  - id: "12.14"
+    quote: "THE STANDING GATE. npm run typecheck, npm run lint, npm test and npm run gate:privacy all exit 0, and npm run test:e2e exits 0."
+    evidence:
+      - "WITNESSED by this lane at a1c17d5: typecheck EXIT=0, lint EXIT=0, test EXIT=0 (43 files, 681 tests), gate:privacy EXIT=0, gate:tokens EXIT=0, test:e2e see the e2e line in the header."
+      - "One qualifier recorded rather than glossed: node_modules could not be produced by npm ci at this head (finding HZ11-M3P12-08), so the gate above ran against an npm install tree."
+    met: true
+  - id: "12.15"
+    quote: "THE WHOLE-CORPUS EFFECT IS RECORDED, NOT ONLY THE HAPPY FIXTURE."
+    evidence:
+      - "NOT WITNESSED by this lane as a work-history record; test/fixtures/measure-identity-convergence.ts is committed and the fast gate drives it over the committed fixtures."
+    met: false
+  - id: "12.16"
+    quote: "THE ACCOUNT BASIS FAILS CLOSED, AND THIS IS THE GUARD ON H12.1 RATHER THAN CRITERION 12.4."
+    evidence:
+      - "WITNESSED by this lane, against the SHIPPED scrape and the SHIPPED trust gate, on wholly invented values that are deliberately not reproduced here. Two over-long Belgian-prefixed spaced sources differing only after the twelfth digit both scrape to ONE identical sixteen-character value, and that value passes the shape test, the country-length test and mod-97. So the residual is real and it is exactly where the criterion says it is."
+      - "AND IT IS BOUNDED AS RECORDED. The non-Belgian direction is closed deterministically: a French-prefixed over-long source truncates to sixteen characters against a table entry of twenty-seven and is refused. A compact over-long token is not scraped at all (the trailing word boundary fails). And BE is the ONLY entry in the whole table whose length is sixteen, confirmed by grep over src/modules/merchants/domain/counterparty-identity.ts:149 through :168."
+      - "This lane looked for a second mechanism of the same kind and found none: the delimited path stores the cell verbatim with no truncation (src/modules/import/domain/parse-statement.ts:114 through :124), and a whitespace-only cell survives that guard but is refused by the trust gate."
+    met: true
+  - id: "12.17"
+    quote: "THE RE-DERIVATION HAS ONE NAMED INVOCATION POINT AND ONE STATED ORDER."
+    evidence:
+      - "package.json carries rederive:merchant-rules invoking scripts/rederive-merchant-rules.ts, and test/domain/counterparty-identity-contracts.test.ts:121 through :130 reads package.json and asserts it."
+      - "The deployed run is declared as owed by M3-P16 in the work history, which is what the criterion itself provides for."
+    met: true
+  - id: "12.18"
+    quote: "THE RULE SUBJECT IS VALIDATED AT THE WRITE BOUNDARY."
+    evidence:
+      - "WITNESSED in the slow gate: test/e2e/merchants.spec.ts:276 'submitting a PRE-MIGRATION un-namespaced subject surfaces the refusal to the reader' passed."
+      - "npm test EXIT=0 covers the unit half."
+    met: true
+  - id: "12.19"
+    quote: "THE GOVERNING DOCUMENT SAYS WHAT THE CODE DOES."
+    evidence:
+      - "NOT WITNESSED by this lane: the pulse-domain skill text was not diffed against the resolution chain the code now implements."
+    met: false
+  - id: "12.20"
+    quote: "THE RESIDUE IS COUNTED AND NAMED."
+    evidence:
+      - "NOT WITNESSED by this lane; it is a work-history record over the real documents, which this review did not read."
+    met: false
+  - id: "12.22"
+    quote: "THE TRUST TABLE IS PINNED AND SOURCED."
+    evidence:
+      - "src/modules/merchants/domain/counterparty-identity.ts:149 through :168 is the committed table with the registry named in the comment block above it."
+      - "WITNESSED by this lane that the table's contents matter and are load-bearing: BE is the only sixteen-length entry, which is what confines the truncation residual to one country."
+      - "npm test EXIT=0 with the pinning test in test/domain/counterparty-identity-contracts.test.ts."
+    met: true
+  - id: "12.21"
+    quote: "PASS ONE CANNOT LOSE A RULE'S MEANING, FOR ANY KIND."
+    evidence:
+      - "test/property/pass-one-preserves-meaning.test.ts is committed and passes in the fast gate."
+      - "WITNESSED against the real adapter that the empty pattern is left alone: a seed containing an EXACT rule with the empty pattern came through a blocked run with that row byte-identical."
+    met: true
+  - id: "12.23"
+    quote: "THE ROUTINE REFUSES A DATABASE IT WAS NOT TOLD TO WRITE TO, AND THE REFUSAL SHIPS IN THE SAME MERGE AS THE ROUTINE."
+    evidence:
+      - "WITNESSED, the refusal path: npm run rederive:merchant-rules against the LOCAL stack with --expect-host 127.0.0.1 --expect-ref postgres --expect-port 54322 exits 3 with 'the resolved connection carries no project ref in its username and none in its host, so it matches neither endpoint shape this interlock understands. Refusing as unparseable.'"
+      - "WITNESSED, the matching path on the pooler shape: with an invented twenty-character ref on an unresolvable .invalid pooler host on port 5432 and matching --expect-host and --expect-ref, the guard printed 'target confirmed against the host and project ref given on the command line' and the run then failed at connection time with PrismaClientInitializationError, which is proof the interlock approved and the client opened rather than the guard refusing."
+      - "No connection string, password or host was printed on any refusal path this lane exercised."
+      - "The criterion's own closing clause says a review evaluating the implementation that predates it marks it NOT MET AND NOT YET OWED. It is no longer in that position: the work history declares it BUILT IN THIS ROUND, and this lane witnessed it working."
+    met: true
+
+hazard-classes-addressed:
+  - class-id: H12.1
+    probed: >-
+      Ran the SHIPPED scrape and the SHIPPED trust gate over invented adversarial
+      inputs and looked for two different counterparties reaching one key. Found
+      exactly one mechanism, the recorded sixteen-character truncation, and
+      confirmed its bound: only a Belgian-prefixed spaced over-long source can
+      reach it, because BE is the sole sixteen-length entry in the country table,
+      a compact over-long token does not scrape at all, and every other country's
+      truncation is refused on length.
+    cleared-because: >-
+      The trust gate is the guard the criterion says it is and it fails closed on
+      every other input this lane could construct. The residual is real, bounded,
+      recorded as open with mod-97 as its only remaining filter, and closing it
+      needs an importer re-parse, which this phase correctly refuses to do.
+  - class-id: H12.2
+    probed: >-
+      Read the fixture's asserted composition and the baseline assertion rather
+      than the convergent count alone; confirmed the test asserts a baseline of
+      exactly 24 over 24 rows, which is total non-convergence rather than a
+      partly converged fixture.
+    cleared-because: >-
+      The fixture is pinned to reproduce total non-convergence, and the real-month
+      measurement it is meant to be checked against is a committed harness rather
+      than a scratchpad. This lane did not reach the real documents and says so.
+  - class-id: H12.3
+    probed: >-
+      Ran the routine against a real Postgres through the real adapter on a seed
+      whose rules were written under the baseline derivation, and read
+      assignmentsBefore and assignmentsAfter off the report.
+    cleared-because: >-
+      On the applying seed the run reported assignmentsBefore 3 and
+      assignmentsAfter 3 with 0 lost, and the descriptor rule survived beside the
+      added account rule. On the losing seed it reported the loss, exited 1 and
+      wrote nothing.
+  - class-id: H12.4
+    probed: >-
+      Read the single write gate at src/modules/merchants/application/rederive-rules.ts:1009
+      through :1063 and watched the merchant_rules and transactions tables across
+      six probe runs on a real database.
+    cleared-because: >-
+      The only write is applyRuleWrites over merchant_rules; nothing in the
+      routine reaches the transactions table, and the recompute is the existing
+      one.
+  - class-id: H12.5
+    probed: >-
+      Ran npm run gate:privacy at this head and swept this document for content.
+    cleared-because: >-
+      gate:privacy EXIT=0. This lane read no real document, so it added no
+      exposure of its own, and every invented value used in a probe is
+      deliberately absent from this file.
+  - class-id: H12.6
+    probed: >-
+      Read the descriptor branch and the bare-key guard, and confirmed the
+      whitespace-only account path through the delimited importer reaches the
+      trust gate rather than a bare namespace.
+    cleared-because: >-
+      The descriptor key is the full normalised descriptor with nothing removed,
+      and an untrusted or empty account falls to that same key rather than to a
+      shortened one.
+  - class-id: H12.14
+    probed: >-
+      Reproduced the truncation end to end on two invented over-long
+      Belgian-prefixed spaced sources through the shipped regex, then ran the
+      shipped trust gate over the stored value.
+    cleared-because: >-
+      Reproduced exactly as recorded, including that the stored value passes all
+      three trust tests, and confirmed the bound is one country. It is carried as
+      an open parked item with a counterexample test, which is the honest
+      disposition; nothing in this round changes that.
+  - class-id: H12.15
+    probed: >-
+      Called the shipped trust gate with an empty and a whitespace-only value and
+      followed the delimited importer's empty-cell guard.
+    cleared-because: >-
+      compactAccount reduces both to the empty string and the trust gate refuses
+      before any key is built, so the row takes its own full descriptor.
+  - class-id: H12.16
+    probed: >-
+      Read the first-wins loop at src/modules/import/domain/belfius-current-account-template.ts:266
+      through :272 and confirmed the ordering is decided by matchAll order.
+    cleared-because: >-
+      The behaviour is pinned end to end by criterion 12.16's fifth case and
+      parked with its measurement, which is the correct disposition for an
+      importer decision that cannot be answered without a re-parse.
+  - class-id: H12.17
+    probed: >-
+      Checked that the row-to-counterparty record is emitted by the generator
+      rather than transcribed from counterpartyIdentity's output, by reading the
+      test's import.
+    cleared-because: >-
+      The mapping is imported from the generator and asserted in both directions
+      at test/domain/counterparty-identity.test.ts:174 and :175.
+  - class-id: H12.25
+    probed: >-
+      Seeded a real database with an already-namespaced rule alongside bare ones
+      and ran the routine; also ran it three times consecutively.
+    cleared-because: >-
+      Runs two and three rewrote zero patterns, so an already-namespaced rule is
+      left exactly as it is and is not namespaced a second time.
+  - class-id: H12.26
+    probed: >-
+      Seeded a real database with an EXACT rule whose pattern is the empty string
+      and ran the routine.
+    cleared-because: >-
+      The empty-pattern row came through byte-identical, so it was not turned
+      into a bare namespace.
+  - class-id: H12.27
+    probed: >-
+      Ran the routine twice on a real database with a seed whose matched rows
+      split across the two bases, and compared formatDecisionReport output.
+    cleared-because: >-
+      The decision report was byte-identical across runs while the matched counts
+      legitimately differed, which is exactly the separation the criterion asks
+      for.
+  - class-id: H12.28
+    probed: >-
+      Established that the table's contents are load-bearing by showing that BE
+      being the only sixteen-length entry is what confines the truncation
+      residual, then confirmed a full-contents pin exists in the fast gate.
+    cleared-because: >-
+      The table is committed with its registry source and pinned, so an edit is
+      red rather than silent.
+  - class-id: H12.29
+    probed: >-
+      Read criterion 12.16's fifth case and confirmed it names the parked item
+      that owns the question.
+    cleared-because: >-
+      First-wins is pinned by an end-to-end assertion rather than left
+      incidental, so a change to last-wins or longest-wins is red.
+  - class-id: H12.18
+    probed: >-
+      Read the report's assignmentsBefore and assignmentsAfter on a real run
+      rather than the row count, and checked that a rule left in place is counted
+      separately from a rule whose effect survives.
+    cleared-because: >-
+      The measurement is the assignment set, not the row count, and the promotion
+      is what keeps the effect alive for a row that moved to the account basis.
+  - class-id: H12.19
+    probed: >-
+      Attacked the acknowledge path four ways on a real database: by rule id
+      through the conflict flag, by one pair of two, by a pair naming a
+      transaction that is not lost, and by both pairs.
+    cleared-because: >-
+      Exactly the pairs named were cleared, the conflict flag did not clear a
+      loss, a bogus pair cleared nothing, and naming both reached exit 0. So a
+      blocking condition is clearable and only by naming it.
+  - class-id: H12.31
+    probed: >-
+      Read the two biconditionals in test/property/rederive-loss-reporting.test.ts
+      and ran a real seed whose rows change hands, checking that a real loss
+      blocks.
+    cleared-because: >-
+      The losing seed reported both losses with their transaction ids and exited
+      1 without writing. This lane did not construct a world reaching the
+      claimant-merchant class against the real adapter and says so.
+  - class-id: H12.32
+    probed: >-
+      Constructed a seed whose rows split across bases and confirmed a run that
+      loses nothing exits 0 and applies rather than blocking.
+    cleared-because: >-
+      The applying seed reported 0 lost and exit 0 with assignments preserved, so
+      an ordinary mixed-basis migration is not stopped on a loss that did not
+      happen.
+  - class-id: H12.20
+    probed: >-
+      Ran the shipped npm script end to end twice, once refused and once
+      approved, so the invocation point was exercised rather than read.
+    cleared-because: >-
+      package.json carries the script, a test asserts it, and this lane invoked
+      it. One consequence is declared in the work history and judged below: it
+      cannot be invoked against any database an operator can create locally.
+  - class-id: H12.21
+    probed: >-
+      Ran the slow gate, which carries the browser witness for the refusal.
+    cleared-because: >-
+      test/e2e/merchants.spec.ts:276 passed: a pre-migration un-namespaced
+      subject surfaces the refusal to the reader.
+  - class-id: H12.22
+    probed: >-
+      Attempted no independent check of the skill text.
+    cleared-because: >-
+      NOT WITNESSED by this lane, recorded as such at criterion 12.19 rather than
+      cleared on evidence.
+  - class-id: H12.23
+    probed: >-
+      Checked that the measurement harness is committed at
+      test/fixtures/measure-identity-convergence.ts and takes a path argument.
+    cleared-because: >-
+      The harness is committed and driven by the fast gate over the committed
+      fixtures, so the numbers are re-runnable by anyone.
+  - class-id: H12.24
+    probed: >-
+      Read criterion 12.20's requirement; did not reach the real documents.
+    cleared-because: >-
+      NOT WITNESSED by this lane, recorded as such at criterion 12.20.
+  - class-id: H12.7
+    probed: >-
+      Hashed the nine card-grammar and always-on constants at origin/main and at
+      HEAD.
+    cleared-because: >-
+      All nine are byte-unchanged, so no new descriptor family was induced and
+      M3-P6's grouping cannot have moved through the normaliser.
+  - class-id: H12.8
+    probed: >-
+      Read the two grouping sites and their null handling, and ran the slow gate
+      which exercises both screens.
+    cleared-because: >-
+      Both sites key on counterpartyIdentity, both map a null account to an
+      absent field before calling it
+      (src/modules/overview/domain/month-projection.ts:134 through :136 and
+      src/modules/merchants/adapters/merchant-repository.ts:357 through :359),
+      and the agreement test is committed. A null reaching the trust gate would
+      throw inside compactAccount; this lane checked both mappings for that and
+      both are correct.
+  - class-id: H12.9
+    probed: >-
+      Confirmed on a real database that a merchant paid through one account and
+      also reached by a descriptor rule keeps both rules and one merchant id.
+    cleared-because: >-
+      The applying run left the descriptor rule in place and added the account
+      rule pointing at the same merchant, which is the recovery the criterion
+      describes.
+  - class-id: H12.10
+    probed: >-
+      Read the port member and the resolver, and relied on the committed key-set
+      assertion.
+    cleared-because: >-
+      The port carries one member and the resolver no longer re-normalises, so a
+      raw text cannot be passed by accident.
+  - class-id: H12.11
+    probed: >-
+      Checked that the ledger's own counterparty key is untouched by this
+      phase's derivation.
+    cleared-because: >-
+      counterpartyIdentity is a separate function in the merchants domain and the
+      ledger's corrections key is not unified with it, which the normaliser's own
+      warning forbids.
+  - class-id: H12.12
+    probed: >-
+      RAN IT TWICE, and three times, against a real Postgres through the real
+      Prisma adapter, comparing the full merchant_rules table and the decision
+      report between runs.
+    finding: HZ11-M3P12-05
+  - class-id: H12.13
+    probed: >-
+      Read the basis predicate the refusal reads and relied on the committed unit
+      assertions.
+    cleared-because: >-
+      matchRules decides basis from the namespace prefix, which normaliseCounterparty
+      cannot produce, so a PREFIX or PATTERN rule cannot reach an account key.
+  - class-id: H12.30
+    probed: >-
+      Attacked the interlock and the approval register it writes to: ran the
+      shipped command against a mismatched target, against a local target,
+      against a matching invented target, and then wrote the approval register
+      from a module that is not the migration command and had done no work.
+    finding: HZ11-M3P12-02
+
+deviations-judged:
+  - deviation: >-
+      files-to-touch, which does not carry prisma/seed.ts. Declared in fix round
+      ten under CRITERIA finding CR9-M3P12-05, which found this set and the one
+      below missing from a block that had declared eleven others.
+    serves-plan-intent: true
+    reasoning: >-
+      The seed was the one unguarded door in the tree and fleet warning 18
+      records it. Leaving a real door open to stay inside a declaration would
+      have been the wrong trade, and the amendment is in flight.
+  - deviation: "files-to-touch, which does not carry test/property/, though criteria 12.7 and 12.21 both name a property test in that directory BY PATH."
+    serves-plan-intent: true
+    reasoning: >-
+      Two criteria require files there by path, so the declaration was short and
+      the code is right. This lane confirmed both files exist and pass.
+  - deviation: >-
+      Criterion 12.17, the half requiring the phase work history to record the
+      command actually run AGAINST THE DEPLOYED DATABASE with its exit code and
+      its printed before-and-after assignment-set sizes.
+    serves-plan-intent: true
+    reasoning: >-
+      Decision D-46 forbids running it before the code deploys and this branch
+      is not deployed, so the criterion cannot be met here without violating the
+      decision it pins. The criterion itself provides for the split.
+  - deviation: "Criteria 12.7, 12.8 and 12.9, which speak of \"a seeded database\" holding MerchantRule rows written under the baseline derivation."
+    serves-plan-intent: false
+    reasoning: >-
+      The declaration is honest and the convention is this tree's, but the
+      substitution removes the only link the guarantees actually depend on in
+      production: that the adapter persists the write set the routine computed.
+      This lane closed the gap by hand and it holds, which is why the finding is
+      medium rather than high, but the tree proves none of it. See
+      HZ11-M3P12-05.
+  - deviation: "files-to-touch, which does not name .gitignore."
+    serves-plan-intent: true
+    reasoning: >-
+      Fixing the tracked symlink without widening the ignore pattern would have
+      left the next worktree to repeat it. The correction that the blob is still
+      reachable in history is made in the same entry, which is the honest half.
+  - deviation: >-
+      files-to-touch, which does not name src/app/globals.css, test/e2e/,
+      messages/en.json, messages/nl.json, messages/fr.json or
+      src/app/(app)/merchants/page.tsx.
+    serves-plan-intent: true
+    reasoning: >-
+      Criterion 12.18 requires the refusal to reach the reader, which cannot be
+      met inside the declared set. Correcting the conflicts-with entry for M3-P9
+      in the same change is the part that matters to whoever schedules M3-P9.
+  - deviation: "Criterion 12.1's composition clause, \"at least 8 rows carry none\", under its strict reading."
+    serves-plan-intent: true
+    reasoning: >-
+      The strict reading collides with the plan's own fixture step. Asserting 8
+      descriptor-basis rows is the only reading the plan admits, and contorting
+      code for the other would have been worse.
+  - deviation: "Criterion 12.5's committed baseline table, test/fixtures/baseline-descriptor-keys.json."
+    serves-plan-intent: true
+    reasoning: >-
+      An invented identifier shape added to the allow list with its provenance
+      is exactly what non-negotiable 8 asks for.
+  - deviation: "Step 13, \"run the full gate before calling the slice done\", read as one clean run of every gate."
+    serves-plan-intent: true
+    reasoning: >-
+      Recording the re-run rather than summarising it away is the right
+      disclosure. This lane's own slow-gate run is recorded in the header.
+  - deviation: "Criterion 12.23, added to the plan AFTER this implementation was built."
+    serves-plan-intent: true
+    reasoning: >-
+      Built in this round rather than deferred, and this lane witnessed both the
+      refusal and the approving path working.
+  - deviation: "files-to-touch, which does not name src/platform/db/guard-cli.ts or src/platform/db/resolve-env.ts."
+    serves-plan-intent: true
+    reasoning: >-
+      Criterion 12.23 calls an interlock that resolves differently from its
+      command decorative, so one shared implementation is the only way to meet
+      it. This lane confirmed the extraction leaves guard-cli's behaviour
+      unchanged by reading both.
+  - deviation: "Criterion 12.17, the deployed run."
+    serves-plan-intent: true
+    reasoning: >-
+      Owed by M3-P16, whose entry condition is the deploy. Correctly not done
+      here.
+  - deviation: "Criterion 12.23's consequence: the routine cannot be rehearsed against any database an operator can create."
+    serves-plan-intent: true
+    reasoning: >-
+      WITNESSED by this lane: the shipped command against the local stack exits
+      3 as unparseable, and no --expect-ref value can change that, because a
+      local connection carries no ref in either field. The judgement is that
+      this serves the plan's intent, since criterion 12.23 specifies exactly
+      this and a one-off command aimed at one deployed database should not have
+      a second mode. The residual is real and is why it is judged rather than
+      cleared: the first time this command runs through its own entry point
+      will be against the database holding the owner's real finances, and the
+      criteria lane cannot see that because criterion 12.23 asks for a matching
+      case per REMOTE endpoint shape only. It is disclosed here rather than
+      raised as a finding because the work history declares it in the same
+      words.
+  - deviation: "files-to-touch, which does not name src/modules/overview/."
+    serves-plan-intent: true
+    reasoning: >-
+      The overview fold is one of the four places the plan's own step 4 names,
+      so the declaration was short rather than the change wrong.
+  - deviation: "files-to-touch, which does not name playwright.config.ts, src/platform/db/gate-target.ts or src/platform/db/guard.ts."
+    serves-plan-intent: true
+    reasoning: >-
+      The gate's own target had to be decided somewhere, and the conflicts-with
+      entry for M3-P9 is corrected in the same change with the module-scope
+      throw distinguished from a globalSetup, which is the distinction that
+      matters to the reader it is addressed to.
+  - deviation: >-
+      Criterion 12.23, which requires the interlock to resolve the environment
+      "the way the command it guards resolves it" and describes that reading as
+      ".env only for a variable the shell does not carry OR carries empty".
+    serves-plan-intent: true
+    reasoning: >-
+      The criterion repeats a false claim about the Prisma CLI's empty-variable
+      handling and the code says what is true instead, erring stricter, which is
+      the direction a fail-closed interlock must err in. This lane confirmed the
+      other half of that comment independently: with DATABASE_URL absent from
+      the shell and a .env in the working directory naming a non-local host, the
+      client did NOT read the .env and failed with 'Environment variable not
+      found: DATABASE_URL'. So resolveClientDbUrl's claim that the client reads
+      process.env and nothing else is true at Prisma 6.19.3.
+  - deviation: "CRITERIA finding CR5-M3P12-11, which asks that a pass-two promotion adding no rule get its own outcome token."
+    serves-plan-intent: true
+    reasoning: >-
+      Distinct outcome tokens are visible in the report this lane read off a
+      real run (not-promoted-untrusted-account, not-promoted-several-accounts),
+      so the distinction is carried.
+  - deviation: "CRITERIA finding CR5-M3P12-05 and the dispatch that accepted it, both of which describe the development-server refusal as gated on isProduction() being false."
+    serves-plan-intent: false
+    reasoning: >-
+      This entry is now FALSE of the tree it describes. It states in the present
+      tense that the refusal is gated on NODE_ENV being exactly "development"
+      and that the wider predicate is not implementable; src/platform/db/guard.ts:157
+      ships the wider predicate, and this lane measured that the cost the entry
+      calls unpayable is not paid (npm test EXIT=0, 681 tests, zero client
+      constructions, against a non-local ambient target). See HZ11-M3P12-04.
