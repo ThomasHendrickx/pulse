@@ -29,7 +29,7 @@ import { join } from "node:path";
 //           -850,00 MASTERCARD AFREKENING NUMMER 51 (INTERNAL, settles
 //                   the card statement below; card line items are the
 //                   only counted spend)
-// gj-pot-b.csv (account B, IBAN BE20539007547099, same profile 1):
+// gj-pot-b.csv (account B, IBAN BE59539007547099, same profile 1):
 //   August: +300,00 from A (INTERNAL, the other transfer leg)
 //           -20,00 Bakkerij Centrum (SPEND)
 // gj-card.csv (card account, profile 2):
