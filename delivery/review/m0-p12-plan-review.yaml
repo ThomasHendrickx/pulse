@@ -75,7 +75,67 @@
 # delivery/review/pulse-v1-plan-adversarial.yaml) are `kind: finding` for
 # the same reason: a plan review has no work history and no deviations.
 
+#
+# ===========================================================================
+# ROUND TWO, THE CONFIRMATION PASS. Judged at plan head d374d1d.
+#
+# work-log (incremental, newest last):
+# - moved the worktree: git fetch origin claude/m0-p12-plan-held-evidence;
+#   git merge --no-edit. Merge made by ort, one file changed in the plan
+#   (128 insertions, 25 deletions). HEAD is the merge 1332d4f, and
+#   `git merge-base --is-ancestor d374d1d HEAD` exits 0, so the head under
+#   review is d374d1d. `git diff d374d1d HEAD -- delivery/plan/pulse-v02.yaml`
+#   is EMPTY, so the plan text I read is d374d1d's and not c116079's.
+# - five hunks against c116079 (9858, 9880, 10652, 10656, 10675), all inside
+#   the two criteria. Against origin/main the plan is still one file.
+# - structural pass repeated exactly as in round one, not by eye: both sides
+#   parsed with PyYAML, every top-level key except `phases` identical
+#   (DECISIONS included, so D-55, D-56, D-59 and D-60 are untouched), phase
+#   id order identical, exactly two phases differ, in each only `acceptance`,
+#   key sets equal so no field was added or dropped, criterion id order
+#   identical in both, and exactly one criterion differs per phase (14.15,
+#   15.9). steps, hazard-classes, migrations, conflicts-with,
+#   files-to-touch, parallelizable and citations all unmoved. So no Flow
+#   enum member, no migration, and no decision record moved in this round
+#   either.
+# - code read for this round, in this worktree:
+#   overview-repository.ts:215-232 read in full, twelve returned figures
+#   enumerated; the four citations the criterion now makes (:216, :217, :219,
+#   :231) are each exact.
+#   month-projection.ts:201 is
+#   `const difference = raw.changeInPotCents - (income - spend - netToReserves);`
+#   and reconciles at :207-212 is
+#   `difference === 0 && unmatchedInternalCount === 0 && unresolvedCount === 0
+#   && inTransitCount === 0 && uninterpretedCount === 0`, so the books-close
+#   assertion pins all four counts at zero AFTER the correction and nothing
+#   before it.
+#   classify-flow.ts:125 returns UNRESOLVED for a zero amount, :98 returns
+#   SPEND for a settlement-pattern debit with no card import, and both the
+#   refund arm (:113) and the settlement mirror arm (corrections.ts:44) are
+#   guarded by cardAccountIds, so on this journey's non-card account the sign
+#   alone decides for every non-zero row.
+#   prisma/schema/import.prisma:114-121 carries bookingDate, valueDate,
+#   amountCents, counterpartyName, counterpartyIban, description, reference,
+#   and no marker of any kind: the citation the shape test rests on is exact.
+# - round-one findings: all six answered. Each carries a ROUND TWO paragraph
+#   in its own `analysis` recording what closed it and what I checked rather
+#   than accepted. Their severities are left as recorded; a severity is a
+#   fact about when it was written and is not rewritten later.
+# - two new findings this round, M0P12-A-007 (medium) and M0P12-A-008 (low).
+#   Neither is high or critical, and neither is a repeat: 007 is the seam
+#   left in the repair of 002, and 008 is the one figure the four-figure set
+#   does not reach.
+# ===========================================================================
+
 kind: finding
+# ROUND TWO STATE OF THIS VERDICT, so the list below cannot be misread. All
+# six round-one findings are ANSWERED at plan head d374d1d and each carries
+# its closure in its own `analysis`; their recorded severities are left
+# untouched because a severity is a fact about the round that wrote it. The
+# two findings that still demand an edit are M0P12-A-007 (medium) and
+# M0P12-A-008 (low). NOTHING HIGH OR CRITICAL SURVIVES THIS ROUND. The
+# verdict stays `revise` because two findings still name an edit, not
+# because the repair failed.
 verdict: revise
 produced-by: claude (Opus 5, claude-opus-5)
 findings:
@@ -114,6 +174,25 @@ findings:
       assertion in THIS spec that the movement it measures is real. The
       ordering is not the risk (conflicts-with already runs M3-P14 first);
       fixture identity is.
+
+      ROUND TWO, judged at plan head d374d1d: CLOSED, and closed three times over rather than once.
+      FIRST, the pre-correction floor is now present and it is the exact mirror of the spend half
+      that made the spend half safe: the journey asserts 'AT LEAST ONE CREDIT OF THAT ACCOUNT IN THE
+      MONTH'S INCOME' before the correction, so the fall it later measures is known non-zero for the
+      same reason the spend fall always was. SECOND, the strict inequality is present: 'the spec
+      asserts the income recorded BEFORE the correction is STRICTLY GREATER than the income asserted
+      after it, so a statement carrying no credit makes this criterion RED rather than passing with
+      two equal hand-written strings and nothing measured'. Two equal strings can no longer be
+      green. THIRD, and this is the one I attacked hardest, the coupling is now by path AND the
+      content at that path is pinned in the other phase. Naming a path alone would bind nothing,
+      because a path is a string and a file can be edited under it. What makes it bind is that
+      criterion 14.15 witness SEVEN now asserts the FILE'S SHAPE: 'exactly one POSITIVE row whose
+      counterpartyIban is absent or belongs to no account of this household, which is the interest
+      credit'. Delete the interest credit from that file and M3-P14 goes red at the shape test;
+      change its amount and both phases go red at their hand-written strings; point 15.9 at
+      test/e2e/month-view.spec.ts:1377 instead, which the criterion now excludes by name, and the
+      floor goes red. There is no edit to that fixture that leaves both phases green and the income
+      half measuring nothing. The finding is answered.
   - id: M0P12-A-002
     severity: high
     evidence:
@@ -161,6 +240,16 @@ findings:
       reopened' and stop looking. A claim of that weight needs a witness, and
       this is the round to add one, because the amendment is the act that
       creates the surface.
+
+      ROUND TWO, judged at plan head d374d1d: SUBSTANTIALLY CLOSED, one seam left, carried forward
+      as the new finding M0P12-A-007 rather than as a repeat of this one. The prose is now an
+      assertion: 'a Playwright test asserts that the held entry's own rendered text, with the text
+      of the row lines it contains excluded, carries the account label, the period row count and the
+      state copy and NO MONETARY AMOUNT AT ALL', and witness FIVE's balance-word test is extended
+      over that entry in all three locales. That is the shape this finding asked for and it catches
+      the placement it names, a subtotal above or beside the rows. What it does not catch is a
+      subtotal rendered AS one of the row lines, because the exclusion is defined by a phrase rather
+      than by a handle. See M0P12-A-007.
   - id: M0P12-A-003
     severity: medium
     evidence:
@@ -189,6 +278,19 @@ findings:
       not income-before minus interest. An implementer meets a red test and
       resolves the contradiction by guesswork. The fix costs one clause and
       makes the two halves symmetric.
+
+      ROUND TWO, judged at plan head d374d1d: CLOSED. The income half is now named over the class:
+      'the rows of that account the wrongly ringed state counted as INCOME, of which AT LEAST ONE IS
+      THE INTEREST CREDIT criterion 14.15 witness SEVEN pins', with the reason stated and the
+      citation exact. I checked the class boundary rather than accepting it. In this journey the
+      reserve set is empty and the pot set holds only the account itself, the account is not a card
+      so neither the settlement mirror arm (corrections.ts:44, guarded by cardAccountIds) nor the
+      refund arm (classify-flow.ts:113, same guard) can fire, and a settlement-pattern debit with no
+      card import returns SPEND rather than INTERNAL (classify-flow.ts:98). So every credit on that
+      account reaches classify-flow.ts:121 and is INCOME, and incomeSigned at overview-
+      repository.ts:216 is a FILTER on that flow, so the total falls by all of them. The class
+      formulation is also robust where the explanatory sentence is approximate, because it is
+      defined by the flow the row carried and not by the row's sign.
   - id: M0P12-A-004
     severity: medium
     evidence:
@@ -223,6 +325,17 @@ findings:
       pot-change unpinned in the one journey that walks the whole wrong
       answer back also leaves the plan carrying a false sentence about the
       code, which the next round will inherit as settled.
+
+      ROUND TWO, judged at plan head d374d1d: CLOSED, and correctly extended past what I asked for.
+      I asked for pot-change; the coordinator was right that rowCount at overview-repository.ts:231
+      clears on the same filter, and the criterion now pins four figures on both sides of the act
+      with each citation exact: spend at :217, income at :216, pot-change at :219, row count at
+      :231, all four verified in this worktree, plus reserves-net recorded and asserted byte
+      identical. The clause also now says which of the two opposite cases it is in, against
+      criterion 15.1's first arm where the rows keep a flow either way, which was the thing that
+      made the original count wrong. On completeness of the set see M0P12-A-008: four is right for
+      the journey as the criterion constructs it, and the one route the construction does not close
+      is a zero-amount row.
   - id: M0P12-A-005
     severity: medium
     evidence:
@@ -258,6 +371,18 @@ findings:
       of the witness while delivering none of the interest axis the witness
       exists to buy. Stating the shapes costs one sentence and the witness
       already contains the rule.
+
+      ROUND TWO, judged at plan head d374d1d: CLOSED. The three shapes are now the test's predicate
+      and they are exactly the ones the engine reads. I checked they are well formed rather than
+      merely present. They are mutually exclusive: a reserve-to-reserve movement has a
+      counterpartyIban belonging to a household account, so it can match neither the positive shape
+      nor the negative shape whichever direction it runs. The 'exactly one' wording buys something
+      the finding did not ask for and is worth recording: any EXTRA row in that file whose
+      counterparty belongs to no account of the household breaks the count, so the file's other rows
+      must all have pot counterparts, which is the witness's own stated premise now enforced rather
+      than assumed. The schema citation is exact (prisma/schema/import.prisma:114 through :121
+      carries bookingDate, valueDate, amountCents, counterpartyName, counterpartyIban, description
+      and reference, and no marker of any kind).
   - id: M0P12-A-006
     severity: low
     evidence:
@@ -288,6 +413,109 @@ findings:
       removes the ambiguity, and pinning reserves-net closes it under either
       reading.
 
+      ROUND TWO, judged at plan head d374d1d: CLOSED, and closed with a tripwire rather than only
+      with a clarification. The criterion now says 'THE STATEMENT FILE of the fixture witness SEVEN
+      pins' and states that 'This journey registers NOTHING before uploading', which settles the
+      ambiguity in the direction the amendment intended. Better than that, it turns the other
+      reading into a red test: reserves-net is recorded and asserted byte identical across the
+      correction, and the criterion says why, that a run inheriting witness SEVEN's whole HOUSEHOLD
+      would classify the reserve-to-reserve row RESERVE at classify-flow.ts:62 through :68 and move
+      a fifth figure. So the wrong reading now fails instead of passing quietly.
+
+  - id: M0P12-A-007
+    severity: medium
+    evidence:
+      - "delivery/plan/pulse-v02.yaml criterion 14.15 witness SEVEN, round two: 'a Playwright test asserts that the held entry's own rendered text, with the text of the row lines it contains excluded, carries the account label, the period row count and the state copy and NO MONETARY AMOUNT AT ALL'."
+      - "The same sentence names the placements it catches and they do not include the one that defeats it: 'an implementation that renders a per-account held subtotal above or beside its rows goes RED here'. A subtotal rendered AS a row line, which is the ordinary markup for a total inside a list of rows, is inside the excluded text."
+      - "The exclusion has no handle. 'the row lines it contains' is defined nowhere in the criterion. Witness THREE supplies a per-row handle in practice ('keyed on each row's own rendered identity'), but nothing says the exclusion uses it, so an exclusion written over the row class or the row testid swallows a footer element carrying the same class or testid."
+      - "The extended balance-word test is scoped differently from the no-amount test in the same sentence: it runs over 'that entry's rendered text' with no exclusion at all, so it also reads the three row descriptors the fixture supplies, which is a second, opposite seam (a descriptor carrying a balance word in any of the three languages fails a test aimed at a heading)."
+    concrete-edit: >-
+      In criterion 14.15 witness SEVEN, replace 'a Playwright test asserts
+      that the held entry's own rendered text, with the text of the row lines
+      it contains excluded, carries the account label, the period row count
+      and the state copy and NO MONETARY AMOUNT AT ALL, so an implementation
+      that renders a per-account held subtotal above or beside its rows goes
+      RED here while passing every other witness of this criterion; and
+      witness FIVE's balance-word test is extended to run over that entry's
+      rendered text in each of the three locales' with 'a Playwright test
+      COUNTS the money-formatted strings rendered anywhere under the held
+      entry and asserts the count is exactly the number of rows the held read
+      returned for that account, so an implementation that renders a
+      per-account held subtotal goes RED here wherever it puts it, above the
+      rows, beside them, or as one more row line, and no exclusion has to be
+      described for it to hold; the entry's own text with those row elements
+      removed is separately asserted to carry the account label, the period
+      row count and the state copy and nothing else; and witness FIVE's
+      balance-word test is extended to run over THAT SAME reduced text, the
+      entry's own text without its row lines, in each of the three locales,
+      so it reads the entry's headings and not the fixture's descriptors'.
+    analysis: >-
+      This is the residue of M0P12-A-002 and it is a different and much
+      smaller defect: round one had no witness at all, round two has a
+      witness with a seam. The repair is right in kind and the plan-writer
+      took the point. What is left is that a subtraction has to describe what
+      it subtracts, and the description is the weak part: 'the row lines it
+      contains' is a phrase, and an implementer who is NOT trying to defeat
+      it writes the natural DOM query, excludes every element carrying the
+      row handle, and a total rendered as the last such element disappears
+      from the assertion along with the rows. A count does not have that
+      problem, because a hidden figure raises the count whatever element it
+      hides in, and it is satisfiable with the markup this phase already
+      owes: witness THREE requires the rows individually keyed, and the money
+      renderer is one mandatory format per the pulse-frontend skill, so
+      counting money-formatted strings under one element is a DOM query and a
+      regular expression. The second half of the edit fixes a smaller thing
+      in the opposite direction: as written, the balance-word test reads the
+      row descriptors too, so an invented Dutch descriptor containing a
+      balance word would fail a test aimed at a heading. Both halves are one
+      sentence.
+  - id: M0P12-A-008
+    severity: low
+    evidence:
+      - "delivery/plan/pulse-v02.yaml criterion 15.9, round two: 'pot-change falls by the signed net of the same rows whose credits leave income and whose debits leave spend, so the three sums move TOGETHER and their combination is unchanged ... differenceCents therefore stays where it was'."
+      - "src/modules/overview/domain/month-projection.ts:201: difference = changeInPot - (income - spend - netToReserves). Expanded over the aggregate's own filters, difference equals the signed sum of the INTERNAL and UNRESOLVED rows, which is what the file's own comment at :160 through :176 states. So the derivation holds exactly when every flowed row on the corrected account is INCOME or SPEND, and the criterion never asserts that."
+      - "'This journey registers NOTHING before uploading' closes the RESERVE and INTERNAL routes by construction (an empty reserve set, a pot set holding only the account itself, and no card import so a settlement-pattern debit returns SPEND at src/modules/ledger/domain/classify-flow.ts:98). It does not close the UNRESOLVED route: src/modules/ledger/domain/classify-flow.ts:125 returns UNRESOLVED for a zero-amount row."
+      - "Criterion 14.15 witness SEVEN's shape test permits one: its three shapes speak of a POSITIVE row and a NEGATIVE row, so a zero-amount row matches none of them and the 'exactly one' counts are unaffected."
+      - "Nothing goes red in that run. unresolvedCents and unresolvedCount at src/modules/overview/adapters/overview-repository.ts:220 and :221 are a fifth and sixth moving figure and are pinned nowhere; the four pinned strings are still written correctly from the fixture's arithmetic; and the books-close assertion is made only AFTER the correction, where src/modules/overview/domain/month-projection.ts:207 through :212 is satisfied because the cleared row has left every count."
+    concrete-edit: >-
+      In criterion 15.9, after 'differenceCents therefore stays where it
+      was', add 'which holds because every flowed row on that account is
+      INCOME or SPEND and the criterion asserts that rather than assuming it:
+      the journey registers nothing, so no counterparty on that statement
+      sits in any declared set and no row on it can be INTERNAL or RESERVE,
+      and the spec asserts recon-difference is recorded before the correction
+      and byte identical after it, so a zero-amount row in the pinned file,
+      which classifies UNRESOLVED (src/modules/ledger/domain/classify-flow.ts:125)
+      and which criterion 14.15 witness SEVEN's positive-and-negative shapes
+      do not exclude, goes red here instead of moving a fifth figure this
+      journey pins nothing about'.
+    analysis: >-
+      Answering the coordinator's question directly: the set of four is
+      COMPLETE for the journey as the criterion constructs it, and I checked
+      every figure the aggregate returns rather than the ones the criterion
+      names. Reading src/modules/overview/adapters/overview-repository.ts:215
+      through :232, twelve figures come back. Four move and are pinned on both
+      sides (income :216, spend :217, changeInPot :219, rowCount :231). One
+      moves only if the account carries a RESERVE row and is pinned byte
+      identical (:218), and the criterion says why none exists. Four move only
+      if the account carries an INTERNAL row (:222 through :229), and the
+      journey's own construction makes that unreachable. uninterpretedCount
+      (:230) does not rise, for the reason the criterion gives, the ring
+      scoping decision D-56 puts in M3-P14, and it is pinned at zero after the
+      correction by the books-close assertion, since reconciles requires all
+      four counts zero (month-projection.ts:207 through :212). That leaves
+      exactly one pair, unresolvedCents and unresolvedCount at :220 and :221,
+      reachable by exactly one row shape, a zero amount. THE CONSEQUENCE IS
+      SMALL AND I AM RANKING IT LOW ON PURPOSE: it cannot let a real defect
+      pass, because rowCount and pot-change are pinned by hand-written strings
+      on both sides and an incomplete clearing moves them. What it can do is
+      make the criterion's own stated derivation false in a run that is green,
+      and the criterion invites exactly that misreading by offering the
+      derivation as a diagnosis: 'a run in which differenceCents does move has
+      cleared some of those rows and not others'. In the zero-amount case that
+      diagnosis names the wrong cause. One clause states the premise and pins
+      the figure that would show it.
+
 # ---------------------------------------------------------------------------
 # CAPTURED: the --type verdict attempt, run first as the dispatch requires.
 #
@@ -312,6 +540,11 @@ findings:
 # of thirty-two across the two phases, against a dispatch that forbids
 # relitigating the rest of either. There is no work history and no deviation
 # to judge. Filling those fields would mean claiming walks not performed.
+# RE-RUN IN ROUND TWO against the same document, same six structural
+# failures (criteria, deviations-judged, framing, kind, phase,
+# review-contract), so the contract still does not fit and the fallback is
+# the same one round one made.
+#
 # Validated instead as the finding contract, exit 0:
 #
 #   $ npx tiphys validate --type finding --context /home/user/wt-m0p12-adv \
@@ -434,3 +667,83 @@ findings:
 #     is unguarded is fixture IDENTITY, not order, which is why finding
 #     M0P12-A-001 asks for a named path and a strict inequality rather than
 #     for a sequencing change.
+
+# ---------------------------------------------------------------------------
+# ROUND TWO: WHAT WAS EXAMINED AND FOUND SOUND. The attacks that failed,
+# recorded because naming them is a stronger statement than "the repair
+# looks right".
+#
+# R2-1. THE PATH BINDING IS REAL, which was the sharpest of the coordinator's
+#    questions and the one I expected to break. A path on its own binds
+#    nothing: it is a string in two specs and the file under it can be
+#    edited without either spec noticing. What makes it bind here is that
+#    the CONTENT at that path is asserted in the OTHER phase, by shape.
+#    Criterion 14.15 witness SEVEN asserts exactly one positive row whose
+#    counterpartyIban is absent or belongs to no account of the household,
+#    exactly one row addressed to the second reserve account, and exactly
+#    one negative row addressed to no account of the household, and it
+#    asserts each of their amounts against hand-written strings. I could
+#    not construct an edit to that file that leaves both phases green and
+#    15.9's income half measuring nothing: remove the credit and M3-P14's
+#    shape test goes red; change an amount and the hand-written strings in
+#    both phases go red; add a second credit with no household counterparty
+#    and the 'exactly one' goes red; point the journey at
+#    test/e2e/month-view.spec.ts:1377, which 15.9 now excludes by name, and
+#    the strict-inequality floor goes red. Three mechanisms where round one
+#    asked for one.
+#
+# R2-2. THE FOUR SHAPES ARE MUTUALLY EXCLUSIVE AND THE COUNTS ARE TIGHT.
+#    Checked rather than assumed: the reserve-to-reserve row carries a
+#    counterpartyIban belonging to a household account, so it matches
+#    neither the positive shape nor the negative shape whichever direction
+#    it runs, and the three counts cannot double-count one row. The
+#    'exactly one' wording buys more than the finding asked for, because
+#    any extra row in that file whose counterparty belongs to no account of
+#    the household breaks a count, which turns the witness's own premise
+#    (that every other row has a pot counterpart) from an assumption into
+#    an assertion.
+#
+# R2-3. THE CLASS BOUNDARY ON THE INCOME HALF IS THE RIGHT ONE. On this
+#    journey's account every credit reaches classify-flow.ts:121, because
+#    the reserve set is empty, the pot set holds only the account itself,
+#    the settlement mirror arm and the refund arm are both guarded by
+#    cardAccountIds and the account is not a card, and a settlement-pattern
+#    debit with no card import returns SPEND at classify-flow.ts:98. The
+#    formulation is also robust where the criterion's explanatory sentence
+#    is approximate, because the class is defined by the flow the row
+#    carried rather than by its sign.
+#
+# R2-4. THE IDENTITY REASONING IS CORRECT AS FAR AS IT REACHES, and I
+#    verified it by expansion rather than by reading the sentence.
+#    difference = changeInPot - (income - spend - netToReserves)
+#    (month-projection.ts:201). Over the aggregate's own filters that
+#    equals the signed sum of the INTERNAL and UNRESOLVED rows, which is
+#    what the file's comment at :160 through :176 already states. So
+#    clearing a set of rows leaves difference unchanged exactly when that
+#    set carries no INTERNAL and no UNRESOLVED row. The criterion's
+#    construction ('registers NOTHING before uploading') closes the
+#    INTERNAL and RESERVE routes by itself. The UNRESOLVED route is the one
+#    gap and it is finding M0P12-A-008; it is ranked low because it cannot
+#    let a real defect pass, only make a green run's stated explanation
+#    wrong.
+#
+# R2-5. THE NO-SUM ASSERTION IS SATISFIABLE WITH THE MARKUP THIS PHASE
+#    SHIPS, which the coordinator asked separately from whether it is
+#    tight. Witness THREE already requires each held row to be keyed on its
+#    own rendered identity, so per-row elements exist and are addressable;
+#    the money renderer is one mandatory format per the pulse-frontend
+#    skill, so a monetary amount is recognisable by pattern; and the entry
+#    already carries a label, a count and state copy that a no-amount
+#    assertion must tolerate, which a money-format test does. Nothing in
+#    the assertion is unbuildable. It is the EXCLUSION that is loose, not
+#    the assertion, which is why M0P12-A-007 asks for a count rather than
+#    for different markup.
+#
+# R2-6. HOUSE RULES AND SCOPE, re-checked on this round's added lines: zero
+#    non-ASCII characters in the added plan text, so no em dash; English
+#    throughout; no amount, no counterparty, no date and no account number
+#    anywhere in it, the second reserve account still delegated as an
+#    obligation with no identifier written into the plan; and no
+#    occurrence of queue, cron, event bus, cache, redux, zustand, component
+#    library, budget or goal. The migrations note of both phases is byte
+#    identical to origin/main, so D-59 stands and no Flow member is added.
