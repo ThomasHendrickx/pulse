@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -192,6 +192,59 @@ describe("the guard's reading and the Prisma CLI's differ on the EMPTY case, and
       } else {
         process.env["DATABASE_URL"] = previous;
       }
+    }
+  });
+
+  // WHICH .env, PINNED (fix round nine, CRITERIA finding CR7-M3P12-06). Every
+  // comment in src/platform/db/ used to say "the .env file at the package
+  // root" while readDotEnvValue joins process.cwd(). The two are the same only
+  // when the command is invoked from the package root. This test states which
+  // of the two the code means, so the corrected comments are a checked claim
+  // rather than a second sentence nothing verifies.
+  test("THE LOCATION IS THE WORKING DIRECTORY: a subdirectory finds nothing and refuses, it does not climb to a package root", () => {
+    const dir = scratch();
+    const nested = join(dir, "nested");
+    mkdirSync(nested);
+    const previousCwd = process.cwd();
+    const previous = process.env["DATABASE_URL"];
+    try {
+      delete process.env["DATABASE_URL"];
+
+      // THE CONTROL: from the directory that HOLDS the .env, the value is
+      // found. Without this the refusal below could be a broken reader.
+      process.chdir(dir);
+      expect(resolveDbEnv("DATABASE_URL")).toBe(LOCAL_FROM_DOT_ENV);
+
+      // AND ONE LEVEL DOWN: nothing. The reader does not climb, so the guard
+      // finds no target and its caller refuses. That is a round trip, not a
+      // run against a database nobody named.
+      process.chdir(nested);
+      expect(resolveDbEnv("DATABASE_URL")).toBeUndefined();
+    } finally {
+      process.chdir(previousCwd);
+      if (previous === undefined) {
+        delete process.env["DATABASE_URL"];
+      } else {
+        process.env["DATABASE_URL"] = previous;
+      }
+    }
+  });
+
+  // AND THE COMMENTS SAY THE SAME THING THE TEST DOES. A corrected sentence
+  // that drifts back is the shape clause R-087 exists for, so the wording is
+  // pinned rather than trusted.
+  test("no comment in the database platform directory still says the reader looks at the package root", () => {
+    const dbDir = join(__dirname, "..", "..", "src", "platform", "db");
+    for (const name of ["gate-target.ts", "resolve-env.ts", "guard-cli.ts"]) {
+      const source = readFileSync(join(dbDir, name), "utf-8");
+      // The phrase survives only where it is QUOTED as the old, false
+      // wording, which is how clause R-087 requires a correction to be
+      // written. A line carrying it unquoted is a live claim again.
+      const claims = source
+        .split("\n")
+        .filter((line) => /\.env file at the package root/.test(line))
+        .filter((line) => !line.includes('"'));
+      expect(claims).toEqual([]);
     }
   });
 

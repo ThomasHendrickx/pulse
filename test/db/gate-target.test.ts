@@ -371,6 +371,20 @@ describe("the mechanism is actually installed", () => {
     expect(spec).toContain("test.skip(");
   });
 
+  // BOTH SPECS THAT OPEN A DOOR SKIP IN DEPLOY-VERIFY (fix round nine,
+  // CRITERIA finding CR7-M3P12-05). The admin-client spec asserted a local
+  // target after a skip that fires only on an ABSENT key, and deploy-verify
+  // carries a present deployed one, so the assertion turned a spec that should
+  // skip into a red stage. Nothing in the fast gate could see that, so this
+  // pins the ordering in the source.
+  test("the spec that opens a Supabase admin client skips in deploy-verify BEFORE it asserts a local target", () => {
+    const spec = read("test", "e2e", "auth.spec.ts");
+    expect(spec).toContain("PLAYWRIGHT_BASE_URL");
+    expect(spec.indexOf("PLAYWRIGHT_BASE_URL")).toBeLessThan(
+      spec.indexOf("assertGateApiTargetIsLocal()"),
+    );
+  });
+
   test("the one spec that opens a Prisma client guards before it writes", () => {
     const spec = read("test", "e2e", "merchant-rule-write.spec.ts");
     expect(spec).toContain("new PrismaClient()");

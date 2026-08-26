@@ -25,7 +25,9 @@
 //
 // WHAT IS ACTUALLY TRUE. The PRISMA CLI takes a variable from the shell when
 // the shell carries it AT ALL, empty included, and falls back to the .env
-// file at the package root only when the shell does not carry it. resolveDbEnv
+// file in the CURRENT WORKING DIRECTORY only when the shell does not carry it.
+// See the note on readDotEnvValue below for why that is the location and not
+// the package root. resolveDbEnv
 // below deliberately treats a shell-EMPTY value as ABSENT, so it falls back
 // where the CLI would abort.
 //
@@ -76,6 +78,28 @@ import { join } from "node:path";
 // interlock (gate-target.ts) must read the .env file DIRECTLY rather than
 // through a loader that declines to override a shell variable, and this is
 // the reader this tree already has.
+//
+// IT READS THE WORKING DIRECTORY, NOT THE PACKAGE ROOT, and every comment in
+// this directory used to say the package root (fix round nine, CRITERIA
+// finding CR7-M3P12-06). The old sentence is quoted rather than deleted
+// (clause R-087): "the .env file at the package root". The two are the same
+// only when the command is invoked from the package root, which every npm
+// script in this repository is, so nothing sanctioned was ever wrong; but the
+// operator instructions in gate-target.ts told a person to create a file at a
+// location the code does not read, and a present-tense claim about behaviour
+// that nothing checks is exactly what clause R-087 names.
+//
+// THE WORKING DIRECTORY IS THE CORRECT READING AND NOT A BUG TO FIX. The
+// Prisma CLI resolves its own .env relative to the invocation, so an interlock
+// resolving from its own module location would diverge from the command it
+// guards the moment the two differ, and criterion 12.23 calls an interlock
+// that resolves differently from its command decorative. The failure
+// direction of the working-directory reading is a REFUSAL: invoked from a
+// subdirectory the gate finds no target and throws GateDbTargetRefused, which
+// is a round trip rather than a run against something nobody named.
+//
+// test/db/db-guard.test.ts pins WHICH of the two locations is meant, so the
+// paragraph above is a checked claim rather than a comment.
 export const readDotEnvValue = (name: string): string | undefined => {
   const dotEnvPath = join(process.cwd(), ".env");
   if (!existsSync(dotEnvPath)) {

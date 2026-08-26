@@ -23,7 +23,7 @@
 // project, with a working password. The two web servers had the same hole
 // from the other direction: playwright.config.ts spread `...process.env` into
 // both of them, and Next's own loader does not override a variable the shell
-// already carries, so a .env file at the package root was not a pin. The
+// already carries, so a .env file was not a pin. The
 // plan names this exact shape as hazard H12.30 and criterion 12.23 bought a
 // guard for ONE command; this is the guard for the gate.
 //
@@ -41,8 +41,14 @@
 //      purpose, so a value under one of them was put there on purpose. This
 //      is how an operator points the gate at a database they made.
 //
-//   2. The .env file at the package root, read directly rather than through
-//      a loader that declines to override. This is the ordinary local case.
+//   2. The .env file IN THE WORKING DIRECTORY THE COMMAND WAS INVOKED FROM,
+//      read directly rather than through a loader that declines to override.
+//      This is the ordinary local case, and for every npm script in this
+//      repository that directory IS the package root. The wording was
+//      corrected in fix round nine (CRITERIA finding CR7-M3P12-06): it said
+//      "at the package root", which is where the reader does NOT look. See
+//      readDotEnvValue in ./resolve-env for why the working directory is the
+//      right reading rather than a defect.
 //
 //   3. Nothing. Refuse.
 //
@@ -68,9 +74,12 @@
 // direction, but it is a real change and rediscovering it from the error
 // message costs whoever hits it. Do ONE of these instead:
 //
-//   a .env file at the package root carrying DATABASE_URL, DIRECT_URL,
+//   a .env file in the directory you invoke the gate FROM, which for
+//   `npm run test:e2e` is the package root, carrying DATABASE_URL, DIRECT_URL,
 //   NEXT_PUBLIC_SUPABASE_URL and the two keys, all pointing at the local
 //   stack. This is the ordinary case and what `npm run test:e2e` expects.
+//   Invoked from a subdirectory the gate finds no .env and refuses, which is
+//   a round trip and not a run against something nobody named.
 //
 //   or export PULSE_GATE_DATABASE_URL, PULSE_GATE_DIRECT_URL,
 //   PULSE_GATE_SUPABASE_URL, PULSE_GATE_SUPABASE_ANON_KEY and
@@ -182,7 +191,7 @@ export const assessGateDbTarget = (
     return {
       allowed: false,
       reason:
-        "no source named a database for this gate. The gate does not fall back to an ambient DATABASE_URL, because a variable the container happens to carry is not a target anyone chose. Set PULSE_GATE_DATABASE_URL, PULSE_GATE_DIRECT_URL and PULSE_GATE_SUPABASE_URL, or put DATABASE_URL, DIRECT_URL and NEXT_PUBLIC_SUPABASE_URL in a .env file at the package root.",
+        "no source named a database for this gate. The gate does not fall back to an ambient DATABASE_URL, because a variable the container happens to carry is not a target anyone chose. Set PULSE_GATE_DATABASE_URL, PULSE_GATE_DIRECT_URL and PULSE_GATE_SUPABASE_URL, or put DATABASE_URL, DIRECT_URL and NEXT_PUBLIC_SUPABASE_URL in a .env file in the directory you are invoking this from, which for every npm script in this repository is the package root.",
     };
   }
 
@@ -236,7 +245,7 @@ export const gateDbCandidates = (
     },
   },
   {
-    source: "the .env file at the package root",
+    source: "the .env file in the working directory",
     values: {
       DATABASE_URL: fromDotEnv("DATABASE_URL"),
       DIRECT_URL: fromDotEnv("DIRECT_URL"),

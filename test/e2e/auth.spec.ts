@@ -64,11 +64,29 @@ test("a wrong password surfaces the localized sign-in failure line", async ({
 // Supabase user with no users row must RECOVER to a rendered sign-in screen,
 // not live-lock between the middleware and the household-context guard. The
 // orphan state is constructed through the admin API exactly as the criteria
-// reviewer constructed it. Skipped when no service role key is in the
-// environment (deployed runs); the skip is visible in the report.
+// reviewer constructed it.
+//
+// THIS IS A LOCAL-STACK SPEC AND IT SKIPS IN DEPLOY-VERIFY (fix round nine,
+// CRITERIA finding CR7-M3P12-05). The comment here used to say only "Skipped
+// when no service role key is in the environment (deployed runs)", and that
+// was true before the target assertion below was added and is quoted rather
+// than deleted (clause R-087). It stopped being the whole story: the
+// deploy-verify config deliberately skips the gate interlock, so that
+// environment legitimately carries a DEPLOYED Supabase URL and key, the
+// absence skip therefore does not fire, and the assertion does, turning a spec
+// that is supposed to skip into a red stage. The direction was safe, a refusal
+// rather than a write, but it was still a red gate on a correct run and
+// nothing in the fast gate could see it. The deploy-verify skip is now
+// explicit and comes FIRST, the way test/e2e/merchant-rule-write.spec.ts
+// already does it.
 test("an auth user without a household link recovers to sign-in instead of looping", async ({
   page,
 }) => {
+  test.skip(
+    process.env.PLAYWRIGHT_BASE_URL !== undefined,
+    "constructs an auth user through a service-role key; in deploy-verify mode the suite opens no project of its own",
+  );
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   test.skip(
