@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LinkPending } from "@/platform/ui/link-pending";
 import { getLocale, getTranslations } from "next-intl/server";
 import { Amount, formatCents } from "@/platform/ui/amount";
 import { maskCardNumbers } from "@/platform/ui/mask-card-number";
@@ -429,6 +430,7 @@ const EmptyState = async () => {
           data-testid="empty-state-accounts-link"
         >
           {t("emptyAccountsCta")}
+          <LinkPending />
         </Link>
       </p>
       <p>
@@ -438,6 +440,7 @@ const EmptyState = async () => {
           data-testid="empty-state-import-link"
         >
           {t("emptyImportCta")}
+          <LinkPending />
         </Link>
       </p>
     </section>
@@ -469,18 +472,22 @@ export const MonthScreen = async ({
             <Link
               className="month-nav"
               aria-label={t("prevMonthNav")}
+              data-testid="month-step-previous"
               href={previousHref}
             >
               {"‹"}
+              <LinkPending />
             </Link>
             <h1 data-testid="month-title">{monthTitle(overview.month, locale)}</h1>
             {overview.canGoNext ? (
               <Link
                 className="month-nav"
                 aria-label={t("nextMonthNav")}
+                data-testid="month-step-next"
                 href={nextHref}
               >
                 {"›"}
+                <LinkPending />
               </Link>
             ) : null}
             {overview.partial ? (
@@ -519,6 +526,7 @@ export const MonthScreen = async ({
               {overview.unresolvedCounterpartyCount === 1
                 ? t("unresolvedOne")
                 : t("unresolvedMany")}
+              <LinkPending />
             </Link>
           ) : null}
           <div className="month-pot">

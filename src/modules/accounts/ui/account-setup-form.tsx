@@ -275,11 +275,25 @@ export const AccountSetupForm = ({
       >
         {copy.addRow}
       </button>
+      {/* THE BUSY STATE ON THIS ONE (M3-P10). This submit does NOT render
+          through src/platform/ui/submit-button.tsx, and the reason is
+          mechanical rather than a preference: useFormStatus reports the
+          pending state of a form that was submitted THROUGH a form action,
+          and this form deliberately uses an onSubmit handler and a
+          transition instead (see the note above about React resetting a
+          form after a form action resolves). So useFormStatus reports
+          nothing here and the leaf would be inert. The transition's own
+          pending flag is the same fact, and it drives the same vocabulary:
+          aria-busy is what src/app/globals.css draws the busy mark from,
+          and disabled is what stops a second submission. The sibling that
+          shares this mechanism, and the file to change if the mark ever
+          changes, is src/platform/ui/submit-button.tsx. */}
       <button
         type="submit"
         className="account-setup-submit"
         data-testid="register-accounts"
         disabled={pending}
+        aria-busy={pending ? "true" : undefined}
       >
         {copy.submit}
       </button>

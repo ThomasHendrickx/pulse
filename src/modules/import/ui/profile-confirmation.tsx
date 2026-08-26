@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { LinkPending } from "@/platform/ui/link-pending";
 import { getTranslations } from "next-intl/server";
 import { Amount } from "@/platform/ui/amount";
+import { SubmitButton } from "@/platform/ui/submit-button";
 import { maskCardNumbers } from "@/platform/ui/mask-card-number";
 import type { ParsedRow } from "../domain/parse-statement";
 import { confirmImportAction, previewImportAction } from "./actions";
@@ -88,7 +90,12 @@ export const ProfileConfirmation = async ({
            screen and linking to it. */
         <p className="import-note" data-testid="landing-unregistered">
           {t.rich("landingUnregistered", {
-            setup: (chunks) => <Link href="/accounts">{chunks}</Link>,
+            setup: (chunks) => (
+              <Link href="/accounts">
+                {chunks}
+                <LinkPending />
+              </Link>
+            ),
           })}
         </p>
       ) : landingLabel === undefined ? (
@@ -177,9 +184,9 @@ export const ProfileConfirmation = async ({
                 defaultValue={specJson}
                 spellCheck={false}
               />
-              <button type="submit" formAction={previewImportAction}>
+              <SubmitButton formAction={previewImportAction}>
                 {t("previewAgain")}
-              </button>
+              </SubmitButton>
             </details>
           </>
         )}
@@ -208,9 +215,9 @@ export const ProfileConfirmation = async ({
           </fieldset>
         ) : null}
 
-        <button type="submit" className="import-primary" data-testid="confirm-import">
+        <SubmitButton className="import-primary" testId="confirm-import">
           {t("confirmAndImport")}
-        </button>
+        </SubmitButton>
       </form>
     </section>
   );
