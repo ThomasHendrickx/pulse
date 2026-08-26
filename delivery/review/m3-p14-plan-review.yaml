@@ -1,0 +1,368 @@
+# Adversarial plan review of phase M3-P14 (account setup), the rewritten
+# single-phase form of the M0-P6 iteration. Reviewer worktree wt-m0p6-adv,
+# branch claude/m0-p6-plan-review, plan head origin/claude/m0-p6-plan-accounts
+# merged at 5416303. The phase text read is delivery/plan/pulse-v02.yaml:7670
+# through :8104.
+#
+# WHY THIS DOCUMENT IS A FINDING SET AND NOT A VERDICT. Unchanged from rounds
+# one and two, whose headers carry the captured tiphys output: a verdict judges
+# an IMPLEMENTED phase against a work history, requires phase, criteria,
+# deviations-judged and review-contract, and carries concrete-fix (a fix to
+# CODE) where a plan review carries concrete-edit (an edit to the PLAN). M3-P14
+# has no work history. Validated as --type finding, as the three precedent
+# reviews in delivery/review/ are.
+#
+# THIS ROUND IS DELIBERATELY SMALL. The owner's instruction of 2026-08-26 binds
+# it: two phases became one, twenty-one criteria became nine, twenty-seven
+# hazard classes became nine, and an implementer is building in parallel. A
+# finding here has to be worth interrupting a build for. Wording, tightenable
+# criteria, missing harnesses and absent instrumentation were all seen and all
+# left alone. Four findings, one high and three medium.
+#
+# WHAT WAS WALKED. All nine criteria and all nine hazard classes from the plan
+# text; the six steps; files-to-touch, migrations and conflicts-with; the
+# report-code-disagreement entries for this phase (delivery/plan/pulse-v02.yaml
+# :2068 through :2200); and the code the phase cites, at origin/main rather than
+# only at the phase's grounding commit 75ec85d, which is what surfaced the one
+# high finding. Round-two finding R2-001, the savings statement uploaded by a
+# household that has registered nothing, is ANSWERED by criterion 14.5's gate
+# and needs nothing further.
+#
+# THE OWNER'S SCENARIO WAS TRACED THROUGH THE CODE AND IT LANDS. Four bank
+# accounts plus four savings accounts is the eight of criterion 14.1; two credit
+# cards are excluded at setup by decision D-48 and criterion 14.6; one uploaded
+# bank statement's transfers to the pot siblings take the pot arm at
+# src/modules/ledger/domain/classify-flow.ts:73 and become INTERNAL, its
+# transfers to the savings siblings take the reserve arm at :62 and become
+# RESERVE, and merchant resolution runs over INCOME and SPEND rows only, so none
+# of the seven is offered as a merchant to name. No finding disputes the shape
+# of the phase. Findings 1 and 4 dispute two premises inside it.
+#
+# THE THREE FLAGGED RISKS, ANSWERED IN THE REPORT AND IN FINDINGS 3 AND 4.
+# Risk 3, the deleted decision D-56, was tested link by link and the chain HOLDS
+# for the households this phase creates. Card accounts are the link that looked
+# breakable and is not: deriveDeclaredSets at
+# src/modules/ledger/domain/ledger-transaction.ts:56 through :70 puts a card
+# account (a POT account with no account number) into potAccountIds, so
+# src/modules/ledger/application/interpret-window.ts:37 loads its rows and no
+# card row can sit uninterpreted on a non-pot account. No finding is raised
+# against the deletion.
+#
+# HOUSE RULES. No em dash in this file, checked. No amount, no counterparty, no
+# date from a row and no account or card number anywhere in it or in its commit
+# message. English throughout.
+kind: finding
+verdict: FIX-ROUND-NEEDED
+produced-by: claude (Opus 5, claude-opus-5)
+findings:
+  - id: PR7-001
+    severity: high
+    evidence:
+      - >-
+        Step 2 (delivery/plan/pulse-v02.yaml:7739) instructs: "Give an account
+        number ONE canonical form and ONE validity test, and put both in
+        src/platform ... The canonical form is uppercase with whitespace
+        removed. The validity test is DR-0028's ... non-empty after
+        canonicalisation, a country code the pinned country-length table
+        carries, the exact length that table assigns it, and the ISO 7064
+        mod-97 check."
+      - >-
+        ALL FOUR OF THOSE ALREADY EXIST ON origin/main, in one file, shipped.
+        Captured: `git cat-file -p
+        origin/main:src/modules/merchants/domain/counterparty-identity.ts |
+        grep -n` returns IBAN_LENGTH_BY_COUNTRY at :149 ("each participating
+        country code exactly one total IBAN length ... A COUNTRY CODE THIS
+        TABLE DOES NOT CARRY IS REFUSED"), compactAccount at :174, mod97 at
+        :179 ("ISO 7064 mod-97-10, computed in chunks"), and
+        isTrustedCounterpartyAccount at :262 through :277, whose body is
+        exactly the four tests step 2 describes: empty check, table lookup,
+        length equality, and mod97(compact) === 1.
+      - >-
+        M3-P12 IS MERGED, not pending. Captured: `git ls-tree --name-only
+        origin/main delivery/work-history/` lists m3-p12.yaml, and `git log
+        --oneline origin/main` shows e87e841 "merge: counterparty identity, so
+        a naming matches the counterparty and not the whole description" with
+        502da43 and b324d87 behind it.
+      - >-
+        THE PLAN BRANCH CANNOT SEE IT. Captured: `git merge-base --is-ancestor
+        e87e841 origin/claude/m0-p6-plan-accounts` returns NO, and the merge
+        base of the plan branch with main is 999d378. The phase is grounded at
+        75ec85d, and `git cat-file -p 75ec85d:src/modules/merchants/domain/`
+        lists only merchant-review.ts, merchant-rule.ts and
+        normalise-counterparty.ts. So the plan writer read a tree in which the
+        file genuinely did not exist, and the sentence in M3-P12's own step at
+        delivery/plan/pulse-v02.yaml:6543 ("The uppercasing and whitespace
+        removal named here IS the platform canonical form M3-P14 introduces,
+        imported rather than expressed a second time") was written as an
+        instruction to a phase that had already shipped without it.
+      - >-
+        CONSEQUENCE FOR CRITERION 14.4 (delivery/plan/pulse-v02.yaml:7922). It
+        requires "a unit test enumerates the call sites and asserts exactly one
+        definition under src/ of the canonical form, of the pinned
+        country-length table and of the mod-97 implementation, all three in the
+        platform module, with every consumer importing them", and it names
+        exactly ONE existing sibling to reconcile: the whitespace-removal
+        helper at src/modules/import/domain/belfius-current-account-template.ts
+        :90. It does not name counterparty-identity.ts, which is the actual
+        second definition of all three. An implementer who builds the platform
+        module and writes the enumeration test over the sites 14.4 NAMES goes
+        GREEN with two live definitions of the country-length table and two of
+        mod-97 in the tree. An implementer who writes it over all of src/ goes
+        RED and is blocked, because the work to satisfy it is a move of four
+        exports out of the merchants domain.
+      - >-
+        AND THE PHASE IS NOT ALLOWED TO DO THAT WORK. files-to-touch
+        (delivery/plan/pulse-v02.yaml:7824) lists no path under
+        src/modules/merchants and no counterparty-identity test file, while
+        `git grep -n` on origin/main shows the consumers that a move must
+        rewire: src/modules/merchants/application/assign-merchant.ts:16 through
+        :20 and :119, src/modules/merchants/application/rederive-rules.ts:86
+        through :90, :408 and :420,
+        src/modules/merchants/application/index.ts:68 through :78,
+        src/modules/merchants/domain/merchant-review.ts:13 and
+        src/modules/merchants/domain/merchant-rule.ts:41, plus four committed
+        test files (test/domain/counterparty-identity.test.ts,
+        test/domain/counterparty-identity-contracts.test.ts,
+        test/application/counterparty-identity-journey.test.ts,
+        test/application/counterparty-identity-surfaces.test.ts).
+      - >-
+        conflicts-with (delivery/plan/pulse-v02.yaml:8096) states "M3-P12 and
+        M3-P13 ... this phase runs strictly BEFORE both, per decision D-52".
+        For M3-P12 that ordering is spent: it is on main.
+    concrete-edit: >-
+      Three edits, all inside M3-P14. ONE, replace criterion 14.4's first
+      sentence with: "A unit test enumerates the call sites and asserts exactly
+      one definition under src/ of the canonical form, of the pinned
+      country-length table and of the mod-97 implementation, all three in the
+      platform module. The definitions M3-P12 already shipped at
+      src/modules/merchants/domain/counterparty-identity.ts (compactAccount
+      :174, IBAN_LENGTH_BY_COUNTRY :149, mod97 :179, isTrustedCounterpartyAccount
+      :262) are MOVED into that platform module rather than copied, and
+      counterparty-identity.ts imports them, so its own behaviour is unchanged
+      and its four committed test files still pass; the existing
+      whitespace-removal helper at
+      src/modules/import/domain/belfius-current-account-template.ts:90 is NAMED
+      in that test and is either replaced by the platform form or recorded as
+      the one permitted exception with its reason." TWO, add to files-to-touch:
+      src/modules/merchants/domain/counterparty-identity.ts,
+      src/modules/merchants/application/assign-merchant.ts,
+      src/modules/merchants/application/rederive-rules.ts,
+      src/modules/merchants/application/index.ts,
+      src/modules/merchants/domain/merchant-review.ts,
+      src/modules/merchants/domain/merchant-rule.ts, and
+      test/domain/counterparty-identity.test.ts,
+      test/domain/counterparty-identity-contracts.test.ts,
+      test/application/counterparty-identity-journey.test.ts,
+      test/application/counterparty-identity-surfaces.test.ts. THREE, replace
+      criterion 14.3's opening with "The server action refuses an account
+      number that the platform validity test refuses" and delete its
+      restatement of the four rules, keeping its four refusal assertions and
+      its named-error and preserved-rows clauses unchanged, so the rules have
+      one statement in the plan as well as one in the code. Amend conflicts-with
+      to record that M3-P12 is merged at e87e841 and that D-52's ordering now
+      binds M3-P13 only.
+    analysis: >-
+      This is the only finding that changes what the implementer builds, and it
+      is worth the interruption precisely because the implementer is building
+      now: the platform account-number module is step 2, near the front of the
+      work, and writing it from scratch is a wasted afternoon that ends in a
+      criterion that cannot be satisfied without touching six merchants files
+      the phase does not declare. The phase is not wrong to want the code in
+      src/platform; the ledger domain imports nothing from another module
+      (.claude/skills/pulse-domain/SKILL.md:168), so platform is the only home
+      four modules can reach. What changed under the plan is that the code is
+      already written, in the wrong module, by a phase that shipped while the
+      plan was being rewritten. The residual hazard if this is left alone is
+      not immediate wrong money: a registered account's transfers classify as
+      INTERNAL or RESERVE and never reach the naming screen, so the merchants
+      copy is not consulted for them. It is drift. Two country-length tables
+      and two mod-97 implementations, one owned by setup and one owned by
+      merchant grouping, is one rule that can go two ways, and criterion 14.4
+      exists in this plan for exactly that reason.
+  - id: PR7-002
+    severity: medium
+    evidence:
+      - >-
+        Step 5 (delivery/plan/pulse-v02.yaml:7775) says the refusal is "one new
+        machine reason on the existing union
+        (src/modules/import/application/ports.ts:72 through :81) ... whose
+        message names the setup screen and links to it", and then that "A
+        statement whose own account is registered in the SAVINGS ring is
+        refused by the same mechanism ... and its message names the ring
+        correction and what that correction costs".
+      - >-
+        Criterion 14.5 (delivery/plan/pulse-v02.yaml:7945) requires those two
+        cases to render DIFFERENT text. Case one: "the rendered message names
+        the setup screen and links to it". Case two: "a message that names the
+        ring correction AND WHAT IT COSTS, that the account leaves the reserves
+        block and every transfer into it stops counting as money set aside; a
+        message naming the remedy without its price fails this criterion".
+      - >-
+        ONE REASON CANNOT CARRY TWO MESSAGES IN THIS CODEBASE. Captured from
+        src/modules/import/application/ports.ts:71 through :81:
+        ImportFailureReason is a flat union of string literals
+        ("mixed-accounts", "undetectable", "unparseable", "layout-unsupported",
+        "balance-mismatch", "extraction-failed", "layout-version-mismatch")
+        with no payload. Captured from src/modules/import/ui/status-keys.ts:6
+        through :10: IMPORT_STATUS_KEYS maps each tag to exactly one message
+        key ("no-file" to importNoFile, "bad-spec" to importBadSpec,
+        "declaration-needed" to importDeclarationNeeded). One tag, one
+        catalogue key, one message.
+      - >-
+        So an implementer following step 5 literally adds one tag and one
+        catalogue key, and then 14.5 cannot go green on both cases. The
+        available escape is a single message that covers both, which tells a
+        household whose account was never registered at all to correct a ring,
+        and tells a household whose savings account is correctly registered to
+        go and register it. Both are a wrong instruction on a screen, and the
+        second is the message decision D-55 exists to deliver.
+    concrete-edit: >-
+      In step 5, replace "Anything else is refused with one new machine reason
+      on the existing union" with "Anything else is refused with TWO new machine
+      reasons on the existing union, one for an own account that is registered
+      nowhere and one for an own account registered in the savings ring, each
+      whitelisted in src/modules/import/ui/status-keys.ts and translated
+      separately in all three catalogues, because the union carries no payload
+      and one tag renders one message." In the same step replace "is refused by
+      the same mechanism" with "is refused by the same gate under the second of
+      those reasons". Add to criterion 14.5, after its second case, the
+      sentence: "The two cases must resolve to two DISTINCT machine reasons and
+      two distinct catalogue keys; the test asserts the rendered text of the
+      two differs and that neither message tells the household to do the other
+      one's remedy."
+    analysis: >-
+      A one-word defect with a real consequence and a cheap edit, which is why
+      it is worth sending. The savings-ring refusal is the entire user-facing
+      half of decision D-55: it is the moment a household is told that the
+      product will not import this statement and what to do instead. If it
+      collapses into the generic not-registered message, the household is sent
+      to a setup screen where the account is already listed, sees no problem,
+      and has no route forward. Two tags cost one line each in the union, the
+      whitelist and three catalogues.
+  - id: PR7-003
+    severity: medium
+    evidence:
+      - >-
+        Hazard H14.4 (delivery/plan/pulse-v02.yaml:8050) states the failure and
+        names its only guard: "A savings account is marked as a spending
+        account at setup, so its transfers pair as internal instead of showing
+        as money set aside, the reserves block understates what was saved, and
+        nothing on any screen distinguishes that month from a correct one. The
+        explanation given before the ring is answered is the only guard v1 has."
+      - >-
+        Criterion 14.2 (delivery/plan/pulse-v02.yaml:7886) discharges it with:
+        "the copy explaining what each ring means renders BEFORE the ring
+        control and is present in all three catalogues", closing with "a screen
+        that asks the question without answering it first fails this
+        criterion".
+      - >-
+        RENDERS BEFORE IS DOM ORDER, AND DOM ORDER IS SATISFIED BY HIDDEN TEXT.
+        A details element, a collapsed "what do these mean?" panel, a
+        visually-hidden block or a tooltip payload all sit earlier in the
+        document than the ring control and all satisfy the criterion as
+        written, while the owner answers eight rings having read nothing. The
+        criterion goes green and the guard does not exist. That is the vacuous
+        pass, and it lands on the one hazard the phase says has no second line
+        of defence.
+      - >-
+        The frontend skill already forbids the shape this criterion permits:
+        .claude/skills/pulse-frontend/SKILL.md:105, cited by this phase's own
+        grounding, is the rule that a screen never hides an unknown. The
+        criterion is the place that rule has to be made testable, because a
+        Playwright locator that has been resolved but never asserted visible
+        passes over a collapsed element.
+    concrete-edit: >-
+      In criterion 14.2, replace "that the copy explaining what each ring means
+      renders BEFORE the ring control and is present in all three catalogues"
+      with "that the copy explaining what each ring means is VISIBLE without any
+      interaction, asserted with toBeVisible at 390 CSS pixels wide with no
+      click, hover or expansion first, and precedes the first ring control in
+      the document, and is present in all three catalogues". Add as the last
+      sentence of the criterion: "A collapsed disclosure, a tooltip or a
+      visually-hidden block satisfies document order and fails this criterion,
+      because the guard is that the sentence was on the screen when the answer
+      was given."
+    analysis: >-
+      This is the risk the phase itself flags as knowingly weakened, and the
+      honest judgement is that the explanation is a thin guard even at its best:
+      a person setting up an app reads little and the ring words are not obvious
+      to a Belgian household that thinks in current and savings accounts. But
+      thin and absent are different, and as written the criterion cannot tell
+      them apart. Eight rows on a phone is exactly the layout where a designer
+      reaches for a collapsible explainer to save vertical space, so this is not
+      a contrived implementation; it is the likely one. The edit is one clause
+      and one sentence and costs the implementer a toBeVisible.
+  - id: PR7-004
+    severity: medium
+    evidence:
+      - >-
+        Step 6 (delivery/plan/pulse-v02.yaml:7808) rests the deletion of the
+        clearing and read-scoping machinery on a stated premise: "An account's
+        ring can be changed on the accounts screen WHILE THAT ACCOUNT HAS NO
+        IMPORTED ROWS OF ITS OWN, which is decision D-51 as rewritten and
+        covers every case the new shape can produce: a savings account marked
+        spending at setup HAS NO STATEMENT OF ITS OWN, so correcting it only
+        reclassifies the CURRENT account's transfers to it".
+      - >-
+        THE PHASE'S OWN IMPORT GATE FALSIFIES THAT PREMISE. Step 5
+        (delivery/plan/pulse-v02.yaml:7775) and criterion 14.5 accept "a file
+        whose own account number resolves to a REGISTERED account", and refuse
+        only where the registered account is in the SAVINGS ring. A savings
+        account mis-registered as spending is registered in the POT ring, so
+        its own statement is ACCEPTED. The gate that would have stopped it,
+        D-55, fires on the correctly registered account and not on the
+        mis-registered one.
+      - >-
+        Once accepted, the account has imported rows of its own, and D-51
+        refuses the ring change for exactly that reason. The mistake H14.4
+        describes has then locked out its own only remedy, permanently, inside
+        the product.
+      - >-
+        The end state is the one H14.4 names and is now unfixable: transfers
+        between the current account and that account take the pot arm at
+        src/modules/ledger/domain/classify-flow.ts:73 and are INTERNAL, so the
+        reserves block understates by everything set aside there, while
+        src/modules/ledger/domain/reconciliation.ts:70 through :81 forms the
+        identity from spend and reserves with the same sign and reports the
+        books closed. Nothing on any screen distinguishes that month from a
+        correct one.
+      - >-
+        AND NO CRITERION SAYS WHAT THE HOUSEHOLD DOES NEXT. Criterion 14.8
+        (delivery/plan/pulse-v02.yaml:7998) asserts only that "a ring change is
+        refused for an account that already carries its own imported rows,
+        asserted at the application level". Step 6 says "the screen says so
+        rather than failing silently", but no criterion tests any screen text
+        for that refusal, so the refusal is explicit in the plan and untested in
+        the phase.
+    concrete-edit: >-
+      Two edits. ONE, correct step 6's premise: replace "a savings account
+      marked spending at setup HAS NO STATEMENT OF ITS OWN, so correcting it
+      only reclassifies the CURRENT account's transfers to it" with "a savings
+      account marked spending at setup is corrected while it has no imported
+      rows, and correcting it then only reclassifies the CURRENT account's
+      transfers to it. The gate at step 5 accepts that account's OWN statement,
+      because the account is registered in the pot ring, and importing it closes
+      the remedy for good. v1 accepts that: the ring change is a fix for a
+      mistake caught before a statement is uploaded, not after, and the screen
+      must say which of the two the household is in." TWO, add to criterion 14.8,
+      after its ring-change sentence: "A Playwright test asserts that on the
+      accounts screen an account carrying its own imported rows renders its ring
+      as unchangeable with a line of copy, present in all three catalogues,
+      saying that a ring is fixed once a statement for that account has been
+      imported and that the only route to change it in v1 is outside the
+      product, so the refusal is visible rather than a disabled control with no
+      reason."
+    analysis: >-
+      The plan is right to keep the ring change small and right to delete the
+      clearing machinery: the sentence "no row on a non-pot account can carry a
+      stale flow" survives every path this reviewer could construct, and finding
+      PR7-004 does not reopen it. What it reopens is narrower and is a claim the
+      plan makes in its own justification: that the D-51 window covers every
+      case the new shape can produce. It does not cover the case where the
+      household acts on the mistake by uploading the mis-registered account's
+      statement, which the product invites by accepting it. The right answer at
+      this size is not to build a way back; it is to stop the plan asserting a
+      coverage it does not have and to make the refusal say plainly that the
+      window has closed. A household that reaches this state must start a fresh
+      household and re-import, and it is better for that sentence to be on the
+      screen than to be discovered.
