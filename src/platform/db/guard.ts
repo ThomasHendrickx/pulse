@@ -97,40 +97,74 @@ export const assessDestructiveDbTarget = (env: DbGuardEnv): DbGuardVerdict => {
 // THE PREDICATE IS THREE THINGS AND NOTHING ELSE: NODE_ENV is exactly
 // "development", a connection string is present, and its host is not local.
 //
-// WHY EXACTLY "development" AND NOT "not production", which is what the
-// finding's concrete-fix proposed and what I built first. `next dev` sets
-// NODE_ENV=development and `next start` sets production, so "development" is
-// precisely the command the gap is about. "Not production" is wider in two
-// ways that are both wrong here. It catches NODE_ENV=test, which is what
-// vitest sets, and the fast gate transitively imports this module, so the
-// wider form made `npm test` refuse to run in any container whose ambient
-// DATABASE_URL is remote: that changes what the fast gate requires of every
-// contributor, to guard a server the fast gate never starts. And it catches
-// NODE_ENV unset, which is what a tsx entry point has, including the
-// re-derivation command, whose whole purpose is to open a DEPLOYED database
-// and which carries its own stricter interlock in target-guard.ts; the wider
-// form would have refused the one command criterion 12.23 exists for.
+// WHY IT IS NOW "NOT PRODUCTION" AND NOT "EXACTLY development", CORRECTED IN
+// FIX ROUND TEN under HAZARD finding CR9-M3P12-HZ-01, and the old reasoning is
+// quoted rather than deleted because it was careful and it was still wrong
+// (clause R-087).
 //
-// So this guards the dev server and nothing else. Production is untouched,
-// tests are untouched, and the writing script keeps the interlock built for
-// it. What remains unguarded by this is an arbitrary tsx entry point with no
-// NODE_ENV, which is the status quo and a different question.
+// WHAT STOOD HERE: that "development" is precisely the command the gap is
+// about, and that "not production" is wider in two ways that are both wrong,
+// because it catches NODE_ENV=test, "and the fast gate transitively imports
+// this module, so the wider form made `npm test` refuse to run in any
+// container whose ambient DATABASE_URL is remote"; and because it catches
+// NODE_ENV unset, "which is what a tsx entry point has, including the
+// re-derivation command, whose whole purpose is to open a DEPLOYED database".
+// It ended: "What remains unguarded by this is an arbitrary tsx entry point
+// with no NODE_ENV, which is the status quo and a different question."
 //
-// THE ESCAPE HATCH mirrors the destructive guard's above, in name and in
-// posture: one variable, set explicitly per run by someone who means to point
-// a dev server at a remote database. It is not read anywhere else.
-export type DevDbGuardEnv = {
+// WHY THAT WAS WRONG. It was not wrong about the two costs; it was wrong that
+// they were unavoidable, and it left the guard inert in exactly the two
+// contexts where this module is actually reached. Measured in fix round nine:
+// one `npm test` run printed the client's own startup line fourteen times from
+// thirteen distinct test files, and the re-derivation command constructed a
+// client from the ambient environment BEFORE its own interlock spoke. So "a
+// test run or a script is not the thing this guard is about" described the
+// only two things it was ever reached by.
+//
+// WHAT MAKES THE WIDER FORM AFFORDABLE NOW, and it is a change to the client
+// rather than an argument: src/platform/db/client.ts constructs LAZILY. The
+// fast gate imports the adapters and never issues a query, so no client is
+// constructed and this predicate is never consulted, which removes the first
+// cost entirely rather than trading it away. And the re-derivation reaches
+// construction only through a repository call, which happens after its own
+// interlock has proved host and ref, which removes the second: that interlock
+// records its approval in ./runtime-target and this predicate honours it.
+//
+// THE PREDICATE IS NOW: production is untouched; an interlock that has already
+// named and matched this process's target is honoured; otherwise a present
+// connection string must name a local host, with the one explicit override
+// below.
+//
+// THE OVERRIDE KEEPS ITS NAME, PULSE_ALLOW_REMOTE_DB_IN_DEV, though it now
+// covers every non-production context rather than the dev server alone. The
+// name is retained deliberately: it is an operator-facing variable that
+// standing instructions already name, and renaming it would break those
+// instructions to make one comment read better.
+export type NonProductionDbGuardEnv = {
   readonly NODE_ENV?: string | undefined;
   readonly DATABASE_URL?: string | undefined;
   readonly PULSE_ALLOW_REMOTE_DB_IN_DEV?: string | undefined;
+  // The name of an interlock in THIS process that has resolved the connection
+  // it would open and matched it against a target the operator named on a
+  // command line. Not a flag: see ./runtime-target for why the difference is
+  // the whole point. Undefined means no interlock has run.
+  readonly interlockApproval?: string | undefined;
 };
 
-export const assessDevServerDbTarget = (env: DevDbGuardEnv): DbGuardVerdict => {
-  if (env.NODE_ENV !== "development") {
+export const assessNonProductionDbTarget = (
+  env: NonProductionDbGuardEnv,
+): DbGuardVerdict => {
+  if (env.NODE_ENV === "production") {
     return {
       allowed: true,
       reason:
-        "not a development server: production opens the deployed database, and a test run or a script is not the thing this guard is about",
+        "production: this is the server that serves real traffic and the deployed database is the target it exists to open",
+    };
+  }
+  if (env.interlockApproval !== undefined) {
+    return {
+      allowed: true,
+      reason: `${env.interlockApproval} resolved this process's connection and matched it against a target named on its own command line`,
     };
   }
   if (env.PULSE_ALLOW_REMOTE_DB_IN_DEV === "1") {
@@ -154,14 +188,14 @@ export const assessDevServerDbTarget = (env: DevDbGuardEnv): DbGuardVerdict => {
     return {
       allowed: false,
       reason:
-        "DATABASE_URL did not parse as a connection URL, so a non-production server cannot establish what it would open. Refusing.",
+        "DATABASE_URL did not parse as a connection URL, so a non-production process cannot establish what it would open. Refusing.",
     };
   }
   if (!LOCAL_DB_HOSTS.has(hostname.replace(/^\[|\]$/g, "").toLowerCase())) {
     return {
       allowed: false,
       reason:
-        "this is a development server and DATABASE_URL points at a non-local host. Refusing to open it: a development server is never the thing that serves real traffic, and in a shared container the ambient value belongs to somebody else's deployment. Pin DATABASE_URL to the local stack, or set PULSE_ALLOW_REMOTE_DB_IN_DEV=1 for a deliberate remote session. The resolved value is deliberately not printed: this repository is public.",
+        "this process is not production and DATABASE_URL points at a non-local host. Refusing to open it: nothing outside production serves real traffic, and in a shared container the ambient value belongs to somebody else's deployment. Pin DATABASE_URL to the local stack, run the command that carries its own host-and-ref interlock, or set PULSE_ALLOW_REMOTE_DB_IN_DEV=1 for a deliberate remote session. The resolved value is deliberately not printed: this repository is public.",
     };
   }
   return {

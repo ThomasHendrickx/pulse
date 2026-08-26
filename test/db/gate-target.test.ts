@@ -385,12 +385,19 @@ describe("the mechanism is actually installed", () => {
     );
   });
 
-  test("the one spec that opens a Prisma client guards before it writes", () => {
-    const spec = read("test", "e2e", "merchant-rule-write.spec.ts");
-    expect(spec).toContain("new PrismaClient()");
-    expect(
-      spec.indexOf("assertGateDbTargetIsLocal") < spec.indexOf("prisma.household.create"),
-    ).toBe(true);
+  // THIS TEST READ RAW TEXT TOO, and it is repaired rather than deleted (fix
+  // round ten). Its second operand, "prisma.household.create", no longer
+  // exists in that spec: the client is constructed in beforeAll behind the
+  // assertion, so the writes go through an accessor. The general ordering
+  // assertion below now covers what this one was reaching for; what stays here
+  // is the file-specific claim, checked against CODE.
+  test("the one spec that opens a Prisma client guards before it constructs it", () => {
+    const spec = codeOnly(read("test", "e2e", "merchant-rule-write.spec.ts"));
+    expect(/\bassertGateDbTargetIsLocal\s*\(/.test(spec)).toBe(true);
+    expect(/new\s+PrismaClient\s*\(/.test(spec)).toBe(true);
+    expect(spec.search(/\bassertGateDbTargetIsLocal\s*\(/)).toBeLessThan(
+      spec.search(/new\s+PrismaClient\s*\(/),
+    );
   });
 
   // THE STANDING ANSWER to "can anything still reach a database nobody
@@ -411,14 +418,30 @@ describe("the mechanism is actually installed", () => {
   // than a file that lives where doors have historically been written, which
   // is a shape. Matching the shape is the standing error this repository has
   // now recorded sixteen times.
-  const trackedSourceFiles = (): string[] =>
-    execFileSync("git", ["ls-files", "-z"], {
+  const SOURCE_EXTENSION = /\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/;
+
+  const gitFileList = (...args: string[]): string[] =>
+    execFileSync("git", args, {
       cwd: projectRoot,
       encoding: "utf-8",
       maxBuffer: 32 * 1024 * 1024,
     })
       .split("\0")
-      .filter((name) => name !== "" && /\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/.test(name));
+      .filter((name) => name !== "" && SOURCE_EXTENSION.test(name));
+
+  const trackedSourceFiles = (): string[] => gitFileList("ls-files", "-z");
+
+  // THE WORKING TREE, WHICH IS WIDER THAN THE INDEX. --others lists files git
+  // does not track and --exclude-standard drops the ignored ones, so
+  // node_modules and build output stay out while an operator's unstaged
+  // scratch script is read. De-duplicated because a path can legitimately
+  // appear in neither list twice but the concatenation is cheap to make safe.
+  const scannedSourceFiles = (): string[] => [
+    ...new Set([
+      ...gitFileList("ls-files", "-z"),
+      ...gitFileList("ls-files", "-z", "--others", "--exclude-standard"),
+    ]),
+  ];
 
   // THE EXCLUSIONS, each one a path and a reason. Nothing else is exempt, and
   // a test below refuses an entry that has stopped being a door, so this list
@@ -430,7 +453,17 @@ describe("the mechanism is actually installed", () => {
     {
       path: "src/platform/db/client.ts",
       reason:
-        "the APPLICATION's own runtime client, not a gate door: it is the single PrismaClient the Next.js server holds. No test and no script CONSTRUCTS it. The one test that imports it, test/application/rederive-script-exit-codes.test.ts, replaces the module with a stub through vi.mock, and test/schema/tenancy.test.ts names it only inside generated source strings it writes to a scratch directory. It carries its own interlock instead, assessDevServerDbTarget in ./guard, which refuses a non-production server pointed at a deployed database. Calling the gate interlock here would refuse PRODUCTION, which is the one target this client legitimately opens, so the exemption is a different guard rather than no guard.",
+        "the APPLICATION's own runtime Prisma client, and the one door that may legitimately open PRODUCTION, which is why it cannot call the gate assertion: that assertion refuses everything that is not the local stack. THE PREVIOUS REASON HERE WAS FALSE IN TWO CLAUSES and is quoted rather than deleted (clause R-087). It said 'No test and no script CONSTRUCTS it', and one npm test run printed this module's own startup line fourteen times from thirteen distinct files while scripts/rederive-merchant-rules.ts constructed it transitively at import, before its own interlock had spoken. It said the module 'carries its own interlock instead, assessDevServerDbTarget', and that predicate returned allowed for every NODE_ENV that is not exactly 'development', so under vitest and under tsx it checked nothing. WHAT IS TRUE NOW, and it is a change to the module rather than to this sentence: construction is LAZY, so importing this module constructs nothing and no test and no script reaches a client by importing an adapter; and the interlock it carries is assessNonProductionDbTarget, which runs AT CONSTRUCTION and refuses a non-local target in every context that is not production unless an in-process interlock has already named and approved that exact target. So the exemption is a different guard rather than no guard, and that is now true of every context rather than only of next dev.",
+    },
+    {
+      path: "src/middleware.ts",
+      reason:
+        "APPLICATION RUNTIME, an anon-key Supabase client, and not a gate door. It runs only inside the Next.js request path, it carries the ANON key rather than a service-role key, so it reads and writes only what row-level security permits for the signed-in user, and it opens whichever project NEXT_PUBLIC_SUPABASE_URL names, which in production is the deployed project this application is. Under the gate that variable is not ambient: enforceGateDbTarget assigns all five pinned names in playwright.config.ts before either web server starts, so the gate's own runs reach the local stack by a mechanism rather than by luck. Calling the gate assertion here would refuse production, exactly as it would in the Prisma client above.",
+    },
+    {
+      path: "src/platform/auth/supabase-server.ts",
+      reason:
+        "APPLICATION RUNTIME, the same anon-key server client as the middleware above and exempt for the same reasons: request-scoped, anon key rather than service-role, bound to the project the deployed application IS, and pinned to the local stack under the gate by enforceGateDbTarget rather than by whatever the shell holds. It is listed separately rather than folded into one entry because the staleness test checks each path, so a file that stops being a door is retired on its own.",
     },
   ];
 
@@ -444,48 +477,170 @@ describe("the mechanism is actually installed", () => {
   // staleness test below is what surfaced it, which is the point of having a
   // staleness test.
 
-  const codeOnly = (source: string): string =>
-    source
-      .split("\n")
-      .map((line) => line.replace(/\/\/.*$/, ""))
-      .join("\n")
-      .replace(/"[^"\n]*"|'[^'\n]*'|`[^`]*`/g, '""');
+  // CODE IS NOT TEXT, AND THIS IS THE HALF THE SCAN GOT RIGHT ON ONE SIDE AND
+  // WRONG ON THE OTHER (fix round ten, CRITERIA finding CR9-M3P12-01 and
+  // HAZARD finding CR9-M3P12-HZ-03).
+  //
+  // WHAT WAS HERE AND WHY IT WAS FALSE, quoted rather than deleted (clause
+  // R-087). The scan decided whether a file IS a door from `codeOnly(raw)`,
+  // under a header that said "PROSE IS NOT A DOOR ... the scan reads CODE",
+  // and then decided whether that door was GUARDED from `raw.includes(name)`.
+  // A mention of the guard's name ANYWHERE satisfied it: an import line, a
+  // comment, a string. A reviewer deleted both real assertion CALLS from
+  // prisma/seed.ts, left the import and the comment, and the entire fast gate
+  // stayed green. The ordering test beside it was worse: both of its indexOf
+  // operands resolved to prose, so moving the assertion to AFTER the
+  // constructor changed nothing.
+  //
+  // SO BOTH SIDES NOW READ THE SAME CODE-ONLY TEXT, and the guarded side
+  // requires a CALL rather than a mention. The stripper is a one-pass scanner
+  // over the source's own lexical states rather than a stack of regexes,
+  // because the two failure directions are opposite and a regex cannot be
+  // safe in both: over-stripping HIDES A DOOR, under-stripping INVENTS A
+  // GUARD, and the old line-comments-then-quotes ordering could do either
+  // depending on which construct nested inside which.
+  //
+  // IT ALSO STRIPS BLOCK COMMENTS, which the old one never did, so the same
+  // trick with /* */ no longer works on either side.
+  //
+  // Positions are preserved: every stripped character is replaced by a space
+  // rather than removed, so an index into the code-only text is an index into
+  // the original file and the ordering assertion below means what it says.
+  const codeOnly = (source: string): string => {
+    const out: string[] = [];
+    let i = 0;
+    const blank = (n: number): void => {
+      for (let k = 0; k < n; k += 1) {
+        out.push(source[i + k] === "\n" ? "\n" : " ");
+      }
+      i += n;
+    };
+    while (i < source.length) {
+      const two = source.slice(i, i + 2);
+      if (two === "//") {
+        const nl = source.indexOf("\n", i);
+        blank((nl === -1 ? source.length : nl) - i);
+        continue;
+      }
+      if (two === "/*") {
+        const close = source.indexOf("*/", i + 2);
+        blank((close === -1 ? source.length : close + 2) - i);
+        continue;
+      }
+      const ch = source[i] as string;
+      if (ch === '"' || ch === "'" || ch === "`") {
+        let j = i + 1;
+        while (j < source.length) {
+          if (source[j] === "\\") {
+            j += 2;
+            continue;
+          }
+          if (source[j] === ch) {
+            j += 1;
+            break;
+          }
+          // An unterminated single-quoted or double-quoted literal ends at the
+          // newline; a template literal legitimately spans lines.
+          if (ch !== "`" && source[j] === "\n") {
+            break;
+          }
+          j += 1;
+        }
+        out.push(ch);
+        i += 1;
+        blank(j - i - 1);
+        if (i < source.length && source[i] === ch) {
+          out.push(ch);
+          i += 1;
+        }
+        continue;
+      }
+      out.push(ch);
+      i += 1;
+    }
+    return out.join("");
+  };
+
+  type DoorKind = "prisma" | "supabase-admin" | "supabase-anon";
+
+  // THE DOOR PATTERNS AND THE GUARD CALL THAT ANSWERS EACH ONE, in one table
+  // so a fourth kind is a row rather than a third copy of the loop.
+  //
+  // THE THIRD KIND IS NEW (fix round ten, CRITERIA finding CR9-M3P12-04). An
+  // anon-key Supabase client built with createServerClient or
+  // createBrowserClient opens whatever project NEXT_PUBLIC_SUPABASE_URL names
+  // and matched neither of the two original patterns, so the scan's title said
+  // EVERY door while its definition covered two kinds of door. Widening the
+  // definition is the honest direction; the two application files that match
+  // it are allow-listed below with their reason, and the staleness test keeps
+  // both entries honest.
+  const DOOR_KINDS: ReadonlyArray<{
+    readonly kind: DoorKind;
+    readonly constructs: RegExp;
+    readonly requires?: RegExp;
+    readonly guard: string;
+  }> = [
+    {
+      kind: "prisma",
+      constructs: /new\s+PrismaClient\s*\(/,
+      guard: "assertGateDbTargetIsLocal",
+    },
+    {
+      kind: "supabase-admin",
+      constructs: /createClient\s*\(/,
+      requires: /SUPABASE_SERVICE_ROLE_KEY/,
+      guard: "assertGateApiTargetIsLocal",
+    },
+    {
+      kind: "supabase-anon",
+      constructs: /create(Server|Browser)Client\s*\(/,
+      guard: "assertGateApiTargetIsLocal",
+    },
+  ];
 
   type Door = {
     readonly path: string;
-    readonly kind: "prisma" | "supabase-admin";
+    readonly kind: DoorKind;
     readonly guarded: boolean;
+    // Whether the guard CALL precedes the construction, in code-only
+    // positions. Undefined where the door is not guarded at all.
+    readonly guardsBeforeConstructing: boolean | undefined;
   };
 
-  // PROSE IS NOT A DOOR. This tree talks about `new PrismaClient()` in
-  // comments and in test titles more often than it calls it, so the scan
-  // reads CODE: line comments are dropped and quoted spans are blanked before
-  // the patterns are applied.
-  const scanDoors = (): Door[] => {
+  // PURE, over code-only text, so every one of the shapes this round was shown
+  // green on can be driven from a string in the regression test below rather
+  // than only by editing a real file.
+  const doorsInSource = (
+    path: string,
+    source: string,
+  ): Door[] => {
     const doors: Door[] = [];
-    for (const path of trackedSourceFiles()) {
-      const raw = readFileSync(join(projectRoot, path), "utf-8");
-      const source = codeOnly(raw);
-      if (/new\s+PrismaClient\s*\(/.test(source)) {
-        doors.push({
-          path,
-          kind: "prisma",
-          guarded: raw.includes("assertGateDbTargetIsLocal"),
-        });
+    for (const entry of DOOR_KINDS) {
+      if (entry.requires !== undefined && !entry.requires.test(source)) {
+        continue;
       }
-      if (
-        /SUPABASE_SERVICE_ROLE_KEY/.test(source) &&
-        /createClient\s*\(/.test(source)
-      ) {
-        doors.push({
-          path,
-          kind: "supabase-admin",
-          guarded: raw.includes("assertGateApiTargetIsLocal"),
-        });
+      const construction = entry.constructs.exec(source);
+      if (construction === null) {
+        continue;
       }
+      // A CALL, not a mention. `new RegExp` rather than a literal so the one
+      // guard name in the table above is the only place it is written.
+      const call = new RegExp(`\\b${entry.guard}\\s*\\(`).exec(source);
+      doors.push({
+        path,
+        kind: entry.kind,
+        guarded: call !== null,
+        guardsBeforeConstructing:
+          call === null ? undefined : call.index < construction.index,
+      });
     }
     return doors;
   };
+
+  const scanDoors = (files: readonly string[] = trackedSourceFiles()): Door[] =>
+    files.flatMap((path) =>
+      doorsInSource(path, codeOnly(readFileSync(join(projectRoot, path), "utf-8"))),
+    );
 
   test("the scan's denominator is the TRACKED TREE, not a list of directories", () => {
     const files = trackedSourceFiles();
@@ -502,7 +657,7 @@ describe("the mechanism is actually installed", () => {
 
   test("EVERY door in the tracked tree is guarded, whatever kind of client opens it and wherever it sits", () => {
     const exempt = new Set(ALLOWED_UNGUARDED.map((entry) => entry.path));
-    const unguarded = scanDoors()
+    const unguarded = scanDoors(trackedSourceFiles())
       .filter((door) => !door.guarded && !exempt.has(door.path))
       .map((door) => `${door.path} (${door.kind})`);
     expect(unguarded).toEqual([]);
@@ -517,15 +672,130 @@ describe("the mechanism is actually installed", () => {
   });
 
   test("prisma/seed.ts, the door the old two-directory walk could not see, is guarded on BOTH of its clients", () => {
-    const seed = read("prisma", "seed.ts");
-    expect(seed).toContain("assertGateDbTargetIsLocal");
-    expect(seed).toContain("assertGateApiTargetIsLocal");
-    // Order is the whole point: refuse before a client exists.
-    expect(seed.indexOf("assertGateDbTargetIsLocal")).toBeLessThan(
-      seed.indexOf("new PrismaClient()"),
-    );
-    expect(seed.indexOf("assertGateApiTargetIsLocal")).toBeLessThan(
-      seed.indexOf("createClient("),
-    );
+    const doors = scanDoors(["prisma/seed.ts"]);
+    expect(doors.map((door) => door.kind).sort()).toEqual([
+      "prisma",
+      "supabase-admin",
+    ]);
+    for (const door of doors) {
+      expect(door.guarded).toBe(true);
+      expect(door.guardsBeforeConstructing).toBe(true);
+    }
+  });
+
+  // ORDER IS THE WHOLE POINT, AND IT IS NOW ASSERTED OF EVERY DOOR RATHER THAN
+  // OF ONE FILE (fix round ten, HAZARD finding CR9-M3P12-HZ-03). The only
+  // ordering assertion in the tree named prisma/seed.ts by path, so a second
+  // door whose guard ran after its constructor was green. A guard that runs
+  // after the thing it guards is not a guard.
+  test("EVERY guarded door calls its guard BEFORE it constructs its client", () => {
+    const exempt = new Set(ALLOWED_UNGUARDED.map((entry) => entry.path));
+    const late = scanDoors()
+      .filter(
+        (door) =>
+          !exempt.has(door.path) && door.guardsBeforeConstructing === false,
+      )
+      .map((door) => `${door.path} (${door.kind})`);
+    expect(late).toEqual([]);
+  });
+
+  // THE SHAPES THIS SCAN WAS SHOWN GREEN ON, driven from strings so they stay
+  // red forever rather than only until somebody edits the file they were found
+  // in. Every one of these was witnessed passing the previous implementation.
+  describe("the shapes that used to pass", () => {
+    const PRISMA_DOOR = "const client = new PrismaClient();";
+
+    test("a guard named only in an IMPORT does not guard anything", () => {
+      const source = codeOnly(
+        `import { assertGateDbTargetIsLocal } from "@/platform/db/gate-target";\n${PRISMA_DOOR}\n`,
+      );
+      const doors = doorsInSource("probe.ts", source);
+      expect(doors).toHaveLength(1);
+      expect(doors[0]!.guarded).toBe(false);
+    });
+
+    test("a guard named only in a LINE COMMENT does not guard anything", () => {
+      const source = codeOnly(
+        `// assertGateDbTargetIsLocal() runs somewhere else, honest\n${PRISMA_DOOR}\n`,
+      );
+      expect(doorsInSource("probe.ts", source)[0]!.guarded).toBe(false);
+    });
+
+    test("a guard named only in a BLOCK COMMENT does not guard anything", () => {
+      const source = codeOnly(
+        `/*\n  assertGateDbTargetIsLocal();\n*/\n${PRISMA_DOOR}\n`,
+      );
+      expect(doorsInSource("probe.ts", source)[0]!.guarded).toBe(false);
+    });
+
+    test("a guard named only in a STRING does not guard anything", () => {
+      const source = codeOnly(
+        `const why = "assertGateDbTargetIsLocal()";\n${PRISMA_DOOR}\n`,
+      );
+      expect(doorsInSource("probe.ts", source)[0]!.guarded).toBe(false);
+    });
+
+    test("a door hidden inside a BLOCK COMMENT is not a door", () => {
+      const source = codeOnly(`/*\n${PRISMA_DOOR}\n*/\nconst x = 1;\n`);
+      expect(doorsInSource("probe.ts", source)).toEqual([]);
+    });
+
+    test("a guard CALLED AFTER the constructor is guarded but out of order", () => {
+      const source = codeOnly(
+        `${PRISMA_DOOR}\nassertGateDbTargetIsLocal();\n`,
+      );
+      const door = doorsInSource("probe.ts", source)[0]!;
+      expect(door.guarded).toBe(true);
+      expect(door.guardsBeforeConstructing).toBe(false);
+    });
+
+    // THE CONTROLS, so all seven refusals above are refusals and not a
+    // predicate that now refuses everything.
+    test("THE CONTROL: a real call before a real constructor is guarded and in order", () => {
+      const source = codeOnly(
+        `import { assertGateDbTargetIsLocal } from "@/platform/db/gate-target";\nassertGateDbTargetIsLocal();\n${PRISMA_DOOR}\n`,
+      );
+      const door = doorsInSource("probe.ts", source)[0]!;
+      expect(door.guarded).toBe(true);
+      expect(door.guardsBeforeConstructing).toBe(true);
+    });
+
+    test("THE CONTROL: a bare door with no mention at all is an unguarded door", () => {
+      const door = doorsInSource("probe.ts", codeOnly(`${PRISMA_DOOR}\n`))[0]!;
+      expect(door.guarded).toBe(false);
+    });
+
+    test("THE CONTROL: the admin and anon kinds are recognised and told apart", () => {
+      const admin = doorsInSource(
+        "probe.ts",
+        codeOnly(
+          `const k = process.env.SUPABASE_SERVICE_ROLE_KEY;\nconst a = createClient(u, k);\n`,
+        ),
+      );
+      expect(admin.map((door) => door.kind)).toEqual(["supabase-admin"]);
+      const anon = doorsInSource(
+        "probe.ts",
+        codeOnly(`const c = createServerClient(u, k, o);\n`),
+      );
+      expect(anon.map((door) => door.kind)).toEqual(["supabase-anon"]);
+    });
+  });
+
+  // WHAT THE DENOMINATOR STILL COULD NOT SEE, closed (fix round ten, CRITERIA
+  // finding CR9-M3P12-03 and HAZARD finding CR9-M3P12-HZ-04). git ls-files
+  // reads the INDEX, so a file staged in the same commit IS scanned; what was
+  // invisible is a file that exists on disk and has never been staged, which
+  // is exactly the shape of an operator's own one-off script, and the fast
+  // gate is normally run BEFORE git add, which is the moment the author most
+  // wants to be told.
+  test("an UNTRACKED door on disk is seen too: the denominator is the working tree, not only the index", () => {
+    const files = scannedSourceFiles();
+    const tracked = trackedSourceFiles();
+    expect(files.length).toBeGreaterThanOrEqual(tracked.length);
+    const exempt = new Set(ALLOWED_UNGUARDED.map((entry) => entry.path));
+    const unguarded = scanDoors(files)
+      .filter((door) => !door.guarded && !exempt.has(door.path))
+      .map((door) => `${door.path} (${door.kind})`);
+    expect(unguarded).toEqual([]);
   });
 });

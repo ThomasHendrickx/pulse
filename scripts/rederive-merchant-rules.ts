@@ -84,7 +84,7 @@
 // script.
 //
 // THE TARGET INTERLOCK (criterion 12.23, hazard H12.30). Before this command
-// reads or writes ANYTHING it requires --expect-host AND --expect-ref, and it
+// makes ANY REPOSITORY CALL it requires --expect-host AND --expect-ref, and it
 // refuses unless the connection it would actually open matches both. There is
 // no override, because an override would be a second assertion of the very
 // thing being checked. The ref is not optional and a host match is not enough:
@@ -93,6 +93,26 @@
 // different project of the owner's, with a working password, in that same
 // region. See src/platform/db/target-guard.ts for where the ref lives in each
 // endpoint shape and for the one accepted equivalence gap.
+//
+// THE SENTENCE ABOVE USED TO SAY "reads or writes ANYTHING" AND THAT WAS
+// FALSE, corrected in fix round ten under HAZARD finding CR9-M3P12-HZ-02 and
+// quoted rather than deleted (clause R-087). This command's import graph
+// reaches the application's Prisma client, and that module used to construct a
+// client at import time, which happens before main() runs and therefore before
+// the interlock speaks. It was witnessed: a run against an invented non-local
+// connection with a mismatched host printed the client's own startup line
+// FIRST and the refusal second. No query was issued, because Prisma connects
+// lazily, so nothing was read and nothing was written; but a client resolved
+// from the ambient environment already existed when the interlock spoke, and
+// the wider word covered that.
+//
+// IT IS NOW TRUE AGAIN RATHER THAN NARROWED INTO TRUTH. The same fix round
+// made src/platform/db/client.ts construct LAZILY, so this command's imports
+// construct nothing, and the client is built on the first repository call,
+// which is after the interlock has approved. The interlock records that
+// approval in src/platform/db/runtime-target.ts, which is what lets the
+// client's own non-production guard admit a DEPLOYED target for this command
+// and refuse one for every other tsx entry point.
 //
 // --dry-run DECIDES AND WRITES NOTHING. It is threaded into the routine
 // itself; it is not a substitution made here, which is what it used to be
@@ -105,6 +125,7 @@
 import { householdId, userId, type HouseholdContext } from "@/platform/tenancy";
 import { resolveClientDbUrl } from "@/platform/db/resolve-env";
 import { assessRederiveTarget } from "@/platform/db/target-guard";
+import { noteInterlockApproved } from "@/platform/db/runtime-target";
 import { recomputeInterpretation } from "@/modules/ledger/application";
 import {
   RederiveRecomputeError,
@@ -292,8 +313,11 @@ export const main = async (
 ): Promise<number> => {
   const argument = (name: string): string | undefined =>
     argumentIn(deps.argv, name);
-  // THE INTERLOCK RUNS FIRST, before the household argument is even read and before
-  // any repository call. A refused run has read nothing and written nothing.
+  // THE INTERLOCK RUNS FIRST, before the household argument is even read and
+  // before any repository call. A refused run has read nothing, written
+  // nothing, and now also CONSTRUCTED nothing: the application client is lazy,
+  // so the module graph this file imports builds no client (fix round ten,
+  // HAZARD findings CR9-M3P12-HZ-01 and HZ-02).
   const target = assessRederiveTarget(
     { DATABASE_URL: deps.databaseUrl },
     {
@@ -310,6 +334,16 @@ export const main = async (
     return 3;
   }
   console.log(`target guard: ${target.reason}`);
+
+  // THE APPROVAL IS RECORDED FOR THIS PROCESS, and only now that it is real.
+  // The application client refuses a non-local target in every context that is
+  // not production; this command is a tsx entry point whose whole purpose is
+  // to open a DEPLOYED database, and the thing that distinguishes it from any
+  // other script is precisely the check that just passed. See
+  // src/platform/db/runtime-target.ts for why this is a fact rather than a
+  // flag, and note that it is recorded AFTER the refusal branch above, so a
+  // blocked run approves nothing.
+  noteInterlockApproved("rederive-merchant-rules");
 
   const household = argument("household");
   if (household === undefined || household.trim() === "") {

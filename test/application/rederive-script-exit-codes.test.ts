@@ -1,11 +1,18 @@
 import { describe, expect, test, vi } from "vitest";
 import type { HouseholdContext } from "@/platform/tenancy";
 
-// THE LIVE CLIENT IS NEVER CONSTRUCTED. The command under test imports the
-// merchants module, which imports the Prisma adapter, which builds a client
-// at import time. This test drives main() with injected dependencies and must
-// not depend on any environment, so the client module is replaced before the
-// import graph is walked.
+// THE LIVE CLIENT IS NEVER CONSTRUCTED, and the reason has changed (fix round
+// ten, HAZARD finding CR9-M3P12-HZ-01). This comment used to say that the
+// command "imports the merchants module, which imports the Prisma adapter,
+// which builds a client at import time", and that was true and was the defect:
+// merely walking this import graph constructed a client from whatever the
+// environment held, before any interlock ran. src/platform/db/client.ts is now
+// LAZY, so the import graph builds nothing on its own.
+//
+// The mock is KEPT rather than removed, for a different and still-good reason:
+// this test drives main() with injected dependencies and must not depend on
+// any environment at all, and a stub is a stronger statement of that than
+// relying on no code path happening to touch the binding.
 vi.mock("@/platform/db/client", () => ({ prisma: {} }));
 
 import { main } from "../../scripts/rederive-merchant-rules";

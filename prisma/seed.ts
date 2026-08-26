@@ -54,7 +54,7 @@ const SEED_CLOCK = fixedClock(new Date("2026-08-01T08:00:00.000Z"));
 // (enforceGateDbTarget at module scope), scripts/rederive-merchant-rules.ts
 // (its own stricter host-and-ref interlock, src/platform/db/target-guard.ts),
 // and src/platform/db/client.ts, which is the application's own client and
-// deliberately carries a DIFFERENT guard (assessDevServerDbTarget) because
+// deliberately carries a DIFFERENT guard (assessNonProductionDbTarget) because
 // production is the one target it may legitimately open. The scan that holds
 // all of these to the rule is test/db/gate-target.test.ts, and it reads the
 // tracked tree.

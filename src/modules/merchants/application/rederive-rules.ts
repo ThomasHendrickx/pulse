@@ -318,13 +318,21 @@ export type RederiveReport = {
   readonly exitCode: number;
 };
 
+// THE DECLARED CAPABILITY IS THE USED CAPABILITY (fix round ten, HAZARD
+// finding CR9-M3P12-HZ-05). This Pick used to include "upsertRule", which this
+// routine has never called: the three call sites are listRules,
+// listCountedTransactions and applyRuleWrites. It was not free to leave there.
+// upsertRule is the one port member that REPOINTS an existing declaration
+// rather than rejecting a collision, which is why the in-memory fake stopped
+// routing inserts through it, and a routine whose declared dependencies
+// include it reads as a routine that may use it. This is the one module whose
+// whole contract is that it overwrites and deletes nothing, so the type now
+// says exactly what it needs. Test fakes are unaffected: they implement the
+// full port.
 export type RederiveDependencies = {
   readonly merchants: Pick<
     MerchantRepositoryPort,
-    | "listRules"
-    | "listCountedTransactions"
-    | "upsertRule"
-    | "applyRuleWrites"
+    "listRules" | "listCountedTransactions" | "applyRuleWrites"
   >;
   readonly recompute: RecomputeInterpretation;
 };

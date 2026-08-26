@@ -547,3 +547,50 @@ describe("CRITERION 12.23: the interlock resolves what the client resolves", () 
     expect(client).not.toContain("loadEnvFile");
   });
 });
+
+// FIX ROUND TEN, HAZARD finding CR9-M3P12-HZ-02.
+//
+// THE HEADER CLAIMED "Before this command reads or writes ANYTHING", and a
+// reviewer captured the application client's own startup line printing BEFORE
+// the interlock's refusal, because the import graph constructed a client at
+// module scope. The claim is now true rather than narrowed, because the client
+// is lazy; this is the test that keeps it true, and it executes the shipped
+// command rather than reading it.
+describe("a refused run constructs no client at all, not merely no query", () => {
+  const repositoryRoot = join(__dirname, "..", "..");
+
+  test("the FIRST line of a refused run is the refusal, and no client announces itself", () => {
+    const result = spawnSync(
+      "npx",
+      [
+        "tsx",
+        "scripts/rederive-merchant-rules.ts",
+        "--household",
+        "00000000-0000-4000-8000-000000000001",
+        "--expect-host",
+        "aws-0-eu-west-9.pooler.supabase.com",
+        "--expect-ref",
+        "qqqqppppoooonnnnmmmm",
+      ],
+      {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          // INVENTED, and deliberately a shape the interlock will refuse: the
+          // host and the ref both differ from the ones named above.
+          DATABASE_URL:
+            "postgresql://postgres.zzzzyyyyxxxxwwwwvvvv:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres",
+          DIRECT_URL:
+            "postgresql://postgres.zzzzyyyyxxxxwwwwvvvv:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres",
+        },
+      },
+    );
+    const output = `${result.stdout}${result.stderr}`;
+    expect(result.status).toBe(3);
+    // THE ORDERING CLAIM, executed. The client prints one line the moment it
+    // is constructed, so its absence is the evidence that none was.
+    expect(output).not.toContain("[pulse:db]");
+    expect(output.trimStart().startsWith("rederive-merchant-rules:")).toBe(true);
+  }, 60_000);
+});

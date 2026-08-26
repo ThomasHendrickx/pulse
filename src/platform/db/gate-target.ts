@@ -6,6 +6,22 @@
 // nobody named. Not a test, not a script, not a gate, and not a hook another
 // tool invokes on your behalf.
 //
+// AND THE INSTRUMENT THAT ENFORCES IT HAS LIMITS, STATED HERE RATHER THAN LEFT
+// TO BE DISCOVERED (fix round ten, HAZARD finding CR9-M3P12-HZ-04). The
+// sentence above is what this repository INTENDS; the scan in
+// test/db/gate-target.test.ts is what it can actually check, and the two are
+// not the same size. What the scan reads is every tracked or untracked,
+// non-ignored file with a JavaScript or TypeScript extension, and what it
+// looks for is three literal construction shapes. So it does NOT see: a door
+// opened from a shell script, a SQL file or a CLI invocation; a door reached
+// TRANSITIVELY through a module it has exempted, which is why the exemptions
+// carry reasons rather than only paths; a service-role key that arrives under
+// any name other than SUPABASE_SERVICE_ROLE_KEY; or a client constructed
+// through an identifier computed at runtime rather than written literally.
+// Those four are the standing residue. Anyone adding a door of one of those
+// shapes gets no help from the scan and must route it through this file by
+// hand.
+//
 // THE WORDING WIDENED IN FIX ROUND EIGHT, and the old sentence is quoted here
 // rather than deleted (clause R-087). It read "no test, no script and no gate
 // in this repository may open a database nobody named", and the instrument

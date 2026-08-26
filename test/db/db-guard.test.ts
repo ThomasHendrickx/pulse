@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   assessDestructiveDbTarget,
-  assessDevServerDbTarget,
+  assessNonProductionDbTarget,
 } from "../../src/platform/db/guard";
 import { resolveDbEnv } from "../../src/platform/db/resolve-env";
 
@@ -286,50 +286,101 @@ describe("a non-production server may not open a deployed database", () => {
     "postgresql://postgres.aaaabbbbccccddddeeee:pw@aws-0-eu-central-1.pooler.supabase.com:6543/postgres";
 
   test("THE LIVE GAP: a development server pointed at a deployed host is refused", () => {
-    const verdict = assessDevServerDbTarget({
+    const verdict = assessNonProductionDbTarget({
       NODE_ENV: "development",
       DATABASE_URL: REMOTE,
     });
     expect(verdict.allowed).toBe(false);
-    expect(verdict.reason).toContain("development server");
+    expect(verdict.reason).toContain("not production");
   });
 
-  // THREE THINGS THIS DELIBERATELY DOES NOT GUARD, each for its own reason.
-  // Production, because the deployed app must open the deployed database.
-  // A test run, because vitest sets NODE_ENV=test and the fast gate imports
-  // this module transitively, so guarding it would make `npm test` refuse in
-  // any container with a remote ambient value. And a bare script, because the
-  // one that writes carries the stricter interlock in target-guard.ts and
-  // exists precisely to open a deployed database.
-  test("PRODUCTION, TESTS AND SCRIPTS ARE UNTOUCHED, which is what makes this safe to ship", () => {
-    for (const NODE_ENV of ["production", "test", undefined]) {
+  // WHAT THIS TEST USED TO ASSERT, AND WHY THAT WAS THE DEFECT (fix round ten,
+  // HAZARD finding CR9-M3P12-HZ-01). It was titled "PRODUCTION, TESTS AND
+  // SCRIPTS ARE UNTOUCHED, which is what makes this safe to ship", and it
+  // asserted allowed for NODE_ENV of production, test and undefined against a
+  // DEPLOYED connection string. Two of those three were the only contexts this
+  // module was ever actually reached by: one npm test run constructed the
+  // application client from thirteen distinct test files, and the
+  // re-derivation script constructed it before its own interlock spoke. The
+  // guard was inert exactly where it was needed and the test pinned it that
+  // way, which is why nothing went red for five rounds.
+  //
+  // It is replaced rather than deleted, and the replacement asserts the
+  // opposite for two of the three.
+  test("PRODUCTION IS UNTOUCHED, and every other context is refused a deployed target", () => {
+    expect(
+      assessNonProductionDbTarget({
+        NODE_ENV: "production",
+        DATABASE_URL: REMOTE,
+      }).allowed,
+    ).toBe(true);
+    for (const NODE_ENV of ["development", "test", undefined]) {
       expect(
-        assessDevServerDbTarget({ NODE_ENV, DATABASE_URL: REMOTE }).allowed,
-      ).toBe(true);
+        assessNonProductionDbTarget({ NODE_ENV, DATABASE_URL: REMOTE }).allowed,
+      ).toBe(false);
     }
+  });
+
+  // THE ONE CONTEXT THAT IS NOT PRODUCTION AND MAY STILL OPEN A DEPLOYED
+  // DATABASE, and the reason it is not a flag. The re-derivation command
+  // requires an explicit host AND project ref on its own command line and
+  // resolves the connection it would actually open before matching them; when
+  // that has happened, this predicate honours the fact rather than an
+  // assertion. See src/platform/db/runtime-target.ts.
+  test("an INTERLOCK that has already matched this process's target is honoured, and only by name", () => {
+    const verdict = assessNonProductionDbTarget({
+      NODE_ENV: undefined,
+      DATABASE_URL: REMOTE,
+      interlockApproval: "rederive-merchant-rules",
+    });
+    expect(verdict.allowed).toBe(true);
+    expect(verdict.reason).toContain("rederive-merchant-rules");
+    // And with no interlock, the identical environment is refused, so the
+    // approval is what carries it and not the environment.
+    expect(
+      assessNonProductionDbTarget({ NODE_ENV: undefined, DATABASE_URL: REMOTE })
+        .allowed,
+    ).toBe(false);
+  });
+
+  // THE FAST GATE IS NOT MADE TO REFUSE, and this is the cost the old narrow
+  // predicate was protecting against. It is answered by the client being LAZY
+  // rather than by the guard being inert: a run that issues no query
+  // constructs no client, so the predicate is never consulted. Asserted by
+  // counting the client's own startup line over a real fast-gate run in
+  // test/db/gate-target.test.ts; here we only pin that the predicate itself
+  // WOULD refuse, so the two halves cannot both drift.
+  test("under vitest the predicate refuses a deployed target, so laziness is what keeps the gate green", () => {
+    expect(process.env.NODE_ENV).not.toBe("production");
+    expect(
+      assessNonProductionDbTarget({
+        NODE_ENV: process.env.NODE_ENV,
+        DATABASE_URL: REMOTE,
+      }).allowed,
+    ).toBe(false);
   });
 
   test("a development server on the local stack proceeds", () => {
     expect(
-      assessDevServerDbTarget({ NODE_ENV: "development", DATABASE_URL: LOCAL })
+      assessNonProductionDbTarget({ NODE_ENV: "development", DATABASE_URL: LOCAL })
         .allowed,
     ).toBe(true);
   });
 
   test("an unparseable value is refused rather than read as a host", () => {
     expect(
-      assessDevServerDbTarget({ NODE_ENV: "development", DATABASE_URL: "not-a-url" })
+      assessNonProductionDbTarget({ NODE_ENV: "development", DATABASE_URL: "not-a-url" })
         .allowed,
     ).toBe(false);
   });
 
   test("an ABSENT value is left to the client's own error, which is more precise", () => {
-    expect(assessDevServerDbTarget({ NODE_ENV: "development" }).allowed).toBe(true);
+    expect(assessNonProductionDbTarget({ NODE_ENV: "development" }).allowed).toBe(true);
   });
 
   test("the escape hatch is one variable, set per run, and it is the only way through", () => {
     expect(
-      assessDevServerDbTarget({
+      assessNonProductionDbTarget({
         NODE_ENV: "development",
         DATABASE_URL: REMOTE,
         PULSE_ALLOW_REMOTE_DB_IN_DEV: "1",
@@ -338,7 +389,7 @@ describe("a non-production server may not open a deployed database", () => {
     // Not any truthy value: the destructive guard beside it uses the same
     // literal, and a guard that takes "0" or "false" as consent is a joke.
     expect(
-      assessDevServerDbTarget({
+      assessNonProductionDbTarget({
         NODE_ENV: "development",
         DATABASE_URL: REMOTE,
         PULSE_ALLOW_REMOTE_DB_IN_DEV: "false",
@@ -347,7 +398,7 @@ describe("a non-production server may not open a deployed database", () => {
   });
 
   test("NO VALUE IS EVER PRINTED: this repository is public", () => {
-    const verdict = assessDevServerDbTarget({
+    const verdict = assessNonProductionDbTarget({
       NODE_ENV: "development",
       DATABASE_URL: REMOTE,
     });
@@ -355,14 +406,56 @@ describe("a non-production server may not open a deployed database", () => {
     expect(verdict.reason).not.toContain("aaaabbbbccccddddeeee");
   });
 
-  test("the client constructs it BEFORE the client, so a refused server opens nothing", () => {
+  test("the client asks it BEFORE it constructs, so a refused process opens nothing", () => {
     const source = readFileSync(
       join(__dirname, "..", "..", "src", "platform", "db", "client.ts"),
       "utf-8",
     );
-    expect(source).toContain("assessDevServerDbTarget");
-    expect(source.indexOf("assessDevServerDbTarget({")).toBeLessThan(
-      source.indexOf("const constructClient"),
+    expect(source).toContain("assessNonProductionDbTarget");
+    // Inside constructClient, the assertion call precedes the construction.
+    // The CODE forms are matched, not the prose: this file's own header
+    // discusses `new PrismaClient()` above the function, which is exactly the
+    // shape of mention that fooled the door scan for five rounds.
+    expect(source.search(/^\s*assertTargetAllowed\(\);$/m)).toBeGreaterThan(-1);
+    expect(source.search(/^\s*return new PrismaClient\(\);$/m)).toBeGreaterThan(
+      -1,
     );
+    expect(source.search(/^\s*assertTargetAllowed\(\);$/m)).toBeLessThan(
+      source.search(/^\s*return new PrismaClient\(\);$/m),
+    );
+  });
+
+  // AND THE MODULE CONSTRUCTS NOTHING AT IMPORT, WITNESSED BY IMPORTING IT.
+  // This is the behavioural half and it is the one that matters: under vitest
+  // NODE_ENV is "test" and this container's ambient DATABASE_URL is a deployed
+  // pooler, so against the EAGER client this import both constructed a client
+  // and, with the widened predicate, threw. It now does neither.
+  //
+  // Measured before and after on the same tree: the eager module printed its
+  // own startup line 18 times in one `npm test` run, from thirteen distinct
+  // files; the lazy module prints it 0 times.
+  test("importing the application client constructs NOTHING, so no test opens a target nobody named", async () => {
+    const clientModule = await import("../../src/platform/db/client");
+    expect(clientModule.prismaHasBeenConstructed()).toBe(false);
+    // And the binding is still there to be used: this asserts the module
+    // loaded rather than that the import silently failed.
+    expect(typeof clientModule.prisma).toBe("object");
+    expect(clientModule.prismaHasBeenConstructed()).toBe(false);
+  });
+
+  // The source-level half, kept beside it so a refactor that reintroduces a
+  // module-scope constructor is red twice.
+  test("the client module constructs NOTHING at module scope", () => {
+    const source = readFileSync(
+      join(__dirname, "..", "..", "src", "platform", "db", "client.ts"),
+      "utf-8",
+    );
+    const topLevel = source
+      .split("\n")
+      .filter((line) => /^\S/.test(line) && !line.startsWith("//"));
+    expect(topLevel.some((line) => line.includes("new PrismaClient("))).toBe(
+      false,
+    );
+    expect(source).toContain("const constructClient");
   });
 });
