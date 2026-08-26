@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { join } from "node:path";
+import { FIXTURE_ACCOUNT_A, registerCurrentAccount } from "./setup-accounts";
+
+// M3-P14: every fixture here belongs to the same invented current account,
+// which the household registers at setup before importing anything.
 
 // Criterion 3.3 (hazard H3.2): name an unresolved counterparty on the
 // merchant review screen and assert the month's data REGROUPS it without a
@@ -30,6 +34,8 @@ test("naming an unresolved counterparty regroups it and changes no total", async
   await expect(page.getByTestId("household-context")).toHaveText(unique);
 
   // One import: declare the account and confirm the detected format.
+  await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+
   await page.goto("/import");
   await page.getByLabel("Bank export file").setInputFiles(FIXTURE);
   await page.getByRole("button", { name: "Upload" }).click();
@@ -37,9 +43,6 @@ test("naming an unresolved counterparty regroups it and changes no total", async
     page.getByRole("heading", { name: "Confirm the detected format" }),
   ).toBeVisible();
   await page.getByLabel("Format name").fill("Demobank current account");
-  await page.getByLabel("Label").fill("Daily account");
-  await page.getByLabel("Bank").fill("Demobank");
-  await page.getByLabel("Ring").selectOption("POT");
   await page.getByTestId("confirm-import").click();
   await expect(page.getByTestId("import-result")).toBeVisible();
   await expect(page.getByTestId("rows-added")).toHaveText("6");
@@ -139,6 +142,8 @@ test.describe("card group labels on a phone", () => {
     await page.getByRole("button", { name: "Create household" }).click();
     await expect(page.getByTestId("household-context")).toHaveText(unique);
 
+    await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+
     await page.goto("/import");
     await page.getByLabel("Bank export file").setInputFiles(CARD_FIXTURE);
     await page.getByRole("button", { name: "Upload" }).click();
@@ -146,9 +151,6 @@ test.describe("card group labels on a phone", () => {
       page.getByRole("heading", { name: "Confirm the detected format" }),
     ).toBeVisible();
     await page.getByLabel("Format name").fill("Demobank current account");
-    await page.getByLabel("Label").fill("Daily account");
-    await page.getByLabel("Bank").fill("Demobank");
-    await page.getByLabel("Ring").selectOption("POT");
     // THE CONFIRM-FORMAT PREVIEW, the screen the owner photographed
     // (finding CR-M3P6-01). It renders the RAW parsed descriptor, which is
     // where a card number sits whole, and no criterion named it before this
@@ -286,6 +288,8 @@ test("submitting a PRE-MIGRATION un-namespaced subject surfaces the refusal to t
   await page.getByRole("button", { name: "Create household" }).click();
   await expect(page.getByTestId("household-context")).toHaveText(unique);
 
+  await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+
   await page.goto("/import");
   await page.getByLabel("Bank export file").setInputFiles(FIXTURE);
   await page.getByRole("button", { name: "Upload" }).click();
@@ -293,9 +297,6 @@ test("submitting a PRE-MIGRATION un-namespaced subject surfaces the refusal to t
     page.getByRole("heading", { name: "Confirm the detected format" }),
   ).toBeVisible();
   await page.getByLabel("Format name").fill("Demobank current account");
-  await page.getByLabel("Label").fill("Daily account");
-  await page.getByLabel("Bank").fill("Demobank");
-  await page.getByLabel("Ring").selectOption("POT");
   await page.getByTestId("confirm-import").click();
   await expect(page.getByTestId("import-result")).toBeVisible();
 

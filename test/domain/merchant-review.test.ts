@@ -110,6 +110,15 @@ const importFixture = async (world: World): Promise<void> => {
   if (!detected.ok) {
     throw new Error("detection failed");
   }
+  // SETUP FIRST (M3-P14): the account a statement belongs to is registered
+  // before the file is confirmed. A card carries no own-account column and
+  // registers nothing.
+  await world.registerAccountForStatement(
+    context,
+    fixtureBytes(),
+    detected.value,
+    { label: "Current A", bank: "Demobank", role: "POT" },
+  );
   const confirmed = await confirmImport(context, world.deps, {
     importId: uploaded.importId,
     profileName: "Card descriptors export",
@@ -692,6 +701,16 @@ describe("every rendering surface that shows descriptor text is derived, not rem
       expression: "landingAccount?.label",
       why: "The same declared account label on the landing branch of the same route.",
     },
+    {
+      file: "modules/accounts/ui/account-setup-form.tsx",
+      expression: "row.label",
+      why: "The VALUE of the setup form's own label input, held in the client island's state: text the household is typing right now, never parsed from a statement line (M3-P14).",
+    },
+    {
+      file: "modules/accounts/ui/accounts-screen.tsx",
+      expression: "account.label",
+      why: "The account's DECLARED label on the accounts list, typed by the household at setup, never parsed from a statement line (M3-P14).",
+    },
   ];
 
   const collectSourceFiles = (dir: string): readonly string[] => {
@@ -763,19 +782,24 @@ describe("every rendering surface that shows descriptor text is derived, not rem
   }
 
   test("the walk finds surfaces at all, so a broken walk cannot pass by finding nothing", () => {
-    // TEN leaf sites in FOUR files at this head: five masked and five
+    // TWELVE leaf sites in SIX files at this head: five masked and seven
     // declared exclusions. The round-1 grep recorded eight in three and did
     // not reproduce; this walk also reaches a file that grep never saw, the
     // import route, which renders TWO declared account labels rather than
     // the one this comment used to count.
+    //
+    // UPDATED IN M3-P14 (was ten in four): the accounts screen and its
+    // setup form render the household's OWN declared account labels, which
+    // are typed by the household and never parsed from a statement, so both
+    // join the exclusion table with their reason rather than being masked.
     //
     // CORRECTED IN PLACE (clause R-087, finding CR-M3P6-10). This comment
     // said NINE and the walk returned TEN, and the assertion below was a
     // FLOOR, so the recorded number could drift from the measured one with
     // nothing going red: the same mechanism this test exists to eliminate,
     // one level up. The assertion is now EXACT.
-    expect(surfaces.length).toBe(10);
-    expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(4);
+    expect(surfaces.length).toBe(12);
+    expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(6);
     expect(surfaces.filter((surface) => surface.masked).length).toBe(5);
   });
 

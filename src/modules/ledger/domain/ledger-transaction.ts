@@ -4,6 +4,7 @@
 // derived from these fields plus the user's declarations and is entirely
 // rebuildable.
 
+import { canonicalAccountNumber } from "@/platform/account-number";
 import type { Cents } from "@/platform/money";
 import type { PlainDate } from "@/platform/plain-date";
 import { SETTLEMENT_CREDIT_PATTERNS, matchesAny } from "./constants";
@@ -53,10 +54,20 @@ export const deriveDeclaredSets = (
   const potIbanToAccountId = new Map<string, string>();
   const potAccountIds = new Set<string>();
   const cardAccountIds = new Set<string>();
+  // EVERY SET IS KEYED ON THE CANONICAL FORM (M3-P14, criterion 14.4).
+  // A declaration is stored canonical, but the account number on a FACT row
+  // is whatever the source printed: the delimited parser stores the cell
+  // verbatim and a Belgian statement prints its accounts SPACED. Comparing
+  // raw stored strings answers "different account" for one account written
+  // two ways, so both sides canonicalise at comparison time and the fact
+  // column is never rewritten (pulse-domain section 2, rule 1). The
+  // comparison side is classify-flow.ts, corrections.ts and
+  // pair-transfers.ts; the rule and its siblings are recorded at the
+  // canonical form's definition in src/platform/account-number.ts.
   for (const account of accounts) {
     if (account.role === "RESERVE") {
       if (account.iban !== undefined) {
-        reserveIbans.add(account.iban);
+        reserveIbans.add(canonicalAccountNumber(account.iban));
       }
       continue;
     }
@@ -64,8 +75,9 @@ export const deriveDeclaredSets = (
     if (account.iban === undefined) {
       cardAccountIds.add(account.id);
     } else {
-      potIbans.add(account.iban);
-      potIbanToAccountId.set(account.iban, account.id);
+      const canonical = canonicalAccountNumber(account.iban);
+      potIbans.add(canonical);
+      potIbanToAccountId.set(canonical, account.id);
     }
   }
   return { reserveIbans, potIbans, potIbanToAccountId, potAccountIds, cardAccountIds };

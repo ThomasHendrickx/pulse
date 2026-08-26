@@ -20,7 +20,16 @@ export type ConfirmOutcome =
         | "import-not-found"
         | "not-awaiting-declaration"
         | "declaration-needed"
-        | "already-confirmed";
+        | "already-confirmed"
+        // M3-P14: the file's own account number is not one the household
+        // registered at setup. Nothing is written and no account is
+        // created; the message names the setup screen and links to it.
+        | "account-not-registered"
+        // M3-P14, decision D-55: the file's own account IS registered,
+        // but in the savings ring, whose statements are not imported in
+        // v1. Same refusal, different message: this one names the ring
+        // correction and what that correction costs.
+        | "account-in-savings-ring";
     };
 
 export const confirmImport = async (
@@ -75,29 +84,55 @@ export const confirmImport = async (
     return { kind: "failed", importId: record.id, reason: "mixed-accounts" };
   }
 
-  // Account resolution mirrors the upload path EXACTLY, because the
-  // confirmation screen names the landing account from the same rule
-  // (finding F1, transparency): the file's own IBAN first, then the
-  // binding of a spec-identical stored profile, then, and only then, the
-  // user's declaration.
+  // ACCOUNT RESOLUTION, AND THE GATE M3-P14 PUTS IN FRONT OF IT.
+  //
+  // Accounts used to come into existence HERE and only here, one statement
+  // at a time, which is the verified root cause of the owner's complaint:
+  // a transfer to an account no file had yet introduced missed both
+  // declared-set arms in classification, fell to the sign rule, landed in
+  // the spend total and offered its counterparty on the naming screen. So
+  // the file's own account is now either ALREADY REGISTERED, or the file
+  // carries no own-account column at all, which is the card shape.
+  //
+  // Two arms, and a card is the only thing declared at first sight:
+  //
+  //   the file carries an own account -> it must resolve to an account
+  //   registered at setup, in the POT ring. Anything else is a refusal
+  //   with nothing written.
+  //
+  //   the file carries NO own account -> it is a card (decision D-48: a
+  //   card statement carries no account number and is recognised through
+  //   its bound SourceProfile), resolved from a spec-identical stored
+  //   profile or declared here.
   const existingProfile = await findProfileBySpec(context, deps, input.spec);
   const fileIban = parsed.value.accountIbans[0];
   let accountId: string | undefined;
   if (fileIban !== undefined) {
+    // Canonical on both sides inside the repository (criterion 14.4): the
+    // file prints its account spaced on one path and compact on another.
     const existing = await deps.accounts.findAccountByIban(context, fileIban);
-    accountId = existing?.id;
+    if (existing === null) {
+      return { kind: "rejected", reason: "account-not-registered" };
+    }
+    if (existing.role === "RESERVE") {
+      // Decision D-55: reserve accounts are registered for their account
+      // number only and their statements are not imported in v1. The
+      // remedy is the ring correction, and the message names its price.
+      return { kind: "rejected", reason: "account-in-savings-ring" };
+    }
+    accountId = existing.id;
   } else {
     accountId = existingProfile?.accountId;
-  }
-  if (accountId === undefined) {
-    if (input.declaration === undefined) {
-      return { kind: "rejected", reason: "declaration-needed" };
+    if (accountId === undefined) {
+      if (input.declaration === undefined) {
+        return { kind: "rejected", reason: "declaration-needed" };
+      }
+      const created = await deps.accounts.declareAccount(
+        context,
+        input.declaration,
+      );
+      accountId = created.id;
     }
-    const created = await deps.accounts.declareAccount(context, {
-      ...input.declaration,
-      ...(fileIban !== undefined ? { iban: fileIban } : {}),
-    });
-    accountId = created.id;
   }
 
   // Reuse a spec-identical stored profile rather than storing a twin; the

@@ -77,6 +77,15 @@ export const interpretForImport = (
 ): Promise<InterpretationSummary | null> =>
   interpretForImportUseCase(context, liveDependencies, importId);
 
+// Whether an account carries imported fact rows of its own (M3-P14). A
+// read on the ledger's own tables, published because the accounts module
+// needs the answer to refuse a ring change (decision D-51) and may not
+// reach into another module's repository (pulse-domain section 9).
+export const hasImportedRows = (
+  context: HouseholdContext,
+  accountId: string,
+): Promise<boolean> => repository.hasImportedRows(context, accountId);
+
 // Recompute: the same step over everything, no import attached. One
 // internal dev-only action (pulse-v1-architecture.md).
 export const recomputeInterpretation = (

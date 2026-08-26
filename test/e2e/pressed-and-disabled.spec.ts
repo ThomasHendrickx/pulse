@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page, type CDPSession } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { FIXTURE_ACCOUNT_A, registerCurrentAccount } from "./setup-accounts";
 
 // M3-P9. THE PRESSED APPEARANCE IS MEASURED BY PRESSING, the disabled, busy
 // and unconfirmed appearances are measured by entering them, and the press a
@@ -46,8 +47,20 @@ const REJECTED_FIXTURE = join(__dirname, "..", "fixtures", "unknown-layout.pdf")
 const CONTROL_SELECTOR =
   'button, a[href], summary, input[type="submit"], input[type="button"], [role="button"]';
 
-// THE ENUMERATION, nineteen controls from seventeen source sites, the
-// shell's NavLink accounting for three of them. Criterion 9.2(a) fails in
+// THE ENUMERATION, twenty-one controls, the shell's NavLink accounting for
+// four of them.
+//
+// AMENDED IN M3-P14 rather than the sweep narrowed, which is what criterion
+// 9.2(a) requires when the two disagree. That phase adds a fourth
+// navigation link and a second call to action on the empty state, both of
+// which the sweep reaches on screens it already visits. It also adds the
+// accounts screen's own controls, which are NOT here and are NOT swept: the
+// journey below walks that screen to register an account, but takes no
+// measurement on it, so it contributes nothing to this set. That is a real
+// gap in the pressed-feedback coverage of a new screen and it is recorded
+// as one rather than papered over; closing it belongs to whichever phase
+// next owns this file, because criterion 14.9 pins M3-P14 to the gates it
+// names and this spec's control set is M3-P9's contract. Criterion 9.2(a) fails in
 // BOTH directions against this list: a control the sweep does not reach
 // fails, and a control the sweep finds that is not named here fails too. If
 // the two disagree the enumeration is amended and the sweep is never
@@ -61,11 +74,13 @@ const ENUMERATION: readonly string[] = [
   "button[data-testid=confirm-import]",
   "button.merchant-name-button|Name",
   "button.app-signout|Sign out",
-  // The seven navigating controls.
+  // The nine navigating controls.
   "a[data-testid=nav-overview]",
   "a[data-testid=nav-import]",
   "a[data-testid=nav-merchants]",
+  "a[data-testid=nav-accounts]",
   "a[data-testid=empty-state-import-link]",
+  "a[data-testid=empty-state-accounts-link]",
   "a[data-testid=unresolved-pill]",
   "a.month-nav|‹",
   "a.month-nav|›",
@@ -1396,6 +1411,12 @@ const runJourney = async (page: Page, reduced: boolean, cdp: CDPSession | null):
   await expect(page.getByTestId("empty-state")).toBeVisible();
   await measure();
 
+  // M3-P14: a household that has registered nothing is sent to the accounts
+  // screen before the import screen will accept a file, so the account this
+  // fixture belongs to is registered first. No measurement is taken on the
+  // accounts screen; see the note on the enumeration above.
+  await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+
   await page.goto("/import");
   await expect(page.getByRole("button", { name: "Upload" })).toBeVisible();
   await measure();
@@ -1427,9 +1448,6 @@ const runJourney = async (page: Page, reduced: boolean, cdp: CDPSession | null):
   }
 
   await page.getByLabel("Format name").fill("Demobank current account");
-  await page.getByLabel("Label").fill("Daily account");
-  await page.getByLabel("Bank").fill("Demobank");
-  await page.getByLabel("Ring").selectOption("POT");
   await page.getByTestId("confirm-import").click();
   await expect(page.getByTestId("import-result")).toBeVisible();
   await measure();
@@ -1507,7 +1525,7 @@ const runJourney = async (page: Page, reduced: boolean, cdp: CDPSession | null):
   console.log(`swept control set (${found.length}):\n  ${found.join("\n  ")}`);
   const expected = [...ENUMERATION].sort();
   expect(found, "the swept control set is not the enumeration").toEqual(expected);
-  expect(found).toHaveLength(19);
+  expect(found).toHaveLength(21);
 
   if (cdp !== null) {
     // Criterion 9.9(b) is taken over the SET, so the count of controls the

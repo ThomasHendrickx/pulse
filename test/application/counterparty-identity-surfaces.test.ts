@@ -52,6 +52,14 @@ const ingestFixture = async (): Promise<World> => {
   if (!detected.ok) {
     throw new Error("detection failed");
   }
+  // SETUP FIRST (M3-P14): the account a statement belongs to is registered
+  // before the file is confirmed. A card carries no own-account column and
+  // registers nothing.
+  await world.registerAccountForStatement(context, bytes, detected.value, {
+    label: "Daily account",
+    bank: "Belfius",
+    role: "POT",
+  });
   const confirmed = await confirmImport(context, world.deps, {
     importId: uploaded.importId,
     profileName: "belfius-current-account-nl",

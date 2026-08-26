@@ -417,6 +417,20 @@ const EmptyState = async () => {
       <h1>{t("noData")}</h1>
       <p>{t("emptyTitle")}</p>
       <p>{t("emptyBody")}</p>
+      {/* SETUP IS NAMED WHERE IT IS NEEDED (M3-P14, criterion 14.7). The
+          first screen anyone sees now points at the accounts screen as
+          well as the import screen, because a household that has
+          registered nothing is sent there before the import screen will
+          accept a file. */}
+      <p>
+        <Link
+          href="/accounts"
+          className="empty-state-cta"
+          data-testid="empty-state-accounts-link"
+        >
+          {t("emptyAccountsCta")}
+        </Link>
+      </p>
       <p>
         <Link
           href="/import"

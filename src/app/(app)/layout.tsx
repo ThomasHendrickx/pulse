@@ -17,7 +17,7 @@ import { NavLink } from "@/platform/ui/nav-link";
 // TWO ROWS, PHONE FIRST (M3-P7, DR-0022, following
 // delivery/design/mobile-v02/Main.dc.html:23 through :33): the identity
 // row carries the brand, the household name and sign out; the navigation
-// row below it gives the three links a third of the width each, so every
+// row below it gives the links an equal share of the width, so every
 // target clears the tap-target minimum at 360 as well as at 390. The
 // household identity keeps the ellipsis M3-P1 criterion 1.5 decided: it is
 // the one element in the product allowed to give way. At the one
@@ -54,6 +54,16 @@ export default async function AppLayout({
           </NavLink>
           <NavLink href="/merchants" testId="nav-merchants">
             {t("navMerchants")}
+          </NavLink>
+          {/* THE FOURTH LINK (M3-P14, criterion 14.7). The row was sized
+              for three at a third of the width each and is now four at a
+              quarter each: the links already flex 1 1 0, so the fourth
+              narrows them rather than overflowing, and criterion 14.7
+              measures the tap-target floor in BOTH dimensions at 360 as
+              well as at 390 because a fourth link changes width and not
+              height. */}
+          <NavLink href="/accounts" testId="nav-accounts">
+            {t("navAccounts")}
           </NavLink>
         </nav>
         {/* READ AFTER THE NAVIGATION, DRAWN BESIDE THE IDENTITY (M3-P7 fix
