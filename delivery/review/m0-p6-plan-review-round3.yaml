@@ -1,0 +1,685 @@
+# Round THREE adversarial plan review of the M0-P6 plan iteration: phases
+# M3-P14 and M3-P15 of delivery/plan/pulse-v02.yaml, reviewer worktree
+# wt-m0p6-adv, branch claude/m0-p6-plan-review, plan head 3226374 merged at
+# 5f6bac8. Round one returned FIX-ROUND-NEEDED with 7 high, 7 medium, 1 low;
+# round two with 5 high, 5 medium, 1 low. Round two's finding R2-004 was put
+# to the owner and the owner reversed the position: DR-0030
+# (/home/user/pulse-fleet/decisions/DR-0030.yaml, decided 2026-08-24) makes
+# Pulse ACCEPT a reserve account's own statement. That is settled and is not
+# reviewed here. What is reviewed is whether the plan that implements it
+# holds.
+#
+# WHY THIS IS AGAIN A FINDING SET AND NOT A VERDICT. `--type verdict` was
+# attempted first at this head and refused for the same structural reason as
+# in both earlier rounds. Captured:
+#
+#   $ npx tiphys validate --type verdict --context /home/user/wt-m0p6-adv \
+#       delivery/review/m0-p6-plan-review-round3.yaml
+#   INVALID #/criteria required property criteria is missing
+#   INVALID #/deviations-judged required property deviations-judged is missing
+#   INVALID #/framing required property framing is missing
+#   INVALID #/phase required property phase is missing
+#   INVALID #/review-contract required property review-contract is missing
+#   INVALID #/kind value "finding" does not equal the required constant
+#     "verdict"
+#   INVALID #/findings/0/concrete-edit property concrete-edit is not permitted
+#     here
+#   INVALID #/findings/0/concrete-fix required property concrete-fix is missing
+#   (the last pair repeated for each finding)
+#
+# A verdict judges an IMPLEMENTED phase against a work history and demands
+# `concrete-fix`, a fix to CODE. A plan review demands `concrete-edit`, an
+# edit to the PLAN, and M3-P14 and M3-P15 have not been built. Validated as
+# `--type finding`, as rounds one and two were.
+#
+# THIS WAS NOT A DELTA REVIEW. The reversal rewrote D-55, added D-59 and
+# D-60, deleted the import refusal and the pot-only ring control, and added
+# criteria 14.15, 14.16, 15.2's second half and 15.9 with hazards H14.16 and
+# H14.17 and H15.8. All 24 criteria were walked again from the plan file:
+# 14.1 through 14.16 and 15.1 through 15.9, plus all 26 hazard classes, the
+# six decisions D-55 through D-60, both migrations notes and both
+# conflicts-with blocks.
+#
+# EVERY ROUND-TWO FINDING IS ANSWERED. R2-001 by the reversal itself plus
+# criterion 14.11 and hazard H14.13; R2-002 by the corrected D-56, criterion
+# 14.14 and hazard H14.14, and by 15.3 now naming listGapRows; R2-003 by
+# criterion 14.11 witness FOUR, hazard H14.15 and the fourth baseline in step
+# 1; R2-004 by DR-0030 and the rewritten D-55, which now records the position
+# as CHOSEN and carries the what-the-household-loses paragraph; R2-005 by
+# M3-P14's conflicts-with naming M3-P15 a shipping prerequisite, by criterion
+# 15.9 and by hazard H15.8; R2-006 by the named exception in D-58 and 15.7;
+# R2-007 by criterion 14.2's grouping clause; R2-008 by the corrected M3-P12
+# step; R2-009 by 14.10's diff-scoped token clause; R2-010 by 14.7's absolute
+# bound for the added link; R2-011 by 15.1 now asserting pot-change and
+# dropping the dead hedge. Nothing is parked without a reason. The repairs
+# are good. What follows is what the REVERSAL broke and what it left
+# unspecified.
+#
+# ==========================================================================
+# THE INVARIANT WALK, done by hand and reported in full because the dispatch
+# asked for it and because the answer is not a simple yes.
+#
+# A HELD ROW is a row with a null flow on an account whose ring is not POT
+# (decision D-59). Walking every read in the tree that touches a transaction:
+#
+#   monthFigures, src/modules/overview/adapters/overview-repository.ts:214
+#   through :236. Twelve projections. incomeSigned (:216) filters
+#   flow='INCOME'; spendSigned (:217) flow='SPEND'; reserveSigned (:218)
+#   flow='RESERVE'; changeInPot (:219) flow IS NOT NULL; unresolvedCents and
+#   unresolvedCount (:220, :221) flow='UNRESOLVED'; unmatchedCents and
+#   unmatchedCount (:222 through :225) flow='INTERNAL'; inTransitCents and
+#   inTransitCount (:226 through :229) flow='INTERNAL'; rowCount (:231)
+#   flow IS NOT NULL. A held row carries NO flow, so it is excluded from
+#   every one of the eleven. The twelfth, uninterpretedCount (:230), filters
+#   flow IS NULL and is the one that sees it; criterion 14.14 scopes it.
+#   countedGroups (:128 through :131): flow = the requested INCOME or SPEND.
+#   Excluded.
+#   listReserveMovements (:177 through :179): flow='RESERVE'. Excluded.
+#   merchant review's read, src/modules/merchants/adapters/
+#   merchant-repository.ts:231 through :234: INCOME and SPEND only.
+#   Excluded.
+#   listGapRows (:263 through :310): WHERE at :295 admits flow IS NULL and
+#   the CASE at :280 labels it 'uninterpreted'. Sees it; criterion 14.14
+#   scopes it.
+#   The domain identity, src/modules/ledger/domain/reconciliation.ts:60
+#   through :66, skips any transaction with no flow in the interpretation
+#   map, so test/property/reconciliation.test.ts cannot redden either.
+#   Interpretation never stamps one: src/modules/ledger/application/
+#   interpret-window.ts:37 through :39 builds its list from potAccountIds,
+#   and src/modules/ledger/domain/ledger-transaction.ts:56 through :61 puts
+#   a RESERVE account in neither declared account set.
+#
+# SO: a held row cannot reach any total or any gap read, PROVIDED the two
+# null-flow reads are scoped as criterion 14.14 requires and PROVIDED no
+# THIRD read is added that sees a null flow. Criterion 14.15 requires exactly
+# such a third read and the plan does not specify it, which is finding
+# R3-002. And the invariant criterion 14.16 asserts is not the one the
+# mechanism delivers, which is finding R3-001 and is the finding of the
+# round: the row that moves is not the held row, it is the POT-SIDE TRANSFER
+# ROW, and it moves because the reserve import DECLARES the account.
+# ==========================================================================
+#
+# THE MOD-97 MEASUREMENT, ordered by the dispatch, with the method stated so
+# it can be repeated. THE METHOD IS THE PRIVACY GATE'S OWN, because that is
+# the only definition of "an account-shaped value in this tree" the
+# repository actually enforces. Reproduced exactly from
+# scripts/gate-privacy.sh: the file set is `git ls-files`, skipping
+# package-lock.json, *.png, *.jpg, *.jpeg, *.ico, *.woff, *.woff2, the allow
+# list itself, and design/reference/pulse-prototype.html (the gate's own
+# judgement skip, scripts/gate-privacy.sh:117 through :129). The pattern is
+# the gate's IBAN alternation, BOTH arms:
+#   IBAN_LOCAL   \b[A-Za-z]{2}[0-9]{2}([[:space:]]?[0-9]{4}){3}\b
+#   IBAN_FOREIGN \b[A-Za-z]{2}[0-9]{2}[0-9A-Za-z]{10,30}\b
+# Each hit is normalised by the gate's own norm(), `tr -d ' -' | tr 'x*' 'XX'
+# | tr 'a-z' 'A-Z'`, then `sort -u`. ISO 7064 is then applied to each
+# distinct value: move the first four characters to the end, map A-Z to
+# 10-35, take the result mod 97, require 1.
+#
+#   $ bash mod97.sh gate | wc -l
+#   17
+#   $ node -e '<mod-97 over that list>'
+#   distinct=17 pass=7 fail=10 nonnumeric=0
+#   by shape: 14 of length 16 with country code BE, of which 4 pass and 10
+#   fail; and one each of length 18, 22 and 27 carrying three other European
+#   country codes, all three of which pass.
+#
+# MY NUMBER IS 17 DISTINCT, 7 PASSING, 10 FAILING. Neither number in front
+# of me is right, and the two are wrong in different halves, which is worth
+# saying because it explains both.
+#   $ grep -Eoh "$IBAN" test/fixtures/allowed-identifiers.txt | norm |
+#       sort -u | wc -l
+#   19
+# The 19 both parties report is the count of account shapes in the ALLOW
+# LIST, not in the tree. The allow list carries two entries the gate's scan
+# scope no longer reaches, which is harmless (the gate fails on a tree value
+# not on the list, never the reverse) but makes 19 the wrong denominator.
+# The "4 passing" in the plan is MY OWN ROUND-TWO NUMBER, which I measured
+# over the Belgian-length pattern ALONE and reported as 16 distinct with 4
+# passing; the plan took the numerator from that measurement and the
+# denominator from the allow list, so the figure recorded in the plan is a
+# mixture of two scans and matches neither. The dispatch's 7 is the correct
+# pass count and its 19 is the allow-list denominator.
+# WHICH CRITERIA THE TRUE NUMBER MAKES UNSATISFIABLE: none in M3-P14, because
+# criterion 14.11 witness FOUR now re-invents exactly the numbers criteria
+# 14.1 and 14.5 require to be registered and leaves the rest alone, and
+# criterion 14.1 carries its own fast-gate assertion. ONE in M3-P15, criterion
+# 15.1's second arm, which is finding R3-003.
+#
+# SCOPE DISCIPLINE. No queue, cron, event bus, cache, state library,
+# component library, per-transaction override, goal or budget is added. D-60
+# is a boundary AGAINST scope growth and is the right shape. Nothing to
+# report.
+#
+# HOUSE RULES. `git diff aa4e526~1 3226374 -- delivery/plan/pulse-v02.yaml |
+# grep '^+' | grep -c '—'` returns 0. Both fix-round commit messages carry no
+# amount, no counterparty, no date from a row and no identifier. English
+# throughout. No identifier shape appears in this document.
+kind: finding
+verdict: FIX-ROUND-NEEDED
+produced-by: claude (Opus 5, claude-opus-5)
+findings:
+  - id: R3-001
+    severity: high
+    evidence:
+      - >-
+        Criterion 14.16 is the phase's invariant witness: "A household holds a
+        pot account and a reserve account; the month is computed FIRST with
+        only the pot statement imported, and every field of MonthFigures is
+        recorded; then the reserve account's OWN statement is imported, with no
+        other change, and the test asserts that incomeCents, spendCents,
+        netToReservesCents and changeInPotCents are each byte identical to the
+        recorded values".
+      - >-
+        Importing a statement is not a read-only act on the rest of the
+        household. src/modules/import/application/confirm-import.ts:136 calls
+        deps.interpret after ingest, and
+        src/modules/ledger/application/interpret-window.ts:34 through :39
+        rebuilds the declared sets from listAccounts on every run, so an
+        interpretation triggered by ANY import reclassifies every pot row in
+        the window against the declaration set as it stands at that moment.
+      - >-
+        On the construction criterion 14.11 witness ONE establishes as the
+        order every household is in, the reserve account does not exist until
+        the reserve statement is confirmed:
+        confirm-import.ts:86 through :101 finds no account for the file's own
+        number and declares one at :96 from the owner's ring answer. So
+        BEFORE the reserve import the pot account's transfers to that savings
+        account match nothing in
+        src/modules/ledger/domain/ledger-transaction.ts:56 through :61, miss
+        the reserve arm at src/modules/ledger/domain/classify-flow.ts:62, miss
+        the pot arm at :73, and fall to the sign rule at :102 as SPEND. AFTER
+        the reserve import the account is in reserveIbans, classify-flow.ts:62
+        fires, and those same rows are RESERVE.
+      - >-
+        So spendSigned falls and reserveSigned rises by exactly the household's
+        transfers to that account, which is a change to spendCents and
+        netToReservesCents, two of the four figures 14.16 asserts are byte
+        identical. changeInPotCents does not move (both flows are non-null,
+        overview-repository.ts:219) and differenceCents does not move, so the
+        test fails on precisely the two figures a correct implementation must
+        move.
+      - >-
+        The alternative reading, that the household REGISTERED the reserve
+        account before the pot statement was imported, makes the criterion pass
+        and makes it prove almost nothing: the reserve rows were never going to
+        be counted, so the test measures that adding rows nobody reads changes
+        nothing. It also contradicts criterion 14.11 witness ONE, whose
+        household "registers NOTHING". Two criteria in the same phase describe
+        incompatible households and neither says which one 14.16 is built on.
+      - >-
+        The failure mode is the dangerous one rather than the annoying one. An
+        implementer meeting 14.16 red at the end of the phase has one cheap
+        repair available: stop the reserve import from recomputing. That would
+        break criterion 14.5's healing, which requires a declaration to
+        reclassify rows already imported, and it would restore the original
+        defect for every household that imports its savings statement before
+        its current-account statement.
+    concrete-edit: >-
+      Split criterion 14.16 into two arms that name their construction.
+      "FIRST ARM, THE HELD ROW CHANGES NOTHING. The reserve account is
+      REGISTERED on the accounts screen before any statement is imported, so
+      the declaration set is identical before and after. The pot statement is
+      imported and every field of MonthFigures is recorded; the reserve
+      account's own statement is then imported with no other change, and the
+      test asserts incomeCents, spendCents, netToReservesCents,
+      changeInPotCents, differenceCents, uninterpretedCount and rowCount are
+      each byte identical to the recorded values, that reconciles is still
+      true, and that the held-rows element of criterion 14.15 has appeared
+      naming the new rows. SECOND ARM, THE DECLARATION DOES CHANGE SOMETHING
+      AND THE CRITERION SAYS WHICH. On the order criterion 14.11 witness ONE
+      establishes, the reserve account is DECLARED by the reserve import
+      itself, so before it the pot account's transfers to that account fall to
+      the sign rule at src/modules/ledger/domain/classify-flow.ts:102 and are
+      SPEND, and after it they take classify-flow.ts:62 and are RESERVE. The
+      test asserts exactly that: spendCents FALLS and netToReservesCents RISES
+      by the same hand-written string computed from the fixture's own
+      arithmetic, changeInPotCents and differenceCents are byte identical,
+      reconciles is still true, uninterpretedCount is unchanged, and the
+      held-rows element has appeared. The movement belongs to the DECLARATION
+      and never to the held rows, and a test asserting no figure moves here
+      would be asserting that registering an account does not heal the rows
+      that reference it, which criterion 14.5 requires it to do."
+    analysis: >-
+      This is the finding of the round and it is the one the dispatch asked
+      for, with one correction to the question: the row that leaks is not the
+      held row. Held rows are watertight, and I walked all fourteen reads to
+      say so. What moves is the POT-SIDE row, and it moves for a reason the
+      phase wants, because declaring an account is supposed to reclassify what
+      references it. The defect is that the phase's own invariant criterion
+      was written as though importing a reserve statement were inert, when on
+      the order the phase itself calls the order every household is in, that
+      import carries a declaration with it. As written the criterion is red
+      for a correct implementation on one construction and near-vacuous on the
+      other, and it never says which. That is the exact shape of round one's
+      PR6-003 and round two's arithmetic findings, now landing on the criterion
+      that guards the reconciliation identity.
+  - id: R3-002
+    severity: high
+    evidence:
+      - >-
+        Criterion 14.15 requires a screen state: "an element with data-testid
+        held-rows renders, naming each account whose rows are held and how many
+        of its rows fall in the month", plus the same per account on the
+        accounts screen. That data has to come from a read.
+      - >-
+        The plan removes both reads that could produce it. Decision D-56 and
+        criterion 14.14 scope BOTH null-flow reads,
+        src/modules/overview/adapters/overview-repository.ts:230 and
+        listGapRows at :263 through :310, to POT accounts. After the phase
+        there is no read in the tree that returns a row on a non-pot account.
+      - >-
+        Nothing adds one. src/modules/overview/application/ports.ts declares
+        six methods (listIncomeGroups, listSpendGroups, listReserveMovements,
+        monthFigures, listGapRows, hasAnyTransactions) and none can return a
+        held row; MonthOverview at
+        src/modules/overview/application/month-overview.ts:42 through :67 has
+        no held field and :87 through :95 fetches nothing that could fill one.
+        M3-P14's files-to-touch lists
+        src/modules/overview/application/month-overview.ts and
+        src/modules/overview/adapters/overview-repository.ts and does NOT list
+        src/modules/overview/application/ports.ts, which a new port method
+        requires. No step and no criterion names the read.
+      - >-
+        The read the phase must add is a THIRD read carrying a null-flow
+        condition, and it carries the INVERSE ring predicate of the two that
+        criterion 14.14 pins. 14.14 witness FOUR asserts "the two reads are
+        scoped by the same predicate"; a third read scoped by the opposite
+        predicate is outside that test entirely, so decision D-56's central
+        sentence, "TWO reads carrying THREE null-flow conditions", becomes
+        false on the day criterion 14.15 is implemented. That sentence has now
+        been corrected once already, in the second fix round, after the same
+        claim was found false by grep.
+      - >-
+        The wrong implementation is the natural one and no criterion refuses
+        it: a read written as "flow IS NULL" with no ring filter at all. It
+        satisfies 14.15 witness ONE, and it also lists every genuine
+        uninterpreted row on a POT account under held-rows, which renders
+        OUTSIDE the reconciliation panel beside a verdict 14.15 witness ONE
+        requires to read as books closing. The only assertion that could catch
+        it is 14.15 witness THREE, whose wording is ambiguous (finding R3-008).
+    concrete-edit: >-
+      Add src/modules/overview/application/ports.ts and
+      src/modules/accounts/adapters/account-repository.ts to M3-P14's
+      files-to-touch, and add a fourth step clause to the ACCEPT step naming
+      the read: "The held state needs a READ, because scoping the two
+      null-flow reads to pot accounts leaves nothing in the tree that can see
+      a held row. This phase adds ONE, a third null-flow read carrying the
+      INVERSE ring predicate of the other two: rows with no flow on accounts
+      that are not pot accounts, grouped by account, bounded by the requested
+      period, behind a new method on the overview port and a new field on
+      MonthOverview." Add to criterion 14.14, as a fifth case: "FIVE, THE
+      THREE READS PARTITION. A grep records every null-flow condition under
+      src/ and the test asserts there are exactly three, in three reads, and
+      that they partition rather than overlap: the count and the listing take
+      POT accounts, the held read takes NON-POT accounts, and an application
+      test over a household holding one null-flow row on a pot account and one
+      on a reserve account asserts each row is returned by exactly one of the
+      three and never by two. A held read written without a ring filter fails
+      this case, and it is the only case that can see it."
+    analysis: >-
+      The screen state is the thing DR-0030 is paying for, by the plan's own
+      words, and it is the one part of the reversal with no data path. That is
+      recoverable, and an implementer will notice within an hour. What is not
+      recoverable by noticing is the shape of the read they will write, because
+      the plan has told them twice that only two reads can see a null flow and
+      is about to be wrong a third time. A third read with no ring filter puts
+      a genuine gap on a pot account into an element that renders next to a
+      green verdict, which is the same defect this plan has now corrected in
+      two consecutive rounds under two different names.
+  - id: R3-003
+    severity: high
+    evidence:
+      - >-
+        Criterion 14.11 witness FOUR closes the fixture collision precisely and
+        NARROWLY: "the savings account criteria 14.1 and 14.5 require to be
+        REGISTERED through the form criterion 14.12 guards must pass the
+        platform validity test ... Only those numbers are re-invented; the rest
+        of the tree's invented numbers are left alone."
+      - >-
+        Criterion 15.1's SECOND ARM, in the other phase, registers an account
+        too: "The same spec registers an ordinary current account in the POT
+        ring, imports a statement whose own rows are ordinary outside spend".
+        It names no fixture. The account it registers is not one of criterion
+        14.1's seven, so M3-P14's re-invention does not cover it, and criterion
+        14.12's refusal applies to it in full.
+      - >-
+        Measured with the privacy gate's own patterns and skip list over `git
+        ls-files`: 17 distinct account-shaped values, 7 passing the ISO 7064
+        mod-97 check, 10 failing. Of the 14 Belgian-length values, 4 pass and
+        10 fail. Every committed fixture that could serve criterion 15.1's
+        second arm, an ordinary current-account statement of outside spend,
+        carries an own-account number among the failing ten.
+      - >-
+        So an implementer who reaches for a committed fixture, which is the
+        cheap and natural move and the one the criterion's silence invites,
+        finds the registration refused and criterion 15.1's second arm
+        unreachable, in the phase that no longer has 14.11 witness FOUR's
+        instruction to re-invent anything.
+      - >-
+        The plan's own record of the measurement is wrong in both halves and
+        should not be relied on by the phase that inherits it. The
+        verification-first step tells the phase to measure for itself, which is
+        right; the number the plan states beside it, 19 distinct with 4
+        passing, is the allow list's line count as a denominator and this
+        reviewer's round-two Belgian-only scan as a numerator, two different
+        measurements combined.
+    concrete-edit: >-
+      Add to criterion 15.1's second arm, after "registers an ordinary current
+      account in the POT ring": "over a fixture whose own account number passes
+      the platform validity test of criterion 14.12, which the phase asserts by
+      a fast-gate unit test rather than by inspection; if it reuses a committed
+      fixture whose number predates that check, it re-invents the number,
+      updates every reference to it in sibling fixtures in the same commit, and
+      adds and removes the corresponding entries in
+      test/fixtures/allowed-identifiers.txt with a written provenance note, on
+      the same terms M3-P14 criterion 14.11 witness FOUR sets." Add to M3-P15's
+      verification-first step: "and CAPTURE, from the phase base, which
+      committed fixture account numbers pass the validity test, because this
+      phase registers an account of its own through the form M3-P14 guards."
+      And replace the count the plan states with a statement that the phase
+      reads the number off its own run, with no figure quoted, since the figure
+      recorded is a mixture of two scans.
+    analysis: >-
+      Round two found this collision in M3-P14 and the fix round closed it
+      there, thoroughly, with a hazard class and a fourth baseline. It closed
+      it in the phase where it was reported rather than in the class where it
+      lives, and the same collision is sitting one phase later on a criterion
+      that was not part of the reported finding. The pressure is unchanged and
+      so is the cheap way out: weaken criterion 14.12, which restores hazard
+      H14.11 in full.
+  - id: R3-004
+    severity: high
+    evidence:
+      - >-
+        Criterion 15.9 names the failure the product cannot catch, in its own
+        words: the household answers "the ring question with the SPENDING ring,
+        which is the mistake the product cannot otherwise catch".
+      - >-
+        Walked: a savings statement answered POT creates a pot account with an
+        account number
+        (src/modules/import/application/confirm-import.ts:95 through :99), so
+        every row ON it is interpreted. The interest the account earns is a
+        positive row with an outside counterparty and takes
+        src/modules/ledger/domain/classify-flow.ts:121 as INCOME; anything paid
+        out of it takes :107 as SPEND. The transfer from the current account
+        arrives on both sides as a row whose counterparty is now in potIbans,
+        so both legs take classify-flow.ts:73 as INTERNAL and PAIR, leaving no
+        unmatched cause. reserves-net renders 0,00 and no-reserves renders
+        (src/modules/overview/ui/month-view.tsx:223 and :249 through :253), and
+        src/modules/overview/domain/month-projection.ts:208 through :213
+        returns reconciles TRUE.
+      - >-
+        So the household is shown a month that closes, with income and spend
+        inflated by a savings account's internal life and with "set aside this
+        month" reading zero. Nothing on the month view differs from a correct
+        month. This is the state round two reported as R2-001, and the reversal
+        did not remove it: it removed the refusal that would have made it
+        unreachable, so the file is now accepted and the wrong answer injects a
+        whole statement into the counted month instead of injecting nothing.
+      - >-
+        The protection the plan puts in its place is entirely at the moment of
+        answering: criterion 14.11 witness ONE requires consequence copy beside
+        each answer, witness TWO forbids a defaulted ring, witness THREE
+        requires the screen to name where the answer can be changed. All three
+        are good and none of them is a detection. A household that reads the
+        copy and answers wrongly anyway, or answers before understanding it,
+        gets no second signal from any screen at any later time.
+      - >-
+        The asymmetry is the point. Criterion 14.15 gives the RIGHT answer a
+        screen state: held rows are named, per account, on the month view and
+        on the accounts screen. The WRONG answer, which criterion 15.9 calls
+        uncatchable, gets nothing. The one element DR-0030 pays for surfaces
+        the case that was already safe and stays silent on the case that is
+        not.
+    concrete-edit: >-
+      Add a sixth assertion to criterion 14.15: "SIX, THE COUNTED SIDE IS
+      NAMED TOO, BECAUSE THE WRONG ANSWER IS THE ONE NOTHING ELSE CATCHES. The
+      held-rows element has a counterpart: the month view names, per account,
+      which accounts contributed COUNTED rows to this month and which are held,
+      so a household whose savings account was answered as a spending account
+      sees it named among the counted accounts on the screen it actually looks
+      at rather than only on the accounts screen it has no reason to open. A
+      Playwright test over a household that answered the SPENDING ring for a
+      savings statement asserts that account appears among the counted accounts
+      with its row count, that the copy naming it is present in all three
+      catalogues, and that the same copy links to the accounts screen where the
+      ring is changed. The test is the mirror of witness ONE and it exists
+      because criterion 15.9 names this answer as the mistake the product
+      cannot otherwise catch; a phase that surfaces only the correct answer has
+      built the easy half."
+    analysis: >-
+      The reversal made this worse rather than better, and honestly so, because
+      DR-0030 traded a refusal for an answer. That trade is the owner's and it
+      is right for the reasons the record gives. What does not follow from it is
+      leaving the wrong answer invisible. Every ingredient is already in the
+      phase: the accounts screen lists each account with its ring, the held-rows
+      element already groups rows by account for the month, and criterion 15.9
+      already knows which answer is dangerous. What is missing is that the
+      dangerous one is the one that renders nothing.
+  - id: R3-005
+    severity: medium
+    evidence:
+      - >-
+        The fourth sweep for the defect shape this plan has now carried three
+        times, a criterion resting on evidence that cannot exist in the phase's
+        own tree, finds a fourth instance in a criterion added this round.
+      - >-
+        Criterion 14.14 witness TWO reads: "over a household whose accounts are
+        ALL pot accounts, every field of MonthFigures is byte identical to the
+        values the verification-first step captured from the phase base ... and
+        listGapRows returns the same rows it returned at the base."
+      - >-
+        Step 1 captures four baselines and the listGapRows output for an
+        all-pot household is not among them. Baseline ONE is "the full
+        MonthFigures of a household whose accounts are ALL pot accounts over a
+        committed fixture". Baseline THREE captures "whether listGapRows returns
+        them" for a DIFFERENT household, the one with an imported reserve
+        statement. Baseline TWO is the navigation geometry and baseline FOUR is
+        the mod-97 measurement.
+      - >-
+        So "the same rows it returned at the base" for the all-pot household is
+        a state of the repository that stops existing the moment the phase
+        lands, with nothing captured to stand in for it. Criterion 14.10 makes
+        a missing baseline a failure, which does not help here: the baseline is
+        not missing from the work history, it was never listed in step 1.
+    concrete-edit: >-
+      Add to M3-P14 step 1's baseline ONE: "and, over the same all-pot
+      household and the same committed fixture, the full output of listGapRows,
+      printed as captured output, because criterion 14.14 witness TWO asserts
+      against it by hand and a baseline that is not captured is a
+      counterfactual an implementer must invent." And amend criterion 14.14
+      witness TWO to read "and listGapRows returns rows byte identical to the
+      output the verification-first step captured from the phase base for that
+      same household and fixture, written into the test by hand from that
+      captured output and never read back from the implementation."
+    analysis: >-
+      The sweep the fix round ran was real and found the instance the review
+      named plus one more, and this one is in a criterion that did not exist
+      when the sweep ran. That is not a failure of the sweep, it is the reason
+      the defect keeps recurring: a repair adds criteria and the sweep is run
+      before the repair. Naming the baseline costs one clause and closes the
+      fourth instance in the same place as the other three.
+  - id: R3-006
+    severity: medium
+    evidence:
+      - >-
+        Decision D-48 closes the duplicate-card hazard "by construction rather
+        than by a mechanism": the registration form has no path that creates an
+        account without an account number.
+      - >-
+        The import path has one, and the reversal reopened it. Under the
+        superseded D-55 the confirm path refused any declaration naming the
+        reserve ring; under DR-0030 the ring question offers both rings on
+        every declaration, including for a file that carries no own-account
+        column. src/modules/import/application/confirm-import.ts:98 writes
+        "...(fileIban !== undefined ? { iban: fileIban } : {})", so a
+        card-shaped export, or any file whose own-account cell does not parse,
+        answered with the savings ring creates an account with role RESERVE and
+        a NULL account number.
+      - >-
+        Such an account sits in NO declared set:
+        src/modules/ledger/domain/ledger-transaction.ts:57 through :62 takes
+        the RESERVE branch, finds no iban and continues, so it is absent from
+        reserveIbans, potIbans, potAccountIds and cardAccountIds. Its rows are
+        therefore held forever, transfers to it are matched by nothing, and it
+        is not a card account, so settlement matching at
+        src/modules/ledger/domain/classify-flow.ts:83 never sees it and the
+        card's settlement debit stays aggregate SPEND.
+      - >-
+        prisma/schema/accounts.prisma:28 declares @@unique([householdId, iban])
+        and Postgres does not collide NULLs, so a second such import creates a
+        second such account rather than adopting the first. The duplicate D-48
+        closes at the form is open at the import.
+      - >-
+        No criterion covers it. Criterion 14.6 covers the card case through the
+        import path with the correct ring; 14.11's four witnesses all use a
+        statement that carries its own account number; 14.15 and 14.16 both
+        describe an account in the reserve ring without saying whether it has a
+        number.
+    concrete-edit: >-
+      Add to M3-P14's ACCEPT step: "AND THE ONE CASE THE REVERSAL REOPENS. A
+      file that carries no own-account column can now be declared in the
+      reserve ring, producing an account with role RESERVE and no account
+      number, which sits in no declared set
+      (src/modules/ledger/domain/ledger-transaction.ts:57 through :62) and
+      which the per-household uniqueness constraint cannot deduplicate because
+      Postgres does not collide NULLs. The confirm path therefore refuses the
+      reserve ring for a declaration carrying no account number, with the same
+      named-error shape as the missing-ring refusal of criterion 14.11 witness
+      TWO, and the copy says a card is a spending account whose statement is
+      imported, which is what decision D-48 already tells the owner on the
+      accounts screen." Add to criterion 14.11 witness TWO: "and the same
+      application test asserts a declaration naming the reserve ring with no
+      account number is refused with a named error, because such an account
+      would sit in no declared set, would hold its rows forever, and would be
+      duplicated rather than adopted on the next upload of the same file."
+    analysis: >-
+      This is a hole the earlier plan closed for the wrong reason and reopened
+      by removing that reason. The refusal was there to stop reserve statements
+      being imported; it also happened to stop a numberless reserve account
+      being created, and the reversal took both. The consequence is small in
+      probability and unbounded in effect: an account Pulse can never match,
+      never deduplicate and never correct into anything useful, whose rows are
+      held with no way for the household to learn that holding them is not what
+      they wanted.
+  - id: R3-007
+    severity: medium
+    evidence:
+      - >-
+        Criterion 14.15 witness TWO requires the accounts screen to give "the
+        count of imported rows held for it". Nothing in that phrase bounds the
+        count to a month, and "imported rows held for it" reads as all of them.
+      - >-
+        Decision D-60 forbids exactly that shape: "no figure anywhere is
+        accumulated across months", and criterion 14.15 witness FIVE enforces
+        it with "a grep asserts no read in the overview module sums outside the
+        requested period".
+      - >-
+        The guard cannot see the thing. The accounts screen is the accounts
+        module (M3-P14 files-to-touch: src/modules/accounts/ui/ and
+        src/modules/accounts/adapters/account-repository.ts), and the grep is
+        scoped to the overview module. An all-time held count read by the
+        accounts repository is outside it.
+      - >-
+        The two readings have different consequences and the criterion picks
+        neither. Month-scoped: the accounts screen shows a number that changes
+        as the household browses months, on a screen with no month control,
+        which reads as a property of the account and is not one. All-time: it
+        is an accumulated figure of exactly the kind D-60 exists to forbid,
+        and the household will read a count of held rows as a proxy for how
+        much is in savings, which is the misreading DR-0030's whole argument is
+        about.
+    concrete-edit: >-
+      Replace criterion 14.15 witness TWO with: "TWO, THE ACCOUNTS SCREEN SAYS
+      SO, AND SAYS IT WITHOUT A NUMBER THAT LOOKS LIKE A TOTAL. The account's
+      row on the accounts screen names it as an account whose rows are held and
+      states that its statements are kept but counted in no month, with no
+      accumulated count and no amount, so nothing on that screen can be read as
+      how much is in savings, which is decision D-60. The per-month count lives
+      on the month view, where a month is what is being shown, and criterion
+      14.15 witness ONE bounds it to the requested period." And widen witness
+      FIVE's grep from "no read in the overview module" to "no read in the
+      overview module or the accounts module", so the guard covers both screens
+      the phase touches.
+    analysis: >-
+      D-60 is the best thing the reversal added: it names the boundary that
+      keeps an accepted statement from becoming a savings dashboard built on the
+      wrong arithmetic. It is undercut by one clause in a sibling criterion
+      asking for a count with no period on a screen with no month, and by a
+      guard whose grep stops at the module boundary the count sits on the far
+      side of.
+  - id: R3-008
+    severity: medium
+    evidence:
+      - >-
+        Criterion 14.15 witness THREE requires "over a household holding BOTH a
+        held row on a reserve account AND a null-flow row on a pot account, the
+        two render in different places with different copy, the pot row under
+        recon-cause-uninterpreted and the reserve row under held-rows, and a
+        test asserts neither string appears in the other's element".
+      - >-
+        "Neither string" has two readings. Read as the COPY string, the test
+        asserts the two blocks carry different wording, which is true of any
+        implementation that writes two different sentences and catches nothing.
+        Read as the ROW's rendered text, it asserts the two rows do not appear
+        in each other's element, which is the assertion that matters.
+      - >-
+        Only the second reading catches the failure finding R3-002 describes: a
+        held read written as "flow IS NULL" with no ring filter returns the POT
+        account's genuine gap as well, so that row renders under held-rows AND
+        under recon-cause-uninterpreted. Under the copy reading, both blocks
+        still carry different wording and the test is green.
+      - >-
+        The stake is that held-rows renders outside the reconciliation panel
+        beside a verdict criterion 14.15 witness ONE requires to read as books
+        closing, so a genuine gap listed there is a gap described to the reader
+        as a normal state.
+    concrete-edit: >-
+      Replace the last clause of criterion 14.15 witness THREE with: "and a
+      test asserts, by transaction, that the row on the pot account appears
+      under recon-cause-uninterpreted and NOT under held-rows, and that the row
+      on the reserve account appears under held-rows and NOT under
+      recon-cause-uninterpreted, keyed on each row's own rendered identity and
+      not on the two blocks carrying different wording, which any
+      implementation satisfies. A held read written without a ring filter
+      returns both rows and fails here, and this is the assertion that catches
+      it."
+    analysis: >-
+      One word carrying two meanings, in the assertion that is the last line of
+      defence for the read finding R3-002 says the plan has not specified. The
+      weaker reading is the one an implementer under time pressure will take,
+      because it is the one that passes first. Naming what is compared costs a
+      clause and turns the witness into an instrument.
+  - id: R3-009
+    severity: low
+    evidence:
+      - >-
+        M3-P14's conflicts-with still carries the reversed position in its last
+        entry: "M3-P7 and M3-P8 (test/e2e/month-view.spec.ts): no ordering is
+        required, but they must not run in parallel with this phase, which
+        rewrites the reserve upload at test/e2e/month-view.spec.ts:1377 under
+        decision D-55 and adds a width witness to the shell's navigation row."
+      - >-
+        Under DR-0030 that test is not rewritten. Criterion 14.11 witness FOUR
+        says the opposite in as many words: "The existing reserve upload at
+        test/e2e/month-view.spec.ts:1377 goes on uploading its statement, and
+        its reserve-group count and its reserves-net and no-reserves assertions
+        are unchanged and still passing."
+      - >-
+        The stale sentence also cites decision D-55 for a rewrite D-55 no
+        longer describes, D-55 having been replaced in full by the accept
+        position.
+    concrete-edit: >-
+      Replace that conflicts-with entry with: "M3-P7 and M3-P8
+      (test/e2e/month-view.spec.ts): no ordering is required, but they must not
+      run in parallel with this phase, which adds a width witness to the shell's
+      navigation row and edits that spec's fixtures where criterion 14.11
+      witness FOUR requires an account number re-invented. The reserve upload at
+      test/e2e/month-view.spec.ts:1377 is NOT rewritten under DR-0030 and its
+      assertions stand unchanged."
+    analysis: >-
+      The smallest finding and the only low. It matters slightly more than a
+      typo because conflicts-with is what a dispatcher reads to decide what may
+      run beside what, and because a sentence citing a superseded decision for a
+      change that is no longer made is how a reversal leaves a fossil that the
+      next reader takes for a live instruction.
