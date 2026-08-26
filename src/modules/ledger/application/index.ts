@@ -6,7 +6,7 @@
 
 import type { HouseholdContext } from "@/platform/tenancy";
 import { listAccounts } from "@/modules/accounts/application";
-import { resolveCounterparties } from "@/modules/merchants/application";
+import { resolveIdentities } from "@/modules/merchants/application";
 import * as repository from "../adapters/ledger-repository";
 import {
   interpretForImport as interpretForImportUseCase,
@@ -64,8 +64,8 @@ const liveDependencies: LedgerDependencies = {
   // rules-only resolver (RuleResolver). Read-only by port shape: this is
   // the whole merchants surface interpretation gets (criterion 3.2).
   merchants: {
-    resolveCounterparties: (context, texts) =>
-      resolveCounterparties(context, texts),
+    resolveIdentities: (context, identityKeys) =>
+      resolveIdentities(context, identityKeys),
   },
 };
 

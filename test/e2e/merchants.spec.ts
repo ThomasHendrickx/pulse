@@ -262,3 +262,101 @@ test.describe("card group labels on a phone", () => {
     ).toBeLessThanOrEqual(390);
   });
 });
+
+// M3-P12, criterion 12.18: THE STALE PAGE. Decision D-46 deploys the code
+// before the re-derivation runs, so for the length of that window a page
+// rendered earlier holds the OLD subject: a normalised counterparty text
+// with no namespace. Submitting it must reach the reader as a refusal, not
+// be written as a rule that can never match anything (hazard H12.21).
+//
+// The stale submission is produced by editing the hidden field's value in
+// the DOM, which is exactly what an old page's HTML carries. Nothing else in
+// the flow is faked: the real form, the real server action and the real use
+// case run.
+test("submitting a PRE-MIGRATION un-namespaced subject surfaces the refusal to the reader", async ({
+  page,
+}) => {
+  const unique = `stale-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+  const email = `${unique}@pulse-e2e.test`;
+  const password = `pw-${unique}`;
+
+  await page.goto("/sign-up");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Create household" }).click();
+  await expect(page.getByTestId("household-context")).toHaveText(unique);
+
+  await page.goto("/import");
+  await page.getByLabel("Bank export file").setInputFiles(FIXTURE);
+  await page.getByRole("button", { name: "Upload" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Confirm the detected format" }),
+  ).toBeVisible();
+  await page.getByLabel("Format name").fill("Demobank current account");
+  await page.getByLabel("Label").fill("Daily account");
+  await page.getByLabel("Bank").fill("Demobank");
+  await page.getByLabel("Ring").selectOption("POT");
+  await page.getByTestId("confirm-import").click();
+  await expect(page.getByTestId("import-result")).toBeVisible();
+
+  await page.goto("/merchants");
+  const group = page.getByTestId("unresolved-group").first();
+  await expect(group).toBeVisible();
+  const unresolvedBefore = await page.getByTestId("unresolved-group").count();
+
+  // Roll the hidden subject back to what a pre-migration page carried: the
+  // namespace stripped off.
+  await group.evaluate((element) => {
+    const hidden = element.querySelector<HTMLInputElement>(
+      'input[name="counterpartyText"]',
+    );
+    if (hidden === null) {
+      throw new Error("no counterpartyText field on the unresolved group");
+    }
+    hidden.value = hidden.value.replace(/^(account|descriptor):/, "");
+  });
+  await group.getByPlaceholder("Name this counterparty").fill("Stale Naming");
+  await group.getByRole("button", { name: "Name" }).click();
+
+  // THE REFUSAL REACHES THE READER. This is the half this spec carries, and
+  // it is the half that needs a browser: the banner is rendered from a
+  // redirect status the screen reads, in the reader's own language.
+  await expect(page.getByTestId("naming-refused")).toBeVisible();
+
+  // NOTHING WAS WRITTEN. Corrected in the fix round, finding HZ-M3P12-08:
+  // the two assertions below used to be described as showing this, and they
+  // cannot, because an un-namespaced pattern matches no identity key, so a
+  // rule that WAS written would also produce zero merchant groups and an
+  // unchanged unresolved count. They are kept because they DO show that the
+  // screen did not regroup, and the observation that distinguishes a refusal
+  // from a dead rule is added after them: a reload re-renders the group from
+  // the database, so an unchanged hidden subject and an unchanged group set
+  // is the page state a refusal leaves and a written rule does not.
+  //
+  // The stronger form of "writes NOTHING", counting the repository calls, is
+  // carried by test/application/counterparty-identity-surfaces.test.ts,
+  // which can see the port. Neither test claims the other's half.
+  await expect(page.getByTestId("merchant-group")).toHaveCount(0);
+  await expect(page.getByTestId("unresolved-group")).toHaveCount(
+    unresolvedBefore,
+  );
+
+  await page.reload();
+  await expect(page.getByTestId("unresolved-group")).toHaveCount(
+    unresolvedBefore,
+  );
+  await expect(page.getByTestId("merchant-group")).toHaveCount(0);
+  const subjectAfterReload = await page
+    .getByTestId("unresolved-group")
+    .first()
+    .evaluate((element) => {
+      const hidden = element.querySelector<HTMLInputElement>(
+        'input[name="counterpartyText"]',
+      );
+      return hidden === null ? null : hidden.value;
+    });
+  // Still a namespaced identity key, which is what the derivation produces
+  // and what the stale page had rolled back.
+  expect(subjectAfterReload).not.toBeNull();
+  expect(subjectAfterReload).toMatch(/^(account|descriptor):.+/);
+});
