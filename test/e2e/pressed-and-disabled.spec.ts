@@ -82,8 +82,16 @@ const ENUMERATION: readonly string[] = [
   "a[data-testid=empty-state-import-link]",
   "a[data-testid=empty-state-accounts-link]",
   "a[data-testid=unresolved-pill]",
-  "a.month-nav|‹",
-  "a.month-nav|›",
+  // AMENDED IN M3-P10, which is what criterion 9.2(a) asks for when the
+  // sweep and the enumeration disagree: the enumeration is amended, never
+  // the sweep narrowed. These two Links carried no data-testid and were
+  // identified here by their glyph child. M3-P10's criterion 10.5(a)
+  // forbids a spec binding to that glyph, which is a punctuation mark
+  // rather than text, and explicitly permits that phase to give the two
+  // controls testids; it did, so their identity in this sweep changed.
+  // Nothing was added or removed: the set is still twenty-one.
+  "a[data-testid=month-step-previous]",
+  "a[data-testid=month-step-next]",
   // The spec editor's disclosure summary.
   "summary|Detected format description",
   // The four remaining links.

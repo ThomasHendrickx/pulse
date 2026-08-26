@@ -154,3 +154,21 @@ it is what makes the 4 to 9 millisecond figures above mean something. The
 and every one of them was outside the pressed control's subtree, which is
 exactly the mutation the first version of criterion 10.2 would have accepted.
 
+## Static criterion checks at the final tree
+
+    $ grep -rn "useOptimistic" src/            -> no output, exit 1   (10.6d)
+    $ grep -rln '^"use client"' src/
+      src/modules/accounts/ui/account-setup-form.tsx   (M3-P14, pre-existing)
+      src/platform/ui/submit-button.tsx                (new)
+      src/platform/ui/link-pending.tsx                 (new)
+      src/platform/ui/nav-link.tsx                     (pre-existing)
+    $ find src/app -name "loading.*" | wc -l   -> 0                   (10.1d)
+    $ git diff --name-only 8d99dfd..HEAD -- styles/ src/app/globals.css \
+        messages/ prisma/ test/fixtures/ 'src/modules/*/application/' \
+        'src/modules/*/domain/' 'src/modules/*/adapters/' \
+        src/platform/ui/amount.tsx src/platform/ui/mask-card-number.ts \
+        package.json package-lock.json
+      -> prints nothing                                               (10.7)
+    $ grep -c '<identifier|card|thousands-amount|date shapes>' over every
+      added line of the phase diff -> 0 hits over 1296 lines, exit 1   (10.9b, weaker)
+
