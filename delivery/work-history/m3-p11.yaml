@@ -59,7 +59,11 @@ prompt: |
 files-touched:
   - src/modules/merchants/ui/actions.ts (failure returned as a Result, success revalidate and redirect unchanged)
   - "src/modules/merchants/ui/merchant-row.tsx (new, the one client leaf: predicted row, marking, notices)"
-  - src/modules/merchants/ui/merchant-review.tsx (rows render through the leaf; every string resolved server side)
+  - src/modules/merchants/ui/merchant-review.tsx (rows render through the leaf; every string resolved server side; the row's direction reaches the leaf)
+  - "src/modules/merchants/ui/naming-claims.ts (new, fix round: the pure per-row claim record)"
+  - "src/modules/merchants/ui/notice-queue.ts (new, fix round: the pure one-notice-at-a-time queue)"
+  - "test/app/naming-claims.test.ts (new, fix round: the two-rows-in-flight pin)"
+  - "test/app/notice-queue.test.ts (new, fix round: the notice queue's rules)"
   - src/platform/ui/toast.tsx (new, the hand-built dismiss-only toast)
   - src/platform/ui/submit-button.tsx (optional describedBy prop wired to aria-describedby)
   - src/app/globals.css (the toast rules, tokens only)
@@ -80,6 +84,30 @@ per-step-commits:
   - sha: "45bdf01"
     subject: >-
       history: the M3-P11 work history with captured witnesses
+  - sha: "8fb0f58"
+    subject: >-
+      history: record the real commit shas, captured from the log
+  - sha: "ad1d550"
+    subject: >-
+      fix: the naming claim is per row and per direction, not one shared slot
+  - sha: "91f54cb"
+    subject: >-
+      history: the HZ-M3P11-02 fix round, with its red and green witnesses
+  - sha: "4ed40df"
+    subject: >-
+      fix: the failure notice claims only what the client can know
+  - sha: "b55221b"
+    subject: >-
+      fix: one notice on screen at a time, so no notice is covered
+  - sha: "6a8718c"
+    subject: >-
+      fix: the unconfirmed description hangs on a control a keyboard can reach
+  - sha: "4f3f10e"
+    subject: >-
+      test: two spec measurements widened to the criteria they serve
+  - sha: "80fc1cc"
+    subject: >-
+      test: the masking walk sees a descriptor rendered from a variable
 key-decisions:
   - decision: >-
       The action's failure path returns a Result carrying only the error
@@ -336,11 +364,11 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
-  - gate: npm test (vitest, fast gate)
+  - gate: npm test (vitest, fast gate, re-run at the fix-round head 80fc1cc)
     result: green
     wrapper-exit-code: 0
-    discovered: 679
-    passed: 679
+    discovered: 690
+    passed: 690
     failed: 0
     skipped: 0
     todo: 0
@@ -381,7 +409,7 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
-  - gate: npm run test:e2e (all projects, chromium-phone-prod and chromium-prod carrying the new spec)
+  - gate: npm run test:e2e (all projects, chromium-phone-prod and chromium-prod carrying the new spec; 114 tests in 14 files after the fix round)
     result: amber
     no-wrapper-exit-code: >-
       environment-limited: this container has no Docker, so no local
@@ -547,6 +575,66 @@ claims:
       /home/user), so the probes could not be built here. Every value in
       this phase's diff and history comes from committed synthetic
       fixtures or invented probe strings.
+  - id: C-fixround-CR-M3P11-03
+    kind: coverage
+    statement: >-
+      nameRefusedName is now unreachable from the product and is retained
+      only for the banner path, which is a trade criterion 11.4(c) forces
+      rather than an oversight: that criterion requires BOTH forced failure
+      causes, the whitespace-only name included, to render the failure
+      key's catalogue value.
+    settled-by:
+      executed-construction:
+        command: >-
+          grep -rn "nameRefusedName" src/ messages/en.json test/
+        exit-code: 0
+        output: >-
+          Three kinds of hit and no fourth: the REFUSAL_MESSAGE banner map
+          in merchant-review.tsx, which only a hand-typed
+          /merchants?status= URL reaches; the key itself in the three
+          catalogues; and no reference in the refusals map the toast
+          resolves, which is where a reachable use would be. Removing the
+          key would mean changing criterion 11.4(c), which is the owner's
+          plan and not this round's to edit, so the key stays and its
+          unreachability is recorded here.
+  - id: C-fixround-CR-M3P11-05
+    kind: coverage
+    statement: >-
+      The no-JavaScript loss recorded in this phase's deviations is
+      accurate as written: the base posted the server action directly, the
+      phase's own plan step replaced that with a client wrapper, and React
+      then renders a javascript: action, so a no-JS submit does nothing and
+      no field value reaches a query string.
+    settled-by:
+      executed-construction:
+        command: >-
+          git show e499d64:src/modules/merchants/ui/merchant-review.tsx |
+          grep -n "form action=" and the probe capture recorded in
+          delivery/work-history/m3-p11-notes.md
+        exit-code: 0
+        output: >-
+          At the base the form read action={assignMerchantAction}, which
+          the framework progressively enhances into a working post. The
+          probe capture reads form-action-attr:
+          "javascript:throw new Error('React form unexpectedly submitted.')"
+          for a form whose action is a client function. Both halves of the
+          recorded deviation hold; nothing was changed, because restoring
+          the no-JS path is a plan question rather than a fix to this head.
+  - id: Q-fixround-HZ-M3P11-05
+    kind: open-question
+    statement: >-
+      The difference notice still does not say WHAT was stored, only that
+      the stored form differs from the typed one; the row it concerns is
+      now announced through aria-describedby, but the stored value itself
+      is only on the row.
+    still-open-because: >-
+      Putting the stored name inside the sentence needs an interpolated
+      catalogue value, and the notice's wording is resolved on the server
+      where the stored name is not yet known, while the criterion measures
+      the notice's trimmed text as EXACTLY the catalogue value, so an
+      interpolated name would fail 11.5 as written. The association half is
+      built; the wording half needs either a fifth key or a criterion
+      change, and both are the owner's.
 fix-round:
   - mechanism: >-
       HZ-M3P11-02. THE MECHANISM IS A SHARED SINGLE-WRITER RECORD READ BY
@@ -596,6 +684,127 @@ fix-round:
       the projection, the two-row pin in test/app/naming-claims.test.ts is
       what keeps the replacement honest. Not measured in a browser: no arm
       of this round could run test:e2e (no Docker, CR-M3P11-01).
+  - mechanism: >-
+      HZ-M3P11-04. THE MECHANISM IS A CLIENT SENTENCE ASSERTING A SERVER
+      FACT, not "the failure copy is blunt". The use case writes the
+      declaration and only THEN awaits recompute, so the window between the
+      write and the answer arriving is a window in which the client knows
+      nothing and the old copy said "The name was not saved". Every place
+      the client speaks about the server was re-read against what the
+      client can observe.
+    derivation:
+      command: >-
+        grep -n "upsertRule\|await deps.recompute\|return ok"
+        src/modules/merchants/application/assign-merchant.ts (the order that
+        makes the sentence false), then grep -n "copy.failed\|namingFailed"
+        -r src/modules/merchants/ui messages/ (every raiser and every
+        catalogue carrying it)
+      output: >-
+        The order: upsertRule at the write, "await deps.recompute(context)"
+        after it, "return ok" last, so a failure between the write and the
+        response leaves the declaration stored. The raisers are the catch
+        arm and the refusal fallback in merchant-row.tsx, both reading
+        copy.failed, resolved once in merchant-review.tsx from
+        t("namingFailed"); the catalogues are the three messages files, one
+        key each. All three reworded to claim only the client's own
+        observation, describe the screen rather than storage, and tell the
+        reader how to find out. Key count unchanged at 161 with equal key
+        sets, no banned string in any new English value, npm run lint 0 and
+        the fast gate 690 passed.
+    not-covered: >-
+      The sweep covered the merchants ui folder and the three catalogues. It
+      did NOT re-audit the M3-P12 refusal wording (nameRefusedStale,
+      nameRefusedAccount, nameRefusedUnidentifiable), which does say the
+      naming was not saved: those are raised only from a server ANSWER that
+      refused before writing anything, so the sentence is true there, and
+      changing merged copy is outside this phase. The reworded sentence is
+      also weaker for the one arm where the server did answer (an empty
+      name), which is the price of one key serving both arms under the
+      four-key cap; CR-M3P11-03 records that trade.
+  - mechanism: >-
+      HZ-M3P11-01. THE MECHANISM IS MANY INDEPENDENT WRITERS DRAWING INTO
+      ONE FIXED RECTANGLE, not "two toasts overlap". Anything rendered
+      position: fixed at one offset by more than one component collides,
+      and the notice is raised per row by design.
+    derivation:
+      command: >-
+        grep -n "position: fixed" -r src/app/globals.css and grep -n
+        "<Toast" -r src/modules (every drawer into that rectangle), read
+        against decision D-32, criterion 11.5 and criterion 11.9
+      output: >-
+        One fixed rule, .pulse-toast, with a single bottom offset and no
+        stacking; two raisers, both in merchant-row.tsx, one per row
+        instance. The three routes out are each closed by something already
+        decided: D-32 states "ONE HOST PER ROW, not a shared one" and parks
+        the shared host, so lifting or portalling the notice out of its row
+        is not this phase's to take; criterion 11.5 requires the difference
+        notice "present on that row", so a portal breaks a criterion; and
+        criterion 11.9(b) pins the stylesheet's px and rem line count while
+        11.8 pins styles/tokens.css to an empty diff, so a stacking offset
+        can be neither a literal nor a new token. So the collision is made
+        IMPOSSIBLE instead of survivable: one notice displayed at a time, in
+        the order raised, waiting rather than covering, and nothing removed
+        that the reader has not dismissed. Five fast-gate rules over the
+        pure queue (5 passed), one authored browser journey raising two
+        notices on two rows, and the fast gate at 690 passed.
+    not-covered: >-
+      NOT MEASURED IN A BROWSER: the two-notice journey is authored and
+      unrun, like every browser arm of this phase (CR-M3P11-01). The queue
+      orders notices GLOBALLY on this screen, so a difference notice raised
+      while a failure notice is up waits behind it; that is the intended
+      trade and it means criterion 11.5's "still present 5000 ms later" is
+      measured, as the committed spec drives it, with one notice at a time.
+      The queue is module-scope and therefore per document: it does not
+      survive a navigation, which is correct, since the notices do not
+      either. It coordinates the merchants screen only; if a second surface
+      ever raises notices it moves beside the toast rather than being
+      copied.
+  - mechanism: >-
+      HZ-M3P11-03 and CR-M3P11-02 and HZ-M3P11-06 and CR-M3P11-04, four
+      instances of ONE mechanism: A GUARD OR A PROMISE THAT READS THE SHAPE
+      IT EXPECTS RATHER THAN THE SHAPE IT HAS. The masking walk recognised
+      a property access and not a destructured prop; the description was
+      hung on the one control that is disabled exactly while it exists; the
+      client read result.ok on the assumption that a redirect always
+      rejects; and two spec assertions matched a substring or two endpoints
+      where the criterion says exactly and throughout.
+    derivation:
+      command: >-
+        node over the repository's own TypeScript AST walk, listing every
+        JSX expression that renders a descriptor value from a VARIABLE
+        rather than a property (the shape the walk could not see); grep -n
+        "disabled" src/platform/ui/submit-button.tsx
+        src/modules/merchants/ui/merchant-row.tsx (what a keyboard can
+        reach during the prediction); grep -n "hasText: trimmed\|
+        expectFiguresUnmoved" test/e2e/optimistic-naming.spec.ts
+      output: >-
+        The AST listing returned five bare-identifier candidates, of which
+        exactly ONE is a rendered descriptor value (the leaf's own label);
+        the other four are an object literal's key, a translation argument,
+        a class-name ternary and a submit handler, which is why the walk
+        now decides on the syntax tree rather than on the text. Extending
+        it turned the pinned count red at 15 against 14, which is the
+        witness that the surface was invisible before; green after the
+        count and the declared exclusion were recorded, 29 passed. The
+        disabled grep found the disabled attribute on the submit control
+        ONLY, so the naming field in the same form is reachable and now
+        carries the same description. The spec greps found one substring
+        filter and two endpoint-only figure comparisons, all three
+        replaced. Fast gate 690 passed, lint 0, typecheck 0, 114 e2e tests
+        registered.
+    not-covered: >-
+      The AST walk covers src/**/*.tsx only, so a descriptor value rendered
+      from a .ts file or reached through a JSX SPREAD attribute is still
+      invisible; the spread hole was already declared at the exclusion and
+      remains. CR-M3P11-02 is answered in code for the keyboard path, and
+      what a reader gets is stated rather than claimed: the primary telling
+      is the polite live region as the text enters, the submit control
+      carries the description the criterion names, and the naming field
+      carries it too so the focus-return telling is reachable; M3-P10's
+      form-wide disabled busy state is a decided design and was not
+      touched. HZ-M3P11-06's guard is reasoned, not measured: no browser
+      ran here, and no framework version that resolves the call exists to
+      test against.
 environment-warnings:
   - warning: >-
       The playwright browser install under /opt/pw-browsers did not match
