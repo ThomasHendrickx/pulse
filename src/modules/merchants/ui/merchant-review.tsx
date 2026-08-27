@@ -1,11 +1,12 @@
 import { getTranslations } from "next-intl/server";
 import { Amount } from "@/platform/ui/amount";
 import { maskCardNumbers } from "@/platform/ui/mask-card-number";
-import { SubmitButton } from "@/platform/ui/submit-button";
 import type { HouseholdContext } from "@/platform/tenancy";
 import { listMerchantReview } from "../application";
 import type { ReviewGroup } from "../application";
 import { assignMerchantAction } from "./actions";
+import { MerchantGroupRow } from "./merchant-row";
+import type { NamingCopy } from "./merchant-row";
 
 // The merchant review screen: counted transactions grouped per direction,
 // resolved groups under their merchant name, unresolved ones under the
@@ -15,6 +16,11 @@ import { assignMerchantAction } from "./actions";
 // total and naming only moves them into the right group. The direction
 // totals render beside each section precisely so that naming can be SEEN
 // to leave them unchanged (hazard H3.2).
+//
+// Since M3-P11 every nameable row renders through the MerchantGroupRow
+// client leaf, which predicts the label per DR-0025 and raises the DR-0026
+// notices. This component stays a server component and resolves every
+// string the leaf renders, so no message catalogue crosses the boundary.
 
 const GroupRow = async ({
   group,
@@ -23,63 +29,86 @@ const GroupRow = async ({
 }) => {
   const t = await getTranslations();
   const unresolved = group.merchantId === undefined;
-  return (
-    <li
-      className={unresolved ? "merchant-row merchant-row-unresolved" : "merchant-row"}
-      data-testid={unresolved ? "unresolved-group" : "merchant-group"}
-    >
-      {/* The label of an unresolved group is the normalised descriptor for a
-          descriptor-basis group, so a card descriptor rendered the card
-          number here. Masked in the RENDERING only (M3-P6, decision D-12):
-          the hidden counterpartyText field below stays UNMASKED, because
-          that value is the counterparty IDENTITY KEY that becomes the EXACT
-          MerchantRule pattern, and a masked subject would match nothing. */}
-      <span className="merchant-row-label" data-testid="group-label">
-        {/* A GROUP THAT CANNOT BE NAMED STILL NEEDS A NAME ON THE SCREEN
-            (fix round two, findings CR2-M3P12-07 and HZ-M3P12-R2-04). Its
-            label is the normalised counterparty text, and for these rows
-            there is none, so the row rendered blank: an item carrying money
-            and a row count with nothing to read and nothing to do. */}
-        {group.unnameableReason === undefined
-          ? maskCardNumbers(group.label)
-          : t("unnameableLabel")}
-      </span>
-      <span className="merchant-row-count">
-        {group.count} {t("rows")}
-      </span>
-      <span data-testid="group-total">
-        <Amount cents={group.totalCents} />
-      </span>
-      {unresolved && group.counterpartyText !== undefined ? (
-        <form action={assignMerchantAction} className="merchant-name-form">
-          <input
-            type="hidden"
-            name="counterpartyText"
-            value={group.counterpartyText}
-          />
-          <label className="merchant-name-field">
-            <span className="visually-hidden">{t("namePlaceholder")}</span>
-            <input
-              type="text"
-              name="merchantName"
-              placeholder={t("namePlaceholder")}
-              required
-            />
-          </label>
-          <SubmitButton className="merchant-name-button">
-            {t("nameIt")}
-          </SubmitButton>
-        </form>
-      ) : null}
-      {/* AND THE REASON WHERE THE FORM WOULD HAVE BEEN. The copy already
-          existed and was reachable only by submitting a form the screen no
-          longer offers, so the explanation could never be read. */}
-      {unresolved && group.unnameableReason !== undefined ? (
+  // A GROUP THAT CANNOT BE NAMED STILL NEEDS A NAME ON THE SCREEN (fix
+  // round two, findings CR2-M3P12-07 and HZ-M3P12-R2-04). It stays fully
+  // server rendered: nothing about it can be predicted because nothing
+  // about it can be submitted, so it pays for no client boundary. It still
+  // carries the stable data-group-key identity every row shares
+  // (criterion 11.3), masked like the label beside it.
+  if (unresolved && group.unnameableReason !== undefined) {
+    return (
+      <li
+        className="merchant-row merchant-row-unresolved"
+        data-testid="unresolved-group"
+        data-group-key={maskCardNumbers(group.key)}
+      >
+        <span className="merchant-row-label" data-testid="group-label">
+          {t("unnameableLabel")}
+        </span>
+        <span className="merchant-row-count">
+          {group.count} {t("rows")}
+        </span>
+        <span data-testid="group-total">
+          <Amount cents={group.totalCents} />
+        </span>
+        {/* THE REASON WHERE THE FORM WOULD HAVE BEEN. The copy already
+            existed and was reachable only by submitting a form the screen
+            no longer offers, so the explanation could never be read. */}
         <p className="merchant-row-unnameable" data-testid="group-unnameable">
           {t("nameRefusedUnidentifiable")}
         </p>
-      ) : null}
-    </li>
+      </li>
+    );
+  }
+  // Every string the client leaf can ever render, resolved HERE. The
+  // refusal kinds that keep M3-P12's specific wording are listed by kind;
+  // empty-merchant-name is deliberately NOT among them: the whitespace-only
+  // name is criterion 11.4's forced domain failure and carries the one
+  // failure message, and the transport failure shares it.
+  const copy: NamingCopy = {
+    unconfirmed: t("nameUnconfirmed"),
+    failed: t("namingFailed"),
+    differs: t("namingDiffers"),
+    dismiss: t("noticeDismiss"),
+    refusals: {
+      "empty-counterparty": t("nameRefusedStale"),
+      "unnamespaced-counterparty": t("nameRefusedStale"),
+      "non-canonical-counterparty": t("nameRefusedStale"),
+      "untrusted-counterparty-account": t("nameRefusedAccount"),
+      "unidentifiable-counterparty": t("nameRefusedUnidentifiable"),
+    },
+  };
+  return (
+    <MerchantGroupRow
+      // The row's stable DOM identity, MASKED (criterion 11.3, finding
+      // DELTA-M0P4-08): for an unresolved group the raw key IS the
+      // normalised descriptor, and criterion 11.3 only ever compares the
+      // sequence to itself.
+      groupKey={maskCardNumbers(group.key)}
+      // The label of an unresolved group is the normalised descriptor for
+      // a descriptor-basis group, so a card descriptor rendered the card
+      // number here. Masked in the RENDERING only (M3-P6, decision D-12):
+      // the hidden counterpartyText field inside the leaf stays UNMASKED,
+      // because that value is the counterparty IDENTITY KEY that becomes
+      // the EXACT MerchantRule pattern, and a masked subject would match
+      // nothing.
+      label={maskCardNumbers(group.label)}
+      countText={`${group.count} ${t("rows")}`}
+      totalCents={group.totalCents}
+      unresolved={unresolved}
+      copy={copy}
+      {...(unresolved && group.counterpartyText !== undefined
+        ? {
+            naming: {
+              identityKey: group.counterpartyText,
+              fieldLabel: t("namePlaceholder"),
+              placeholder: t("namePlaceholder"),
+              submitLabel: t("nameIt"),
+            },
+            action: assignMerchantAction,
+          }
+        : {})}
+    />
   );
 };
 
@@ -115,8 +144,14 @@ const DirectionSection = async ({
   );
 };
 
-// The refusal statuses the assignment action redirects with, mapped to the
-// message that tells the reader what happened (criterion 12.18). A status
+// The refusal statuses mapped to the message that tells the reader what
+// happened (criterion 12.18). CORRECTED IN M3-P11 (clause R-087): this
+// comment used to say the assignment action redirects with these statuses,
+// and since M3-P11 it does not. The action returns its refusal to the
+// client leaf, which raises the notice on the row (DR-0026), so nothing
+// sets /merchants?status= any more. The banner path is kept because the
+// route still reads the parameter and a rendered sentence for a hand-typed
+// or bookmarked status URL is better than a silently ignored one; a status
 // this map does not carry renders nothing, so an unknown query string can
 // never put an empty banner on the screen.
 const REFUSAL_MESSAGE: Readonly<

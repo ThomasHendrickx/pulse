@@ -15,10 +15,33 @@ import { redirect } from "next/navigation";
 import { requireHouseholdContext } from "@/platform/auth/context";
 import { recomputeInterpretation } from "@/modules/ledger/application";
 import { assignMerchant } from "../application";
+import type { AssignMerchantError } from "../application";
+
+// THE FAILURE IS REPORTED, NOT REDIRECTED (M3-P11, DR-0025 and DR-0026).
+// Until this phase a refused naming redirected to /merchants?status=<kind>
+// and the screen rendered the mapped refusal banner (M3-P12, criterion
+// 12.18). That mechanism swapped the whole document to say one sentence,
+// and it could not tell the predicting row that its prediction failed. The
+// action now RETURNS the refusal as a value the awaiting client wrapper
+// reads, and the wrapper reverts the prediction and raises the notice
+// (decision D-32). The success path is untouched: revalidate, then
+// redirect, exactly as before.
+//
+// The honest limit, recorded rather than hidden: without JavaScript the
+// form still posts, the returned value reaches nothing, and the failure is
+// silent, as the pre-M3-P12 screen was. The screen still reads
+// /merchants?status=<kind> (merchant-review.tsx REFUSAL_MESSAGE), so the
+// banner path remains renderable, but nothing sets that status any more.
+export type AssignMerchantActionResult =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly error: { readonly kind: AssignMerchantError["kind"] };
+    };
 
 export const assignMerchantAction = async (
   formData: FormData,
-): Promise<void> => {
+): Promise<AssignMerchantActionResult> => {
   const context = await requireHouseholdContext();
   const outcome = await assignMerchant(
     context,
@@ -29,12 +52,12 @@ export const assignMerchantAction = async (
     recomputeInterpretation,
   );
   if (!outcome.ok) {
-    // THE REFUSAL IS SHOWN, never swallowed (criterion 12.18). Each kind
-    // gets its own status so the reader is told which thing was wrong;
-    // before M3-P12 every failure redirected as a missing name, which was
-    // already a false message for an empty subject and would have been a
-    // silently wrong one for a stale page's un-namespaced key.
-    redirect(`/merchants?status=${outcome.error.kind}`);
+    // THE REFUSAL IS SHOWN, never swallowed (criterion 12.18's intent,
+    // carried by the toast since M3-P11). Only the KIND crosses the
+    // boundary: the UI owns the wording, in three languages, so an error
+    // carrying an English sentence cannot exist here (pulse-typescript
+    // section 5).
+    return { ok: false, error: { kind: outcome.error.kind } };
   }
   revalidatePath("/merchants");
   redirect("/merchants");
