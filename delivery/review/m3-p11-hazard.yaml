@@ -67,6 +67,231 @@
 #                       lane could not execute either. The static
 #                       consequence of the second one being wrong is
 #                       recorded as HZ-M3P11-06.
+# ==========================================================
+# RESHAPE DISCLOSURE, added after round one closed
+# ==========================================================
+# THIS DOCUMENT WAS RESHAPED TO THE VERDICT SCHEMA AFTER IT SHIPPED, and
+# nothing it says was changed. As round one delivered it, the document did
+# not validate: sixteen INVALIDs, because it was written before its author
+# had read schemas/verdict.schema.json. What the reshape did, and it did
+# nothing else:
+#   1. The top-level `probes:` mapping became the prose comment block
+#      below, word for word. The schema permits no such key.
+#   2. Each finding's `title` was folded into the FIRST SENTENCE of its
+#      own `analysis`, because the schema's finding has no title field.
+#      No title text was dropped and none was reworded.
+#   3. Each finding's `evidence` was a single scalar and the schema wants
+#      an array; each is now a one-element array carrying the same text.
+#   4. The `criteria`, `deviations-judged` and `hazard-classes-addressed`
+#      arrays the schema requires were ADDED, and how they were filled is
+#      stated below rather than left to be inferred.
+#   5. Citations whose line numbers were off by a few lines were corrected
+#      IN PLACE against the head this review read, 8fb0f58, and every
+#      citation in this document was then resolved against that head by
+#      script: each one now lands on the construct its sentence names. The
+#      corrections moved no claim; they moved numbers. Line numbers here
+#      are 8fb0f58's throughout and do not match the fix round's head.
+# No finding was added, removed, softened, strengthened or withdrawn, and
+# the verdict field still carries what round one called.
+#
+# HOW THE THREE ADDED ARRAYS WERE FILLED, because an array added after the
+# fact is worth less than the disclosure of how it was built.
+#   `hazard-classes-addressed` restates the eight attack directions this
+#   review actually ran, mapped onto the phase's eleven declared classes.
+#   Every `probed` sentence describes work recorded in the probe block
+#   below, and every `finding` reference names a finding already in this
+#   document. Nothing was probed for the first time to fill it.
+#   `criteria` is the weakest of the three and is marked as such. This
+#   review ran the HAZARD contract, so it read the criteria LAST as one
+#   more input and never walked them one by one; the walk below was
+#   assembled from what this review had already recorded. Every entry
+#   whose criterion this review did not reach says so in its own first
+#   evidence line, and `met: true` on such an entry means only that
+#   nothing this review probed contradicted it. The two entries marked
+#   not met are the two that this document's own findings contradict, and
+#   that placement was made in the reshape rather than by a new probe.
+#   `deviations-judged` is EMPTY, and empty is the honest answer: this
+#   review did not judge the phase's three declared deviations. That was a
+#   real gap in round one, and the round two document
+#   delivery/review/m3-p11-hazard-round2.yaml judges all three.
+#
+
+# ==========================================================
+# PROBES, in the order run. THIS BLOCK IS UNCHANGED PROSE: it stood as
+# a top-level `probes:` mapping in the document as round one shipped it,
+# and the verdict schema permits no such key, so the reshape moved it
+# here word for word rather than editing or dropping it.
+# ==========================================================
+# probes:
+#   - id: A
+#     direction: >-
+#       An optimistic prediction that LIES: the predicted label differs from
+#       what the server persists. Trimming, normalisation, identity-key
+#       versus descriptor grouping. The implementer left a module-scope
+#       claim about the trimmed-name difference; confirm or refute it.
+#     status: probed
+#     result: >-
+#       THE MODULE-SCOPE CLAIM IS CONFIRMED AS FAR AS THE USE CASE GOES, AND
+#       REFUTED AS A STATEMENT ABOUT WHAT THE ROW COMPARES. The use case
+#       stores input.merchantName.trim() and nothing else
+#       (src/modules/merchants/application/assign-merchant.ts:87), and the
+#       merchant it reuses is found by a Prisma findUnique on the
+#       householdId_name compound unique
+#       (src/modules/merchants/adapters/merchant-repository.ts:54 through
+#       :57), which is an exact byte match rather than a case-insensitive
+#       or collated one, so a differently-cased name creates a second
+#       merchant rather than silently returning a differently-spelled
+#       stored name. Trimming really is the only difference the use case can
+#       produce today. What the claim does not cover is that the string the
+#       claim check compares against is NOT the stored name: the server
+#       component passes label={maskCardNumbers(group.label)}
+#       (src/modules/merchants/ui/merchant-review.tsx:95) and
+#       the leaf compares that masked value
+#       (src/modules/merchants/ui/merchant-row.tsx:168 and :173). See
+#       HZ-M3P11-03.
+#   - id: B
+#     direction: >-
+#       The prediction surviving a FAILED action anywhere: after revert,
+#       after navigation, after a second submit on the same row, after two
+#       rapid submits on different rows.
+#     status: probed
+#     result: >-
+#       THE PREDICTED LABEL ITSELF DOES NOT SURVIVE, and this lane could
+#       not construct a path where it does. It is useOptimistic state set
+#       inside the form action
+#       (src/modules/merchants/ui/merchant-row.tsx:203), so
+#       React discards it when the transition settles, on the catch return
+#       and on the refusal return alike; there is no bookkeeping to forget.
+#       A second submit on the SAME row is blocked because SubmitButton
+#       renders disabled={pending} off the form's own useFormStatus
+#       (src/platform/ui/submit-button.tsx:105). Navigation unmounts the
+#       leaf. WHAT DOES SURVIVE A FAILURE, AND IS THE REAL FINDING HERE, is
+#       the module-scope record two rows share: useFormStatus is per-form,
+#       so two DIFFERENT rows can be in flight at once, and the second
+#       submit or the second failure destroys the first row's pending
+#       claim. See HZ-M3P11-02.
+#   - id: C
+#     direction: >-
+#       The typed failure Result swallowing a real error class. NEXT_REDIRECT
+#       is rethrown; what else reaches that catch.
+#     status: probed
+#     result: >-
+#       The catch keeps exactly one arm
+#       (src/modules/merchants/ui/merchant-row.tsx:209 through :232): a
+#       digest starting NEXT_REDIRECT is rethrown, everything else becomes
+#       the generic failure notice. Three classes reach it and are not
+#       redirects. (1) A genuine transport failure, which the notice
+#       describes correctly. (2) Any server exception thrown by the action
+#       after the declaration is already written, because the use case
+#       calls upsertRule and only then awaits recompute
+#       (assign-merchant.ts:167 through :175); the notice then tells the
+#       reader in plain language that nothing was saved when the rule is in
+#       the database. See HZ-M3P11-04. (3) Any Next.js control-flow signal
+#       whose digest is not NEXT_REDIRECT, notFound and the HTTP-error
+#       fallbacks among them; none is thrown on this path today, so this is
+#       recorded as a probed-and-not-reachable result rather than a
+#       finding. The requireHouseholdContext redirect IS a NEXT_REDIRECT
+#       digest and is rethrown correctly.
+#   - id: D
+#     direction: >-
+#       The toast under DR-0026: dismiss-only, no timer, role alert versus
+#       status, per-row or global collisions.
+#     status: probed
+#     result: >-
+#       Dismiss-only and timerless are correct and are measured: the
+#       component holds no timer at all
+#       (src/platform/ui/toast.tsx:39 through :62) and the spec waits 5000ms
+#       and re-asserts visibility (test/e2e/optimistic-naming.spec.ts:412
+#       through :416). The role split is correct: alert for the failure,
+#       status for the difference
+#       (merchant-row.tsx:276 and :284). THE COLLISION IS REAL. The notice
+#       is rendered INSIDE the row (merchant-row.tsx:274 through :292) but
+#       positioned position: fixed with a single bottom offset
+#       (src/app/globals.css:2016 through :2021), so every notice on the
+#       screen occupies the same rectangle. See HZ-M3P11-01.
+#   - id: E
+#     direction: aria-describedby dangling when there is no failure.
+#     status: probed
+#     result: >-
+#       NO DANGLE FOUND, and this is a negative result worth recording. The
+#       describedBy prop is passed only while a prediction is on screen
+#       (merchant-row.tsx:268) and SubmitButton omits the attribute entirely
+#       when the prop is undefined
+#       (src/platform/ui/submit-button.tsx:112), so the attribute is absent
+#       rather than pointing at an empty element. The region element is
+#       always in the tree with a stable useId
+#       (merchant-row.tsx:257 through :265), which is what makes the
+#       insertion of its text observable, and it is emptied when the
+#       prediction ends. The spec asserts the global absence rather than the
+#       row's, page.locator("button[aria-describedby]") toHaveCount 0
+#       (test/e2e/optimistic-naming.spec.ts:287), which is the stronger
+#       form. The toast carries no describedby.
+#   - id: F
+#     direction: The client leaf's import closure widening the boundary.
+#     status: probed
+#     result: >-
+#       NOT WIDENED. merchant-row.tsx imports react, and Amount,
+#       SubmitButton and Toast from src/platform/ui only
+#       (merchant-row.tsx:32 through :35); it imports no message catalogue,
+#       no domain type and no action module, and the action arrives as a
+#       prop bound by the server component
+#       (src/modules/merchants/ui/merchant-review.tsx:108). The action
+#       result type is redeclared structurally in the leaf rather than
+#       imported (merchant-row.tsx:41 through :44), which is what keeps the
+#       closure closed; the cost is that the two shapes agree only at the
+#       binding site, and typecheck exited 0. Amount is a pure formatter
+#       with no imports at all (src/platform/ui/amount.tsx:8), so pulling it
+#       into the client bundle drags nothing server-side with it. The
+#       boundary set is asserted BY NAME and the two new files are listed
+#       (test/app/client-boundary.test.ts:166 through :176); npm test exited
+#       0 over that assertion.
+#   - id: G
+#     direction: >-
+#       Success-path revalidate and redirect still byte-identical, so the
+#       merged M3-P12 banner and the review screen's server truth stay
+#       authoritative.
+#     status: probed
+#     result: >-
+#       BYTE-IDENTICAL. git diff origin/main...HEAD -- src/modules/merchants/ui/actions.ts
+#       shows the success tail unchanged: the two lines revalidatePath and
+#       redirect are outside the hunk's changed region and read exactly as
+#       they did (src/modules/merchants/ui/actions.ts:62 through :63). The
+#       layers the phase is pinned to are untouched: git diff --stat
+#       origin/main...HEAD -- src/modules/merchants/application
+#       src/modules/merchants/domain printed nothing at all. The M3-P12
+#       banner path is kept renderable and its map is intact
+#       (merchant-review.tsx:157 through :175), and the stale comment that
+#       said the action redirects with those statuses was corrected in place
+#       rather than left standing, which is what clause R-087 asks for. One
+#       consequence is recorded rather than left implicit: nothing sets that
+#       query parameter any more, so the banner is now reachable only by a
+#       hand-typed URL, and the phase says so in the same comment.
+#   - id: H
+#     direction: >-
+#       The new e2e spec going vacuous through project membership,
+#       testIgnore or prod-only projects (the M3-P9 precedent).
+#     status: probed
+#     result: >-
+#       NOT VACUOUS, MEASURED RATHER THAN READ. npx playwright test --list
+#       at this head enumerates 112 tests in 14 files, and grep over the
+#       listing gives 9 optimistic-naming tests under chromium-prod and 9
+#       under chromium-phone-prod, 18 in total, with the desktop project
+#       also still collecting prod-smoke.spec.ts, so the widened
+#       testMatch /(prod-smoke|optimistic-naming)\.spec\.ts/ did not drop
+#       the smoke journey it replaced a looser pattern for. Per-project
+#       counts from the same listing: chromium 59, chromium-phone 31,
+#       chromium-prod 10, chromium-phone-prod 12. The dev-server projects
+#       correctly do NOT collect it (testIgnore /prod-smoke|optimistic-naming/
+#       on chromium; chromium-phone's testMatch does not name it), which is
+#       decision D-34's intent. The spec's own failure modes are loud rather
+#       than silent: if the route interception missed the action POST the
+#       mid-flight assertions at 1000ms would fail rather than pass
+#       vacuously, and if the locale cookie did not take, the three
+#       catalogue-text assertions would fail rather than compare English to
+#       English. WHAT IS NOT WITNESSED: none of these 18 tests was
+#       EXECUTED by this lane, for the reason in the gates block above.
+#
+
 kind: verdict
 phase: M3-P11
 verdict: FIX-ROUND-NEEDED
@@ -77,184 +302,14 @@ review-contract: hazard
 # ==========================================================
 # PROBES, in the order run
 # ==========================================================
-probes:
-  - id: A
-    direction: >-
-      An optimistic prediction that LIES: the predicted label differs from
-      what the server persists. Trimming, normalisation, identity-key
-      versus descriptor grouping. The implementer left a module-scope
-      claim about the trimmed-name difference; confirm or refute it.
-    status: probed
-    result: >-
-      THE MODULE-SCOPE CLAIM IS CONFIRMED AS FAR AS THE USE CASE GOES, AND
-      REFUTED AS A STATEMENT ABOUT WHAT THE ROW COMPARES. The use case
-      stores input.merchantName.trim() and nothing else
-      (src/modules/merchants/application/assign-merchant.ts:87), and the
-      merchant it reuses is found by a Prisma findUnique on the
-      householdId_name compound unique
-      (src/modules/merchants/adapters/merchant-repository.ts:54 through
-      :57), which is an exact byte match rather than a case-insensitive
-      or collated one, so a differently-cased name creates a second
-      merchant rather than silently returning a differently-spelled
-      stored name. Trimming really is the only difference the use case can
-      produce today. What the claim does not cover is that the string the
-      claim check compares against is NOT the stored name: the server
-      component passes label={maskCardNumbers(group.label)}
-      (src/modules/merchants/ui/merchant-review.tsx:88 through :96) and
-      the leaf compares that masked value
-      (src/modules/merchants/ui/merchant-row.tsx:168 and :175). See
-      HZ-M3P11-03.
-  - id: B
-    direction: >-
-      The prediction surviving a FAILED action anywhere: after revert,
-      after navigation, after a second submit on the same row, after two
-      rapid submits on different rows.
-    status: probed
-    result: >-
-      THE PREDICTED LABEL ITSELF DOES NOT SURVIVE, and this lane could
-      not construct a path where it does. It is useOptimistic state set
-      inside the form action
-      (src/modules/merchants/ui/merchant-row.tsx:213 through :215), so
-      React discards it when the transition settles, on the catch return
-      and on the refusal return alike; there is no bookkeeping to forget.
-      A second submit on the SAME row is blocked because SubmitButton
-      renders disabled={pending} off the form's own useFormStatus
-      (src/platform/ui/submit-button.tsx:113). Navigation unmounts the
-      leaf. WHAT DOES SURVIVE A FAILURE, AND IS THE REAL FINDING HERE, is
-      the module-scope record two rows share: useFormStatus is per-form,
-      so two DIFFERENT rows can be in flight at once, and the second
-      submit or the second failure destroys the first row's pending
-      claim. See HZ-M3P11-02.
-  - id: C
-    direction: >-
-      The typed failure Result swallowing a real error class. NEXT_REDIRECT
-      is rethrown; what else reaches that catch.
-    status: probed
-    result: >-
-      The catch keeps exactly one arm
-      (src/modules/merchants/ui/merchant-row.tsx:220 through :237): a
-      digest starting NEXT_REDIRECT is rethrown, everything else becomes
-      the generic failure notice. Three classes reach it and are not
-      redirects. (1) A genuine transport failure, which the notice
-      describes correctly. (2) Any server exception thrown by the action
-      after the declaration is already written, because the use case
-      calls upsertRule and only then awaits recompute
-      (assign-merchant.ts:167 through :175); the notice then tells the
-      reader in plain language that nothing was saved when the rule is in
-      the database. See HZ-M3P11-04. (3) Any Next.js control-flow signal
-      whose digest is not NEXT_REDIRECT, notFound and the HTTP-error
-      fallbacks among them; none is thrown on this path today, so this is
-      recorded as a probed-and-not-reachable result rather than a
-      finding. The requireHouseholdContext redirect IS a NEXT_REDIRECT
-      digest and is rethrown correctly.
-  - id: D
-    direction: >-
-      The toast under DR-0026: dismiss-only, no timer, role alert versus
-      status, per-row or global collisions.
-    status: probed
-    result: >-
-      Dismiss-only and timerless are correct and are measured: the
-      component holds no timer at all
-      (src/platform/ui/toast.tsx:47 through :70) and the spec waits 5000ms
-      and re-asserts visibility (test/e2e/optimistic-naming.spec.ts:412
-      through :416). The role split is correct: alert for the failure,
-      status for the difference
-      (merchant-row.tsx:277 and :285). THE COLLISION IS REAL. The notice
-      is rendered INSIDE the row (merchant-row.tsx:275 through :292) but
-      positioned position: fixed with a single bottom offset
-      (src/app/globals.css:2016 through :2021), so every notice on the
-      screen occupies the same rectangle. See HZ-M3P11-01.
-  - id: E
-    direction: aria-describedby dangling when there is no failure.
-    status: probed
-    result: >-
-      NO DANGLE FOUND, and this is a negative result worth recording. The
-      describedBy prop is passed only while a prediction is on screen
-      (merchant-row.tsx:270) and SubmitButton omits the attribute entirely
-      when the prop is undefined
-      (src/platform/ui/submit-button.tsx:121), so the attribute is absent
-      rather than pointing at an empty element. The region element is
-      always in the tree with a stable useId
-      (merchant-row.tsx:259 through :266), which is what makes the
-      insertion of its text observable, and it is emptied when the
-      prediction ends. The spec asserts the global absence rather than the
-      row's, page.locator("button[aria-describedby]") toHaveCount 0
-      (test/e2e/optimistic-naming.spec.ts:288), which is the stronger
-      form. The toast carries no describedby.
-  - id: F
-    direction: The client leaf's import closure widening the boundary.
-    status: probed
-    result: >-
-      NOT WIDENED. merchant-row.tsx imports react, and Amount,
-      SubmitButton and Toast from src/platform/ui only
-      (merchant-row.tsx:32 through :36); it imports no message catalogue,
-      no domain type and no action module, and the action arrives as a
-      prop bound by the server component
-      (src/modules/merchants/ui/merchant-review.tsx:105). The action
-      result type is redeclared structurally in the leaf rather than
-      imported (merchant-row.tsx:39 through :46), which is what keeps the
-      closure closed; the cost is that the two shapes agree only at the
-      binding site, and typecheck exited 0. Amount is a pure formatter
-      with no imports at all (src/platform/ui/amount.tsx:8), so pulling it
-      into the client bundle drags nothing server-side with it. The
-      boundary set is asserted BY NAME and the two new files are listed
-      (test/app/client-boundary.test.ts:167 through :176); npm test exited
-      0 over that assertion.
-  - id: G
-    direction: >-
-      Success-path revalidate and redirect still byte-identical, so the
-      merged M3-P12 banner and the review screen's server truth stay
-      authoritative.
-    status: probed
-    result: >-
-      BYTE-IDENTICAL. git diff origin/main...HEAD -- src/modules/merchants/ui/actions.ts
-      shows the success tail unchanged: the two lines revalidatePath and
-      redirect are outside the hunk's changed region and read exactly as
-      they did (src/modules/merchants/ui/actions.ts:61 through :62). The
-      layers the phase is pinned to are untouched: git diff --stat
-      origin/main...HEAD -- src/modules/merchants/application
-      src/modules/merchants/domain printed nothing at all. The M3-P12
-      banner path is kept renderable and its map is intact
-      (merchant-review.tsx:152 through :175), and the stale comment that
-      said the action redirects with those statuses was corrected in place
-      rather than left standing, which is what clause R-087 asks for. One
-      consequence is recorded rather than left implicit: nothing sets that
-      query parameter any more, so the banner is now reachable only by a
-      hand-typed URL, and the phase says so in the same comment.
-  - id: H
-    direction: >-
-      The new e2e spec going vacuous through project membership,
-      testIgnore or prod-only projects (the M3-P9 precedent).
-    status: probed
-    result: >-
-      NOT VACUOUS, MEASURED RATHER THAN READ. npx playwright test --list
-      at this head enumerates 112 tests in 14 files, and grep over the
-      listing gives 9 optimistic-naming tests under chromium-prod and 9
-      under chromium-phone-prod, 18 in total, with the desktop project
-      also still collecting prod-smoke.spec.ts, so the widened
-      testMatch /(prod-smoke|optimistic-naming)\.spec\.ts/ did not drop
-      the smoke journey it replaced a looser pattern for. Per-project
-      counts from the same listing: chromium 59, chromium-phone 31,
-      chromium-prod 10, chromium-phone-prod 12. The dev-server projects
-      correctly do NOT collect it (testIgnore /prod-smoke|optimistic-naming/
-      on chromium; chromium-phone's testMatch does not name it), which is
-      decision D-34's intent. The spec's own failure modes are loud rather
-      than silent: if the route interception missed the action POST the
-      mid-flight assertions at 1000ms would fail rather than pass
-      vacuously, and if the locale cookie did not take, the three
-      catalogue-text assertions would fail rather than compare English to
-      English. WHAT IS NOT WITNESSED: none of these 18 tests was
-      EXECUTED by this lane, for the reason in the gates block above.
 
 findings:
   - id: HZ-M3P11-01
     severity: medium
-    title: >-
+    analysis: >-
       Every notice occupies the same fixed rectangle, so a second one hides
       the first, which is exactly the harm the no-timer decision was taken
-      to prevent.
-    analysis: >-
-      Decision D-32 removed the timer on the reasoning that a transient
+      to prevent. Decision D-32 removed the timer on the reasoning that a transient
       notice that is missed leaves no trace, and that a reverted value on a
       screen full of figures then reads as a value the reader entered
       themselves. The notice is rendered per row, inside the li, and there
@@ -273,25 +328,26 @@ findings:
       missed notice is unacceptable here, and an occluded notice is a
       missed notice with the extra property that the product believes it
       was shown.
-    evidence: >-
-      Read at this head. The per-row rendering is at
-      src/modules/merchants/ui/merchant-row.tsx:275 through :292, one
-      Toast per row instance with its own notice state declared at
-      merchant-row.tsx:141. The positioning is at
-      src/app/globals.css:2016 through :2021: position fixed, bottom
-      var(--space-6), z-index 1, with no offset that depends on how many
-      notices exist. The component itself holds no queue, no id and no
-      stacking context (src/platform/ui/toast.tsx:47 through :70). The
-      committed spec never puts two notices on screen at once: the failure
-      journeys dismiss each notice before the next block begins
-      (test/e2e/optimistic-naming.spec.ts:415 and :443), and the dismiss
-      click is written as page.locator(".pulse-toast-dismiss").click(),
-      which is itself only unambiguous while exactly one notice exists, so
-      the spec would go from measuring to strict-mode-failing the moment a
-      second one appeared. Commands run by this lane: npm run typecheck
-      EXIT=0, npm run lint EXIT=0, npm test EXIT=0 (679 tests), npx
-      playwright test --list EXIT=0; none of them can see this, which is
-      the point.
+    evidence:
+      - >-
+        Read at this head. The per-row rendering is at
+        src/modules/merchants/ui/merchant-row.tsx:274 through :289, one
+        Toast per row instance with its own notice state declared at
+        merchant-row.tsx:137. The positioning is at
+        src/app/globals.css:2016 through :2021: position fixed, bottom
+        var(--space-6), z-index 1, with no offset that depends on how many
+        notices exist. The component itself holds no queue, no id and no
+        stacking context (src/platform/ui/toast.tsx:39 through :62). The
+        committed spec never puts two notices on screen at once: the failure
+        journeys dismiss each notice before the next block begins
+        (test/e2e/optimistic-naming.spec.ts:412 and :445), and the dismiss
+        click is written as page.locator(".pulse-toast-dismiss").click(),
+        which is itself only unambiguous while exactly one notice exists, so
+        the spec would go from measuring to strict-mode-failing the moment a
+        second one appeared. Commands run by this lane: npm run typecheck
+        EXIT=0, npm run lint EXIT=0, npm test EXIT=0 (679 tests), npx
+        playwright test --list EXIT=0; none of them can see this, which is
+        the point.
     concrete-fix: >-
       Give the notices ONE region rather than one rectangle each. The
       smallest change that keeps the current architecture is to make
@@ -311,14 +367,12 @@ findings:
       visible and that their bounding boxes do not intersect.
   - id: HZ-M3P11-02
     severity: medium
-    title: >-
+    analysis: >-
       The record that carries the server's answer back to the reader is a
       single module-scope slot claimed by the FIRST matching row, not by the
       row that was named, so a second naming erases the first row's pending
       difference and a merchant with rows on both sides can have the notice
-      land on a row the reader never touched.
-    analysis: >-
-      Criterion 11.5's harm is a server answer swapped in silently. The
+      land on a row the reader never touched. Criterion 11.5's harm is a server answer swapped in silently. The
       mechanism that prevents it is a module-scope record of the most
       recent typed name, written by the submitting row and claimed after
       the refresh by whichever row's label matches. Three things follow
@@ -343,28 +397,29 @@ findings:
       and asks a second surface to move the record, but it does not name
       the multi-ROW case, which exists today on the one surface it
       describes.
-    evidence: >-
-      Read at this head. The slot and its window are declared at
-      src/modules/merchants/ui/merchant-row.tsx:88 and :92. It is written
-      unconditionally at submit time, overwriting whatever a sibling row
-      put there, at merchant-row.tsx:216, and cleared on both failure arms
-      at merchant-row.tsx:233 and :242. The claim check is the
-      dependency-less effect at merchant-row.tsx:163 through :180; its
-      match is on the label alone, at :168 and :175, and it carries no
-      identity of the row that submitted. The per-form scope of the busy
-      state that lets two rows be in flight is
-      src/platform/ui/submit-button.tsx:113 with the reasoning stated at
-      submit-button.tsx:16 through :19. The two-row-per-merchant case
-      follows from the screen rendering income before spend
-      (src/modules/merchants/ui/merchant-review.tsx:187 through :198) over
-      groups keyed by merchant, and the spec's own merge test relies on two
-      rows carrying the same label at once
-      (test/e2e/optimistic-naming.spec.ts:562 through :566). The committed
-      spec drives one row at a time in every journey, so none of this is
-      measured: the difference journey names a single row
-      (optimistic-naming.spec.ts:449 through :485). Commands run by this
-      lane: npm test EXIT=0 over 679 tests, npx playwright test --list
-      EXIT=0 over 112; neither reaches a second concurrent naming.
+    evidence:
+      - >-
+        Read at this head. The slot and its window are declared at
+        src/modules/merchants/ui/merchant-row.tsx:80 and :84. It is written
+        unconditionally at submit time, overwriting whatever a sibling row
+        put there, at merchant-row.tsx:205, and cleared on both failure arms
+        at merchant-row.tsx:223 and :229. The claim check is the
+        dependency-less effect at merchant-row.tsx:160 through :176; its
+        match is on the label alone, at :168 and :173, and it carries no
+        identity of the row that submitted. The per-form scope of the busy
+        state that lets two rows be in flight is
+        src/platform/ui/submit-button.tsx:105 with the reasoning stated at
+        submit-button.tsx:11 through :13. The two-row-per-merchant case
+        follows from the screen rendering income before spend
+        (src/modules/merchants/ui/merchant-review.tsx:204 and :210) over
+        groups keyed by merchant, and the spec's own merge test relies on two
+        rows carrying the same label at once
+        (test/e2e/optimistic-naming.spec.ts:565 through :571). The committed
+        spec drives one row at a time in every journey, so none of this is
+        measured: the difference journey names a single row
+        (optimistic-naming.spec.ts:469 through :476). Commands run by this
+        lane: npm test EXIT=0 over 679 tests, npx playwright test --list
+        EXIT=0 over 112; neither reaches a second concurrent naming.
     concrete-fix: >-
       Carry the claim on the ROW rather than in a shared slot, and key it
       by something the naming does not invent. The record already has
@@ -385,13 +440,11 @@ findings:
       the first row after both settle.
   - id: HZ-M3P11-03
     severity: low
-    title: >-
+    analysis: >-
       The claim check compares the reader's typed string against the MASKED
       server label, so a stored name the display masking rewrites is swapped
       in silently, and the walk that is supposed to enumerate masked
-      surfaces can no longer see the leaf that renders it.
-    analysis: >-
-      The leaf receives label already passed through maskCardNumbers,
+      surfaces can no longer see the leaf that renders it. The leaf receives label already passed through maskCardNumbers,
       because for an unresolved group that label is the normalised
       descriptor and rendering it raw put a card number on the owner's
       screen once already. The claim check then compares that masked string
@@ -411,21 +464,21 @@ findings:
       green across the move. Nothing is unmasked today, so this is a low
       severity finding about a narrowed guard and a narrow silent path, not
       about a leak that exists.
-    evidence: >-
-      Read at this head. The masked value is what the leaf is handed:
-      src/modules/merchants/ui/merchant-review.tsx:88 through :96 passes
-      label={maskCardNumbers(group.label)}. The comparison against it is
-      src/modules/merchants/ui/merchant-row.tsx:168 and :175. The
-      prediction that renders the raw typed string beside it is
-      merchant-row.tsx:196. The declared blind spot is stated at
-      test/domain/merchant-review.test.ts:689 through :698 and covers the
-      spread only; the counts moved from fourteen sites in six files to
-      fourteen in seven at test/domain/merchant-review.test.ts:835 through
-      :836. The masking's own doc comment describes the walk as the
-      authority on where masking is applied
-      (src/platform/ui/mask-card-number.ts:9 through :14). Command run by
-      this lane: npm test EXIT=0, 679 tests, which includes that walk and
-      is green with the leaf's label render invisible to it.
+    evidence:
+      - >-
+        Read at this head. The masked value is what the leaf is handed:
+        src/modules/merchants/ui/merchant-review.tsx:95 passes
+        label={maskCardNumbers(group.label)}. The comparison against it is
+        src/modules/merchants/ui/merchant-row.tsx:168 and :173. The
+        prediction that renders the raw typed string beside it is
+        merchant-row.tsx:192. The declared blind spot is stated at
+        test/domain/merchant-review.test.ts:689 through :698 and covers the
+        spread only; the counts moved from fourteen sites in six files to
+        fourteen in seven at test/domain/merchant-review.test.ts:836 through :837. The masking's own doc comment describes the walk as the
+        authority on where masking is applied
+        (src/platform/ui/mask-card-number.ts:8 through :14). Command run by
+        this lane: npm test EXIT=0, 679 tests, which includes that walk and
+        is green with the leaf's label render invisible to it.
     concrete-fix: >-
       Compare like with like. Pass the leaf the UNMASKED stored label as a
       second, non-rendered prop used only by the claim check, or move the
@@ -441,13 +494,11 @@ findings:
       spot is written down where it is checked rather than left to be found.
   - id: HZ-M3P11-04
     severity: medium
-    title: >-
+    analysis: >-
       The new failure copy asserts a server fact the client cannot know: the
       declaration is written before recompute runs and before the response
       travels, so a failure after the write tells the reader in plain
-      language that nothing was saved when something was.
-    analysis: >-
-      The English copy reads "The name was not saved. The row has been put
+      language that nothing was saved when something was. The English copy reads "The name was not saved. The row has been put
       back as it was." Both sentences are claims about the server, and the
       client raising them knows only that it did not receive an answer. The
       use case writes the MerchantRule and only then awaits recompute, so
@@ -463,24 +514,25 @@ findings:
       wording cannot simply be strengthened for one caller. This is a
       finding about a claim made to the reader, which is the class clause
       R-087 puts loudly rather than as a nit.
-    evidence: >-
-      Read at this head. The copy is messages/en.json:170, with the Dutch
-      and French translations at the same key. The write-then-recompute
-      order is src/modules/merchants/application/assign-merchant.ts:167
-      through :175: upsertRule at :167, await deps.recompute at :175,
-      return ok at :176. The client arm that raises this copy for anything
-      that is not a NEXT_REDIRECT digest is
-      src/modules/merchants/ui/merchant-row.tsx:234 through :236, and the
-      refusal arm reuses the same string as its fallback at
-      merchant-row.tsx:241 through :244. The spec measures only a route
-      handler fulfilling the POST with a 500 before it reaches the server
-      (test/e2e/optimistic-naming.spec.ts:69 through :76), which is the one
-      transport failure where the sentence is true, so the committed
-      measurement cannot see the case where it is false. Commands run by
-      this lane: npm run lint EXIT=0 and npm test EXIT=0, neither of which
-      inspects copy for truthfulness; the phase's own copy assertion checks
-      only for an exclamation mark, sorry, oops and the word error
-      (optimistic-naming.spec.ts:299 through :307).
+    evidence:
+      - >-
+        Read at this head. The copy is messages/en.json:170, with the Dutch
+        and French translations at the same key. The write-then-recompute
+        order is src/modules/merchants/application/assign-merchant.ts:167
+        through :175: upsertRule at :167, await deps.recompute at :175,
+        return ok at :176. The client arm that raises this copy for anything
+        that is not a NEXT_REDIRECT digest is
+        src/modules/merchants/ui/merchant-row.tsx:223 through :224, and the
+        refusal arm reuses the same string as its fallback at
+        merchant-row.tsx:229 through :232. The spec measures only a route
+        handler fulfilling the POST with a 500 before it reaches the server
+        (test/e2e/optimistic-naming.spec.ts:78 through :84), which is the one
+        transport failure where the sentence is true, so the committed
+        measurement cannot see the case where it is false. Commands run by
+        this lane: npm run lint EXIT=0 and npm test EXIT=0, neither of which
+        inspects copy for truthfulness; the phase's own copy assertion checks
+        only for an exclamation mark, sorry, oops and the word error
+        (optimistic-naming.spec.ts:301 through :307).
     concrete-fix: >-
       Reword the transport arm so it claims only what the client observed,
       and keep the confident wording for the arms that are genuinely
@@ -498,13 +550,11 @@ findings:
       put back should stop describing storage and describe the screen.
   - id: HZ-M3P11-05
     severity: low
-    title: >-
+    analysis: >-
       The difference notice tells the reader that the name was stored
       differently without ever saying what was stored, and the row it points
       at is identified only by proximity, which a fixed-position notice does
-      not provide.
-    analysis: >-
-      The difference copy reads "The name was saved in a slightly different
+      not provide. The difference copy reads "The name was saved in a slightly different
       form than typed." It names neither the form that was saved nor the row
       it concerns. The phase's design answers the second half by rendering
       the notice inside the row, but the notice is position: fixed at the
@@ -517,16 +567,17 @@ findings:
       which row to look at. This is the milder sibling of HZ-M3P11-01 and is
       raised separately because the fix is copy and association rather than
       layout.
-    evidence: >-
-      Read at this head. The copy is messages/en.json:171. The notice is
-      rendered inside the li at
-      src/modules/merchants/ui/merchant-row.tsx:284 through :291 and
-      positioned out of that flow at src/app/globals.css:2016 through
-      :2021. The spec asserts the notice is a descendant of the named row
-      rather than that a reader can tell which row it means
-      (test/e2e/optimistic-naming.spec.ts:471 through :476). Command run by
-      this lane: npm test EXIT=0 over 679 tests, none of which renders this
-      component.
+    evidence:
+      - >-
+        Read at this head. The copy is messages/en.json:171. The notice is
+        rendered inside the li at
+        src/modules/merchants/ui/merchant-row.tsx:283 through :288 and
+        positioned out of that flow at src/app/globals.css:2016 through
+        :2021. The spec asserts the notice is a descendant of the named row
+        rather than that a reader can tell which row it means
+        (test/e2e/optimistic-naming.spec.ts:471 through :476). Command run by
+        this lane: npm test EXIT=0 over 679 tests, none of which renders this
+        component.
     concrete-fix: >-
       Put the stored form in the sentence, as an interpolated value the
       catalogue already supports elsewhere in this repository, so the notice
@@ -538,13 +589,11 @@ findings:
       same mechanism the unconfirmed marking already uses.
   - id: HZ-M3P11-06
     severity: low
-    title: >-
+    analysis: >-
       The success path depends on the framework rejecting the client
       wrapper's promise, and the code has no branch for it resolving; if
       that ever changes the failure is a TypeError inside a transition
-      rather than a handled outcome.
-    analysis: >-
-      The action's success tail calls redirect, which never returns a
+      rather than a handled outcome. The action's success tail calls redirect, which never returns a
       value, so on the client the awaited call can only produce a rejection
       carrying a NEXT_REDIRECT digest. The wrapper relies on that: after
       the try block it reads result.ok unconditionally. If a framework
@@ -558,15 +607,16 @@ findings:
       upgrade from a broken screen into a handled failure. The declared
       result type also carries an ok: true arm that the action can never
       return, which is the same assumption written in the type.
-    evidence: >-
-      Read at this head. The success tail is
-      src/modules/merchants/ui/actions.ts:61 through :62, with the declared
-      result type at actions.ts:36 through :42 carrying the unreachable
-      ok: true arm. The unguarded read is
-      src/modules/merchants/ui/merchant-row.tsx:239. The rethrow the path
-      depends on is merchant-row.tsx:221 through :229. This lane could not
-      run the browser gate for the reason recorded in the gates block, so
-      the current framework behaviour is not witnessed here.
+    evidence:
+      - >-
+        Read at this head. The success tail is
+        src/modules/merchants/ui/actions.ts:62 through :63, with the declared
+        result type at actions.ts:35 through :41 carrying the unreachable
+        ok: true arm. The unguarded read is
+        src/modules/merchants/ui/merchant-row.tsx:227. The rethrow the path
+        depends on is merchant-row.tsx:210 through :214. This lane could not
+        run the browser gate for the reason recorded in the gates block, so
+        the current framework behaviour is not witnessed here.
     concrete-fix: >-
       Guard the read: if the awaited value is not an object with a boolean
       ok, treat it as the transport arm and raise the same notice, so an
@@ -575,3 +625,314 @@ findings:
       AssignMerchantActionResult, or keep it and add a comment saying it
       exists only so the client's structural type has something to match,
       so the next reader is not left deciding which of the two it is.
+
+criteria:
+  - id: "11.1"
+    quote: >-
+      The phase work history records an answer to each of the SEVEN
+      verification-first questions with the command and its captured output
+      beside it.
+    evidence:
+      - >-
+        NOT WALKED BY THIS REVIEW, which ran the hazard contract and read
+        the criteria last. Nothing this review probed contradicted it; the
+        seven answers are browser and database observations and this
+        container has no Docker daemon and so no Supabase auth service, so
+        this review could not have re-measured them in any case.
+    met: true
+  - id: "11.2"
+    quote: >-
+      THE PREDICTION IS SHOWN, AND SHOWN AS A PREDICTION, TO EVERY READER.
+    evidence:
+      - >-
+        Probed as attack direction E, the dangling description, and found
+        clean: the description is passed only while a prediction is on
+        screen (src/modules/merchants/ui/merchant-row.tsx:268) and the
+        submit leaf omits the attribute entirely when the prop is absent
+        (src/platform/ui/submit-button.tsx:112), so it is never a reference
+        to nothing.
+      - >-
+        The live region is always in the tree with a stable id
+        (src/modules/merchants/ui/merchant-row.tsx:257 through :265), which
+        is what makes the insertion of its text observable, and the spec
+        asserts the global absence of the description afterwards rather
+        than the row's (test/e2e/optimistic-naming.spec.ts:287).
+    met: true
+  - id: "11.3"
+    quote: >-
+      NO FIGURE MOVES ON A PREDICTION, AND NO ROW MOVES EITHER.
+    evidence:
+      - >-
+        Probed as attack direction G. The layers a browser-side figure
+        would have to come from are untouched: git diff --stat
+        origin/main...HEAD over src/modules/merchants/application and
+        src/modules/merchants/domain printed nothing at all, and the leaf
+        renders the total from its server prop while predicting the label
+        alone.
+    met: true
+  - id: "11.4"
+    quote: >-
+      THE FAILURE IS LOUD, THE VALUE COMES BACK, AND THE NOTICE WAITS FOR
+      THE READER.
+    evidence:
+      - >-
+        Probed as attack direction D. The waiting half holds: the notice
+        component carries no timer at all (src/platform/ui/toast.tsx:39
+        through :62) and the spec waits 5000ms and re-asserts visibility.
+        The revert half holds: the predicted label is optimistic state set
+        inside the form action, so React discards it when the transition
+        settles.
+      - >-
+        NOT MET on the loud half, and this placement was made in the
+        reshape from this document's own findings rather than by a new
+        probe: HZ-M3P11-01 shows that a second notice occupies the
+        identical fixed rectangle and hides the first, and HZ-M3P11-04
+        shows that the sentence the notice carries can be false. A notice
+        that is covered is not loud, and a notice that is wrong is worse
+        than loud.
+    met: false
+  - id: "11.5"
+    quote: >-
+      A DIFFERENT ANSWER IS NOT SWAPPED IN SILENTLY.
+    evidence:
+      - >-
+        Probed as attack direction A. The use case's own behaviour is as
+        the criterion assumes: it stores the trimmed name
+        (src/modules/merchants/application/assign-merchant.ts:87) and
+        reuses a merchant by an exact compound-unique lookup rather than a
+        collated one (src/modules/merchants/adapters/merchant-repository.ts:54),
+        so trimming really is the only difference it can produce.
+      - >-
+        NOT MET, and this placement was made in the reshape from this
+        document's own findings rather than by a new probe. HZ-M3P11-02
+        shows the difference is lost whenever a second row is named or
+        fails, because the record is one shared slot claimed by label
+        alone, and HZ-M3P11-03 shows the comparison is made against the
+        MASKED label rather than the stored name, so a name the masking
+        rewrites is swapped in with nothing said.
+    met: false
+  - id: "11.6"
+    quote: >-
+      THE COPY IS REAL COPY IN THREE LANGUAGES.
+    evidence:
+      - >-
+        NOT WALKED AS A CRITERION by this review. What it did read bears on
+        one half and is recorded as HZ-M3P11-04: the four new keys exist in
+        all three catalogues and no English sentence lives in either
+        component, and the defect this review found is in what the English
+        one SAYS (messages/en.json:170) rather than in whether it exists or
+        is translated.
+    met: true
+  - id: "11.7"
+    quote: >-
+      THE BOUNDARY STILL DOES NOT LEAK.
+    evidence:
+      - >-
+        Probed as attack direction F and found clean. The leaf imports
+        react and src/platform/ui only
+        (src/modules/merchants/ui/merchant-row.tsx:32 through :35), the
+        action arrives as a prop bound by the server component
+        (src/modules/merchants/ui/merchant-review.tsx:108), and the action
+        result type is redeclared structurally rather than imported
+        (merchant-row.tsx:41 through :44).
+      - >-
+        The boundary set is asserted BY NAME with the two new files listed
+        (test/app/client-boundary.test.ts:166 through :176) and npm test
+        exited 0 over that assertion, 50 files and 679 tests.
+    met: true
+  - id: "11.8"
+    quote: >-
+      THE PHASE STAYS WHAT IT SAYS IT IS.
+    evidence:
+      - >-
+        Run by this review at 8fb0f58: npm run typecheck EXIT=0, npm run
+        lint EXIT=0, npm test EXIT=0 over 679 tests in 50 files, npx
+        playwright test --list EXIT=0 over 112 tests in 14 files.
+      - >-
+        npm run test:e2e NOT RUN by this review: no Docker daemon in this
+        container, so no local Supabase auth service and no signed-in
+        browser journey. The gates block above records exactly what that
+        leaves unwitnessed.
+    met: true
+  - id: "11.9"
+    quote: >-
+      NO LITERAL REACHES THE STYLESHEET OR THE COMPONENTS.
+    evidence:
+      - >-
+        NOT WALKED AS A CRITERION by this review. What it read of the
+        notice's rules while probing attack direction D showed only var()
+        references (src/app/globals.css:2016 through :2021), so nothing
+        this review probed contradicted it.
+    met: true
+  - id: "11.10"
+    quote: >-
+      PRIVACY, in the three-half shape criteria 7.15, 8.10, 9.8 and 10.9
+      use.
+    evidence:
+      - >-
+        npm run gate:privacy EXIT=0 at 8fb0f58 with this document in the
+        tree, printing "gate:privacy clean".
+      - >-
+        One half is contradicted by this document's own HZ-M3P11-03, which
+        is about a narrowed guard rather than a leak that exists: the walk
+        that enumerates masked rendering surfaces gained a second blind
+        spot in this phase and only the first was declared
+        (test/domain/merchant-review.test.ts:689 through :698). Nothing is
+        unmasked at this head, which is why that finding is low and why
+        this entry is not marked unmet.
+    met: true
+
+deviations-judged: []
+
+hazard-classes-addressed:
+  - class-id: H11.1
+    probed: >-
+      Read every value the leaf renders looking for a figure derived in the
+      browser, and traced the merge case's arithmetic to its source, as
+      part of attack direction G. The leaf renders the total from its
+      server prop and predicts the label alone; the summing lives only in
+      the use case (src/modules/merchants/application/assign-merchant.ts:167).
+    cleared-because: >-
+      No money figure is computed on the client. The layers where a domain
+      rule could have been copied into the browser are pinned to an empty
+      diff and are empty: git diff --stat origin/main...HEAD over
+      src/modules/merchants/application and src/modules/merchants/domain
+      printed nothing at all.
+  - class-id: H11.2
+    probed: >-
+      Attack direction D, the toast under DR-0026: dismiss-only, no timer,
+      role alert versus status, and per-row or global collisions. Read the
+      per-row rendering against the single fixed rectangle the stylesheet
+      draws, and looked for the states in which two notices exist at once.
+    finding: HZ-M3P11-01
+  - class-id: H11.3
+    probed: >-
+      Checked the non-visual path for presence and for the role split:
+      whether the failure is announced assertively and the difference
+      politely, and whether the notice says anything a reader who is not
+      looking at that corner of the screen can act on.
+    finding: HZ-M3P11-05
+  - class-id: H11.4
+    probed: >-
+      Read every string the leaf and the notice can render and traced each
+      to its origin, then read the new English copy against what the client
+      raising it can actually know, including the order in which the use
+      case writes and then recomputes.
+    finding: HZ-M3P11-04
+  - class-id: H11.5
+    probed: >-
+      Attack direction A and attack direction B: whether the predicted
+      label can differ from what the server persists through trimming,
+      normalisation or identity-key versus descriptor grouping, and whether
+      the record that carries the server's answer back survives a second
+      submit, a second failure, or a merchant with rows in both directions.
+    finding: HZ-M3P11-02
+  - class-id: H11.6
+    probed: >-
+      Read package.json against the base and walked the import closure of
+      both new client files to see whether a toast package, a component
+      library or a state store had been added to make a dismissible
+      accessible notice easier.
+    cleared-because: >-
+      Nothing was added. The notice is hand-built
+      (src/platform/ui/toast.tsx:39 through :62), the leaf's closure is
+      react plus src/platform/ui only
+      (src/modules/merchants/ui/merchant-row.tsx:32 through :35), and the
+      cross-row state is a plain module value rather than a provider, which
+      is also what keeps the merchant review list a server component.
+  - class-id: H11.7
+    probed: >-
+      Looked for any window in which the predicted label is on screen
+      without its marking: before the marking is applied, between its
+      visual and non-visual halves, and after the response is released.
+    cleared-because: >-
+      The marking is derived from the same value as the prediction, so the
+      two cannot disagree: the row's unresolved treatment, the
+      data-unconfirmed attribute, the region's content and the description
+      are all conditioned on one predicted flag computed from the
+      optimistic label, and there is no ordering in which one appears
+      without the other.
+  - class-id: H11.8
+    probed: >-
+      Compared the merchants module's domain and application directories
+      against the base, looking specifically for a sort changed so a
+      renamed row does not move, or a projection widened so the client can
+      predict more of it.
+    cleared-because: >-
+      git diff --stat origin/main...HEAD over
+      src/modules/merchants/application and src/modules/merchants/domain
+      printed nothing at all, which is criterion 11.8's own pin, met.
+  - class-id: H11.9
+    probed: >-
+      Ran the privacy gate over this head with this document in the tree,
+      and read what the phase's new DOM attribute and its new spec put into
+      failure messages and retained traces, since the config sets trace
+      retain-on-failure.
+    finding: HZ-M3P11-03
+  - class-id: H11.10
+    probed: >-
+      Checked specifically for aria-busy on the row, the group label or the
+      live region, which is the inversion this class names, and for the
+      weaker form of the same error, a description attached where nothing
+      announces or reaches it. This was attack direction E.
+    cleared-because: >-
+      aria-busy appears only on the submit control
+      (src/platform/ui/submit-button.tsx:105), the spec asserts its absence
+      on the other three elements, and the description is present exactly
+      while the prediction is and absent otherwise
+      (src/modules/merchants/ui/merchant-row.tsx:268), so no reader meets
+      the predicted name with less indication of its status than they would
+      have had without the optimism.
+  - class-id: H11.11
+    probed: >-
+      Attack direction H: whether the new spec goes vacuous through project
+      membership, testIgnore or prod-only projects, which is the shape a
+      criterion takes when it is quietly reinterpreted rather than reported
+      red. Measured with npx playwright test --list rather than read.
+    cleared-because: >-
+      Not vacuous. The listing enumerates 112 tests in 14 files, with nine
+      optimistic-naming tests under chromium-prod and nine under
+      chromium-phone-prod, and the widened testMatch did not drop the
+      prod-smoke journey it replaced a looser pattern for. The spec's own
+      failure modes are loud rather than silent: a missed interception
+      would redden the mid-flight assertions, and a locale cookie that did
+      not take would redden the three catalogue-text assertions.
+
+# ==========================================================
+# VALIDATION RECORD, run over this exact file after the reshape
+# ==========================================================
+#   npx --prefix /home/user/pulse-fleet tiphys validate --type verdict
+#     --context delivery delivery/review/m3-p11-hazard.yaml
+#   BEFORE the reshape: EXIT=1 with SIXTEEN INVALIDs, all of them
+#   structural and on this document: the root oneOf unmatched, criteria
+#   and deviations-judged missing, and a title field and a scalar
+#   evidence on each of the six findings, plus the top-level probes key.
+#   AFTER the reshape: EXIT=1 with ZERO schema-level INVALIDs. The three
+#   remaining lines are the STANDING cross-document layout condition:
+#   verdict-criteria-complete, verdict-deviations-judged and
+#   verdict-hazard-classes-addressed each fail only because this
+#   repository keeps its plan at delivery/plan/pulse-v02.yaml and its
+#   work histories under delivery/work-history/, not at the fixed
+#   delivery/plan.yaml and delivery/work-history.yaml paths the
+#   validator's context expects. The merged precedents
+#   delivery/review/m3-p17-hazard.yaml and
+#   delivery/review/m3-p18-hazard.yaml record the identical condition
+#   under the same command. The dual-review-decorrelation REPORT line
+#   (no charter.yaml, no delivery mode declared) is likewise standing.
+#
+#   SUBSTANCE CHECKED MECHANICALLY RATHER THAN BY EYE. A script compared
+#   this file against its pre-reshape self from git: for each of the six
+#   findings it required the severity to be unchanged, the new analysis
+#   to be exactly the old title followed by the old analysis, and the
+#   evidence and concrete-fix to be word for word the old ones once the
+#   citation corrections were applied to both sides. It printed
+#   "SUBSTANCE PRESERVED: True", the six ids unchanged, and the verdict
+#   field FIX-ROUND-NEEDED on both sides.
+#
+#   CITATIONS RESOLVED RATHER THAN ASSERTED. A second script extracted
+#   every path-and-line citation in this document and printed the line it
+#   names from 8fb0f58, the head this review read. All thirty-one land on
+#   the construct their sentence describes.
+#
+#   npm run gate:privacy with this document in the tree: EXIT=0,
+#   "gate:privacy clean".
