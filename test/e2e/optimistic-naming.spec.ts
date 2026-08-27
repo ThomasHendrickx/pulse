@@ -256,6 +256,22 @@ const namableGroup = (page: Page): Locator =>
     .filter({ has: page.locator(".merchant-name-form") })
     .first();
 
+// The same thing, confined to the SPEND section (slow-gate repair round).
+// A merchant with groups on both sides renders TWO rows, one per direction
+// (finding HZ-M3P11-02), so a merge test that names one income group and
+// one spend group into a single name ends with two rows and no summed
+// total, which is the product being right rather than a merge failing. The
+// merge measurement below therefore names two groups on the SAME side, and
+// this is how it reaches them: the section is the one carrying the spend
+// total, which is the only stable handle the screen offers.
+const namableSpendGroup = (page: Page): Locator =>
+  page
+    .locator(".merchant-section")
+    .filter({ has: page.getByTestId("spend-total") })
+    .getByTestId("unresolved-group")
+    .filter({ has: page.locator(".merchant-name-form") })
+    .first();
+
 // The key-addressed handle on the row under test: survives the testid and
 // label changing at the moment the prediction lands.
 const rowByKey = (page: Page, key: string): Locator =>
@@ -628,20 +644,38 @@ test("a second notice waits for the first rather than covering it", async ({
   // testid stays where it is, because the criteria measure the notice's
   // trimmed text as exactly the catalogue value and the wrapper also
   // carries the dismiss control's label.
+  //
+  // ATTRIBUTION IS MEASURED THE WAY THE PRODUCT DEFINES IT (slow-gate
+  // repair round). This block used to require BOTH rows to carry an
+  // aria-describedby at once, and that is unreachable by construction:
+  // src/modules/merchants/ui/merchant-row.tsx sets the attribute only
+  // while the row's own notice is the one ON SCREEN, and the queue above
+  // shows exactly one at a time. A row whose notice is waiting points at
+  // nothing, because there is nothing on screen for it to point at, which
+  // is the correct behaviour and not a gap: an aria-describedby aimed at
+  // an element that is not rendered would describe a control by a sentence
+  // no reader can reach. So what is asserted is the pair of properties the
+  // criterion actually needs. Exactly ONE of the two rows points at the
+  // notice on screen, and it points at THAT notice and not the other; and
+  // after the dismissal the OTHER row is the one pointing, at a different
+  // notice. Nothing is weakened: the old form could pass with both rows
+  // pointing at the SAME notice, which this one refuses.
   const describedByOf = async (row: Locator): Promise<string | null> =>
     row.getAttribute("aria-describedby");
   const shownNoticeId = async (): Promise<string | null> =>
     page.locator(".pulse-toast").getAttribute("id");
-  const firstDescribedBy = await describedByOf(firstRow);
-  const secondDescribedBy = await describedByOf(secondRow);
-  expect(firstDescribedBy).not.toBeNull();
-  expect(secondDescribedBy).not.toBeNull();
-  expect(firstDescribedBy).not.toBe(secondDescribedBy);
-  // Whichever of the two is drawn first, it is one of them and the row it
-  // belongs to says so. The order itself is measured by the re-raise
-  // journey below rather than assumed here.
+  const pointingRows = async (): Promise<readonly (string | null)[]> =>
+    (await Promise.all([describedByOf(firstRow), describedByOf(secondRow)]))
+      .map((value) => value);
+
   const shownFirst = await shownNoticeId();
-  expect([firstDescribedBy, secondDescribedBy]).toContain(shownFirst);
+  expect(shownFirst).not.toBeNull();
+  const pointingWhileFirstShown = await pointingRows();
+  expect(
+    pointingWhileFirstShown.filter((value) => value !== null),
+    "exactly one row points at the notice on screen, and it is that notice",
+  ).toEqual([shownFirst]);
+  const rowShownFirst = pointingWhileFirstShown.indexOf(shownFirst);
 
   // Dismissing it REVEALS the one that was waiting rather than losing it,
   // and the revealed one belongs to the OTHER row.
@@ -652,8 +686,17 @@ test("a second notice waits for the first rather than covering it", async ({
     copy["namingFailed"] ?? "",
   );
   const shownSecond = await shownNoticeId();
+  expect(shownSecond).not.toBeNull();
   expect(shownSecond).not.toBe(shownFirst);
-  expect([firstDescribedBy, secondDescribedBy]).toContain(shownSecond);
+  const pointingWhileSecondShown = await pointingRows();
+  expect(
+    pointingWhileSecondShown.filter((value) => value !== null),
+    "the revealed notice is pointed at too, and by one row only",
+  ).toEqual([shownSecond]);
+  expect(
+    pointingWhileSecondShown.indexOf(shownSecond),
+    "the revealed notice belongs to the OTHER row",
+  ).not.toBe(rowShownFirst);
 
   // And dismissing that one leaves the screen with none.
   await page.locator(".pulse-toast-dismiss").click();
@@ -694,29 +737,50 @@ test("the notice on screen is the one the reader's last action produced", async 
   await expect(page.getByTestId("naming-failed")).toBeVisible({
     timeout: 15_000,
   });
+  // THE ROW'S OWN NOTICE IS WAITED FOR, NOT THE TOAST COUNT (slow-gate
+  // repair round). This used to wait for .pulse-toast to have count 1 and
+  // then read row two's aria-describedby in the next statement. The count
+  // was already 1 from row ONE's notice, so the wait returned at once and
+  // the read landed while row two's action was still held by armDelay:
+  // the attribute was null and the comparison failed against a toast id
+  // that was real. The condition that actually says row two's notice has
+  // taken the screen is row two POINTING at it, which is what is waited
+  // for here. It is not a wait added to hide a race: the race was reading
+  // a state before the action that produces it had answered, and this
+  // fails on a product that never reaches the state.
   await nameInput(secondRow).fill("   ");
   await submitControl(secondRow).click();
-  await expect(page.locator(".pulse-toast")).toHaveCount(1, {
-    timeout: 15_000,
-  });
+  await expect
+    .poll(async () => secondRow.getAttribute("aria-describedby"), {
+      timeout: 15_000,
+    })
+    .not.toBeNull();
   const secondDescribedBy = await secondRow.getAttribute("aria-describedby");
+  await expect(page.locator(".pulse-toast")).toHaveCount(1);
   expect(await page.locator(".pulse-toast").getAttribute("id")).toBe(
     secondDescribedBy,
   );
 
   // The reader now acts on row ONE again. Its own notice must take the
   // screen back, and row two's must still be waiting rather than gone.
+  // Row one points at its notice only once that notice is the one on
+  // screen, so the same wait applies here.
   await nameInput(firstRow).fill("   ");
   await submitControl(firstRow).click();
-  const firstDescribedBy = await firstRow.getAttribute("aria-describedby");
-  expect(firstDescribedBy).not.toBeNull();
-  expect(firstDescribedBy).not.toBe(secondDescribedBy);
   await expect
-    .poll(async () => page.locator(".pulse-toast").getAttribute("id"), {
+    .poll(async () => firstRow.getAttribute("aria-describedby"), {
       timeout: 15_000,
     })
-    .toBe(firstDescribedBy);
+    .not.toBeNull();
+  const firstDescribedBy = await firstRow.getAttribute("aria-describedby");
+  expect(firstDescribedBy).not.toBe(secondDescribedBy);
+  expect(await page.locator(".pulse-toast").getAttribute("id")).toBe(
+    firstDescribedBy,
+  );
   await expect(page.locator(".pulse-toast")).toHaveCount(1);
+  // Row two's notice is waiting rather than showing, so row two points at
+  // nothing while row one's is up.
+  expect(await secondRow.getAttribute("aria-describedby")).toBeNull();
   await expect(page.getByTestId("naming-failed")).toHaveText(
     copy["namingFailed"] ?? "",
   );
@@ -782,7 +846,7 @@ test("naming into an existing merchant predicts no merge and no sum", async ({
   // First naming, allowed to settle: creates the existing merchant.
   const shared = "Gedeelde Naam";
   {
-    const target = namableGroup(page);
+    const target = namableSpendGroup(page);
     await nameInput(target).fill(shared);
     await submitControl(target).click();
     await expect(
@@ -792,7 +856,8 @@ test("naming into an existing merchant predicts no merge and no sum", async ({
 
   // Second naming with the SAME name, held in flight: while the prediction
   // is on screen the two groups must still be two rows with two totals.
-  const target = namableGroup(page);
+  // Same side as the first, so the merge this measures really is one row.
+  const target = namableSpendGroup(page);
   await expect(target).toBeVisible();
   const rowKey = (await target.getAttribute("data-group-key")) ?? "";
   const row = rowByKey(page, rowKey);
