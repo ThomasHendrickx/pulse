@@ -72,6 +72,18 @@ export type PdfLayoutSourceProfileSpec = {
   readonly kind: "pdf-layout";
   readonly templateId: string;
   readonly templateVersion: number;
+  // THE FILE'S OWN-ACCOUNT IDENTITY when the layout carries no IBAN (fix
+  // round 2, finding HZ-M3P3-02): the masked card number a card statement
+  // prints. It is part of the SPEC, and therefore of specEquals, because
+  // spec equality is what decides whether an upload is a known source or
+  // a new one to declare. Without it two cards of one issuer detect to
+  // one spec, reuse one profile, land on one account, and their rows
+  // share a dedup scope, so a payment on one card that matches a day, an
+  // amount and a merchant on the other is silently absorbed as already
+  // known. Absent for a layout whose files identify themselves by IBAN;
+  // absent stays absent through canonicalisation, so a pre-existing
+  // stored spec is still exactly equal to itself.
+  readonly accountIdentifier?: string;
 };
 
 export type SourceProfileSpec =
@@ -130,11 +142,23 @@ export const parseSourceProfileSpec = (
     ) {
       return err({ kind: "invalid-spec" as const, at: "templateVersion" });
     }
+    const accountIdentifier = record.accountIdentifier;
+    if (
+      accountIdentifier !== undefined &&
+      (typeof accountIdentifier !== "string" || accountIdentifier === "")
+    ) {
+      return err({ kind: "invalid-spec" as const, at: "accountIdentifier" });
+    }
     // Whether the template EXISTS in this build's registry is a parse-time
     // question for the statement parser, not a validity question for the
     // stored declaration: a spec naming a template this build does not
     // carry must still round-trip so the profile row stays readable.
-    return ok({ kind: "pdf-layout" as const, templateId, templateVersion });
+    return ok({
+      kind: "pdf-layout" as const,
+      templateId,
+      templateVersion,
+      ...(accountIdentifier === undefined ? {} : { accountIdentifier }),
+    });
   }
   if (record.kind !== undefined && record.kind !== "delimited") {
     return err({ kind: "invalid-spec" as const, at: "kind" });

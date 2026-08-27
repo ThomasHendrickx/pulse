@@ -7,7 +7,44 @@
 #
 # Nothing on this list may be taken from a real statement. When adding an
 # entry, say where you invented it. If you cannot say, it does not go on the
-# list. Spaces and dashes are ignored when matching.
+# list.
+#
+# HOW MATCHING WORKS. Once a value is FOUND, both sides are normalised the
+# same way before comparison: spaces and dashes are removed, mask glyphs are
+# folded so x and X and * are one value, and letters are upper-cased.
+#
+# WHAT IS FOUND is three separate patterns, and they do not cover the same
+# ground. Stated one by one because this paragraph has now been wrong in
+# both directions (fix round 4 finding CR3-M3P3-02, fix round 5 findings
+# HZ4-M3P3-02 and CR4-M3P3-01): first it under-promised, then it replaced
+# that with "case-insensitively and accept letters in the body", which is
+# true of one pattern each and of neither on its own.
+#
+#   LOCAL account shape: two letters, two digits, then twelve DIGITS in
+#   groups of four, separated by spaces or not. Either case. This is the
+#   Belgian-length shape and it is the only one that tolerates separators.
+#
+#   FOREIGN account shape: two letters, two digits, then ten to thirty
+#   letters-or-digits, COMPACT only, either case. This is what reaches an
+#   account number whose body carries letters. It takes no separators on
+#   purpose: allowing them inside a variable-length body made the match run
+#   past the account number into the following word and invented shapes
+#   nobody could write a provenance note for, measured in fix round 4.
+#
+#   CARD shapes: sixteen digits in four groups, and the masked form, both
+#   with separators and either case.
+#
+# SO WHAT NEITHER ACCOUNT PATTERN COVERS, said plainly: an account number
+# whose body carries letters AND is written with spaces or hyphens is found
+# by nothing here. The local pattern refuses the letters and the foreign one
+# refuses the separators. Nothing in the tree is written that way today and
+# every value that is, is listed; a future fixture that writes one would go
+# unchecked, and closing it means giving the foreign shape a separator rule
+# that cannot run past the value.
+#
+# Binary and lockfile paths are skipped, because grep reads no text in them;
+# a committed PDF is scanned, and rule 3 of the script refuses a compressed
+# one for that reason.
 
 # --- accounts -------------------------------------------------------------
 
@@ -19,7 +56,16 @@ BE68539075417034
 
 # Second and third invented accounts, wherever a fixture needs a pot or a
 # counterparty account distinct from the current account.
-BE20539007547099
+#
+# THE FIRST OF THE TWO WAS REPLACED IN M3-P14 and the old value is gone from
+# the tree. It was BE + two check digits + the run 539007547099, and those
+# check digits did not satisfy ISO 7064, which did not matter while an
+# account could only be declared from the file that introduced it. From
+# M3-P14 the household TYPES every account number at setup and a number
+# failing the check is refused, so a fixture whose own account fails the
+# check can no longer be registered at all. The body is unchanged; only the
+# two check digits were recomputed for it.
+BE59539007547099
 BE02233445566778
 
 # Counterparty accounts in the interpretation and merchant tests. Bank codes
@@ -34,19 +80,47 @@ BE02979245566602
 
 # Belfius PDF fixture accounts, emitted by the fixture builder at
 # test/fixtures/generate-pdf-fixtures.ts. Bodies are sequential runs.
-BE90012345678944
+#
+# THE FIRST OF THESE IS THE STATEMENT'S OWN ACCOUNT and was recomputed in
+# M3-P14 for the same reason as the entry above: from that phase the
+# household registers it by typing it, and registration refuses a number
+# that fails the ISO 7064 check. The body is the same sequential run; only
+# the two check digits changed. The old value is gone from the tree.
+BE72012345678944
 BE45678901234515
 BE77123456789012
 BE10987654321001
 
 # Accounts in the original design prototype at
-# design/reference/pulse-prototype.html.
+# design/reference/pulse-prototype.html. Constructed by typing a BE, two
+# check digits and twelve digits by hand until the shape read like an
+# account number; neither validates under the IBAN mod-97 check, which is
+# positive evidence they were made up rather than copied. Provenance note
+# added in fix round 2 (finding CR-M3P3-06): the note here used to say
+# where they are USED, and this file's own rule at the top asks where they
+# were INVENTED, which is the one thing it did not say.
 BE71479602578213
 BE68973942180011
 
 # Documented placeholder. Deliberately not a valid IBAN: check digits 00
 # never validate. Used in the mobile mockup under delivery/design/.
 BE00000000000000
+
+# --- accounts whose body carries letters -----------------------------------
+# Surfaced in fix round 4 (finding HZ3-M3P3-03) when the account pattern was
+# widened to accept letters in the body: until then no pattern here matched a
+# non-Belgian account number at all, and these had been sitting in tracked
+# fixtures with the gate exiting 0.
+#
+# All three are the PUBLISHED WORKED EXAMPLES from the IBAN specification's
+# own documentation, the same source the first entry in this file names, used
+# by the generic delimited fixtures to exercise a non-Belgian counterparty
+# column. None was transcribed from anything: each was copied from public
+# specification text, and each was probed against every real statement in the
+# container and returns zero hits.
+DE89370400440532013000
+FR1420041010050500013M02606
+NL91ABNA0417164300
 
 # --- card numbers ---------------------------------------------------------
 # Present so the masking work in M3-P6 has something to mask. None is a live
@@ -69,3 +143,137 @@ BE00000000000000
 # the masked form, so the gate must know these as well as the bare digits.
 400012XXXXXX9010
 559920XXXXXX5544
+
+# The two cards of the KBC PDF fixtures, in the masked form a card
+# statement prints (test/fixtures/generate-pdf-fixtures.ts and the KBC
+# fixture PDFs built from it). Invented the same way as the patterned PANs
+# above: a Mastercard-shaped six-digit head, the mask glyphs the layout
+# itself prints, and a hand-picked four-digit tail, one descending and one
+# ascending so the pair reads as made up at a glance. The second exists so
+# a fixture can carry a SECOND card of the same issuer, which is what the
+# two-cards-one-account finding needed to be witnessed.
+#
+# Checked before listing, not asserted: each was probed against every real
+# statement present in the container at fix-round-2 review time, in its
+# masked form, its six-digit head and its four-digit tail, and returned
+# zero WHOLE-TOKEN hits in all three forms in both documents. QUALIFIED IN
+# FIX ROUND 4 (finding CR3-M3P3-03), because the unqualified sentence was
+# true under a token reading and false under a plain one: a four-digit tail
+# is four digits, and four digits turn up inside longer unrelated reference
+# runs. What was checked, and what matters, is that no probe occurs as a
+# value in its own right. That is the only check available to anyone here,
+# and it is the one that would have caught a transcription.
+541788XXXXXX3210
+541788XXXXXX7654
+
+# The third card, added in fix round 3 for the credit-balance statement
+# fixture, so that family keeps one card per document and the identity
+# witnesses stay unambiguous. Invented and probed the same way as the two
+# above: masked form, six-digit head and four-digit tail, zero hits in all
+# three forms against every real statement in the container.
+541788XXXXXX9081
+
+# The fourth card, added in fix round 4 for the underpaid statement
+# fixture. Same construction and the same three-form check as the three
+# above.
+541788XXXXXX6503
+
+# --- M3-P12 counterparty-identity fixture ---------------------------------
+# Emitted by test/fixtures/generate-pdf-fixtures.ts into
+# belfius-counterparty-identity.pdf. Every value here was constructed by
+# hand for this fixture and none was transcribed from anything.
+#
+# HOW THEY WERE INVENTED: the twelve-digit body of each is a run of repeated
+# digit pairs typed in ascending order (1111 2222 3333, then 2222 3333 4444,
+# and so on), which reads as made up at a glance, and the two ISO 7064 check
+# digits were then COMPUTED for that body so the value passes the trust gate
+# this phase adds. A fixture whose accounts all failed the gate could not
+# witness the account basis at all: every committed fixture that predates
+# this phase carries accounts that fail mod-97, measured, which is why new
+# ones were needed rather than reused.
+BE31111122223333
+BE78222233334444
+BE28333344445555
+BE75444455556666
+BE25555566667777
+BE72666677778888
+
+# The two longer-than-Belgian sources that witness the truncation hazard.
+# Built the same way: the body is a typed run, both carry the SAME computed
+# check digits, and they differ only in their last three digits, which is
+# what makes the sixteen-character value the shipped scrape stores identical
+# for both. That identical stored value is the third entry, listed because
+# the gate finds it in its own right wherever the spaced form appears.
+FR0230006000011234567890066
+FR0230006000011234567890163
+FR02300060000112
+
+# --- M3-P12 fix round: the PAN-shaped view of the two long sources --------
+# NOT A NEW VALUE. It is the SAME invented digits already listed above, seen
+# through the gate's other pattern. The two FR sources are written spaced in
+# the fixture, so the gate's card pattern (four groups of four digits) can
+# match the four groups that follow the country code and the check digits,
+# yielding this value, while the IBAN pattern matches the country-prefixed
+# form and yields FR02300060000112. Which of the two alternatives fires is a
+# property of the regex engine's start position, not of the tree, and only
+# the IBAN form was listed. The hazard lane of M3-P12 recorded ONE run of
+# gate:privacy reporting test/fixtures/baseline-descriptor-keys.json as
+# carrying an identifier shape not on the allow list, followed by
+# twenty-three clean runs on the identical tree, and this is the only value
+# in the whole tree that the card pattern can produce and the list does not
+# carry: every other one is listed. Listing it makes the gate's answer the
+# same whichever alternative matches. The digits' provenance is the entry for
+# the two FR sources above: typed runs, invented, with computed check digits.
+3000600001123456
+
+# --- M3-P14 setup fixture accounts -----------------------------------------
+# The eight accounts of the owner's own scenario, registered at setup by
+# test/e2e/accounts.spec.ts and carried by test/fixtures/setup-current.csv:
+# one current account, three further spending accounts and four savings
+# accounts.
+#
+# HOW THEY WERE INVENTED: the twelve-digit body of each is a 9 followed by
+# ten zeroes and the account's ordinal, 900000000001 through 900000000008,
+# which reads as made up at a glance and cannot be mistaken for a bank's
+# real numbering. The two check digits were then COMPUTED for each body so
+# every one passes the validity test the setup screen applies; a fixture
+# account that failed it could not be registered at all, and every account
+# number committed before this phase was measured against that test with 11
+# of the 24 distinct values in the tree failing it, which is why new ones
+# were needed rather than reused.
+#
+# The counterparty accounts of the three OUTSIDE merchants in that fixture
+# are not new: they are BE71096123456769 and BE39103123456719, already
+# listed above, plus one row that carries no counterparty account at all.
+BE73900000000001
+BE46900000000002
+BE19900000000003
+BE89900000000004
+BE62900000000005
+BE35900000000006
+BE08900000000007
+BE78900000000008
+
+# --- M3-P14 deliberately INVALID probes -----------------------------------
+# The four refusals criterion 14.3 requires are asserted over values that
+# must FAIL the validity test, so none of these can be a well-formed account
+# number and none could ever match anything. Each is derived by hand from
+# BE73900000000001 above, whose provenance is the entry for the setup
+# accounts, by breaking exactly one of the four tests:
+#
+#   ZZ73900000000001   the country code replaced by ZZ, which the pinned
+#                      ISO 13616 table does not carry.
+#   BE7390000000000    one digit short of the length the table assigns BE.
+#   BE739000000000012  one digit long.
+#   BE73900000000010   the last two digits transposed, so the country and the
+#                      length are right and the ISO 7064 check fails. This is
+#                      the mistake the criterion is about: one character
+#                      wrong by hand.
+#   BE46900000000020   the same transposition applied to BE46900000000002,
+#                      used by the Playwright test that types three rows and
+#                      corrects the one that is refused.
+ZZ73900000000001
+BE7390000000000
+BE739000000000012
+BE73900000000010
+BE46900000000020

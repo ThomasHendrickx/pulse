@@ -58,10 +58,19 @@ const detect = async (
   if (template === undefined) {
     return err({ kind: "layout-unsupported" as const });
   }
+  // Fix round 2 (HZ-M3P3-02): a layout that carries no IBAN identifies
+  // its account by a line of its own (the masked card number), and that
+  // identity belongs in the SPEC, because spec equality is what decides
+  // known-source versus new-source. A template that declares the reader
+  // and finds nothing yields an identifier-less spec here; its own parse
+  // then fails loudly rather than letting the file bind to whatever
+  // account a spec-equal profile happens to hold.
+  const identifier = template.accountIdentifier?.(pages);
   return ok({
     kind: "pdf-layout" as const,
     templateId: template.id,
     templateVersion: template.version,
+    ...(identifier === undefined ? {} : { accountIdentifier: identifier }),
   });
 };
 
