@@ -407,3 +407,183 @@ pointer in this file is corrected in place above, loudly.
 npm run test:e2e has still executed nowhere at any head of this branch;
 the browser arms need the Supabase auth service. Unchanged, recorded, not
 claimed.
+
+---
+
+## FIX ROUND TWO
+
+Three lanes reviewed head 85da7f6 and two of them reviewed d3cb64f. This
+round works the union of all five documents. Where a finding was already
+closed before this round started, it is named with the commit that closed
+it rather than redone.
+
+### The environment changed, and that is the biggest single fact of this round
+
+Every earlier round of this phase recorded that the browser arms could not
+run: no Docker daemon, so no Supabase auth service. In THIS container a
+Docker daemon is running and a local Supabase stack is up with all seven
+migrations applied, so `npm run test:e2e` was spawned for the first time in
+this phase's life, and the browser arms of criteria 18.1, 18.2, 18.4 and
+18.5 executed for the first time. Two things came out of that which no
+amount of reading had found:
+
+1. The door-opens journey asserted a FALSE claim (see below). It could not
+   have been caught by review: the spec had not run in this container or
+   in either review lane, which all three review documents record (both
+   lanes list every browser arm under NOT WITNESSED, and this work
+   history recorded suite-e2e as an error with no wrapper exit code),
+   and my own first execution of it failed at sign-up before any
+   assertion ran.
+2. Two browser journeys needed a raised per-test timeout in this container.
+   The default 30s is spent on the first dev-server compile of a route;
+   the budget is raised the way `test/e2e/month-view.spec.ts` already
+   raises it for its long journeys. Nothing is skipped and no assertion is
+   relaxed.
+
+Also measured and worth carrying forward: the throwaway Postgres a review
+lane can build (initdb as the postgres system user, pg_ctl on a pinned
+loopback port) can create ICU collations, and that is what makes the
+POSIX-class divergence visible without a second cluster.
+
+### HZ-M3P18-01 / CR2-M3P18-01 / CR-HAZ-P18-02, the whitespace class: the
+### mechanism was still there after round one
+
+Round one added the missing escapes and kept `[[:space:]]` inside the
+class. That closed the under-stripping the lanes measured and opened
+over-stripping, because what a POSIX class matches is decided by the
+CLUSTER'S ctype and not by the committed SQL. Measured here on ONE Postgres
+16.13 server, one expression, two collations, sweeping every code point
+from 1 to U+10FFFF:
+
+    RED  (class as committed at d3cb64f)
+      libc C.utf8: 25 stripped, exactly the JavaScript set. AGREE.
+      ICU "und":   30 stripped, the JavaScript set PLUS U+001C, U+001D,
+                   U+001E, U+001F and U+0085. DISAGREE.
+
+    GREEN (class as committed now, code points enumerated, no POSIX class)
+      libc C.utf8: 25 stripped. AGREE.
+      ICU "und":   25 stripped. AGREE.
+
+Over-stripping is the worse direction of the two. Under-stripping leaves a
+row unmatchable with its original rendering intact, so a later migration
+can still repair it; over-stripping REWRITES the stored declaration into a
+form the canonical probe can no longer match, and the measurement above is
+what settles that: the SQL side stripped U+0085 where the platform class
+does not, so the rewritten stored value and a probe over any value
+carrying that character disagree. The original rendering is gone, so no
+re-run repairs it, and the migration reports success. That is the shape this phase
+exists to prevent, and round one shipped it.
+
+The rule is recorded at the mechanism's definition and named as binding on
+every sibling: A SQL MIRROR OF canonicalAccountNumber ENUMERATES CODE
+POINTS AND NEVER NAMES A POSIX CLASS. That is a rule this round writes
+down, not a measured fact, and three assertions are what hold it (each
+shown red against the superseded class and green after, exit 1 then exit
+0, in the fast-gate run recorded under claim M3P18-C12): the fast
+gate refuses a POSIX class in the constant, in the migration text and in
+the script's comment-stripped code; the fast gate parses the class from its
+own text with no assumption about a head and consumes the whole body; and
+the slow gate executes the migration's OWN extracted class in Postgres over
+the UNION of both whitespace sets under two collations.
+
+### CR2-M3P18-02 / CR-HAZ-P18-03, the reserves block doubled a preserved pair
+
+Measured, over exactly the harness's collision pair plus one RESERVE-flow
+movement to it, through the COMMITTED repository functions:
+
+    RED  (plain LEFT JOIN)   two groups, 50000 each, block net 100000,
+                             figures.netToReservesCents 50000
+    GREEN (LEFT JOIN LATERAL ... LIMIT 1)
+                             one group, 50000, block net 50000,
+                             figures.netToReservesCents 50000
+
+The committed arm asserts the INVARIANT (block net equals the
+reconciliation's own net), not a group count, because a fan-out breaks the
+equality whatever the number of groups. The group count and row count are
+asserted beside it as secondary, since a fan-out moves those too.
+
+Which of a preserved pair's two labels survives is now arbitrary but
+stable, lowest account id first. Naming the pair to the household remains
+the parked merge's work, and the detection script is what names it to an
+operator today.
+
+### CR-HAZ-P18-01 / CR2-M3P18-04, the wrong ring became permanent at the
+### first upload
+
+The guard tested "does this account carry ANY imported row" while the
+property it protects is "does this account carry a row whose interpretation
+was built against the ring it is leaving". Those were the same thing only
+while a savings account could not have rows at all, and DR-0030, which this
+phase implements, ended that.
+
+The narrowing is by the account's CURRENT RING and not by a flow condition,
+deliberately, for two reasons. First, it is sound: a flow is stamped only
+over the pot account ids, so a reserve-ring account's own rows carry no
+flow by construction, and the invariant is maintained inductively by this
+very guard. Second, a flow condition in a database read would be a THIRD
+absent-flow read, which criterion 18.3 forbids by name; the ring-keyed form
+adds no query at all.
+
+DR-0031's own words are that the ring is "correctable only while the
+account has no imported rows of its own". This guard now reads that
+condition in the only sense that stays true after DR-0030. The direction
+that could strand a stamped row, a POT account with its own rows leaving
+the pot, is still refused by name, with the copy that already said exactly
+that, and clearing rows on an account leaving the pot stays out of the
+plan.
+
+### CR-HAZ-P18-05, one query holding two answers to what the pot is
+
+Scoped, in the WHERE of both `monthFigures` and `listGapRows`. It is a
+no-op over any household the product can currently produce, and it is
+recorded as a no-op rather than dressed up: what changes is that the
+agreement between the ring-scoped count and the unscoped sums stops being a
+property of `interpret-window.ts` and becomes a property of these two
+queries.
+
+### The door-opens journey asserted something false, and running it is what found it
+
+The arm asserted every August figure byte identical after the July upload,
+on the stated ground that "the fixture books in July". An import interprets
+a window padded by INTERPRETATION_WINDOW_PADDING_DAYS (49 days) around its
+own booking span, so a July import reaches into late August and heals the
+August row the harness seeded with no flow. Measured: spend 96,47 against
+an asserted 86,47, a difference of exactly the healed row's amount.
+
+The healing is correct behaviour and predates this phase. The arm now pins
+the move to that one row and pins everything else byte identical, so a
+change of any other size or on any other figure reddens. What this leaves
+OPEN, and it is recorded rather than resolved because an implementer does
+not edit the plan: criterion 18.4 arm two's literal wording asks for byte
+identity across that upload, and over this fixture pair that is not
+achievable. Its substance, the door opening and the rows classifying
+exactly as a canonical household's do, is met and now witnessed through the
+browser.
+
+### Findings already closed before this round, named with the commit
+
+- CR-M3P18-03 (the spec's no-fact-moved arm under-asserted its comment):
+  closed at 20b6b07, which added the full transaction snapshot and
+  deep-compare.
+- CR-M3P18-04 / CR2-M3P18-05 (the held read's period bounds unpinned):
+  closed at 20b6b07.
+- CR-HAZ-P18-04 half, the stale justification in change-account-ring.ts:
+  closed at 20b6b07; rewritten again this round because the guard itself
+  changed.
+- HZ2-M3P18-01 (the migration pin held one occurrence): closed at a620ae2,
+  by another session on this branch while this round was in flight. The
+  two implementations were merged at rebase; the surviving extraction is
+  not bound to the table aliases, so a fifth site under any alias reddens
+  the count.
+- CR-M3P18-05 (the false import.spec.ts pointer in the notes): closed at
+  20b6b07 in this file. Its SIBLING in a test comment was still live and is
+  corrected this round.
+
+### Still open, and honestly
+
+- The read-back of the fixtures and the new copy against the real
+  documents. The documents are not in this container and were not
+  available to any session of this phase. The record of what WAS done
+  stands above: every line was invented in-session. The act remains owed at
+  slice close.
+- Criterion 18.4 arm two's literal byte-identity wording, above.
