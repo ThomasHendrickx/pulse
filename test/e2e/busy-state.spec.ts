@@ -35,6 +35,11 @@ const DELAY_MS = 2000;
 const CEILING_MS = 200;
 const MEDIAN_CEILING_MS = 100;
 const SETTLE_MS = 1000;
+// How long after its own response was released a control may still be
+// busy because the navigation that response started has not landed yet.
+// A ceiling, not a wait: the loop that uses it stops the moment the
+// control is gone or at rest.
+const AFTER_RESPONSE_CEILING_MS = 5000;
 // The floor a meaningful non-text graphic has to clear against what it sits
 // on. The busy mark is the only thing on screen saying the press was heard.
 const MIN_MARK_CONTRAST = 3;
@@ -389,6 +394,42 @@ const pressAndMeasure = async (
 
   // Let the delayed response through and the resulting navigation settle.
   await page.waitForTimeout(DELAY_MS + 500);
+  // THE SETTLING ALLOWANCE IS A CEILING AND NOT A SLEEP (slow-gate repair
+  // round). The 500ms above assumed that whatever the released response
+  // starts has finished 500ms later, and for the upload control that is a
+  // guess about the SERVER: its action redirects to the import detail
+  // route, which re-runs statement detection and parsing on the stored
+  // bytes before it renders anything. On a loaded machine that render
+  // passed 500ms and the reading below caught a control still busy while
+  // the navigation it started was still in flight, which is the control
+  // working rather than failing. So the reading is retaken until the
+  // control is gone or at rest, up to the ceiling below, and the LAST
+  // reading is the one asserted. A control that never comes back to rest
+  // still fails, which is the whole point of the assertion: this bounds
+  // how long the product may take, it does not stop asking.
+  const readRestingState = async (): Promise<{
+    readonly busy: boolean;
+    readonly unpressable: boolean;
+  }> => {
+    const remaining = await control.count();
+    if (remaining === 0) {
+      return { busy: false, unpressable: false };
+    }
+    return control.evaluate((node) => {
+      const element = node as HTMLButtonElement;
+      return {
+        busy: element.getAttribute("aria-busy") === "true",
+        unpressable:
+          element.disabled || element.getAttribute("aria-disabled") === "true",
+      };
+    });
+  };
+  const restDeadline = Date.now() + AFTER_RESPONSE_CEILING_MS;
+  let resting = await readRestingState();
+  while ((resting.busy || resting.unpressable) && Date.now() < restDeadline) {
+    await page.waitForTimeout(100);
+    resting = await readRestingState();
+  }
 
   // CRITERION 10.3'S SECOND HALF, MEASURED PER CONTROL (fix round, finding
   // HZ-M3P10-03). This used to be one assertion at the very end of the
@@ -399,18 +440,7 @@ const pressAndMeasure = async (
   // gone, which is a pass; a control that is still on screen must have come
   // back to rest, and the revalidate-in-place surfaces are where that
   // matters.
-  const survivors = await control.count();
-  const cleared =
-    survivors === 0
-      ? { busy: false, unpressable: false }
-      : await control.evaluate((node) => {
-          const element = node as HTMLButtonElement;
-          return {
-            busy: element.getAttribute("aria-busy") === "true",
-            unpressable:
-              element.disabled || element.getAttribute("aria-disabled") === "true",
-          };
-        });
+  const cleared = resting;
   const documentBusyAfterResponse = await page.locator('[aria-busy="true"]').count();
 
   return {
