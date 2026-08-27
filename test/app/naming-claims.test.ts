@@ -65,11 +65,68 @@ describe("the naming claim record", () => {
       at: NOW + 10,
     });
     // Row B's naming is refused, so row B's claim goes and row A's stays.
-    forgetNaming(store, "descriptor:ROW B");
+    forgetNaming(store, "descriptor:ROW B", "spend");
     expect(
       claimNaming(store, {
         direction: "spend",
         label: "Bakkerij",
+        resolved: true,
+        now: NOW + 500,
+      }),
+    ).toBe("differs");
+  });
+
+  // THE SAME KEY IN TWO DIRECTIONS (round two, finding HZ2-M3P11-01). The
+  // review groups each direction separately over the same counterparty
+  // identity, so a counterparty with a spend row and a refund renders TWO
+  // rows carrying the SAME data-group-key, which is the identity the leaf
+  // writes and retires a claim by. These two cases use one key and two
+  // directions on purpose: the pair below with two distinct keys passes
+  // against a store keyed on the row alone, so it encodes the assumption
+  // rather than testing it.
+  it("keeps the income row's claim when the SAME key is named in the other direction", () => {
+    const store = createNamingClaimStore();
+    recordNaming(store, {
+      rowKey: "descriptor:ONE COUNTERPARTY",
+      direction: "income",
+      typed: "  Terugbetaling  ",
+      at: NOW,
+    });
+    recordNaming(store, {
+      rowKey: "descriptor:ONE COUNTERPARTY",
+      direction: "spend",
+      typed: "Winkel",
+      at: NOW + 10,
+    });
+    expect(
+      claimNaming(store, {
+        direction: "income",
+        label: "Terugbetaling",
+        resolved: true,
+        now: NOW + 500,
+      }),
+    ).toBe("differs");
+  });
+
+  it("keeps the income row's claim when the SAME key FAILS in the other direction", () => {
+    const store = createNamingClaimStore();
+    recordNaming(store, {
+      rowKey: "descriptor:ONE COUNTERPARTY",
+      direction: "income",
+      typed: "  Terugbetaling  ",
+      at: NOW,
+    });
+    recordNaming(store, {
+      rowKey: "descriptor:ONE COUNTERPARTY",
+      direction: "spend",
+      typed: "Winkel",
+      at: NOW + 10,
+    });
+    forgetNaming(store, "descriptor:ONE COUNTERPARTY", "spend");
+    expect(
+      claimNaming(store, {
+        direction: "income",
+        label: "Terugbetaling",
         resolved: true,
         now: NOW + 500,
       }),

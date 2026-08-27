@@ -292,7 +292,7 @@ export const MerchantGroupRow = ({
               // label dies with the transition); the notice is the loud
               // half (DR-0025). Only THIS row's claim is retired, never a
               // sibling's (finding HZ-M3P11-02).
-              forgetNaming(namingClaims, groupKey);
+              forgetNaming(namingClaims, groupKey, direction);
               setNotice({ kind: "failed", message: copy.failed });
               return;
             }
@@ -302,13 +302,13 @@ export const MerchantGroupRow = ({
               // signalling the redirect as a rejection. Treated as the
               // transport arm: loud, reverted, and true, since the client
               // still does not know what the server did.
-              forgetNaming(namingClaims, groupKey);
+              forgetNaming(namingClaims, groupKey, direction);
               setNotice({ kind: "failed", message: copy.failed });
               return;
             }
             if (!answer.ok) {
               // The DOMAIN refusal, reported as a value by the action.
-              forgetNaming(namingClaims, groupKey);
+              forgetNaming(namingClaims, groupKey, direction);
               setNotice({
                 kind: "failed",
                 message: copy.refusals[answer.error.kind] ?? copy.failed,
