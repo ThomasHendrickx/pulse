@@ -121,9 +121,20 @@ export const AccountsScreen = async ({
                 >
                   {account.iban ?? t("accountsCardNoNumber")}
                 </span>
-                {/* THE RING CORRECTION, and the only one v1 has. Refused
-                    for an account that already carries its own imported
-                    rows, with copy that says so (decision D-51). */}
+                {/* THE RING CORRECTION, and the only one v1 has. It is
+                    the household's remedy for a ring answered wrongly at
+                    setup, so it is always offered. This comment used to
+                    read "Refused for an account that already carries its
+                    own imported rows"; that was true before DR-0030 and
+                    is corrected here rather than deleted (clause R-087).
+                    The refusal is now the SPENDING to SAVINGS direction
+                    alone, on an account already carrying its own rows,
+                    whose flows were computed against the pot and would be
+                    stranded by the move; the reverse direction is always
+                    admitted, because a savings account's own rows carry
+                    no flow (decision D-51 as rewritten, and
+                    src/modules/accounts/application/change-account-ring.ts
+                    for the whole argument). */}
                 <form action={changeAccountRingAction} className="accounts-ring-form">
                   <input type="hidden" name="accountId" value={account.id} />
                   <span

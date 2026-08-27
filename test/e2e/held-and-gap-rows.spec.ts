@@ -177,3 +177,91 @@ test("every port method sees the pot gap and never the savings row, and the held
     );
   }
 });
+
+// M3-P18 FIX ROUND TWO, criteria finding CR2-M3P18-02 and hazard finding
+// CR-HAZ-P18-03. THE PRESERVED COLLISION PAIR MUST NOT FAN THE RESERVES
+// BLOCK OUT.
+//
+// This phase's migration deliberately PRESERVES a pair of account rows
+// that are one real account, leaving both exactly as they are, so a
+// household holding such a pair is the normal case rather than an exotic
+// one. The reserves join used to match a transaction to EVERY account row
+// whose canonical number equalled its counterparty column, and the GROUP
+// BY on the number and the label then produced one group PER PAIR MEMBER,
+// each carrying the FULL amount. The month view sums the groups
+// (src/modules/overview/application/month-overview.ts), so the block read
+// double the money that moved, while monthFigures, which does not join,
+// read it once and the reconciliation banner still said the books close.
+//
+// THE ASSERTION IS THE INVARIANT, NOT A GROUP COUNT: the reserves block's
+// net must equal the reconciliation's own net to reserves. A fan-out
+// breaks that equality whatever the number of groups, which is why the
+// equality is what this arm reddens on; the group count and the row
+// count below are secondary and are stated because a fan-out moves them
+// too.
+test("a preserved collision pair does not double the reserves block (findings CR2-M3P18-02, CR-HAZ-P18-03)", async () => {
+  const unique = `reservepair-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+  const seeded = await seedPrePhaseHousehold(prismaClient(), { name: unique });
+  const context = {
+    householdId: householdId(seeded.householdId),
+    userId: userId(`${unique}-user`),
+  };
+
+  // ONE pot-side movement into the account the harness stores TWICE
+  // (collisionSpaced POT and collisionCompact RESERVE are one real
+  // account). The counterparty column is written SPACED, the way a
+  // delimited source prints it, so the canonical comparison is what does
+  // the matching. This row is booked HERE rather than in the harness so
+  // the shared MonthFigures baseline every other arm asserts against
+  // stays exactly as it is.
+  await prismaClient().transaction.create({
+    data: {
+      householdId: seeded.householdId,
+      accountId: seeded.accountIds.spacedPot,
+      importId: seeded.importId,
+      bookingDate: new Date("2026-08-12T00:00:00Z"),
+      amountCents: -50000,
+      description: "OVERSCHRIJVING NAAR SPAARREKENING",
+      counterpartyIban: "BE54 9100 0000 0003",
+      rawLine: `seeded;${unique}-reserve`,
+      dedupKey: `${unique}-reserve`,
+      flow: "RESERVE",
+    },
+  });
+
+  // Both members of the pair are still there: this arm measures the
+  // repository over the population the migration preserves, not over a
+  // repaired one.
+  const pairRows = await prismaClient().account.findMany({
+    where: {
+      householdId: seeded.householdId,
+      id: {
+        in: [
+          seeded.accountIds.collisionSpaced,
+          seeded.accountIds.collisionCompact,
+        ],
+      },
+    },
+  });
+  expect(pairRows).toHaveLength(2);
+
+  const groups = await repository.listReserveMovements(context, AUGUST);
+  const raw = await repository.monthFigures(context, AUGUST);
+  const figures = deriveMonthFigures(raw);
+
+  // THE INVARIANT. The block's net is the sum of the groups, exactly as
+  // month-overview.ts computes it.
+  const blockNet = groups.reduce((total, group) => total + group.parkedCents, 0);
+  expect(blockNet).toBe(figures.netToReservesCents);
+  expect(blockNet).toBe(50000);
+
+  // Secondary, and each of these also moves under a fan-out: one
+  // movement is one row across all groups, and one canonical
+  // counterparty is one group.
+  expect(groups.reduce((total, group) => total + group.rowCount, 0)).toBe(1);
+  expect(groups).toHaveLength(1);
+  // The surviving label is one of the pair's two, deterministically the
+  // lowest account id's; which one is arbitrary and stable, and naming
+  // the pair to the household is the parked merge's work.
+  expect(["Buffer account", "Buffer savings"]).toContain(groups[0]?.label);
+});

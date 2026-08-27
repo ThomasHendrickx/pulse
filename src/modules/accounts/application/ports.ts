@@ -72,7 +72,11 @@ export type AccountsLedgerGateway = {
   // Called exactly once after a declaration write, never per row.
   readonly recompute: (context: HouseholdContext) => Promise<void>;
   // Whether this account carries imported fact rows of its own. Read
-  // only: nothing in this module may write a transaction column.
+  // only: nothing in this module may write a transaction column. It is
+  // asked ONLY of an account leaving the POT ring, because that is the
+  // only direction in which an own row can be left carrying a flow
+  // computed against the ring it left; see
+  // src/modules/accounts/application/change-account-ring.ts.
   readonly hasImportedRows: (
     context: HouseholdContext,
     accountId: string,

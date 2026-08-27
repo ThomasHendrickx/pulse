@@ -298,6 +298,45 @@ describe("criterion 14.8: the ring change, and what makes a stale flow unreachab
     expect(world.recomputes()).toBe(recomputesBefore);
   });
 
+  // M3-P18 FIX ROUND TWO. The ring answered wrongly at setup must stay
+  // correctable AFTER the household uploads that account's statement,
+  // because under DR-0030 that upload is now ACCEPTED and the account
+  // acquires rows of its own at the first confirm. Before this fix the
+  // guard consulted the row count alone, so the first upload froze the
+  // wrong answer for the life of the account: the rows were held and
+  // counted in no total, transfers into the account read as money set
+  // aside, the pot-scoped uninterpreted count flagged nothing, and the
+  // banner read as books closing, with no control anywhere in the
+  // product able to undo it. A savings-ring account's own rows carry NO
+  // flow (the interpretation window is built from the pot account ids
+  // alone), so nothing can be stranded in this direction, and the
+  // recompute that follows is what stamps those rows for the first time.
+  test("a SAVINGS-ring account carrying its own imported rows CAN be corrected back to spending, and recomputes once", async () => {
+    const world = makeAccountsWorld();
+    await registerAccounts(context, world.deps, { rows: EIGHT });
+    // Row index 4 is the first RESERVE-ring account: stand-in for the
+    // spending account the household answered as savings at setup.
+    const misRinged = world.rows[4];
+    if (misRinged === undefined) {
+      throw new Error("unreachable");
+    }
+    expect(misRinged.role).toBe("RESERVE");
+    // Its own statement has been uploaded and accepted (DR-0030), so it
+    // carries imported rows of its own.
+    world.setOwnRows(misRinged.id);
+    const recomputesBefore = world.recomputes();
+
+    const outcome = await changeAccountRing(context, world.deps, {
+      accountId: misRinged.id,
+      role: "POT",
+    });
+    expect(outcome.ok).toBe(true);
+    expect(world.rows[4]?.role).toBe("POT");
+    // Exactly one recompute, which is what brings the previously held
+    // rows into the interpretation window.
+    expect(world.recomputes()).toBe(recomputesBefore + 1);
+  });
+
   test("a ring change is ALLOWED while the account carries no rows of its own, and recomputes once", async () => {
     const world = makeAccountsWorld();
     await registerAccounts(context, world.deps, { rows: EIGHT });

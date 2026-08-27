@@ -75,40 +75,78 @@ describe("the canonical backfill touches only the declaration (criterion 18.4)",
     // byte-equal to the constant. Executable equivalence with
     // canonicalAccountNumber over renderings carrying the divergent
     // characters remains the slow-gate spec's arm.
+    //
+    // The extraction is deliberately NOT bound to the table aliases: a
+    // pattern is matched wherever regexp_replace appears, so a fifth
+    // site under any alias reddens the count rather than escaping it.
     const patterns = [
-      ...sql.matchAll(/regexp_replace\([ab]\."iban", '([^']*)', '', 'g'\)/g),
+      ...sql.matchAll(/regexp_replace\([^,]+,\s*'([^']*)'/g),
     ].map((match) => match[1]);
     expect(patterns).toHaveLength(4);
     for (const pattern of patterns) {
       expect(pattern).toBe(ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS);
     }
-    // And no site in the migration falls back to the bare POSIX class.
-    expect(sql).not.toContain(`'[[:space:]]'`);
+    // And no site in the migration names a POSIX class, in ANY spelling
+    // (round two: the assertion used to name the bare [[:space:]] alone,
+    // which a class merely CONTAINING one satisfied). The test below
+    // states why a mirror may never name one at all.
+    expect(sql).not.toMatch(/\[:[a-z]+:\]/);
     // Canonicalisation is applied WITHOUT validation (findings P14-006,
     // P17-004): no validity machinery may appear in the migration.
     expect(sql).not.toMatch(/mod97|checksum|valid/i);
   });
 
+  test("the shared SQL whitespace class ENUMERATES CODE POINTS and names no POSIX class", () => {
+    // WHY THIS IS AN ASSERTION AND NOT A STYLE NOTE. This one class has
+    // now been wrong three times, so the test is written to catch the
+    // fourth. A POSIX class's membership belongs to the CLUSTER'S ctype
+    // and not to the committed SQL, so a mirror naming one cannot be
+    // pinned by any test that does not run on the deployed cluster.
+    // MEASURED on one Postgres 16.13 server, one expression, two
+    // collations, sweeping every code point from 1 to U+10FFFF: under
+    // the libc C.utf8 collation the superseded class ("[[:space:]" plus
+    // the escapes) stripped exactly the 25 members of \s, and under an
+    // ICU "und" collation the SAME text stripped 30, adding U+001C,
+    // U+001D, U+001E, U+001F and U+0085, none of which \s matches.
+    // Over-stripping is the worse of the two directions: the backfill
+    // rewrites a stored declaration into a form canonicalAccountNumber
+    // can never produce, so the row is permanently unmatchable by the
+    // canonical lookup with its original rendering gone, and the
+    // migration reports success.
+    expect(ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS).not.toMatch(/\[:[a-z]+:\]/);
+  });
+
   test("the shared SQL whitespace class enumerates exactly the JavaScript whitespace set", () => {
-    // The class is parsed from its own text: the POSIX [[:space:]] head
-    // contributes the six ASCII members, then every visible ARE escape,
-    // single or range. The expected set is DERIVED by sweeping every
-    // Unicode code point through the same regex canonicalAccountNumber
-    // uses, so this test reddens if either side ever drifts: a character
-    // \s gains, a character the class loses, or a typo in an escape.
+    // The class is parsed from its OWN TEXT with no assumption about any
+    // head: every member is a visible ARE escape, single or range, and
+    // the parse must consume the WHOLE body, so a character that is
+    // neither a bracket nor part of an escape reddens here rather than
+    // being silently ignored. The expected set is DERIVED by sweeping
+    // every Unicode code point through the same regex
+    // canonicalAccountNumber uses, so this reddens if either side
+    // drifts: a character \s gains, a character the class loses, or a
+    // typo in an escape.
     const body = ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS;
-    expect(body.startsWith("[[:space:]")).toBe(true);
+    expect(body.startsWith("[")).toBe(true);
     expect(body.endsWith("]")).toBe(true);
-    const classSet = new Set<number>([9, 10, 11, 12, 13, 32]);
-    for (const match of body.matchAll(
+    const inner = body.slice(1, -1);
+    const classSet = new Set<number>();
+    let consumed = 0;
+    for (const match of inner.matchAll(
       /\\u([0-9a-f]{4})(?:-\\u([0-9a-f]{4}))?/g,
     )) {
+      // No unparsed text may sit between two escapes: the whole class
+      // body is accounted for, member by member.
+      expect(match.index).toBe(consumed);
+      consumed += match[0].length;
       const from = parseInt(match[1] ?? "", 16);
       const to = match[2] === undefined ? from : parseInt(match[2], 16);
       for (let code = from; code <= to; code += 1) {
         classSet.add(code);
       }
     }
+    expect(consumed).toBe(inner.length);
+
     const jsSet = new Set<number>();
     for (let code = 0; code <= 0x10ffff; code += 1) {
       if (code >= 0xd800 && code <= 0xdfff) {
@@ -121,11 +159,14 @@ describe("the canonical backfill touches only the declaration (criterion 18.4)",
     expect([...classSet].sort((a, b) => a - b)).toEqual(
       [...jsSet].sort((a, b) => a - b),
     );
-    // The named divergent characters the hazard lane witnessed are in
-    // the class, and U+200B, which \s does not match, is not.
+    // The named characters both directions turned on: the three the bare
+    // POSIX class under-stripped, the one it over-stripped under an ICU
+    // collation, and U+200B, which \s does not match and no mirror may
+    // strip.
     expect(classSet.has(0x00a0)).toBe(true);
     expect(classSet.has(0x202f)).toBe(true);
     expect(classSet.has(0xfeff)).toBe(true);
+    expect(classSet.has(0x0085)).toBe(false);
     expect(classSet.has(0x200b)).toBe(false);
   });
 
@@ -142,6 +183,15 @@ describe("the canonical backfill touches only the declaration (criterion 18.4)",
 describe("the detection script's selection and wiring (criterion 18.5, findings R2-M3P18-01 and R2-M3P18-02)", () => {
   const scriptSource = (): string =>
     readFileSync(join(ROOT, "scripts", "detect-account-collisions.ts"), "utf-8");
+
+  // The script's CODE, with line comments stripped, so a superseded class
+  // QUOTED in a correction comment (which clause R-087 requires to stay)
+  // can neither satisfy nor fail an assertion about what the script runs.
+  const scriptCode = (): string =>
+    scriptSource()
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("//"))
+      .join("\n");
 
   test("the selection GROUPS by canonical form and emits groups of two or more", () => {
     const source = scriptSource();
@@ -160,7 +210,13 @@ describe("the detection script's selection and wiring (criterion 18.5, findings 
     expect(source).toMatch(
       /regexp_replace\(a\."iban", \$\{ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS\}, '', 'g'\)/,
     );
-    expect(source).not.toContain(`'[[:space:]]'`);
+    // No POSIX class in any spelling reaches the script's CODE, for the
+    // reason the class-membership test above states: a POSIX class's
+    // membership belongs to the cluster, so a grouping naming one groups
+    // differently on the deployed target than on any cluster a test can
+    // reach. Asserted over the comment-stripped code, because the
+    // correction comment quotes the superseded class on purpose.
+    expect(scriptCode()).not.toMatch(/\[:[a-z]+:\]/);
   });
 
   test("the guard wiring is the surviving contract only (D-62)", () => {
