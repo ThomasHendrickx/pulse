@@ -201,3 +201,63 @@ docker Postgres up, per CLAUDE.md).
 
 Fast gate after steps 5 and 6: 50 files, 678 tests, 0 failed, 0 skipped
 reported by vitest; tsc exit 0; eslint exit 0.
+
+## Environment upgrade discovered at gate time: a bare Postgres 16 exists here
+
+The container has /usr/lib/postgresql/16 (server binaries) although no Docker
+daemon and no Supabase auth service. A throwaway cluster was started as the
+postgres system user on 127.0.0.1:54322 (trust auth, data dir
+/var/lib/postgresql/pulse-pgdata) and used for three captured runs:
+
+1. `npx prisma migrate deploy` with DATABASE_URL/DIRECT_URL pinned to
+   127.0.0.1:54322: ALL SEVEN migrations applied cleanly on a fresh database,
+   the canonical backfill included. Exit 0.
+2. A temporary witness script (untracked, deleted after the run; its full
+   output is recorded below verbatim) executed the NON-BROWSER arms of
+   criteria 18.3, 18.4 and 18.5 against that database using the committed
+   harness, the committed migration.sql text and the real repository and
+   application code: 42 assertions, all ok, exit 0. Highlights: the ring
+   scoping counts the pot gap and never the savings row; listGapRows returns
+   no savings row (the listing-alone assertion); the held read returns the
+   savings row with the typed label; the committed SQL expression agreed with
+   canonicalAccountNumber over every seeded rendering; the collision pair
+   stayed byte identical over TWO runs; the checksum-failing number was
+   backfilled canonical; the canonical control household was untouched; the
+   canonical probe missed the spaced row before the migration and matched it
+   after; the typed canonical twin was refused by the REAL adapter with no
+   second row; the detection script printed exactly the pair's two row ids
+   and no account-shaped string.
+3. `npx playwright test held-and-gap-rows --project=chromium` with the same
+   pinned env plus invented NEXT_PUBLIC_SUPABASE values: 1 passed (52.8s),
+   exit 0. This spec drives no browser, so the missing auth service does not
+   reach it; the criterion 18.3 port sweep is therefore FORMALLY witnessed in
+   this container.
+
+STILL ENVIRONMENT-LIMITED, precisely: every spec that drives the BROWSER
+(sign-up needs the Supabase auth service, which is Docker-based and absent):
+test/e2e/canonical-backfill.spec.ts (its browser arms; its SQL arms were
+witnessed by run 2), the criterion 18.2 held-block test in
+test/e2e/month-view.spec.ts, the rewritten acceptance test in
+test/e2e/accounts.spec.ts, and the full `npm run test:e2e` gate. Command a
+capable container must run, from the repo root, with the local supabase
+stack up and DATABASE_URL/DIRECT_URL/NEXT_PUBLIC_SUPABASE_* pinned to it:
+
+    npm run test:e2e
+
+The slice does not close until that passes somewhere.
+
+## Claim-grep run (clause claim-grep), over the final work history
+
+    $ grep -nEi 'cannot be|impossible|needs a|is covered|catches|would catch|recovers|anyway|always|never|no way to' delivery/work-history/m3-p18.yaml
+    25, 39, 46: hits inside the VERBATIM prompt block (quotations of the
+        dispatch, which schema rule R-052a forbids rewording); the
+        dispatch's "cannot be executed here" is corrected by the captured
+        runs under gate-evidence and claims C2/C3.
+    395: "never the savings row" inside claim C2's captured OUTPUT, which
+        is the passing spec's own title, adjacent to the executed command
+        and its exit code.
+    The whitespace-flattened re-run found the same hits plus "needs a"
+    inside claim M3P18-C6, which is an open question by kind.
+
+Work history validated: npx --prefix /home/user/pulse-fleet tiphys validate
+--type work-history delivery/work-history/m3-p18.yaml, exit 0.
