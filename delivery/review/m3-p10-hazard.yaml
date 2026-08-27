@@ -44,10 +44,7 @@
 # A3  double submission while busy (H10.5)                       not-yet-probed
 # A4  the busy signal LYING: shown for an action that already
 #     failed or already completed                                not-yet-probed
-# A5  interaction with the merged M3-P9 pressed/disabled
-#     machinery: same controls, same stylesheet, aria-disabled
-#     with pointer-events, keyboard reachability of a busy
-#     control                                                    not-yet-probed
+# A5  interaction with the M3-P9 machinery                        PROBED, see P9/P10/P11
 # A6  reduced-motion behaviour                                   PROBED, see P8
 # A7  client boundary width and import closure (H10.2)           PROBED, see P1/P2
 # A8  the phase's own e2e spec going VACUOUS through project
@@ -159,6 +156,98 @@
 #     M3-P9 already measures this (test/e2e/pressed-and-disabled.spec.ts
 #     :1937 and :1950 run the same control at both settings). This attack
 #     direction produced no finding against M3-P10.
+#
+# ==========================================================
+# BROWSER PROBES. Playwright chromium 1194 driven by playwright-core over
+# page.setContent, with the head's REAL stylesheet concatenated in its own
+# import order (styles/tokens.css, styles/pulse-theme.css,
+# src/app/globals.css, the @import lines stripped). No server, no database:
+# these answer DOM and computed-style questions only. Scripts .probe.mjs,
+# .probe2.mjs, .probe3.mjs, run from the worktree and NOT committed.
+# CAVEAT recorded honestly: Tailwind's preflight is not in the
+# concatenation, so a property the app's own rules do not set is the UA
+# default rather than the preflight default. Every property read below IS
+# set by the app's own rules.
+# ==========================================================
+#
+# P9. THE M3-P9 DISABLED RULE BEATS THE M3-P9 BUSY RULE ON EVERY PROPERTY
+#     THEY SHARE, AND M3-P10 IS WHAT MAKES THEM COLLIDE.
+#     src/platform/ui/submit-button.tsx:98 and :99 set BOTH
+#     disabled={pending} and aria-busy="true" on the same element. In
+#     src/app/globals.css the disabled rule (:1590 through :1601) is
+#     `button:disabled` (specificity 0,1,1) and the busy rule (:1687
+#     through :1693) is `[aria-busy="true"]` (0,1,0), so the disabled rule
+#     wins. Measured on a real button carrying the shipped
+#     .merchant-name-button class, node .probe.mjs:
+#       at rest        opacity 1     cursor pointer  bg oklch(0.23 0.008 265)
+#                                                    color oklch(0.986 0.004 85)
+#       busy+disabled  opacity 0.55  cursor DEFAULT  bg oklch(0.91 0.005 265)
+#                                                    color oklch(0.7 0.007 265)
+#       aria-busy only opacity 0.7   cursor progress bg oklch(0.23 0.008 265)
+#     So NO submit control in the product ever renders the busy appearance
+#     M3-P9 designed. Every one of them renders the DISABLED appearance:
+#     --color-surface-disabled, --color-ink-disabled, cursor default. The
+#     "aria-busy only" row is what the stylesheet's author expected and it
+#     is unreachable through the shipped leaf.
+#
+# P10. THE BUSY MARK IS BELOW ANY VISIBILITY THRESHOLD ONCE THE DISABLED
+#      RULE HAS WON. The mark is drawn by [aria-busy="true"]::after with
+#      background-color: currentColor (globals.css:1695 through :1708), so
+#      its colour is whatever `color` resolved to, which P9 shows is
+#      --color-ink-disabled. It then sits inside an element painted at
+#      opacity 0.55, and its own opacity is animated 0.25 to 1 by
+#      @keyframes pulse-busy-cycle (globals.css:1737).
+#      node .probe3.mjs, resolving every colour through a canvas 2D context
+#      so the numbers are real sRGB rather than a parse of an oklch string,
+#      and compositing in the order the browser paints:
+#        page background            rgb(252,250,247)
+#        button background          rgb(223,225,229)   element opacity 0.55
+#        mark background            rgb(156,158,163)
+#        button as painted          rgb(236,236,237)
+#        mark at animation low  0.25 rgb(227,227,228)  contrast 1.09:1
+#        mark at animation mid  0.5  rgb(218,218,219)  contrast 1.19:1
+#        mark at animation peak 1.0  rgb(199,199,201)  contrast 1.43:1
+#      Against the 3:1 floor for a meaningful non-text graphic the mark
+#      never gets close, at any point in its cycle. What the owner sees on
+#      a press is the control going flat pale grey, which is the product's
+#      own vocabulary for UNAVAILABLE, with no perceptible motion in it.
+#
+# P11. A PRESS DESTROYS KEYBOARD FOCUS. Measured in chromium,
+#      node .probe.mjs "focus" block: focus a button, then set
+#      disabled = true, which is exactly what
+#      src/platform/ui/submit-button.tsx:98 does on every press:
+#        activeElement before  focusme
+#        activeElement after   BODY
+#        still tabbable        false
+#      Nothing in the leaf, in any caller, or in the spec restores focus.
+#      The merchant naming submit is the worst case because it is the one
+#      the owner presses most AND the one whose action revalidates in place
+#      rather than navigating: after each name, focus is on document.body
+#      and the next row must be reached by tabbing from the top of the
+#      document again. aria-busy on an unfocused, disabled control is
+#      announced to nobody, so the phase delivers no acknowledgement at all
+#      on the assistive-technology path.
+#
+# P12. THE aria-busy ROUTE TAKES NOTHING AWAY, AS M3-P9's COMMENT WARNED,
+#      and the leaf is right not to rely on it. node .probe.mjs
+#      "ariaBusyOnlyStillActivates": an element carrying only
+#      aria-busy="true" computes pointer-events: auto and delivers a click.
+#      The leaf uses the NATIVE disabled attribute instead, which refuses
+#      activation from pointer and keyboard alike, so hazard H10.5 is
+#      genuinely closed for the eight leaf-rendered submits. No finding on
+#      the double-submission direction.
+#
+# P13. THE NAVIGATION MARKER HAS A REAL BOX AND DOES NOT ESCAPE ITS LINK.
+#      node .probe2.mjs at 390 by 844: the .pulse-busy span inside a
+#      .month-nav Link measures 18 by 10 CSS pixels, its ::after 10 by 10,
+#      and markRight 35.59 against linkRight 46, so criterion 10.5's
+#      "bounding rect whose width and height are both greater than zero" is
+#      satisfiable and the mark stays inside the 46 by 46 tap target. Its
+#      colour there is oklch(0.46 0.008 265) on the page surface, which is
+#      the link's own ink and is legible. No finding.
+#      Recorded as a side observation rather than a finding: a busy submit
+#      control grows from 64.36 to 82.36 CSS pixels wide when the mark
+#      appears, so a press reflows the row it sits in.
 #
 kind: verdict
 phase: M3-P10
