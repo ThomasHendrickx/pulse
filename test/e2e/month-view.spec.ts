@@ -1,5 +1,21 @@
 import { expect, test, type Page } from "@playwright/test";
 import { join } from "node:path";
+// THE PHONE MEASUREMENTS MOVED TO A SHARED MODULE (M3-P14). They were
+// defined in this file; a second phone spec now measures with the SAME
+// instruments rather than a second copy of them, and tapTargetOffenders
+// grew an axes argument whose default is exactly what this file measured
+// before. See test/e2e/phone-helpers.ts.
+import {
+  ensureRegistered,
+  FIXTURE_ACCOUNT_A,
+  FIXTURE_ACCOUNT_B,
+} from "./setup-accounts";
+import {
+  applyTextScale,
+  clippingOffenders,
+  horizontalOverflow,
+  tapTargetOffenders,
+} from "./phone-helpers";
 
 // The month view's dangerous states (criteria 4.2, 4.3, 4.4), each on a
 // fresh household. The webServer's clock is fixed at 2026-09-15T12:00:00Z
@@ -46,30 +62,65 @@ const signUp = async (page: Page, prefix: string): Promise<void> => {
   await expect(page.getByTestId("household-context")).toHaveText(unique);
 };
 
-// The RING is a parameter and not a constant (M3-P7 fix round, finding
-// CR-M3P7-01). It was hardcoded to POT here, and the first round of this
-// phase read that as a limit on the FIXTURES rather than on this helper, and
-// recorded an impossibility that was not one: declaring an existing
-// committed fixture under RESERVE produces a reserve row from zero new
-// fixtures, which is what witnesses the reserve arm of criterion 7.14.
+// SETUP COMES FIRST (M3-P14). An account is registered before the statement
+// that belongs to it is imported, because the confirm step now refuses a
+// file whose own account is not one the household registered. The ring is
+// answered at setup and no longer on the confirmation screen, which is why
+// this helper no longer fills a Label, a Bank or a Ring there.
+//
+// CORRECTED RATHER THAN QUIETLY REWRITTEN (clause R-087). This helper used
+// to carry a `ring` parameter, added in the M3-P7 fix round so a committed
+// fixture could be declared under RESERVE through the import path. That
+// path is gone: a savings account's statement is not imported in v1
+// (decision D-55), so the reserve arm is now witnessed by REGISTERING the
+// partner account as savings and importing only the pot side, which is what
+// a household actually does.
+const FIXTURE_ACCOUNT: Record<string, string> = {
+  "mv-partial.csv": FIXTURE_ACCOUNT_A,
+  "mv-dense.csv": FIXTURE_ACCOUNT_A,
+  "mv-unresolved.csv": FIXTURE_ACCOUNT_A,
+  "mv-gapped-a.csv": FIXTURE_ACCOUNT_A,
+  "mv-gapped-b.csv": FIXTURE_ACCOUNT_B,
+  "mv-transit-a.csv": FIXTURE_ACCOUNT_A,
+  "mv-transit-b.csv": FIXTURE_ACCOUNT_B,
+  "mv-cancel-a.csv": FIXTURE_ACCOUNT_A,
+  "mv-cancel-b.csv": FIXTURE_ACCOUNT_B,
+};
+
 const uploadPotFile = async (
   page: Page,
   file: string,
   label: string,
   expectedAdded: string,
-  ring: "POT" | "RESERVE" = "POT",
 ): Promise<void> => {
+  const accountNumber = FIXTURE_ACCOUNT[file];
+  if (accountNumber === undefined) {
+    throw new Error(`no registered account is declared for ${file}`);
+  }
+  await ensureRegistered(page, {
+    label,
+    bank: "Demobank",
+    accountNumber,
+    ring: "POT",
+  });
   await page.goto("/import");
   await page.getByLabel("Bank export file").setInputFiles(join(FIXTURES, file));
   await page.getByRole("button", { name: "Upload" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Confirm the detected format" }),
-  ).toBeVisible();
-  await page.getByLabel("Format name").fill("Demobank current account");
-  await page.getByLabel("Label").fill(label);
-  await page.getByLabel("Bank").fill("Demobank");
-  await page.getByLabel("Ring").selectOption(ring);
-  await page.getByTestId("confirm-import").click();
+  // TWO LANDINGS, BOTH CORRECT (M3-P14). The FIRST file of a household
+  // stops at the confirmation screen because its format has no name yet.
+  // The SECOND file of the same format lands straight on the result: its
+  // account was registered at setup and a spec-identical profile already
+  // exists, so nothing is left to ask. Before this phase the second file
+  // always stopped, because its account was unknown until it introduced
+  // itself, which is exactly what setup removes.
+  const confirming = page.getByRole("heading", {
+    name: "Confirm the detected format",
+  });
+  await expect(confirming.or(page.getByTestId("import-result"))).toBeVisible();
+  if ((await confirming.count()) > 0) {
+    await page.getByLabel("Format name").fill("Demobank current account");
+    await page.getByTestId("confirm-import").click();
+  }
   await expect(page.getByTestId("import-result")).toBeVisible();
   await expect(page.getByTestId("rows-added")).toHaveText(expectedAdded);
 };
@@ -353,7 +404,6 @@ const DESK = { width: 1280, height: 720 } as const;
 // belong in a spec: the ban on literals is a ban on literals in
 // COMPONENTS (CLAUDE.md non-negotiable 4), and a measurement that read its
 // own bar out of the stylesheet it is measuring would be a mirror.
-const TAP_MIN = 44;
 const NAME_RATIO_MIN = 0.55;
 const NAME_FLOOR = { 390: 180, 360: 160 } as const;
 const FOLD = 700;
@@ -361,7 +411,6 @@ const ROW_TESTIDS = ["spend-group", "income-group", "reserve-group"] as const;
 const LABEL_MIN_LENGTH = 28;
 const DENSE_SPEND_GROUPS = 23;
 
-const INTERACTIVE = "a, button, input:not([type=hidden]), select, [role=button]";
 
 // ---------------------------------------------------------------------
 // M3-P7 FIX ROUND. Everything from here to the reserve test closes findings
@@ -541,33 +590,6 @@ const collectHiding = (page: Page) =>
 
 // Finding HZ-M3P7-04. One shot of a text-size preference over the rendered
 // page: every element's own computed size multiplied by the factor.
-const applyTextScale = (page: Page, factor: number) =>
-  page.evaluate((scale) => {
-    // SNAPSHOT FIRST, THEN APPLY. Reading a computed size after an ancestor
-    // has already been written compounds the factor down the tree, because
-    // font-size inherits: the first draft of this helper did exactly that
-    // and reported a document 17 times too wide. A platform text-scaling
-    // setting multiplies each element's own size once.
-    const elements = [...document.querySelectorAll("*")].filter(
-      (element): element is HTMLElement => element instanceof HTMLElement,
-    );
-    const sizes = elements.map((element) =>
-      parseFloat(getComputedStyle(element).fontSize),
-    );
-    elements.forEach((element, index) => {
-      const size = sizes[index];
-      if (size !== undefined && Number.isFinite(size)) {
-        element.style.fontSize = `${size * scale}px`;
-      }
-    });
-  }, factor);
-
-const horizontalOverflow = (page: Page) =>
-  page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-  }));
-
 // FINDING HZ2-03. The whole sweep under a device text-size preference, not
 // the horizontal half of it. The fold is included because criterion 7.8 is
 // the criterion this phase exists for and it was the one axis the scaled
@@ -613,38 +635,6 @@ const seedDense = async (page: Page): Promise<void> => {
   await uploadPotFile(page, "mv-dense.csv", "Daily account", "25");
 };
 
-// Criterion 7.5. Every interactive control in the shell header and in main
-// is at least TAP_MIN tall, and the failure message names each offender.
-const tapTargetOffenders = (page: Page): Promise<string[]> =>
-  page.evaluate(
-    ({ selector, min }) => {
-      const roots = [
-        document.querySelector("header.app-header"),
-        document.querySelector("main"),
-      ];
-      const offenders: string[] = [];
-      for (const root of roots) {
-        if (root === null) {
-          continue;
-        }
-        for (const element of root.querySelectorAll(selector)) {
-          const rect = element.getBoundingClientRect();
-          if (rect.width === 0 && rect.height === 0) {
-            continue;
-          }
-          if (rect.height < min) {
-            const name =
-              element.getAttribute("data-testid") ??
-              (element.textContent ?? "").trim().slice(0, 40);
-            offenders.push(`${name}: ${Math.round(rect.height)}px`);
-          }
-        }
-      }
-      return offenders;
-    },
-    { selector: INTERACTIVE, min: TAP_MIN },
-  );
-
 // Criterion 7.6. Every element carrying a data-testid, as the pair of its
 // testid and its trimmed text, sorted, with its box and its hiding.
 const collectTestids = (page: Page) =>
@@ -668,42 +658,6 @@ const collectTestids = (page: Page) =>
         `${a.testId} ${a.text}`.localeCompare(`${b.testId} ${b.text}`),
       ),
   );
-
-// Criterion 7.7 (a) and (b). Horizontal clipping over everything inside
-// main that is not .visually-hidden, and vertical clipping over the
-// elements that actually clip: an element with visible overflow reports
-// content height it is not hiding.
-const clippingOffenders = (page: Page) =>
-  page.evaluate(() => {
-    const horizontal: string[] = [];
-    const vertical: string[] = [];
-    const main = document.querySelector("main");
-    if (main === null) {
-      return { horizontal: ["no main element"], vertical: [] };
-    }
-    const name = (element: Element): string =>
-      element.getAttribute("data-testid") ??
-      (element.textContent ?? "").trim().slice(0, 40);
-    for (const element of main.querySelectorAll("*")) {
-      if (!(element instanceof HTMLElement)) {
-        continue;
-      }
-      if (
-        !element.matches(".visually-hidden") &&
-        element.scrollWidth > element.clientWidth + 1
-      ) {
-        horizontal.push(`${name(element)} (horizontal)`);
-      }
-      const overflowY = getComputedStyle(element).overflowY;
-      if (
-        ["hidden", "clip", "scroll", "auto"].includes(overflowY) &&
-        element.scrollHeight > element.clientHeight + 1
-      ) {
-        vertical.push(`${name(element)} (vertical)`);
-      }
-    }
-    return { horizontal, vertical };
-  });
 
 // Criterion 7.14, the criterion this phase exists for. Track count, name
 // width against the row's BORDER box, and the two lines. The border box is
@@ -1373,8 +1327,19 @@ test("the reserve rows are measured by the same bar as the spend rows", async ({
 }) => {
   test.setTimeout(180_000);
   await signUp(page, "mv-reserve-phone");
+  // The savings account is REGISTERED and its statement is never imported,
+  // which is what a household actually does: a reserve account is
+  // registered for its account number only (pulse-domain section 1,
+  // decision D-55). The reserve row on the month view comes from the POT
+  // side, which is the only side there is. Zero new fixtures, exactly as
+  // before.
+  await ensureRegistered(page, {
+    label: "Savings account",
+    bank: "Demobank",
+    accountNumber: FIXTURE_ACCOUNT_B,
+    ring: "RESERVE",
+  });
   await uploadPotFile(page, "mv-gapped-a.csv", "Daily account", "3");
-  await uploadPotFile(page, "mv-gapped-b.csv", "Savings account", "1", "RESERVE");
 
   for (const viewport of [PHONE, NARROW_PHONE] as const) {
     await page.setViewportSize(viewport);

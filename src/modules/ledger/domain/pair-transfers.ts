@@ -17,6 +17,7 @@
 // imported, so classification from the pot side is sufficient and complete
 // (pulse-v1-architecture.md). Callers pass only INTERNAL transfer legs.
 
+import { canonicalAccountNumber } from "@/platform/account-number";
 import { TRANSFER_DATE_TOLERANCE_DAYS } from "./constants";
 import type { DeclaredSets, LedgerTransaction } from "./ledger-transaction";
 import { dayDistance } from "./plain-date-distance";
@@ -72,15 +73,21 @@ export const pairInternalTransfers = (
       if (distance > TRANSFER_DATE_TOLERANCE_DAYS) {
         continue;
       }
+      // Canonical on both sides (M3-P14, criterion 14.4): accountIban
+      // carries the canonical declared form, the leg's counterparty column
+      // is the fact the source printed, and one account is written spaced
+      // on one path and compact on another.
       if (
         out.counterpartyIban === undefined ||
-        out.counterpartyIban !== accountIban.get(inc.accountId)
+        canonicalAccountNumber(out.counterpartyIban) !==
+          accountIban.get(inc.accountId)
       ) {
         continue;
       }
       if (
         inc.counterpartyIban === undefined ||
-        inc.counterpartyIban !== accountIban.get(out.accountId)
+        canonicalAccountNumber(inc.counterpartyIban) !==
+          accountIban.get(out.accountId)
       ) {
         continue;
       }

@@ -39,6 +39,9 @@ export type CountedTransaction = {
   readonly amountCents: Cents;
   readonly description: string;
   readonly counterpartyName?: string;
+  // The stored counterparty account, unvalidated (M3-P12). The identity
+  // derivation's trust gate is what decides whether it is used.
+  readonly counterpartyAccount?: string;
   readonly merchantId?: string;
 };
 
@@ -66,6 +69,18 @@ export type MerchantRepositoryPort = {
     input: {
       readonly merchantId: string;
       readonly kind: MerchantRuleKind;
+      readonly pattern: string;
+    },
+  ) => Promise<MerchantRuleLike>;
+  // M3-P12: pass one of the re-derivation rewrites a pattern IN PLACE, which
+  // upsertRule cannot express: its key IS the pattern, so writing a new one
+  // creates a second row rather than moving the existing declaration. This
+  // member exists only for that routine. It never deletes and it never
+  // changes a rule's merchant.
+  readonly updateRulePattern: (
+    context: HouseholdContext,
+    input: {
+      readonly ruleId: string;
       readonly pattern: string;
     },
   ) => Promise<MerchantRuleLike>;

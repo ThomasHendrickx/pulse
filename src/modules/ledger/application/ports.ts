@@ -38,13 +38,21 @@ export type InterpretationLinkWrite = {
 // looks like caching). test/application/resolve-merchants.test.ts asserts
 // this port's key set stays exactly this.
 export type MerchantResolverPort = {
-  // Distinct raw counterparty texts in, merchant assignments out; the
-  // resolver normalises internally and unresolved texts are absent from
-  // the map. Bound to the merchants module's rules-only resolver until
-  // slice 5 adds the LLM step behind this same port.
-  readonly resolveCounterparties: (
+  // Distinct counterparty IDENTITY KEYS in, merchant assignments out;
+  // unresolved keys are absent from the map. Bound to the merchants
+  // module's rules-only resolver until slice 5 adds the LLM step behind
+  // this same port.
+  //
+  // THE MEMBER WAS RENAMED IN M3-P12 (`resolveCounterparties` ->
+  // `resolveIdentities`) and the rename is the point rather than tidying:
+  // the argument used to be a RAW counterparty text that the resolver
+  // normalised for itself, and it is now a key the caller derived with
+  // counterpartyIdentity. Both are `readonly string[]`, so a call site left
+  // passing raw text would typecheck and silently resolve nothing (hazard
+  // H12.10). Renaming the member makes every such site a compile error.
+  readonly resolveIdentities: (
     context: HouseholdContext,
-    texts: readonly string[],
+    identityKeys: readonly string[],
   ) => Promise<ReadonlyMap<string, string>>;
 };
 
