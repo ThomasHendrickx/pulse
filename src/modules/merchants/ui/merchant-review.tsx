@@ -73,6 +73,17 @@ const GroupRow = async ({
   // failure message, and the transport failure shares it.
   const copy: NamingCopy = {
     unconfirmed: t("nameUnconfirmed"),
+    // THE FAILURE SENTENCE CLAIMS ONLY WHAT THE CLIENT KNOWS (fix round,
+    // finding HZ-M3P11-04). It used to say the name was not saved, and
+    // that is a claim about the server which the client cannot make: the
+    // use case writes the MerchantRule and only THEN awaits recompute
+    // (src/modules/merchants/application/assign-merchant.ts, upsertRule
+    // before await deps.recompute), so an exception in recompute or a
+    // connection lost on the response leg leaves the declaration stored
+    // while this notice is on screen. The wording now says the answer did
+    // not arrive, describes the SCREEN rather than storage, and tells the
+    // reader how to find out. It stays true on the other arm too, where
+    // the server did answer and wrote nothing.
     failed: t("namingFailed"),
     differs: t("namingDiffers"),
     dismiss: t("noticeDismiss"),
