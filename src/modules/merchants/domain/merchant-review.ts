@@ -8,6 +8,10 @@
 
 import type { Cents } from "@/platform/money";
 import {
+  counterpartyIdentity,
+  isBareIdentityKey,
+} from "./counterparty-identity";
+import {
   counterpartyText,
   normaliseCounterparty,
 } from "./normalise-counterparty";
@@ -25,6 +29,12 @@ export type CountedRow = {
   readonly amountCents: Cents;
   readonly description: string;
   readonly counterpartyName?: string;
+  // The counterparty ACCOUNT as the importer stored it, unvalidated. M3-P12:
+  // the review keys on counterpartyIdentity, whose account branch reads this
+  // field, so the repository read must select it. A row that carries none, or
+  // carries one the trust gate refuses, keeps exactly the descriptor key it
+  // had before this phase.
+  readonly counterpartyAccount?: string;
   readonly merchantId?: string;
 };
 
@@ -34,14 +44,24 @@ export type MerchantNameLike = {
 };
 
 export type ReviewGroup = {
-  // Merchant id for resolved groups, normalised counterparty text for
-  // unresolved ones: stable within a household either way.
+  // Merchant id for resolved groups, the namespaced counterparty IDENTITY
+  // key for unresolved ones (M3-P12): stable within a household either way.
   readonly key: string;
   readonly label: string;
   readonly merchantId?: string;
-  // The text the assignment form submits for an unresolved group; absent
-  // on resolved groups.
+  // What the assignment form submits for an unresolved group: the identity
+  // key, which is what assignMerchant stores as the rule subject. Absent on
+  // resolved groups. NAME KEPT rather than renamed to `identityKey`, because
+  // this field is the wire contract of the shipped form and the server action
+  // reads it by this name; the comment is what says it is no longer a text.
   readonly counterpartyText?: string;
+  // WHY THIS GROUP CANNOT BE NAMED (fix round two, findings CR2-M3P12-07 and
+  // HZ-M3P12-R2-04). Withholding the form was right and leaving the row blank
+  // was not: the reader met a list item with an empty label, a row count and
+  // an amount, no control and no sentence, counted in the number the screen
+  // prints as work they are being asked to do. The screen renders this where
+  // the form would have been.
+  readonly unnameableReason?: "no-counterparty-text";
   readonly totalCents: Cents;
   readonly count: number;
 };
@@ -72,25 +92,58 @@ const groupDirection = (
 ): readonly ReviewGroup[] => {
   const groups = new Map<
     string,
-    { label: string; merchantId?: string; counterpartyText?: string; total: number; count: number }
+    {
+      label: string;
+      merchantId?: string;
+      counterpartyText?: string;
+      unnameableReason?: "no-counterparty-text";
+      total: number;
+      count: number;
+    }
   >();
   for (const row of rows) {
     const merchantId = row.merchantId;
-    const normalised = normaliseCounterparty(counterpartyText(row));
-    const key = merchantId ?? normalised;
+    const identity = counterpartyIdentity(row);
+    // THE UNRESOLVED LABEL IS UNCHANGED BY THIS PHASE: it is still the
+    // normalised counterparty text. What changed is that an account-basis
+    // group now holds SEVERAL such texts, so "the label" needs a rule; the
+    // rule is the lexicographically smallest, which is deterministic
+    // whatever order the rows arrive in and is therefore the same on this
+    // screen and on the month view, whose rows come out of SQL in no
+    // guaranteed order. Naming the group properly (the carried counterparty
+    // name, or the masked account) is decision D-41 and belongs to M3-P13
+    // with the basis and the row count; putting a bare account number here
+    // would be that phase's work done badly and early.
+    const unresolvedLabel = normaliseCounterparty(counterpartyText(row));
+    const key = merchantId ?? identity.key;
     const entry = groups.get(key);
     if (entry !== undefined) {
       entry.total += row.amountCents;
       entry.count += 1;
+      if (merchantId === undefined && unresolvedLabel < entry.label) {
+        entry.label = unresolvedLabel;
+      }
       continue;
     }
     groups.set(key, {
       label:
         merchantId === undefined
-          ? normalised
-          : (merchantNames.get(merchantId) ?? normalised),
+          ? unresolvedLabel
+          : (merchantNames.get(merchantId) ?? unresolvedLabel),
+      // THE NAMING FORM IS WITHHELD FROM A BARE-NAMESPACE GROUP (fix round,
+      // finding HZ-M3P12-01). `counterpartyText` is what the form submits,
+      // and the screen renders no form for a group that has none. A group
+      // keyed on a bare namespace holds rows that carry NO counterparty text
+      // at all, so there is nothing to recognise the next such row by;
+      // offering a naming there would offer to put every one of them under
+      // one merchant. The group is still SHOWN and its money is still
+      // counted, which is what it did before this phase; what it cannot do
+      // is be named, and the write boundary refuses the subject as well, so
+      // the two guards agree.
       ...(merchantId === undefined
-        ? { counterpartyText: normalised }
+        ? isBareIdentityKey(identity.key)
+          ? { unnameableReason: "no-counterparty-text" as const }
+          : { counterpartyText: identity.key }
         : { merchantId }),
       total: row.amountCents,
       count: 1,
@@ -104,6 +157,9 @@ const groupDirection = (
       ...(entry.counterpartyText === undefined
         ? {}
         : { counterpartyText: entry.counterpartyText }),
+      ...(entry.unnameableReason === undefined
+        ? {}
+        : { unnameableReason: entry.unnameableReason }),
       totalCents: entry.total as Cents,
       count: entry.count,
     }))

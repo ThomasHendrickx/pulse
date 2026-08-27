@@ -1,6 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { Amount } from "@/platform/ui/amount";
 import { maskCardNumbers } from "@/platform/ui/mask-card-number";
+import { SubmitButton } from "@/platform/ui/submit-button";
 import type { HouseholdContext } from "@/platform/tenancy";
 import { listMerchantReview } from "../application";
 import type { ReviewGroup } from "../application";
@@ -27,13 +28,21 @@ const GroupRow = async ({
       className={unresolved ? "merchant-row merchant-row-unresolved" : "merchant-row"}
       data-testid={unresolved ? "unresolved-group" : "merchant-group"}
     >
-      {/* The label of an unresolved group IS the normalised descriptor, so a
-          card descriptor rendered the card number here. Masked in the
-          RENDERING only (M3-P6, decision D-12): the hidden counterpartyText
-          field below stays UNMASKED, because that value becomes the EXACT
-          MerchantRule pattern and a masked subject would match nothing. */}
+      {/* The label of an unresolved group is the normalised descriptor for a
+          descriptor-basis group, so a card descriptor rendered the card
+          number here. Masked in the RENDERING only (M3-P6, decision D-12):
+          the hidden counterpartyText field below stays UNMASKED, because
+          that value is the counterparty IDENTITY KEY that becomes the EXACT
+          MerchantRule pattern, and a masked subject would match nothing. */}
       <span className="merchant-row-label" data-testid="group-label">
-        {maskCardNumbers(group.label)}
+        {/* A GROUP THAT CANNOT BE NAMED STILL NEEDS A NAME ON THE SCREEN
+            (fix round two, findings CR2-M3P12-07 and HZ-M3P12-R2-04). Its
+            label is the normalised counterparty text, and for these rows
+            there is none, so the row rendered blank: an item carrying money
+            and a row count with nothing to read and nothing to do. */}
+        {group.unnameableReason === undefined
+          ? maskCardNumbers(group.label)
+          : t("unnameableLabel")}
       </span>
       <span className="merchant-row-count">
         {group.count} {t("rows")}
@@ -57,10 +66,18 @@ const GroupRow = async ({
               required
             />
           </label>
-          <button type="submit" className="merchant-name-button">
+          <SubmitButton className="merchant-name-button">
             {t("nameIt")}
-          </button>
+          </SubmitButton>
         </form>
+      ) : null}
+      {/* AND THE REASON WHERE THE FORM WOULD HAVE BEEN. The copy already
+          existed and was reachable only by submitting a form the screen no
+          longer offers, so the explanation could never be read. */}
+      {unresolved && group.unnameableReason !== undefined ? (
+        <p className="merchant-row-unnameable" data-testid="group-unnameable">
+          {t("nameRefusedUnidentifiable")}
+        </p>
       ) : null}
     </li>
   );
@@ -98,19 +115,52 @@ const DirectionSection = async ({
   );
 };
 
+// The refusal statuses the assignment action redirects with, mapped to the
+// message that tells the reader what happened (criterion 12.18). A status
+// this map does not carry renders nothing, so an unknown query string can
+// never put an empty banner on the screen.
+const REFUSAL_MESSAGE: Readonly<
+  Record<
+    string,
+    | "nameRefusedStale"
+    | "nameRefusedName"
+    | "nameRefusedAccount"
+    | "nameRefusedUnidentifiable"
+  >
+> = {
+  "empty-merchant-name": "nameRefusedName",
+  "empty-counterparty": "nameRefusedStale",
+  "unnamespaced-counterparty": "nameRefusedStale",
+  "untrusted-counterparty-account": "nameRefusedAccount",
+  "unidentifiable-counterparty": "nameRefusedUnidentifiable",
+  // A subject that is not the key the screen renders did not come from a
+  // rendered group, which is the same thing a page left open across the
+  // deploy submits, so the reader gets the same instruction: reload and name
+  // the group again (fix round two, finding CR2-M3P12-08).
+  "non-canonical-counterparty": "nameRefusedStale",
+};
+
 export const MerchantReviewScreen = async ({
   context,
+  status,
 }: {
   readonly context: HouseholdContext;
+  readonly status?: string;
 }) => {
   const [t, review] = await Promise.all([
     getTranslations(),
     listMerchantReview(context),
   ]);
+  const refusal = status === undefined ? undefined : REFUSAL_MESSAGE[status];
   return (
     <section className="merchant-screen">
       <h1>{t("merchants")}</h1>
       <p className="merchant-lead">{t("merchantsBody")}</p>
+      {refusal === undefined ? null : (
+        <p className="merchant-refused" data-testid="naming-refused" role="status">
+          {t(refusal)}
+        </p>
+      )}
       <p className="merchant-note" data-testid="unresolved-count">
         {review.unresolvedCount}{" "}
         {review.unresolvedCount === 1 ? t("unresolvedOne") : t("unresolvedMany")}

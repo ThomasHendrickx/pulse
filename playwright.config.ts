@@ -1,9 +1,32 @@
 import { defineConfig, devices } from "@playwright/test";
+import { enforceGateDbTarget } from "./src/platform/db/gate-target";
 
 // The slow gate. Runs against `npm run dev` locally with a seeded database.
 // Set PLAYWRIGHT_BASE_URL to point the same specs at a deployed environment
 // (used by the deploy-verify stage); in that case no local server is started.
 const externalBaseUrl = process.env.PLAYWRIGHT_BASE_URL;
+
+// THE GATE'S DATABASE TARGET IS DECIDED HERE, FIRST (M3-P12 fix round four,
+// CRITERIA finding CR4-M3P12-02). See src/platform/db/gate-target.ts for the
+// the reasoning. Two things happen on this line and both matter:
+//
+//   IT REFUSES a target no source named, and any target that is not a local
+//   stack, by THROWING. A throw out of the config aborts the run before a
+//   web server is spawned and before a worker opens a client, which is the
+//   only moment early enough to be a mechanism rather than a warning.
+//
+//   IT ASSIGNS the approved values into process.env. This file used to spread
+//   `...process.env` into both web servers, and Next's own loader does not
+//   override a variable the shell already carries, so a .env file at the
+//   package root was NOT a pin: the servers talked to whatever the container
+//   held. After this line process.env carries the named target, so the
+//   spreads below and every client any worker constructs resolve to it.
+//
+// IT IS SKIPPED IN DEPLOY-VERIFY MODE, where PLAYWRIGHT_BASE_URL names a
+// deployed app: no server is started there and no database may be opened at
+// all, which the one database-driving spec enforces for itself by skipping.
+const gateDb =
+  externalBaseUrl === undefined ? enforceGateDbTarget() : undefined;
 const baseURL = externalBaseUrl ?? "http://127.0.0.1:3000";
 // The production-mode server (deploy-verify defect round): the owner's
 // production 500 lived in behaviour next dev never exercises (runtime
@@ -86,7 +109,39 @@ export default defineConfig({
         hasTouch: true,
         viewport: { width: 390, height: 844 },
       },
-      testMatch: /(month-view|navigation)\.spec\.ts/,
+      // M3-P9 widens this to carry the pressed, disabled and busy
+      // measurement at 390 by 844 as well as at the desk width, under the
+      // touch emulation this project declares: a held press measured
+      // without hasTouch is a desktop measurement at a phone width, which
+      // is the error class this round exists to avoid.
+      testMatch: /(month-view|navigation|pressed-and-disabled|busy-state)\.spec\.ts/,
+    },
+    // THE PRODUCTION-MODE PHONE PROJECT (M3-P10, decision D-34). The same
+    // chromium mobile descriptor as the project above, bound to the server
+    // this config already builds and starts with `npm run build` and
+    // `npx next start`, because that is the build the owner presses and it
+    // differs from the dev server in exactly the dimension the navigation
+    // measurement turns on: viewport prefetching is disabled in
+    // development, so a pending state proved only against `next dev` proves
+    // nothing about the owner's screen.
+    //
+    // WHAT THIS COSTS, and both halves are real. The production server
+    // refuses a frozen clock by the app's own guard, so prodEnv above drops
+    // PULSE_FIXED_NOW and the spec below must be clock-independent: it
+    // reaches a month through the month view's own query parameter rather
+    // than through whatever month the clock gives. And the phase cannot
+    // close unless the production bundle builds, which is the right gate to
+    // depend on.
+    {
+      name: "chromium-phone-prod",
+      use: {
+        ...devices["Pixel 5"],
+        isMobile: true,
+        hasTouch: true,
+        viewport: { width: 390, height: 844 },
+        baseURL: prodBaseURL,
+      },
+      testMatch: /busy-state\.spec\.ts/,
     },
   ],
   ...(externalBaseUrl
@@ -104,7 +159,7 @@ export default defineConfig({
             // exercise the real production bundle; the timeout covers
             // prisma generate plus next build.
             timeout: 300_000,
-            env: { ...prodEnv, PULSE_DIST_DIR: ".next-prod" },
+            env: { ...prodEnv, ...gateDb, PULSE_DIST_DIR: ".next-prod" },
           },
           {
           command: "npm run dev",
@@ -123,8 +178,13 @@ export default defineConfig({
           // 2026 is the partial current month, August 2026 a closed month
           // compared against July 2026. Parsed by fixedNowOverride in
           // src/platform/config.ts, consumed by appClock only.
+          // The pinned target is spread AFTER process.env, deliberately and
+          // not decoratively: the assignment above already put it there, and
+          // spreading it again means a later edit that reintroduces an
+          // ambient value cannot win by accident.
           env: {
             ...process.env,
+            ...gateDb,
             PULSE_FIXED_NOW: "2026-09-15T12:00:00Z",
           },
           },

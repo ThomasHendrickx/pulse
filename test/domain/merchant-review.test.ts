@@ -8,6 +8,11 @@ import { recomputeInterpretation } from "../../src/modules/ledger/application/in
 import { assignMerchant } from "../../src/modules/merchants/application/assign-merchant";
 import { listMerchantReview } from "../../src/modules/merchants/application/merchant-review";
 import { counterpartyText } from "../../src/modules/merchants/domain/merchant-review";
+import {
+  counterpartyIdentity,
+  isBareIdentityKey,
+  identityBasisOfKey,
+} from "../../src/modules/merchants/domain/counterparty-identity";
 import { normaliseCounterparty } from "../../src/modules/merchants/domain/normalise-counterparty";
 import { foldGroups } from "../../src/modules/overview/domain/month-projection";
 import type { CountedGroupRow } from "../../src/modules/overview/domain/month-projection";
@@ -106,6 +111,15 @@ const importFixture = async (world: World): Promise<void> => {
   if (!detected.ok) {
     throw new Error("detection failed");
   }
+  // SETUP FIRST (M3-P14): the account a statement belongs to is registered
+  // before the file is confirmed. A card carries no own-account column and
+  // registers nothing.
+  await world.registerAccountForStatement(
+    context,
+    fixtureBytes(),
+    detected.value,
+    { label: "Current A", bank: "Demobank", role: "POT" },
+  );
   const confirmed = await confirmImport(context, world.deps, {
     importId: uploaded.importId,
     profileName: "Card descriptors export",
@@ -237,12 +251,22 @@ describe("criterion 6.2: over-stripping is refused", () => {
 });
 
 describe("the key space is closed under the pipeline, which is what makes a stored rule match (hazard H6.4)", () => {
-  // assign-merchant.ts normalises the submitted subject AGAIN before storing
-  // it, and the review form submits the already-normalised key, so a key the
-  // pipeline would strip further becomes a stored EXACT rule that matches
-  // NOTHING while every total stays right. This is the invariant, asserted
-  // over every group the fixture produces rather than over one example.
-  test("normalising any group's submitted subject returns that subject unchanged", async () => {
+  // CORRECTED IN M3-P12, LOUDLY RATHER THAN QUIETLY (clause R-087). This
+  // block used to say "assign-merchant.ts normalises the submitted subject
+  // AGAIN before storing it", and asserted that normalising any submitted
+  // subject returns it unchanged. Both halves are now FALSE and the second
+  // one would be actively harmful if left: assignMerchant stores the subject
+  // VERBATIM since M3-P12, because the subject is a counterparty identity
+  // key whose namespace is lowercase and normalising it would upper-case the
+  // namespace into a string no derivation can produce.
+  //
+  // The invariant the old test was protecting is real and survives in the
+  // form below: what must be a fixed point of the pipeline is the DESCRIPTOR
+  // SUFFIX, since that is the part the derivation recomputes on every read.
+  // An account-basis subject is not normalised at any point, by anything, so
+  // there is nothing for it to be closed under; what guards it instead is
+  // the trust gate.
+  test("every group's submitted subject is a namespaced identity key, and its descriptor suffix is a fixed point of the pipeline", async () => {
     const world = await importedWorld();
     const review = await reviewOf(world);
     const subjects = [...review.income, ...review.spend]
@@ -250,7 +274,12 @@ describe("the key space is closed under the pipeline, which is what makes a stor
       .filter((subject): subject is string => subject !== undefined);
     expect(subjects.length).toBeGreaterThan(0);
     for (const subject of subjects) {
-      expect(normaliseCounterparty(subject), subject).toBe(subject);
+      const basis = identityBasisOfKey(subject);
+      expect(basis, subject).toBeDefined();
+      if (basis === "descriptor") {
+        const suffix = subject.slice("descriptor:".length);
+        expect(normaliseCounterparty(suffix), subject).toBe(suffix);
+      }
     }
   });
 
@@ -345,12 +374,16 @@ describe("criterion 6.3: no card number in a key, in a rendered label, or on eit
       merchantName: null,
       primaryTag: null,
       counterpartyText: counterpartyText(row),
+      counterpartyAccount:
+        row.counterpartyIban === undefined ? null : row.counterpartyIban,
       isCash: false,
       totalCents: row.amountCents as Cents,
       rowCount: 1,
     }));
     const folded = foldGroups(rows, {
       useTags: false,
+      identity: counterpartyIdentity,
+      isBareKey: isBareIdentityKey,
       normalise: normaliseCounterparty,
     });
     const carryingMonth: string[] = [];
@@ -450,10 +483,14 @@ describe("criterion 6.3: no card number in a key, in a rendered label, or on eit
       if (group.counterpartyText === undefined) {
         continue;
       }
-      // The submitted subject is the UNMASKED normalised text. Masking it
-      // would produce an EXACT rule that matches nothing (hazard H6.4).
+      // The submitted subject is the UNMASKED identity key. Masking it would
+      // produce an EXACT rule that matches nothing (hazard H6.4). Every row
+      // of this card fixture carries no counterparty account, so every
+      // subject here is descriptor-basis and its suffix is the label.
       expect(group.counterpartyText).not.toContain("****");
-      expect(group.counterpartyText).toBe(normaliseCounterparty(group.label));
+      expect(group.counterpartyText).toBe(
+        `descriptor:${normaliseCounterparty(group.label)}`,
+      );
     }
   });
 });
@@ -666,6 +703,16 @@ describe("every rendering surface that shows descriptor text is derived, not rem
       expression: "landingAccount?.label",
       why: "The same declared account label on the landing branch of the same route.",
     },
+    {
+      file: "modules/accounts/ui/account-setup-form.tsx",
+      expression: "row.label",
+      why: "The VALUE of the setup form's own label input, held in the client island's state: text the household is typing right now, never parsed from a statement line (M3-P14).",
+    },
+    {
+      file: "modules/accounts/ui/accounts-screen.tsx",
+      expression: "account.label",
+      why: "The account's DECLARED label on the accounts list, typed by the household at setup, never parsed from a statement line (M3-P14).",
+    },
   ];
 
   const collectSourceFiles = (dir: string): readonly string[] => {
@@ -737,19 +784,24 @@ describe("every rendering surface that shows descriptor text is derived, not rem
   }
 
   test("the walk finds surfaces at all, so a broken walk cannot pass by finding nothing", () => {
-    // TEN leaf sites in FOUR files at this head: five masked and five
+    // TWELVE leaf sites in SIX files at this head: five masked and seven
     // declared exclusions. The round-1 grep recorded eight in three and did
     // not reproduce; this walk also reaches a file that grep never saw, the
     // import route, which renders TWO declared account labels rather than
     // the one this comment used to count.
+    //
+    // UPDATED IN M3-P14 (was ten in four): the accounts screen and its
+    // setup form render the household's OWN declared account labels, which
+    // are typed by the household and never parsed from a statement, so both
+    // join the exclusion table with their reason rather than being masked.
     //
     // CORRECTED IN PLACE (clause R-087, finding CR-M3P6-10). This comment
     // said NINE and the walk returned TEN, and the assertion below was a
     // FLOOR, so the recorded number could drift from the measured one with
     // nothing going red: the same mechanism this test exists to eliminate,
     // one level up. The assertion is now EXACT.
-    expect(surfaces.length).toBe(10);
-    expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(4);
+    expect(surfaces.length).toBe(12);
+    expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(6);
     expect(surfaces.filter((surface) => surface.masked).length).toBe(5);
   });
 

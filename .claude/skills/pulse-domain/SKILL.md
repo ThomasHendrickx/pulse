@@ -126,14 +126,31 @@ One file is one account. A file containing rows from more than one account fails
 
 ## 7. Merchant resolution
 
+**What a rule matches on is the counterparty IDENTITY, not the transaction's free text** (M3-P12, DR-0027). This is the whole point of the chain and it used to be wrong here: the first step said "exact match on normalised counterparty string", and for a transfer row that string is the whole description, communication and per-transaction reference included, so a naming matched the one row it was written from and never the next one.
+
+The identity is one pure function, `counterpartyIdentity` in the merchants domain, and it returns a NAMESPACED key with two bases:
+
+- `account:<COMPACT UPPERCASE ACCOUNT>` where the row carries a counterparty account **and that account is TRUSTED**. Nothing else is consulted: not the name, not the description, not the communication. The same account is the same counterparty, always. The accepted cost is that two purposes paid to one counterparty land in one group; separating them is a tag question.
+- `descriptor:<normaliseCounterparty(counterpartyText(row))>` otherwise, which is exactly the key that row had before.
+
+**TRUSTED is three tests and a value failing any of them is not trusted**: non-empty after uppercasing and whitespace removal; a length exactly equal to what the pinned ISO 13616 country-length table assigns its country code, with a country code the table does not carry REFUSED rather than admitted; and the ISO 7064 mod-97 check. The gate exists because the counterparty account is not a structured field on the PDF path: it is a regex scrape out of free text that nothing else validates, and a longer-than-Belgian account written spaced is stored as a sixteen-character PREFIX of itself.
+
+**What the gate does NOT close, and it is not a detail.** The length test closes truncation deterministically only where the truncated value's country code carries a table length other than sixteen, which is every non-Belgian source. A BELGIAN-PREFIXED over-long token written in spaced groups truncates to a sixteen-character value whose country code is BE and whose length is BE's own table length, so the length test cannot fire and the mod-97 check alone stands, with a residual of roughly one in ninety-seven. Two such sources differing only after the sixteenth character therefore CAN share one account key. This is demonstrated on invented values and pinned by a counterexample test; it is open, not solved. Closing it means refusing a scrape match whose next characters continue the bank's four-digit-group grammar, which is a change to the importer's template and therefore a layout version bump and a re-parse of every stored source. The parked item that owns the scrape's ambiguity is hazard H12.16 in the v0.2 plan.
+
+**Falling back is always safe and merging never is.** A refused account keeps the descriptor key the row already had, which is a VISIBLE failure to converge, and the owner recovers from it by naming again. Admitting a bad account merges two counterparties' money into one group with nothing on screen to say so, and the owner cannot recover from that because they cannot see it. Every uncertain case falls to the visible side.
+
+The namespaces are lowercase on purpose: `normaliseCounterparty` uppercases its input, so it can never emit either namespace and the two key spaces are collision-free by construction rather than by inspection.
+
 A chain behind one port, first confident answer wins:
 
-1. Exact match on normalised counterparty string, from `MerchantRule`.
-2. Prefix and pattern match, from `MerchantRule`.
+1. Exact match on the counterparty IDENTITY key, from `MerchantRule`.
+2. Prefix and pattern match, from `MerchantRule`. **PREFIX and PATTERN never apply to an account-basis key**: a prefix of an account number is a different account, and a glob over one merges counterparties. The matcher refuses both, reading the basis off the key's own namespace. No product surface writes either kind today; both are reserved for the slice-5 accepted-answer path below.
 3. Claude, batched, slice 5 onward.
 4. Unresolved.
 
-Normalise before matching: uppercase, strip payment terminal noise, strip city and date fragments, collapse whitespace. Much of what looks like a matching problem is dirty strings that normalise identically.
+Normalise before matching on the DESCRIPTOR basis: uppercase, strip payment terminal noise, strip city and date fragments, collapse whitespace. Much of what looks like a matching problem is dirty strings that normalise identically. The account basis normalises nothing; the trust gate is what stands in its place.
+
+`assignMerchant` stores the identity key VERBATIM as the rule subject and validates the namespace at the write boundary: a subject carrying no known namespace, or an account subject the trust gate refuses, is a typed error that reaches the reader rather than a rule that can never match.
 
 The Claude call takes **distinct unresolved strings** for an import, not transactions. Thirty new merchants across four hundred rows is one call with thirty items. Below-threshold answers go to the review queue, never into the numbers.
 

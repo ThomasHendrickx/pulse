@@ -16,12 +16,46 @@ export type CountedGroupRow = {
   readonly merchantName: string | null;
   readonly primaryTag: string | null;
   readonly counterpartyText: string;
+  // M3-P12: the counterparty ACCOUNT the read now returns beside the text,
+  // so this fold can key on the same counterparty IDENTITY the merchant
+  // review keys on. Null where the row carries none.
+  readonly counterpartyAccount: string | null;
   readonly isCash: boolean;
   readonly totalCents: Cents;
   readonly rowCount: number;
 };
 
+// The counterparty identity as this fold consumes it. STRUCTURAL on purpose:
+// the derivation lives in the merchants domain and is injected by the
+// application layer, exactly as the normaliser it replaces was, so the
+// overview module still imports nothing from merchants.
+export type CountedGroupIdentity = (input: {
+  readonly description: string;
+  readonly counterpartyAccount?: string;
+}) => { readonly key: string; readonly basis: "account" | "descriptor" };
+
+// STRUCTURAL, like the identity beside it: the predicate lives in the
+// merchants domain and is injected by the application layer, so the overview
+// module still imports nothing from merchants.
+export type CountedGroupBareKey = (key: string) => boolean;
+
 export type OverviewGroupKind = "tag" | "merchant" | "cash" | "unresolved";
+
+// WHETHER AN UNRESOLVED GROUP CAN BE NAMED AT ALL (fix round three, finding
+// CR3-M3P12-06, THE FIFTH CONSUMER). The derivation's floor says a bare
+// namespace is not an identity, and round two enforced that at the matcher,
+// the write boundary and the merchant review. The month view was the one
+// place that took an identity and applied no guard: two rows carrying no
+// counterparty information at all landed in ONE group whose LABEL is the
+// empty string, with their money summed and a row count beside it, counted
+// into the unresolved pill as work the reader is being asked to do.
+//
+// THE MONEY STAYS IN THE MONTH, so the group is not dropped and the rows are
+// not refused the way the matcher refuses them: a total that silently loses
+// rows would be a worse answer than a blank one. What changes is that the
+// group says why it cannot be named, and the UI renders that instead of an
+// empty label.
+export type OverviewUnnameableReason = "no-counterparty-text";
 
 export type OverviewGroup = {
   readonly key: string;
@@ -30,6 +64,10 @@ export type OverviewGroup = {
   // ("cash" is a destination the UI names in the viewer's language), and
   // an English label baked here could not be.
   readonly label: string;
+  // Present only on an unresolved group the reader cannot name (fix round
+  // three, finding CR3-M3P12-06). The UI renders the reason where a name
+  // would have been.
+  readonly unnameableReason?: OverviewUnnameableReason;
   // Signed as stored: spend groups are negative, income groups positive.
   readonly totalCents: Cents;
   readonly rowCount: number;
@@ -50,16 +88,25 @@ export const foldGroups = (
   options: {
     readonly useTags: boolean;
     readonly normalise: (text: string) => string;
+    readonly identity: CountedGroupIdentity;
+    readonly isBareKey: CountedGroupBareKey;
   },
 ): readonly OverviewGroup[] => {
   const groups = new Map<
     string,
-    { kind: OverviewGroupKind; label: string; total: number; rowCount: number }
+    {
+      kind: OverviewGroupKind;
+      label: string;
+      unnameableReason?: OverviewUnnameableReason;
+      total: number;
+      rowCount: number;
+    }
   >();
   for (const row of rows) {
     let key: string;
     let kind: OverviewGroupKind;
     let label: string;
+    let unnameableReason: OverviewUnnameableReason | undefined;
     if (row.isCash) {
       key = "cash";
       kind = "cash";
@@ -77,22 +124,45 @@ export const foldGroups = (
       kind = "merchant";
       label = row.merchantName ?? "";
     } else {
-      const normalised = options.normalise(row.counterpartyText);
-      key = `text:${normalised}`;
+      // The unresolved key is the counterparty IDENTITY, still under this
+      // fold's own `text:` prefix so the overview's four key spaces stay
+      // disjoint. The identity key carries its own namespace inside it, so
+      // an account group and a descriptor group can never collide.
+      const normalisedText = options.normalise(row.counterpartyText);
+      const identity = options.identity({
+        description: row.counterpartyText,
+        ...(row.counterpartyAccount === null
+          ? {}
+          : { counterpartyAccount: row.counterpartyAccount }),
+      });
+      key = `text:${identity.key}`;
       kind = "unresolved";
-      label = normalised;
+      unnameableReason = options.isBareKey(identity.key)
+        ? "no-counterparty-text"
+        : undefined;
+      // THE LABEL IS UNCHANGED BY M3-P12: still the normalised counterparty
+      // text. An account-basis group now holds several of them, and the one
+      // shown is the lexicographically smallest, which is the same rule the
+      // merchant review builder applies, so the two screens agree without
+      // depending on the order rows leave SQL in. Naming the group properly
+      // is decision D-41 and belongs to M3-P13.
+      label = normalisedText;
     }
     const existing = groups.get(key);
     if (existing === undefined) {
       groups.set(key, {
         kind,
         label,
+        ...(unnameableReason === undefined ? {} : { unnameableReason }),
         total: row.totalCents,
         rowCount: row.rowCount,
       });
     } else {
       existing.total += row.totalCents;
       existing.rowCount += row.rowCount;
+      if (kind === "unresolved" && label < existing.label) {
+        existing.label = label;
+      }
     }
   }
   return [...groups.entries()]
@@ -100,6 +170,9 @@ export const foldGroups = (
       key,
       kind: entry.kind,
       label: entry.label,
+      ...(entry.unnameableReason === undefined
+        ? {}
+        : { unnameableReason: entry.unnameableReason }),
       totalCents: cents(entry.total),
       rowCount: entry.rowCount,
     }))

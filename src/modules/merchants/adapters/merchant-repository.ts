@@ -114,6 +114,99 @@ export const upsertRule = async (
   };
 };
 
+// REMOVED IN M3-P12's THIRD FIX ROUND, finding CR3-M3P12-07: updateRulePattern
+// lived here as a bare updateManyAndReturn outside any transaction, with a
+// comment saying pass one of the re-derivation writes through it. Both halves
+// went false when the fix round moved the whole write set onto applyRuleWrites
+// below, and a declaration rewrite outside a transaction is exactly the thing
+// that round bought. It is gone rather than kept with a corrected comment, so
+// there is one write path for a declaration and it is the atomic one.
+
+export const applyRuleWrites = async (
+  context: HouseholdContext,
+  input: {
+    readonly updates: readonly { readonly ruleId: string; readonly pattern: string }[];
+    readonly inserts: readonly {
+      readonly merchantId: string;
+      readonly kind: MerchantRuleKind;
+      readonly pattern: string;
+    }[];
+  },
+): Promise<void> => {
+  if (input.updates.length === 0 && input.inserts.length === 0) {
+    return;
+  }
+  // THE INTERACTIVE FORM, so the tenancy check can throw from INSIDE the
+  // transaction (fix round three, finding CR3-M3P12-04). The batch form ran
+  // every statement and returned, and the household check then ran on the
+  // results, AFTER the commit: on the one path that check exists for, a rule
+  // id belonging to another household, the caller got an exception and the
+  // inserts had already landed. A guard that fires after the row exists has
+  // not enforced anything, and CLAUDE.md non-negotiable 6 is not a message,
+  // it is a rule about what reaches the table. Throwing inside the callback
+  // makes the rollback the database's.
+  await prisma.$transaction(async (tx) => {
+    for (const update of input.updates) {
+      // Household ownership is verified in the SAME statement as the write.
+      const result = await tx.merchantRule.updateMany({
+        where: { id: update.ruleId, householdId: context.householdId },
+        data: { pattern: update.pattern },
+      });
+      if (result.count === 0) {
+        throw new Error(
+          "applyRuleWrites: one or more rules did not belong to the household",
+        );
+      }
+    }
+    // THE INSERT HALF'S OWN TENANCY CHECK (fix round four, finding
+    // HAZARD finding CR4-M3P12-03). The update loop above verifies ownership
+    // statement as the write; this loop verified nothing at all. A rule row
+    // carries the CALLING household's id in its own column, so every read
+    // that filters on householdId still finds it, but its merchantId pointed
+    // wherever the caller said: the schema's foreign key on
+    // MerchantRule.merchantId references Merchant.id with no household
+    // component, so the database permits a declaration in household A that
+    // names a merchant owned by household B. WITNESSED against real Postgres
+    // before this fix: a cross-household insert succeeded, threw nothing, and
+    // created the row. CLAUDE.md non-negotiable 6 is not a severity
+    // judgement, so this is not one either.
+    //
+    // upsertRule, above in this same file, has always made exactly this
+    // check and calls a foreign merchantId "a bug or an attack". The fake
+    // repository the fast gate binds routes its inserts through upsertRule,
+    // so the fake was STRICTER than the adapter it stands in for and could
+    // not have caught this: the real-database spec is what pins it, with an
+    // INSERT submitted ALONE so the update loop cannot throw first.
+    const insertedMerchantIds = [
+      ...new Set(input.inserts.map((insert) => insert.merchantId)),
+    ];
+    if (insertedMerchantIds.length > 0) {
+      const owned = await tx.merchant.findMany({
+        where: {
+          id: { in: insertedMerchantIds },
+          householdId: context.householdId,
+        },
+        select: { id: true },
+      });
+      if (owned.length !== insertedMerchantIds.length) {
+        throw new Error(
+          "applyRuleWrites: one or more inserted rules point at a merchant that does not belong to the household",
+        );
+      }
+    }
+    for (const insert of input.inserts) {
+      await tx.merchantRule.create({
+        data: {
+          householdId: context.householdId,
+          merchantId: insert.merchantId,
+          kind: insert.kind,
+          pattern: insert.pattern,
+        },
+      });
+    }
+  });
+};
+
 export const findTagByName = async (
   context: HouseholdContext,
   name: string,
@@ -237,6 +330,11 @@ export const listCountedTransactions = async (
       amountCents: true,
       description: true,
       counterpartyName: true,
+      // M3-P12: the review keys on the counterparty IDENTITY, whose account
+      // branch reads this column. It was not selected before this phase,
+      // which is why the structured account the importer already stored
+      // reached merchant identity through nothing.
+      counterpartyIban: true,
       merchantId: true,
     },
     orderBy: [{ bookingDate: "asc" }, { id: "asc" }],
@@ -256,6 +354,9 @@ export const listCountedTransactions = async (
         ...(row.counterpartyName === null
           ? {}
           : { counterpartyName: row.counterpartyName }),
+        ...(row.counterpartyIban === null
+          ? {}
+          : { counterpartyAccount: row.counterpartyIban }),
         ...(row.merchantId === null ? {} : { merchantId: row.merchantId }),
       },
     ];
