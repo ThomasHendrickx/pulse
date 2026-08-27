@@ -1,0 +1,821 @@
+# Adversarial plan review of the M0-P6 plan iteration: phases M3-P14 and
+# M3-P15 of delivery/plan/pulse-v02.yaml (lines 7448 and 7916), reviewer
+# worktree wt-m0p6-adv, branch claude/m0-p6-plan-review, plan head b38cd02,
+# grounded at 75ec85d.
+#
+# WHY THIS DOCUMENT IS A FINDING SET AND NOT A VERDICT. The dispatch asked
+# for `tiphys validate --type verdict`. That type is not reachable for a
+# PLAN review in this repository, for two reasons, one mechanical and one
+# semantic. Mechanical, captured:
+#
+#   $ npx tiphys validate --type verdict --context /home/user/wt-m0p6-adv \
+#       /home/user/wt-m0p6-adv/delivery/review/m0-p6-plan-review.yaml
+#   INVALID #/criteria the plan could not be read, so completeness against
+#     phase M3-P14 could not be checked:
+#     /home/user/wt-m0p6-adv/plan.yaml does not exist
+#     (check: verdict-criteria-complete)
+#   INVALID #/deviations-judged the work history could not be read, so the
+#     declared deviations could not be compared:
+#     /home/user/wt-m0p6-adv/work-history.yaml does not exist
+#     (check: verdict-deviations-judged)
+#   INVALID #/hazard-classes-addressed the plan could not be read ...
+#     (check: verdict-hazard-classes-addressed)
+#   INVALID #/produced-by ... assurance-modes.yaml could not be read ...
+#     (check: dual-review-decorrelation)
+#
+# The kernel's three verdict completeness checks read plan.yaml and
+# work-history.yaml from FIXED relative paths in the context directory
+# (node_modules/@tiphys/kernel/dist/src/checks.js:2021 readVerdictPlanPhase,
+# :2105 verdictDeviationsJudged), and this repository keeps its plan at
+# delivery/plan/pulse-v02.yaml. Semantic, and decisive: a verdict judges an
+# IMPLEMENTED phase, so `deviations-judged` compares against the phase work
+# history. M3-P14 and M3-P15 have no work history because they have not been
+# built; there is nothing to compare and inventing a context directory to
+# make the validator agree would be fabricating the other document. The role
+# brief's own mandated output is `schemas/finding.schema.json`, and the
+# precedent adversarial plan reviews in this same directory
+# (pulse-v02-plan-adversarial.yaml, pulse-v1-plan-adversarial.yaml) are
+# finding sets. This document validates at exit 0 under --type finding.
+#
+# work-log (incremental, newest last):
+# - created this file as a beacon before deep reading
+# - read both role briefs in full, schemas/verdict.schema.json,
+#   schemas/finding.schema.json, and the kernel's checks.js verdict checks
+# - probed the verdict type with a stub document; captured output above
+# - read both phases verbatim from delivery/plan/pulse-v02.yaml (7448-7915,
+#   7916-8352) and confirmed they match the briefs word for word
+# - repository verification pass, every claim below read at the worktree
+#   head: classify-flow.ts (reserve arm :64, pot arm :75, sign fallback
+#   :102-:107); ledger-transaction.ts deriveDeclaredSets :48-:70;
+#   application/interpret-window.ts :35-:39 (pot accounts only) and
+#   :106-:128 (merchant nulls for non-counted rows); confirm-import.ts
+#   :86-:99 (findAccountByIban then declareAccount with the FILE's raw
+#   value); accounts/application/ports.ts :23-:38 (four functions, no
+#   update); accounts.prisma @@unique([householdId, iban]) on the raw
+#   column; overview-repository.ts :171-:176 (reserves label join),
+#   :219 changeInPot, :230 uninterpretedCount; month-projection.ts
+#   :201 difference, :208-:213 reconciles; merchant-review.ts :79-:95
+#   (group key and label), normalise-counterparty.ts :94-:97
+#   counterpartyText and :365-:366 collapseWhitespace; merchant-review.tsx
+#   :28-:36 (unresolved-group, group-label); mask-card-number.ts (label
+#   anchored, and its own note that the reserves group label may be a
+#   counterparty account); month-view.tsx :354-:361 recon-cause-
+#   uninterpreted and :514 pot-change; layout.tsx :48-:58 three nav links;
+#   globals.css :165-:190 .app-nav flex 1 1 0; month-view.spec.ts :356
+#   TAP_MIN, :618-:643 tapTargetOffenders (HEIGHT only), :676-:706
+#   clippingOffenders (main only), :1371-:1404 the existing reserve upload;
+#   package.json gate:tokens (greps src/modules/*/ui only);
+#   scripts/gate-privacy.sh identifier patterns; messages/en.json
+#   uninterpretedCause
+# - executed one arithmetic probe rather than asserting it:
+#     $ node -e 'const c=t=>t.replace(/\s+/g," ").trim(); ...'
+#     "<four groups, spaced>" compact= "<sixteen characters>" equal= false
+#   so a spaced account number normalised by the merchants pipeline is NOT
+#   the compact canonical form (finding PR6-008). No account-shaped token is
+#   written into this file: gate:privacy scans the TREE, and an unlisted
+#   shape here would fail it.
+# - THE END-STATE WALK, stated plainly because the dispatch asked for it.
+#   For the eight accounts that carry an account number the plan does reach
+#   the owner's end state, and it reaches it by construction rather than by
+#   possibility: registration writes a declaration, deriveDeclaredSets picks
+#   it up, classify-flow.ts:64 and :75 fire before the sign rule at :102, and
+#   interpret-window.ts:106-:128 gives INTERNAL and RESERVE rows a null
+#   merchant, so they cannot appear on the naming screen at all. Criterion
+#   14.5 covers the half-imported world in the ONE direction that matters
+#   most (rows imported first, accounts registered after, healed by an
+#   unbounded recompute with no fact rewritten). For the two cards the plan
+#   does NOT reach the end state and says so in criterion 14.6 rather than
+#   hiding it, which is the right shape. What the walk does not survive is
+#   listed below: five ways to satisfy every criterion and still leave the
+#   owner short of the end state, three criteria that a correct
+#   implementation cannot satisfy as written, and three hazard classes whose
+#   named guard cannot see the thing the class fears.
+kind: finding
+verdict: FIX-ROUND-NEEDED
+produced-by: claude (Opus 5, claude-opus-5)
+findings:
+  - id: PR6-001
+    severity: high
+    evidence:
+      - >-
+        M3-P14 criterion 14.3 makes a later import of an already registered
+        account ADOPT it ("the household holds exactly one account
+        afterwards, that the ingested rows carry that account's id"), and
+        names no ring. Registration reaches the RESERVE ring by criterion
+        14.2. So "register the savings account, then upload its statement"
+        becomes a supported path in this phase.
+      - >-
+        src/modules/ledger/application/interpret-window.ts:35-39 builds
+        windowedAccountIds from sets.potAccountIds only, and
+        src/modules/ledger/domain/ledger-transaction.ts:56-60 puts a RESERVE
+        account in neither potAccountIds nor cardAccountIds, so rows on a
+        reserve account are never loaded and never interpreted.
+      - >-
+        src/modules/overview/adapters/overview-repository.ts:230 counts
+        every row with a NULL flow as uninterpretedCount with no account
+        filter, and src/modules/overview/domain/month-projection.ts:208-213
+        makes reconciles require uninterpretedCount === 0. The month
+        therefore never closes again, for every month those rows fall in.
+      - >-
+        messages/en.json uninterpretedCause tells the owner "Pulse includes
+        them when interpretation next covers the period, for example after
+        the next import touching this account". For a reserve account that
+        sentence is false forever: no import ever makes interpretation cover
+        it.
+      - >-
+        The state is already reachable at the head and nothing measures it:
+        test/e2e/month-view.spec.ts:1377 uploads a second file declaring a
+        RESERVE account and the spec asserts nothing about the verdict, the
+        uninterpreted count or the cause block.
+      - >-
+        No criterion in 14.1 through 14.10 mentions the verdict, the
+        uninterpreted count or an import onto a reserve account, and no
+        hazard class H14.1 through H14.9 names it. M3-P15 step 4 and
+        criterion 15.3 fix it, and M3-P15 runs strictly AFTER M3-P14 by this
+        phase's own conflicts-with entry.
+    concrete-edit: >-
+      Add criterion 14.11 to M3-P14: "AN IMPORT ONTO A REGISTERED RESERVE
+      ACCOUNT DOES NOT LEAVE THE BOOKS OPEN FOREVER. A Playwright test
+      registers a reserve account, then uploads a statement whose own account
+      number is that account, and asserts the state the owner is left in.
+      EITHER the confirm path refuses the import with a named error whose
+      catalogue copy, present in all three catalogues, says a reserve
+      account's statements are not imported in v1 and names correcting the
+      ring as what changes that, and the existing reserve upload at
+      test/e2e/month-view.spec.ts:1377 is updated in the same phase because
+      it performs exactly this act today; OR the import is admitted and the
+      test asserts the month view's verdict still reads as books closing and
+      recon-cause-uninterpreted is absent, which requires the pot-scoping of
+      uninterpretedCount that M3-P15 step 4 describes to be brought forward
+      into this phase. The phase picks one and records which in a decision."
+      Add hazard class H14.10: "A household registers a savings account and
+      then uploads its statement, the rows land uninterpreted because
+      interpretation loads pot accounts only, and the month never closes
+      again while the cause copy promises a healing that cannot happen",
+      addressed-by criterion 14.11.
+    analysis: >-
+      This is the dispatch's third attack and the answer is that the plan
+      does not face it. Registering four reserve accounts and importing
+      nothing is safe: no rows exist, so uninterpretedCount stays zero. The
+      damage arrives one natural act later, and M3-P14 is the phase that
+      makes that act frictionless: before it, a reserve account could only
+      come into existence by declaring RESERVE at import time, which is a
+      wrong answer on a form; after it, the owner has deliberately
+      registered four savings accounts, has the statements, and the adoption
+      rule of 14.3 quietly turns "upload them too" into rows on an account
+      the engine will not look at. Every acceptance criterion of M3-P14 can
+      be green in that state. The phase order makes this worse rather than
+      better, because the fix lives in the phase that runs next.
+  - id: PR6-002
+    severity: high
+    evidence:
+      - >-
+        M3-P15 criterion 15.1 reads: "registers a savings account in the POT
+        ring by mistake, imports the M3-P14 fixture, records spend-total and
+        reserves-net as strings, corrects the ring to RESERVE ... and asserts
+        with no further upload that spend-total has fallen and reserves-net
+        has risen by exactly the fixture's movements to that account".
+      - >-
+        The M3-P14 fixture is a CURRENT-ACCOUNT fixture (criterion 14.1: "one
+        new invented current-account fixture whose rows carry transfers to
+        seven distinct other accounts"), so the mis-declared savings account
+        owns no rows in it; it appears only as a counterparty.
+      - >-
+        src/modules/ledger/domain/classify-flow.ts:73-77 returns INTERNAL for
+        any row whose counterparty account is in the declared POT set, and it
+        runs BEFORE the sign fallback at :102. An account registered POT
+        carrying an account number (which M3-P14 criterion 14.6 makes
+        mandatory: the form has no path that submits an account without one)
+        therefore makes those rows INTERNAL, never SPEND.
+      - >-
+        src/modules/overview/adapters/overview-repository.ts:217 sums
+        spend-total over flow = 'SPEND' only, so spend-total is identical
+        before and after the correction and cannot fall.
+      - >-
+        Before the correction the household has no RESERVE row at all, so
+        reserves-net is not rendered: test/e2e/month-view.spec.ts:1402-1403
+        pins that the reserves card shows no-reserves until it has a row, and
+        the criterion asks the test to record reserves-net as a string at
+        that moment.
+    concrete-edit: >-
+      Replace 15.1's first sentence with: "A Playwright test registers a
+      savings account in the POT ring by mistake, imports the M3-P14 fixture,
+      records spend-total, pot-change, reserves-net-or-its-absence and
+      recon-cause-unmatched as strings, corrects the ring to RESERVE, and
+      asserts with no further upload that the rows referencing that account
+      have moved from the unmatched-internal cause to the reserves block:
+      reserves-net rises by exactly the fixture's movements to that account,
+      recon-cause-unmatched falls by exactly those rows, and spend-total is
+      byte identical before and after, all compared against strings written
+      by hand in the spec from the fixture's own arithmetic." Then add a
+      second arm for the direction the criterion was reaching for and which
+      the fixture cannot produce on its own: "A second case imports a
+      statement for an account declared RESERVE by mistake whose own rows are
+      ordinary outside spend, corrects it to POT, and asserts spend-total
+      RISES by exactly those rows", which is the only construction in which a
+      ring correction moves the spend total.
+    analysis: >-
+      The criterion was written from the intent ("a wrong ring moves money
+      between spend and reserves") without walking the classification order
+      it lands on. Two independent failures, either fatal: an account
+      declared POT never contributes to spend through its counterparty rows,
+      and the figure the test is told to record before the correction is not
+      on the page. An implementer meeting this criterion honestly must
+      rewrite it, and the danger is the other repair: making a wrongly ringed
+      account's transfers SPEND so the criterion goes green, which would put
+      the household's own transfers back in the spend total, that is, exactly
+      the defect this whole round exists to remove.
+  - id: PR6-003
+    severity: high
+    evidence:
+      - >-
+        M3-P14 criterion 14.8 ends: "A fourth test imports a companion
+        fixture carrying the partner legs and asserts the cause block
+        disappears, the count reaches zero and no money figure on the screen
+        moves."
+      - >-
+        src/modules/overview/adapters/overview-repository.ts:219 defines
+        changeInPot as SUM(amountCents) FILTER (WHERE flow IS NOT NULL) over
+        the whole household. The partner legs are new rows with a non-null
+        flow, so importing them changes changeInPot by their sum, which is
+        the negation of the first account's legs.
+      - >-
+        src/modules/overview/ui/month-view.tsx:514 renders changeInPot as a
+        money figure with data-testid pot-change, and M3-P15 criterion 15.4
+        names pot-change among the golden journey's asserted strings, so it
+        is a money figure on the screen by this plan's own reckoning.
+      - >-
+        src/modules/overview/domain/month-projection.ts:201 computes
+        difference as changeInPot - (income - spend - netToReserves). Before
+        the companion import the difference equals the unmatched leg total
+        and renders as recon-difference (month-view.tsx:312, alarm: true);
+        after it the difference is zero and the element is absent. That is a
+        money figure moving, and it is the figure the criterion's own first
+        half is about.
+    concrete-edit: >-
+      Replace the last sentence of 14.8 with: "A fourth test imports a
+      companion fixture carrying the partner legs and asserts that
+      recon-cause-unmatched is absent, that the unmatched count reaches zero,
+      that income-total, spend-total and reserves-net are byte identical to
+      the strings recorded before that import, that pot-change moves by
+      exactly the sum of the partner legs (a string written by hand in the
+      spec), and that recon-difference is absent where it previously rendered
+      the unmatched total. The three counted totals are the figures that must
+      not move; pot-change and the difference MUST move, because the household
+      gained the other side of its own transfers, and a test that asserted
+      otherwise would be asserting the identity is broken."
+    analysis: >-
+      As written a correct implementation cannot pass this criterion, so the
+      implementer will discover it red at the end of the phase and weaken it
+      under time pressure, which is how a criterion stops being a contract.
+      The wording also teaches the wrong invariant: pairing an internal
+      transfer is supposed to move changeInPot and close the difference, and
+      a plan that says otherwise invites someone to make changeInPot ignore
+      pairs.
+  - id: PR6-004
+    severity: high
+    evidence:
+      - >-
+        M3-P14 step 3 specifies the form as "a label, a bank, a ring and an
+        account number" and no criterion 14.1 through 14.10 requires the
+        typed account number to be VALID. Criterion 14.4 requires only
+        idempotence, one canonical form across surface renderings, and that
+        "a string that is not an account number is returned unchanged rather
+        than mangled".
+      - >-
+        src/modules/ledger/domain/classify-flow.ts:62-77 matches a
+        counterparty account by set membership, so a registration carrying
+        one wrong character matches nothing at all. The result is
+        indistinguishable from not having registered: the transfer falls
+        through to the sign rule at :102, lands in the spend total, and is
+        offered on the naming screen, with no message anywhere.
+      - >-
+        The determinism the fix needs is already decided and already
+        specified in this same plan: DR-0028, and M3-P12 step at plan line
+        6328-6336, define a trustworthy account as non-empty after
+        uppercasing and whitespace removal, of exactly the length the pinned
+        country-length table assigns its country code (a country the table
+        does not carry is REFUSED), and passing the ISO 7064 mod-97 check.
+        M3-P12 criterion 12.16 tests exactly those four refusals.
+      - >-
+        The owner types seven of these by hand from paper documents on a
+        phone-first product (DR-0021, the owner is on Android), which is the
+        population where a transposed pair of digits is expected rather than
+        unlikely.
+    concrete-edit: >-
+      Add to M3-P14 step 2, after the sentence about normalising a
+      declaration on the way in: "The same platform module carries the
+      DETERMINISTIC validity test DR-0028 settles, the pinned country-length
+      table and the ISO 7064 mod-97 check, because a canonical form that
+      cannot say whether a string is an account number can only be applied
+      blindly." Add criterion 14.11a: "A REGISTRATION THE ENGINE CANNOT USE
+      IS REFUSED AT THE FORM, NOT ACCEPTED SILENTLY. The server action
+      refuses an account number that is empty after canonicalisation, whose
+      country code the pinned table does not carry, whose length differs from
+      the length that table assigns its country code, or that fails the ISO
+      7064 mod-97 check, with a named error rendered in all three
+      catalogues; an application test asserts each of the four refusals over
+      wholly invented inputs, and a Playwright test asserts the owner sees
+      the message and no account row is created." Add hazard class H14.11:
+      "The owner mistypes one character of an account number, registration
+      succeeds, and the account is silently never matched by anything, which
+      is the original defect with a new cause", addressed-by criterion
+      14.11a.
+    analysis: >-
+      This is the difference between a plan that makes the end state possible
+      and one that delivers it. Every other criterion in the phase is written
+      over a fixture whose account numbers are correct by construction, so
+      the entire suite is green in a world where the owner's registration
+      does nothing. The cost of the fix is near zero because the predicate is
+      already decided, already specified one phase away, and DR-0028 makes it
+      explicitly deterministic rather than a model's judgement; the only
+      question the plan has to answer is which phase owns the module, and
+      M3-P14 runs first.
+  - id: PR6-005
+    severity: high
+    evidence:
+      - >-
+        src/modules/overview/adapters/overview-repository.ts:175-176 joins
+        the accounts table with a."iban" = t."counterpartyIban", raw string
+        equality in SQL, and :187 falls back to row.counterpartyIban as the
+        group label when the join finds nothing.
+      - >-
+        M3-P14 step 2 names that join as a site that must normalise both
+        sides, and NO criterion witnesses it. Criterion 14.4's third sentence
+        pins the TypeScript side only ("a ledger domain test asserts that a
+        transaction whose stored counterparty account is written spaced
+        classifies as RESERVE"), and criterion 14.2 asserts reserve-group
+        counts, the absence of no-reserves and the reserves-net and
+        spend-total strings, none of which changes when the join misses:
+        grouping is by t."counterpartyIban", so the count and the total are
+        right and only the LABEL degrades.
+      - >-
+        Criterion 14.4 records the measurement that makes this the expected
+        case rather than an edge: "every one of the 26 account-shaped tokens
+        in the owner's own current-account document is written spaced", while
+        registration stores the canonical form.
+      - >-
+        The degraded label is an account number rendered on screen:
+        src/platform/ui/mask-card-number.ts names "month-view.tsx's reserves
+        group label, which is the user's own declared account label or a
+        counterparty IBAN" as a DELIBERATE exclusion from masking, so nothing
+        downstream softens it.
+    concrete-edit: >-
+      Add to criterion 14.2, as a sixth assertion: "and each reserve-group's
+      rendered label is byte identical to the LABEL the household typed when
+      it registered that account, and no reserve-group label contains any
+      account-shaped token, which fails if the reserves join at
+      src/modules/overview/adapters/overview-repository.ts:175-176 compares
+      raw stored strings; the fixture writes its counterparty accounts in the
+      spaced surface form so that a join over raw values cannot pass." Add
+      the same assertion to criterion 14.5's third test, where the account is
+      registered after the rows already exist.
+    analysis: >-
+      The end state the owner asked for is not only "not offered as a
+      merchant", it is "recognised as my account". Four savings accounts
+      appearing in the reserves block under their raw account numbers
+      instead of "Holiday savings" is the visible half of the same defect,
+      and it is the half this criterion set cannot see, because every
+      assertion it makes about the reserves block is a count or a total. A
+      correct implementation that normalises everywhere in TypeScript and
+      forgets the one comparison written in SQL passes 14.1 through 14.10.
+      The codebase has been bitten by exactly this asymmetry before, which is
+      why normalise-counterparty.ts:24-42 carries a whole paragraph about the
+      SQL copy of the counterparty rule and a test that pins it.
+  - id: PR6-006
+    severity: high
+    evidence:
+      - >-
+        M3-P14 step 7 and decision D-49 promise that a MerchantRule the owner
+        already wrote against what turns out to be their own account is
+        "KEPT, is never deleted by any engine path, and is counted and named
+        to the owner at the moment of registration", and that "the
+        registration result names how many of their merchant rules stopped
+        matching and which accounts absorbed them".
+      - >-
+        No acceptance criterion of M3-P14 mentions a MerchantRule, a naming,
+        or a count of rules that stopped matching: 14.1, 14.2, 14.3, 14.4,
+        14.5, 14.6, 14.7, 14.8, 14.9 and 14.10 read end to end without one.
+        No hazard class H14.1 through H14.9 names it either.
+      - >-
+        Criterion 14.5, the phase's healing witness, imports the fixture and
+        then registers, but never NAMES a merchant in between, so the
+        already-named case is not exercised anywhere in the phase.
+      - >-
+        The equivalent promise in M3-P15 IS witnessed, by criterion 15.6,
+        which shows the shape is available and was simply not applied to the
+        phase where the owner meets it first. M3-P14 runs strictly before
+        M3-P12 precisely because, per decision D-52 at plan line 9362, the
+        owner's own-account counterparties would otherwise "become nine tidy
+        groups that invite a naming", so this phase's whole ordering argument
+        assumes namings exist before registration.
+      - >-
+        The mechanism the step relies on is real but partial:
+        src/modules/ledger/application/interpret-window.ts:120-128 writes a
+        null merchant for every row that is not INCOME or SPEND, so the
+        assignment stops applying. Nothing in that path tells the owner it
+        happened, and the merchants module keeps the rule row, so the naming
+        the owner made disappears from every screen with no statement.
+    concrete-edit: >-
+      Add criterion 14.11b to M3-P14: "A NAMING THAT STOPS APPLYING IS
+      COUNTED AND NAMED, NEVER SILENTLY GONE. A Playwright test imports the
+      fixture, names one own-account group as a merchant on /merchants,
+      registers the account that group belongs to, and asserts three things:
+      the registration result names the number of merchant rules that stopped
+      matching and the account that absorbed them, in copy present in all
+      three catalogues; the transactions concerned carry no merchant; and the
+      MerchantRule row still exists, asserted at the application level. A
+      grep asserts no code path in the accounts module or in interpretation
+      calls any delete on a MerchantRule, which is
+      .claude/skills/pulse-domain/SKILL.md:41 held mechanically." Add hazard
+      class H14.12: "A naming the owner made before registering the account
+      stops applying with no statement, so a decision they made appears to
+      have been thrown away", addressed-by criterion 14.11b.
+    analysis: >-
+      This is the dispatch's second attack, the half-imported world, in the
+      direction the plan left open. Rows already imported are handled by
+      14.5. Rows already NAMED are handled by a step and a decision with no
+      criterion under them, which means an implementation that does nothing
+      at all about merchant rules passes this phase unchanged. The rows heal
+      by themselves, so the defect is not arithmetic; it is that the owner's
+      own declaration vanishes from the interface without a word, which is
+      the same class of surprise as the one that started this round.
+  - id: PR6-007
+    severity: high
+    evidence:
+      - >-
+        M3-P15 criterion 15.4 requires "an application test builds a
+        household whose accounts are all pot accounts, runs the month
+        projection before and after the scoping change is applied, and
+        asserts every field of MonthFigures is identical".
+      - >-
+        After the phase, the tree contains ONE month projection: the scoped
+        one. "Before the scoping change is applied" is a state of the
+        repository that no longer exists, so the test can only be written by
+        keeping a second, unscoped copy of the four reads
+        (overview-repository.ts:128-131, :175-176, :219-235 and
+        merchant-repository.ts:231-234) alive in the shipped tree solely to
+        be compared against, or by hand-writing the expected numbers and
+        calling that the before state.
+      - >-
+        This is the same defect shape the dispatch reports was just found in
+        M3-P12 criterion 12.17: evidence that exists only outside the phase's
+        own tree.
+      - >-
+        The first half of 15.4 does not have the problem and is the model:
+        "the committed golden journey (test/e2e/golden-journey.spec.ts)
+        passes unchanged, and its asserted strings ... are untouched in the
+        diff" is checkable inside the phase, because the strings were
+        committed before it.
+    concrete-edit: >-
+      Replace 15.4's second witness with one obtainable in the phase's own
+      tree: "A second witness makes the claim mechanical rather than
+      incidental. The verification-first step records, from the phase base
+      before any edit, the full MonthFigures of a household whose accounts
+      are ALL pot accounts, over a committed fixture, as captured output in
+      the phase work history. An application test in the phase's diff then
+      asserts the scoped projection over that same fixture returns each of
+      those recorded values, written into the test by hand from the captured
+      output and never read back from the implementation. A third case, over
+      a household that also holds one non-pot account with rows, asserts the
+      figures differ ONLY in the fields the scoping is meant to change, so
+      the test can distinguish a scoping that works from a scoping that does
+      nothing."
+    analysis: >-
+      The criterion asks the implementer to measure a counterfactual, and the
+      two ways to satisfy it are both bad: dead code kept alive for a test,
+      or a hand-written before that is really an after. H15.4 is the hazard
+      that a shipped figure changes silently on data that already exists, and
+      it is the hazard that decides whether this phase is a defect fix or the
+      charter stop-for at charter.yaml:86-88, so it deserves a witness that
+      can actually be produced.
+  - id: PR6-008
+    severity: medium
+    evidence:
+      - >-
+        M3-P14 criterion 14.1's control arm requires "at least one group's
+        group-label is the canonical form of a registered-in-the-other-arm
+        account number".
+      - >-
+        src/modules/merchants/ui/merchant-review.tsx:35-36 renders
+        group-label as maskCardNumbers(group.label), and
+        src/modules/merchants/domain/merchant-review.ts:79-92 sets that label
+        to normaliseCounterparty(counterpartyText(row)), where
+        counterpartyText is counterpartyName ?? description
+        (normalise-counterparty.ts:94-97). The counterparty ACCOUNT column is
+        never consulted, so a group label is an account number only if the
+        fixture writes one into the counterparty NAME or the description.
+      - >-
+        Even then the two forms differ: normalise-counterparty.ts:365-366
+        collapses whitespace to single spaces rather than removing it.
+        Executed probe: applying that collapse to a four-group spaced
+        rendering returns the spaced form, and comparing it to the compact
+        canonical form printed equal= false.
+      - >-
+        Criterion 14.4 records that the owner's real document writes every
+        one of its 26 account-shaped tokens SPACED, so the fixture shape this
+        clause forces (a compact account number sitting in a counterparty
+        name cell) is the shape the measured document does not have.
+    concrete-edit: >-
+      Replace that clause of 14.1 with one keyed on what the shipped code
+      actually renders: "and that the set of unresolved group-labels in the
+      control arm contains, for each of the seven own accounts, the
+      counterparty text the fixture writes for it, recorded in the spec as a
+      hand-written list, so the registered arm's assertion is a set
+      DIFFERENCE of exactly those seven and not merely a smaller number."
+      Keep the registered arm's existing clause about no group-label equalling
+      a registered account label, and move the account-number-on-screen
+      assertion to the reserves block, where the account number really can
+      surface, by adopting the edit in finding PR6-005.
+    analysis: >-
+      H14.3 is the hazard that the scenario is proved on a fixture built to
+      pass, and 14.1 is its only guard, so the guard should not itself
+      require a fixture shaped unlike any statement. As written the clause is
+      satisfiable, but only by a fixture that puts a compact account number
+      where a bank writes a name, and an implementer who tries the realistic
+      shape first will find the clause red for a reason that has nothing to
+      do with the defect.
+  - id: PR6-009
+    severity: medium
+    evidence:
+      - >-
+        M3-P14 criterion 14.2 requires "spend-total in the CONTROL arm is
+        byte identical to a hand-written string that INCLUDES them, so the
+        two arms differ by exactly the household's savings".
+      - >-
+        Criterion 14.1's fixture carries transfers to seven own accounts,
+        THREE of them in the pot ring. In the control arm those three are
+        undeclared, so src/modules/ledger/domain/classify-flow.ts:102-107
+        makes them SPEND; in the registered arm classify-flow.ts:73-77 makes
+        them INTERNAL. They leave the spend total together with the four
+        reserve transfers.
+      - >-
+        So the two arms differ by the savings PLUS the pot-to-pot transfers,
+        and a hand-written string computed from the criterion's own
+        explanation would be wrong by exactly the pot-to-pot sum.
+    concrete-edit: >-
+      Replace the trailing clause of 14.2 with: "so the two arms differ by
+      exactly the household's savings PLUS its pot-to-pot transfers, which is
+      every movement between accounts the household owns; the spec states
+      that decomposition in a comment and each of the three hand-written
+      strings (control spend-total, registered spend-total, and their
+      difference) is computed from the fixture's own arithmetic, never read
+      back from the implementation."
+    analysis: >-
+      Small arithmetic, large consequence for the one rule this criterion
+      insists on. The criterion forbids reading a number back from the
+      implementation, which is right; it then supplies an explanation that
+      produces the wrong number, which is precisely the pressure that makes
+      someone paste in what the page showed and call it hand-written.
+  - id: PR6-010
+    severity: medium
+    evidence:
+      - >-
+        Hazard H14.8 is "The fourth navigation link is added to a row M3-P7
+        sized for three at 360 pixels and quietly pushes an existing target
+        below the bar that phase established", addressed-by criterion 14.7.
+      - >-
+        Every instrument 14.7 names is blind to that change.
+        test/e2e/month-view.spec.ts:618-643 (tapTargetOffenders) compares
+        rect.height against TAP_MIN only (:635), and a fourth link changes
+        WIDTH, not height, because src/app/globals.css:177-190 gives
+        .app-nav-link flex: 1 1 0 with min-height: var(--tap-target-min).
+      - >-
+        test/e2e/month-view.spec.ts:676-706 (clippingOffenders) scans
+        document.querySelector("main") only, and criterion 14.7 repeats that
+        scope in its own words: "no element in main is clipped on either
+        axis". The navigation row is in header.app-header
+        (src/app/(app)/layout.tsx:48), outside it.
+      - >-
+        globals.css:180 sets overflow-wrap: anywhere on the link, so a label
+        too wide for a quarter row WRAPS inside its own quarter rather than
+        widening the document, which is also what keeps
+        document.documentElement.scrollWidth, the criterion's third
+        instrument, unchanged.
+    concrete-edit: >-
+      Add to criterion 14.7: "and a width witness, because the fourth link
+      changes width and not height: at 390 and at 360, and at the 150 and 200
+      percent text scales the existing spec already applies to the shell,
+      every element with data-testid nav-overview, nav-import, nav-merchants
+      and nav-accounts renders its label on at most the number of lines it
+      renders on at the phase base, measured by comparing the link's
+      scrollHeight to its single-line height, and each link's border box is
+      at least the tap-target minimum in BOTH dimensions. The criterion fails
+      if any existing nav target renders on more lines with the fourth link
+      than without it."
+    analysis: >-
+      The hazard's antecedent is certainly true, since the phase adds the
+      link, so this is not a vacuous guard by absence of a trigger; it is
+      worse, a guard whose three named measurements each measure a quantity
+      the change cannot move. M3-P7 spent a whole phase and two fix rounds on
+      this row at 360 with a device text scale applied, and this phase would
+      hand back the width axis with a green criterion.
+  - id: PR6-011
+    severity: medium
+    evidence:
+      - >-
+        Hazard H14.9 is "A literal colour, font size or spacing value is
+        added to the new screen because the design needed one and no token
+        existed", addressed-by criterion 14.10, whose only relevant
+        instrument is npm run gate:tokens.
+      - >-
+        package.json defines gate:tokens as
+        "! grep -rE 'oklch\(|#[0-9a-fA-F]{3,8}|font-size:\s*[0-9.]+px'
+        src/modules/*/ui". It never matches a SPACING value, which the hazard
+        names explicitly, and it never matches rgb(), hsl(), a named colour,
+        or a px value on any property other than font-size.
+      - >-
+        Its path scope is src/modules/*/ui. This phase's files-to-touch adds
+        src/app/(app)/accounts/ (a new route), src/app/(app)/layout.tsx and
+        src/app/globals.css, and the existing shell shows markup does live in
+        the route layer: src/app/(app)/layout.tsx:48-58 carries the
+        navigation markup directly. None of those paths is scanned.
+      - >-
+        styles/tokens.css and src/app/globals.css are also in files-to-touch
+        and also unscanned, which is correct for the token DEFINITIONS and
+        wrong for a literal written into a component rule beside them.
+    concrete-edit: >-
+      Replace the gate clause of criterion 14.10 with: "npm run gate:tokens
+      exits 0, and because its grep covers src/modules/*/ui only and matches
+      neither a spacing literal nor a colour written as rgb(), hsl() or a
+      named colour, this phase additionally asserts by its own grep, recorded
+      in the work history, that no file the phase adds or edits under
+      src/app/ or src/modules/*/ui carries a colour literal in any notation
+      or a px, rem or em length outside styles/tokens.css. Any value the new
+      screen needs is added to styles/tokens.css first, and the phase work
+      history names each token it added."
+    analysis: >-
+      CLAUDE.md non-negotiable 4 is absolute and the gate that is supposed to
+      hold it reaches one third of the surface this phase touches, in one of
+      the three dimensions the hazard names. Naming that in the criterion
+      costs one grep and stops the class of finding where the gate is cited
+      as though it were the rule.
+  - id: PR6-012
+    severity: medium
+    evidence:
+      - >-
+        M3-P14 decision D-47 (plan line 9248) puts the canonical form of an
+        account number in src/platform, and criterion 14.4 requires "a grep
+        over src shows exactly one definition of the canonical
+        account-number function and every consumer imports it".
+      - >-
+        M3-P12, which runs AFTER M3-P14 by decision D-52, specifies at plan
+        line 6320-6336 a counterpartyIdentity function in the MERCHANTS
+        domain whose account key is "that account uppercased with whitespace
+        removed", together with its own trust tests. That is a second
+        implementation of the same transformation, in a module, landing after
+        14.4's pin was already green.
+      - >-
+        This codebase has been bitten by exactly this and carries the scars
+        as pinned tests: normalise-counterparty.ts:24-42 records that the
+        same rule written in SQL and in TypeScript drifted, and
+        mask-card-number.ts records a deliberately duplicated label line held
+        byte identical by a test in test/domain/merchant-review.test.ts.
+      - >-
+        The ledger domain rule that forbids importing from another module
+        (.claude/skills/pulse-domain/SKILL.md:168) is what forced the
+        platform placement in the first place, and it does not forbid the
+        merchants domain from importing from src/platform, so there is no
+        obstacle to one definition.
+    concrete-edit: >-
+      Add to criterion 14.4: "and the unit test that enumerates the call
+      sites is written so that a SECOND implementation of the same
+      transformation reddens it wherever it lives, including one written
+      inline inside another module's identity derivation: it asserts that no
+      file under src/ other than the platform module contains an uppercase
+      plus whitespace-removal expression applied to an account-bearing
+      field." And add one sentence to M3-P12's step at plan line 6320: "the
+      uppercasing and whitespace removal named here is the platform canonical
+      form M3-P14 introduced, imported rather than re-expressed, and the
+      three trust tests live beside it for the same reason."
+    analysis: >-
+      Two functions that agree on the day they are written and are edited by
+      different phases are one function with a delay fuse. The cost of
+      merging them is one import; the cost of not merging them is that an
+      account number canonicalised one way for classification and another way
+      for merchant identity puts the household's own transfers back on the
+      naming screen, which is the exact defect the round is about.
+  - id: PR6-013
+    severity: medium
+    evidence:
+      - >-
+        M3-P15 criterion 15.7 requires the control to show, before the change
+        is applied, "the number of transactions it will reclassify and the
+        amount that will move between the spend total and the reserves
+        block", and a Playwright test that the shown amount is byte identical
+        to the amount the totals actually move by.
+      - >-
+        For the case criterion 15.2 covers, an account LEAVING the pot, the
+        rows on that account are cleared entirely (M3-P15 step 3), so they
+        leave the spend total and enter NOTHING. The reserves block gains a
+        different set of rows: the counterparty rows on the household's OTHER
+        pot accounts, which move from INTERNAL to RESERVE by
+        src/modules/ledger/domain/classify-flow.ts:62-68. Two distinct
+        movements, and the criterion names one.
+      - >-
+        Nothing in the criterion requires the preview to be produced by the
+        function that produces the totals. A hand-rolled query that sums rows
+        whose counterparty account equals the account's number satisfies the
+        byte-identity assertion on a simple fixture and diverges wherever the
+        engine applies a correction: the settlement match at
+        classify-flow.ts:80-98, the reserve drawdown at :62-68, the refund
+        arm at :110-118, and the unmatched or in-transit leg accounting at
+        src/modules/overview/adapters/overview-repository.ts:222-229.
+    concrete-edit: >-
+      Replace 15.7's first sentence with: "The correction control shows,
+      before the change is applied, three quantities and not one: how many
+      transactions ON the account will stop being counted at all, how much
+      will move from the spend total into the reserves block (or the reverse
+      direction for a correction into the pot), and how many merchant rules
+      will stop matching. Each is produced by a DRY RUN of the same domain
+      interpretation the recompute runs, over the proposed declaration set,
+      writing nothing, never by a separate query. An application test asserts
+      the preview equals the actual movement over a fixture that contains a
+      settlement-matched card debit and a matched transfer pair as well as
+      ordinary rows, so a preview computed by a second rule diverges rather
+      than agrees."
+    analysis: >-
+      H15.6 is the hazard that the owner is offered a control that silently
+      moves money with no statement of what will move. A preview that names
+      one of two movements is a statement that is wrong in the case the
+      sibling criterion 15.2 is built on, and the owner would be told an
+      amount moved into reserves while a different amount silently left the
+      books. Requiring the dry run rather than a query is what makes the
+      preview and the outcome the same computation, which is what the step's
+      own sentence, "neither number is an estimate", already claims.
+  - id: PR6-014
+    severity: medium
+    evidence:
+      - >-
+        src/modules/import/application/confirm-import.ts:93-99 declares an
+        account with "...(fileIban !== undefined ? { iban: fileIban } : {})",
+        that is, the account number in the SURFACE FORM the file printed.
+        M3-P14 step 2 requires registration to normalise before storing but
+        says nothing about this path, so after the phase Account.iban holds a
+        mixture of canonical and file-surface forms.
+      - >-
+        prisma/schema/accounts.prisma:28 declares @@unique([householdId,
+        iban]) over the stored value. Two rows holding the same account in
+        two surface forms do not collide, so the constraint cannot see the
+        duplicate.
+      - >-
+        M3-P14 step 5 nevertheless states "The uniqueness the database
+        already carries (prisma/schema/accounts.prisma:28) is the backstop
+        and not the mechanism", which is false as long as stored forms are
+        mixed: there is no backstop, only the application check criterion
+        14.3 requires.
+      - >-
+        Criterion 14.4 measures why the two forms really do differ in this
+        tree: the delimited parse stores the cell verbatim
+        (src/modules/import/domain/parse-statement.ts:114-123) while the PDF
+        path compacts it
+        (src/modules/import/domain/belfius-current-account-template.ts:90).
+    concrete-edit: >-
+      Add to M3-P14 step 2: "The import path's own declaration at
+      src/modules/import/application/confirm-import.ts:93-99 stores the
+      canonical form too, so Account.iban holds ONE form tree-wide and the
+      per-household uniqueness constraint is a real backstop rather than a
+      nominal one; the stored FACT column on the transaction is untouched,
+      because that is a fact and comparison still normalises both sides."
+      Add to criterion 14.3: "and a third case asserts that an account
+      declared through the IMPORT path stores its account number in the
+      canonical form, so that a subsequent registration of the same account
+      in any surface form is refused by the application check AND would
+      collide in the database."
+    analysis: >-
+      The plan's own sentence about the backstop is the thing to fix, because
+      a false statement about a safety net is worse than no net: the next
+      phase to touch this area will read it and rely on it. Canonicalising on
+      the one remaining write path costs one expression and makes the
+      sentence true.
+  - id: PR6-015
+    severity: low
+    evidence:
+      - >-
+        Both phases open with a verification-first step whose product is
+        captured output written into the phase work history (M3-P14 step 1,
+        M3-P15 step 1), and neither phase has an acceptance criterion that
+        requires that output to exist. M3-P14 criterion 14.10 requires the
+        work history to record a privacy read-back and nothing else.
+      - >-
+        M3-P15 hazard H15.7 is addressed-by "judgment-property-of-prose: step
+        1 is verification-first ..." rather than by a criterion id, which is
+        the only hazard class in either phase whose guard is not falsifiable
+        by a test or a grep.
+      - >-
+        M3-P15's own verified-root-cause states the risk in its last
+        sentence: "Both halves were READ at 75ec85d and not executed, which
+        is why step 1 is verification-first."
+    concrete-edit: >-
+      Add to criterion 14.10 and to criterion 15.8: "and the phase work
+      history carries the captured output of the verification-first step,
+      one block per claim that step enumerates, each block showing the
+      command and its output rather than a restatement of the conclusion; a
+      claim listed in step 1 with no captured output under it fails this
+      criterion." Then change H15.7's addressed-by to name criterion 15.8.
+    analysis: >-
+      The verification-first step exists because this plan's authors know a
+      read is not an observation, and it is the step most likely to be
+      skipped under time pressure precisely because nothing downstream fails
+      when it is. One clause in the gate criterion makes the omission
+      visible, which is all this needs.
