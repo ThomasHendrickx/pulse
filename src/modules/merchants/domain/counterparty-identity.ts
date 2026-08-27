@@ -56,6 +56,11 @@
 // (the descriptor normaliser, whose non-destructive floor is the same rule
 // one tier down). The rule is not local to this file.
 
+import {
+  ACCOUNT_NUMBER_LENGTH_BY_COUNTRY,
+  canonicalAccountNumber,
+  isValidAccountNumber,
+} from "@/platform/account-number";
 import { counterpartyText, normaliseCounterparty } from "./normalise-counterparty";
 
 export const ACCOUNT_NAMESPACE = "account:";
@@ -131,71 +136,21 @@ export type CounterpartyIdentityRow = {
   readonly counterpartyAccount?: string;
 };
 
-// THE ACCOUNT-LENGTH TABLE (criterion 12.22). Source: the ISO 13616 IBAN
-// Registry published by SWIFT as the registration authority, which assigns
-// each participating country code exactly one total IBAN length. Populated
-// FROM THAT REGISTRY rather than from the countries this project has seen,
-// because a table grown from observed data is a table that silently refuses
-// the first row of the next country.
-//
-// A COUNTRY CODE THIS TABLE DOES NOT CARRY IS REFUSED, never admitted on a
-// length guess: admitting it is what would let a truncated value through.
-// The full contents are pinned by a regression test
-// (test/domain/counterparty-identity.test.ts), so adding, removing or
-// altering an entry is RED rather than silent (hazard H12.28). Widening the
-// table is a deliberate act with a test update beside it; that is the same
-// discipline the card-descriptor shapes one tier down already carry in
-// normalise-counterparty.ts.
-export const IBAN_LENGTH_BY_COUNTRY: ReadonlyMap<string, number> = new Map([
-  ["AD", 24], ["AE", 23], ["AL", 28], ["AT", 20], ["AZ", 28],
-  ["BA", 20], ["BE", 16], ["BG", 22], ["BH", 22], ["BI", 27],
-  ["BR", 29], ["BY", 28], ["CH", 21], ["CR", 22], ["CY", 28],
-  ["CZ", 24], ["DE", 22], ["DJ", 27], ["DK", 18], ["DO", 28],
-  ["EE", 20], ["EG", 29], ["ES", 24], ["FI", 18], ["FK", 18],
-  ["FO", 18], ["FR", 27], ["GB", 22], ["GE", 22], ["GI", 23],
-  ["GL", 18], ["GR", 27], ["GT", 28], ["HN", 28], ["HR", 21],
-  ["HU", 28], ["IE", 22], ["IL", 23], ["IQ", 23], ["IS", 26],
-  ["IT", 27], ["JO", 30], ["KW", 30], ["KZ", 20], ["LB", 28],
-  ["LC", 32], ["LI", 21], ["LT", 20], ["LU", 20], ["LV", 21],
-  ["LY", 25], ["MC", 27], ["MD", 24], ["ME", 22], ["MK", 19],
-  ["MN", 20], ["MR", 27], ["MT", 31], ["MU", 30], ["NI", 28],
-  ["NL", 18], ["NO", 15], ["OM", 23], ["PK", 24], ["PL", 28],
-  ["PS", 29], ["PT", 25], ["QA", 29], ["RO", 24], ["RS", 22],
-  ["RU", 33], ["SA", 24], ["SC", 31], ["SD", 18], ["SE", 24],
-  ["SI", 19], ["SK", 24], ["SM", 27], ["SO", 23], ["ST", 25],
-  ["SV", 28], ["TL", 23], ["TN", 24], ["TR", 26], ["UA", 29],
-  ["VA", 22], ["VG", 24], ["XK", 20], ["YE", 30],
-]);
+// THE ACCOUNT-LENGTH TABLE AND THE CANONICAL FORM MOVED TO PLATFORM in
+// M3-P14 (criterion 14.4). They used to be DEFINED here; four modules now
+// need them and the ledger domain may not import from another module, so
+// there is exactly one definition, in src/platform/account-number.ts, and
+// these two names are aliases of it kept so the merchants module's own
+// vocabulary does not change. The registry provenance, the refusal of an
+// unknown country code and the pinning test's contract are all recorded at
+// that definition.
+export const IBAN_LENGTH_BY_COUNTRY = ACCOUNT_NUMBER_LENGTH_BY_COUNTRY;
 
 // Uppercase and drop every whitespace character. This is the ONLY
 // transformation the account branch applies: no masking (a masked key could
 // never match a second transaction, hazard H6.4 one module over), no
 // truncation, no repair.
-export const compactAccount = (value: string): string =>
-  value.replace(/\s/g, "").toUpperCase();
-
-// ISO 7064 mod-97-10, computed in chunks so no intermediate exceeds the
-// safe integer range. Letters carry their position value (A = 10 ... Z = 35).
-const mod97 = (compact: string): number => {
-  const rearranged = `${compact.slice(4)}${compact.slice(0, 4)}`;
-  let remainder = 0;
-  for (const character of rearranged) {
-    const code = character.charCodeAt(0);
-    const digits =
-      code >= 65 && code <= 90
-        ? String(code - 55)
-        : code >= 48 && code <= 57
-          ? character
-          : undefined;
-    if (digits === undefined) {
-      return -1;
-    }
-    for (const digit of digits) {
-      remainder = (remainder * 10 + Number(digit)) % 97;
-    }
-  }
-  return remainder;
-};
+export const compactAccount = canonicalAccountNumber;
 
 // THE TRUST GATE (decision D-43, criterion 12.16). THREE tests, and a value
 // failing ANY of them is not trusted.
@@ -259,23 +214,13 @@ const mod97 = (compact: string): number => {
 // EXACTLY today's behaviour for that row. Nothing is lost by refusing and a
 // silent merge is what is risked by admitting, which is the asymmetry
 // decision D-43 fixes.
-export const isTrustedCounterpartyAccount = (value: string | undefined): boolean => {
-  if (value === undefined) {
-    return false;
-  }
-  const compact = compactAccount(value);
-  if (compact === "") {
-    return false;
-  }
-  if (!/^[A-Z]{2}[0-9]{2}[A-Z0-9]+$/.test(compact)) {
-    return false;
-  }
-  const expected = IBAN_LENGTH_BY_COUNTRY.get(compact.slice(0, 2));
-  if (expected === undefined || compact.length !== expected) {
-    return false;
-  }
-  return mod97(compact) === 1;
-};
+// THE TEST ITSELF IS PLATFORM'S (M3-P14, criterion 14.4): one canonical
+// form, one country-length table, one mod-97 implementation, and this gate
+// is the merchants module's DECISION about what to do with the answer, not
+// a second copy of the test.
+export const isTrustedCounterpartyAccount = (
+  value: string | undefined,
+): boolean => isValidAccountNumber(value);
 
 // Which basis a key was produced under, read from its namespace. This is
 // what D-40's refusal in matchRules consults and what assignMerchant's
