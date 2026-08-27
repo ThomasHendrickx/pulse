@@ -6,7 +6,10 @@
 
 import type { HouseholdContext } from "@/platform/tenancy";
 import { appClock } from "@/platform/clock";
-import { normaliseCounterparty } from "@/modules/merchants/application";
+import {
+  counterpartyIdentity,
+  normaliseCounterparty,
+} from "@/modules/merchants/application";
 import * as repository from "../adapters/overview-repository";
 import {
   getMonthOverview as getMonthOverviewUseCase,
@@ -55,6 +58,7 @@ const liveDependencies: OverviewDependencies = {
   // appClock reads the PULSE_FIXED_NOW override. Resolving per call keeps
   // the read at request time.
   clock: { now: () => appClock().now() },
+  counterpartyIdentity,
   normaliseCounterparty,
 };
 

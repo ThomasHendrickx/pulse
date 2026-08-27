@@ -9,7 +9,11 @@ import {
   parseStatementBytes,
   type SourceProfileSpec,
 } from "@/modules/import/application";
-import { ImportResult, ProfileConfirmation } from "@/modules/import/ui";
+import {
+  ImportResult,
+  PREVIEW_ROW_LIMIT,
+  ProfileConfirmation,
+} from "@/modules/import/ui";
 
 // Thin route for one import: dispatch on the status machine. The
 // AWAITING_DECLARATION branch re-runs deterministic detection on the
@@ -73,7 +77,11 @@ export default async function ImportDetailPage({
   }
 
   const parsed = await parseStatementBytes(record.rawContent, spec);
-  const previewRows = parsed.ok ? parsed.value.rows.slice(0, 5) : [];
+  // The slice and the copy that discloses it read the SAME number
+  // (finding CR-M3P3-04).
+  const previewRows = parsed.ok
+    ? parsed.value.rows.slice(0, PREVIEW_ROW_LIMIT)
+    : [];
 
   // The landing account, resolved by the SAME rule the confirm use case
   // applies (finding F1): the file's own IBAN first, then the binding of a
@@ -97,6 +105,7 @@ export default async function ImportDetailPage({
       specJson={JSON.stringify(spec, null, 2)}
       previewRows={previewRows}
       landingLabel={landingAccount?.label}
+      carriesOwnAccount={fileIban !== undefined}
       parseFailed={!parsed.ok}
       status={status}
     />

@@ -11,9 +11,10 @@ import { uploadStatement } from "../../src/modules/import/application/upload-sta
 import { recomputeInterpretation } from "../../src/modules/ledger/application/interpret-window";
 import type { LedgerDependencies } from "../../src/modules/ledger/application/ports";
 import { assignMerchant } from "../../src/modules/merchants/application/assign-merchant";
-import { resolveCounterparties } from "../../src/modules/merchants/application/resolve-counterparties";
+import { resolveIdentities } from "../../src/modules/merchants/application/resolve-identities";
 import { tagMerchant } from "../../src/modules/merchants/application/tag-merchant";
 import { matchRules } from "../../src/modules/merchants/domain/merchant-rule";
+import { counterpartyIdentity } from "../../src/modules/merchants/domain/counterparty-identity";
 import { makeFakeImportWorld } from "./fake-import-world";
 
 // Criterion 3.2: a manual assignment writes a MerchantRule DECLARATION
@@ -78,6 +79,15 @@ const uploadAndDeclare = async (
   if (!detected.ok) {
     throw new Error("detection failed");
   }
+  // SETUP FIRST (M3-P14): the account a statement belongs to is registered
+  // before the file is confirmed. A card carries no own-account column and
+  // registers nothing.
+  await world.registerAccountForStatement(
+    context,
+    bytes(content),
+    detected.value,
+    { label: "Current A", bank: "Demobank", role: "POT" },
+  );
   const confirmed = await confirmImport(context, world.deps, {
     importId: outcome.importId,
     profileName: "Current A export",
@@ -127,7 +137,13 @@ const factSnapshot = (world: World): string =>
   );
 
 describe("manual assignment writes a declaration and recompute applies it retroactively (criterion 3.2)", () => {
-  test("naming a counterparty writes ONE exact MerchantRule on the normalised string and every past matching transaction regroups, across imports", async () => {
+  // M3-P12: what the form submits, and therefore what these tests pass, is
+  // the counterparty IDENTITY KEY the review screen rendered, not a raw
+  // text. The rows below carry a counterparty account that the trust gate
+  // REFUSES (measured: every account in these fixtures fails ISO 7064), so
+  // they take the descriptor basis and their key is the namespace followed
+  // by exactly the string they keyed on before this phase.
+  test("naming a counterparty writes ONE exact MerchantRule on the identity key and every past matching transaction regroups, across imports", async () => {
     const world = makeFakeImportWorld();
     await declareAccountB(world);
     await uploadAndDeclare(world, "a.csv", fileA);
@@ -142,7 +158,7 @@ describe("manual assignment writes a declaration and recompute applies it retroa
     const factsBefore = factSnapshot(world);
 
     const outcome = await assignMerchant(context, assignDeps(world), {
-      counterpartyText: "BETALING MET DEBETKAART SUPERMARKT NOORD GENT",
+      counterpartyText: "descriptor:SUPERMARKT NOORD",
       merchantName: "Supermarkt",
     });
     expect(outcome.ok).toBe(true);
@@ -155,7 +171,7 @@ describe("manual assignment writes a declaration and recompute applies it retroa
     expect(world.rules).toHaveLength(1);
     expect(world.rules[0]).toMatchObject({
       kind: "EXACT",
-      pattern: "SUPERMARKT NOORD",
+      pattern: "descriptor:SUPERMARKT NOORD",
       merchantId: outcome.value.merchant.id,
     });
     expect(world.merchants.map((merchant) => merchant.name)).toEqual([
@@ -185,12 +201,20 @@ describe("manual assignment writes a declaration and recompute applies it retroa
     await declareAccountB(world);
     await uploadAndDeclare(world, "a.csv", fileA);
 
+    // The two spellings that used to be normalised INSIDE assignMerchant
+    // now converge one step earlier, in the identity derivation, and the
+    // assertion below is what says so rather than leaving it implied.
+    expect(counterpartyIdentity({ description: "Supermarkt Noord" }).key).toBe(
+      counterpartyIdentity({ description: "SUPERMARKT NOORD" }).key,
+    );
+    const subject = counterpartyIdentity({ description: "Supermarkt Noord" }).key;
     const first = await assignMerchant(context, assignDeps(world), {
-      counterpartyText: "Supermarkt Noord",
+      counterpartyText: subject,
       merchantName: "Supermarkt",
     });
     const second = await assignMerchant(context, assignDeps(world), {
-      counterpartyText: "SUPERMARKT NOORD",
+      counterpartyText: counterpartyIdentity({ description: "SUPERMARKT NOORD" })
+        .key,
       merchantName: "Colruyt Group",
     });
     expect(first.ok && second.ok).toBe(true);
@@ -209,8 +233,12 @@ describe("manual assignment writes a declaration and recompute applies it retroa
     await declareAccountB(world);
     await uploadAndDeclare(world, "a.csv", fileA);
 
+    // The salary row's counterparty account PASSES the trust gate, so this
+    // naming is made against the account basis. That is the change this
+    // phase exists for: the salary is named once and stays named however the
+    // description varies.
     const outcome = await assignMerchant(context, assignDeps(world), {
-      counterpartyText: "Acme Salaris BV",
+      counterpartyText: "account:BE39103123456719",
       merchantName: "Acme (salary)",
     });
     expect(outcome.ok).toBe(true);
@@ -230,7 +258,11 @@ describe("manual assignment writes a declaration and recompute applies it retroa
     await uploadAndDeclare(world, "a.csv", fileA);
 
     const outcome = await assignMerchant(context, assignDeps(world), {
-      counterpartyText: "Eigen rekening",
+      counterpartyText: counterpartyIdentity({
+        description: "OVERSCHRIJVING EIGEN REKENING",
+        counterpartyName: "Eigen rekening",
+        counterpartyAccount: IBAN_B,
+      }).key,
       merchantName: "Should never appear",
     });
     expect(outcome.ok).toBe(true);
@@ -246,10 +278,10 @@ describe("interpretation has no rule repository dependency, by construction (cri
   test("the interpret use case's whole merchants surface is the one read-only resolver function", () => {
     // Type-level: adding ANY second member to the port (a rule write, a
     // merchant create) turns the typecheck gate red here.
-    expectTypeOf<keyof LedgerDependencies["merchants"]>().toEqualTypeOf<"resolveCounterparties">();
+    expectTypeOf<keyof LedgerDependencies["merchants"]>().toEqualTypeOf<"resolveIdentities">();
     const world = makeFakeImportWorld();
     expect(Object.keys(world.ledgerDeps.merchants)).toEqual([
-      "resolveCounterparties",
+      "resolveIdentities",
     ]);
   });
 
@@ -270,7 +302,8 @@ describe("interpretation has no rule repository dependency, by construction (cri
     await uploadAndDeclare(world, "a.csv", fileA);
 
     const assigned = await assignMerchant(context, assignDeps(world), {
-      counterpartyText: "Supermarkt Noord",
+      counterpartyText: counterpartyIdentity({ description: "Supermarkt Noord" })
+        .key,
       merchantName: "Supermarkt",
     });
     expect(assigned.ok).toBe(true);
@@ -361,8 +394,8 @@ describe("the rule chain: exact, then prefix, then pattern, deterministically", 
   });
 });
 
-describe("the resolver use case: distinct raw strings in, certain assignments out", () => {
-  test("a PREFIX rule resolves city variants the household has never seen, and unresolved strings stay absent", async () => {
+describe("the resolver use case: distinct identity keys in, certain assignments out", () => {
+  test("a PREFIX rule resolves city variants the household has never seen, and unresolved keys stay absent", async () => {
     const world = makeFakeImportWorld();
     const merchant = await world.merchantsPort.createMerchant(
       context,
@@ -371,22 +404,27 @@ describe("the resolver use case: distinct raw strings in, certain assignments ou
     await world.merchantsPort.upsertRule(context, {
       merchantId: merchant.id,
       kind: "PREFIX",
-      pattern: "SUPERMARKT",
+      // M3-P12: a stored pattern is a prefix of an IDENTITY KEY, so it
+      // carries the namespace. This is exactly what pass one of the
+      // re-derivation writes for a pre-existing PREFIX rule, and it still
+      // matches what it always matched.
+      pattern: "descriptor:SUPERMARKT",
     });
-    const resolved = await resolveCounterparties(
+    // The resolver is handed KEYS now, not raw text: it no longer normalises
+    // for itself, so the caller derives them with counterpartyIdentity.
+    const keys = [
+      "BETALING MET DEBETKAART SUPERMARKT NOORD 9000 GENT",
+      "Supermarkt Zuid Tongeren",
+      "ONBEKENDE BAKKER",
+    ].map((text) => counterpartyIdentity({ description: text }).key);
+    const resolved = await resolveIdentities(
       context,
       { merchants: world.merchantsPort },
-      [
-        "BETALING MET DEBETKAART SUPERMARKT NOORD 9000 GENT",
-        "Supermarkt Zuid Leuven",
-        "ONBEKENDE BAKKER",
-      ],
+      keys,
     );
-    expect(
-      resolved.get("BETALING MET DEBETKAART SUPERMARKT NOORD 9000 GENT"),
-    ).toBe(merchant.id);
-    expect(resolved.get("Supermarkt Zuid Leuven")).toBe(merchant.id);
-    expect(resolved.has("ONBEKENDE BAKKER")).toBe(false);
+    expect(resolved.get(keys[0] ?? "")).toBe(merchant.id);
+    expect(resolved.get(keys[1] ?? "")).toBe(merchant.id);
+    expect(resolved.has(keys[2] ?? "")).toBe(false);
   });
 });
 
