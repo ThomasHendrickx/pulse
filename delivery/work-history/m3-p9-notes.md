@@ -1153,3 +1153,263 @@ throughout, which is the CR-903 range the Playwright config's own comment
 documents, and two earlier attempts at this gate were killed outright during
 the production build before a single test ran (`E2E_EXIT=143`), which is why
 the run quoted here was taken with a warm `.next-prod`.
+
+---
+
+# ROUND FOUR (M3-P9): both clean-room lanes at 6517703
+
+Criteria lane, `claude/m3-p9-rev2-crit`: 8 of 9 met, 2 high, 6 medium, 5 low.
+Hazard lane, `claude/m3-p9-rev2-haz`: 1 high, 1 medium, 3 low. Read in full.
+Both lanes ran the artifact rather than reading it, and the criteria lane's
+slow gate is the number that matters most here: **exit 0, 62 passed, 1
+skipped**, chromium-phone 26 passed and 0 skipped, this file contributing
+exactly the 5 tests it declared, on a box with the ports free and load 0.5 to
+4.8. My own two reds did not reproduce, which is what fleet warning 18 says
+to expect, and the lane said so plainly rather than treating its green as the
+correcter number.
+
+## what I changed
+
+### CR2-M3P9-01, high, mine, and the false-comment kind
+
+`src/app/globals.css` carried a comment above the pressed rule saying THE
+HALF THIS PHASE DOES NOT SHIP, that setting the attribute needs a client
+listener the diff cannot carry, and that the six lines that set it live in
+the spec, which installs them. All three were true in round one and none is
+true at this head. The third describes a thing criterion 9.9(a) now forbids
+in terms, and the criterion's own grep over the spec returns three
+read-shaped lines and no write.
+
+Corrected in place under clause R-087, with the old wording quoted verbatim
+inside the new comment so a reader who has seen it elsewhere knows it was
+wrong. The replacement says what is true: a document-level capture-phase
+`pointerdown` listener in the ROOT LAYOUT raises the attribute, served as one
+inline script per decision D-61, and the spec measures the shipped document
+and installs no mechanism.
+
+WHY THIS WAS WORTH A HIGH. The comment did not merely go stale; it pointed
+the next reader at the wrong file for the mechanism and told them the product
+does not ship it. That is the precondition for hazard H9.11: someone reads
+the layout script as test scaffolding, deletes it, and criteria 9.2, 9.3 and
+9.4 all stay green because 9.2 presses with a mouse and 9.3 and 9.4 apply
+their states through the DOM.
+
+**The source is closed too.** `delivery/work-history/m3-p9.yaml` carried the
+deviation this comment came from, still reading THIS IS AN OPEN ESCALATION
+AND NOT A CLOSED DEVIATION. It is now marked `resolved: true` and names what
+resolved it: the amendment at `bca2a74` put `src/app/layout.tsx` into
+files-to-touch, D-61 settled the shape, criterion 9.9 was added, the listener
+landed at `274a858` and the marker was renamed at `b55a31b`. The old text is
+quoted rather than deleted.
+
+### CR2-M3P9-07, medium, mine
+
+Three work-history entries still named `data-testid="press-feedback"`, and
+one open question still said the gate was red because of it. All corrected in
+place the way this phase's own fix round one corrected its earlier false
+claims: the round-two key decision, the M3P9-C17 coverage claim, and
+M3P9-C20, which is now marked resolved and points at M3P9-C21.
+
+### R2H-02, medium, mine: the constraint now has a mechanism
+
+D-61 permits an unchecked inline script ONLY because the constant carries no
+interpolation. The hazard lane found that true and backed by nothing: no lint
+rule, no test, and no Content-Security-Policy to make a violation visible, so
+"NO INTERPOLATION, EVER" read as a standing property when it was an
+unenforced convention.
+
+It is enforced now. A test named `the press listener constant carries no
+interpolation` reads `src/app/layout.tsx` from disk, extracts the
+`PRESS_FEEDBACK` constant and fails on any template expression. It has NO
+skip condition, so it runs under every project that collects the spec. It
+lives in the spec rather than the fast gate because criterion 9.7 pins this
+phase to one new file under `test/e2e/` and a unit test would print an eighth
+path; that is a scope constraint and it is recorded, not hidden.
+
+```
+✓ the press listener constant carries no interpolation (10ms)
+PRESS_FEEDBACK: 727 characters, 0 template expressions
+```
+
+The comment in the layout now names the check instead of asserting the
+property.
+
+### CR2-M3P9-13, medium, mine: the vacuous zero is labelled
+
+The lane found by RUNNING it that `page.touchscreen.tap` reports its
+`:active` zero over ZERO sampled frames, so criterion 9.9(c)'s liveness
+clause proves DELIVERY and not SAMPLING on that path. It is right, and my own
+round-one note had already recorded why: that path dispatches its touchstart
+and touchend inside one task, so no animation frame can fall between them and
+no mechanism, this product's or any other, can be observed held under it.
+
+The spec now prints each path's verdict and asserts the count of paths whose
+zero was measured over a non-empty window:
+
+```
+touch path "held CDP Input.dispatchTouchEvent touchStart": 25 frames during the press,
+  in :active 0 (LOAD-BEARING), carrying the shipped marking 25
+touch path "Input.synthesizeTapGesture with gestureSourceType "touch"": 24 frames during
+  the press, in :active 0 (LOAD-BEARING), carrying the shipped marking 24
+touch path "page.touchscreen.tap": 0 frames during the press,
+  in :active 0 (VACUOUS, sampled no frame), carrying the shipped marking 0
+```
+
+`sampledPaths >= 2` is asserted, so a zero nothing looked at can never
+quietly become the whole evidence. The criterion's own text is what should
+choose between naming the two held paths as the ones its zero binds on and
+replacing the third; that is a plan item and it is recorded below.
+
+### CR2-M3P9-10, low, mine
+
+`assertCleared` matched the ending event's NAME by prefix, and the recorded
+label carries the delivery target as a suffix, so an ending delivered
+anywhere in the document satisfied an ending that names the control. It now
+takes the expected target and asserts the whole label: `@control` for endings
+one, two, three and five, and `@other` for ending four, which is the ending
+whose entire point is that a mouse pointerup does NOT reach the control.
+
+### CR2-M3P9-08 and R2H-04, low, mine
+
+The work history recorded "six paths" against `origin/main`, a moving base. A
+phase that merges its own base branch cannot satisfy that sentence. Corrected
+in place to the invocation that survives:
+
+```
+$ git diff --name-only $(git merge-base HEAD origin/main) HEAD
+delivery/work-history/m3-p9-notes.md
+delivery/work-history/m3-p9.yaml
+playwright.config.ts
+src/app/globals.css
+src/app/layout.tsx
+styles/tokens.css
+test/e2e/pressed-and-disabled.spec.ts
+```
+
+Seven paths, exactly criterion 9.7's permitted set. Against the declared base
+`a4f1a94` the same command prints ten, and both lanes traced the three extra
+to merge-inherited commits rather than to this phase.
+
+## CR2-M3P9-09, low: RAISED AGAINST MY SPEC AND REFUTED WITH THE STYLESHEET
+
+This is the one review edit I did not take, and fleet warning 15 is why: a
+concrete-edit is a proposal, not a patch.
+
+The finding says the alpha floor in `assertMagnitude` is gated on a second
+condition criterion 9.3(a) does not carry, `bgRatio >= MIN_CONTRAST_RATIO`,
+and proposes deleting it. Deleting it would redden a correct measurement.
+Criterion 9.2(b)(ii)'s alpha floor exists for a state that CHANGES THE
+BACKGROUND: it stops a pressed tint clearing the contrast bar only by being
+nearly opaque. Criterion 9.3's states are not all of that kind:
+
+```
+$ sed -n '/^\[aria-busy="true"\],/,/^}/p' src/app/globals.css
+[aria-busy="true"],
+a[aria-busy="true"],
+summary[aria-busy="true"],
+.pulse-busy {
+  opacity: 0.7;
+  cursor: progress;
+}
+```
+
+The busy rule sets NO background. On a control whose resting background is
+transparent, `.app-nav-link` being the case, the entered background is
+transparent too, so an unconditional floor would demand an alpha of 0.08 from
+a background the state never touched and fail a magnitude that legitimately
+passes on an opacity delta of 0.30 against a bar of 0.15.
+
+The implementation is right and the criterion's sentence is the half that
+should carry the qualification. The reasoning is now written at the line
+itself so the next reader does not delete the condition, and the criterion
+wording is a plan item below.
+
+## criterion 9.8, and my view on the lane's argument
+
+**I agree with the lane, and I would go slightly further on one point.**
+
+Criterion 9.8(b) requires a whole-worktree grep, for probes built from the
+real statements, to exit 1. Two independent probe builds now exist. Mine
+returned 19 tree hits; the lane's, with looser families, returned 61. Both
+returned the same two numbers where it counts: **ZERO over the files this
+phase adds or modifies, and ZERO over every commit message on the branch.**
+Every tree hit in both runs sits in a file this phase does not touch.
+
+The lane's argument is that the whole-tree half is unsatisfiable BY
+CONSTRUCTION, and it is right for a reason the fleet has already written
+down. Fleet warning 12: the gate "cannot see a merchant name, a place name, a
+date or an amount inside a file, because those look exactly like invented
+ones". The committed synthetic fixtures are deliberately built to imitate the
+real statements' SHAPE so the parsers can be tested against them. A probe
+family drawn from the real statements will therefore always hit the synthetic
+ones, and the closer the fixtures get to their job the more it hits. No
+phase's artifact can change that, so the criterion is red on every phase for
+ever.
+
+Its proposed replacement is a BASELINE COMPARISON: record the whole-tree hit
+count and its per-file list, and require that it not INCREASE against the
+phase's base. I agree. It catches the thing the criterion is for, a NEW leak,
+and it stops a criterion that no phase can meet from teaching its readers to
+skip it, which is the state in which a real leak passes. Two real merchant
+descriptors already reached this public repository past a green gate, and
+both clean-room lanes found them by READING rather than by grepping.
+
+**Where I would go further.** A baseline comparison is only as good as the
+baseline, and a count is a weak baseline: a leak that lands in a file which
+already carries a hit does not move the count. I would record the per-file
+hit SET and require that no file gain a hit it did not have, which is what
+the lane's own per-file list already collects and costs nothing more. And I
+would keep the two halves that are real and that this phase meets, the
+touched-files grep and the commit-message grep, as the falsifying ones, since
+those are the surfaces a phase actually controls.
+
+**What I did NOT do.** I did not relax anything. The phase still records the
+whole-tree half as NOT CLEAN rather than green, at 19 pairs, all pre-existing
+and outside the phase's files. This is a plan defect and the plan holder
+routes it; my part is the view and the evidence.
+
+## the plan items, gathered, so nothing is dropped
+
+Routed by the coordinator before this round and NOT built to yet, since the
+clauses are being rewritten:
+
+- **CR2-M3P9-02 (high)** the config-membership check reads `testMatch` only,
+  while Playwright decides with `!testIgnore && testMatch`, and this config
+  already uses project-level `testIgnore`.
+- **CR2-M3P9-03 (medium)** the served-script assertion is satisfied by a
+  script whose entire body is a COMMENT naming `addEventListener` and
+  `pointerdown`.
+- **R2H-01 (high)** criterion 9.7(c)'s grep matches the double-quote SHAPE of
+  the client directive; a single-quoted `'use client';` is invisible to it.
+
+Raised in this round and needing a criterion rather than code:
+
+- **CR2-M3P9-04** criterion 9.8(b), above.
+- **CR2-M3P9-05** the spec's sweep selector and the shipped listener's
+  selector are the same string, so the denominator and the mechanism share a
+  producer (fleet warning 28). Nothing in the product is outside it today.
+  The fix wants a WIDER selector written into criterion 9.2(a) so the spec
+  cannot narrow it; I did not add it unilaterally because a wider sweep
+  changes the denominator criterion 9.2(a) pins in both directions, and
+  widening it from the spec is exactly the move that criterion forbids.
+- **CR2-M3P9-06 and R2H-03** criterion 9.9(a)'s prose forbids the passive
+  event recorder that criteria 9.9(c) and 9.9(e) require, while its own
+  FALSIFIED BY clause correctly permits it. The prose and the falsification
+  clause disagree inside one criterion. My deviation is declared and both
+  lanes judged it sound.
+- **CR2-M3P9-09** the alpha-floor condition, refuted above; the criterion
+  sentence is what should carry the qualification.
+- **CR2-M3P9-11** `a { display: inline-block }` has a layout blast radius no
+  criterion in this phase measures.
+- **CR2-M3P9-12** the shortest press any criterion measures is 150ms and the
+  amplitude is only asserted on a 400ms hold, while the owner's gesture is a
+  tap. The lane's arithmetic says the transform is at roughly 95 percent of
+  `--press-offset` by 60ms of a 90ms transition and my captured
+  first-movement times of 14 to 15ms support it, but that is arithmetic and
+  this phase's whole discipline is that a press is measured by pressing. A
+  tap-length half belongs in criterion 9.9(b).
+- **CR2-M3P9-08 and R2H-04** criterion 9.7's diff check names a moving base;
+  the merge-base invocation is the one a merging phase can satisfy.
+- **R2H-05** no enumerated ending covers an OS-level gesture that takes the
+  touch and hands no DOM event back. Not reachable from this container; worth
+  a manual pass on a real device.

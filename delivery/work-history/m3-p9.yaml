@@ -165,6 +165,9 @@ per-step-commits:
     subject: "Merge remote-tracking branch 'origin/main' into claude/m3-p9-pressed-and-disabled"
   - sha: b55a31b
     subject: "ui: the press marker is a bare data attribute, not a test id"
+  # ROUND FOUR, both clean-room lanes at 6517703
+  - sha: 39f2ea8
+    subject: "ui: correct the comment that said this phase does not ship the listener"
 
 key-decisions:
   - decision: >-
@@ -366,7 +369,11 @@ key-decisions:
   - decision: >-
       The listener ships as a module-scope string constant in src/app/layout.tsx
       rendered as ONE script element inside the body, carrying
-      data-testid="press-feedback", and NOT as a client component.
+      the bare attribute data-press-feedback, and NOT as a client component.
+      CORRECTED IN PLACE IN ROUND THREE (clause R-087, finding CR2-M3P9-07):
+      this said data-testid="press-feedback", which was true when it was
+      written and stopped being true at b55a31b when the plan amendment at
+      497ec49 renamed the marker.
     why: >-
       Decision D-61 settles it and it is not the implementer's to re-decide. A
       "use client" file would open the first React client boundary since
@@ -454,6 +461,55 @@ key-decisions:
       carried :active from the previous path. Cleared, all three paths report
       zero during the press with the shipped marking on 25 of 25 and 24 of 24
       frames.
+  # ROUND FOUR
+  - decision: >-
+      D-61's no-interpolation constraint is given a MECHANISM rather than
+      softened: a test with no skip condition reads src/app/layout.tsx from
+      disk, extracts the PRESS_FEEDBACK constant and fails on any template
+      expression.
+    why: >-
+      The hazard lane found the constraint true and enforced by nothing, so
+      "NO INTERPOLATION, EVER" read as a standing property when it was an
+      unenforced convention: no lint rule, no test, and no
+      Content-Security-Policy to make a violation visible. The constraint is
+      what D-61 rests on when it permits an unchecked inline script, so it
+      earns a check rather than a softer sentence. It lives in the spec and
+      not the fast gate because criterion 9.7 pins this phase to one new file
+      under test/e2e/ and a unit test would print an eighth path; that is a
+      scope constraint and it is recorded rather than hidden. It carries no
+      skip condition for the same reason the config-membership test carries
+      none: a guard that runs only where touch is declared is silent in half
+      the runs.
+  - decision: >-
+      The tap path's :active zero is RECORDED AS VACUOUS and the count of
+      paths whose zero was measured over a non-empty window is asserted at two
+      or more, rather than the third path's zero being counted as evidence.
+    why: >-
+      Criterion 9.9(c)'s liveness clause proves an input path DELIVERED
+      pointerdown and touchstart; it does not prove anything was LOOKED AT
+      while they were in flight, and page.touchscreen.tap dispatches its
+      touchstart and touchend inside one task so no animation frame can fall
+      between them. A zero over an empty window is numerically identical to a
+      zero over 24 frames, which is the same argument the criterion already
+      makes one level up. Choosing between naming the two held paths as the
+      ones the zero binds on and replacing the third is the criterion's to
+      make; the spec's job is to stop the empty one being counted silently.
+  - decision: >-
+      CR2-M3P9-09's concrete edit was REFUTED rather than adopted: the alpha
+      floor in assertMagnitude keeps its second condition.
+    why: >-
+      Fleet warning 15, a review's concrete-edit is a proposal and not a
+      patch, walked against the stylesheet rather than against the sentence.
+      Criterion 9.2(b)(ii)'s alpha floor exists for a state that CHANGES the
+      background: it stops a pressed tint clearing the contrast bar only by
+      being nearly opaque. The busy rule sets opacity and cursor and NO
+      background, so on a control whose resting background is transparent the
+      entered background is transparent too, and an unconditional floor would
+      demand an alpha of 0.08 from a background the state never touched and
+      redden a magnitude that legitimately passes on an opacity delta of 0.30
+      against a bar of 0.15. The reasoning is written at the line so the next
+      reader does not delete the condition, and the criterion's sentence is
+      recorded as the half that should carry the qualification.
 
 verification-first:
   - finding: >-
@@ -661,17 +717,30 @@ deviations:
   - plan-clause: >-
       files-to-touch and criterion 9.7, which print no client script, so the
       pointerdown handler that sets [data-pressed] cannot ship in this phase.
+    resolved: true
     why: >-
-      THIS IS AN OPEN ESCALATION AND NOT A CLOSED DEVIATION, raised under
-      clause R-034 rather than improvised around. The only host I found for
-      the handler is a *.tsx file, which criterion 9.7 falsifies the phase for
-      and hazard H9.5 names; I did not find one inside the declared files. So the phase ships the stylesheet half, measures it
-      under a real held touch press with the handler installed by the spec, and
-      states plainly that no shipped code sets the attribute yet. Whoever holds
-      the plan decides: amend files-to-touch on the base branch so a follow-up
-      round lands the six lines, or leave them to M3-P10, which opens the
-      client boundary anyway. Until one of those happens, a finger reaches the
-      pressed appearance only where the engine grants :active to a touch.
+      RESOLVED IN ROUND TWO AND MARKED SO IN ROUND THREE (finding
+      CR2-M3P9-01). THE ESCALATION WAS ACCEPTED: the plan amendment at
+      bca2a74, "plan: M3-P9 may ship the listener that makes the press
+      visible", put src/app/layout.tsx into files-to-touch as the ONE file
+      matching *.tsx this phase may print, decision D-61 settled the shape as
+      an inline script in the root layout rather than a client island, and
+      criterion 9.9 was added as the criterion that fails when the listener is
+      missing. The listener landed at 274a858 and the marker was renamed at
+      b55a31b. NOTHING BELOW THIS SENTENCE IS TRUE OF THIS HEAD ANY LONGER
+      AND IT IS KEPT RATHER THAN DELETED so the register reads as a decision
+      taken rather than a question never asked. What it said while it was
+      open: "THIS IS AN OPEN ESCALATION AND NOT A CLOSED DEVIATION, raised
+      under clause R-034 rather than improvised around. The only host I found
+      for the handler is a *.tsx file, which criterion 9.7 falsifies the phase
+      for and hazard H9.5 names; I did not find one inside the declared files.
+      So the phase ships the stylesheet half, measures it under a real held
+      touch press with the handler installed by the spec, and states plainly
+      that no shipped code sets the attribute yet. Whoever holds the plan
+      decides: amend files-to-touch on the base branch so a follow-up round
+      lands the six lines, or leave them to M3-P10, which opens the client
+      boundary anyway." The plan took the first branch. The spec installs no
+      handler now and criterion 9.9(a) forbids it.
   # ROUND TWO
   - plan-clause: >-
       Criterion 9.9(a): "the spec registers no addInitScript and no
@@ -1263,7 +1332,10 @@ claims:
     statement: >-
       The mechanism is SERVED and not injected, and the measurement ran. The
       raw response body for the sign-in screen and for the authenticated shell
-      each carry a script element with data-testid="press-feedback", a
+      each carry a script element with the bare attribute data-press-feedback
+      (CORRECTED IN PLACE IN ROUND THREE, finding CR2-M3P9-07: this named
+      data-testid="press-feedback", the marker at the time it was recorded;
+      the coverage was RE-TAKEN after the rename and is quoted at M3P9-C21), a
       non-empty body and a pointerdown registration, and the live element's
       text is byte identical to what the response carried.
     settled-by:
@@ -1322,10 +1394,20 @@ claims:
           witnessed is a physical device, and iOS is not measurable here at all.
   - id: M3P9-C20
     kind: open-question
+    resolved: true
     statement: >-
-      A CONFLICT INSIDE THE AMENDED PLAN, ONE ATTRIBUTE WIDE, AND IT IS WHY
-      THE E2E GATE IS RED. Step 5, criterion 9.9(a) and criterion 9.7(c) all
-      require the shipped script element to carry data-testid="press-feedback".
+      CLOSED IN ROUND THREE, and marked here rather than left for a reader to
+      infer from a later entry (finding CR2-M3P9-07). The plan amendment at
+      497ec49 renamed the marker to the bare attribute data-press-feedback,
+      this branch followed at b55a31b, the pre-existing spec is green under
+      BOTH projects with the new marker present, and the slow gate is GREEN:
+      the clean-room criteria lane ran it at this head and reported exit 0,
+      62 passed, 1 skipped. SEE M3P9-C21 FOR THE SETTLED RECORD. Everything
+      after this sentence is what the question said while it was open and is
+      NO LONGER TRUE: "A CONFLICT INSIDE THE AMENDED PLAN, ONE ATTRIBUTE
+      WIDE, AND IT IS WHY THE E2E GATE IS RED. Step 5, criterion 9.9(a) and
+      criterion 9.7(c) all required the shipped script element to carry
+      data-testid="press-feedback".
       The pre-existing test/e2e/month-view.spec.ts:1034 runs
       document.querySelectorAll("[data-testid]") over the WHOLE document and
       asserts every element it returns has a non-zero box; a script element is
@@ -1385,6 +1467,85 @@ claims:
           specs that pass on isolated retry while a third, different one fails
           with the identical import-result timeout signature, which is the
           contention shape and not this change.
+  - id: M3P9-C22
+    kind: remedy
+    statement: >-
+      THE FALSE COMMENT AND ITS SOURCE ARE BOTH CORRECTED IN PLACE. The
+      stylesheet comment that said this phase does not ship the listener, that
+      the diff is pinned to two stylesheets plus config plus spec, and that
+      the spec installs the six lines that raise the attribute, is replaced
+      with what is true, with the old wording quoted inside it. The
+      work-history deviation it came from is marked resolved and names the
+      amendment, the decision and the two commits that resolved it.
+    settled-by:
+      executed-construction:
+        command: >-
+          cd /home/user/wt-m3p9 && grep -c "THE HALF THIS PHASE DOES"
+          src/app/globals.css
+        exit-code: 0
+        output: >-
+          Exactly ONE occurrence remains and it is inside the quoted
+          historical text of the corrected comment, which is the form clause
+          R-087 asks for: corrected loudly, not deleted quietly. The
+          replacement names src/app/layout.tsx and the PRESS_FEEDBACK constant
+          as what raises the attribute, says the spec installs no mechanism,
+          and states why the old text mattered: a comment sending the next
+          reader to the spec for the mechanism is the precondition for hazard
+          H9.11.
+  - id: M3P9-C23
+    kind: coverage
+    statement: >-
+      D-61's no-interpolation constraint is enforced by a check, the ending
+      assertions resolve the delivery target rather than the event name, and
+      the touch path that cannot hold a press no longer contributes a silent
+      zero. All six tests this file contributes under chromium-phone pass.
+    settled-by:
+      executed-construction:
+        command: >-
+          cd /home/user/wt-m3p9 && npx playwright test --project=chromium-phone
+          test/e2e/pressed-and-disabled.spec.ts
+        exit-code: 0
+        output: >-
+          "6 passed (3.3m)", S_EXIT=0, zero skipped. The new check printed
+          "PRESS_FEEDBACK: 727 characters, 0 template expressions". The three
+          paths printed their verdicts: held CDP touchStart "25 frames during
+          the press, in :active 0 (LOAD-BEARING)"; synthesizeTapGesture "24
+          frames during the press, in :active 0 (LOAD-BEARING)";
+          page.touchscreen.tap "0 frames during the press, in :active 0
+          (VACUOUS, sampled no frame)". The declared count for this project is
+          now 6 and equals the passed count.
+  - id: M3P9-C24
+    kind: open-question
+    statement: >-
+      CRITERION 9.8(b)'s WHOLE-WORKTREE HALF IS UNSATISFIABLE BY CONSTRUCTION
+      AND I AGREE WITH THE LANE THAT RAISED IT. Two independent probe builds
+      now exist, mine at 19 tree hits and the criteria lane's looser families
+      at 61, and both return ZERO over the files this phase touches and ZERO
+      over every commit message. Every tree hit sits in a file this phase does
+      not touch.
+    settled-by:
+      executed-construction:
+        command: >-
+          two probe builds from the three real uploads, mine at fix round 1
+          and the criteria lane's at review time, both kept outside the
+          repository and never committed
+        exit-code: 0
+        output: >-
+          Fleet warning 12 says why no artifact can satisfy it: the gate
+          cannot see a merchant name, a place name, a date or an amount inside
+          a file, because those look exactly like invented ones, and the
+          committed synthetic fixtures are built to imitate the real
+          statements' shape so the parsers can be tested. A probe family drawn
+          from the real statements will therefore always hit the synthetic
+          ones. I SUPPORT the lane's replacement, a baseline comparison that
+          must not INCREASE against the phase's base, and I would go one step
+          further: record the per-file hit SET rather than the count, because
+          a leak landing in a file that already carries a hit does not move a
+          count, and the per-file list the lane already collects costs nothing
+          more. Keep the touched-files grep and the commit-message grep as the
+          falsifying halves, since those are the surfaces a phase controls.
+          NOTHING WAS RELAXED HERE: the phase still records the whole-tree half
+          as NOT CLEAN rather than green.
 
 environment-warnings:
   - warning: >-
@@ -1453,9 +1614,19 @@ environment-warnings:
       than asserted.
     evidence: >-
       git diff --stat supabase/config.toml printed nothing after the revert,
-      and git diff --name-only against origin/main lists six paths (corrected
-      from five in fix round 1, finding CR-M3P9-05), none of them
-      supabase/config.toml.
+      and the phase's diff carries none of them supabase/config.toml.
+      CORRECTED IN PLACE IN ROUND THREE (finding CR2-M3P9-08, and the hazard
+      lane's R2H-04 independently): this said "six paths", which was true when
+      it was written and cannot stay true, because a phase that merges its own
+      base branch has paths in its raw diff that are not its own work. The
+      count is now recorded against the invocation that survives a moving
+      base: git diff --name-only $(git merge-base HEAD origin/main) HEAD
+      prints SEVEN paths at this head, exactly criterion 9.7's permitted set.
+      Against the phase's declared base a4f1a94 the same command prints TEN,
+      and the three extra are merge-inherited rather than this phase's: the
+      pdf addendum from 75ec85d, the plan file from main's own amendments, and
+      scripts/gate-privacy.sh from dc8c505, whose parent is the plan commit
+      0539657 and which reached this branch through the merge at 84fe83a.
   - warning: >-
       A COMMENT CAN FAIL A CRITERION'S OWN GREP. Criterion 9.2(c) greps the
       stylesheets for the webkit property that removes the platform tap
