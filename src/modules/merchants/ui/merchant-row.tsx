@@ -49,6 +49,10 @@ import {
   subscribeToNotices,
 } from "./notice-queue";
 import {
+  isNamingActionAnswer,
+  type NamingActionAnswer,
+} from "./naming-answer";
+import {
   claimNaming,
   forgetNaming,
   namingClaims,
@@ -56,30 +60,14 @@ import {
   type NamingDirection,
 } from "./naming-claims";
 
-// The action's result, typed STRUCTURALLY rather than imported from the
-// action module: the boundary rule keeps this leaf's import closure inside
-// src/platform/ui and React, and the server component that binds the real
+// The action's answer shape and the guard the client applies to it live
+// in ./naming-answer, a pure module, so the fast gate can hold the rule
+// rather than leaving it to a browser gate this project cannot run. The
+// type is declared there rather than imported from the action module,
+// which is what keeps this leaf's closure inside its own folder,
+// src/platform/ui and React; the server component that binds the real
 // action to this prop is where the compiler checks the two shapes agree.
-type NamingActionResult =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly error: { readonly kind: string } };
 
-// THE ANSWER IS CHECKED RATHER THAN ASSUMED (fix round, finding
-// HZ-M3P11-06). The success path ends in redirect(), which throws, so the
-// awaited call can only produce a rejection carrying a NEXT_REDIRECT
-// digest and the ok: true arm above is unreachable today. Reading
-// result.ok on that assumption means that a framework version which ever
-// RESOLVED the call instead would throw a TypeError inside a transition,
-// and the reader would meet an error boundary instead of a notice. One
-// guard turns that into the loud failure this phase already knows how to
-// show.
-const isNamingActionResult = (value: unknown): value is NamingActionResult => {
-  if (typeof value !== "object" || value === null || !("ok" in value)) {
-    return false;
-  }
-  const { ok } = value as { readonly ok: unknown };
-  return typeof ok === "boolean";
-};
 
 export type NamingCopy = {
   // The unconfirmed marking's accessible text (the fourth catalogue key,
@@ -153,7 +141,7 @@ export const MerchantGroupRow = ({
     readonly placeholder: string;
     readonly submitLabel: string;
   };
-  readonly action?: (formData: FormData) => Promise<NamingActionResult>;
+  readonly action?: (formData: FormData) => Promise<NamingActionAnswer>;
 }) => {
   const regionId = useId();
   // The predicted label, null while nothing is in flight. Set inside the
@@ -311,7 +299,7 @@ export const MerchantGroupRow = ({
               setNotice({ kind: "failed", message: copy.failed });
               return;
             }
-            if (!isNamingActionResult(answer)) {
+            if (!isNamingActionAnswer(answer)) {
               // The action resolved with something this client does not
               // recognise, which today can only mean the framework stopped
               // signalling the redirect as a rejection. Treated as the
