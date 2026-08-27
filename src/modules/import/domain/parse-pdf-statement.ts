@@ -100,5 +100,19 @@ export const parsePdfStatement = (
     });
   }
 
-  return ok({ rows, accountIbans });
+  // THE STATEMENT'S OWN SETTLEMENT FIGURE SURVIVES THE GATE (fix round 2,
+  // finding HZ-M3P3-01). Balances are verified here and not persisted,
+  // and this number used to be discarded with them, so a card import's
+  // settlement total was re-derived downstream as the sum of its negative
+  // rows. Those two are equal only on a statement with no ordinary
+  // merchant refund, and the refund case then double counted an entire
+  // card statement while every criterion stayed green. The figure is a
+  // FACT the document carries; it is handed on and stored as one.
+  return ok({
+    rows,
+    accountIbans,
+    ...(parsed.value.settlementTotalCents === undefined
+      ? {}
+      : { settlementTotalCents: parsed.value.settlementTotalCents }),
+  });
 };

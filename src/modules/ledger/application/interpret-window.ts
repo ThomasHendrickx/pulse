@@ -7,7 +7,7 @@
 
 import type { PlainDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
-import { counterpartyText } from "@/modules/merchants/application";
+import { counterpartyIdentity } from "@/modules/merchants/application";
 import { INTERPRETATION_WINDOW_PADDING_DAYS } from "../domain/constants";
 import { counterpartyKey } from "../domain/corrections";
 import { interpretLedger } from "../domain/interpret";
@@ -59,6 +59,21 @@ export const interpretWindow = async (
         });
   const transactions = [...windowed, ...cardRows];
 
+  // Finding HZ-M3P3-01: a card import's settlement total is the figure its
+  // own statement carries, read from the stored fact column, never
+  // re-derived from the row signs. Loaded over the same unbounded card
+  // account set and for the same reason (CR-301): the figure describes the
+  // whole import, not the rows a window happened to load.
+  const statementTotals =
+    cardAccountIds.length === 0
+      ? []
+      : await deps.ledger.listCardStatementTotals(context, {
+          accountIds: cardAccountIds,
+        });
+  const statementSettlementTotals = new Map(
+    statementTotals.map((entry) => [entry.importId, entry.settlementTotalCents]),
+  );
+
   // Finding CR-303: refund history over the WHOLE ledger, so a window run
   // and a recompute agree on every refund. The read happens after ingest
   // persisted the new rows, so it includes the window's own outgoing rows.
@@ -71,6 +86,7 @@ export const interpretWindow = async (
     transactions,
     accounts,
     outgoingHistoryKeys,
+    statementSettlementTotals,
   });
 
   // Merchant resolution over the SAME interpreted set (M1-P4): counted
@@ -85,29 +101,40 @@ export const interpretWindow = async (
     const flow = interpretation.flows.get(transactionId);
     return flow === "INCOME" || flow === "SPEND";
   };
-  // The counterparty-source rule has ONE definition (decision D-11), and it
-  // is the merchants module's, reached through that module's published
-  // application interface rather than copied here. This file used to carry
-  // its own copy of the expression, which meant the ledger and the merchant
-  // review could silently disagree about which text a transaction resolves
-  // under while both looked right in isolation.
-  const merchantText = (transaction: LedgerTransaction): string =>
-    counterpartyText(transaction);
-  const countedTexts = [
+  // WHAT A TRANSACTION RESOLVES UNDER has ONE definition (decision D-11,
+  // and from M3-P12 decision D-37), and it is the merchants module's,
+  // reached through that module's published application interface rather
+  // than copied here. This file used to carry its own copy of the
+  // expression, which meant the ledger and the merchant review could
+  // silently disagree about which text a transaction resolves under while
+  // both looked right in isolation. It is now the counterparty IDENTITY: the
+  // counterparty account where the row carries a trusted one, the normalised
+  // descriptor otherwise, and DISTINCT IDENTITY KEYS are what cross the port.
+  const merchantKey = (transaction: LedgerTransaction): string =>
+    counterpartyIdentity({
+      description: transaction.description,
+      ...(transaction.counterpartyName === undefined
+        ? {}
+        : { counterpartyName: transaction.counterpartyName }),
+      ...(transaction.counterpartyIban === undefined
+        ? {}
+        : { counterpartyAccount: transaction.counterpartyIban }),
+    }).key;
+  const countedKeys = [
     ...new Set(
       transactions
         .filter((transaction) => isCounted(transaction.id))
-        .map(merchantText),
+        .map(merchantKey),
     ),
   ];
-  const resolvedMerchants = await deps.merchants.resolveCounterparties(
+  const resolvedMerchants = await deps.merchants.resolveIdentities(
     context,
-    countedTexts,
+    countedKeys,
   );
   const merchants = transactions.map((transaction) => ({
     transactionId: transaction.id,
     merchantId: isCounted(transaction.id)
-      ? (resolvedMerchants.get(merchantText(transaction)) ?? null)
+      ? (resolvedMerchants.get(merchantKey(transaction)) ?? null)
       : null,
   }));
 

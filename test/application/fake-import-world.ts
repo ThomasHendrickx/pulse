@@ -7,13 +7,14 @@
 
 import { statementParser } from "../../src/modules/import/adapters/statement-parser";
 import { interpretForImport } from "../../src/modules/ledger/application/interpret-window";
-import { resolveCounterparties } from "../../src/modules/merchants/application/resolve-counterparties";
+import { resolveIdentities } from "../../src/modules/merchants/application/resolve-identities";
 import type { MerchantRuleLike } from "../../src/modules/merchants/domain/merchant-rule";
 import type {
   MerchantRecord,
   MerchantRepositoryPort,
   TagRecord,
 } from "../../src/modules/merchants/application/ports";
+import type { Cents } from "../../src/platform/money";
 import type { Flow } from "../../src/modules/ledger/domain/flow";
 import type {
   DeclaredAccount,
@@ -37,6 +38,8 @@ import type {
   AccountRecord,
   NewAccount,
 } from "../../src/modules/accounts/application/ports";
+import type { SourceProfileSpec } from "../../src/modules/import/domain/source-profile";
+import { canonicalAccountNumber } from "../../src/platform/account-number";
 import type { HouseholdContext } from "../../src/platform/tenancy";
 
 export type StoredTransaction = IngestRow & {
@@ -65,6 +68,7 @@ type MutableImport = {
   sourceProfileId?: string;
   rowsAdded?: number;
   rowsKnown?: number;
+  settlementTotalCents?: number;
   failureReason?: ImportFailureReason;
 };
 
@@ -94,6 +98,20 @@ export type FakeImportWorld = {
   // Every write into the merchants module's DECLARATION stores, counted:
   // criterion 3.2's runtime half asserts interpretation makes NONE.
   readonly declarationWrites: () => number;
+  // SETUP, IN THE FAST GATE (M3-P14). From this phase on an account comes
+  // into existence at SETUP, before any statement is imported, and the
+  // confirm use case refuses a file whose own account is not registered.
+  // This seeds the declaration layer exactly as registerAccounts does: it
+  // parses the file with the REAL parser, reads its own account column and
+  // registers that account. A file carrying no own-account column is a
+  // card and registers nothing, which is the shape confirmImport still
+  // declares at first sight (decision D-48).
+  readonly registerAccountForStatement: (
+    context: HouseholdContext,
+    bytes: Uint8Array,
+    spec: SourceProfileSpec,
+    declaration: { readonly label: string; readonly bank: string; readonly role: "POT" | "RESERVE" },
+  ) => Promise<void>;
 };
 
 export const makeFakeImportWorld = (): FakeImportWorld => {
@@ -179,6 +197,18 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
           dedupKey: stored.dedupKey,
         })),
     applyReparse: async (context, input) => {
+      // HZ2-M3P3-04: the settlement figure is rebuilt by the same
+      // operation that rebuilds the facts it belongs to.
+      for (const entry of input.imports) {
+        const record = imports.get(entry.importId);
+        if (record !== undefined && record.householdId === context.householdId) {
+          if (entry.settlementTotalCents === undefined) {
+            delete record.settlementTotalCents;
+          } else {
+            record.settlementTotalCents = entry.settlementTotalCents;
+          }
+        }
+      }
       // Mirrors the adapter's contract: the profile spec and every listed
       // row's fact columns move together; row identity, importId,
       // accountId and rawLine never change. Finding CR-302: this fake now
@@ -278,6 +308,9 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       record.status = "INGESTED";
       record.accountId = input.accountId;
       record.sourceProfileId = input.sourceProfileId;
+      if (input.settlementTotalCents !== undefined) {
+        record.settlementTotalCents = input.settlementTotalCents;
+      }
       let added = 0;
       for (const row of input.rows) {
         const exists = transactions.some(
@@ -304,10 +337,15 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
   };
 
   const accountsPort: AccountsGateway = {
+    // Canonical on both sides, mirroring the Prisma adapter (M3-P14,
+    // criterion 14.4): the declaration is stored canonical and the value
+    // the file carries is whatever the source printed.
     findAccountByIban: async (context, iban) =>
       accounts.find(
         (account) =>
-          account.householdId === context.householdId && account.iban === iban,
+          account.householdId === context.householdId &&
+          account.iban !== undefined &&
+          canonicalAccountNumber(account.iban) === canonicalAccountNumber(iban),
       ) ?? null,
     getAccountById: async (context, accountId) =>
       accounts.find(
@@ -369,6 +407,23 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       const merchant = { id: id("merchant"), householdId: context.householdId, name };
       merchants.push(merchant);
       return merchant;
+    },
+    // M3-P12: pass one of the re-derivation rewrites a pattern in place.
+    // Household ownership is checked here the same way the adapter checks it.
+    updateRulePattern: async (context, input) => {
+      const existing = rules.find(
+        (rule) =>
+          rule.householdId === context.householdId && rule.id === input.ruleId,
+      );
+      if (existing === undefined) {
+        throw new Error(
+          "updateRulePattern: rule does not belong to the household",
+        );
+      }
+      declarationWriteCount += 1;
+      const updated = { ...existing, pattern: input.pattern };
+      rules[rules.indexOf(existing)] = updated;
+      return updated;
     },
     upsertRule: async (context, input) => {
       // Finding CR-401, mirrored from the adapter: the merchant the rule
@@ -493,6 +548,9 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
           ...(stored.counterpartyName === undefined
             ? {}
             : { counterpartyName: stored.counterpartyName }),
+          ...(stored.counterpartyIban === undefined
+            ? {}
+            : { counterpartyAccount: stored.counterpartyIban }),
           ...(stored.merchantId === undefined
             ? {}
             : { merchantId: stored.merchantId }),
@@ -538,6 +596,20 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
               ? {}
               : { counterpartyName: stored.counterpartyName }),
           })),
+      listCardStatementTotals: async (context, input) =>
+        [...imports.values()]
+          .filter(
+            (record) =>
+              record.householdId === context.householdId &&
+              record.accountId !== undefined &&
+              input.accountIds.includes(record.accountId) &&
+              record.settlementTotalCents !== undefined,
+          )
+          .map((record) => ({
+            importId: record.id,
+            settlementTotalCents: record.settlementTotalCents as Cents,
+          }))
+          .sort((a, b) => (a.importId < b.importId ? -1 : 1)),
       importPeriod: async (context, importId) => {
         const dates = transactions
           .filter(
@@ -609,8 +681,8 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
     // interpretation's whole merchants surface is this one read-only
     // function (criterion 3.2).
     merchants: {
-      resolveCounterparties: (context, texts) =>
-        resolveCounterparties(context, { merchants: merchantsPort }, texts),
+      resolveIdentities: (context, identityKeys) =>
+        resolveIdentities(context, { merchants: merchantsPort }, identityKeys),
     },
   };
 
@@ -635,6 +707,33 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
     tags,
     merchantTags,
     declarationWrites: () => declarationWriteCount,
+    registerAccountForStatement: async (context, bytes, spec, declaration) => {
+      const parsed = await statementParser.parse(bytes, spec);
+      if (!parsed.ok) {
+        throw new Error("registerAccountForStatement: the file does not parse");
+      }
+      const own = parsed.value.accountIbans[0];
+      if (own === undefined) {
+        return;
+      }
+      const canonical = canonicalAccountNumber(own);
+      const already = accounts.some(
+        (account) =>
+          account.householdId === context.householdId &&
+          account.iban === canonical,
+      );
+      if (already) {
+        return;
+      }
+      accounts.push({
+        id: id("account"),
+        householdId: context.householdId,
+        label: declaration.label,
+        bank: declaration.bank,
+        role: declaration.role,
+        iban: canonical,
+      });
+    },
   };
 };
 
@@ -649,6 +748,9 @@ const toImportRecord = (record: MutableImport): ImportRecord => ({
     : { sourceProfileId: record.sourceProfileId }),
   ...(record.rowsAdded === undefined ? {} : { rowsAdded: record.rowsAdded }),
   ...(record.rowsKnown === undefined ? {} : { rowsKnown: record.rowsKnown }),
+  ...(record.settlementTotalCents === undefined
+    ? {}
+    : { settlementTotalCents: record.settlementTotalCents }),
   ...(record.failureReason === undefined
     ? {}
     : { failureReason: record.failureReason }),

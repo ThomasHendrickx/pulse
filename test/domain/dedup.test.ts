@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { assignDedupKeys } from "../../src/modules/import/domain/dedup";
+import {
+  assignDedupKeys,
+  nextFreeDedupKey,
+} from "../../src/modules/import/domain/dedup";
 import type { ParsedRow } from "../../src/modules/import/domain/parse-statement";
 import type { SourceProfileSpec } from "../../src/modules/import/domain/source-profile";
 import { cents } from "../../src/platform/money";
@@ -123,5 +126,28 @@ describe("a desync between rows and keys crashes, never softens (finding F7)", (
       "../../src/modules/import/domain/dedup"
     );
     expect(() => zipRowsWithDedupKeys([one], [""])).toThrow(/desync|empty/i);
+  });
+});
+
+// FIX ROUND 2 (finding CR-M3P3-07). nextFreeDedupKey had no witness
+// anywhere: neutering its taken-check left the whole fast gate green,
+// re-parse suite included, because its only caller is the profile-fix
+// re-parse and nothing there exercises a taken key. It decides whether a
+// re-parsed row lands or the unique index aborts the repair, so it gets
+// one here, directly.
+describe("nextFreeDedupKey allocates the next free ordinal (CR-M3P3-07)", () => {
+  test("a free key is returned unchanged", () => {
+    expect(nextFreeDedupKey("h:acc-1:abc#0", () => false)).toBe("h:acc-1:abc#0");
+  });
+
+  test("a taken hash key walks to the first free ordinal", () => {
+    const taken = new Set(["h:acc-1:abc#0", "h:acc-1:abc#1", "h:acc-1:abc#2"]);
+    expect(nextFreeDedupKey("h:acc-1:abc#0", (key) => taken.has(key))).toBe(
+      "h:acc-1:abc#3",
+    );
+  });
+
+  test("a taken NATURAL key throws rather than inventing an ordinal it has no room for", () => {
+    expect(() => nextFreeDedupKey("n:acc-1:0001:0002", () => true)).toThrow();
   });
 });

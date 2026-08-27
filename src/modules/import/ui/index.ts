@@ -5,3 +5,4 @@
 export { UploadForm } from "./upload-form";
 export { ProfileConfirmation } from "./profile-confirmation";
 export { ImportResult } from "./import-result";
+export { PREVIEW_ROW_LIMIT } from "./preview-limit";
