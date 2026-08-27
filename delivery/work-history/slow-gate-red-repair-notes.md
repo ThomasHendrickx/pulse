@@ -219,3 +219,34 @@ answered. One is a PRODUCT defect.
    the "one row after the merge" assertion was measuring the product being
    right. Both namings now target the spend section, where a merge really
    does produce one row with the summed total.
+
+## A ninth finding, which only a green run could expose
+
+With the eight above repaired, the busy-state journey failed once more in
+the desktop project alone, on a control the baseline never reached because
+the naming assertion aborted the loop first:
+
+    upload submit: still marked busy after its response was released
+    Expected: false   Received: true
+
+INSTRUMENT, and a race of the same family as number 7. The helper waited
+DELAY_MS plus a flat 500ms and then read the control once. That 500ms is a
+guess about the SERVER: the upload action redirects to the import detail
+route, which re-runs statement detection and parsing over the stored bytes
+before it renders. On a loaded machine that render passes 500ms, and the
+single reading catches a control still busy while the navigation it started
+is still in flight, which is the control working. The reading is now
+retaken until the control is gone or at rest, up to a five second ceiling,
+and the LAST reading is asserted. A control that never comes back to rest
+still fails; what changed is that the spec now bounds how long the product
+may take instead of assuming a number.
+
+## Gates at head
+
+    typecheck        exit 0
+    lint             exit 0
+    npm test         exit 0   54 files, 704 tests
+    gate:privacy     exit 0
+    gate:decisions   exit 0
+    gate:tokens      exit 0
+    npm run build    exit 0
