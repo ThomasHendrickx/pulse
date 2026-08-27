@@ -507,9 +507,10 @@ describe("the fixture token-overlap check is committed and covered (HZ-M3P12-09)
     // READ AS CODE, NOT AS PROSE. This file's header QUOTES both discarded
     // implementations, because that is how clause R-087 requires a correction
     // to be written, so a search over the raw text finds the very strings the
-    // negative assertions forbid. The same lesson as the client scanner in
-    // test/db/gate-target.test.ts: a check that reads comments is checking
-    // what the file SAYS rather than what it DOES.
+    // negative assertions forbid. The lesson was first paid for by the client
+    // scanner in test/db/gate-target.test.ts, a file since withdrawn with the
+    // target interlock (decision D-62): a check that reads comments is
+    // checking what the file SAYS rather than what it DOES.
     const code = source
       .split("\n")
       .map((line) => line.replace(/\/\/.*$/, ""))
