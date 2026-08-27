@@ -771,6 +771,22 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
+  # THE E2E GATE DID RUN, PARTIALLY, AND IT IS RED. Recorded as a red
+  # gate-evidence entry below rather than as a did-not-run one, because it
+  # ran. Scope: test/e2e/busy-state.spec.ts only, under all three of its
+  # projects, against a local Supabase stack this round brought up. The rest
+  # of the suite was not run. The full account, the control run at
+  # origin/main and the reading of the failure are in the fix-round entry
+  # that begins "NOT ONE OF THE SEVEN FINDINGS".
+  - gate: suite-e2e-fix-round-2-busy-state-only
+    result: red
+    wrapper-exit-code: 1
+    discovered: 9
+    passed: 3
+    failed: 6
+    skipped: 0
+    todo: 0
+    did-not-run: 0
 claims:
   - id: M3P10-C1
     kind: coverage
@@ -1646,6 +1662,79 @@ fix-round:
       their recorded runs all report a kind attribute the shipped leaf no
       longer sets. The first thing to do in any container that has Docker is
       npm run test:e2e at this head under every project.
+  - mechanism: >-
+      NOT ONE OF THE SEVEN FINDINGS. THE SUITE RAN, AND TWO ASSERTIONS OF
+      CRITERION 10.3 ARE RED AT THE DEPLOYED HEAD. Every round of this phase
+      has recorded npm run test:e2e as unrunnable because the container has
+      no Docker. That diagnosis was wrong (see the environment warning
+      below): the daemon is installed and merely not started. With it
+      started, the project's own Supabase CLI brings up a local stack, prisma
+      migrate deploy applies the schema, and test/e2e/busy-state.spec.ts runs
+      under all three of its projects. IT IS RED. Six of nine tests fail, on
+      two assertions: "merchant naming submit: aria-busy at 1000ms" expected
+      true and received false, on all three projects, and once under the desk
+      project "sign-up submit: still marked busy after its response was
+      released" expected false and received true. THE FAILURE IS NOT THIS
+      ROUND'S: it reproduces at origin/main a56cc5b with none of this round's
+      commits present. WHAT THE RED MOST LIKELY MEANS, read out of the source
+      rather than measured, so it is a lead and not a conclusion: the spec
+      holds the naming control as a LAZY locator rooted at
+      getByTestId("unresolved-group").first(), and M3-P11 made the pressed
+      row change its own test id at the moment of the press.
+      src/modules/merchants/ui/merchant-row.tsx sets
+      data-testid={rowUnresolved ? "unresolved-group" : "merchant-group"}
+      with rowUnresolved = unresolved && !predicted, and the form action
+      calls setPredictedLabel BEFORE it awaits the server. So the pressed row
+      leaves the "unresolved-group" set immediately, .first() re-resolves to
+      a DIFFERENT row at the 1000 ms read, and the control the spec measures
+      there is one nobody pressed. On that reading the busy state itself may
+      be correct and the INSTRUMENT is what M3-P11 broke, which is consistent
+      with the assertions that pass on the same control in the same run:
+      requests is 1, the appearance did change, and the interval was
+      measured. NOTHING IS FIXED HERE. This round's brief is the seven
+      criteria findings, both review lanes have spent their two rounds, and a
+      wrong repair to a measurement is exactly how this phase produced an
+      assertion that could not fail (finding HZ-M3P10-03).
+    derivation:
+      command: >-
+        dockerd started directly, then npx supabase start with the services
+        that need a network fetch excluded, npx prisma migrate deploy against
+        the local stack (NOT migrate reset, which Prisma refuses to an agent
+        without the owner's explicit consent, and which was not run), then
+        npx playwright test test/e2e/busy-state.spec.ts at this branch head,
+        then the same spec under chromium-phone-prod at origin/main a56cc5b
+        as the control, reading each failure name out of the per-test
+        error-context.md.
+      output: >-
+        AT THIS BRANCH HEAD: "6 failed ... 3 passed (6.5m)". The failing
+        tests are busy-state.spec.ts:537 and :652 under [chromium],
+        [chromium-phone] and [chromium-phone-prod]. Failure names:
+        "merchant naming submit: aria-busy at 1000ms" (chromium-phone,
+        chromium-phone-prod), "naming row 0: aria-busy at 1000ms" (all
+        three), and "sign-up submit: still marked busy after its response was
+        released" (chromium only).
+        AT ORIGIN/MAIN a56cc5b, chromium-phone-prod only, control: "2 failed
+        ... 1 passed (2.4m)", the same two tests, the same two failure names
+        "merchant naming submit: aria-busy at 1000ms" and "naming row 0:
+        aria-busy at 1000ms". So the red is the deployed head's, not this
+        round's.
+        A FIRST RUN OF THE SAME SPEC WAS DISCARDED because the container's
+        root filesystem was 100 percent full with 48MB free and the run
+        carried ENOSPC errors and one "Page crashed", which is the shape
+        playwright.config.ts already warns about; 1.45GB was reclaimed with
+        docker image prune and the run above is the clean one.
+    not-covered: >-
+      THE RED IS NOT DIAGNOSED AND NOT FIXED, and no part of this entry says
+      the product is correct. The mechanism above is read from source and has
+      not been measured: nothing here has watched the pressed control's own
+      aria-busy at 1000 ms through a locator that cannot re-resolve. The
+      sign-up clears failure is a SECOND failure with a different shape,
+      observed once under one project and not explained at all. The rest of
+      the suite is also unrun: this was busy-state.spec.ts only, so criterion
+      10.7's "exits 0 under EVERY project" is still not witnessed, and
+      merchants.spec.ts under the phone project this round added
+      (CR-M3P10-05) has still not executed. What this entry replaces is the
+      belief that none of it could be run at all.
 environment-warnings:
   - warning: >-
       PAGE.SETCONTENT REUSES THE WINDOW, so a top-level `const` in an inline
