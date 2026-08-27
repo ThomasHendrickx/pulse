@@ -48,6 +48,15 @@
 //   src/modules/overview/adapters/overview-repository.ts  the reserves join
 //   src/modules/import/application/confirm-import.ts the registered lookup
 //   src/modules/accounts/adapters/account-repository.ts  the stored form
+//   src/modules/accounts/application/register-accounts.ts  the typed
+//       duplicate check (M3-P18: known set over canonical forms)
+//
+// AND THE SQL MIRRORS, which cannot import this function and must agree
+// with it by test rather than by reading (each is pinned by a spec):
+//   src/modules/overview/adapters/overview-repository.ts  the reserves join
+//   prisma/schema/migrations/20260827120000_canonical_account_iban_backfill
+//       the canonical backfill of stored declarations (M3-P18)
+//   scripts/detect-account-collisions.ts  the collision grouping (M3-P18)
 //
 // A new consumer joins that list rather than growing a second copy.
 

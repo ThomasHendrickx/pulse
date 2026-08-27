@@ -144,3 +144,60 @@ behaviour change; recorded as a loud correction (R-087).
 
 Full fast gate after step 3: 49 files, 669 tests, 0 failed (output below at
 gate time).
+
+## Steps 5 and 6: the backfill, the detection script, the canonical duplicate check
+
+Migration authored at
+prisma/schema/migrations/20260827120000_canonical_account_iban_backfill/migration.sql:
+one UPDATE of "accounts" only, the SQL mirror expression
+upper(regexp_replace(iban, '[[:space:]]', '', 'g')), the NOT EXISTS collision
+exclusion FIRST, IS DISTINCT FROM for idempotence, iban IS NOT NULL so a card
+row is untouched. No validation anywhere in it (P14-006, P17-004).
+
+scripts/detect-account-collisions.ts: GROUP BY (householdId, canonical form)
+HAVING count(*) > 1, array_agg of row ids, one line per group, ids only
+(R2-M3P18-01). Guard wiring is the surviving contract only: resolveClientDbUrl
+via resolve-env.ts, assessNonProductionDbTarget with the
+PULSE_ALLOW_REMOTE_DB_IN_DEV hatch, and no import resolves to target-guard,
+runtime-target, gate-target or connection-string (R2-M3P18-02); pinned by
+test/domain/canonical-backfill.test.ts. The post-deploy check for the parked
+merge is:
+
+    PULSE_ALLOW_REMOTE_DB_IN_DEV=1 DATABASE_URL=<deployed target> \
+      npx tsx scripts/detect-account-collisions.ts
+
+RED WITNESS for the typed duplicate check (criterion 18.5, clause R-037a),
+captured before the register-accounts fix:
+
+    $ npx vitest run test/application/account-setup.test.ts   # unfixed check
+    x the typed duplicate check compares canonical forms (criterion 18.5) >
+      a typed row whose canonical form matches a non-canonically stored
+      account is refused, and no second row is created
+    Tests  1 failed | 15 passed (16)
+
+The failing arm is the DANGEROUS member (non-canonical stored beside canonical
+typed: before the fix a second row was created). The reverse member (canonical
+stored, spaced typed) was already green because validation canonicalises the
+typed side; recorded as such rather than claimed as a second red.
+
+After the fix (known set over canonical forms): 16 passed. The consumer
+enumeration in test/domain/account-number.test.ts and the sibling list at
+src/platform/account-number.ts grew the new consumer and the two new SQL
+mirror sites BY NAME (clause mechanism-sibling).
+
+Slow-gate specs AUTHORED here, runnable only where a local Postgres exists:
+  - test/e2e/canonical-backfill.spec.ts: executes the COMMITTED migration.sql
+    over the harness household (18.4 arms one to four, 18.5 migration half,
+    detection script output contract, the door-opens browser journey with the
+    August baseline byte-compare, and the retype-trap refusal).
+  - test/e2e/held-and-gap-rows.spec.ts: the criterion 18.3 port sweep over
+    the REAL repository, every port method called, the listing-alone
+    assertion included, with a parsed-port completeness pin.
+  - test/e2e/month-view.spec.ts gains the criterion 18.2 held-block test
+    (five assertions, three locales); test/e2e/accounts.spec.ts's refusal
+    test is REWRITTEN into the DR-0030 acceptance test.
+Command a capable container must run: npm run test:e2e (local stack pinned,
+docker Postgres up, per CLAUDE.md).
+
+Fast gate after steps 5 and 6: 50 files, 678 tests, 0 failed, 0 skipped
+reported by vitest; tsc exit 0; eslint exit 0.

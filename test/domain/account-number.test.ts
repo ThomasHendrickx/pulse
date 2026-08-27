@@ -66,6 +66,11 @@ describe("criterion 14.4: one canonical form, one country table, one mod-97", ()
   test("every consumer of the canonical form imports it rather than re-deriving it", () => {
     expect(filesMatching(/canonicalAccountNumber/)).toEqual([
       "modules/accounts/adapters/account-repository.ts",
+      // JOINED IN M3-P18 (criterion 18.5): the already-registered check
+      // builds its known set over canonical forms, because a pre-M3-P14
+      // stored rendering compared as a raw string let one real account
+      // become two rows.
+      "modules/accounts/application/register-accounts.ts",
       "modules/accounts/domain/account-registration.ts",
       "modules/import/domain/belfius-current-account-template.ts",
       "modules/import/domain/detect-profile.ts",
