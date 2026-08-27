@@ -1587,13 +1587,28 @@ input[type="button"]:active,
  * a disabled disclosure kept the pointer cursor; the spec caught exactly
  * that. The anchor variant is here for the same reason before a class rule
  * grows one. */
-button:disabled,
-input:disabled,
-select:disabled,
-textarea:disabled,
-[aria-disabled="true"],
-a[aria-disabled="true"],
-summary[aria-disabled="true"] {
+/* BUSY IS NOT DISABLED, AND THE CASCADE HAD IT THE OTHER WAY ROUND (fix
+ * round, finding HZ-M3P10-01). Every rule in this block excludes a control
+ * that is marked busy. Before this, `button:disabled` at (0,1,1) outranked
+ * `[aria-busy="true"]` at (0,1,0) on every property they share, and the
+ * shared submit leaf set BOTH attributes on the same element, so a control
+ * that was working rendered in the product's own vocabulary for
+ * unavailable: measured in chromium at opacity 0.55, cursor default,
+ * --color-surface-disabled and --color-ink-disabled.
+ *
+ * WHY :where() AND NOT A BARE :not(). :where() contributes no specificity,
+ * so the disabled rules keep the exact (0,1,1) and (0,1,0) weights M3-P9
+ * tuned against `.spec-editor summary` and against the class rules that
+ * follow. Only their SCOPE narrows: a busy control keeps its own surface
+ * and its own ink, which is what makes the busy appearance below reachable
+ * at all. */
+button:disabled:where(:not([aria-busy="true"])),
+input:disabled:where(:not([aria-busy="true"])),
+select:disabled:where(:not([aria-busy="true"])),
+textarea:disabled:where(:not([aria-busy="true"])),
+[aria-disabled="true"]:where(:not([aria-busy="true"])),
+a[aria-disabled="true"]:where(:not([aria-busy="true"])),
+summary[aria-disabled="true"]:where(:not([aria-busy="true"])) {
   background-color: var(--color-surface-disabled);
   color: var(--color-ink-disabled);
   border-color: var(--color-surface-disabled);
@@ -1647,20 +1662,20 @@ summary[aria-disabled="true"] {
  * moment a pointer crossed it. It changes nothing about the hover baseline
  * criterion 9.2 measures against, because it applies only where the
  * disabled state is present and 9.2 measures controls that carry none. */
-button:disabled:hover,
-input:disabled:hover,
-[aria-disabled="true"]:hover {
+button:disabled:hover:where(:not([aria-busy="true"])),
+input:disabled:hover:where(:not([aria-busy="true"])),
+[aria-disabled="true"]:hover:where(:not([aria-busy="true"])) {
   color: var(--color-ink-disabled);
   text-decoration: none;
 }
 
 /* A disabled control does not respond to a press, by either route. */
-button:disabled:active,
-input:disabled:active,
-[aria-disabled="true"]:active,
-button:disabled[data-pressed],
-input:disabled[data-pressed],
-[aria-disabled="true"][data-pressed] {
+button:disabled:active:where(:not([aria-busy="true"])),
+input:disabled:active:where(:not([aria-busy="true"])),
+[aria-disabled="true"]:active:where(:not([aria-busy="true"])),
+button:disabled[data-pressed]:where(:not([aria-busy="true"])),
+input:disabled[data-pressed]:where(:not([aria-busy="true"])),
+[aria-disabled="true"][data-pressed]:where(:not([aria-busy="true"])) {
   transform: none;
   background-color: var(--color-surface-disabled);
 }
@@ -1692,7 +1707,17 @@ summary[aria-busy="true"],
   cursor: progress;
 }
 
-[aria-busy="true"]::after,
+/* THE MARK'S BOX IS RESERVED AT REST (fix round, finding HZ-M3P10-07).
+ * The mark used to be inserted into the control's inline flow on the press,
+ * so the control GREW when it was pressed: measured in chromium, a shipped
+ * .merchant-name-button went from 64.36 to 82.36 CSS pixels and reflowed
+ * the row it sits in at the moment the owner was looking at it. The box is
+ * therefore laid out whenever the control carries the aria-busy attribute
+ * AT ALL, which the submit leaf now sets in both states ("false" at rest),
+ * and only its opacity changes. The class route keeps its old shape: the
+ * link-shaped controls gain .pulse-busy on the press, and they are fixed
+ * tap targets the mark fits inside without moving anything. */
+[aria-busy]::after,
 .pulse-busy::after {
   content: "";
   display: inline-block;
@@ -1702,9 +1727,35 @@ summary[aria-busy="true"],
   height: var(--space-5);
   margin-left: var(--space-4);
   border-radius: 50%;
-  background-color: currentColor;
+  background-color: var(--color-busy-mark);
+  opacity: 0;
+  transition: opacity var(--duration-state) var(--ease-standard);
+}
+
+/* THE MARK IS FULLY OPAQUE FOR THE WHOLE CYCLE (fix round, finding
+ * HZ-M3P10-01). The loop pulses the mark's SIZE, so its contrast against
+ * the control never dips: the old loop faded the mark to 0.25 and spent
+ * most of its period below any visibility threshold. It also means the mark
+ * is visible where the loop is refused: under reduced motion
+ * --duration-busy-cycle is 0s and an animation of zero duration does not
+ * run, so an opacity that only the keyframes set would leave the mark
+ * invisible exactly there. */
+[aria-busy="true"]::after,
+.pulse-busy::after {
+  opacity: 1;
   animation: pulse-busy-cycle var(--duration-busy-cycle) var(--ease-standard)
     infinite;
+}
+
+/* The four submit controls whose resting surface is --color-surface-inverse
+ * carry the mark in the inverse ink, for the same reason their label is in
+ * it. Same list as the inverse pressed rule above; a fifth dark control
+ * added later belongs in both. */
+.auth-submit,
+.import-primary,
+.merchant-name-button,
+.account-setup-submit {
+  --color-busy-mark: var(--color-ink-inverse);
 }
 
 /* THE UNCONFIRMED MARKING, for M3-P11 to enter on a predicted row. It is a
@@ -1733,10 +1784,10 @@ summary[aria-busy="true"],
  * at :root there and an animation of zero duration does not run. */
 @keyframes pulse-busy-cycle {
   from {
-    opacity: 0.25;
+    transform: scale(var(--scale-busy-mark-min));
   }
   to {
-    opacity: 1;
+    transform: scale(1);
   }
 }
 

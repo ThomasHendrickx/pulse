@@ -102,8 +102,34 @@ export const SubmitButton = ({
   return (
     <button
       type="submit"
-      disabled={pending}
-      aria-busy={pending ? "true" : undefined}
+      // THE CONTROL STAYS FOCUSABLE WHILE IT REFUSES THE PRESS (fix round,
+      // finding HZ-M3P10-02). This was `disabled={pending}`, and a focused
+      // element that becomes disabled is removed from the tab order, so the
+      // browser moved focus to document.body and nothing put it back:
+      // measured in chromium, activeElement went from the pressed control to
+      // BODY and the control was no longer tabbable. On the merchant naming
+      // form, which revalidates in place rather than navigating, that cost a
+      // keyboard user their place on every row they named, and aria-busy on
+      // an unfocused control is announced to nobody, so the press produced
+      // no acknowledgement at all on the assistive-technology path.
+      //
+      // WHAT REPLACES IT, and it is the split src/app/globals.css describes
+      // where it says the phase that sets the attribute must also refuse the
+      // action in its handler. aria-disabled marks the refusal and keeps the
+      // element in the tab order and focused; the stylesheet's
+      // pointer-events rule refuses a tap or a click; and the handler below
+      // refuses the keyboard path, because an aria-disabled submit button is
+      // still activated by Enter and Space and pointer-events cannot reach
+      // either. Both halves are needed: without the handler a second Enter
+      // posts the form again.
+      aria-busy={pending ? "true" : "false"}
+      aria-disabled={pending ? "true" : undefined}
+      onClick={(event) => {
+        if (pending) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
       {...(className === undefined ? {} : { className })}
       {...(testId === undefined ? {} : { "data-testid": testId })}
       {...(name === undefined ? {} : { name })}
