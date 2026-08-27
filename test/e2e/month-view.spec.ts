@@ -1502,7 +1502,7 @@ test("held rows are shown under the account's label, in every locale, and nothin
 
   // TWO: the words, visible text, not an attribute.
   await expect(held.getByTestId("held-note")).toHaveText(
-    "These rows are held on a savings account. They are no part of this month's income, spend or reserves.",
+    "These rows are held because this account is registered in the savings ring. They are no part of this month's income, spend or reserves.",
   );
 
   // THREE: nothing is summed. No per-account total, no grand total: the
@@ -1531,11 +1531,11 @@ test("held rows are shown under the account's label, in every locale, and nothin
   const noteByLocale = [
     {
       locale: "nl",
-      note: "Deze rijen staan op een spaarrekening. Ze tellen niet mee in de inkomsten, de uitgaven of de reserves van deze maand.",
+      note: "Deze rijen worden aangehouden omdat deze rekening als spaarrekening is geregistreerd. Ze tellen niet mee in de inkomsten, de uitgaven of de reserves van deze maand.",
     },
     {
       locale: "fr",
-      note: "Ces lignes se trouvent sur un compte d'épargne. Elles ne comptent ni dans les revenus, ni dans les dépenses, ni dans les réserves de ce mois.",
+      note: "Ces lignes sont mises en attente parce que ce compte est enregistré comme compte d'épargne. Elles ne comptent ni dans les revenus, ni dans les dépenses, ni dans les réserves de ce mois.",
     },
   ] as const;
   for (const { locale, note } of noteByLocale) {

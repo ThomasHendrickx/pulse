@@ -16,13 +16,35 @@
 --
 -- THE CANONICAL FORM IS AN SQL MIRROR of canonicalAccountNumber in
 -- src/platform/account-number.ts: uppercase, every whitespace character
--- removed. The whitespace class is written [[:space:]] and not a
--- backslash-s on purpose, the same POSIX-class rule the overview
--- repository's reserves join records at
--- src/modules/overview/adapters/overview-repository.ts (the mirror rule
--- and the whitespace-class lesson); the agreement between this
--- expression and the platform function is asserted BY TEST over the
--- committed SQL (test/e2e/canonical-backfill.spec.ts), never by reading.
+-- removed, where "whitespace" means EXACTLY the set JavaScript's \s
+-- matches. CORRECTED IN THE M3-P18 FIX ROUND (hazard finding
+-- HZ-M3P18-01, clause R-087), and the superseded wording is quoted
+-- rather than deleted: this comment used to say "The whitespace class is
+-- written [[:space:]] and not a backslash-s on purpose" and the
+-- statement below stripped bare [[:space:]]. That was NOT a mirror:
+-- witnessed live on Postgres 16.13 (C.utf8), [[:space:]] retains U+00A0,
+-- U+202F and U+FEFF, all of which \s strips, so an NBSP-spaced stored
+-- rendering (0xA0 is one byte in Windows-1252, the common Belgian export
+-- encoding) stayed at its SQL fixed point, the canonical lookup still
+-- missed it, and the new canonical duplicate check refused the retype: a
+-- full lockout for exactly the household this migration exists to let
+-- back in. The class now unions the POSIX class with every remaining
+-- ECMAScript WhiteSpace and LineTerminator member, as visible ARE
+-- escapes (U+200B is deliberately absent: \s does not match it). The
+-- one authoritative copy for importable code is
+-- ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS in src/platform/account-number.ts;
+-- this file cannot import, so test/domain/canonical-backfill.test.ts
+-- asserts this inlined class is byte-equal to that constant, and the
+-- agreement with the platform function is asserted BY TEST over the
+-- committed SQL (test/e2e/canonical-backfill.spec.ts) over renderings
+-- that include the divergent characters, never by reading.
+--
+-- EDITED IN PLACE RATHER THAN FOLLOWED UP: at the time of this fix round
+-- the migration existed only on the unmerged phase branch and had been
+-- applied to throwaway review clusters only, so no deployed database
+-- carries the superseded statement and an in-place correction is the
+-- honest form; a shipped migration would instead have needed a follow-up
+-- file with the same collision guard.
 --
 -- CANONICALISATION WITHOUT VALIDATION, deliberately (review findings
 -- P14-006 and P17-004): canonicalisation is total and returns a string
@@ -50,15 +72,15 @@
 -- untouched throughout.
 
 UPDATE "accounts" a
-SET "iban" = upper(regexp_replace(a."iban", '[[:space:]]', '', 'g'))
+SET "iban" = upper(regexp_replace(a."iban", '[[:space:]\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]', '', 'g'))
 WHERE a."iban" IS NOT NULL
-  AND a."iban" IS DISTINCT FROM upper(regexp_replace(a."iban", '[[:space:]]', '', 'g'))
+  AND a."iban" IS DISTINCT FROM upper(regexp_replace(a."iban", '[[:space:]\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]', '', 'g'))
   AND NOT EXISTS (
     SELECT 1
     FROM "accounts" b
     WHERE b."householdId" = a."householdId"
       AND b."id" <> a."id"
       AND b."iban" IS NOT NULL
-      AND upper(regexp_replace(b."iban", '[[:space:]]', '', 'g'))
-          = upper(regexp_replace(a."iban", '[[:space:]]', '', 'g'))
+      AND upper(regexp_replace(b."iban", '[[:space:]\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]', '', 'g'))
+          = upper(regexp_replace(a."iban", '[[:space:]\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]', '', 'g'))
   );

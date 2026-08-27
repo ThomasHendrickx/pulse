@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { formatCollisionGroups } from "../../scripts/detect-account-collisions";
+import { ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS } from "../../src/platform/account-number";
 
 // M3-P18, criterion 18.4 arm one and criterion 18.5's wiring pins, at the
 // only level the fast gate can see: the committed TEXT of the migration
@@ -50,18 +51,64 @@ describe("the canonical backfill touches only the declaration (criterion 18.4)",
     expect(sql.match(/\bUPDATE\b/gi)).toHaveLength(1);
   });
 
-  test("the expression is the SQL mirror of the canonical form, POSIX class included", () => {
+  test("the expression is the SQL mirror of the canonical form, the ONE shared whitespace class inlined", () => {
     const sql = statements();
-    // upper + regexp_replace over [[:space:]]: the same mirror the
-    // reserves join records, with the POSIX class that survives
-    // template-literal escaping (the whitespace-class lesson at
-    // src/modules/overview/adapters/overview-repository.ts). Executable
-    // equivalence with canonicalAccountNumber is the slow-gate spec's
-    // arm; this pin keeps the committed text on that expression.
-    expect(sql).toContain(`upper(regexp_replace(a."iban", '[[:space:]]', '', 'g'))`);
+    // CORRECTED IN THE M3-P18 FIX ROUND (hazard finding HZ-M3P18-01):
+    // this pin used to hold the migration to bare [[:space:]], which
+    // retains U+00A0, U+202F and U+FEFF where the platform \s strips
+    // them. The migration cannot import, so it INLINES the class; this
+    // assertion is what keeps the inlined copy byte-equal to
+    // ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS at the mechanism's definition.
+    // Executable equivalence with canonicalAccountNumber over renderings
+    // carrying the divergent characters is the slow-gate spec's arm.
+    expect(sql).toContain(
+      `upper(regexp_replace(a."iban", '${ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS}', '', 'g'))`,
+    );
+    // And no site in the migration falls back to the bare POSIX class.
+    expect(sql).not.toContain(`'[[:space:]]'`);
     // Canonicalisation is applied WITHOUT validation (findings P14-006,
     // P17-004): no validity machinery may appear in the migration.
     expect(sql).not.toMatch(/mod97|checksum|valid/i);
+  });
+
+  test("the shared SQL whitespace class enumerates exactly the JavaScript whitespace set", () => {
+    // The class is parsed from its own text: the POSIX [[:space:]] head
+    // contributes the six ASCII members, then every visible ARE escape,
+    // single or range. The expected set is DERIVED by sweeping every
+    // Unicode code point through the same regex canonicalAccountNumber
+    // uses, so this test reddens if either side ever drifts: a character
+    // \s gains, a character the class loses, or a typo in an escape.
+    const body = ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS;
+    expect(body.startsWith("[[:space:]")).toBe(true);
+    expect(body.endsWith("]")).toBe(true);
+    const classSet = new Set<number>([9, 10, 11, 12, 13, 32]);
+    for (const match of body.matchAll(
+      /\\u([0-9a-f]{4})(?:-\\u([0-9a-f]{4}))?/g,
+    )) {
+      const from = parseInt(match[1] ?? "", 16);
+      const to = match[2] === undefined ? from : parseInt(match[2], 16);
+      for (let code = from; code <= to; code += 1) {
+        classSet.add(code);
+      }
+    }
+    const jsSet = new Set<number>();
+    for (let code = 0; code <= 0x10ffff; code += 1) {
+      if (code >= 0xd800 && code <= 0xdfff) {
+        continue;
+      }
+      if (/\s/u.test(String.fromCodePoint(code))) {
+        jsSet.add(code);
+      }
+    }
+    expect([...classSet].sort((a, b) => a - b)).toEqual(
+      [...jsSet].sort((a, b) => a - b),
+    );
+    // The named divergent characters the hazard lane witnessed are in
+    // the class, and U+200B, which \s does not match, is not.
+    expect(classSet.has(0x00a0)).toBe(true);
+    expect(classSet.has(0x202f)).toBe(true);
+    expect(classSet.has(0xfeff)).toBe(true);
+    expect(classSet.has(0x200b)).toBe(false);
   });
 
   test("the collision pair is excluded first and null numbers are untouched", () => {
@@ -89,6 +136,13 @@ describe("the detection script's selection and wiring (criterion 18.5, findings 
     // aggregate over the id column.
     expect(source).toMatch(/SELECT array_agg\(a\."id"::text ORDER BY a\."id"\) AS "ids"/);
     expect(source).not.toMatch(/SELECT[^\n]*"iban"/);
+    // The grouping strips the ONE shared whitespace class, bound as a
+    // parameter, never a local copy and never the bare POSIX class
+    // (M3-P18 fix round, hazard finding HZ-M3P18-01).
+    expect(source).toMatch(
+      /regexp_replace\(a\."iban", \$\{ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS\}, '', 'g'\)/,
+    );
+    expect(source).not.toContain(`'[[:space:]]'`);
   });
 
   test("the guard wiring is the surviving contract only (D-62)", () => {

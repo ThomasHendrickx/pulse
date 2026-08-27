@@ -66,6 +66,34 @@
 export const canonicalAccountNumber = (value: string): string =>
   value.replace(/\s/g, "").toUpperCase();
 
+// THE ONE SQL WHITESPACE CLASS THE MIRRORS STRIP, NOT BARE [[:space:]].
+// Corrected in the M3-P18 fix round under HAZARD finding HZ-M3P18-01 and
+// stated loudly (clause R-087): the sibling note above used to let the
+// mirrors stand on the POSIX class alone, and the delivered mirror tests
+// exercised ASCII renderings only, over which [[:space:]] and
+// JavaScript's \s happen to agree. Witnessed live on Postgres 16.13
+// (C.utf8): POSIX [[:space:]] does NOT match U+00A0, U+202F or U+FEFF,
+// all of which \s strips, and U+00A0 is the single byte 0xA0 in
+// Windows-1252, the encoding common for Belgian exports, so the
+// divergence sat exactly on the population the backfill exists for (a
+// stored NBSP-spaced rendering stayed at its SQL fixed point, the
+// canonical lookup still missed it, and the canonical duplicate check
+// refused the retype: a full lockout).
+//
+// The class below unions the POSIX class with every remaining member of
+// ECMAScript's WhiteSpace and LineTerminator productions (the definition
+// of \s): U+00A0, U+1680, U+2000..U+200A, U+2028, U+2029, U+202F,
+// U+205F, U+3000, U+FEFF. It deliberately does NOT include U+200B, which
+// \s does not match. Written as VISIBLE Postgres ARE escapes, never raw
+// characters, so the source shows what it strips; consumers pass it as a
+// bind parameter or splice it into SQL text, and the migration, which
+// cannot import anything, inlines the same class with a pin in
+// test/domain/canonical-backfill.test.ts asserting byte equality. The
+// same test derives the \s set by sweeping EVERY Unicode code point and
+// asserts this class enumerates exactly that set.
+export const ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS =
+  "[[:space:]\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]";
+
 // THE PINNED COUNTRY-LENGTH TABLE. Source: the ISO 13616 IBAN Registry
 // published by SWIFT as the registration authority, which assigns each
 // participating country code exactly one total length. Populated FROM THAT

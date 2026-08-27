@@ -30,7 +30,7 @@ import type { PrismaClient } from "@prisma/client";
 //
 // EVERY account-shaped value below is INVENTED and listed with its
 // provenance in test/fixtures/allowed-identifiers.txt (review finding
-// P17-007): the bodies are the run 910000000001 through 910000000005
+// P17-007): the bodies are the run 910000000001 through 910000000007
 // with computed ISO 7064 check digits, except invalidNumber whose check
 // digits are deliberately wrong so the value fails the validity test.
 
@@ -93,6 +93,44 @@ export const PRE_PHASE_ACCOUNTS = {
     bank: "Demobank",
     iban: "BE54910000000003",
     role: "RESERVE",
+  },
+  // THE DIVERGENT-WHITESPACE RENDERINGS (M3-P18 fix round, hazard
+  // finding HZ-M3P18-01). The harness used to space with ASCII spaces
+  // only, so the mirror-agreement arms were green over a character set
+  // on which POSIX [[:space:]] and JavaScript \s happen to agree. These
+  // three rows carry the characters the two classes DISAGREED on,
+  // written as visible escapes so the source shows them: U+00A0 is the
+  // single byte 0xA0 in Windows-1252, the common Belgian export
+  // encoding; U+202F is the French-locale group separator; U+FEFF is a
+  // BOM a careless copy-paste drags along.
+  //
+  // nbspSpaced/nbspCompact are ONE real account, a SECOND collision
+  // pair: the corrected class makes their canonical forms equal, so the
+  // backfill must leave BOTH byte identical and the detection grouping
+  // must emit them as one group; the superseded [[:space:]] class saw
+  // two unrelated rows here, which is the blindness the hazard lane
+  // witnessed. narrowNbsp has no twin and must be CANONICALISED by the
+  // backfill, U+202F separators and leading BOM stripped.
+  nbspSpaced: {
+    key: "nbspSpaced",
+    label: "House fund",
+    bank: "Demobank",
+    iban: "BE70\u00a09100\u00a00000\u00a00006",
+    role: "POT",
+  },
+  nbspCompact: {
+    key: "nbspCompact",
+    label: "House fund savings",
+    bank: "Demobank",
+    iban: "BE70910000000006",
+    role: "RESERVE",
+  },
+  narrowNbsp: {
+    key: "narrowNbsp",
+    label: "Deposit book",
+    bank: "Demobank",
+    iban: "\ufeffBE43\u202f9100\u202f0000\u202f0007",
+    role: "POT",
   },
   // The two SAVINGS-ring accounts, stored CANONICAL (compact uppercase):
   // the backfill is a proven no-op over them, and criterion 18.2's
