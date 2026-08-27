@@ -63,13 +63,22 @@ export const subscribeToNotices = (
   };
 };
 
-// Join the queue. Idempotent: a row that re-renders while its notice is up
-// keeps its place rather than moving to the back.
+// Raise a notice, or raise it again. ONE ENTRY PER NOTICE, ALWAYS: a
+// second raise refreshes the existing entry's turn rather than adding a
+// second one, so nothing is ever duplicated and nothing is starved.
+//
+// CORRECTED IN ROUND TWO (clause R-087, finding HZ2-M3P11-02). This
+// comment used to say the call is idempotent so that a row keeps its
+// place, and that was FALSE as the screen drove it: the leaf cleared its
+// notice at the start of every submit, so a row that retried left the
+// queue and rejoined at the back, and with the oldest entry on screen the
+// reader who pressed a control on one row was shown a sentence about
+// another. Two things changed together. The leaf no longer drops its
+// notice when a retry starts (nothing removes an undismissed notice but
+// the reader and an unmount), and a raise now moves that notice to the
+// END of the queue, which is where the screen reads from.
 export const enterNoticeQueue = (queue: NoticeQueue, id: string): void => {
-  if (queue.waiting.includes(id)) {
-    return;
-  }
-  queue.waiting = [...queue.waiting, id];
+  queue.waiting = [...queue.waiting.filter((entry) => entry !== id), id];
   announce(queue);
 };
 
@@ -82,8 +91,13 @@ export const leaveNoticeQueue = (queue: NoticeQueue, id: string): void => {
   announce(queue);
 };
 
-// The one notice on screen is the one that has waited longest.
+// THE ONE NOTICE ON SCREEN IS THE ONE RAISED MOST RECENTLY (round two,
+// finding HZ2-M3P11-02), which is the notice the reader's own last action
+// produced. The others wait behind it and are shown in turn as each is
+// dismissed, so this changes which one is read first and never whether one
+// is read at all: nothing is dropped, nothing is covered, and nothing
+// leaves without the reader or an unmount.
 export const isNoticeShowing = (queue: NoticeQueue, id: string): boolean =>
-  queue.waiting[0] === id;
+  queue.waiting[queue.waiting.length - 1] === id;
 
 export const noticeQueue: NoticeQueue = createNoticeQueue();

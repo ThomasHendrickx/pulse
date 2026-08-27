@@ -661,6 +661,75 @@ test("a second notice waits for the first rather than covering it", async ({
   route.disarm();
 });
 
+// M3-P11 round two, finding HZ2-M3P11-02. The reader acts on a row whose
+// notice is already up while a second row's notice waits behind it. What
+// appears at the bottom of the screen must be about the row they just
+// acted on.
+test("the notice on screen is the one the reader's last action produced", async ({
+  page,
+}) => {
+  const copy = catalogue("en");
+  await signUpFresh(page, "re-raise");
+  await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+  await importFixture(page, SMALL_FIXTURE);
+  await openMerchants(page, "en");
+
+  const route = await routeServerActions(page);
+  const namableKeys = await page
+    .getByTestId("unresolved-group")
+    .filter({ has: page.locator(".merchant-name-form") })
+    .evaluateAll((rows) =>
+      rows.map((row) => row.getAttribute("data-group-key") ?? ""),
+    );
+  expect(namableKeys.length).toBeGreaterThan(1);
+  const firstKey = namableKeys[0] ?? "";
+  const secondKey = namableKeys.find((key) => key !== firstKey) ?? "";
+  const firstRow = rowByKey(page, firstKey);
+  const secondRow = rowByKey(page, secondKey);
+
+  // Row one fails, then row two fails, both left undismissed.
+  route.armDelay();
+  await nameInput(firstRow).fill("   ");
+  await submitControl(firstRow).click();
+  await expect(page.getByTestId("naming-failed")).toBeVisible({
+    timeout: 15_000,
+  });
+  await nameInput(secondRow).fill("   ");
+  await submitControl(secondRow).click();
+  await expect(page.locator(".pulse-toast")).toHaveCount(1, {
+    timeout: 15_000,
+  });
+  const secondDescribedBy = await secondRow.getAttribute("aria-describedby");
+  expect(await page.locator(".pulse-toast").getAttribute("id")).toBe(
+    secondDescribedBy,
+  );
+
+  // The reader now acts on row ONE again. Its own notice must take the
+  // screen back, and row two's must still be waiting rather than gone.
+  await nameInput(firstRow).fill("   ");
+  await submitControl(firstRow).click();
+  const firstDescribedBy = await firstRow.getAttribute("aria-describedby");
+  expect(firstDescribedBy).not.toBeNull();
+  expect(firstDescribedBy).not.toBe(secondDescribedBy);
+  await expect
+    .poll(async () => page.locator(".pulse-toast").getAttribute("id"), {
+      timeout: 15_000,
+    })
+    .toBe(firstDescribedBy);
+  await expect(page.locator(".pulse-toast")).toHaveCount(1);
+  await expect(page.getByTestId("naming-failed")).toHaveText(
+    copy["namingFailed"] ?? "",
+  );
+
+  // Row two's notice was not lost: dismissing row one's reveals it.
+  await page.locator(".pulse-toast-dismiss").click();
+  await expect(page.locator(".pulse-toast")).toHaveCount(1);
+  expect(await page.locator(".pulse-toast").getAttribute("id")).toBe(
+    secondDescribedBy,
+  );
+  route.disarm();
+});
+
 // Criterion 11.3's two further datasets, in English: the dense month
 // M3-P7's criterion 7.13 introduced, and the naming whose typed name is an
 // EXISTING merchant's name, which is the case that would merge and sum two

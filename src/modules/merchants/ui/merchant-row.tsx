@@ -191,12 +191,19 @@ export const MerchantGroupRow = ({
       return;
     }
     enterNoticeQueue(noticeQueue, noticeId);
-    // A row that leaves the screen with a notice up must not hold the
-    // queue closed behind it.
-    return () => {
-      leaveNoticeQueue(noticeQueue, noticeId);
-    };
   }, [notice, noticeId]);
+  // A row that leaves the screen with a notice up must not hold a place in
+  // the queue behind it. Separate from the effect above ON PURPOSE (round
+  // two, finding HZ2-M3P11-02): a cleanup on that one runs on every raise
+  // as well as on unmount, which took the row out of the queue and put it
+  // back, and the module's own comment claimed an idempotence that
+  // sequence defeated.
+  useEffect(
+    () => () => {
+      leaveNoticeQueue(noticeQueue, noticeId);
+    },
+    [noticeId],
+  );
 
   const dismissNotice = useCallback(() => {
     leaveNoticeQueue(noticeQueue, noticeId);
@@ -267,7 +274,13 @@ export const MerchantGroupRow = ({
           action={async (formData) => {
             const typed = String(formData.get("merchantName") ?? "");
             setPredictedLabel(typed);
-            setNotice(null);
+            // THE PREVIOUS NOTICE IS NOT DROPPED HERE (round two, finding
+            // HZ2-M3P11-02). Clearing it at the start of a retry removed a
+            // notice the reader had not dismissed, which is the property
+            // decision D-32 bought by removing the timer, and it took this
+            // row out of the notice queue so another row's sentence took
+            // the screen while the reader was acting on this one. The
+            // outcome below replaces it, and the success path clears it.
             recordNaming(namingClaims, {
               rowKey: groupKey,
               direction,
@@ -284,7 +297,9 @@ export const MerchantGroupRow = ({
                 // with a NEXT_REDIRECT digest (measured in this phase's
                 // verification-first probe). Rethrow so the router handles
                 // it; this row's claim stays for the refreshed row to
-                // answer.
+                // answer. The row's own notice goes, because the naming it
+                // was about has now been answered.
+                setNotice(null);
                 throw error;
               }
               // The TRANSPORT failure: the request never produced the
