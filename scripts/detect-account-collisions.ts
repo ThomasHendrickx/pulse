@@ -12,7 +12,17 @@
 // which surfaces no output this repository may point at, so THE NAMING
 // LIVES HERE: one run of this script lists every such group, by row id
 // and NOTHING ELSE. The post-deploy check for the parked merge is one run
-// of this script against the deployed target.
+// of this script against the deployed target, AND THAT RUN IS NOT
+// OPTIONAL (M3-P18 fix round, hazard finding HZ-M3P18-04): with the
+// savings-ring refusal removed under DR-0030, a rings-disagreeing pair
+// no longer surfaces as a named refusal at upload. Its statements land
+// deterministically on the member whose stored form equals the canonical
+// probe and, where that member sits in the savings ring, they are
+// silently HELD: counted nowhere, flagged as no gap (the uninterpreted
+// count is pot-scoped by design), visible only as a held block naming
+// the savings-ring registration under the other row's label. This
+// script's output is the one signal that names such a pair, so it is run
+// after the backfill deploys, not merely available.
 //
 // THE SELECTION IS A GROUPING, NOT A NOT-CANONICAL FILTER (finding
 // R2-M3P18-01): it groups ALL of a household's rows by the canonical form
@@ -52,6 +62,7 @@
 // the answer); 2 the target was refused; 1 the query failed.
 
 import { PrismaClient } from "@prisma/client";
+import { ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS } from "../src/platform/account-number";
 import { assessNonProductionDbTarget } from "../src/platform/db/guard";
 import { resolveClientDbUrl } from "../src/platform/db/resolve-env";
 
@@ -62,11 +73,20 @@ export type CollisionGroup = {
 };
 
 // The grouping, over the SAME SQL mirror of canonicalAccountNumber the
-// migration uses (uppercase, every [[:space:]] removed; the POSIX class
-// on purpose, see the mirror-rule note in
-// src/modules/overview/adapters/overview-repository.ts). The canonical
-// form itself is grouped on and never selected, so no account-shaped
-// value can reach the output.
+// migration uses: uppercase, every character of the ONE shared
+// whitespace class removed. CORRECTED IN THE M3-P18 FIX ROUND (hazard
+// finding HZ-M3P18-01, clause R-087), superseded wording quoted: this
+// comment used to read "every [[:space:]] removed; the POSIX class on
+// purpose", and that class retains U+00A0, U+202F and U+FEFF where
+// JavaScript's \s strips them, so a pair the application layer treats as
+// ONE account (an NBSP-spaced rendering beside its compact twin) was two
+// unrelated rows to this grouping and the post-deploy check reported no
+// collision. The class now comes from ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS
+// at the mechanism's definition, passed as a BIND PARAMETER (a regexp
+// pattern is an ordinary string argument, so binding is safe and keeps
+// exactly one copy in importable code). The canonical form itself is
+// grouped on and never selected, so no account-shaped value can reach
+// the output.
 export const detectAccountCollisions = async (
   client: PrismaClient,
 ): Promise<readonly CollisionGroup[]> => {
@@ -74,7 +94,7 @@ export const detectAccountCollisions = async (
     SELECT array_agg(a."id"::text ORDER BY a."id") AS "ids"
     FROM "accounts" a
     WHERE a."iban" IS NOT NULL
-    GROUP BY a."householdId", upper(regexp_replace(a."iban", '[[:space:]]', '', 'g'))
+    GROUP BY a."householdId", upper(regexp_replace(a."iban", ${ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS}, '', 'g'))
     HAVING count(*) > 1
     ORDER BY 1
   `;

@@ -187,16 +187,31 @@ test("the backfill canonicalises the declarations, spares the pair, and opens th
   // THE MIGRATION, executed as committed.
   // -----------------------------------------------------------------
   const beforeRun = await accountsSnapshot(household.id);
+  // The FULL fact snapshot, every column, before anything runs (fix
+  // round, finding CR-M3P18-03: the comment beneath used to claim byte
+  // identity while the code asserted only a row count).
+  const factsBefore = await prismaClient().transaction.findMany({
+    where: { householdId: household.id },
+    orderBy: { id: "asc" },
+  });
   await runMigration();
   const afterRun = await accountsSnapshot(household.id);
 
   // ARM: the committed expression agrees with canonicalAccountNumber
-  // over EVERY rendering the harness wrote, except the collision pair,
-  // which is left byte identical (criterion 18.5), and the card's NULL
-  // number, which is untouched.
+  // over EVERY rendering the harness wrote, the DIVERGENT-whitespace
+  // rendering included (fix round, hazard finding HZ-M3P18-01: the
+  // narrowNbsp row's U+202F separators and leading U+FEFF must be
+  // stripped, which bare [[:space:]] cannot do), except the TWO
+  // collision pairs, which are left byte identical (criterion 18.5),
+  // and the card's NULL number, which is untouched. The NBSP pair is
+  // the second pair: its members share a canonical form only under the
+  // corrected class, so its byte identity here is what witnesses the
+  // collision guard and the class agreeing.
   const pairIds = new Set([
     seeded.accountIds.collisionSpaced,
     seeded.accountIds.collisionCompact,
+    seeded.accountIds.nbspSpaced,
+    seeded.accountIds.nbspCompact,
   ]);
   for (const before of beforeRun) {
     const after = afterRun.find((row) => row.id === before.id);
@@ -228,18 +243,29 @@ test("the backfill canonicalises the declarations, spares the pair, and opens th
   );
   expect(invalidRow?.iban).toBe("BE82910000000002");
 
-  // ARM: no fact moved. The seeded transactions are byte identical.
-  const transactions = await prismaClient().transaction.findMany({
-    where: { householdId: household.id, importId: seeded.importId },
-    orderBy: { dedupKey: "asc" },
-    select: { counterpartyIban: true, amountCents: true, description: true },
-  });
-  expect(transactions).toHaveLength(4);
+  // ARM: the narrowNbsp rendering, which has no twin, IS canonicalised:
+  // the U+202F separators and the leading BOM are gone (fix round,
+  // hazard finding HZ-M3P18-01; before the corrected class this row
+  // stayed at its SQL fixed point and its statement stayed refused).
+  const narrowRow = afterRun.find(
+    (row) => row.id === seeded.accountIds.narrowNbsp,
+  );
+  expect(narrowRow?.iban).toBe("BE43910000000007");
 
   // ARM: idempotent. A second run leaves every row byte identical.
   await runMigration();
   const afterSecondRun = await accountsSnapshot(household.id);
   expect(afterSecondRun).toEqual(afterRun);
+
+  // ARM: no fact moved, asserted as the byte identity it claims (fix
+  // round, finding CR-M3P18-03): every transaction column, deep-compared
+  // across BOTH migration runs against the pre-run snapshot.
+  const factsAfter = await prismaClient().transaction.findMany({
+    where: { householdId: household.id },
+    orderBy: { id: "asc" },
+  });
+  expect(factsAfter).toEqual(factsBefore);
+  expect(factsAfter).toHaveLength(4);
 
   // ARM: a no-op where there is nothing to do. A household whose stored
   // numbers are already canonical (M3-P14's own write shape) is
@@ -275,8 +301,18 @@ test("the backfill canonicalises the declarations, spares the pair, and opens th
   ]
     .sort()
     .join(" ");
+  // The NBSP pair is a collision only under the corrected whitespace
+  // class: the superseded [[:space:]] grouping saw two unrelated rows
+  // here, which was hazard finding HZ-M3P18-01's blindness half.
+  const expectedNbspLine = [
+    seeded.accountIds.nbspSpaced,
+    seeded.accountIds.nbspCompact,
+  ]
+    .sort()
+    .join(" ");
   const lines = stdout.trim().split("\n").filter((line) => line !== "");
   expect(lines).toContain(expectedLine);
+  expect(lines).toContain(expectedNbspLine);
   // No account number reaches the output, in any rendering: every line
   // is row ids only. (Other concurrently seeded households may
   // legitimately contribute their own pair lines; each is ids only.)

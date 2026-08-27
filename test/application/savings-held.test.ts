@@ -76,6 +76,17 @@ describe("a savings account's own statement is accepted and held (DR-0030, crite
     for (const row of world.transactions) {
       expect(row.flow).toBeUndefined();
     }
+
+    // AND THE IMPORT'S STATUS IS TERMINAL AT INGESTED (M3-P18 fix round,
+    // hazard finding HZ-M3P18-03): interpretation ran (confirm always
+    // runs it) but a savings import's rows never enter the window, so
+    // replaceInterpretation never flips it to INTERPRETED. This pin is
+    // the tested half of the corrected marker documentation at
+    // src/modules/import/adapters/import-repository.ts: for a savings
+    // import, INGESTED means settled and nothing is owed, and a future
+    // pending-work consumer must scope itself to pot-ring imports.
+    const record = world.imports.get(uploaded.importId);
+    expect(record?.status).toBe("INGESTED");
   });
 
   test("every account number the savings fixture introduces passes the validity test (criterion 18.2)", () => {

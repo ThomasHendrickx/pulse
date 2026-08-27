@@ -9,6 +9,7 @@
 // the declaration tables (accounts, merchants, merchant_tags, tags).
 
 import { Prisma } from "@prisma/client";
+import { ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS } from "@/platform/account-number";
 import { prisma } from "@/platform/db/client";
 import { cents } from "@/platform/money";
 import {
@@ -168,16 +169,24 @@ export const listSpendGroups = (
 // declared-set lookups. The SQL form mirrors canonicalAccountNumber in
 // src/platform/account-number.ts: uppercase, every whitespace removed.
 //
-// THE WHITESPACE CLASS IS WRITTEN [[:space:]] AND NOT \s ON PURPOSE, and
-// this is a correction of a defect this phase shipped and its own journey
-// spec caught (clause R-087). These queries are Prisma tagged TEMPLATE
-// LITERALS, so the SQL text passes through JavaScript escaping first: a
-// backslash-s in the source is not a recognised JavaScript escape and
-// collapses to a bare `s`, so the join ran regexp_replace(col, 's', ...)
-// and stripped the letter s from both sides instead of stripping
-// whitespace. It joined nothing, the reserve rows rendered under their
-// account numbers, and criterion 14.1's label assertion was what said so.
-// The POSIX class carries no backslash and cannot be eaten that way.
+// THE WHITESPACE CLASS IS THE SHARED PLATFORM CONSTANT, BOUND AS A
+// PARAMETER, and this paragraph has been corrected TWICE, both times
+// loudly (clause R-087). FIRST correction (M3-P14): a backslash-s in a
+// Prisma tagged template literal is not a recognised JavaScript escape
+// and collapses to a bare `s`, so the join once stripped the letter s
+// from both sides; the fix then was the POSIX class [[:space:]], which
+// carries no backslash. SECOND correction (M3-P18 fix round, hazard
+// finding HZ-M3P18-01), superseded wording quoted: "THE WHITESPACE CLASS
+// IS WRITTEN [[:space:]] AND NOT \s ON PURPOSE" was itself wrong one
+// level up, because POSIX [[:space:]] retains U+00A0, U+202F and U+FEFF
+// where the platform canonical form's \s strips them, so an NBSP-spaced
+// counterparty column joined to nothing exactly like the original
+// defect. The one class both corrections converge on is
+// ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS (src/platform/account-number.ts):
+// the POSIX class unioned with the remaining ECMAScript whitespace, as
+// visible ARE escapes, passed as a BIND parameter so no template-literal
+// escaping can eat it (the first correction's lesson, kept by
+// construction rather than by avoiding backslashes).
 export const listReserveMovements = async (
   context: HouseholdContext,
   period: Period,
@@ -191,15 +200,15 @@ export const listReserveMovements = async (
     }[]
   >`
     SELECT
-      upper(regexp_replace(t."counterpartyIban", '[[:space:]]', '', 'g'))
+      upper(regexp_replace(t."counterpartyIban", ${ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS}, '', 'g'))
                                     AS "counterpartyIban",
       a."label"                     AS "label",
       SUM(t."amountCents")::bigint  AS "totalCents",
       COUNT(*)::bigint              AS "rowCount"
     FROM "transactions" t
     LEFT JOIN "accounts" a
-      ON upper(regexp_replace(a."iban", '[[:space:]]', '', 'g'))
-         = upper(regexp_replace(t."counterpartyIban", '[[:space:]]', '', 'g'))
+      ON upper(regexp_replace(a."iban", ${ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS}, '', 'g'))
+         = upper(regexp_replace(t."counterpartyIban", ${ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS}, '', 'g'))
      AND a."householdId" = t."householdId"
     WHERE t."householdId" = ${context.householdId}::uuid
       AND t."flow" = 'RESERVE'::"Flow"
