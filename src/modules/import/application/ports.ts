@@ -90,6 +90,11 @@ export type ImportRecord = {
   readonly rowsAdded?: number;
   readonly rowsKnown?: number;
   readonly failureReason?: ImportFailureReason;
+  // The statement's own settlement figure, SIGNED integer cents, for a
+  // layout that prints one (finding HZ-M3P3-01). Absent otherwise. Signed
+  // rather than positive because a card standing in credit prints a
+  // figure owed to the household (finding HZ2-M3P3-05).
+  readonly settlementTotalCents?: number;
 };
 
 export type StoredProfile = {
@@ -192,6 +197,13 @@ export type ImportRepositoryPort = {
           readonly transactionId: string;
           readonly dedupKey: string;
         })[];
+        // The RE-PARSED settlement figure (fix round 3, finding
+        // HZ2-M3P3-04). The column is a fact of the document, so the one
+        // sanctioned facts rebuild rebuilds it too, in the same
+        // transaction as the rows it belongs to. Absent means the
+        // re-parse produced none and the stored value is cleared, so a
+        // figure can never outlive the reading that produced it.
+        readonly settlementTotalCents?: number;
       }[];
     },
   ) => Promise<void>;
@@ -209,6 +221,11 @@ export type ImportRepositoryPort = {
       readonly sourceProfileId: string;
       readonly fromStatus: ImportStatus;
       readonly rows: readonly IngestRow[];
+      // Written on the import row inside the SAME transaction as the
+      // rows, because it is a fact of the same document and must never
+      // exist without them (finding HZ-M3P3-01). Absent for a statement
+      // that prints no such figure.
+      readonly settlementTotalCents?: number;
     },
   ) => Promise<
     | { readonly ok: true; readonly added: number; readonly known: number }

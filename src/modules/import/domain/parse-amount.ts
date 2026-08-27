@@ -1,7 +1,7 @@
 // Amount text to integer cents, without a float anywhere on the path
 // (CLAUDE.md non-negotiable 3). The digits are taken apart as strings and
 // assembled with integer arithmetic only; parseFloat never appears, so a
-// value like 30941.50 can never pick up representation error on its way to
+// value like 38152.75 can never pick up representation error on its way to
 // the ledger.
 
 import { cents, type Cents } from "@/platform/money";

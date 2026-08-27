@@ -9,6 +9,7 @@
 // Everything here is derived, disposable and rebuildable from facts plus
 // declarations. Nothing here writes; persistence is an adapter concern.
 
+import type { Cents } from "@/platform/money";
 import { classifyFlow, type Classification } from "./classify-flow";
 import { TRANSFER_DATE_TOLERANCE_DAYS } from "./constants";
 import {
@@ -59,12 +60,21 @@ export const interpretLedger = (input: {
   // recompute. When absent (recompute, pure-domain tests over complete
   // datasets), history is derived from the given transactions.
   readonly outgoingHistoryKeys?: ReadonlySet<string>;
+  // Import id to the settlement figure that import's own statement
+  // carries (fix round 2, finding HZ-M3P3-01). Absent entries fall back
+  // to the row-sum derivation; an absent map is the pure-domain default
+  // for a dataset built from rows alone.
+  readonly statementSettlementTotals?: ReadonlyMap<string, Cents>;
 }): LedgerInterpretation => {
   const sets = deriveDeclaredSets(input.accounts);
   const potTransactions = input.transactions.filter((transaction) =>
     sets.potAccountIds.has(transaction.accountId),
   );
-  const cardImports = summarizeCardImports(potTransactions, sets);
+  const cardImports = summarizeCardImports(
+    potTransactions,
+    sets,
+    input.statementSettlementTotals,
+  );
   const outgoingHistoryKeys =
     input.outgoingHistoryKeys ?? buildOutgoingHistoryKeys(potTransactions);
 
@@ -83,11 +93,29 @@ export const interpretLedger = (input: {
   // Exclusive settlement allocation (finding CR-306): a statement is
   // settled ONCE, so each card import pairs with AT MOST ONE settlement
   // debit. Candidates are enumerated per debit and allocated globally by
-  // the D-7-style tie-break (smallest date distance to the statement's
-  // period end, then lowest transaction id, then lowest import id);
-  // losers fall through to the sign rule's honest unitemised SPEND, the
-  // same arm a no-match debit takes, so an exact-cent coincidence can
-  // never make real spend vanish onto an already-settled statement.
+  // the D-7-style tie-break, and losers fall through to the sign rule's
+  // honest unitemised SPEND, the same arm a no-match debit takes, so an
+  // exact-cent coincidence can never make real spend vanish onto an
+  // already-settled statement.
+  //
+  // THE STRENGTH OF THE READING COMES FIRST (fix round 5, finding
+  // HZ4-M3P3-01). An import with no printed figure can offer TWO totals,
+  // because from the rows alone an unrecognised settlement credit and an
+  // ordinary merchant refund are the same shape (ledger-transaction.ts).
+  // The second of those is the weaker reading, and a review lane built the
+  // link it uniquely enables: one statement's SECOND total coinciding with
+  // another statement's ONLY total, with the weaker match nearer in time,
+  // so a date-first tie-break credited the debit to the statement that did
+  // not receive it. Every consequence of that was loud, and what it cost
+  // was the settlement RECORD rather than the month, but a link made on
+  // the weaker of two readings should lose to one made on the only reading
+  // there is. So the order is now: matches on the import's PRIMARY total
+  // (its printed figure, or its net when both derivations agree) before
+  // one that matches only on the secondary; then the smallest date
+  // distance to the statement's period end; then lowest transaction id;
+  // then lowest import id. An import offering ONE total always matches on
+  // its primary, so this subsumes "prefer the unambiguous import" without
+  // punishing an ambiguous one that matches on its trustworthy reading.
   const patternDebits = potTransactions
     .filter((t) => classifications.get(t.id)?.settledCardImportId !== undefined)
     .sort((a, b) => compareIds(a.id, b.id));
@@ -96,11 +124,18 @@ export const interpretLedger = (input: {
       settlementCandidateImports(debit, cardImports).map((candidate) => ({
         debit,
         candidate,
+        // 0 when the debit's magnitude is the import's PRIMARY total, 1
+        // when it only equals a secondary candidate. An import with a
+        // stored figure, or one whose two derivations agree, has exactly
+        // one total and is therefore always 0.
+        readingRank:
+          candidate.settlementTotalsCents[0] === -debit.amountCents ? 0 : 1,
         distance: dayDistance(debit.bookingDate, candidate.periodEnd),
       })),
     )
     .sort(
       (a, b) =>
+        a.readingRank - b.readingRank ||
         a.distance - b.distance ||
         compareIds(a.debit.id, b.debit.id) ||
         compareIds(a.candidate.importId, b.candidate.importId),

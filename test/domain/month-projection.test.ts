@@ -20,7 +20,10 @@ import {
   type CountedGroupRow,
   type RawMonthFigures,
 } from "@/modules/overview/domain/month-projection";
-import { normaliseCounterparty } from "@/modules/merchants/application";
+import {
+  counterpartyIdentity,
+  normaliseCounterparty,
+} from "@/modules/merchants/application";
 
 // The pure projection layer's fast-gate suite (fix round 1, CR-504: the
 // layer shipped with e2e coverage only, so a silent sign flip or an
@@ -97,13 +100,14 @@ describe("calendar month arithmetic (month.ts)", () => {
 });
 
 describe("foldGroups partitions every row into exactly one group", () => {
-  const options = { useTags: true, normalise: normaliseCounterparty };
+  const options = { useTags: true, identity: counterpartyIdentity, normalise: normaliseCounterparty };
 
   const row = (overrides: Partial<CountedGroupRow>): CountedGroupRow => ({
     merchantId: null,
     merchantName: null,
     primaryTag: null,
     counterpartyText: "SUPERMARKT NOORD GENT",
+    counterpartyAccount: null,
     isCash: false,
     totalCents: cents(-1000),
     rowCount: 1,
@@ -176,22 +180,25 @@ describe("attachDeltas joins by group key and pins the magnitude semantics", () 
   test("deltas join by key across the year boundary, not by array position", () => {
     const january = foldGroups(
       [
-        { merchantId: "m1", merchantName: "Colruyt", primaryTag: null, counterpartyText: "COLRUYT", isCash: false, totalCents: cents(-5000), rowCount: 2 },
-        { merchantId: null, merchantName: null, primaryTag: null, counterpartyText: "BAKKERIJ CENTRUM", isCash: false, totalCents: cents(-1500), rowCount: 1 },
+        { merchantId: "m1", merchantName: "Colruyt", primaryTag: null, counterpartyText: "COLRUYT", counterpartyAccount: null, isCash: false, totalCents: cents(-5000), rowCount: 2 },
+        { merchantId: null, merchantName: null, primaryTag: null, counterpartyText: "BAKKERIJ CENTRUM", counterpartyAccount: null, isCash: false, totalCents: cents(-1500), rowCount: 1 },
       ],
-      { useTags: true, normalise: normaliseCounterparty },
+      { useTags: true, identity: counterpartyIdentity, normalise: normaliseCounterparty },
     );
     const december = foldGroups(
       [
-        { merchantId: null, merchantName: null, primaryTag: null, counterpartyText: "BAKKERIJ CENTRUM", isCash: false, totalCents: cents(-1000), rowCount: 1 },
-        { merchantId: "m1", merchantName: "Colruyt", primaryTag: null, counterpartyText: "COLRUYT", isCash: false, totalCents: cents(-6000), rowCount: 3 },
+        { merchantId: null, merchantName: null, primaryTag: null, counterpartyText: "BAKKERIJ CENTRUM", counterpartyAccount: null, isCash: false, totalCents: cents(-1000), rowCount: 1 },
+        { merchantId: "m1", merchantName: "Colruyt", primaryTag: null, counterpartyText: "COLRUYT", counterpartyAccount: null, isCash: false, totalCents: cents(-6000), rowCount: 3 },
       ],
-      { useTags: true, normalise: normaliseCounterparty },
+      { useTags: true, identity: counterpartyIdentity, normalise: normaliseCounterparty },
     );
     const withDeltas = attachDeltas(january, december);
     const byKey = new Map(withDeltas.map((g) => [g.key, g.deltaCents]));
     expect(byKey.get("merchant:m1")).toBe(-1000);
-    expect(byKey.get("text:BAKKERIJ CENTRUM")).toBe(500);
+    // M3-P12: the unresolved key is the counterparty IDENTITY under the
+    // fold's own text: prefix. These rows carry no account, so the identity
+    // is the descriptor basis and the suffix is the key they always had.
+    expect(byKey.get("text:descriptor:BAKKERIJ CENTRUM")).toBe(500);
   });
 
   test("PINNED DECISION (review probe P-F11): the delta is the MAGNITUDE change, |current| minus |previous|, including across a sign flip", () => {
