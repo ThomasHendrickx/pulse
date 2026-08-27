@@ -7692,8 +7692,10 @@ phases:
       At household setup the owner enters every account they own ONCE, each
       account number with a label and a ring, pot or savings, before any
       statement is imported. Credit cards are explicitly not asked for and are
-      declared at first sight when their statement arrives, as today. Ring is
-      fixed at setup. From then on a transfer to one of the household's own
+      declared at first sight when their statement arrives, as today. The ring
+      is ANSWERED at setup and stays CORRECTABLE afterwards in both directions
+      on the same screen, which is criterion 14.12 and decision D-51. From then
+      on a transfer to one of the household's own
       accounts is recognised as their own account instead of being offered as a
       merchant to name, which is the thing the owner actually complained about
       and the point of this phase. A savings account's own statement is
@@ -7786,10 +7788,22 @@ phases:
           src/modules/overview/adapters/overview-repository.ts:175 through
           :176. The import path's own declaration at confirm-import.ts:93
           through :99 stores the canonical form too, so the per-household
-          uniqueness constraint at prisma/schema/accounts.prisma:28 is a real
-          backstop.
+          uniqueness constraint at prisma/schema/accounts.prisma:28 is a
+          backstop FOR ROWS WRITTEN FROM THIS PHASE ONWARD. It is NOT a
+          backstop for rows a pre-existing household already carries, because
+          the migrations note deliberately leaves stored values alone and a
+          Belgian statement prints its accounts spaced, so uniqueness for those
+          is enforced IN THE USE CASE over the CANONICAL form rather than by
+          the index, which compares stored strings and would not fire on that
+          pair.
       - text: >-
-          Build the setup screen. One route under the authenticated shell that
+          Build the setup screen. ONE ROUTE, src/app/(app)/accounts/, is the
+          whole of it, and this plan's three names for it, the setup screen,
+          the accounts screen and the accounts list, are three STATES of that
+          one route: entering the accounts not yet known, reviewing what is
+          about to be written, and listing what the household holds with each
+          ring changeable in place under criterion 14.12. It is a route under
+          the authenticated shell that
           asks for EVERY account at once: a label, a bank, an account number
           and a ring for each, with rows the owner can add and remove, and one
           submit. It states in plain language, BEFORE the ring is answered and
@@ -7831,8 +7845,8 @@ phases:
           field on MonthOverview
           (src/modules/overview/application/month-overview.ts:42 through :67),
           returning the rows of the requested period on accounts whose ring is
-          savings, per account, with booking date, counterparty text and
-          amount. IT CARRIES NO FLOW CONDITION AT ALL and is keyed on the RING
+          savings, per account and carrying that account's LABEL, with booking
+          date, counterparty text and amount. IT CARRIES NO FLOW CONDITION AT ALL and is keyed on the RING
           alone, which is sound because a savings account's rows never enter
           the interpretation window and are therefore held by construction, and
           which is why it is correctly absent from the enumeration criterion
@@ -7863,7 +7877,15 @@ phases:
           same commit, and adds the new entries to
           test/fixtures/allowed-identifiers.txt with a written provenance note
           while removing the superseded ones. It reads its own numbers off its
-          own run rather than off this plan.
+          own run rather than off this plan. PROD-SMOKE IS MIGRATED FIRST
+          rather than last: it drives the declaration fieldset and the ring
+          control directly over a freshly signed up household, it runs against
+          a real production build and against the deployed URL in
+          deploy-verify, and a production-only failure with no witness is the
+          incident it exists to prevent. Its migration completes setup for the
+          account its PDF fixture carries, whose number is re-invented through
+          test/fixtures/generate-pdf-fixtures.ts so the emitted PDF stays
+          uncompressed and readable by npm run gate:privacy.
       - text: >-
           Make registration recognise what is already there. Interpretation
           runs over a window across all pot accounts rather than over the rows
@@ -7901,8 +7923,31 @@ phases:
           in the same use case and before the recompute. That is a targeted
           interpretation write over one account's rows, not the general
           clearing machinery earlier drafts carried, and it touches no fact
-          column. It is named here as scope rather than absorbed: it is one
-          repository function and one call. Criterion 14.12 measures the
+          column, and it clears that account's interpretation ENTIRELY: the
+          flow and merchant columns of its own rows, AND every TransferLink row
+          naming one of those rows on either side, because
+          prisma/schema/ledger.prisma:1 through :5 declares that table pure
+          interpretation and fully rebuildable while
+          src/modules/ledger/adapters/ledger-repository.ts:173 deletes links
+          only by the ids the window loaded, so a link with an end outside the
+          pot is reachable by no future recompute. THE CLEAR IS THE LEDGER'S,
+          NOT THE ACCOUNTS MODULE'S: the function lives in
+          src/modules/ledger/adapters/ledger-repository.ts beside
+          replaceInterpretation, is declared on the ledger repository port at
+          src/modules/ledger/application/ports.ts and published through the
+          ledger's application interface, and the accounts use case receives it
+          as an injected dependency exactly as
+          src/modules/merchants/application/assign-merchant.ts:69 receives
+          recompute, because .claude/skills/pulse-domain/SKILL.md:168 forbids
+          the accounts module reaching a neighbour's repository and criterion
+          14.8 forbids the accounts repository updating a transaction. THE
+          CORRECTION IS ONE UNIT OF WORK: the ring declaration, the clear and
+          the recompute all land or none do, and the use case returns a named
+          error rather than a partial state. The clear is keyed on the
+          account's CURRENT ring rather than on the transition, so it is
+          re-runnable and converges, clearing an account that is not in the pot
+          being a no-op once done. It is named as scope rather than absorbed:
+          one repository function, one port member and one call. Criterion 14.12 measures the
           correction and criterion 14.13 measures the household that arrives
           with its accounts already declared.
       - text: >-
@@ -7933,6 +7978,9 @@ phases:
       - test/domain/
       - test/application/
       - src/modules/overview/application/ports.ts (the held-rows read)
+      - src/modules/ledger/adapters/ledger-repository.ts (the targeted clear)
+      - src/modules/ledger/application/ports.ts
+      - src/modules/ledger/application/index.ts
       - src/modules/overview/application/month-overview.ts
       - .claude/skills/pulse-domain/SKILL.md (section 1, corrected by DR-0030)
       - test/e2e/accounts.spec.ts
@@ -7941,6 +7989,8 @@ phases:
       - test/e2e/import.spec.ts
       - test/e2e/merchants.spec.ts
       - test/e2e/navigation.spec.ts
+      - test/e2e/prod-smoke.spec.ts
+      - test/e2e/seed-pre-phase-household.ts (new, the seed harness)
       - test/fixtures/
       - test/fixtures/allowed-identifiers.txt
     extras: []
@@ -8076,7 +8126,26 @@ phases:
           D-48: a card carries no account number, is recognised through its
           bound SourceProfile, and is therefore never entered at setup. The
           setup screen says so in all three catalogues and the accounts list
-          shows card accounts once they exist, with their ring. And the
+          shows card accounts once they exist, with their ring. AND THE CARD IS
+          A ROW WITH NO NUMBER, WHICH THE SCREEN MUST ADMIT: a card account is
+          exactly an account whose number is absent
+          (prisma/schema/accounts.prisma:16 through :20), and that ABSENCE is
+          what the ledger reads as cardness
+          (src/modules/ledger/domain/ledger-transaction.ts:64). So a card
+          account is listed as already known WITHOUT a number, is not a row the
+          validity test of criterion 14.3 is applied to, is not counted among
+          the rows the household must complete before submitting, and NO
+          control on this route can give an existing card account a number. A
+          Playwright test over a household holding a card account asserts setup
+          submits without touching that row and that its stored number is still
+          absent afterwards; an application test asserts the setup use case
+          rejects any submission that would write a number onto an account
+          bound to a SourceProfile, because doing so moves it out of the
+          unbounded card load
+          (src/modules/ledger/application/interpret-window.ts:54 through :58,
+          finding CR-301), breaks settlement matching, and turns off the card
+          refund arm at src/modules/ledger/domain/classify-flow.ts:113 through
+          :117 (finding HZ-M3P3-06). And the
           consequence is witnessed rather than asserted: a Playwright test
           imports a card fixture and its paying current-account fixture and
           asserts that before the card statement is imported the settlement
@@ -8111,11 +8180,21 @@ phases:
           recompute exactly once; a test asserts running recompute twice
           afterwards leaves every interpretation column identical, which is the
           rebuildability test the domain sets
-          (.claude/skills/pulse-domain/SKILL.md:35). A ring change out of the
-          pot CLEARS the interpretation columns of that account's own rows
-          before recomputing, asserted at the application level, which is what
-          keeps a stale flow on an account outside the pot unreachable; a test
-          asserts no raw column on any of those rows changed while flow and
+          (.claude/skills/pulse-domain/SKILL.md:35), AND the whole
+          transfer_links table identical, since that table is pure
+          interpretation (prisma/schema/ledger.prisma:1 through :5). A ring
+          change out of the pot CLEARS that account's interpretation entirely,
+          the flow and merchant of its own rows and every TransferLink naming
+          one of them on either side, IN THE SAME UNIT OF WORK as the ring
+          declaration and the recompute, asserted at the application level by a
+          test in which the recompute dependency THROWS: the test asserts the
+          account's ring is unchanged afterwards, that its rows still carry the
+          flow they carried before, and that the household is shown a named
+          error in all three catalogues, so the criterion can fail. A further
+          test asserts the clearing function is reached through the LEDGER's
+          published application interface, with a grep showing the accounts
+          module imports no ledger adapter and no table the ledger owns, and
+          that no raw column on any affected row changed while flow and
           merchant became null. THIS PLAN CARRIES NO GENERAL CLEARING
           MACHINERY, only that targeted write, because no other path leaves an
           interpreted row outside the pot. AND IT DOES CARRY READ SCOPING,
@@ -8146,10 +8225,17 @@ phases:
           of fixture account numbers re-invented, and a phase that reaches a
           green e2e gate by weakening criterion 14.3 rather than by
           re-inventing the numbers FAILS this criterion;
-          .claude/skills/pulse-domain/SKILL.md:22, which says a reserve
-          account's statements are not imported in v1, is corrected in this
-          phase's commit to record DR-0030, with a grep asserting the
-          superseded sentence is gone, because CLAUDE.md routes every task
+          .claude/skills/pulse-domain/SKILL.md:22 carries THREE sentences and
+          DR-0030 reaches all three, that a reserve account is registered for
+          its account number only, that its statements are not imported in v1,
+          and that a reserve movement is classified entirely from the pot side.
+          All three are corrected in this phase's commit to record what the
+          product now does: the statement IS imported, its rows are stored as
+          facts and shown marked held and counted in no total, and the pot side
+          remains the only place a reserve movement is CLASSIFIED while the
+          savings side is where interest, a movement between two savings
+          accounts and a payment straight out of savings become visible at all.
+          A grep asserts each of the three superseded sentences is gone, because CLAUDE.md routes every task
           touching accounts or flow to that skill first so a sentence there
           contradicting the shipped behaviour is read BEFORE the plan by
           whoever works next; the work history carries the captured output of
@@ -8183,8 +8269,14 @@ phases:
           than one fixture. Five assertions. ONE, THE ROWS ARE ON THE PAGE: an element with
           data-testid held-rows renders under that account, one line per held
           row of the requested period carrying its booking date, its
-          counterparty text and its amount, and a Playwright test asserts each
-          of the first three shapes appears with the amount the fixture gives
+          counterparty text and its amount, and the block is HEADED BY THE
+          LABEL the household typed for that account, never by its number,
+          which the port method returns alongside the rows; a Playwright test
+          asserts the heading is the typed label and a grep asserts the
+          rendered block carries no account-shaped string, which is the same
+          requirement criterion 14.1 makes of the reserve-group elements beside
+          it and for the same reason. A Playwright test asserts each of the
+          first three shapes appears with the amount the fixture gives
           it, byte compared against strings written by hand in the spec from
           the fixture's own arithmetic. A row COUNT standing in for an amount
           fails this criterion. TWO, THE WORDS: the block states, in text the
@@ -8229,8 +8321,13 @@ phases:
           src/modules/overview/adapters/overview-repository.ts:230 and
           listGapRows at overview-repository.ts:263 through :310 whose CASE at
           :280 labels a null flow uninterpreted and whose WHERE at :295 admits
-          it, and the test asserts BOTH are scoped by the account's ring and
-          that no third read carrying a flow condition appears. The read
+          it, and the grep's arms are THREE rather than two, the SQL string
+          form, a SQL COALESCE or CASE over the flow column compared to a
+          sentinel, and the Prisma client form in ALL its spellings, a bare
+          null, an equals-null object and an in-list carrying null, because the
+          pinned literal is one of several texts for one condition. The test
+          asserts BOTH are scoped by the account's ring and that no third read
+          carrying a flow condition appears. The read
           criterion 14.10 adds is correctly absent from this enumeration
           because it carries NO flow condition, being keyed on the account's
           ring alone; a held read written instead as an absent flow on an
@@ -8246,8 +8343,12 @@ phases:
           household holding one null-flow row on a SPENDING account and one on
           a SAVINGS account asserts the spending row is counted by
           uninterpretedCount AND returned by listGapRows AND holds the verdict
-          open, while the savings row is in neither and is instead rendered by
-          criterion 14.10. A scoping written by dropping the null-flow
+          open, while the savings row is in neither and is instead returned by
+          the held read of criterion 14.10. THE SWEEP IS OVER THE WHOLE PORT
+          rather than over two named reads: the test calls EVERY method
+          src/modules/overview/application/ports.ts publishes and asserts, per
+          method, which of the two rows it returns or counts, so a read nobody
+          thought about cannot quietly see either. A scoping written by dropping the null-flow
           condition rather than by the ring fails here, which is finding CR-502
           held rather than undone (the comment recording it at
           overview-repository.ts:237 through :242).
@@ -8265,14 +8366,28 @@ phases:
           they render as held under criterion 14.10 with their dates and
           amounts; that the current account's transfers into it have moved out
           of the internal pairing and into the reserves block; that
-          income-total and spend-total have each fallen by exactly the rows
-          concerned, against strings written by hand in the spec from the
-          fixture's own arithmetic; and that the verdict still reads as books
+          income-total, spend-total AND NET-TO-RESERVES are each byte identical
+          to strings written by hand in the spec from the fixture's own
+          arithmetic, NET TO RESERVES being the figure this correction exists to
+          repair and the one the reconciliation identity cannot check, because
+          substituting
+          src/modules/overview/adapters/overview-repository.ts:216 through :219
+          into src/modules/overview/domain/month-projection.ts:196 through :201
+          cancels the income, spend and reserve sums on both sides and leaves
+          the difference equal to the internal sum plus the unresolved sum, so
+          a misallocation among those three reconciles perfectly and the
+          verdict is blind to exactly the defect this criterion is for; that
+          the reserves block renders one group for that account carrying the
+          LABEL the household typed and not its number; and that the verdict still reads as books
           closing. An application test asserts the same use case CLEARS the
           flow and merchant of that account's own rows before recomputing, that
           every one of those rows carries a null flow afterwards, and that no
-          raw column on any of them changed. The REVERSE direction, savings to
-          spending, is asserted to need no clearing and to classify those rows
+          raw column on any of them changed. A second application test runs the
+          same use case TWICE over the same account and asserts the second run
+          changes nothing and errors on nothing, which is what makes the
+          correction recoverable in a product whose recompute can throw. The
+          REVERSE direction, savings to spending, is asserted to need no
+          clearing and to classify those rows
           on the ordinary recompute. Neither direction is refused; a phase that
           refuses either fails this criterion.
       - id: "14.13"
@@ -8282,10 +8397,33 @@ phases:
           where the owner actually is, with accounts created one file at a time
           through src/modules/import/application/confirm-import.ts:96, rings
           answered on an import screen this phase deletes, and rows already
-          ingested. A Playwright test builds a household that way and then
-          loads the setup screen, asserting: that every existing account is
-          listed with its label, its number and its ring, marked as already
-          known rather than as a blank row; that the household can add the
+          ingested. A test builds that household through a SEED HARNESS rather
+          than through the product, because this phase removes both screens the
+          pre-phase household was made on, the ring control being deleted by
+          criterion 14.5 and the numbered-account creation at
+          confirm-import.ts:96 being closed by the gate. The harness writes
+          Account rows directly with a label, a bank, a ring and a stored
+          number left exactly as the pre-phase import path wrote it, including
+          at least one whose stored form is NOT canonical, at least one whose
+          stored number FAILS the validity test of criterion 14.3, and at least
+          one CARD account with no number at all, plus ingested Transaction
+          rows against them, and it lives beside the existing e2e helpers. A
+          Playwright test then loads the setup screen over that household and
+          asserts: that every existing account is listed with its label, its
+          ring, and its number where it has one, a card account being listed
+          without one and never gaining one, marked as already known rather
+          than as a blank row; that a typed row whose CANONICAL form equals the
+          canonical form of an account the household already holds is refused
+          with a named error in all three catalogues pointing at the listed row
+          it duplicates, rather than creating a second Account for one real
+          account, asserted by an application test over a household whose
+          stored number is non-canonical and whose typed number is canonical,
+          since the index at prisma/schema/accounts.prisma:28 compares stored
+          strings and does not fire on that pair, and a domain test states what
+          would otherwise follow, that the reserve set is tested first at
+          src/modules/ledger/domain/classify-flow.ts:62 so a duplicate answered
+          with two different rings sends every movement to that account to
+          RESERVE; that the household can add the
           accounts it never imported and submit; that the ring explanation
           renders for them too, because they never saw it; that after
           submission the import gate accepts a file for any listed account; and
@@ -8359,6 +8497,32 @@ phases:
           a figure that looks like a savings balance appears while being only
           the sum of whatever statements happen to have been imported.
         addressed-by: criterion 14.10
+      - id: H14.16
+        statement: >-
+          A card account is given an account number at setup, which moves it
+          out of the unbounded card load, breaks settlement matching and turns
+          off the card refund arm, because the phase says cards are not asked
+          for and then asks a pre-existing household to complete every row.
+        addressed-by: criterion 14.6
+      - id: H14.17
+        statement: >-
+          A pre-existing household re-types its own account number canonically,
+          the stored row holds a spaced rendering, the unique index does not
+          fire, and one real account becomes two rows whose rings may disagree.
+        addressed-by: criterion 14.13
+      - id: H14.18
+        statement: >-
+          The ring change lands its declaration and then fails before its clear
+          or its recompute, leaving an account whose ring says one thing and
+          whose rows say another, with no path that heals it.
+        addressed-by: criterion 14.8
+      - id: H14.19
+        statement: >-
+          The correction is measured on income and spend while the figure it
+          exists to repair is net to reserves, which the reconciliation
+          identity cannot check because a misallocation among the three
+          reconciles perfectly.
+        addressed-by: criterion 14.12
       - id: H14.13
         statement: >-
           The committed fixtures predate the validity check the setup form now
