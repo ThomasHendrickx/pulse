@@ -40,12 +40,17 @@ prompt: |
   changed, and anything you could not do with the reason.
 files-touched:
   - src/app/api/health/version/route.ts
+  - src/app/api/health/version/build-stamp.ts
   - test/app/health-version.test.ts
   - test/e2e/prod-smoke.spec.ts
   - delivery/work-history/m3-p17.yaml
 per-step-commits:
-  - sha: 8dc9678
+  - sha: d5b656f
     subject: "health: add the deployed build stamp route (M3-P17)"
+  - sha: c831623
+    subject: "docs: record the M3-P17 work history"
+  - sha: aad2a64
+    subject: "health: fix round 1 for M3-P17"
 key-decisions:
   - decision: >-
       The route reads process.env.VERCEL_GIT_COMMIT_SHA and process.env.VERCEL_ENV
@@ -59,11 +64,14 @@ key-decisions:
       instruction is explicit that files outside the phase declaration are
       not touched. The two variables are Vercel platform facts, not
       application secrets, and the read happens inside the handler body at
-      request time and not at module scope (checked: `grep -n
-      'process\.env' src/app/api/health/version/route.ts` shows both reads
-      at lines 41-42, both inside `GET()`, which begins at line 39; no
-      module-scope statement reads either variable), which is the property
-      config.ts's own comment calls BUILD-SAFE (src/platform/config.ts:1-10):
+      request time and not at module scope (checked at round 1: `grep -n
+      'process\.env' src/app/api/health/version/route.ts` showed both reads
+      at lines 41-42, both inside `GET()`, which began at line 39; no
+      module-scope statement read either variable. RE-CHECKED AT THE FIX
+      ROUND 1 HEAD after the marker moved to build-stamp.ts: the same grep
+      now shows the two reads at lines 47-48, both inside `GET()`, which
+      now begins at line 44; still no module-scope read, still true), which
+      is the property config.ts's own comment calls BUILD-SAFE (src/platform/config.ts:1-10):
       a Vercel build importing this route module during page-data
       collection reads nothing and validates nothing. There is also
       existing precedent for process.env reads outside config.ts confined
@@ -98,6 +106,67 @@ key-decisions:
       it, and it touches none of this phase's own three files (confirmed:
       `git diff --name-only origin/main...HEAD` still lists exactly the
       three files this phase owns after the rebase).
+  - decision: >-
+      FIX ROUND 1 (coordinator dispatch, both clean-room lanes returned
+      FIX-ROUND-NEEDED on head 12c20f3). Moved `export const UNSTAMPED`
+      out of src/app/api/health/version/route.ts into a new sibling file,
+      src/app/api/health/version/build-stamp.ts, and repointed both
+      importers (test/app/health-version.test.ts and
+      test/e2e/prod-smoke.spec.ts) at the new module.
+    why: >-
+      CR-M3P17-01 / HZ-M3P17-01 (both lanes, severity high/critical):
+      `npm run build` exited 1 at 12c20f3 with "UNSTAMPED is not a valid
+      Route export field", because a Next.js App Router route module may
+      only export its HTTP handlers and the segment config fields, and
+      tsc --noEmit never runs that check, so the fast gate was green over
+      a head whose production build (and therefore npm run test:e2e,
+      whose chromium-prod project builds before it serves) could not pass
+      in any environment, Docker or not. I reproduced this myself before
+      touching any code (see verification-first below). The new file
+      stays inside this phase's declared files-to-touch
+      (src/app/api/health/), which both verdicts' concrete-fix already
+      confirmed as available; the criteria lane named the file
+      build-stamp.ts, the hazard lane named it unstamped.ts, and I used
+      build-stamp.ts, since "build stamp" is the phase's own vocabulary
+      (the plan's own title for M3-P17). Only the marker moved; buildFact
+      stays in route.ts because it was never exported and never tripped
+      the route-export check.
+  - decision: >-
+      FIX ROUND 1. Added an explicit `Cache-Control: no-store` header to
+      the route's 200 response, plus one unit test asserting it.
+    why: >-
+      HZ-M3P17-02 (low): force-dynamic stops Next's static caching but
+      emits no freshness header of its own, so an intermediary could
+      apply heuristic freshness to a body whose entire purpose is telling
+      a waiting phase (M3-P16) which build is currently live. A stale
+      cached sha read by that phase is exactly the failure mode the
+      hazard lane named.
+  - decision: >-
+      FIX ROUND 1. Corrected the route's comment, which said the marker
+      "carries no hexadecimal-only characters", to the plan's own
+      wording: the marker carries characters that are NOT hexadecimal
+      digits.
+    why: >-
+      CR-M3P17-03 (low, R-087): the original sentence was false as
+      written, since the marker "unstamped" DOES contain hexadecimal
+      digits (a, d, e); the property that is actually true, and tested,
+      is that not every character is hexadecimal, so the whole word can
+      never match /^[0-9a-f]+$/i.
+  - decision: >-
+      FIX ROUND 1. Rebased the branch a second time onto origin/main's
+      new tip (dc18484 at dispatch time) rather than leaving it on
+      f19984b.
+    why: >-
+      HZ-M3P17-03 / CR-M3P17-02 (low): npm run gate:decisions was red at
+      12c20f3 on six review lanes over the two-round cap, and both lanes
+      independently confirmed by construction that the same six lanes
+      are red at the branch's own merge base f19984b, i.e. pre-existing
+      and not introduced by this phase. dc18484 ("review: keep at most
+      two rounds per lane on main") already prunes them on trunk, one
+      commit ahead of this phase's old merge base, so rebasing removes
+      the open question entirely rather than leaving it for the
+      orchestrator. Verified after rebasing: npm run gate:decisions
+      exits 0 (see gate-evidence).
 verification-first:
   - finding: >-
       No existing build stamp. Captured: `grep -rniE
@@ -149,8 +218,89 @@ verification-first:
       response", which is an acceptable, recorded answer under the clause
       rather than an omission.
     contradicts-plan: false
+  - finding: >-
+      FIX ROUND 1. Both clean-room verdicts' central finding (CR-M3P17-01
+      / HZ-M3P17-01) reproduced myself before writing any fix, per the
+      dispatch's instruction to verify their evidence rather than take it
+      on trust. In this worktree at head 12c20f3, with DATABASE_URL,
+      DIRECT_URL, NEXT_PUBLIC_SUPABASE_URL and
+      NEXT_PUBLIC_SUPABASE_ANON_KEY pinned to invented local values:
+      `npm run build` exits 1 with "Type error: Route
+      src/app/api/health/version/route.ts does not match the required
+      types of a Next.js Route. UNSTAMPED is not a valid Route export
+      field." Compilation itself succeeded first ("Compiled successfully
+      in 13.0s"); the route-export type check is what fails, exactly as
+      both verdicts state. Also reproduced the typecheck escape hatch
+      both lanes named: immediately after the failed build, with
+      .next/types now present, `npm run typecheck` exits 2 with TS2344 on
+      the generated route type naming property UNSTAMPED; removing
+      .next/ and re-running typecheck alone exits 0 again, which is the
+      exact state the fast gate was measured in during the previous
+      round. Both findings independently confirmed rather than trusted.
+    contradicts-plan: false
+  - finding: >-
+      FIX ROUND 1. Mechanism-index lookup re-checked before writing the
+      fix (clause mechanism-lookup): the mechanism behind CR-M3P17-01 /
+      HZ-M3P17-01 is that a Next.js special route file's exports are
+      checked against a closed whitelist only during `next build`
+      ("checking validity of types"), never during `tsc --noEmit`, so an
+      extra named export on such a file is invisible to the fast gate and
+      visible only to a gate this phase's own container can run without a
+      database or Docker (npm run build). The index
+      (node_modules/@tiphys/kernel/tuition/mechanism-index.yaml) still
+      has no entry matching this shape (re-checked against the same 15
+      keys listed above); this is a second recorded miss under the same
+      acceptable answer as before, and it is the one this fix round adds
+      the mechanism-sibling record for (see key-decisions and the comment
+      at src/app/api/health/version/build-stamp.ts:1-14).
+    contradicts-plan: false
 deviations: []
+fix-round:
+  - mechanism: >-
+      A Next.js App Router special route file's exports are checked
+      against a closed whitelist (its HTTP handlers plus the segment
+      config fields) only during `next build`'s own type-checking pass,
+      never during `tsc --noEmit`, so any additional named export is
+      invisible to the fast gate and visible only to a gate this
+      container can run without a database or Docker.
+    derivation:
+      command: >-
+        find src/app -name "route.ts" | sort; then find src/app -name
+        "route.ts" -print0 | xargs -0 grep -Hn "export"
+      output: |
+        src/app/api/health/db/route.ts
+        src/app/api/health/pdf/route.ts
+        src/app/api/health/version/route.ts
+
+        src/app/api/health/version/route.ts:15:// why it is not exported from here) AND THE TWO VARIABLE NAMES BELOW ARE
+        src/app/api/health/version/route.ts:38:export const runtime = "nodejs";
+        src/app/api/health/version/route.ts:39:export const dynamic = "force-dynamic";
+        src/app/api/health/version/route.ts:44:export async function GET() {
+        src/app/api/health/db/route.ts:32:export const runtime = "nodejs";
+        src/app/api/health/db/route.ts:33:export const dynamic = "force-dynamic";
+        src/app/api/health/db/route.ts:61:export async function GET() {
+        src/app/api/health/pdf/route.ts:16:export const runtime = "nodejs";
+        src/app/api/health/pdf/route.ts:17:export const dynamic = "force-dynamic";
+        src/app/api/health/pdf/route.ts:19:export async function GET() {
+    not-covered: >-
+      The enumeration is scoped to src/app, where Next's App Router
+      special files (route.ts, page.tsx, layout.tsx and siblings) live;
+      it does not walk page.tsx or layout.tsx files, which carry a
+      DIFFERENT export whitelist (default export plus named metadata
+      exports) and were not touched by this phase or this fix round. It
+      also only covers the tree as it exists at this commit: a route.ts
+      added later could reintroduce the same mechanism, and nothing here
+      guards against that beyond `npm run build` itself, which is why
+      this fix round's key-decisions and the comment at
+      src/app/api/health/version/build-stamp.ts:1-14 record the rule at
+      the mechanism's definition for the next reader, and this work
+      history records the miss against the mechanism index (the index
+      has no entry for this shape, verification-first above), which is
+      the channel this project uses to carry a mechanism rule forward
+      past a single phase.
 gate-evidence:
+  # ROUND 1, at head 8dc9678 / 12c20f3 (superseded below by FIX ROUND 1 at
+  # aad2a64, kept here as the record the fix round is a response to).
   - gate: "typecheck (npm run typecheck, tsc --noEmit, node v26.8.1, head 8dc9678)"
     result: green
     wrapper-exit-code: 0
@@ -214,6 +364,82 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
+  # FIX ROUND 1, at head aad2a64 (rebased onto origin/main dc18484). Both
+  # clean-room verdicts on head 12c20f3 read in full and their central
+  # evidence reproduced independently before any fix (verification-first
+  # above), then re-run after the fix.
+  - gate: "typecheck (npm run typecheck, tsc --noEmit, node v26.8.1, head aad2a64, fresh worktree with no .next/)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "lint (npm run lint, eslint ., node v26.8.1, head aad2a64)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fast suite (npm test, vitest run, node v26.8.1, head aad2a64; 49 files, 757 tests, 0 skipped; up from 756, the 1 added being the cache-control witness)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 757
+    passed: 757
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "gate-tokens (npm run gate:tokens, head aad2a64)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "gate-privacy (npm run gate:privacy, head aad2a64)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "gate-decisions (npm run gate:decisions, head aad2a64, after rebasing onto origin/main dc18484 which prunes the six over-cap review lanes; 'gate:decisions clean')"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "build (npm run build, prisma generate && next build, Next.js 15.5.23, head aad2a64, DATABASE_URL/DIRECT_URL/NEXT_PUBLIC_SUPABASE_URL/NEXT_PUBLIC_SUPABASE_ANON_KEY pinned to invented local values, per the coordinator's dispatch and the criteria lane's own method; THE DECISIVE WITNESS for CR-M3P17-01/HZ-M3P17-01, unrun in round 1): the route now appears in the build's own route table as 'ƒ /api/health/version', and a follow-up typecheck WITH the resulting .next/types present also exits 0 (the exact escape hatch the hazard lane named at round 1 is closed, not merely unwitnessed)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "e2e (npm run test:e2e, playwright test, head aad2a64): still does not reach test collection, but for a different and narrower reason than round 1 -- the build defect that made it unsatisfiable in ANY environment is fixed (see the build gate above and the collection probe under claims), and what remains is this container's own missing Docker daemon"
+    result: error
+    wrapper-exit-code: 1
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
 claims:
   - id: C-17.4-scope
     kind: coverage
@@ -250,15 +476,50 @@ claims:
         command: "git diff --stat origin/main...HEAD -- package.json package-lock.json"
         exit-code: 0
         output: "(no output: the two files are byte-identical to origin/main)"
+  - id: C-17.4-scope-fixround1
+    kind: coverage
+    statement: >-
+      FIX ROUND 1 RESTATEMENT of C-17.4-scope: with build-stamp.ts added,
+      the branch's diff against its (rebased) merge base still carries
+      only this phase's own files and no other, satisfying criterion
+      17.4 (one instrument and nothing else) at the fix-round head.
+    settled-by:
+      executed-construction:
+        command: "git diff --name-only origin/main...HEAD (origin/main at dc18484, HEAD at aad2a64)"
+        exit-code: 0
+        output: |
+          delivery/work-history/m3-p17.yaml
+          src/app/api/health/version/build-stamp.ts
+          src/app/api/health/version/route.ts
+          test/app/health-version.test.ts
+          test/e2e/prod-smoke.spec.ts
+  - id: C-17.2-two-vars-by-name-fixround1
+    kind: coverage
+    statement: >-
+      FIX ROUND 1 RESTATEMENT of C-17.2-two-vars-by-name at the new line
+      numbers after the marker moved out: the route still reads exactly
+      the two environment variables the plan names, by those names, and
+      no third.
+    settled-by:
+      executed-construction:
+        command: "grep -n 'process\\.env' src/app/api/health/version/route.ts"
+        exit-code: 0
+        output: |
+          27:// THIS ROUTE READS process.env DIRECTLY rather than through
+          47:      sha: buildFact(process.env.VERCEL_GIT_COMMIT_SHA),
+          48:      deploymentEnvironment: buildFact(process.env.VERCEL_ENV),
   - id: C-17-gate-decisions-preexisting
     kind: coverage
     statement: >-
-      npm run gate:decisions fails on origin/main f19984b itself, before
-      any of this phase's changes are applied, with the identical six
-      review lanes over the two-round cap that it reports at this phase's
-      final head, so the failure is a pre-existing condition of the branch
-      point rather than something this phase introduced or could clear
-      within its own file scope.
+      ROUND 1 RECORD, KEPT FOR PROVENANCE, RESOLVED IN FIX ROUND 1 (see
+      C-17-gate-decisions-resolved below and the gate-decisions entry
+      under the FIX ROUND 1 gate-evidence block). npm run gate:decisions
+      failed on origin/main f19984b itself, before any of this phase's
+      changes were applied, with the identical six review lanes over the
+      two-round cap that it reported at round 1's final head, so the
+      failure was a pre-existing condition of that branch point rather
+      than something this phase introduced or could clear within its own
+      file scope at the time.
     settled-by:
       executed-construction:
         command: >-
@@ -282,23 +543,27 @@ claims:
             What round two leaves open is carried into the implementer's brief as work, not into a third round.
           gate:decisions: review lane 'm3-p3-hazard' carries 3 rounds, the cap is 2.
             What round two leaves open is carried into the implementer's brief as work, not into a third round.
-  - id: OQ-17-gate-decisions-remediation
-    kind: open-question
+  - id: C-17-gate-decisions-resolved
+    kind: coverage
     statement: >-
-      This phase touches no file under delivery/review/ or
-      delivery/decisions/ (files-to-touch is src/app/api/health/,
-      test/app/ and test/e2e/prod-smoke.spec.ts), and step 4's own text
-      closes this phase to further additions. I did not find a way to
-      clear the pre-existing gate-decisions failure from within this
-      phase's file scope; whether to accept the branch with this gate red
-      (since it is unrelated to and no worse than main), or to fix the
-      review lanes in a separate change before or alongside merging this
-      phase, is left to the orchestrator.
-    still-open-because: >-
-      Fixing it means either editing or removing historical review
-      records under delivery/review/, which is a decision about those
-      review lanes and their authors, not about this route, and is
-      outside this phase's declared files.
+      FIX ROUND 1 RESOLUTION of the OQ-17-gate-decisions-remediation
+      open question round 1 raised: rebasing onto origin/main's current
+      tip (dc18484, "review: keep at most two rounds per lane on main",
+      identified independently by both clean-room lanes as HZ-M3P17-03 /
+      CR-M3P17-02) removes the six over-cap review lanes from the tree
+      without this phase touching any file under delivery/review/ or
+      delivery/decisions/ itself, and gate:decisions is green at the new
+      head. The open question is superseded by this claim rather than
+      left standing.
+    settled-by:
+      executed-construction:
+        command: "git rebase origin/main (dc18484) then npm run gate:decisions, head aad2a64"
+        exit-code: 0
+        output: |
+          > gate:decisions
+          > bash scripts/gate-decisions.sh
+
+          gate:decisions clean
   - id: OQ-17-claim-grep-prompt-hit
     kind: open-question
     statement: >-
@@ -319,27 +584,120 @@ claims:
       only settlement available is a reading of the schema's own
       required-field rule (R-052a) against this one field, not an
       executable check.
+  - id: C-17-fixround1-build-fixed
+    kind: coverage
+    statement: >-
+      After moving the marker to build-stamp.ts, npm run build exits 0 at
+      the fix-round head, the route appears in the build's own route
+      table, and a typecheck run WITH the resulting .next/types present
+      also exits 0, closing the exact escape hatch (a fresh worktree with
+      no prior build) that made round 1's green typecheck compatible with
+      a broken build.
+    settled-by:
+      executed-construction:
+        command: >-
+          DATABASE_URL/DIRECT_URL/NEXT_PUBLIC_SUPABASE_URL/NEXT_PUBLIC_SUPABASE_ANON_KEY
+          pinned to invented local values; npm run build; then npm run
+          typecheck again with .next/types now present; head aad2a64
+        exit-code: 0
+        output: |
+          > build
+          > prisma generate && next build
+          ...
+           ✓ Compiled successfully in 14.4s
+             Linting and checking validity of types ...
+             Collecting page data ...
+           ✓ Generating static pages (9/9)
+          Route (app)                                 Size  First Load JS
+          ...
+          ├ ƒ /api/health/db                         131 B         103 kB
+          ├ ƒ /api/health/pdf                        131 B         103 kB
+          ├ ƒ /api/health/version                    131 B         103 kB
+          ...
+          > typecheck
+          > tsc --noEmit
+          (no output, exit 0, with .next/types present)
+  - id: C-17-fixround1-route-export-enumeration
+    kind: coverage
+    statement: >-
+      The mechanism behind CR-M3P17-01/HZ-M3P17-01 (a Next.js route
+      module export outside the closed segment-config/handler whitelist)
+      has exactly one call site in the tree, the one this fix round
+      moved, and no sibling route.ts carries the same problem.
+    settled-by:
+      executed-construction:
+        command: >-
+          find src/app -name "route.ts" | sort; then find src/app -name
+          "route.ts" -print0 | xargs -0 grep -Hn "export"
+        exit-code: 0
+        output: |
+          src/app/api/health/db/route.ts
+          src/app/api/health/pdf/route.ts
+          src/app/api/health/version/route.ts
+
+          src/app/api/health/version/route.ts:15:// why it is not exported from here) AND THE TWO VARIABLE NAMES BELOW ARE
+          src/app/api/health/version/route.ts:38:export const runtime = "nodejs";
+          src/app/api/health/version/route.ts:39:export const dynamic = "force-dynamic";
+          src/app/api/health/version/route.ts:44:export async function GET() {
+          src/app/api/health/db/route.ts:32:export const runtime = "nodejs";
+          src/app/api/health/db/route.ts:33:export const dynamic = "force-dynamic";
+          src/app/api/health/db/route.ts:61:export async function GET() {
+          src/app/api/health/pdf/route.ts:16:export const runtime = "nodejs";
+          src/app/api/health/pdf/route.ts:17:export const dynamic = "force-dynamic";
+          src/app/api/health/pdf/route.ts:19:export async function GET() {
+  - id: C-17-fixround1-e2e-collection
+    kind: coverage
+    statement: >-
+      With the build fixed, the prod-smoke spec (carrying the new import
+      of build-stamp.ts) is collected cleanly by Playwright under the
+      project the fix depends on, exactly once, matching what the hazard
+      lane witnessed at round 1 before the fix (H17.3's probe).
+    settled-by:
+      executed-construction:
+        command: >-
+          PULSE_GATE_DATABASE_URL/PULSE_GATE_DIRECT_URL/PULSE_GATE_SUPABASE_URL/PULSE_GATE_SUPABASE_ANON_KEY/PULSE_GATE_SUPABASE_SERVICE_ROLE_KEY
+          pinned to invented local values; npx playwright test --list;
+          head aad2a64
+        exit-code: 0
+        output: |
+          Total: 90 tests in 11 files
+          (prod-smoke.spec.ts appears exactly once, under chromium-prod,
+          confirmed by grep -c "prod-smoke" over the captured listing: 1)
 environment-warnings:
   - warning: >-
-      npm run gate:decisions fails on origin/main itself (six review lanes
-      already exceed the two-round cap), independent of anything this
-      phase changed. A later phase should not assume this gate is green on
-      main; it must be checked, and cleared or explicitly waived, by
-      whoever is authorized to touch delivery/review/.
+      RESOLVED IN FIX ROUND 1, kept here for provenance rather than
+      deleted. At round 1 (head 12c20f3), npm run gate:decisions failed
+      on origin/main's then-tip f19984b itself (six review lanes already
+      over the two-round cap), independent of anything this phase
+      changed. A later main commit (dc18484, "review: keep at most two
+      rounds per lane on main") pruned those lanes, and this fix round
+      rebased onto it, so the condition this warning describes no longer
+      applies at head aad2a64 (npm run gate:decisions there exits 0,
+      captured in gate-evidence and claim C-17-gate-decisions-resolved).
+      A future phase reading this file should not assume the six-lane
+      failure is still live; check gate:decisions directly.
     evidence: >-
-      Checked at this phase's final head by temporarily checking out
-      origin/main's tip (f19984b, the branch's own merge base) in the same
-      worktree and running `npm run gate:decisions` there: it reported the
-      identical six lanes over cap, so the failure predates this phase's
-      own commit. That command and its full output are captured under
-      claim C-17-gate-decisions-preexisting above.
+      Round 1: checking out origin/main's then-tip f19984b in the same
+      worktree and running `npm run gate:decisions` there reported the
+      identical six lanes over cap (claim C-17-gate-decisions-preexisting).
+      Fix round 1: rebasing onto dc18484 and re-running the same command
+      at aad2a64 exits 0, "gate:decisions clean" (claim
+      C-17-gate-decisions-resolved).
   - warning: >-
       This container has no Docker daemon (docker info reports "failed to
       connect to the docker API at unix:///var/run/docker.sock ... dial
       unix /var/run/docker.sock: connect: no such file or directory") and
       no .env, only .env.example, so npm run test:e2e cannot start a local
       Supabase stack and playwright.config.ts's own gate-target check
-      refuses to run against an ambient/ unset database target.
+      refuses to run against an ambient/ unset database target. STILL TRUE
+      AT THE FIX-ROUND HEAD, but narrower than at round 1: round 1's e2e
+      failure sat in front of a head defect (npm run build itself exited
+      1) that this container's environment limitation was masking; that
+      build defect is fixed (finding CR-M3P17-01/HZ-M3P17-01, gate-evidence
+      above), so what remains unwitnessed here is purely this container's
+      missing Docker daemon, not an unsatisfiable build. A container WITH
+      Docker should now be able to run npm run test:e2e to completion; this
+      one still cannot attempt it.
     evidence: >-
       `npx supabase start` returned
       {"_tag":"Error","error":{"code":"LegacyDockerLifecycleInspectError","message":"failed
@@ -353,4 +711,5 @@ environment-warnings:
       NEXT_PUBLIC_SUPABASE_URL in a .env file", thrown from
       src/platform/db/gate-target.ts:324 via playwright.config.ts:29. This
       matches the task's own stated environment limitation (no Docker in
-      this container).
+      this container), re-confirmed at the fix-round head aad2a64 with the
+      identical error.
