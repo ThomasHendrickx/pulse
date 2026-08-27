@@ -511,6 +511,46 @@ const assertAcknowledged = (result: PressResult, predicts: boolean): void => {
   }
 };
 
+// THE NAMEABLE ROW, HELD BY AN IDENTITY THE PRESS CANNOT MOVE (slow-gate
+// repair round). Every other control this file measures keeps the identity
+// it was found by for the whole of the measurement. The merchant naming
+// control does not, and the reason is a cross-phase interaction rather than
+// a fault in either phase: M3-P11 predicts the typed name inside the form
+// action, BEFORE the await, and a predicted row stops being unresolved at
+// that instant, so src/modules/merchants/ui/merchant-row.tsx renders it with
+// data-testid="merchant-group" from the press onwards. A Playwright locator
+// is lazy. A control rooted at getByTestId("unresolved-group").first()
+// therefore re-resolved after the press to the first row that was STILL
+// unresolved, which is a row nobody pressed: the aria-busy reading at
+// 1000ms, the appearance reading and the after-response reading all
+// described the wrong control, and the suite reported a busy state that
+// never appeared. The product behaviour it tripped over is the one DR-0025
+// and DR-0026 asked for and criterion 11.2 requires.
+//
+// WHAT IS HELD INSTEAD is the row's POSITION among the rows carrying
+// data-group-key. Criterion 11.3 fixes that sequence in DOM order across a
+// prediction (test/e2e/optimistic-naming.spec.ts measures it), so the
+// position is stable in exactly the window where the testid is not. The key
+// alone would not do as a selector: a counterparty with a spend row and a
+// refund renders TWO rows sharing one key (finding HZ-M3P11-02), and the
+// position separates them.
+const namableRow = async (page: Page): Promise<Locator> => {
+  const rows = await page
+    .locator("[data-group-key]")
+    .evaluateAll((elements) =>
+      elements.map((element) => ({
+        unresolved: element.getAttribute("data-testid") === "unresolved-group",
+        namable: element.querySelector(".merchant-name-form") !== null,
+      })),
+    );
+  const index = rows.findIndex((row) => row.unresolved && row.namable);
+  expect(
+    index,
+    "an unresolved row carrying a naming form",
+  ).toBeGreaterThanOrEqual(0);
+  return page.locator("[data-group-key]").nth(index);
+};
+
 const signUpFreshAndMeasure = async (
   page: Page,
   probe: ActionProbe,
@@ -600,7 +640,7 @@ test.describe("the busy state", () => {
 
     // 7. the merchant naming submit, the one surface M3-P11 will make predict
     await page.goto("/merchants");
-    const group = page.getByTestId("unresolved-group").first();
+    const group = await namableRow(page);
     await group.getByPlaceholder("Name this counterparty").fill("Named once");
     results.push(
       await pressAndMeasure(page, probe, "merchant naming submit", group.getByRole("button", { name: "Name" })),
@@ -677,7 +717,7 @@ test.describe("the busy state", () => {
     for (let index = 0; index < 5; index += 1) {
       const remaining = await page.getByTestId("unresolved-group").count();
       expect(remaining, "a naming that fails does not satisfy this").toBe(5 - index);
-      const group = page.getByTestId("unresolved-group").first();
+      const group = await namableRow(page);
       const label = (await group.getByTestId("group-label").textContent()) ?? "";
       await group.getByPlaceholder("Name this counterparty").fill(`Named ${index}`);
       const result = await pressAndMeasure(
