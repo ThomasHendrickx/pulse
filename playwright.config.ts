@@ -1,32 +1,24 @@
 import { defineConfig, devices } from "@playwright/test";
-import { enforceGateDbTarget } from "./src/platform/db/gate-target";
 
 // The slow gate. Runs against `npm run dev` locally with a seeded database.
 // Set PLAYWRIGHT_BASE_URL to point the same specs at a deployed environment
 // (used by the deploy-verify stage); in that case no local server is started.
 const externalBaseUrl = process.env.PLAYWRIGHT_BASE_URL;
 
-// THE GATE'S DATABASE TARGET IS DECIDED HERE, FIRST (M3-P12 fix round four,
-// CRITERIA finding CR4-M3P12-02). See src/platform/db/gate-target.ts for the
-// the reasoning. Two things happen on this line and both matter:
-//
-//   IT REFUSES a target no source named, and any target that is not a local
-//   stack, by THROWING. A throw out of the config aborts the run before a
-//   web server is spawned and before a worker opens a client, which is the
-//   only moment early enough to be a mechanism rather than a warning.
-//
-//   IT ASSIGNS the approved values into process.env. This file used to spread
-//   `...process.env` into both web servers, and Next's own loader does not
-//   override a variable the shell already carries, so a .env file at the
-//   package root was NOT a pin: the servers talked to whatever the container
-//   held. After this line process.env carries the named target, so the
-//   spreads below and every client any worker constructs resolve to it.
-//
-// IT IS SKIPPED IN DEPLOY-VERIFY MODE, where PLAYWRIGHT_BASE_URL names a
-// deployed app: no server is started there and no database may be opened at
-// all, which the one database-driving spec enforces for itself by skipping.
-const gateDb =
-  externalBaseUrl === undefined ? enforceGateDbTarget() : undefined;
+// THE GATE'S MODULE-SCOPE TARGET ENFORCEMENT IS WITHDRAWN, loudly (clause
+// R-087, decision D-62, criterion 12.23). A call to enforceGateDbTarget from
+// src/platform/db/gate-target.ts stood here (M3-P12 fix round four, CRITERIA
+// finding CR4-M3P12-02): it THREW during config load on a database target no
+// source named or one that was not a local stack, and it ASSIGNED the
+// approved values into process.env for the webServer env blocks below. That
+// module left the tree with the target interlock D-62 withdrew. What stands
+// in its place is the posture the repository already has: the servers this
+// config starts resolve DATABASE_URL from the invoking shell, db:reset and
+// db:migrate stay behind guard-cli's local-only refusal, and the client's
+// own construction-time guard (assessNonProductionDbTarget) refuses a
+// non-local target in every non-production process, the gate's dev server
+// included. The gate's target question beyond that refusal is carried on the
+// plan's parked surface rather than answered here.
 const baseURL = externalBaseUrl ?? "http://127.0.0.1:3000";
 // The production-mode server (deploy-verify defect round): the owner's
 // production 500 lived in behaviour next dev never exercises (runtime
@@ -159,7 +151,7 @@ export default defineConfig({
             // exercise the real production bundle; the timeout covers
             // prisma generate plus next build.
             timeout: 300_000,
-            env: { ...prodEnv, ...gateDb, PULSE_DIST_DIR: ".next-prod" },
+            env: { ...prodEnv, PULSE_DIST_DIR: ".next-prod" },
           },
           {
           command: "npm run dev",
@@ -178,13 +170,8 @@ export default defineConfig({
           // 2026 is the partial current month, August 2026 a closed month
           // compared against July 2026. Parsed by fixedNowOverride in
           // src/platform/config.ts, consumed by appClock only.
-          // The pinned target is spread AFTER process.env, deliberately and
-          // not decoratively: the assignment above already put it there, and
-          // spreading it again means a later edit that reintroduces an
-          // ambient value cannot win by accident.
           env: {
             ...process.env,
-            ...gateDb,
             PULSE_FIXED_NOW: "2026-09-15T12:00:00Z",
           },
           },

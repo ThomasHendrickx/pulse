@@ -1,7 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { householdId, userId } from "@/platform/tenancy";
-import { assertGateDbTargetIsLocal } from "@/platform/db/gate-target";
 import { applyRuleWrites } from "@/modules/merchants/adapters/merchant-repository";
 
 // M3-P12 FIX ROUND, finding CR-M3P12-02, REPOINTED IN FIX ROUND THREE under
@@ -33,22 +32,17 @@ import { applyRuleWrites } from "@/modules/merchants/adapters/merchant-repositor
 //
 // This spec drives no browser on purpose. It is a database contract test.
 
-// THIS SPEC OPENS A DATABASE, SO IT SAYS WHICH ONE (M3-P12 fix round four,
-// CRITERIA finding CR4-M3P12-02). new PrismaClient() reads process.env and
-// else, so before this round the target of every write below was whatever
-// DATABASE_URL the invoking shell carried, and in this fleet's containers
-// that is a DEPLOYED pooler belonging to a different project with a working
-// password. Nothing in this file, in playwright.config.ts or in the npm
-// script named a target. That is the shape the plan calls hazard H12.30, and
-// this phase shipped an interlock against exactly it for one command while
-// adding a second writing surface without one.
-//
-// TWO THINGS NOW STAND BETWEEN THESE WRITES AND A STRANGER'S DATABASE.
-// playwright.config.ts resolves and PINS the target before a worker starts,
-// refusing anything that is not a local stack; and the beforeAll below reads
-// what the client will actually open and refuses again. The second is not
-// redundant: the config covers every run through `playwright test`, and this
-// covers a spec imported by some other runner, now or later.
+// THE GATE-TARGET ASSERTION THAT STOOD IN beforeAll IS WITHDRAWN, loudly
+// (clause R-087, decision D-62, criterion 12.23). This spec used to call
+// assertGateDbTargetIsLocal from src/platform/db/gate-target.ts before
+// constructing its client (M3-P12 fix rounds four and ten, findings
+// CR4-M3P12-02 and CR9-M3P12-HZ-03), and playwright.config.ts used to pin
+// the gate's target at module scope; both left the tree with the target
+// interlock D-62 withdrew. The writes below therefore open whatever
+// DATABASE_URL the invoking shell carries, which is the reason the gate is
+// run with the local stack's values pinned in the invoking shell (fleet
+// warning 1), and the settled posture for entry points outside criterion
+// 12.23's scope is the plan's parked question rather than this spec's.
 //
 // IN DEPLOY-VERIFY MODE THIS SPEC DOES NOT RUN AT ALL. There the suite drives
 // a DEPLOYED app through its browser and opens no database of its own, and
@@ -61,29 +55,21 @@ test.skip(
   "drives a database directly; in deploy-verify mode the suite opens no database",
 );
 
-// THE GUARD RUNS BEFORE THE CLIENT EXISTS, AND IT DID NOT USED TO (fix round
-// ten, HAZARD finding CR9-M3P12-HZ-03). This file constructed its client at
-// MODULE SCOPE and asserted its target in beforeAll, so the constructor ran
-// first. The only ordering test in the tree named prisma/seed.ts by path, so
-// nothing saw it; generalising that assertion to every door is what found it.
-//
-// The direction was safe today, because Prisma connects on first query rather
-// than at construction, but that is a property of a dependency and not of this
-// spec. A guard that runs after the thing it guards is not a guard, so the
-// construction moved behind the assertion rather than resting on the
-// dependency continuing to behave that way.
+// The client is still constructed in beforeAll rather than at module scope:
+// the withdrawn assertion is what used to justify that order (fix round ten,
+// HAZARD finding CR9-M3P12-HZ-03), and keeping construction out of module
+// scope keeps a future guard, if one is decided, able to run first.
 let client: PrismaClient | undefined;
 const prismaClient = (): PrismaClient => {
   if (client === undefined) {
     throw new Error(
-      "the Prisma client is constructed in beforeAll, after the target assertion. A test reaching it earlier is a test running outside that order.",
+      "the Prisma client is constructed in beforeAll. A test reaching it earlier is a test running outside that order.",
     );
   }
   return client;
 };
 
 test.beforeAll(() => {
-  assertGateDbTargetIsLocal();
   client = new PrismaClient();
 });
 

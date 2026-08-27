@@ -27,8 +27,16 @@ describe("assessDestructiveDbTarget", () => {
     });
     expect(verdict.allowed).toBe(false);
     if (!verdict.allowed) {
+      // THE ASSERTION ON THE HOSTNAME IS INVERTED (M3-P12 interlock
+      // withdrawal, criterion 12.23 measurement FIVE, finding R2-M0P14-02).
+      // This test used to assert the resolved hostname INTO the refusal
+      // reason; the reason now names the VARIABLE only, because this
+      // repository is public, so the hostname must be absent.
       expect(verdict.reason).toContain("DATABASE_URL");
-      expect(verdict.reason).toContain("aws-1-eu-north-1.pooler.supabase.com");
+      expect(verdict.reason).not.toContain(
+        "aws-1-eu-north-1.pooler.supabase.com",
+      );
+      expect(verdict.reason).not.toContain("secret");
     }
   });
 
@@ -233,9 +241,12 @@ describe("the guard's reading and the Prisma CLI's differ on the EMPTY case, and
   // AND THE COMMENTS SAY THE SAME THING THE TEST DOES. A corrected sentence
   // that drifts back is the shape clause R-087 exists for, so the wording is
   // pinned rather than trusted.
+  // gate-target.ts left this list with the withdrawn target interlock
+  // (decision D-62, criterion 12.23); the two files that remain are the ones
+  // that still read the .env location.
   test("no comment in the database platform directory still says the reader looks at the package root", () => {
     const dbDir = join(__dirname, "..", "..", "src", "platform", "db");
-    for (const name of ["gate-target.ts", "resolve-env.ts", "guard-cli.ts"]) {
+    for (const name of ["resolve-env.ts", "guard-cli.ts"]) {
       const source = readFileSync(join(dbDir, name), "utf-8");
       // The phrase survives only where it is QUOTED as the old, false
       // wording, which is how clause R-087 requires a correction to be
@@ -321,45 +332,15 @@ describe("a non-production server may not open a deployed database", () => {
     }
   });
 
-  // THE ONE CONTEXT THAT IS NOT PRODUCTION AND MAY STILL OPEN A DEPLOYED
-  // DATABASE, and the reason it is not a flag. The re-derivation command
-  // requires an explicit host AND project ref on its own command line and
-  // resolves the connection it would actually open before matching them; when
-  // that has happened, this predicate honours the fact rather than an
-  // assertion. See src/platform/db/runtime-target.ts.
-  // AN APPROVAL IS A STATEMENT ABOUT ONE CONNECTION (fix round twelve,
-  // CRITERIA finding CR11-M3P12-04). This test used to pass a NAME and assert
-  // that presence alone admitted a deployed target, which is what let a
-  // reviewer flip the guard by calling the register from a probe that resolved
-  // nothing and matched nothing.
-  test("an INTERLOCK approval admits the connection it names, and ONLY that one", () => {
-    const approval = {
-      source: "rederive-merchant-rules",
-      connection: REMOTE,
-    };
-    const verdict = assessNonProductionDbTarget({
-      NODE_ENV: undefined,
-      DATABASE_URL: REMOTE,
-      interlockApproval: approval,
-    });
-    expect(verdict.allowed).toBe(true);
-    expect(verdict.reason).toContain("rederive-merchant-rules");
-
-    // A DIFFERENT connection, with the same approval in the process, is
-    // refused. This is the assertion the old shape could not make.
-    const other =
-      "postgresql://postgres.qqqqppppoooonnnnmmmm:pw@aws-0-eu-west-9.pooler.supabase.com:5432/postgres";
-    const wrong = assessNonProductionDbTarget({
-      NODE_ENV: undefined,
-      DATABASE_URL: other,
-      interlockApproval: approval,
-    });
-    expect(wrong.allowed).toBe(false);
-    expect(wrong.reason).toContain("DIFFERENT connection");
-    expect(wrong.reason).not.toContain("pooler.supabase.com");
-
-    // And with no approval at all, the identical environment is refused, so
-    // the approval is what carries it and not the environment.
+  // THE INTERLOCK-APPROVAL CASES THAT STOOD HERE ARE WITHDRAWN, loudly
+  // (clause R-087, decision D-62, criterion 12.23). They witnessed the
+  // approval-register branch of this predicate, the pair recorded by the
+  // re-derivation command's host-and-ref interlock and honoured here; that
+  // branch, the register (src/platform/db/runtime-target.ts) and the
+  // interlock itself left the tree together. What replaces the admitted
+  // path is a per-run hatch pair the deployed run sets inline (M3-P16), and
+  // the environment-only refusal below is what remains of these cases.
+  test("a deployed target with NOTHING set is refused: no in-process record can admit one any more", () => {
     expect(
       assessNonProductionDbTarget({ NODE_ENV: undefined, DATABASE_URL: REMOTE })
         .allowed,
@@ -369,10 +350,12 @@ describe("a non-production server may not open a deployed database", () => {
   // THE FAST GATE IS NOT MADE TO REFUSE, and this is the cost the old narrow
   // predicate was protecting against. It is answered by the client being LAZY
   // rather than by the guard being inert: a run that issues no query
-  // constructs no client, so the predicate is never consulted. Asserted by
-  // counting the client's own startup line over a real fast-gate run in
-  // test/db/gate-target.test.ts; here we only pin that the predicate itself
-  // WOULD refuse, so the two halves cannot both drift.
+  // constructs no client, so the predicate is never consulted. The
+  // behavioural witness is the import-constructs-nothing test at the bottom
+  // of this file (the startup-line count over a whole fast-gate run left
+  // with the withdrawn test/db/gate-target.test.ts, decision D-62); here we
+  // only pin that the predicate itself WOULD refuse, so the two halves
+  // cannot both drift.
   test("under vitest the predicate refuses a deployed target, so laziness is what keeps the gate green", () => {
     expect(process.env.NODE_ENV).not.toBe("production");
     expect(
