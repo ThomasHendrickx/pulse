@@ -208,3 +208,46 @@ survivable", which carries its captured derivation adjacent; and "a
 redirect always rejects", which describes the assumption the new guard
 removes and whose not-covered says plainly that the guard is reasoned and
 not measured, because no browser ran here.
+
+## Settle round (round-two findings from both lanes, directed by the coordinator)
+
+Read in full before any edit: delivery/review/m3-p11-criteria-round2.yaml at
+origin/claude/m3-p11-rev-crit 750b811 (APPROVE, two new findings) and
+delivery/review/m3-p11-hazard-round2.yaml at origin/claude/m3-p11-rev-haz
+f9d280d (three new findings). Each claim was re-derived here first.
+
+HZ2-M3P11-01 red witness, ONE KEY AND TWO DIRECTIONS, captured before the
+fix:
+  npx vitest run test/app/naming-claims.test.ts
+  Tests 2 failed | 6 passed (8)
+   - keeps the income row's claim when the SAME key is named in the other
+     direction: expected "differs", received "none"
+   - keeps the income row's claim when the SAME key FAILS in the other
+     direction: expected "differs", received "none"
+Green after adding the direction to the store's identity: Tests 8 passed
+(8). The two distinct-key cases were kept beside the two same-key ones.
+
+CR2-M3P11-02 measured in chromium over a copy of this head's markup, with
+no server (page.setContent):
+  OLD id read off the testid element: null
+  OLD hasNot count: 2, first picked: k1 (the row it was meant to exclude)
+  NEW namableKeys: ["k1","k2"]; NEW secondKey: k2, differs: true
+  NEW id read off .pulse-toast: n1, equal to the row's aria-describedby
+
+HZ2-M3P11-02 red: Tests 3 failed | 3 passed (6) against the old
+oldest-first order; green after the change: 6 passed.
+HZ2-M3P11-03 red: Tests 1 failed | 2 passed (3), "expected true to be
+false" for an answer shaped as a refusal with no error; green: 3 passed.
+
+### Claim grep, re-run over the updated work history
+
+Eight hits outside the verbatim prompt block. Four are the round-one hits
+already disposed of above. The four new ones: the deviation sentence about
+inlining trading a witnessed rule for an unwitnessable one, which the same
+entry's re-measured import facts settle; and three inside the queue's
+not-covered paragraph ("nothing is dropped", "never duplicated, never
+dropped"), which are settled by the derivation printed directly above them
+(the six queue rules, red then green) plus the module's construction:
+leaveNoticeQueue is the only remover and the leaf calls it on dismissal and
+on unmount only. None of the four asserts anything a reader cannot check in
+the same document.
