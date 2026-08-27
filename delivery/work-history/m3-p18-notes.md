@@ -109,3 +109,38 @@ pinned (DATABASE_URL/DIRECT_URL at 127.0.0.1):
      the parked merge is ONE run of scripts/detect-account-collisions.ts
      against the deployed target (operator command recorded in the script
      header).
+
+## Step 3: accept the savings statement (DR-0030)
+
+RED WITNESS (clause R-037a), captured before the fix:
+
+    $ npx vitest run test/application/savings-held.test.ts   # at the unfixed code
+    FAIL  ... the statement is ingested, not refused, and its rows keep no flow
+    AssertionError: expected 'rejected' to be 'ingested'
+    Tests  1 failed | 2 passed (3)
+
+After removing the refusal root and branch (union, arm, routing, whitelist,
+SETUP_LINKED, three catalogues) the same test is green.
+
+Static sweep test test/domain/savings-decision.test.ts shown RED against the
+dangerous states by stashing the fix per class:
+  - stash src/modules/import + messages + SKILL.md: the two 18.1 sweeps fail
+    (refusal reason still wired; superseded skill sentences present), exit 1.
+  - stash overview-repository.ts: the two 18.3 arms fail (absent-flow reads
+    unscoped; held read absent), exit 1.
+Both stashes popped; tree restored (git status clean of unexpected changes).
+
+Registry pins legitimately grown by the change, updated by name rather than
+count-only (test/domain/merchant-review.test.ts): COUNTERPARTY_TEXT_SQL now
+used 3 times (held read added); descriptor-surface walk finds 14 sites (held
+row text MASKED, held heading = declared account label added to the exclusion
+table with its reason).
+
+fr.json carried a DUPLICATE key nameRefusedUnidentifiable (an accent-less
+copy at :127 shadowed by an accented one at :168; JSON parse semantics made
+the accented one the effective value). Rewriting the catalogue through
+JSON.parse/stringify collapsed the pair to the single effective value. No
+behaviour change; recorded as a loud correction (R-087).
+
+Full fast gate after step 3: 49 files, 669 tests, 0 failed (output below at
+gate time).

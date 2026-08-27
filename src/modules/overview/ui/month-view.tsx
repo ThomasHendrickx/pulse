@@ -267,6 +267,69 @@ const ReservesBlock = async ({
   );
 };
 
+// THE HELD BLOCKS (M3-P18, DR-0030): one card per savings account holding
+// rows in the viewed month. HEADED BY THE LABEL the household typed for
+// that account, never by its number (the same requirement M3-P14's
+// criterion 14.1 makes of the reserve-group rows above, for the same
+// reason), with the note saying plainly that these rows are held and
+// counted in no total. NOTHING IS SUMMED, per account or in total
+// (decision D-60): a transfer into savings is already counted on the
+// current-account side and rendered in the reserves block, so any total
+// here would show the same euro under two headings on one screen. Even a
+// clearly labelled partial total is refused for that reason.
+const HeldBlocks = async ({
+  overview,
+}: {
+  readonly overview: MonthOverview;
+}) => {
+  const t = await getTranslations();
+  if (overview.held.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      {overview.held.map((account) => (
+        <section
+          key={account.accountId}
+          className="month-card"
+          data-testid="held-rows"
+        >
+          <header className="month-card-header">
+            <div>
+              <h2>{account.label}</h2>
+              <div className="pulse-eyebrow">{t("heldOnSavings")}</div>
+            </div>
+          </header>
+          <p className="month-note" data-testid="held-note">
+            {t("heldNote")}
+          </p>
+          <ul className="month-list">
+            {account.rows.map((row) => (
+              <li key={row.id} className="month-row" data-testid="held-row">
+                {/* The counterparty text is UNNORMALISED source text, so it
+                    is masked here exactly as the gap rows below mask theirs
+                    (M3-P6, decision D-12). */}
+                <span className="month-group-label">
+                  {maskCardNumbers(row.text)}
+                </span>
+                <span
+                  className="month-row-amount pulse-amount"
+                  data-testid="held-amount"
+                >
+                  <Amount cents={row.amountCents} />
+                </span>
+                <span className="month-row-count month-row-meta">
+                  {row.bookingDate}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </>
+  );
+};
+
 const GapList = ({
   rows,
   testId,
@@ -567,6 +630,11 @@ export const MonthScreen = async ({
         <SpendBlock overview={overview} locale={locale} />
         <ReservesBlock overview={overview} />
       </div>
+
+      {/* Held rows come AFTER the counted blocks: they are part of no
+          total, and rendering them below the reconciliation story keeps
+          the counted month readable first (M3-P18, DR-0030). */}
+      <HeldBlocks overview={overview} />
     </div>
   );
 };

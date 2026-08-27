@@ -526,9 +526,12 @@ describe("criterion 6.10, the SQL half: the merchant-source rule is written ONCE
     );
   });
 
-  test("both SQL reads use the shared fragment rather than their own copy", () => {
+  test("every SQL read uses the shared fragment rather than its own copy", () => {
     const uses = repositorySource.match(/\$\{COUNTERPARTY_TEXT_SQL\}/g) ?? [];
-    expect(uses).toHaveLength(2);
+    // THREE since M3-P18: the grouped counted read, the gap read, and the
+    // HELD read (DR-0030), which shows a savings account's rows under the
+    // same one-definition rule (decision D-11).
+    expect(uses).toHaveLength(3);
   });
 
   // CORRECTED RATHER THAN QUIETLY RENAMED (clause R-087, fix round 2,
@@ -694,6 +697,11 @@ describe("every rendering surface that shows descriptor text is derived, not rem
       why: "The reconciliation part label: translated copy from t(), never counterparty text.",
     },
     {
+      file: "modules/overview/ui/month-view.tsx",
+      expression: "account.label",
+      why: "The HELD block's heading (M3-P18, DR-0030): the household's own declared account label, typed at setup and never parsed from a statement line. Heading the block with the label instead of a number is criterion 18.2's own requirement.",
+    },
+    {
       file: "app/(app)/import/[id]/page.tsx",
       expression: "account?.label",
       why: "The account's DECLARED label, typed by the household itself at first sight, never parsed from a statement line.",
@@ -800,9 +808,14 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     // FLOOR, so the recorded number could drift from the measured one with
     // nothing going red: the same mechanism this test exists to eliminate,
     // one level up. The assertion is now EXACT.
-    expect(surfaces.length).toBe(12);
+    //
+    // UPDATED IN M3-P18 (was twelve, five masked): the held block
+    // (DR-0030) renders each held row's counterparty text MASKED, and the
+    // block's heading is the account's own declared label, which joins the
+    // exclusion table with its reason. Fourteen sites, six files.
+    expect(surfaces.length).toBe(14);
     expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(6);
-    expect(surfaces.filter((surface) => surface.masked).length).toBe(5);
+    expect(surfaces.filter((surface) => surface.masked).length).toBe(6);
   });
 
   test("every unmasked descriptor surface is a DECLARED exclusion with a reason", () => {
