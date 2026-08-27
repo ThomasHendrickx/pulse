@@ -6,7 +6,6 @@
 
 import { redirect } from "next/navigation";
 import { requireHouseholdContext } from "@/platform/auth/context";
-import { parseAccountRole } from "@/modules/accounts/application";
 import type { NewAccount } from "@/modules/accounts/application";
 import {
   confirmImport,
@@ -74,12 +73,16 @@ export const confirmImportAction = async (
     redirect(`/import/${safeId}?status=declaration-needed`);
   }
 
+  // The declaration that survives M3-P14: label and bank only, and ONLY
+  // for a file with no own-account column, which is a card. The ring is
+  // answered at setup and is not asked here; a card is a POT account by
+  // definition (pulse-domain section 1), which is why the role is fixed
+  // rather than read from the form.
   let declaration: NewAccount | undefined;
   const label = String(formData.get("accountLabel") ?? "").trim();
   const bank = String(formData.get("accountBank") ?? "").trim();
-  const role = parseAccountRole(String(formData.get("accountRole") ?? ""));
-  if (label !== "" && bank !== "" && role.ok) {
-    declaration = { label, bank, role: role.value };
+  if (label !== "" && bank !== "") {
+    declaration = { label, bank, role: "POT" };
   }
 
   const outcome = await confirmImport(context, {
@@ -96,6 +99,15 @@ export const confirmImportAction = async (
       // Settled by another confirm (finding F4): the detail page renders
       // the settled result; nothing to re-ask.
       redirect(`/import/${safeId}`);
+    }
+    // M3-P14: the two new refusals are routed the same way as every other
+    // one, as a whitelisted ?status= selector the screen translates. The
+    // query parameter is a selector, never content.
+    if (outcome.reason === "account-not-registered") {
+      redirect(`/import/${safeId}?status=account-not-registered`);
+    }
+    if (outcome.reason === "account-in-savings-ring") {
+      redirect(`/import/${safeId}?status=account-in-savings-ring`);
     }
     redirect(
       outcome.reason === "declaration-needed"

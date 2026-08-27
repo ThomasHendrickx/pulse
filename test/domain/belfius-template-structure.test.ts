@@ -22,7 +22,7 @@ const indented = (text: string): PdfLine => ({ text, x: INDENT });
 const opening = [
   margin("BLZ. : 3/1"),
   margin(
-    "----------------- BE90 0123 4567 8944 BIC: DEMOBEBB ------------------",
+    "----------------- BE72 0123 4567 8944 BIC: DEMOBEBB ------------------",
   ),
   margin("SALDO OP 30-04-2026 EUR + 100,00"),
 ];

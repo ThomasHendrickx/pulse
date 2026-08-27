@@ -4,6 +4,7 @@
 // order. Any change to the MEANING of a correction is an escalation per
 // the charter's stop-for list, never a local call.
 
+import { canonicalAccountNumber } from "@/platform/account-number";
 import {
   CASH_WITHDRAWAL_PATTERNS,
   SETTLEMENT_CREDIT_PATTERNS,
@@ -96,8 +97,25 @@ export const settlementCandidateImports = (
   return cardImports.filter(
     (candidate) =>
       candidate.accountId !== transaction.accountId &&
-      candidate.settlementTotalCents === magnitude &&
-      candidate.settlementTotalCents > 0 &&
+      // THE EQUALITY IS THE MECHANISM (fix round 3, finding
+      // HZ2-M3P3-05): `magnitude` is strictly positive by construction
+      // two lines above, so a card statement standing in credit, whose
+      // figure is non-positive, equals no candidate and settles nothing.
+      // The positivity guard is redundant against that equality, measured
+      // by deleting it and watching the whole fast gate stay green; it is
+      // kept as a cheap statement of intent, not as the thing that works.
+      //
+      // CANDIDATES, PLURAL (fix round 4, finding HZ3-M3P3-01): an import
+      // with no printed figure carries every total its rows could
+      // plausibly settle for, because from the rows alone an unrecognised
+      // settlement credit and an ordinary merchant refund are the same
+      // shape and they imply different totals. Matching ONE of them is
+      // what identifies which; matching none leaves the debit loud, as
+      // before. Exclusivity is unchanged: interpretLedger still allocates
+      // each import to at most one debit.
+      candidate.settlementTotalsCents.some(
+        (total) => total === magnitude && total > 0,
+      ) &&
       dayDistance(transaction.bookingDate, candidate.periodEnd) <=
         SETTLEMENT_DATE_WINDOW_DAYS,
   );
@@ -113,9 +131,11 @@ export const correctReserveDrawdown = (
   transaction: LedgerTransaction,
   reserveIbans: ReadonlySet<string>,
 ): "RESERVE" | undefined =>
+  // Canonical on both sides (M3-P14, criterion 14.4): the declared set is
+  // canonical and the stored fact column is whatever the source printed.
   transaction.amountCents > 0 &&
   transaction.counterpartyIban !== undefined &&
-  reserveIbans.has(transaction.counterpartyIban)
+  reserveIbans.has(canonicalAccountNumber(transaction.counterpartyIban))
     ? "RESERVE"
     : undefined;
 
@@ -124,12 +144,35 @@ export const correctReserveDrawdown = (
 // that counterparty's spend and keeps the income side honest and small.
 // The counterparty identity here is the pre-merchant-resolution key below;
 // M1-P4's resolver refines grouping, not this rule.
+//
+// THE CARD ARM (fix round 2, finding HZ-M3P3-06), decided explicitly here
+// rather than left to fall through the sign rule. On an account in the
+// DECLARED card set, a positive row that is not the settlement credit is a
+// refund BY CONSTRUCTION: a card account has no other way to receive
+// money. Nobody is paid a salary onto a Mastercard. The history test the
+// counterparty arm applies cannot see it, because it keys on descriptor
+// text (counterpartyKey below) and a merchant's refund line is almost
+// never byte-identical to the purchase it reverses, so before this arm an
+// ordinary card refund classified INCOME and reported money that never
+// entered the household as income for the month. The treatment is the one
+// correction 3 already gives a matched refund: SPEND with a positive
+// amount, netting against that merchant's spend.
+//
+// The mirror credit does NOT reach here: correctCardSettlement runs first
+// (classify-flow.ts step 3) and returns INTERNAL for it. This arm is
+// therefore "positive, on a card account, and not the settlement leg".
+// The shape became reachable when phase M3-P3 made card statements
+// importable from PDF; the observed statement carries no refund row, so
+// nothing shipped is misreported today, which is why the rule is written
+// down now rather than discovered later from a wrong month total.
 export const correctRefund = (
   transaction: LedgerTransaction,
   outgoingHistoryKeys: ReadonlySet<string>,
+  cardAccountIds?: ReadonlySet<string>,
 ): "SPEND" | undefined =>
   transaction.amountCents > 0 &&
-  outgoingHistoryKeys.has(counterpartyKey(transaction))
+  (outgoingHistoryKeys.has(counterpartyKey(transaction)) ||
+    cardAccountIds?.has(transaction.accountId) === true)
     ? "SPEND"
     : undefined;
 
