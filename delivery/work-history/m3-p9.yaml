@@ -133,6 +133,7 @@ prompt: |
 files-touched:
   - styles/tokens.css
   - src/app/globals.css
+  - src/app/layout.tsx
   - playwright.config.ts
   - test/e2e/pressed-and-disabled.spec.ts
   - delivery/work-history/m3-p9.yaml
@@ -145,6 +146,28 @@ per-step-commits:
     subject: "test: the pressed, disabled and busy measurement, red against the current stylesheet"
   - sha: add90a3
     subject: "ui: a pressed, disabled, busy and unconfirmed appearance built only from tokens"
+  # FIX ROUND 1
+  - sha: 2e4f3b6
+    subject: "test: the touch press, the aria-disabled refusal, the busy loop and the class-busy mark"
+  - sha: 9c8f1d1
+    subject: "ui: the pressed appearance no longer rests on :active, and a disabled-looking control stops working"
+  - sha: 3c86d13
+    subject: "history: the false claims corrected in place, and the em dashes removed"
+  # ROUND TWO, against the amended plan at 0539657
+  - sha: f637f2a
+    subject: "Merge remote-tracking branch 'origin/main' into claude/m3-p9-pressed-and-disabled"
+  - sha: 274a858
+    subject: "ui: the root layout ships the one listener that raises the pressed attribute"
+  - sha: 1cdd3aa
+    subject: "test: the press a finger makes, measured on the shipped document"
+  # ROUND THREE, the marker rename
+  - sha: 84fe83a
+    subject: "Merge remote-tracking branch 'origin/main' into claude/m3-p9-pressed-and-disabled"
+  - sha: b55a31b
+    subject: "ui: the press marker is a bare data attribute, not a test id"
+  # ROUND FOUR, both clean-room lanes at 6517703
+  - sha: 39f2ea8
+    subject: "ui: correct the comment that said this phase does not ship the listener"
 
 key-decisions:
   - decision: >-
@@ -190,9 +213,16 @@ key-decisions:
       A non-replaced inline box is not transformable, and the measurement
       recorded below shows Chromium reporting matrix(1, 0, 0, 1, 0, 3) on such
       a box whose getBoundingClientRect().top was 8 both at rest and while
-      held. Four of the nineteen controls are bare anchors, so this was a live
-      hole rather than a hypothetical one; the stylesheet gives anchors a
-      block box and the spec is what stops that rule being dropped silently.
+      held. CORRECTED IN FIX ROUND 1 (clause R-087, finding CR-M3P9-03): this
+      said four of the nineteen controls are bare anchors, so this was a live
+      hole. Four ARE bare anchors, but only TWO of them needed the rule. The
+      two links on the import result screen are direct children of
+      .import-screen, which declares display: flex at src/app/globals.css:299,
+      and a flex item is blockified whatever display it specifies, so those
+      two were already transformable. The two that needed it are the auth
+      cross-links, which sit alone inside a paragraph. The hole was live, at
+      two controls rather than four; the stylesheet gives anchors a block box
+      and the spec is what stops that rule being dropped silently.
   - decision: >-
       Every computed-style read in the spec is taken after the running
       transition has finished, through a settle helper that awaits
@@ -272,6 +302,214 @@ key-decisions:
       criterion 9.2's hover baseline; this rule applies only where the
       disabled state is present, and 9.2 measures controls that carry none, so
       the baseline it depends on does not move.
+  # FIX ROUND 1
+  - decision: >-
+      The pressed appearance is given a SECOND route, [data-pressed], beside
+      :active, and every :active selector in the phase's block carries a twin.
+    why: >-
+      THE MECHANISM IS A STATE APPEARANCE REACHABLE ONLY THROUGH AN
+      INPUT-CONDITIONAL PSEUDO-CLASS, not "the spec pressed with a mouse".
+      :active is granted by the engine's gesture pipeline, so a rule resting on
+      it is delivered on exactly the input paths that engine grants it on.
+      Measured here under the chromium-phone project's device options, sampling
+      every animation frame: a held CDP Input.dispatchTouchEvent touchStart,
+      Input.synthesizeTapGesture with gestureSourceType "touch" and
+      page.touchscreen.tap each deliver pointerdown AND touchstart to the
+      control and yield ZERO frames in :active, while a held page.mouse.down in
+      the same context yields 22 of 28 and moves the box 2.000px. The same
+      synthesized tap on a bare div outside the product, carrying only its own
+      :active rule, also yielded zero, so this is the container's gesture
+      pipeline rather than the stylesheet. pointerdown fires on every touch
+      path, and the plan's verification-first step (e) pre-authorises exactly
+      this remedy. THE HALF NOT SHIPPED: nothing in the product sets the
+      attribute. Setting it takes a client listener, because no CSS selector
+      observes a pointerdown, and every file that could host one is a *.tsx
+      outside the six paths criterion 9.7 prints. I did not find a way to ship
+      it inside this phase's declared files; that is a search that came up
+      empty rather than a proof that none exists. The six lines are written out verbatim in the spec, which installs
+      them and measures this rule under a real held touch press. M3-P10 opens
+      the client boundary and is where they land.
+  - decision: >-
+      [aria-disabled="true"] gains pointer-events: none, in a rule of its own,
+      and button:disabled and input:disabled are deliberately left alone.
+    why: >-
+      The aria branch carried the whole disabled appearance, cursor: default
+      included, and removed nothing: measured on the shipped screens, a link
+      marked that way navigated (/sign-in to /sign-up), a submit marked that
+      way produced a POST, and the disclosure summary toggled. It is the only
+      marking eight of the nineteen controls can carry. The native attribute
+      already refuses activation from every input path, so pointer-events there
+      would only cost the cursor the appearance rule sets.
+  - decision: >-
+      THE SECOND MEMBER OF THAT CLASS IS NAMED AND DELIBERATELY NOT CHANGED.
+      [aria-busy="true"] and .pulse-busy also dress a control as unavailable
+      (opacity 0.7, cursor: progress) and also remove no capability: a busy
+      submit still accepts a pointer activation and could still post twice.
+    why: >-
+      Fixing the mechanism rather than the instance would mean adding
+      pointer-events: none there too, and I did not, because the plan's step 5
+      says exactly what a busy control does ("keeps its label and gains a
+      mark") and says nothing about removing interaction, while it says
+      explicitly what the disabled state removes. Substituting my design for
+      the planned one is what clause R-034 forbids. It is recorded here as the
+      derived second member of the class and handed to M3-P10, which decides
+      whether a busy control stays operable (a cancel affordance) or refuses
+      re-entry, and which owns the handler either way.
+  - decision: >-
+      select and textarea join the transition list and the disabled list, and
+      NOT the pressed list.
+    why: >-
+      They are the two interactive controls the product renders that the
+      criterion 9.2 census does not count, because neither is pressable: the
+      Ring select and the spec editor's textarea. A form disabled while its
+      submit is in flight, which is what M3-P10 builds, would otherwise leave
+      those two looking untouched beside a submit that visibly changed. A form
+      field is not pressed, so neither takes the pressed appearance.
+  # ROUND TWO
+  - decision: >-
+      The listener ships as a module-scope string constant in src/app/layout.tsx
+      rendered as ONE script element inside the body, carrying
+      the bare attribute data-press-feedback, and NOT as a client component.
+      CORRECTED IN PLACE IN ROUND THREE (clause R-087, finding CR2-M3P9-07):
+      this said data-testid="press-feedback", which was true when it was
+      written and stopped being true at b55a31b when the plan amendment at
+      497ec49 renamed the marker.
+    why: >-
+      Decision D-61 settles it and it is not the implementer's to re-decide. A
+      "use client" file would open the first React client boundary since
+      src/platform/ui/nav-link.tsx:1, which is M3-P10's job and what hazard
+      H9.5 exists to keep out; and a press listener that does not attach until
+      the React bundle has hydrated is a poor answer to a complaint whose words
+      are that nothing happens when the owner presses. The root layout and not
+      the authenticated shell, because five of the nineteen controls live on
+      the sign-in and sign-up screens, which src/app/(app)/layout.tsx never
+      renders. The constant carries NO interpolation, ever, so it has no
+      injection surface; the product declares no Content-Security-Policy today
+      and src/middleware.ts is where one would land, so the phase that adds one
+      adds a nonce for this script in the same change or turns criterion 9.9
+      red.
+  - decision: >-
+      The clear sweeps the DOCUMENT on pointerup and on pointercancel, with no
+      pointer-id table, and the cost of that is taken deliberately.
+    why: >-
+      A clear that sweeps the document also clears a press ANOTHER FINGER is
+      still holding, so with two touches on two controls the first release
+      un-draws both. That failure is a press that DISAPPEARS, it corrects
+      itself at the next press, and multitouch across two controls is rare on
+      this product. The STICKING failure is the one that matters and criterion
+      9.9(e) measures it, including the two-presses ending that a single-slot
+      clear fails. The pointercancel listener is not optional: a scroll begun
+      on a control IS a pointercancel, and without it the control the reader
+      scrolled from stays drawn pressed until something else is tapped, after
+      which that control answers no further press because it is already in the
+      pressed state.
+  - decision: >-
+      Criterion 9.9(c)'s :active count is taken over the frames BETWEEN the
+      pointerdown and the end of the touch, and the frames after the release
+      are printed beside it rather than counted in it.
+    why: >-
+      MEASURED, not reasoned: with the capture-phase click refusal installed,
+      the compatibility MOUSE click Chromium synthesises after a raw touch
+      sequence leaves the control in :active from about 14ms after touchend
+      onward. Counting those frames would make the criterion assert something
+      about this spec's own instrument. Frames after the touch has ended are by
+      construction not the touch press, so the window is the definition rather
+      than a weakening, and both numbers are printed on every path.
+  - decision: >-
+      The restoration half of criterion 9.9(e) is read AFTER a neutral press
+      that clears the browser's active chain, and the marking half is read
+      BEFORE it.
+    why: >-
+      Same mechanism as the entry above, and it is the one that decides whether
+      ending one can be measured at all: with the activation refused, every one
+      of the twenty frames sampled after the ending had the control in :active,
+      so the :active half of the pressed rule kept drawing it pressed while
+      document.querySelectorAll("[data-pressed]") was already empty. The
+      marking is what this phase ships and a stuck marking is the defect, so
+      that assertion stays on the second frame after the ending, untouched by
+      the neutral press. The neutral spot is asserted not to be a control
+      before it is pressed.
+  # ROUND THREE
+  - decision: >-
+      The marker on the shipped script is the bare attribute
+      data-press-feedback and deliberately not a data-testid, renamed at all
+      four requirement sites the amended plan names.
+    why: >-
+      The escalation this branch raised was accepted and the plan amended at
+      497ec49. It stays in the data-* family the vocabulary already uses for
+      data-pressed, and unlike an id it cannot collide with a CSS id selector
+      or a URL fragment target. Criterion 9.9(a) reads the marker out of the
+      RAW RESPONSE BODY as text rather than through a Playwright locator, so
+      any stable attribute serves the purpose exactly as well and the rename
+      costs nothing. FOUR sites and not three: step 5, criterion 9.7(c),
+      criterion 9.9(a) TWICE (the assertion sentence and the sentence about a
+      tag with that attribute and no body), and criterion 9.9's falsifying
+      clause. One occurrence of the old string survives in step 5 by design,
+      as the historical record of what the old attribute was and what it
+      broke, and it is not a requirement.
+  - decision: >-
+      The browser's active chain is cleared between the three touch paths in
+      criterion 9.9(c), the same way it is cleared between the two halves of
+      every ending.
+    why: >-
+      Re-running after the rename turned up ONE :active frame on the
+      synthesizeTapGesture path where every earlier run had zero, and it is
+      this spec's own instrument rather than the engine: the path before it
+      ends with a compatibility mouse click that this spec refuses, and a
+      refused click leaves Chromium's active chain set on the control until
+      the next input, so one frame at the head of the next path's window
+      carried :active from the previous path. Cleared, all three paths report
+      zero during the press with the shipped marking on 25 of 25 and 24 of 24
+      frames.
+  # ROUND FOUR
+  - decision: >-
+      D-61's no-interpolation constraint is given a MECHANISM rather than
+      softened: a test with no skip condition reads src/app/layout.tsx from
+      disk, extracts the PRESS_FEEDBACK constant and fails on any template
+      expression.
+    why: >-
+      The hazard lane found the constraint true and enforced by nothing, so
+      "NO INTERPOLATION, EVER" read as a standing property when it was an
+      unenforced convention: no lint rule, no test, and no
+      Content-Security-Policy to make a violation visible. The constraint is
+      what D-61 rests on when it permits an unchecked inline script, so it
+      earns a check rather than a softer sentence. It lives in the spec and
+      not the fast gate because criterion 9.7 pins this phase to one new file
+      under test/e2e/ and a unit test would print an eighth path; that is a
+      scope constraint and it is recorded rather than hidden. It carries no
+      skip condition for the same reason the config-membership test carries
+      none: a guard that runs only where touch is declared is silent in half
+      the runs.
+  - decision: >-
+      The tap path's :active zero is RECORDED AS VACUOUS and the count of
+      paths whose zero was measured over a non-empty window is asserted at two
+      or more, rather than the third path's zero being counted as evidence.
+    why: >-
+      Criterion 9.9(c)'s liveness clause proves an input path DELIVERED
+      pointerdown and touchstart; it does not prove anything was LOOKED AT
+      while they were in flight, and page.touchscreen.tap dispatches its
+      touchstart and touchend inside one task so no animation frame can fall
+      between them. A zero over an empty window is numerically identical to a
+      zero over 24 frames, which is the same argument the criterion already
+      makes one level up. Choosing between naming the two held paths as the
+      ones the zero binds on and replacing the third is the criterion's to
+      make; the spec's job is to stop the empty one being counted silently.
+  - decision: >-
+      CR2-M3P9-09's concrete edit was REFUTED rather than adopted: the alpha
+      floor in assertMagnitude keeps its second condition.
+    why: >-
+      Fleet warning 15, a review's concrete-edit is a proposal and not a
+      patch, walked against the stylesheet rather than against the sentence.
+      Criterion 9.2(b)(ii)'s alpha floor exists for a state that CHANGES the
+      background: it stops a pressed tint clearing the contrast bar only by
+      being nearly opaque. The busy rule sets opacity and cursor and NO
+      background, so on a control whose resting background is transparent the
+      entered background is transparent too, and an unconditional floor would
+      demand an alpha of 0.08 from a background the state never touched and
+      redden a magnitude that legitimately passes on an opacity delta of 0.30
+      against a bar of 0.15. The reasoning is written at the line so the next
+      reader does not delete the condition, and the criterion's sentence is
+      recorded as the half that should carry the qualification.
 
 verification-first:
   - finding: >-
@@ -312,8 +550,12 @@ verification-first:
       every screen the new spec reaches and collecting what it found, not by
       copying a list. Command: npx playwright test --project=chromium-phone
       test/e2e/pressed-and-disabled.spec.ts, whose spec prints the collected
-      set. Output, 19 identities: a.month-nav|LEFT-CHEVRON, a.month-nav|
-      RIGHT-CHEVRON, a[data-testid=empty-state-import-link],
+      set. CORRECTED IN FIX ROUND 1 (finding CR-M3P9-06): the first two
+      identities were transliterated into the words LEFT-CHEVRON and
+      RIGHT-CHEVRON, and captured output is not paraphrased. The characters
+      the run printed are restored below and were re-captured in the fix
+      round's own run. Output, 19 identities: "a.month-nav|‹",
+      "a.month-nav|›", a[data-testid=empty-state-import-link],
       a[data-testid=nav-import], a[data-testid=nav-merchants],
       a[data-testid=nav-overview], a[data-testid=unresolved-pill], a|Back to
       import, a|Create household, a|Import another file, a|Sign in,
@@ -450,10 +692,107 @@ deviations:
     why: >-
       src/app/globals.css now declares "a { display: inline-block; }". It is
       inside the phase's declared files, but it is a change to a base element
-      rule rather than to a state rule, so it is called out here: four of the
-      nineteen controls are bare anchors and a non-replaced inline box is not
-      transformable, so without it the pressed rule would leave those four
-      unmoved while the computed style still reported the translation.
+      rule rather than to a state rule, so it is called out here: TWO of the
+      nineteen controls are bare anchors WITH NO FLEX PARENT (the two auth
+      cross-links) and a non-replaced inline box is not transformable, so
+      without it the pressed rule would leave those two unmoved while the
+      computed style still reported the translation. CORRECTED IN FIX ROUND 1
+      (finding CR-M3P9-03): this entry said four, counting the two import
+      result links, which are flex items and were already blockified.
+  # FIX ROUND 1
+  - plan-clause: >-
+      Step 4 and criterion 9.2, which describe the pressed appearance in terms
+      of a press and do not name a selector; the plan's verification-first step
+      (e) pre-authorises "a class or attribute the control carries between
+      pointerdown and pointerup" only IF a held page.mouse.down fails to
+      produce :active under the chromium-phone project.
+    why: >-
+      A held page.mouse.down DOES produce :active under that project, so the
+      ladder's condition is literally not met and the attribute is literally
+      not pre-authorised. It is added anyway, beside :active rather than
+      instead of it, because the ladder's condition is keyed on the mouse
+      question while the phase exists to answer a finger question, and the
+      touch measurement the same step (e) asks for returns zero on every path.
+      Nothing is removed: the mouse case keeps working with no script at all.
+  - plan-clause: >-
+      files-to-touch and criterion 9.7, which print no client script, so the
+      pointerdown handler that sets [data-pressed] cannot ship in this phase.
+    resolved: true
+    why: >-
+      RESOLVED IN ROUND TWO AND MARKED SO IN ROUND THREE (finding
+      CR2-M3P9-01). THE ESCALATION WAS ACCEPTED: the plan amendment at
+      bca2a74, "plan: M3-P9 may ship the listener that makes the press
+      visible", put src/app/layout.tsx into files-to-touch as the ONE file
+      matching *.tsx this phase may print, decision D-61 settled the shape as
+      an inline script in the root layout rather than a client island, and
+      criterion 9.9 was added as the criterion that fails when the listener is
+      missing. The listener landed at 274a858 and the marker was renamed at
+      b55a31b. NOTHING BELOW THIS SENTENCE IS TRUE OF THIS HEAD ANY LONGER
+      AND IT IS KEPT RATHER THAN DELETED so the register reads as a decision
+      taken rather than a question never asked. What it said while it was
+      open: "THIS IS AN OPEN ESCALATION AND NOT A CLOSED DEVIATION, raised
+      under clause R-034 rather than improvised around. The only host I found
+      for the handler is a *.tsx file, which criterion 9.7 falsifies the phase
+      for and hazard H9.5 names; I did not find one inside the declared files.
+      So the phase ships the stylesheet half, measures it under a real held
+      touch press with the handler installed by the spec, and states plainly
+      that no shipped code sets the attribute yet. Whoever holds the plan
+      decides: amend files-to-touch on the base branch so a follow-up round
+      lands the six lines, or leave them to M3-P10, which opens the client
+      boundary anyway." The plan took the first branch. The spec installs no
+      handler now and criterion 9.9(a) forbids it.
+  # ROUND TWO
+  - plan-clause: >-
+      Criterion 9.9(a): "the spec registers no addInitScript and no
+      page.evaluate that adds a listener for pointerdown, touchstart or
+      mousedown, with ONE exception named here and nowhere else, the
+      capture-phase CLICK REFUSAL".
+    why: >-
+      Criteria 9.9(c) and 9.9(e) require the spec to prove pointerdown,
+      touchstart, pointerup and pointercancel were DELIVERED before concluding
+      anything from a zero or from an absence, and I found no way to witness a
+      DOM event without registering a listener for it, so I found no way to
+      obey both clauses. The
+      spec installs a PASSIVE recorder on document in the capture phase whose
+      handlers push a string into an array and do nothing else; it writes no
+      attribute, and the grep criterion 9.9(a) names returns three lines over
+      the file, one comment, one el.matches and one document.querySelectorAll.
+      The spec also PRINTS the scripts it injects, which is the check the
+      criterion itself asks for. The property the prohibition protects, that
+      nothing the test installs can produce the pressed appearance, holds.
+  - plan-clause: >-
+      Criterion 9.9(e): "After EACH of the five endings, by the SECOND sampled
+      animation frame following it ... the control's computed transform matrix
+      and bounding rect are back at their resting values".
+    why: >-
+      The transform is a TRANSITIONED property and --duration-press is 90ms, so
+      it is still unwinding at the second frame by construction, on every
+      ending and under any implementation. The marking assertion, which is the
+      one that catches a stuck press, is taken at the second frame exactly as
+      written and passes on all fifteen endings. The transform and rect
+      restoration is read at the end of the sampled tail instead, on a frame
+      the control is not in :active for the reason the key-decision above
+      records, and is 0.000px on all fifteen.
+  - plan-clause: >-
+      Criterion 9.9(e) ending FOUR: "by asserting that the ending's own event
+      was captured on the control, pointerup for endings one, two, four and
+      five".
+    why: >-
+      Ending four exists precisely because a MOUSE pointer has no implicit
+      capture, so its pointerup is NOT delivered to the control. Asserting that
+      it was would assert the opposite of what the ending measures. The spec
+      asserts a pointerup was captured AND that its target was not the control,
+      which is the stronger form of the same check and is the discriminator the
+      criterion's own reasoning describes.
+  - plan-clause: >-
+      Criterion 9.9(e) ending TWO, a touch release AWAY from the control.
+    why: >-
+      Driving it with a touchMove produced a pointercancel rather than a
+      pointerup on both screens the endings run on, because a touchMove on a
+      screen that scrolls is a scroll and a scroll is ending THREE. The release
+      now ends the touch at moved coordinates with no move event, which leaves
+      the control at a different place from where it began, produces the
+      pointerup this ending is, and lets the engine take no gesture.
 
 gate-evidence:
   - gate: typecheck
@@ -507,6 +846,216 @@ gate-evidence:
     discovered: 57
     passed: 57
     failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  # FIX ROUND 1, re-run at the committed head 1db37b3
+  - gate: typecheck-fix-round-1
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: lint-fix-round-1
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-unit-fix-round-1
+    result: green
+    wrapper-exit-code: 0
+    discovered: 431
+    passed: 431
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-privacy-fix-round-1
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-tokens-fix-round-1
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-e2e-fix-round-1-run-1
+    result: green
+    wrapper-exit-code: 0
+    discovered: 61
+    passed: 60
+    failed: 0
+    skipped: 1
+    todo: 0
+    did-not-run: 0
+  - gate: suite-e2e-fix-round-1-run-2
+    result: red
+    wrapper-exit-code: 1
+    discovered: 61
+    passed: 56
+    failed: 4
+    skipped: 1
+    todo: 0
+    did-not-run: 0
+  - gate: suite-e2e-fix-round-1-run-3
+    result: red
+    wrapper-exit-code: 1
+    discovered: 61
+    passed: 58
+    failed: 2
+    skipped: 1
+    todo: 0
+    did-not-run: 0
+  - gate: suite-e2e-fix-round-1-isolated-retries
+    result: green
+    wrapper-exit-code: 0
+    discovered: 28
+    passed: 28
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  # ROUND TWO
+  - gate: typecheck-round-2
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: lint-round-2
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-unit-round-2
+    result: green
+    wrapper-exit-code: 0
+    discovered: 431
+    passed: 431
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-privacy-round-2
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-tokens-round-2
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-e2e-round-2
+    result: red
+    wrapper-exit-code: 1
+    discovered: 62
+    passed: 59
+    failed: 3
+    skipped: 1
+    todo: 0
+    did-not-run: 0
+  - gate: suite-e2e-round-2-this-phase-spec-under-chromium-phone
+    result: green
+    wrapper-exit-code: 0
+    discovered: 5
+    passed: 5
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  # ROUND THREE, at the committed head b55a31b
+  - gate: typecheck-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: lint-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-unit-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 431
+    passed: 431
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-privacy-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-tokens-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-e2e-round-3
+    result: red
+    wrapper-exit-code: 1
+    discovered: 63
+    passed: 60
+    failed: 2
+    skipped: 1
+    todo: 0
+    did-not-run: 0
+  - gate: suite-e2e-round-3-isolated-retry
+    result: red
+    wrapper-exit-code: 1
+    discovered: 18
+    passed: 17
+    failed: 1
     skipped: 0
     todo: 0
     did-not-run: 0
@@ -591,6 +1140,412 @@ claims:
       verbatim as R-052a requires, and they are not assertions this work
       history makes; the settled hits outside that block are listed in the
       claim-grep record below.
+  # FIX ROUND 1
+  - id: M3P9-C10
+    kind: remedy
+    statement: >-
+      The shipped stylesheet produces a visible pressed appearance under a real
+      held TOUCH press on chromium-phone, on both control shapes, when
+      [data-pressed] is set between pointerdown and pointerup; and it produces
+      none at all through :active under the same press.
+    settled-by:
+      executed-construction:
+        command: >-
+          cd /home/user/wt-m3p9 && npx playwright test --project=chromium-phone
+          -g "a held touch press moves the control"
+        exit-code: 0
+        output: >-
+          RED, against the stylesheet at 88dbaac, exit 1: "touch press, :active
+          only, button.auth-submit: frames 27, in :active 0, carrying
+          [data-pressed] 0, with a transform 0, peak box displacement 0.000px";
+          and with the handler installed "carrying [data-pressed] 26, with a
+          transform 0, peak box displacement 0.000px", failing with
+          "button.auth-submit never carried a transform under a held touch
+          press, Expected > 0, Received 0". GREEN, after the [data-pressed]
+          rules, exit 0: "carrying [data-pressed] 28, with a transform 27, peak
+          box displacement 2.000px" on button.auth-submit and "carrying
+          [data-pressed] 26, with a transform 25, peak box displacement
+          2.000px" on the bare anchor p.auth-alt a, with "press to first
+          visible change under touch" 29.2ms and 31.4ms. The :active-only lines
+          stay at zero frames in both runs.
+  - id: M3P9-C11
+    kind: remedy
+    statement: >-
+      A control marked aria-disabled no longer activates from a pointer, and
+      the same click at the same coordinates does activate it when the marking
+      is removed.
+    settled-by:
+      executed-construction:
+        command: >-
+          cd /home/user/wt-m3p9 && npx playwright test -g "a marked link does
+          not navigate"
+        exit-code: 0
+        output: >-
+          RED, against the stylesheet at 88dbaac, exit 1: "a link wearing the
+          full disabled appearance still navigated, Expected /sign-in, Received
+          /sign-up". GREEN after pointer-events: none, exit 0, 2 passed under
+          both projects, with the positive control (the same click with the
+          marking removed reaching /sign-up, and the unmarked submit producing
+          at least one POST) passing in the same test.
+  - id: M3P9-C12
+    kind: coverage
+    statement: >-
+      The reduced-motion check now reddens when the busy loop is left running
+      under reduce, and the .pulse-busy class and the unconfirmed mark's width
+      now have a red line under them. All three were vacuous before.
+    settled-by:
+      executed-construction:
+        command: >-
+          three mutations, each applied, run and restored with git show
+          HEAD:<path> > <path>, git status --porcelain empty after each
+        exit-code: 1
+        output: >-
+          Deleting --duration-busy-cycle from the prefers-reduced-motion block:
+          "the busy mark still animates under reduce on button.auth-submit|Sign
+          in (name pulse-busy-cycle, duration 0.9s), Expected false, Received
+          true" and the run reached that assertion, so the pre-existing
+          control-level check passed while the mark was spinning. Deleting the
+          two .pulse-busy selectors: "class-busy button.auth-submit|Sign in:
+          background 1.000, colour 1.000, border 1.000, opacity delta 0.000".
+          Replacing pointer-events: none with an inert declaration: "an
+          aria-disabled control still accepts pointer input, Expected none,
+          Received auto". Zeroing the unconfirmed mark's width AND its border:
+          "unconfirmed mark has zero width, Expected > 0, Received 0".
+  - id: M3P9-C13
+    kind: coverage
+    statement: >-
+      Criterion 9.8(b) is WITNESSED for the half that binds this phase and NOT
+      clean for the whole worktree. All five probe families were built in this
+      container from the three statement PDFs under the uploads directory; over
+      the six files this phase touches and over every commit message on the
+      branch, all five return zero hits; over the whole tracked tree, 19 pairs
+      match, all of them in files this phase does not touch and all predating
+      the base.
+    settled-by:
+      executed-construction:
+        command: >-
+          python3 <scratchpad>/privacy-probes2.py, built at fix-round time from
+          the uploads, kept outside the repository and not committed
+          (git ls-files piped through grep for the four probe script names
+          returns 0, and git status --porcelain returns no probe path), and
+          printing families, counts, file lists and exit codes only
+        exit-code: 0
+        output: >-
+          "identifier 25 probes, 0 tree hits, 0 touched hits, 0 message hits;
+          holder-name 2, 0, 0, 0; merchant-string 143, 5, 0, 0;
+          thousands-amount 3, 1, 0, 0; date 112, 13, 0, 0. TOTAL HITS: 19".
+          Exit 0 means at least one hit somewhere, and the criterion asks for
+          exit 1, so the whole-worktree half is recorded as NOT CLEAN rather
+          than green. The 19 land in the parser's own layout-vocabulary
+          constants, the committed synthetic fixtures, two domain tests,
+          prisma/seed.ts and the design reference. I could not read the probe
+          strings to classify them further: printing one in this container was
+          refused by the tool policy and I did not work around that. Handed on
+          as an open question.
+  - id: M3P9-C14
+    kind: open-question
+    statement: >-
+      The e2e gate is not reproducibly green in this container. Three full runs
+      at essentially one tree returned green, then four red, then two red;
+      every red test is a PRE-EXISTING spec, every one passes on an isolated
+      retry at the same head, and the new spec passed all four of its runs in
+      all three. I did not root-cause it and do not claim this round is
+      innocent on the strength of "they are pre-existing" alone.
+    settled-by:
+      executed-construction:
+        command: >-
+          cd /home/user/wt-m3p9 && set -a && . ./.env && set +a && npm run
+          test:e2e (three times), then npx playwright test --project=chromium
+          over the failing files
+        exit-code: 1
+        output: >-
+          RUN 1 "60 passed (18.6m)", "1 skipped", exit 0. RUN 2 "4 failed", "1
+          skipped", "56 passed (20.6m)", exit 1, red on auth.spec.ts:11,
+          golden-journey.spec.ts:79, import.spec.ts:170 and
+          month-view.spec.ts:120. RUN 3 "2 failed", "1 skipped", "58 passed
+          (20.7m)", exit 1, red on import.spec.ts:170 and merchants.spec.ts:18.
+          ISOLATED RETRIES at the same head: "22 passed (6.6m)" exit 0 over the
+          four files of run 2, and "6 passed (2.4m)" exit 0 over the two files
+          of run 3. Two of run 2's four carried the "Protocol error
+          (Runtime.callFunctionOn): Internal server error, session closed"
+          signature the Playwright config documents as CR-903 and attributes to
+          disk pressure; free space was 4.8G, 6.4G and 6.5G. Nothing in the
+          product enters any state this round adds: grep over src/ for
+          aria-disabled, aria-busy, data-unconfirmed, data-pressed, pulse-busy
+          and disabled= exits 1, so the new rules are inert in the running
+          application. The database accumulates across runs and npm run
+          db:reset was not run: Prisma's agent consent guard refuses it and the
+          local stack is shared with other worktrees in this container.
+  - id: M3P9-C15
+    kind: open-question
+    statement: >-
+      Whether a finger press on a real phone produces a visible change in the
+      SHIPPED product is still not witnessed, and I found no way to witness it
+      in this container.
+    settled-by:
+      executed-construction:
+        command: which google-chrome chromium firefox
+        exit-code: 1
+        output: >-
+          Nothing on PATH; no physical device and no mobile browser is
+          reachable from this container, so every phone result in this phase is
+          a Chromium emulation result. What IS witnessed: the stylesheet
+          produces the pressed appearance from pointerdown under emulated
+          touch, and pointerdown fires on every touch path. What is NOT: that
+          any shipped code sets the attribute (nothing does yet), and whether a
+          real engine grants :active to a tap. Android Chrome is understood to,
+          and iOS Safari is understood to require a touch listener; neither is
+          measurable here and neither is asserted as fact anywhere in this
+          phase.
+  # ROUND TWO
+  - id: M3P9-C16
+    kind: remedy
+    statement: >-
+      A FINGER PRESS ON A PHONE NOW PRODUCES A VISIBLE CHANGE IN THE SHIPPED
+      PRODUCT, with nothing installed by the test. Nineteen controls under full
+      motion and the same nineteen under reduce, thirty-eight held touch
+      presses of 400ms, every animation frame sampled: not one frame in the
+      window lost the shipped marking, every control moved, and the peak
+      vertical displacement is 2.000px on every one of them, taken from the
+      control's own transform matrix with the scroll-corrected bounding rect
+      agreeing exactly.
+    settled-by:
+      executed-construction:
+        command: >-
+          cd /home/user/wt-m3p9 && npx playwright test --project=chromium-phone
+          -g "pressed|press a finger|press listener|project with touch"
+        exit-code: 0
+        output: >-
+          "5 passed (2.9m)", zero skipped, which equals the count the spec
+          itself declares for that project. Across the thirty-eight presses:
+          "presses: 38 | any frame missing the marking: 0 | min peak px: 2.000 |
+          min frames with a transform: 24". Verbatim rows: "touch press (full
+          motion) button.auth-submit|Sign in: 25/25 frames marked, 25 with a
+          transform, peak 2.000px (rect 2.000px), first movement at frame 0
+          (14.8ms), 20 frames marked AND moved"; "touch press (reduce)
+          button.auth-submit|Sign in: 24/24 frames marked, 24 with a transform,
+          peak 2.000px (rect 2.000px), first movement at frame 0 (14.3ms), 24
+          frames marked AND moved". The scoping clause criterion 9.9(b)
+          pre-authorises was NOT used: every half was taken on the whole set.
+  - id: M3P9-C17
+    kind: coverage
+    statement: >-
+      The mechanism is SERVED and not injected, and the measurement ran. The
+      raw response body for the sign-in screen and for the authenticated shell
+      each carry a script element with the bare attribute data-press-feedback
+      (CORRECTED IN PLACE IN ROUND THREE, finding CR2-M3P9-07: this named
+      data-testid="press-feedback", the marker at the time it was recorded;
+      the coverage was RE-TAKEN after the rename and is quoted at M3P9-C21), a
+      non-empty body and a pointerdown registration, and the live element's
+      text is byte identical to what the response carried.
+    settled-by:
+      executed-construction:
+        command: >-
+          the same run; the spec reads response.text() from the Playwright
+          navigation response rather than the live DOM
+        exit-code: 0
+        output: >-
+          "config membership: pressed-and-disabled.spec.ts is collected by
+          [\"chromium-phone\"] with hasTouch, out of projects
+          [\"chromium\",\"chromium-prod\",\"chromium-phone\"]" and
+          "scripts this spec injects:
+          [\"INSTALL_HELPERS\",\"INSTALL_RECORDER\"]". The config membership
+          test carries NO skip condition and sits outside the describe block
+          that carries the hasTouch skip, so it asserts under every project that
+          collects the file instead of going silent under the desktop one.
+  - id: M3P9-C18
+    kind: coverage
+    statement: >-
+      :active stays at zero on three touch paths each shown to be alive first,
+      and the press ends when the finger does across all five endings on all
+      three control shapes, with the two-press overlap witnessed rather than
+      assumed.
+    settled-by:
+      executed-construction:
+        command: the same run
+        exit-code: 0
+        output: >-
+          Per path: held CDP touchStart, events ["pointerdown","touchstart",
+          "pointerup","touchend","mousedown","click"], 26 frames during the
+          press, in :active 0, carrying the shipped marking 26;
+          synthesizeTapGesture touch, 24 frames, in :active 0, marking 24;
+          page.touchscreen.tap, 0 frames during the press (its down and up land
+          in one task, so no mechanism can be observed held under it), in
+          :active 0. Fifteen endings, three shapes by five, every one reporting
+          "markedAtSecondFrame":0, and ending five reporting 11 frames with
+          BOTH controls marked simultaneously on each of the three shapes.
+          Ending three additionally asserts the page's scroll position moved,
+          and ending four asserts the pointerup's target was NOT the control,
+          which is the discriminator a target-scoped clear fails.
+  - id: M3P9-C19
+    kind: open-question
+    statement: >-
+      A REAL PHONE STILL HAS NOT BEEN PRESSED. Every result above is Chromium
+      emulation under the phone project's device descriptor.
+    settled-by:
+      executed-construction:
+        command: which google-chrome chromium firefox
+        exit-code: 1
+        output: >-
+          Nothing on PATH. What is witnessed is that the shipped document
+          raises pointerdown on every touch path, that the shipped listener
+          answers it, and that the shipped stylesheet moves the control 2.000px
+          and changes its surface for as long as the touch is held. What is not
+          witnessed is a physical device, and iOS is not measurable here at all.
+  - id: M3P9-C20
+    kind: open-question
+    resolved: true
+    statement: >-
+      CLOSED IN ROUND THREE, and marked here rather than left for a reader to
+      infer from a later entry (finding CR2-M3P9-07). The plan amendment at
+      497ec49 renamed the marker to the bare attribute data-press-feedback,
+      this branch followed at b55a31b, the pre-existing spec is green under
+      BOTH projects with the new marker present, and the slow gate is GREEN:
+      the clean-room criteria lane ran it at this head and reported exit 0,
+      62 passed, 1 skipped. SEE M3P9-C21 FOR THE SETTLED RECORD. Everything
+      after this sentence is what the question said while it was open and is
+      NO LONGER TRUE: "A CONFLICT INSIDE THE AMENDED PLAN, ONE ATTRIBUTE
+      WIDE, AND IT IS WHY THE E2E GATE IS RED. Step 5, criterion 9.9(a) and
+      criterion 9.7(c) all required the shipped script element to carry
+      data-testid="press-feedback".
+      The pre-existing test/e2e/month-view.spec.ts:1034 runs
+      document.querySelectorAll("[data-testid]") over the WHOLE document and
+      asserts every element it returns has a non-zero box; a script element is
+      display: none and reports 0 by 0. Criterion 9.7 requires every
+      pre-existing spec to pass AND pins this phase to one new file under
+      test/e2e/, so criterion 9.7 forbids editing the failing spec here
+      either. Escalated
+      under clause R-034 rather than resolved by improvising: the branch
+      carries what the plan requires and the gate carries the red.
+    settled-by:
+      executed-construction:
+        command: >-
+          cd /home/user/wt-m3p9 && npx playwright test --project=chromium -g
+          "the dense month says exactly the same things", run twice against the
+          same server and the same head, once with the attribute and once with
+          that ONE attribute removed and nothing else changed
+        exit-code: 1
+        output: >-
+          WITH the attribute: "expect(received).toEqual(expected)" with
+          "- Array []" against "+ Array [ + \"press-feedback\", ]" at
+          month-view.spec.ts:1055, "1 failed", D_EXIT=1, and the same failure
+          under both projects in the full gate run. WITHOUT it: "1 passed
+          (20.4s)", D_EXIT=0. The attribute was restored immediately and git
+          status --porcelain src/app/layout.tsx prints nothing. RECOMMENDED
+          FIX: mark the script with an attribute no pre-existing spec scans,
+          data-press-feedback or an id, and rename it in the three plan places.
+          Criterion 9.9(a) reads the raw response body with a regex, so any
+          stable attribute serves its purpose, no test file changes, and
+          criterion 9.7 stays as written. The alternative is to let a phase
+          scope collectTestids to main rather than document, which is what
+          criterion 7.6's own sentence is about, but that prints a second file
+          under test/e2e/.
+  - id: M3P9-C21
+    kind: remedy
+    statement: >-
+      THE RENAME CLOSED THE REGRESSION THIS BRANCH ESCALATED. The pre-existing
+      test/e2e/month-view.spec.ts:1034 is green under BOTH projects with the
+      new marker present, and no requirement site anywhere in the tree carries
+      the old attribute.
+    settled-by:
+      executed-construction:
+        command: >-
+          cd /home/user/wt-m3p9 && grep -rn 'data-testid="press-feedback"' src/
+          test/ styles/ playwright.config.ts ; npm run test:e2e
+        exit-code: 1
+        output: >-
+          The grep exits 1 with no output. The four sites now carrying the new
+          marker are src/app/layout.tsx:110 (the served attribute) and three in
+          the spec: the raw-response regex, the failure message and the live
+          document lookup. Served and matched: curl of the sign-in screen
+          returns <script data-press-feedback=""> with a 727-character body
+          registering a pointerdown listener, matched by the spec's own regex,
+          and zero occurrences of the old attribute. In the full gate run
+          month-view.spec.ts:1034 passed as test 19 under chromium and test 46
+          under chromium-phone, and the string press-feedback appears ZERO
+          times in the whole run. The gate itself exits 1 on two pre-existing
+          specs that pass on isolated retry while a third, different one fails
+          with the identical import-result timeout signature, which is the
+          contention shape and not this change.
+  - id: M3P9-C22
+    kind: remedy
+    statement: >-
+      THE FALSE COMMENT AND ITS SOURCE ARE BOTH CORRECTED IN PLACE. The
+      stylesheet comment that said this phase does not ship the listener, that
+      the diff is pinned to two stylesheets plus config plus spec, and that
+      the spec installs the six lines that raise the attribute, is replaced
+      with what is true, with the old wording quoted inside it. The
+      work-history deviation it came from is marked resolved and names the
+      amendment, the decision and the two commits that resolved it.
+    settled-by:
+      executed-construction:
+        command: >-
+          cd /home/user/wt-m3p9 && grep -c "THE HALF THIS PHASE DOES"
+          src/app/globals.css
+        exit-code: 0
+        output: >-
+          Exactly ONE occurrence remains and it is inside the quoted
+          historical text of the corrected comment, which is the form clause
+          R-087 asks for: corrected loudly, not deleted quietly. The
+          replacement names src/app/layout.tsx and the PRESS_FEEDBACK constant
+          as what raises the attribute, says the spec installs no mechanism,
+          and states why the old text mattered: a comment sending the next
+          reader to the spec for the mechanism is the precondition for hazard
+          H9.11.
+  - id: M3P9-C23
+    kind: coverage
+    statement: >-
+      D-61's no-interpolation constraint is enforced by a check, the ending
+      assertions resolve the delivery target rather than the event name, and
+      the touch path that cannot hold a press no longer contributes a silent
+      zero. All six tests this file contributes under chromium-phone pass.
+    settled-by:
+      executed-construction:
+        command: >-
+          cd /home/user/wt-m3p9 && npx playwright test --project=chromium-phone
+          test/e2e/pressed-and-disabled.spec.ts
+        exit-code: 0
+        output: >-
+          "6 passed (3.3m)", S_EXIT=0, zero skipped. The new check printed
+          "PRESS_FEEDBACK: 727 characters, 0 template expressions". The three
+          paths printed their verdicts: held CDP touchStart "25 frames during
+          the press, in :active 0 (LOAD-BEARING)"; synthesizeTapGesture "24
+          frames during the press, in :active 0 (LOAD-BEARING)";
+          page.touchscreen.tap "0 frames during the press, in :active 0
+          (VACUOUS, sampled no frame)". The declared count for this project is
+          now 6 and equals the passed count.
+  - id: M3P9-C24
+    kind: open-question
+    statement: >-
+      CRITERION 9.8(b)'s WHOLE-WORKTREE HALF IS UNSATISFIABLE BY CONSTRUCTION
+      AND I AGREE WITH THE LANE THAT RAISED IT. Two independent probe builds
+      now exist, mine at 19 tree hits and the criteria lane's looser families
+      at 61, and both return ZERO over the files this phase touches and ZERO
+      over every commit message. Every tree hit sits in a file this phase does
+      not touch.
+    settled-by:
+      executed-construction:
+        command: >-
+          two probe builds from the three real uploads, mine at fix round 1
+          and the criteria lane's at review time, both kept outside the
+          repository and never committed
+        exit-code: 0
+        output: >-
+          Fleet warning 12 says why no artifact can satisfy it: the gate
+          cannot see a merchant name, a place name, a date or an amount inside
+          a file, because those look exactly like invented ones, and the
+          committed synthetic fixtures are built to imitate the real
+          statements' shape so the parsers can be tested. A probe family drawn
+          from the real statements will therefore always hit the synthetic
+          ones. I SUPPORT the lane's replacement, a baseline comparison that
+          must not INCREASE against the phase's base, and I would go one step
+          further: record the per-file hit SET rather than the count, because
+          a leak landing in a file that already carries a hit does not move a
+          count, and the per-file list the lane already collects costs nothing
+          more. Keep the touched-files grep and the commit-message grep as the
+          falsifying halves, since those are the surfaces a phase controls.
+          NOTHING WAS RELAXED HERE: the phase still records the whole-tree half
+          as NOT CLEAN rather than green.
 
 environment-warnings:
   - warning: >-
@@ -659,8 +1614,19 @@ environment-warnings:
       than asserted.
     evidence: >-
       git diff --stat supabase/config.toml printed nothing after the revert,
-      and git diff --name-only against origin/main lists five paths, none of
-      them supabase/config.toml.
+      and the phase's diff carries none of them supabase/config.toml.
+      CORRECTED IN PLACE IN ROUND THREE (finding CR2-M3P9-08, and the hazard
+      lane's R2H-04 independently): this said "six paths", which was true when
+      it was written and cannot stay true, because a phase that merges its own
+      base branch has paths in its raw diff that are not its own work. The
+      count is now recorded against the invocation that survives a moving
+      base: git diff --name-only $(git merge-base HEAD origin/main) HEAD
+      prints SEVEN paths at this head, exactly criterion 9.7's permitted set.
+      Against the phase's declared base a4f1a94 the same command prints TEN,
+      and the three extra are merge-inherited rather than this phase's: the
+      pdf addendum from 75ec85d, the plan file from main's own amendments, and
+      scripts/gate-privacy.sh from dc8c505, whose parent is the plan commit
+      0539657 and which reached this branch through the merge at 84fe83a.
   - warning: >-
       A COMMENT CAN FAIL A CRITERION'S OWN GREP. Criterion 9.2(c) greps the
       stylesheets for the webkit property that removes the platform tap
@@ -673,4 +1639,108 @@ environment-warnings:
       grep -rn "tap-highlight" over the four tracked stylesheets returned
       src/app/globals.css:1359 before the comment was reworded and exits 1
       after.
+  # FIX ROUND 1
+  - warning: >-
+      page.touchscreen.tap CANNOT MEASURE A HELD PRESS. It dispatches its
+      touchstart and its touchend inside one task, so no frame ever falls
+      between them and no press-driven appearance, by any mechanism, is
+      observable under it: zero pressed frames for :active AND for a
+      pointerdown-driven attribute alike. The instrument for a press
+      measurement is a held CDP Input.dispatchTouchEvent touchStart with a
+      waitForTimeout between the start and the end.
+    evidence: >-
+      Under the Pixel 5 context: page.touchscreen.tap on a control whose
+      pointerdown handler sets the attribute produced "frames 9, framesPressed
+      0"; a held CDP touchStart on the same control produced "frames 27,
+      framesPressed 25, peakBoxDisplacementPx 2".
+  - warning: >-
+      grep -F SPLITS A PATTERN THAT CONTAINS A NEWLINE INTO SEVERAL PATTERNS,
+      and an empty one among them matches every file. A probe list built with a
+      \s+ join spans line breaks, and the resulting sweep reported a
+      77-character probe matching .gitignore and .env.example. Build multi-word
+      probes with [ \t]+ and discard any probe containing a newline.
+    evidence: >-
+      The same probe set returned 115 hits with the \s+ join and 19 with the
+      [ \t]+ join, and the 77-character probe's file list included every
+      tracked file in the repository.
+  - warning: >-
+      A "NON-ZERO COMPUTED WIDTH" ASSERTION ON A BORDERED PSEUDO-ELEMENT
+      CANNOT REACH ZERO. Tailwind's preflight sets box-sizing: border-box on
+      ::after, so width: 0 with a one-pixel border computes 2px. Criterion
+      9.3's zero-width clause therefore binds against width: 0 together with
+      border: none, or display: none, and not against width: 0 alone.
+    evidence: >-
+      A standalone probe page with nothing else on it returned
+      {"zeroWidth":"2px","zeroContent":"\"\"","eightWidth":"8px"}, and the
+      spec stayed green under a width-only mutation and reddened when the
+      border was zeroed too.
+  - warning: >-
+      A NEGATIVE NAVIGATION ASSERTION AGAINST THE DEV SERVER CAN PASS WHILE THE
+      NAVIGATION IS STILL IN FLIGHT, because next dev compiles a route on its
+      first request. Warm the destination route before asserting that a click
+      did not reach it, and always pair the negative with a positive control at
+      the same coordinates.
+    evidence: >-
+      The first version of the aria-disabled test passed "the marked link did
+      not navigate" and then failed its own positive control, because the
+      unmarked click had already navigated and the marked one had too; the
+      500ms wait was shorter than the first compile of /sign-up.
+  # ROUND TWO
+  - warning: >-
+      A DANGLING node_modules SYMLINK REPORTS ITSELF AS A MISSING ESLINT
+      PACKAGE. This worktree's node_modules pointed at another worktree that
+      the fleet cleanup removed, and every npm script then failed with
+      ERR_MODULE_NOT_FOUND naming @eslint/eslintrc rather than naming the
+      missing tree. Check `ls -ld node_modules` before believing a dependency
+      error in a fleet worktree.
+    evidence: >-
+      ls -ld node_modules printed a symlink to /home/user/wt-m3p7/node_modules
+      and that path did not exist; npm ci in this worktree restored it and left
+      package.json and package-lock.json byte unchanged.
+  - warning: >-
+      A DEV SERVER ON PORT 3000 IN THIS CONTAINER MAY NOT BE YOURS. The first
+      served document read in this round carried no press listener at all, and
+      the reason was that port 3000 was held by another worktree's application.
+      Read the page from a port you started yourself before concluding anything
+      about what your own tree serves.
+    evidence: >-
+      readlink /proc/PID/cwd on the process holding port 3000 pointed at
+      /home/user/wt-m3p14; the same request against a dev server this worktree
+      started on port 3005 returned the script element immediately.
+  - warning: >-
+      A HARNESS TIMEOUT KILLS THE SUBSHELL THAT OWNS A BACKGROUNDED RUN. A
+      long e2e run started with a plain trailing ampersand died silently when
+      the foreground command that launched it was terminated at its timeout,
+      and the log simply stopped mid-run with no exit code and no error. Start
+      long runs with setsid nohup and redirect from /dev/null so they outlive
+      the shell that launched them.
+    evidence: >-
+      The run's log stopped for 24 minutes with a 7-minute per-test timeout
+      configured, and pgrep showed no playwright process for this worktree.
+  - warning: >-
+      npx supabase start LEAVES THE TRACKED supabase/config.toml EDITED. Fleet
+      warning 13's workaround sets [edge_runtime] enabled = false in a TRACKED
+      file. It was reverted immediately and the revert was checked rather than
+      asserted: git status --porcelain supabase/config.toml prints nothing and
+      the file reads enabled = true again. The start itself printed a
+      certificate error for a Deno package fetch and still exited 0 with all
+      eleven containers healthy, so that error is noise rather than a failure.
+    evidence: >-
+      SB_EXIT=0, docker ps listing eleven supabase containers healthy, and
+      curl http://127.0.0.1:54321/auth/v1/health returning 200 afterwards.
+  # ROUND THREE
+  - warning: >-
+      THE PLAYWRIGHT PROD WEB SERVER IS KILLED, NOT FAILED, WHEN THE
+      PRODUCTION BUILD OVERRUNS ITS TIMEOUT. Two attempts at npm run test:e2e
+      ended with E2E_EXIT=143 and not one test executed: the config gives the
+      prod webServer a 300 second timeout that covers prisma generate plus
+      next build, and on a container at 96 percent disk with other lanes
+      running that build does not finish inside it. The log shows only the
+      prisma banner and then the exit code, which reads like a crash rather
+      than a timeout. Warm .next-prod first with a direct npm run build, then
+      start the gate.
+    evidence: >-
+      Two consecutive runs exited 143 with zero test lines in the log; a
+      direct PULSE_DIST_DIR=.next-prod npm run build exited 0 and left a 153M
+      .next-prod; the next gate run reached the tests and completed in 19.4m.
 
