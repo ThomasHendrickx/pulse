@@ -29,7 +29,12 @@ export const assignMerchantAction = async (
     recomputeInterpretation,
   );
   if (!outcome.ok) {
-    redirect("/merchants?status=name-missing");
+    // THE REFUSAL IS SHOWN, never swallowed (criterion 12.18). Each kind
+    // gets its own status so the reader is told which thing was wrong;
+    // before M3-P12 every failure redirected as a missing name, which was
+    // already a false message for an empty subject and would have been a
+    // silently wrong one for a stale page's un-namespaced key.
+    redirect(`/merchants?status=${outcome.error.kind}`);
   }
   revalidatePath("/merchants");
   redirect("/merchants");
