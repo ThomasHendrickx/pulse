@@ -50,19 +50,31 @@ CURRENCY='(EUR|€)[[:space:]]*[0-9]'
 # script folded case, so the two halves disagreed with each other and with
 # the allow list's promise.
 #
-# IBAN_FOREIGN accepts LETTERS IN THE BODY and any real IBAN length. An
-# account number whose body carries letters never matched the old pattern
-# at all, and one has been sitting in two tracked fixtures unlisted with
-# this gate exiting 0. It is deliberately UPPER-CASE ONLY: an IBAN is
-# written in capitals by convention, while the mixed-case runs this
-# widening otherwise catches are asset hashes and base64 fragments, four of
-# which this tree carries and none of which anyone can write a provenance
-# note for. It also takes the COMPACT form only: allowing a separator
-# inside a variable-length body let the match run past the account number
-# into the following upper-case word, which invented four shapes nobody
-# could list. The spaced form is what IBAN_LOCAL is for.
+# IBAN_FOREIGN accepts LETTERS IN THE BODY and any real account-number
+# length. An account number whose body carries letters never matched the
+# old pattern at all, and three had been sitting in two tracked fixtures
+# unlisted with this gate exiting 0.
+#
+# IT IS NOW CASE-INSENSITIVE, corrected in fix round 5 (findings
+# HZ4-M3P3-02 and CR4-M3P3-01). Fix round 4 wrote it UPPER-CASE ONLY on
+# the argument that account numbers are written in capitals while the
+# mixed-case runs it would otherwise catch are asset hashes and base64
+# fragments. The first half of that is a convention and not a rule, and
+# the measurement was the other way round: an unlisted foreign account
+# written in lower or mixed case PASSED, exit 0, while the same value in
+# capitals was caught, so the one shape that reaches a letters-bearing
+# body was the one shape that did not fold case. The blob problem was
+# real, and it is answered where it belongs, by skipping the single
+# archived file that carries the blobs (see rule 2's skip list) rather
+# than by leaving a pattern half blind.
+#
+# It still takes the COMPACT form only: allowing a separator inside a
+# variable-length body let the match run past the account number into the
+# following word, which invented four shapes nobody could list. The spaced
+# form is what IBAN_LOCAL is for, and the combination neither pattern
+# reaches is named at the top of the allow list rather than left implied.
 IBAN_LOCAL='\b[A-Za-z]{2}[0-9]{2}([[:space:]]?[0-9]{4}){3}\b'
-IBAN_FOREIGN='\b[A-Z]{2}[0-9]{2}[0-9A-Z]{10,30}\b'
+IBAN_FOREIGN='\b[A-Za-z]{2}[0-9]{2}[0-9A-Za-z]{10,30}\b'
 IBAN="$IBAN_LOCAL|$IBAN_FOREIGN"
 PAN='\b([0-9]{4}[[:space:]-]){3}[0-9]{4}\b'
 # Masked PAN: the only form a card statement prints, and invisible to a
@@ -95,11 +107,42 @@ else
   # it decides whether two statements belong to one card. Case is folded
   # so a mask written x or X or * is one value.
   norm() { tr -d ' -' | tr 'x*' 'XX' | tr 'a-z' 'A-Z'; }
-  known="$(grep -vE '^[[:space:]]*(#|$)' "$ALLOW" | norm | sort -u)"
+  # THE ALLOW LIST IS MATERIALISED ONCE, TO A FILE, rather than re-piped
+  # through a subshell for every hit. Two reasons, and the second is the
+  # one that matters. It is cheaper. And a lookup must be able to tell
+  # "this value is not listed" from "the lookup itself failed": grep says
+  # the first with exit 1 and the second with exit 2 or more, and a
+  # pipeline that only asks "did it exit non-zero" reports a clean tree as
+  # dirty whenever the machine refuses a fork. Measured under fleet load:
+  # one run in six reported an identifier that IS on the list.
+  knownfile="$(mktemp)"
+  trap 'rm -f "$knownfile"' EXIT
+  grep -vE '^[[:space:]]*(#|$)' "$ALLOW" | norm | sort -u > "$knownfile"
   for f in $(git ls-files); do
     [ -f "$f" ] || continue
+    # SKIPPED PATHS, and why each is safe to skip. The lockfile and the
+    # binary image and font types carry no readable text for grep. The
+    # allow list itself is skipped because it IS the list.
+    #
+    # design/reference/pulse-prototype.html is the one JUDGEMENT here, and
+    # an exclusion is a hole by construction, so the reason is written
+    # down rather than left as a bare path. That file is a single archived
+    # export of the pre-project design prototype: one enormous escaped
+    # string carrying the whole document, its stylesheet, its inlined font
+    # payloads and its asset references as encoded blobs. Case-insensitive
+    # matching of an alphanumeric account body matches inside those blobs,
+    # so scanning it reports a clean tree as dirty, measured. WHAT MAKES
+    # THE SKIP SAFE, rather than merely convenient: the file is inert, it
+    # is imported by nothing, and the account numbers it does contain in
+    # readable form were found, listed and given provenance when the
+    # widened pattern first scanned it. It is also the file this round
+    # already swept by hand for real place and chain names. What the skip
+    # costs is that a NEW identifier added to this file would go
+    # unchecked, and the answer to that is that nothing should ever be
+    # added to it: it is an archived artefact, not a living fixture.
     case "$f" in \
       package-lock.json|*.png|*.jpg|*.jpeg|*.ico|*.woff|*.woff2|"$ALLOW") continue;; \
+      design/reference/pulse-prototype.html) continue;; \
     esac
     # MASKED matches are only taken when they actually carry a mask glyph,
     # otherwise the shape swallows UUID fragments and plain digit runs that
@@ -107,8 +150,18 @@ else
     for hit in $( { grep -Eoh "$IBAN|$PAN" "$f" 2>/dev/null; \
                     grep -Eoh "$MASKED" "$f" 2>/dev/null | grep -E '[Xx*]'; \
                   } | norm | sort -u); do
-      printf '%s\n' "$known" | grep -qxF "$hit" || \
+      # EXIT 1 IS "NOT LISTED". ANYTHING ABOVE 1 IS THE LOOKUP FAILING,
+      # and the two must never be reported as the same thing: the first is
+      # a finding about the tree, the second is a finding about the
+      # machine, and a gate that confuses them teaches its reader to
+      # ignore it.
+      if grep -qxF -- "$hit" "$knownfile"; then
+        continue
+      elif [ $? -gt 1 ]; then
+        report "gate:privacy could not complete its allow-list lookup while reading $f. This is the gate failing, not the tree: re-run it. Do not read this as a clean tree and do not read it as a dirty one."
+      else
         report "$f: identifier shape not on the allow list. Add it to $ALLOW with a note on where it came from, or replace it with an invented value. Never add a value taken from a real statement."
+      fi
     done
   done
 fi
