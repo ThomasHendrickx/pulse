@@ -25,6 +25,10 @@ If a task touches two, read both.
 7. **No em dashes** in code comments, docs, commit messages or user-facing copy. Use a comma, colon, parenthesis or a new sentence.
 8. **No data in a commit message.** No amount, no counterparty, no date from a row, no account or card number, not even an invented one. A commit message says what changed and why; it never carries a sample of the data. Invented values live in fixtures and nowhere else, and every account or card number in the tree, masked or bare, is listed with its provenance in `test/fixtures/allowed-identifiers.txt`. `npm run gate:privacy` decides three things and must pass with the other gates: commit messages on the branch carry no data, every identifier shape in the tree is on the allow list, and no tracked PDF carries a compressed stream. It decides nothing else. A merchant name, a place name or an amount sitting inside a file is invisible to it, because those look exactly like invented ones. Two real merchant descriptors reached this public repository that way. Before committing anything drawn from a real document, read it back and check it yourself; the gate narrows the hole, it does not close it.
 
+9. **An owner decision is final.** A decision record in `delivery/decisions/` whose status is `decided` is closed. Never ask the owner a question they have already answered. Never re-open a decided decision in a review, a fix round or a plan iteration. Never read its consequences back to the owner as if they had not been weighed, and never ask them to confirm an instruction they gave because the agent who received it did not write it down: the fault there is the missing record, and the fix is to write one. A decided decision is reversed only by the owner, in a NEW record naming the one it supersedes. A reviewer who thinks a decided decision is wrong records the consequence as a finding against the WORK and leaves the decision standing. `npm run gate:decisions` enforces the mechanical half: a decided record whose question or decision changes with nothing superseding it fails, and so does a third adversarial review round on one plan iteration. The judgement half it cannot see, so it is written here instead.
+
+10. **Two review rounds, then build.** A plan iteration gets at most two adversarial review rounds. Whatever the second round leaves open is carried into the implementer's brief as work. A third round costs the owner delivery and buys a precision they did not ask for.
+
 ## Commands
 
 ```bash
@@ -33,12 +37,13 @@ npm run typecheck     # tsc --noEmit
 npm run lint
 npm test              # fast gate: unit and property tests
 npm run gate:privacy  # no data in commit messages, no unknown identifiers in the tree
+npm run gate:decisions # a decided decision is unchanged, and no third review round
 npm run test:e2e      # slow gate: Playwright
 npm run db:reset      # prisma migrate reset against local Docker Postgres
 npm run db:migrate    # prisma migrate dev
 ```
 
-`npm run typecheck && npm run lint && npm test && npm run gate:privacy` must pass before any slice is considered done. `npm run test:e2e` must pass before a slice is closed.
+`npm run typecheck && npm run lint && npm test && npm run gate:privacy && npm run gate:decisions` must pass before any slice is considered done. `npm run test:e2e` must pass before a slice is closed.
 
 ## Stack
 
