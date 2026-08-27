@@ -79,6 +79,15 @@ const uploadAndDeclare = async (
   if (!detected.ok) {
     throw new Error("detection failed");
   }
+  // SETUP FIRST (M3-P14): the account a statement belongs to is registered
+  // before the file is confirmed. A card carries no own-account column and
+  // registers nothing.
+  await world.registerAccountForStatement(
+    context,
+    bytes(content),
+    detected.value,
+    { label: "Current A", bank: "Demobank", role: "POT" },
+  );
   const confirmed = await confirmImport(context, world.deps, {
     importId: outcome.importId,
     profileName: "Current A export",

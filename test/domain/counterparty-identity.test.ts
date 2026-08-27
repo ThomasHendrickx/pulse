@@ -10,8 +10,12 @@ import {
   compactAccount,
   counterpartyIdentity,
   identityBasisOfKey,
+  isBareIdentityKey,
   isTrustedCounterpartyAccount,
 } from "../../src/modules/merchants/domain/counterparty-identity";
+import { matchRules } from "../../src/modules/merchants/domain/merchant-rule";
+import { buildMerchantReview } from "../../src/modules/merchants/domain/merchant-review";
+import { cents } from "../../src/platform/money";
 import {
   counterpartyText,
   normaliseCounterparty,
@@ -24,6 +28,8 @@ import {
   buildFixtureRecords,
   buildPdfFixtures,
 } from "../fixtures/generate-pdf-fixtures";
+
+const repositoryRoot = join(__dirname, "..", "..");
 
 const FIXTURE = "belfius-counterparty-identity.pdf";
 
@@ -259,7 +265,7 @@ describe("CRITERION 12.6: a row matching no family is not guessed at", () => {
     );
   });
 
-  test("an empty or whitespace-only stored account takes the descriptor basis, so no row is ever keyed on a bare namespace", () => {
+  test("an empty or whitespace-only stored account takes the descriptor basis rather than an account key", () => {
     for (const account of ["", " ", "\t", "   \n  "]) {
       const identity = counterpartyIdentity({
         description: "KOSTEN DEMO REKENINGPAKKET",
@@ -269,6 +275,108 @@ describe("CRITERION 12.6: a row matching no family is not guessed at", () => {
       expect(identity.key).not.toBe(ACCOUNT_NAMESPACE);
       expect(identity.key.startsWith(ACCOUNT_NAMESPACE)).toBe(false);
     }
+  });
+
+  // FIX ROUND, finding HZ-M3P12-01. The test above used to be NAMED "so no
+  // row is ever keyed on a bare namespace" and asserted only the account
+  // side, which is exactly how the descriptor side shipped open. The name is
+  // now what it asserts, and the sentence it used to claim is asserted here,
+  // on the side that can actually produce a bare key.
+  describe("THE BARE NAMESPACE IS NOT AN IDENTITY (fix round, HZ-M3P12-01)", () => {
+    const EMPTY_TEXTS = ["", "   ", "\t", "  \n "];
+
+    test("the descriptor branch CAN emit a bare namespace, which is why the floor is needed and not hypothetical", () => {
+      for (const description of EMPTY_TEXTS) {
+        const identity = counterpartyIdentity({ description });
+        expect(normaliseCounterparty(description)).toBe("");
+        expect(identity.key).toBe(DESCRIPTOR_NAMESPACE);
+        expect(isBareIdentityKey(identity.key)).toBe(true);
+      }
+      // And a key with anything after the namespace is NOT bare, so the
+      // predicate is a floor rather than a blanket refusal.
+      expect(
+        isBareIdentityKey(counterpartyIdentity({ description: "DEMO ALFA" }).key),
+      ).toBe(false);
+      expect(isBareIdentityKey("KOSTEN DEMO REKENINGPAKKET")).toBe(false);
+    });
+
+    test("THE MATCHER refuses a bare key, so two rows carrying no counterparty text can never resolve to one merchant", () => {
+      const rule = {
+        id: "r1",
+        merchantId: "m1",
+        kind: "EXACT" as const,
+        pattern: DESCRIPTOR_NAMESPACE,
+      };
+      for (const description of EMPTY_TEXTS) {
+        const key = counterpartyIdentity({ description }).key;
+        expect(matchRules(key, [rule])).toBeUndefined();
+      }
+    });
+
+    test("THE MATCHER refuses a bare PATTERN, which would otherwise sweep every key of that basis onto one merchant (H12.26)", () => {
+      const ordinary = counterpartyIdentity({
+        description: "BIJDRAGE DEMO VERENIGING JAARLIJKS",
+      }).key;
+      const account = counterpartyIdentity({
+        description: "DEMO",
+        counterpartyAccount: IDENTITY_FIXTURE_ACCOUNTS.counterparty1,
+      }).key;
+      expect(account.startsWith(ACCOUNT_NAMESPACE)).toBe(true);
+      for (const kind of ["PREFIX", "PATTERN", "EXACT"] as const) {
+        const sweeper = {
+          id: "r2",
+          merchantId: "m2",
+          kind,
+          pattern: kind === "PATTERN" ? `${DESCRIPTOR_NAMESPACE}*` : DESCRIPTOR_NAMESPACE,
+        };
+        // The glob form is not bare and is refused by D-40 only for account
+        // keys, so it is asserted separately below; the bare forms are
+        // refused outright.
+        if (kind !== "PATTERN") {
+          expect(matchRules(ordinary, [sweeper])).toBeUndefined();
+        }
+        expect(
+          matchRules(account, [{ ...sweeper, pattern: ACCOUNT_NAMESPACE }]),
+        ).toBeUndefined();
+      }
+    });
+
+    test("THE REVIEW SURFACE offers no naming form for a bare-namespace group, so the group is shown and counted but cannot be named", () => {
+      const rows = [
+        {
+          id: "t1",
+          flow: "SPEND" as const,
+          amountCents: cents(-1234),
+          description: "",
+        },
+        {
+          id: "t2",
+          flow: "SPEND" as const,
+          amountCents: cents(-7543),
+          description: "   ",
+        },
+      ];
+      const review = buildMerchantReview(rows, []);
+      const bare = review.spend.filter(
+        (group) => group.merchantId === undefined,
+      );
+      // They still group and their money is still counted, exactly as before
+      // this phase: what changes is that the group carries no submittable
+      // subject.
+      expect(bare).toHaveLength(1);
+      expect(bare[0]?.count).toBe(2);
+      expect(bare[0]?.totalCents).toBe(cents(-8777));
+      expect(bare[0]?.counterpartyText).toBeUndefined();
+      // A group with real text keeps its form, so this is a floor and not a
+      // screen that stopped offering namings.
+      const named = buildMerchantReview(
+        [{ ...rows[0]!, description: "BIJDRAGE DEMO VERENIGING JAARLIJKS" }],
+        [],
+      );
+      expect(named.spend[0]?.counterpartyText).toBe(
+        `${DESCRIPTOR_NAMESPACE}${normaliseCounterparty("BIJDRAGE DEMO VERENIGING JAARLIJKS")}`,
+      );
+    });
   });
 
   test("no truncation, no opening-prefix key and no fallback bucket: two rows share a descriptor key only when their full normalised descriptors are equal", () => {
@@ -381,16 +489,80 @@ describe("CRITERION 12.16: the account basis fails closed", () => {
     expect(identities[0]?.key).not.toBe(identities[1]?.key);
   });
 
-  test("THE TABLE CLOSES TRUNCATION DETERMINISTICALLY: no country whose table length is 16 can be reached by truncation", () => {
-    // Truncation can only ever emit a SIXTEEN-character value, so it only
-    // reaches accounts whose true length exceeds sixteen. For such a value
-    // the country code's table length is never sixteen, so the LENGTH test
-    // refuses it every time rather than 96 times in 97.
+  test("THE TABLE CLOSES TRUNCATION OF A NON-BELGIAN SOURCE deterministically, because BE is the only entry of length 16", () => {
+    // This is the half of the old claim that is TRUE and it is what the
+    // fixture's truncation rows witness: a source whose registry length is
+    // not sixteen truncates to a sixteen-character value whose country code
+    // the table gives a different length, so the LENGTH test refuses it
+    // every time rather than 96 times in 97.
     const sixteens = [...IBAN_LENGTH_BY_COUNTRY.entries()].filter(
       ([, length]) => length === 16,
     );
     expect(sixteens.map(([code]) => code)).toEqual(["BE"]);
     expect(IBAN_LENGTH_BY_COUNTRY.get("BE")).toBe(16);
+  });
+
+  // FIX ROUND, finding HZ-M3P12-05. The test above used to be named "THE
+  // TABLE CLOSES TRUNCATION DETERMINISTICALLY" and asserted only that BE is
+  // the sole sixteen-length entry, which does not establish the claim its
+  // name made. Here is the counterexample, pinned, so the residual is a fact
+  // a reader meets rather than a sentence they believe.
+  test("THE RESIDUAL, PINNED: a BE-prefixed over-long SPACED token truncates to a TRUSTED value, so mod-97 alone stands in that direction", () => {
+    // The shipped scrape, copied verbatim from the importer's template so
+    // this test measures the real grammar and not a paraphrase of it.
+    const DESCRIPTION_IBAN = /\b([A-Z]{2}\d{2}(?:\s?\d{4}){3})\b/g;
+    const scrape = (description: string): string | undefined => {
+      for (const match of description.matchAll(DESCRIPTION_IBAN)) {
+        if (match[1] !== undefined) {
+          return match[1].replace(/\s/g, "");
+        }
+      }
+      return undefined;
+    };
+    // The fixture's own allow-listed Belgian account, spaced, with ONE EXTRA
+    // four-digit group. Two sources differing ONLY in that extra group.
+    const spaced = IDENTITY_FIXTURE_ACCOUNTS.counterparty1.replace(
+      /^(.{4})(.{4})(.{4})(.{4})$/,
+      "$1 $2 $3 $4",
+    );
+    const sourceA = `${spaced} 9001`;
+    const sourceB = `${spaced} 9002`;
+    const storedA = scrape(`OVERSCHRIJVING NAAR ${sourceA} DEMO`);
+    const storedB = scrape(`OVERSCHRIJVING NAAR ${sourceB} DEMO`);
+
+    // ONE stored value for TWO different sources...
+    expect(storedA).toBeDefined();
+    expect(storedA).toBe(storedB);
+    expect(storedA).toHaveLength(16);
+    // ...and the trust gate ADMITS it, because its country code is BE and
+    // its length is BE's table length. This is the case the length test
+    // cannot reach.
+    expect(isTrustedCounterpartyAccount(storedA)).toBe(true);
+    const identityA = counterpartyIdentity({
+      description: `OVERSCHRIJVING NAAR ${sourceA} DEMO`,
+      ...(storedA === undefined ? {} : { counterpartyAccount: storedA }),
+    });
+    const identityB = counterpartyIdentity({
+      description: `OVERSCHRIJVING NAAR ${sourceB} DEMO`,
+      ...(storedB === undefined ? {} : { counterpartyAccount: storedB }),
+    });
+    expect(identityA.basis).toBe("account");
+    expect(identityA.key).toBe(identityB.key);
+
+    // THE SOURCE SAYS SO. If someone rewrites the comment back to the
+    // determinism claim, this reddens.
+    const source = readFileSync(
+      join(
+        repositoryRoot,
+        "src/modules/merchants/domain/counterparty-identity.ts",
+      ),
+      "utf8",
+    );
+    // The corrected statement, and the false one it replaced. Both are
+    // asserted, so neither a silent revert nor a silent deletion passes.
+    expect(source).toMatch(/mod-97 alone\n\/\/   stands there/);
+    expect(source).toMatch(/WHY IT IS FALSE/);
+    expect(source).not.toMatch(/closes\n\/\/ truncation DETERMINISTICALLY/);
   });
 
   test("FIRST-WINS IS PINNED, not incidental: the row carrying two account-shaped tokens keys on the one the generator wrote FIRST", async () => {

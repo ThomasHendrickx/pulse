@@ -35,7 +35,10 @@
 // longest pattern first (the most specific declaration wins), then
 // lexicographically smallest pattern, then lowest rule id.
 
-import { ACCOUNT_NAMESPACE } from "./counterparty-identity";
+import {
+  ACCOUNT_NAMESPACE,
+  isBareIdentityKey,
+} from "./counterparty-identity";
 
 export type MerchantRuleKind = "EXACT" | "PREFIX" | "PATTERN";
 
@@ -84,10 +87,30 @@ export const matchRules = (
   normalised: string,
   rules: readonly MerchantRuleLike[],
 ): RuleMatch | undefined => {
-  if (normalised === "") {
+  // THE EMPTY-KEY REFUSAL, RESTORED AT THE PLACE IT WAS LOST (fix round,
+  // finding HZ-M3P12-01). The bare `normalised === ""` test below can no
+  // longer be produced by any caller, because every key now carries a
+  // namespace; a row whose counterparty text normalises to empty arrives
+  // here as `descriptor:` instead. Both are refused, for the same reason and
+  // in the same place: a key with nothing after its namespace identifies no
+  // counterparty, so resolving it would put two unrelated rows on one
+  // merchant.
+  if (normalised === "" || isBareIdentityKey(normalised)) {
     return undefined;
   }
-  const usable = rules.filter((rule) => rule.pattern !== "");
+  // AND THE SAME REFUSAL ON THE PATTERN SIDE, which is the half that
+  // actually reaches an ordinary row: a PREFIX rule whose pattern is a bare
+  // namespace is a prefix of EVERY key of that basis, and a PATTERN rule
+  // whose glob is one matches every key of that basis outright, so one such
+  // declaration would sweep every unresolved counterparty of the household
+  // onto one merchant. That is hazard H12.26, which pass one of the
+  // re-derivation is built never to CREATE; the write boundary now refuses
+  // to create one from the product surface too, and this refuses to apply
+  // one however it got there. The empty pattern was already inert here and
+  // stays so.
+  const usable = rules.filter(
+    (rule) => rule.pattern !== "" && !isBareIdentityKey(rule.pattern),
+  );
   // D-40's refusal. Read off the key's own namespace, so it needs no extra
   // argument and cannot be bypassed by a caller that forgot to pass one.
   const isAccountBasis = normalised.startsWith(ACCOUNT_NAMESPACE);
