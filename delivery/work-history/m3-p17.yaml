@@ -1,0 +1,356 @@
+kind: work-history
+phase: M3-P17
+prompt: |
+  You are the IMPLEMENTER for Pulse phase M3-P17 (deployed build stamp). Your
+  complete role contract and phase brief is at
+  /tmp/claude-0/-home-user-pulse/675e0551-6f95-56a2-81c0-05a797f5bf41/scratchpad/brief-m3p17.md
+  -- read it in full FIRST and follow it exactly, including its
+  mandated-reading list (resolve those paths from the repo/kernel; `npx
+  tiphys` is available), the work-history schema, the gate list, and the push
+  protocol. Node env: export NVM_DIR=/opt/nvm && . /opt/nvm/nvm.sh.
+
+  Setup:
+  - The repo is at /home/user/pulse (DO NOT work there). Create your own
+    worktree: git -C /home/user/pulse worktree add /home/user/wt-m3p17 -b
+    claude/m3-p17-deployed-build-stamp origin/main
+  - Read /home/user/pulse/CLAUDE.md and the skills it mandates
+    (pulse-frontend, pulse-typescript at minimum -- the phase adds a route).
+  - Your phase section is in delivery/plan/pulse-v02.yaml, phase id M3-P17
+    (branch claude/m3-p17-deployed-build-stamp). Build exactly what it says:
+    the route that makes the deployed build observable. Do not touch files
+    outside the phase declaration.
+  - npm only. Run the full fast gate before you finish: npm run typecheck &&
+    npm run lint && npm test && npm run gate:privacy && npm run gate:decisions
+    (and gate:tokens if the registry lists it). All must exit 0.
+  - e2e (npm run test:e2e) needs a local Supabase stack this container does
+    not have (no Docker). If it cannot run, record that honestly in the work
+    history as environment-limited, with the exact command and error, rather
+    than claiming it green.
+  - Write the work history at delivery/work-history/m3-p17.yaml per
+    schemas/work-history.schema.json (validate with npx tiphys validate if a
+    matching --type exists).
+  - Commit with clear messages (English, no em dashes, NO data samples, no
+    model names), then push: git push -u origin
+    claude/m3-p17-deployed-build-stamp. Retry up to 4 times with backoff
+    2s/4s/8s/16s on network failure only.
+  - Do NOT open a PR, do NOT merge, do NOT edit the plan. If the plan section
+    is wrong or unimplementable, STOP and report that instead of improvising.
+
+  Return: the branch head SHA, gate results (each command exit code), files
+  changed, and anything you could not do with the reason.
+files-touched:
+  - src/app/api/health/version/route.ts
+  - test/app/health-version.test.ts
+  - test/e2e/prod-smoke.spec.ts
+  - delivery/work-history/m3-p17.yaml
+per-step-commits:
+  - sha: 8dc9678
+    subject: "health: add the deployed build stamp route (M3-P17)"
+key-decisions:
+  - decision: >-
+      The route reads process.env.VERCEL_GIT_COMMIT_SHA and process.env.VERCEL_ENV
+      directly inside the GET handler, at request time, rather than through
+      src/platform/config.ts's normal confinement of process.env reads
+      (pulse-typescript section 6, "no process.env anywhere else").
+    why: >-
+      The phase declaration's files-to-touch list is
+      src/app/api/health/, test/app/ and test/e2e/prod-smoke.spec.ts;
+      src/platform/config.ts is not on it, and the top-level task
+      instruction is explicit that files outside the phase declaration are
+      not touched. The two variables are Vercel platform facts, not
+      application secrets, and the read happens inside the handler body at
+      request time and not at module scope (checked: `grep -n
+      'process\.env' src/app/api/health/version/route.ts` shows both reads
+      at lines 41-42, both inside `GET()`, which begins at line 39; no
+      module-scope statement reads either variable), which is the property
+      config.ts's own comment calls BUILD-SAFE (src/platform/config.ts:1-10):
+      a Vercel build importing this route module during page-data
+      collection reads nothing and validates nothing. There is also
+      existing precedent for process.env reads outside config.ts confined
+      to src/platform/db/* (client.ts, resolve-env.ts, gate-target.ts,
+      guard-cli.ts), so this is not the first exception in the tree. The
+      exception and its scope are recorded in a comment at the route
+      itself (mechanism-sibling clause), naming that any future sibling
+      route needing the same two facts should read them the same way here
+      rather than opening a third site.
+  - decision: >-
+      The two JSON field names are sha and deploymentEnvironment.
+    why: >-
+      The plan fixes the two environment variable names and the unstamped
+      marker but not the JSON field names, leaving that choice to this
+      phase. M3-P16's own criteria already refer informally to "the sha"
+      and "the deployment-environment field" when describing what it reads
+      from this route, so these names were chosen to match that
+      vocabulary and reduce friction for the phase that consumes this
+      route.
+  - decision: >-
+      The branch was rebased onto origin/main (f19984b) before the final
+      gate run, after `npm run gate:privacy` first failed with pre-existing
+      identifier-shape gaps in delivery/review/m3-p14-*.yaml that a later
+      main commit (f19984b, "review: land every lane's verdicts with their
+      quoted invented identifiers listed") had already fixed by extending
+      test/fixtures/allowed-identifiers.txt.
+    why: >-
+      The worktree was created from origin/main at the moment of creation
+      (ac9a8a0), and main moved forward by two commits (7b2dfc0, f19984b)
+      while this phase worked. Rebasing picks up an unrelated fix already
+      landed on trunk rather than this phase re-deriving or duplicating
+      it, and it touches none of this phase's own three files (confirmed:
+      `git diff --name-only origin/main...HEAD` still lists exactly the
+      three files this phase owns after the rebase).
+verification-first:
+  - finding: >-
+      No existing build stamp. Captured: `grep -rniE
+      'VERCEL_GIT_COMMIT_SHA|VERCEL_URL|VERCEL_ENV|commitSha|buildId' src
+      scripts test` exits 1 (no matches) in the worktree, and the same
+      pattern over the eight top-level config files
+      (eslint.config.mjs, next.config.ts, vitest.config.ts,
+      playwright.deploy.config.ts, package.json, playwright.config.ts,
+      tsconfig.json, postcss.config.mjs) also exits 1. `ls vercel.json
+      .vercel` reports both absent. The only routes under src/app/api are
+      health/db and health/pdf, neither of which names a build (read in
+      full). So this phase adds the first build stamp rather than a
+      second one.
+    contradicts-plan: false
+  - finding: >-
+      The two platform variable names are fixed by the plan and not chosen
+      here: VERCEL_GIT_COMMIT_SHA for the build commit, VERCEL_ENV for the
+      deployment environment (whose three documented values are
+      production, preview and development). The plan's own grounding
+      section already settles that whether the platform sets either
+      variable for this project is not verifiable from inside a fleet
+      container, naming the reason (the connector returns 403 for this
+      project); this phase did not re-attempt that check itself, per
+      clause R-007 (not re-investigating a question the plan has already
+      answered). A wrong variable name and an
+      unset variable both answer "unstamped" forever and are
+      indistinguishable in production, which is exactly why the names are
+      pinned by the plan rather than left to this implementer's judgement.
+    contradicts-plan: false
+  - finding: >-
+      Mechanism-index lookup (clause mechanism-lookup), checked before
+      writing the route: `grep -n '^  - key:'
+      node_modules/@tiphys/kernel/tuition/mechanism-index.yaml` lists 15
+      keys (a-guard-s-own-failure-path, append-only-log,
+      asserting-a-ci-step-is-wired, atomic-file-replacement,
+      checking-a-generated-artifact-against-its-own-generator,
+      claim-file-mutual-exclusion-by-o-excl,
+      classifying-another-program-s-errors,
+      deciding-what-another-program-will-do-by-pattern-matching-the-text-of-a-file-it-consumes,
+      lease-compare-and-swap, parsing-another-program-s-reporter-output,
+      reading-a-path-whose-type-is-not-established, shared-worktree,
+      supervising-a-dispatched-agent, verifying-access-to-a-remote,
+      worktree-removal-and-force-branch-delete). None of these mechanisms
+      is used by this route: it opens no claim file, takes no lease, reads
+      no append-only log, removes no worktree, deletes no branch,
+      classifies no other program's errors and parses no other program's
+      output. The index has no entry for "reading a platform-supplied
+      environment variable and returning it as a diagnostic HTTP
+      response", which is an acceptable, recorded answer under the clause
+      rather than an omission.
+    contradicts-plan: false
+deviations: []
+gate-evidence:
+  - gate: "typecheck (npm run typecheck, tsc --noEmit, node v26.8.1, head 8dc9678)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "lint (npm run lint, eslint ., node v26.8.1, head 8dc9678)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fast suite (npm test, vitest run, node v26.8.1, head 8dc9678; 49 files, 756 tests, 0 skipped)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 756
+    passed: 756
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "gate-tokens (npm run gate:tokens, inverted grep over src/modules/*/ui; this phase adds no UI, no styling file touched)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "gate-privacy (npm run gate:privacy, head 8dc9678, after rebasing onto origin/main f19984b)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "gate-decisions (npm run gate:decisions, head 8dc9678)"
+    result: red
+    wrapper-exit-code: 1
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "e2e (npm run test:e2e, playwright test): does not reach test collection"
+    result: error
+    wrapper-exit-code: 1
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+claims:
+  - id: C-17.4-scope
+    kind: coverage
+    statement: >-
+      This branch's diff against its merge base carries exactly one new
+      route, its unit test, and the one-block addition to
+      test/e2e/prod-smoke.spec.ts, and no other file.
+    settled-by:
+      executed-construction:
+        command: "git diff --name-only origin/main...HEAD (origin/main at f19984b, HEAD at 8dc9678)"
+        exit-code: 0
+        output: |
+          src/app/api/health/version/route.ts
+          test/app/health-version.test.ts
+          test/e2e/prod-smoke.spec.ts
+  - id: C-17.2-two-vars-by-name
+    kind: coverage
+    statement: >-
+      The route reads exactly the two environment variables the plan names,
+      by those names, and no third.
+    settled-by:
+      executed-construction:
+        command: "grep -n 'process\\.env' src/app/api/health/version/route.ts"
+        exit-code: 0
+        output: |
+          41:    sha: buildFact(process.env.VERCEL_GIT_COMMIT_SHA),
+          42:    deploymentEnvironment: buildFact(process.env.VERCEL_ENV),
+  - id: C-17.4-no-dependency
+    kind: coverage
+    statement: >-
+      This phase adds no dependency and no lockfile change.
+    settled-by:
+      executed-construction:
+        command: "git diff --stat origin/main...HEAD -- package.json package-lock.json"
+        exit-code: 0
+        output: "(no output: the two files are byte-identical to origin/main)"
+  - id: C-17-gate-decisions-preexisting
+    kind: coverage
+    statement: >-
+      npm run gate:decisions fails on origin/main f19984b itself, before
+      any of this phase's changes are applied, with the identical six
+      review lanes over the two-round cap that it reports at this phase's
+      final head, so the failure is a pre-existing condition of the branch
+      point rather than something this phase introduced or could clear
+      within its own file scope.
+    settled-by:
+      executed-construction:
+        command: >-
+          git checkout f19984b (detached, clean working tree, no phase
+          changes applied) then npm run gate:decisions, in the same
+          worktree
+        exit-code: 1
+        output: |
+          > gate:decisions
+          > bash scripts/gate-decisions.sh
+
+          gate:decisions: review lane 'm0-p6-plan-review' carries 5 rounds, the cap is 2.
+            What round two leaves open is carried into the implementer's brief as work, not into a third round.
+          gate:decisions: review lane 'm3-p14-criteria' carries 3 rounds, the cap is 2.
+            What round two leaves open is carried into the implementer's brief as work, not into a third round.
+          gate:decisions: review lane 'm3-p14-plan-review' carries 4 rounds, the cap is 2.
+            What round two leaves open is carried into the implementer's brief as work, not into a third round.
+          gate:decisions: review lane 'm3-p16-plan-review' carries 5 rounds, the cap is 2.
+            What round two leaves open is carried into the implementer's brief as work, not into a third round.
+          gate:decisions: review lane 'm3-p3-criteria' carries 3 rounds, the cap is 2.
+            What round two leaves open is carried into the implementer's brief as work, not into a third round.
+          gate:decisions: review lane 'm3-p3-hazard' carries 3 rounds, the cap is 2.
+            What round two leaves open is carried into the implementer's brief as work, not into a third round.
+  - id: OQ-17-gate-decisions-remediation
+    kind: open-question
+    statement: >-
+      This phase touches no file under delivery/review/ or
+      delivery/decisions/ (files-to-touch is src/app/api/health/,
+      test/app/ and test/e2e/prod-smoke.spec.ts), and step 4's own text
+      closes this phase to further additions. I did not find a way to
+      clear the pre-existing gate-decisions failure from within this
+      phase's file scope; whether to accept the branch with this gate red
+      (since it is unrelated to and no worse than main), or to fix the
+      review lanes in a separate change before or alongside merging this
+      phase, is left to the orchestrator.
+    still-open-because: >-
+      Fixing it means either editing or removing historical review
+      records under delivery/review/, which is a decision about those
+      review lanes and their authors, not about this route, and is
+      outside this phase's declared files.
+  - id: OQ-17-claim-grep-prompt-hit
+    kind: open-question
+    statement: >-
+      Running the mandated claim-grep against this document leaves one hit
+      unsettled by a construction: the word "needs" inside "e2e (npm run
+      test:e2e) needs a local Supabase stack", which sits inside the
+      `prompt` field. That field is required by the schema to carry the
+      dispatch prompt verbatim (R-052a), so the sentence is a quotation of
+      the instructions this phase was given, not an assertion this work
+      history makes about the system, and it is left unedited rather than
+      altered to dodge the grep.
+    still-open-because: >-
+      An earlier draft of this statement quoted the grep pattern's own
+      token list verbatim, which tripped the pattern on this very
+      sentence (several of the pattern's tokens are ordinary English
+      words). Rephrased to describe the hit rather than quote the
+      pattern. Left open rather than settled by construction because the
+      only settlement available is a reading of the schema's own
+      required-field rule (R-052a) against this one field, not an
+      executable check.
+environment-warnings:
+  - warning: >-
+      npm run gate:decisions fails on origin/main itself (six review lanes
+      already exceed the two-round cap), independent of anything this
+      phase changed. A later phase should not assume this gate is green on
+      main; it must be checked, and cleared or explicitly waived, by
+      whoever is authorized to touch delivery/review/.
+    evidence: >-
+      Checked at this phase's final head by temporarily checking out
+      origin/main's tip (f19984b, the branch's own merge base) in the same
+      worktree and running `npm run gate:decisions` there: it reported the
+      identical six lanes over cap, so the failure predates this phase's
+      own commit. That command and its full output are captured under
+      claim C-17-gate-decisions-preexisting above.
+  - warning: >-
+      This container has no Docker daemon (docker info reports "failed to
+      connect to the docker API at unix:///var/run/docker.sock ... dial
+      unix /var/run/docker.sock: connect: no such file or directory") and
+      no .env, only .env.example, so npm run test:e2e cannot start a local
+      Supabase stack and playwright.config.ts's own gate-target check
+      refuses to run against an ambient/ unset database target.
+    evidence: >-
+      `npx supabase start` returned
+      {"_tag":"Error","error":{"code":"LegacyDockerLifecycleInspectError","message":"failed
+      to inspect container health: failed to connect to the docker API at
+      unix:///var/run/docker.sock; ... no such file or directory"}}.
+      `npm run test:e2e` then failed at config load with
+      GateDbTargetRefused: "no source named a database for this gate. The
+      gate does not fall back to an ambient DATABASE_URL... Set
+      PULSE_GATE_DATABASE_URL, PULSE_GATE_DIRECT_URL and
+      PULSE_GATE_SUPABASE_URL, or put DATABASE_URL, DIRECT_URL and
+      NEXT_PUBLIC_SUPABASE_URL in a .env file", thrown from
+      src/platform/db/gate-target.ts:324 via playwright.config.ts:29. This
+      matches the task's own stated environment limitation (no Docker in
+      this container).
