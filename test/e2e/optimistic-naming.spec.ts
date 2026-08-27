@@ -576,8 +576,16 @@ test("a second notice waits for the first rather than covering it", async ({
   const route = await routeServerActions(page);
 
   // Row one fails and its notice stays up, undismissed.
-  const firstTarget = namableGroup(page);
-  const firstKey = (await firstTarget.getAttribute("data-group-key")) ?? "";
+  // Every namable row's key, captured BEFORE anything is submitted, so the
+  // second row can be addressed by identity rather than by a filter.
+  const namableKeys = await page
+    .getByTestId("unresolved-group")
+    .filter({ has: page.locator(".merchant-name-form") })
+    .evaluateAll((rows) =>
+      rows.map((row) => row.getAttribute("data-group-key") ?? ""),
+    );
+  expect(namableKeys.length).toBeGreaterThan(1);
+  const firstKey = namableKeys[0] ?? "";
   const firstRow = rowByKey(page, firstKey);
   await nameInput(firstRow).fill("   ");
   route.armDelay();
@@ -587,13 +595,16 @@ test("a second notice waits for the first rather than covering it", async ({
   });
   route.disarm();
 
-  // Row two fails while it is still there.
-  const secondTarget = page
-    .getByTestId("unresolved-group")
-    .filter({ has: page.locator(".merchant-name-form") })
-    .filter({ hasNot: page.locator(`[data-group-key="${firstKey}"]`) })
-    .first();
-  const secondKey = (await secondTarget.getAttribute("data-group-key")) ?? "";
+  // Row two fails while it is still there. THE SECOND ROW IS PICKED BY KEY
+  // (round two, finding CR2-M3P11-02): filtering with hasNot on
+  // data-group-key excluded nothing, because hasNot excludes rows that
+  // CONTAIN a match and that attribute sits on the row element itself, so
+  // the filter returned the first row again. The namable keys are captured
+  // before the first submit and the second is the first key that is not the
+  // first row's, which is the identity-addressed style the rest of this
+  // spec uses.
+  const secondKey = namableKeys.find((key) => key !== firstKey) ?? "";
+  expect(secondKey).not.toBe("");
   expect(secondKey).not.toBe(firstKey);
   const secondRow = rowByKey(page, secondKey);
   await nameInput(secondRow).fill("   ");
@@ -606,23 +617,43 @@ test("a second notice waits for the first rather than covering it", async ({
     timeout: 15_000,
   });
   await expect(page.locator(".pulse-toast-dismiss")).toHaveCount(1);
-  const first = page.getByTestId("naming-failed");
-  await expect(first).toHaveText(copy["namingFailed"] ?? "");
+  await expect(page.getByTestId("naming-failed")).toHaveText(
+    copy["namingFailed"] ?? "",
+  );
 
-  // Dismissing it REVEALS the one that was waiting rather than losing it.
+  // EACH NOTICE IS ATTRIBUTABLE TO ITS OWN ROW. The id is read from the
+  // NOTICE ELEMENT that carries it (round two, finding CR2-M3P11-02): the
+  // id sits on the .pulse-toast wrapper and the test id on the message
+  // inside it, so reading the id off the message element yields null. The
+  // testid stays where it is, because the criteria measure the notice's
+  // trimmed text as exactly the catalogue value and the wrapper also
+  // carries the dismiss control's label.
+  const describedByOf = async (row: Locator): Promise<string | null> =>
+    row.getAttribute("aria-describedby");
+  const shownNoticeId = async (): Promise<string | null> =>
+    page.locator(".pulse-toast").getAttribute("id");
+  const firstDescribedBy = await describedByOf(firstRow);
+  const secondDescribedBy = await describedByOf(secondRow);
+  expect(firstDescribedBy).not.toBeNull();
+  expect(secondDescribedBy).not.toBeNull();
+  expect(firstDescribedBy).not.toBe(secondDescribedBy);
+  // Whichever of the two is drawn first, it is one of them and the row it
+  // belongs to says so. The order itself is measured by the re-raise
+  // journey below rather than assumed here.
+  const shownFirst = await shownNoticeId();
+  expect([firstDescribedBy, secondDescribedBy]).toContain(shownFirst);
+
+  // Dismissing it REVEALS the one that was waiting rather than losing it,
+  // and the revealed one belongs to the OTHER row.
   await page.locator(".pulse-toast-dismiss").click();
   await expect(page.locator(".pulse-toast")).toHaveCount(1);
   await expect(page.getByTestId("naming-failed")).toBeVisible();
   await expect(page.getByTestId("naming-failed")).toHaveText(
     copy["namingFailed"] ?? "",
   );
-  // The second notice belongs to the SECOND row, and that row says so.
-  const describedBy = await secondRow.getAttribute("aria-describedby");
-  expect(describedBy).not.toBeNull();
-  const noticeId = await page
-    .getByTestId("naming-failed")
-    .getAttribute("id");
-  expect(noticeId).toBe(describedBy);
+  const shownSecond = await shownNoticeId();
+  expect(shownSecond).not.toBe(shownFirst);
+  expect([firstDescribedBy, secondDescribedBy]).toContain(shownSecond);
 
   // And dismissing that one leaves the screen with none.
   await page.locator(".pulse-toast-dismiss").click();
