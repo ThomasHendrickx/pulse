@@ -688,6 +688,89 @@ gate-evidence:
       on a container that can run it, and it is the only place the
       per-control clears reading, the focus reading and the request count
       after a keyboard re-press are exercised against the running product.
+  # FIX ROUND 2'S OWN GATES, at head 98ffcdd on
+  # claude/m3-p10-busy-state-fix2, off origin/main a56cc5b. Every one run
+  # under /opt/node22/bin/node v22.22.2 (package.json declares engines node
+  # 22.x) with DATABASE_URL and DIRECT_URL pinned in the invoking shell to an
+  # invented 127.0.0.1:59999 target; both were parsed with new URL() and both
+  # hostnames printed and read 127.0.0.1 BEFORE the first gate ran, because
+  # the ambient DATABASE_URL in this container points at a deployed pooler
+  # belonging to a different project of the owner's.
+  #   scripts/gate-privacy.sh blob at this round's base a56cc5b:
+  #                             87b248148ee08bf013b0714a61c5a27280fe667e
+  #   (criterion 10.9(a)'s sha half, see the block above)
+  # NPM RUN TEST:E2E DID NOT RUN AND IS NOT CLAIMED. This container has no
+  # Docker, so it has no Supabase auth service, and every journey in the
+  # suite signs up before it measures anything. It is recorded as a warning
+  # under environment-warnings and as the outstanding work in the
+  # CR-M3P10-01 and CR-M3P10-02 fix-round entries. It is NOT recorded as a
+  # gate-evidence entry here, because the one entry in this document that
+  # records a did-not-run gate that way is the only part of this file the
+  # schema refuses (four INVALIDs at gate-evidence/14), and a second copy of
+  # an invalid shape is not a better record.
+  - gate: typecheck-fix-round-2
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: lint-fix-round-2
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-fast-fix-round-2
+    result: green
+    wrapper-exit-code: 0
+    discovered: 704
+    passed: 704
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-privacy-fix-round-2
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-decisions-fix-round-2
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-tokens-fix-round-2
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: build-fix-round-2
+    result: green
+    wrapper-exit-code: 0
+    discovered: 9
+    passed: 9
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
 claims:
   - id: M3P10-C1
     kind: coverage
@@ -1564,6 +1647,46 @@ fix-round:
       longer sets. The first thing to do in any container that has Docker is
       npm run test:e2e at this head under every project.
 environment-warnings:
+  - warning: >-
+      PAGE.SETCONTENT REUSES THE WINDOW, so a top-level `const` in an inline
+      script is a REDECLARATION on the second render and throws before any
+      listener is attached. The symptom is not an error anybody sees: the
+      page simply behaves as if the script were absent, and in a probe that
+      counts prevented form submissions that reads as the guard failing on
+      the second scenario and passing on the first. Wrap any inline script a
+      setContent probe re-renders in an IIFE.
+    evidence: >-
+      A probe that ran an Enter scenario and then a Space scenario recorded
+      the first correctly and then navigated to about:blank with the form's
+      field in the query string; the same script wrapped in an IIFE recorded
+      both. The failure surfaced two runs later as "Execution context was
+      destroyed" from the NEXT setContent call, which names neither the
+      script nor the redeclaration.
+  - warning: >-
+      "NO DOCKER" IS THE WRONG DIAGNOSIS AND IT HAS NOW COST THREE ROUNDS.
+      Fix round 1 and both review lanes recorded that this container has no
+      Docker and therefore no Supabase auth service, and every journey
+      measurement in this phase has been skipped on that basis. THE DOCKER
+      CLIENT AND THE DAEMON BINARY ARE BOTH INSTALLED; what is absent at
+      session start is a RUNNING daemon and its socket. Starting dockerd
+      directly gives a working engine, the registry is reachable through the
+      container's proxy, and the Supabase CLI is already in this project's
+      own node_modules/.bin. So the correct sentence for a future round is
+      "the daemon is not running yet", and the correct first move is to start
+      it rather than to record the suite as unrunnable. What remains true is
+      that a container that restarts every twenty to thirty minutes is a
+      hostile place for a suite that builds a production bundle and starts
+      two servers, and that is a scheduling problem rather than a capability
+      one.
+    evidence: >-
+      `docker info` prints the client block and then fails with "failed to
+      connect to the docker API at unix:///var/run/docker.sock ... no such
+      file or directory"; `/var/run/docker.sock` does not exist. After
+      starting dockerd, `docker ps` returns the empty table and
+      `docker pull hello-world` completes with "Status: Downloaded newer
+      image". `command -v docker` resolves to /usr/bin/docker and
+      `node_modules/.bin/supabase` is present (package.json devDependency
+      supabase ^2.40.7).
   - warning: >-
       THE WORKTREE ARRIVED WITH NO node_modules AND NO .env, unlike the M3-P9
       dispatch which said node_modules was symlinked. Both had to be created
