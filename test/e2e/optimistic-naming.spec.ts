@@ -256,6 +256,22 @@ const namableGroup = (page: Page): Locator =>
     .filter({ has: page.locator(".merchant-name-form") })
     .first();
 
+// The same thing, confined to the SPEND section (slow-gate repair round).
+// A merchant with groups on both sides renders TWO rows, one per direction
+// (finding HZ-M3P11-02), so a merge test that names one income group and
+// one spend group into a single name ends with two rows and no summed
+// total, which is the product being right rather than a merge failing. The
+// merge measurement below therefore names two groups on the SAME side, and
+// this is how it reaches them: the section is the one carrying the spend
+// total, which is the only stable handle the screen offers.
+const namableSpendGroup = (page: Page): Locator =>
+  page
+    .locator(".merchant-section")
+    .filter({ has: page.getByTestId("spend-total") })
+    .getByTestId("unresolved-group")
+    .filter({ has: page.locator(".merchant-name-form") })
+    .first();
+
 // The key-addressed handle on the row under test: survives the testid and
 // label changing at the moment the prediction lands.
 const rowByKey = (page: Page, key: string): Locator =>
@@ -830,7 +846,7 @@ test("naming into an existing merchant predicts no merge and no sum", async ({
   // First naming, allowed to settle: creates the existing merchant.
   const shared = "Gedeelde Naam";
   {
-    const target = namableGroup(page);
+    const target = namableSpendGroup(page);
     await nameInput(target).fill(shared);
     await submitControl(target).click();
     await expect(
@@ -840,7 +856,8 @@ test("naming into an existing merchant predicts no merge and no sum", async ({
 
   // Second naming with the SAME name, held in flight: while the prediction
   // is on screen the two groups must still be two rows with two totals.
-  const target = namableGroup(page);
+  // Same side as the first, so the merge this measures really is one row.
+  const target = namableSpendGroup(page);
   await expect(target).toBeVisible();
   const rowKey = (await target.getAttribute("data-group-key")) ?? "";
   const row = rowByKey(page, rowKey);
