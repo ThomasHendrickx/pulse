@@ -24,8 +24,14 @@ import type { NamingCopy } from "./merchant-row";
 
 const GroupRow = async ({
   group,
+  direction,
 }: {
   readonly group: ReviewGroup;
+  // Which section renders this row. It reaches the client leaf because the
+  // claim that raises the difference notice must agree on it (fix round,
+  // finding HZ-M3P11-02): one merchant with groups on both sides renders
+  // two rows carrying the same label.
+  readonly direction: "income" | "spend";
 }) => {
   const t = await getTranslations();
   const unresolved = group.merchantId === undefined;
@@ -96,6 +102,7 @@ const GroupRow = async ({
       countText={`${group.count} ${t("rows")}`}
       totalCents={group.totalCents}
       unresolved={unresolved}
+      direction={direction}
       copy={copy}
       {...(unresolved && group.counterpartyText !== undefined
         ? {
@@ -137,7 +144,7 @@ const DirectionSection = async ({
       </header>
       <ul className="merchant-list">
         {groups.map((group) => (
-          <GroupRow key={group.key} group={group} />
+          <GroupRow key={group.key} group={group} direction={titleKey} />
         ))}
       </ul>
     </section>
