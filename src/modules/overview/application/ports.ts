@@ -8,6 +8,7 @@ import type { PlainDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
 import type { Clock } from "@/platform/clock";
 import type {
+  CountedGroupBareKey,
   CountedGroupIdentity,
   CountedGroupRow,
   GapRow,
@@ -63,6 +64,11 @@ export type OverviewDependencies = {
   // merchant review screen uses. It replaces the normaliser the same way the
   // review builder's own key changed, so the two screens keep agreeing.
   readonly counterpartyIdentity: CountedGroupIdentity;
+  // THE FLOOR, INJECTED (fix round three, finding CR3-M3P12-06). The overview
+  // must apply the same rule the merchants module states at its derivation:
+  // a bare namespace is not an identity. The predicate is injected rather
+  // than imported so this module keeps importing nothing from merchants.
+  readonly isBareIdentityKey: CountedGroupBareKey;
   // Still injected beside it: the fold labels an unresolved group with the
   // normalised counterparty text, which M3-P12 does not change.
   readonly normaliseCounterparty: (text: string) => string;
