@@ -30,6 +30,21 @@
 // carried a merchant id before the run does not carry the same one after. A
 // rule that could not be promoted is printed, counted, and exits 0.
 //
+// WHAT A BLOCKED RUN LEAVES BEHIND, said here rather than left to be
+// discovered (fix round, findings HZ-M3P12-03 and CR-M3P12-08): NOTHING. The
+// routine decides everything against an in-memory copy of the rule set and
+// issues no write at all unless the run is clean, so exit 1 means the
+// database is exactly as it was found and the printed report describes work
+// that did NOT happen. That is what makes --accept usable: an operator runs,
+// is blocked, reads the rule ids off a report of unapplied work, decides, and
+// re-runs. The FIRST shape of this routine did the opposite, applying every
+// non-blocking write and the full recompute before returning exit 1, so the
+// report was about work already done.
+//
+// --dry-run DECIDES AND WRITES NOTHING. It is threaded into the routine
+// itself; it is not a substitution made here, which is what it used to be
+// and what made the flag's name a lie.
+//
 // IT PRINTS NO PATTERN CONTENT. Rule ids, passes, bases, outcomes and
 // counts only: this repository is public and a stored pattern is derived
 // from a real statement's text.
@@ -72,15 +87,18 @@ const main = async (): Promise<number> => {
     userId: userId("rederive-merchant-rules"),
   };
 
+  // THE FLAG IS THREADED INTO THE ROUTINE, which is the only place that can
+  // honour it (fix round, finding HZ-M3P12-02). It used to be handled HERE,
+  // by substituting a no-op recompute, while the real repository was passed
+  // unconditionally: --dry-run rewrote the patterns, inserted the rules and
+  // skipped only the step that would have made the result visible.
   const report = await rederiveMerchantRules(
     context,
     {
       merchants: merchantRepository,
-      recompute: dryRun
-        ? async () => undefined
-        : (ctx) => recomputeInterpretation(ctx),
+      recompute: (ctx) => recomputeInterpretation(ctx),
     },
-    { acceptedRuleIds: accepted },
+    { acceptedRuleIds: accepted, dryRun },
   );
 
   console.log("--- decision report ---");
@@ -116,6 +134,32 @@ const main = async (): Promise<number> => {
   for (const lost of report.lostAssignments) {
     console.log(
       `  lost-transaction ${lost.transactionId} held-by-rule ${lost.ruleId}`,
+    );
+  }
+  // ACCEPTED LOSSES ARE PRINTED AND COUNTED (finding CR-M3P12-01). They
+  // leave the blocking decision and nothing else; a run that lost one of the
+  // owner's namings with a person's consent must not read like a run that
+  // lost nothing.
+  console.log(
+    `accepted-lost-assignments ${report.acceptedLostAssignments.length}`,
+  );
+  for (const lost of report.acceptedLostAssignments) {
+    console.log(
+      `  accepted-lost-transaction ${lost.transactionId} held-by-rule ${lost.ruleId}`,
+    );
+  }
+  console.log(`promoted-on-one-row ${report.promotedOnOneRow.length}`);
+  for (const ruleId of report.promotedOnOneRow) {
+    console.log(`  promoted-on-one-row-rule ${ruleId}`);
+  }
+  // WHETHER ANYTHING WAS WRITTEN AT ALL, said in one word rather than left
+  // to be inferred from the exit code.
+  console.log(`applied ${report.applied ? "yes" : "no"}`);
+  if (!report.applied) {
+    console.log(
+      report.exitCode === 0
+        ? "  nothing was written: this was a dry run"
+        : "  nothing was written: the run is blocked, and the database is exactly as it was found",
     );
   }
   console.log(`exit ${report.exitCode}`);
