@@ -65,7 +65,50 @@ produced-by: claude
 framing: criteria-contract
 review-contract: criteria
 
-findings: []
+findings:
+  - id: CR-M3P11-01
+    severity: medium
+    evidence:
+      - "npm run test:e2e has executed at NO head of this branch, so criteria 11.2, 11.3, 11.4 and 11.5 (the whole behavioural half of this phase) and the e2e half of 11.8 rest entirely on unexecuted specs. The implementer records it themselves rather than claiming it: the gate-evidence entry for test:e2e is amber with no wrapper exit code and the words environment-limited, and the verification-first arm (a) is recorded OWED with its exact command."
+      - "MY CONTAINER REPRODUCES THE LIMIT, it does not clear it: no Docker daemon here, so no local Supabase auth service, so signUpFresh cannot run and every journey in test/e2e/optimistic-naming.spec.ts and test/e2e/merchants.spec.ts is unreachable."
+      - "What IS witnessed instead, and it is the most that can be: npx playwright test --list EXIT 0 with Total: 112 tests in 14 files, optimistic-naming.spec.ts registered 9 times under chromium-phone-prod and 9 under chromium-prod and under no development project; both widths confirmed (playwright.config.ts:140 gives 390 by 844, devices[Desktop Chrome].viewport is 1280 by 720); and a full read of the spec confirming that each arm asserts what its criterion says it asserts and would falsify what the criterion says it falsifies."
+      - "The specific unexecuted arms at 8fb0f58: optimistic-naming.spec.ts:312 (prediction and marking, three languages), :368 (both forced failures and the difference, three languages), :488 (dense dataset), :522 (naming into an existing merchant), and the amended stale-subject journey at merchants.spec.ts:279."
+    concrete-fix: "Run npm run test:e2e in a container with the Docker-based local Supabase stack, capture the full output into delivery/work-history/m3-p11.yaml, and supply verification-first arm (a) with its captured output at the same time. No code change is demanded by this finding. This is the slice-close condition CLAUDE.md already states, and no fix round conducted in THIS environment can close it."
+    analysis: "Open by nature, not by neglect. It is recorded here as the named condition between the artifact and slice close, following the precedent of CR-M3P18-02. It is the reason criteria 11.2 through 11.5 are marked not met: they are unwitnessed, not refuted, and nothing in the source contradicts them."
+  - id: CR-M3P11-02
+    severity: medium
+    evidence:
+      - "Criterion 11.2(c) asks for the description on the submit control so that a reader who moves focus back to the control they just pressed is told again. The description exists ONLY while the prediction is on screen: src/modules/merchants/ui/merchant-row.tsx:268 passes describedBy only when predicted."
+      - "Over exactly that window the control is DISABLED: src/platform/ui/submit-button.tsx:105 renders disabled={pending}, and the implementer\'s own capture (work history verification-first (e) addendum 2: button-while-inflight PENDING, aria-busy true) confirms pending is true for the whole client-wrapper flight, which is the same span as predicted."
+      - "So for the entire lifetime of the description the control cannot take keyboard focus, and a focused button that becomes disabled has its focus dropped to the document body at the moment of the press. The focus-return path the criterion names is unreachable by keyboard; a screen reader\'s virtual cursor can still reach a disabled button and read its description, which is why this is a partial gap and not a total one."
+      - "The verification-first (g) capture that answered this question shows the control with focused=true and a resolved description, which cannot have been the shipped control for the reason above; it was a throwaway probe island. The evidence is sound for the description-exposure half and silent on the focus-return half."
+      - "The criterion\'s literal falsifier (a submit control whose accessible description does not resolve to that text) does NOT fire: the description does resolve. Criterion 11.2 is therefore not failed on this account, and the finding is recorded against the WORK."
+    concrete-fix: "Either answer it in code, by carrying the unconfirmed description on a control the reader can still reach while the naming is in flight, or answer it in the record, with a short decision note saying that the polite live region is the whole non-visual mechanism and the focus-return sentence in criterion 11.2 is not reachable while M3-P10\'s form-wide disabled busy state stands. Do not silently change M3-P10\'s disabled behaviour to fit: that is a decided design (criterion 10.3) and reversing it is the owner\'s to do."
+    analysis: "The phase exists to give a non-visual reader the same information a sighted one gets, and the primary mechanism, the polite region observed entering, does work. What does not work is the second telling the criterion asks for. Worth an explicit answer rather than a silent pass, because the next phase that reads this criterion will assume the mechanism is live."
+  - id: CR-M3P11-03
+    severity: low
+    evidence:
+      - "src/modules/merchants/ui/merchant-review.tsx:71 through :79 resolves the refusal wording by kind and deliberately omits empty-merchant-name, so a whitespace-only name now renders the generic namingFailed sentence instead of M3-P12\'s specific nameRefusedName wording. The omission is deliberate and its reason is written in place: criterion 11.4(c) requires both forced causes to render the failure key\'s value."
+      - "The consequence is that nameRefusedName is now unreachable in practice. It survives only in the REFUSAL_MESSAGE banner map (merchant-review.tsx:160 area), and the banner path is reachable only by hand-typing or bookmarking /merchants?status=empty-merchant-name, which nothing in the product sets any more."
+      - "The kinds M3-P12\'s criterion 12.18 actually names (the un-namespaced, empty, non-canonical and untrusted-account subjects) DO keep their specific wording through the toast, witnessed both in the refusals map and in the amended journey at test/e2e/merchants.spec.ts:279, which asserts the toast text equals nameRefusedStale. So 12.18 is not regressed."
+    concrete-fix: "If the owner wants the specific wording back for an empty name, criterion 11.4(c) has to be the thing that changes, not the map: the criterion demands the failure key\'s value for both forced causes. Otherwise record that nameRefusedName is retained only for the banner path and is expected to be unreachable."
+    analysis: "A small copy loss traded for a criterion the plan wrote. The implementer took the trade in the direction the criterion demands and wrote the reason where the trade lives, which is the right handling; it is recorded so the loss is a decision rather than a discovery."
+  - id: CR-M3P11-04
+    severity: low
+    evidence:
+      - "TWO SPEC MEASUREMENTS ARE NARROWER THAN THE CRITERIA THEY SERVE. First, criterion 11.4(e) requires the figures byte identical THROUGHOUT the failure journey; test/e2e/optimistic-naming.spec.ts:412 and :445 compare them at two points only, before the click and after the revert has landed, so a figure that moved on the prediction and moved back with the revert would pass unseen."
+      - "Second, criterion 11.5 requires that after the response the group-label carries the TRIMMED string; optimistic-naming.spec.ts:466 asserts it with filter({ hasText: trimmed }), a substring match that the untrimmed predicted label also satisfies. The spec already owns waitForRawLabel, a raw-equality helper, and uses it three lines earlier."
+      - "Neither hole is currently live: the client leaf does no arithmetic at all (grep for cents arithmetic and reduce over merchant-row.tsx returns nothing), and the difference notice assertion that follows the substring match would fail if the label had not actually changed. Both are measurement strength, not behaviour."
+    concrete-fix: "In the two failure blocks, capture the figures once more while the request is still in flight (immediately after the 200ms label assertion) and compare with the same helper. In the difference block, replace the substring filter with waitForRawLabel(row, trimmed, ...) against the row addressed by its key, which is the identity the spec already relies on everywhere else."
+    analysis: "Cheap to close and worth closing while the spec is being touched, because these are the assertions that will be trusted the first time the suite ever runs in a container that has Docker."
+  - id: CR-M3P11-05
+    severity: low
+    evidence:
+      - "THE NAMING FORM NO LONGER WORKS WITHOUT JAVASCRIPT. At the base the form posted the server action directly (git show e499d64:src/modules/merchants/ui/merchant-review.tsx:54 renders form action={assignMerchantAction}), which Next progressively enhances into a working no-JS POST. Since this phase the form action is a client function (merchant-row.tsx:196), and the implementer measured what React then renders: a javascript: action, so a no-JS submit does nothing at all."
+      - "Recorded honestly by the implementer, in the deviations, together with the useful half of the measurement: no field value leaks into a query string either."
+      - "It is a consequence of the plan step this phase was told to execute (predict in a client leaf and have the action report its outcome), not a liberty the implementer took."
+    concrete-fix: "None demanded. If the owner wants the no-JS path back it is a plan-level question, not a fix to this head."
+    analysis: "Recorded so the capability loss is visible to the owner rather than living only inside a deviation entry. For a single-household finance app opened in a modern browser the practical cost is small; the point of recording it is that it is now a property of the product nobody chose out loud."
 
 criteria:
   - id: "11.1"
