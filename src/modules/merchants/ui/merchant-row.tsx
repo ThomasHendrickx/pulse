@@ -29,11 +29,25 @@
 // src/platform/ui and React (criterion 11.7(e)). The action reference
 // arrives as a prop for the same reason.
 
-import { useEffect, useId, useOptimistic, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useOptimistic,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { Amount } from "@/platform/ui/amount";
 import { maskCardNumbers } from "@/platform/ui/mask-card-number";
 import { SubmitButton } from "@/platform/ui/submit-button";
 import { Toast } from "@/platform/ui/toast";
+import {
+  enterNoticeQueue,
+  isNoticeShowing,
+  leaveNoticeQueue,
+  noticeQueue,
+  subscribeToNotices,
+} from "./notice-queue";
 import {
   claimNaming,
   forgetNaming,
@@ -134,6 +148,44 @@ export const MerchantGroupRow = ({
   );
   const [notice, setNotice] = useState<Notice | null>(null);
 
+  // ONE NOTICE ON SCREEN AT A TIME (fix round, finding HZ-M3P11-01). Every
+  // notice is drawn in the same fixed rectangle, so a second one would
+  // cover the first and the covered one would go unread, which is the harm
+  // decision D-32 removed the timer to prevent. The queue in
+  // ./notice-queue holds this row's place instead: a notice raised while
+  // another is up waits and appears when the reader dismisses the one in
+  // front, so nothing overlaps and nothing disappears undismissed. The
+  // decision's own words, and why a shared host is not the fix here, are
+  // quoted at that module's definition.
+  const noticeId = useId();
+  const showing = useSyncExternalStore(
+    useCallback(
+      (onStoreChange: () => void) =>
+        subscribeToNotices(noticeQueue, onStoreChange),
+      [],
+    ),
+    () => isNoticeShowing(noticeQueue, noticeId),
+    // On the server nothing is queued, so nothing is showing.
+    () => false,
+  );
+  useEffect(() => {
+    if (notice === null) {
+      leaveNoticeQueue(noticeQueue, noticeId);
+      return;
+    }
+    enterNoticeQueue(noticeQueue, noticeId);
+    // A row that leaves the screen with a notice up must not hold the
+    // queue closed behind it.
+    return () => {
+      leaveNoticeQueue(noticeQueue, noticeId);
+    };
+  }, [notice, noticeId]);
+
+  const dismissNotice = useCallback(() => {
+    leaveNoticeQueue(noticeQueue, noticeId);
+    setNotice(null);
+  }, [noticeId]);
+
   // THE CLAIM CHECK (criterion 11.5, hazard H11.5): a different answer is
   // not swapped in silently. It runs after every render on purpose, because
   // the refresh that carries the server's answer re-renders every row, and
@@ -170,6 +222,11 @@ export const MerchantGroupRow = ({
   const predicted = predictedLabel !== null;
   const rowUnresolved = unresolved && !predicted;
 
+  // WHICH ROW THE NOTICE IS ABOUT (fix round, finding HZ-M3P11-05). The
+  // notice is a descendant of this row but is drawn fixed at the bottom of
+  // the viewport, so proximity tells a reader nothing about which row it
+  // concerns. While it is up, the row points at it with aria-describedby,
+  // which is the same mechanism the unconfirmed marking already uses.
   return (
     <li
       className={
@@ -178,6 +235,7 @@ export const MerchantGroupRow = ({
       data-testid={rowUnresolved ? "unresolved-group" : "merchant-group"}
       data-group-key={groupKey}
       {...(predicted ? { "data-unconfirmed": "" } : {})}
+      {...(notice !== null && showing ? { "aria-describedby": noticeId } : {})}
     >
       <span className="merchant-row-label" data-testid="group-label">
         {predictedLabel ?? label}
@@ -268,13 +326,14 @@ export const MerchantGroupRow = ({
           </SubmitButton>
         </form>
       ) : null}
-      {notice === null ? null : notice.kind === "failed" ? (
+      {notice === null || !showing ? null : notice.kind === "failed" ? (
         <Toast
           role="alert"
           message={notice.message}
           dismissLabel={copy.dismiss}
           testId="naming-failed"
-          onDismiss={() => setNotice(null)}
+          regionId={noticeId}
+          onDismiss={dismissNotice}
         />
       ) : (
         <Toast
@@ -282,7 +341,8 @@ export const MerchantGroupRow = ({
           message={copy.differs}
           dismissLabel={copy.dismiss}
           testId="naming-differs"
-          onDismiss={() => setNotice(null)}
+          regionId={noticeId}
+          onDismiss={dismissNotice}
         />
       )}
     </li>

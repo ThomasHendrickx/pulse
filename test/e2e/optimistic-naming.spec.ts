@@ -481,6 +481,77 @@ for (const language of LANGUAGES) {
   });
 }
 
+// M3-P11 fix round, finding HZ-M3P11-01. Two notices raised on two
+// different rows before either is dismissed. Every notice is drawn in the
+// same fixed rectangle, so this is the journey where one would have
+// covered the other; the queue makes that impossible instead, and nothing
+// is removed that the reader has not dismissed.
+test("a second notice waits for the first rather than covering it", async ({
+  page,
+}) => {
+  const copy = catalogue("en");
+  await signUpFresh(page, "two-notices");
+  await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+  await importFixture(page, SMALL_FIXTURE);
+  await openMerchants(page, "en");
+
+  const route = await routeServerActions(page);
+
+  // Row one fails and its notice stays up, undismissed.
+  const firstTarget = namableGroup(page);
+  const firstKey = (await firstTarget.getAttribute("data-group-key")) ?? "";
+  const firstRow = rowByKey(page, firstKey);
+  await nameInput(firstRow).fill("   ");
+  route.armDelay();
+  await submitControl(firstRow).click();
+  await expect(page.getByTestId("naming-failed")).toBeVisible({
+    timeout: 15_000,
+  });
+  route.disarm();
+
+  // Row two fails while it is still there.
+  const secondTarget = page
+    .getByTestId("unresolved-group")
+    .filter({ has: page.locator(".merchant-name-form") })
+    .filter({ hasNot: page.locator(`[data-group-key="${firstKey}"]`) })
+    .first();
+  const secondKey = (await secondTarget.getAttribute("data-group-key")) ?? "";
+  expect(secondKey).not.toBe(firstKey);
+  const secondRow = rowByKey(page, secondKey);
+  await nameInput(secondRow).fill("   ");
+  route.armFail();
+  await submitControl(secondRow).click();
+
+  // EXACTLY ONE NOTICE IS ON SCREEN, so neither can be hidden behind the
+  // other, and the dismiss control is unambiguous.
+  await expect(page.locator(".pulse-toast")).toHaveCount(1, {
+    timeout: 15_000,
+  });
+  await expect(page.locator(".pulse-toast-dismiss")).toHaveCount(1);
+  const first = page.getByTestId("naming-failed");
+  await expect(first).toHaveText(copy["namingFailed"] ?? "");
+
+  // Dismissing it REVEALS the one that was waiting rather than losing it.
+  await page.locator(".pulse-toast-dismiss").click();
+  await expect(page.locator(".pulse-toast")).toHaveCount(1);
+  await expect(page.getByTestId("naming-failed")).toBeVisible();
+  await expect(page.getByTestId("naming-failed")).toHaveText(
+    copy["namingFailed"] ?? "",
+  );
+  // The second notice belongs to the SECOND row, and that row says so.
+  const describedBy = await secondRow.getAttribute("aria-describedby");
+  expect(describedBy).not.toBeNull();
+  const noticeId = await page
+    .getByTestId("naming-failed")
+    .getAttribute("id");
+  expect(noticeId).toBe(describedBy);
+
+  // And dismissing that one leaves the screen with none.
+  await page.locator(".pulse-toast-dismiss").click();
+  await expect(page.locator(".pulse-toast")).toHaveCount(0);
+  route.disarm();
+});
+
 // Criterion 11.3's two further datasets, in English: the dense month
 // M3-P7's criterion 7.13 introduced, and the naming whose typed name is an
 // EXISTING merchant's name, which is the case that would merge and sum two
