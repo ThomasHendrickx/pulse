@@ -613,7 +613,7 @@
 #   number because two earlier figures were wrong in different halves, one
 #   counting the allow list's lines as the denominator and one counting a
 #   single pattern arm as the numerator.
-# - DR-0030 LANDED AND REVERSED D-55. The owner decided on 2026-08-24 that
+# - DR-0030 LANDED AND REVERSED D-55. The owner decided on 2026-08-27 that
 #   Pulse ACCEPTS a reserve account's own statement in v1, and the reasoning
 #   is about a figure being wrong rather than about rows being missing: a
 #   savings total derived only from transfers seen on pot accounts is a
@@ -698,6 +698,22 @@
 #   matching the built gate's canonical lookup so that household's statement
 #   is refused with no remedy any screen names, is what criterion 18.4
 #   closes and names.
+# - FIX ROUND ONE on the M3-P18 iteration, answering
+#   delivery/review/m3-p18-plan-review.yaml (eight findings, two high).
+#   The database-behaviour assertions of criteria 18.3, 18.4 and 18.5 are
+#   re-levelled to slow-gate direct-client specs on the
+#   merchant-rule-write precedent, because the fast gate runs in process
+#   over fakes and cannot witness a SQL WHERE clause or the unique index;
+#   the colliding pair's naming moves from migration output nothing
+#   captures to a committed read-only detection script whose output the
+#   slow gate asserts; the 18.1 removal sweep gains the SETUP_LINKED
+#   membership and the shipped refusal e2e, rewritten rather than deleted;
+#   the seed harness gains the two savings-ring accounts the acceptance
+#   uploads land on, committed before the step-1 baseline capture; D-51's
+#   citation of superseded D-55 is annotated without reopening the freeze;
+#   the two stale DR-0030 dates and the migrations path are corrected. The
+#   split decision was renumbered D-63 at the merge that brought in the
+#   descope lane's D-62.
 kind: plan
 status: draft
 baseline-commit: e4ea3ba
@@ -10154,8 +10170,11 @@ phases:
           file and line: the account-in-savings-ring refusal arm, the
           canonical-probe-against-stored-string lookup, and the
           already-registered check comparing typed canonical against stored
-          raw. Then, over a household seeded by the harness of step 2 and
-          before any edit, CAPTURE: that a statement for the account whose
+          raw. Then, over a household seeded by the harness of step 2,
+          which is committed before this capture so the baseline household
+          already holds every account the acceptance uploads land on, its
+          two savings-ring accounts included, and before any other edit,
+          CAPTURE: that a statement for the account whose
           stored number is non-canonical is refused account-not-registered
           today; that retyping that account canonically at setup creates a
           second Account row and the index does not fire; and the full
@@ -10170,9 +10189,12 @@ phases:
           every capture into the phase work history before building.
       - text: >-
           Build the seed harness as ONE committed helper,
-          test/e2e/seed-pre-phase-household.ts, and let every test and
-          capture in this phase construct a pre-phase household through it
-          rather than inline (review finding P17-006: two constructions of
+          test/e2e/seed-pre-phase-household.ts, and let every
+          database-connected test and capture in this phase construct a
+          pre-phase household through it rather than inline; fast-gate
+          tests over fakes do not construct households through the
+          harness, because the harness writes real rows and the fast gate
+          is in-process by design (review finding P17-006: two constructions of
           the same household drift, and the seeded shape is what the
           guarantees are measured against). It writes Account rows directly,
           with a label, a bank, a ring and a stored number left exactly as
@@ -10183,7 +10205,13 @@ phases:
           PAIR of Account rows that are one real account, one spaced as the
           delimited parse stores a cell
           (src/modules/import/domain/parse-statement.ts:114 through :124)
-          and one compact, answered with two different rings. Every
+          and one compact, answered with two different rings, and at
+          least TWO accounts registered in the SAVINGS ring with canonical
+          stored numbers, the pair of savings accounts criterion 18.2's
+          fixture statement is written against, so the acceptance uploads
+          of criteria 18.1 and 18.2 land on the seeded household and the
+          step-1 MonthFigures baseline is captured over a household that
+          already holds them. Every
           account-shaped value it introduces is invented and reaches
           test/fixtures/allowed-identifiers.txt with a written provenance
           note in the same commit (review finding P17-007).
@@ -10192,9 +10220,17 @@ phases:
           account-in-savings-ring arm from confirm-import.ts, the reason
           from the inline union at confirm-import.ts:27 through :32, the
           routing at src/modules/import/ui/actions.ts:109 through :110, the
-          whitelist entry at src/modules/import/ui/status-keys.ts:16 and the
-          message from all three catalogues, because a dead refusal reason
-          left wired is the cheapest way for the refusal to come back. The
+          whitelist entry at src/modules/import/ui/status-keys.ts:16, the
+          SETUP_LINKED membership at
+          src/modules/import/ui/import-status-line.tsx:14 through :17 and
+          the message from all three catalogues, because a dead refusal
+          reason left wired is the cheapest way for the refusal to come
+          back, and the compiler catching the set member today is an
+          accident of the KnownImportStatus generic that no criterion may
+          lean on. The Playwright test M3-P14 shipped asserting the refusal
+          (test/e2e/accounts.spec.ts:446 through :475) is REWRITTEN in the
+          same change into the acceptance test criterion 18.1 specifies,
+          rather than deleted, so the gate keeps its three-arm coverage. The
           accepted rows are ingested as facts, they never enter the
           interpretation window
           (src/modules/ledger/application/interpret-window.ts:37 builds it
@@ -10249,11 +10285,23 @@ phases:
           form, an unconditional rewrite makes the unique index at
           prisma/schema/accounts.prisma:28 fire mid-migration and the deploy
           die on data, so the migration detects such a pair FIRST, leaves
-          both of its rows exactly as they are, names the pair in its
-          output by row id and nothing else, and completes over every other
-          row. Repairing the pair, a merge that moves transactions, is real
-          migration work this phase deliberately does not carry; refusing to
-          guess is what it carries (review findings P14-001 and P17-009).
+          both of its rows exactly as they are, and completes over every
+          other row. THE PAIR IS LEFT DETECTABLE RATHER THAN NAMED INTO A
+          CHANNEL NOTHING CAPTURES: the migration runs under npx prisma
+          migrate deploy, which surfaces no output this plan may point at,
+          and no driver in the tree can catch a Postgres notice, so the
+          naming lives in a committed READ-ONLY script,
+          scripts/detect-account-collisions.ts (the
+          scripts/rederive-merchant-rules.ts precedent), runnable against
+          any target the db guard admits, which lists every household's
+          rows whose stored number is not its canonical form, paired by
+          shared canonical form, by row id and nothing else. The migration
+          itself stays silent, and the phase work history records that the
+          post-deploy check for the parked merge is one run of this
+          script. Repairing the pair, a merge that moves transactions, is
+          real migration work this phase deliberately does not carry;
+          refusing to guess is what it carries (review findings P14-001
+          and P17-009).
       - text: >-
           Make the typed duplicate check compare CANONICAL forms. The
           already-registered check at
@@ -10275,13 +10323,15 @@ phases:
       - src/modules/import/application/confirm-import.ts
       - src/modules/import/ui/actions.ts
       - src/modules/import/ui/status-keys.ts
+      - src/modules/import/ui/import-status-line.tsx
       - src/modules/accounts/application/register-accounts.ts
       - src/modules/accounts/adapters/account-repository.ts
       - src/modules/overview/application/ports.ts (the held read)
       - src/modules/overview/application/month-overview.ts
       - src/modules/overview/adapters/overview-repository.ts
       - src/modules/overview/ui/month-view.tsx
-      - prisma/migrations/ (the canonical backfill)
+      - prisma/schema/migrations/ (the canonical backfill)
+      - scripts/detect-account-collisions.ts (new, the read-only pair detection)
       - messages/en.json
       - messages/nl.json
       - messages/fr.json
@@ -10309,9 +10359,17 @@ phases:
           (src/modules/import/application/confirm-import.ts:27 through
           :32), from the routing (src/modules/import/ui/actions.ts:109
           through :110), from the whitelist
-          (src/modules/import/ui/status-keys.ts:16) and from all three
-          catalogues, because a dead reason left wired is how a refusal
-          comes back. The other two arms of the built gate stand unchanged
+          (src/modules/import/ui/status-keys.ts:16), from the SETUP_LINKED
+          membership at src/modules/import/ui/import-status-line.tsx:14
+          through :17 and from all three catalogues, because a dead reason
+          left wired is how a refusal comes back, and the enumeration is
+          the full sweep of consumers on the phase base rather than a
+          sample. The Playwright test shipped by M3-P14's criterion 14.5
+          that asserts the refusal (test/e2e/accounts.spec.ts:446 through
+          :475) is REWRITTEN into the acceptance test this criterion
+          specifies rather than deleted, so the gate keeps its three-arm
+          coverage, which is why files-to-touch carries
+          test/e2e/accounts.spec.ts. The other two arms of the built gate stand unchanged
           and are asserted still standing: a statement for an account the
           household does not hold is refused account-not-registered, and a
           card statement, which carries no own-account column, is ACCEPTED
@@ -10415,18 +10473,31 @@ phases:
           (src/modules/overview/ui/month-view.tsx:366) while its rows come
           from the listing
           (src/modules/overview/application/month-overview.ts:169). AND THE
-          SCOPING MAY NOT SWALLOW A REAL GAP: an application test over a
-          household holding one null-flow row on a SPENDING account and one
-          on a SAVINGS account asserts the spending row is counted by the
+          SCOPING MAY NOT SWALLOW A REAL GAP, WITNESSED AT THE ONLY LEVEL
+          THAT CAN SEE IT: the ring scoping under test is SQL, the fast
+          gate is in-process over fakes and a test over a fake asserts the
+          fake, so this arm is a spec under test/e2e that constructs a
+          PrismaClient directly (the
+          test/e2e/merchant-rule-write.spec.ts:75 pattern), seeds through
+          the harness a household holding one null-flow row on a SPENDING
+          account and one on a SAVINGS account, and calls the REAL
+          repository methods, asserting the spending row is counted by the
           uninterpreted count AND returned by listGapRows AND holds the
           verdict open
           (src/modules/overview/domain/month-projection.ts:286), while the
           savings row is in neither and is instead returned by the held read
-          of criterion 18.2. THE SWEEP IS OVER THE WHOLE PORT rather than
-          over two named reads: the test calls EVERY method
-          src/modules/overview/application/ports.ts publishes and asserts,
-          per method, which of the two rows it returns or counts, so a read
-          nobody thought about cannot quietly see either. A scoping written
+          of criterion 18.2. One assertion is stated on the listing ALONE:
+          listGapRows itself returns no savings-account row over that
+          household. That assertion is the only witness that can see an
+          unscoped listing, because the cause block is gated on the scoped
+          count, so an unscoped listing's savings rows are returned by the
+          repository and rendered nowhere, which is the defect D-56 calls
+          worse than scoping neither. THE SWEEP IS OVER THE WHOLE PORT
+          rather than over two named reads: the same spec calls EVERY
+          method src/modules/overview/application/ports.ts publishes, on
+          the real repository, and asserts, per method, which of the two
+          rows it returns or counts, so a read nobody thought about cannot
+          quietly see either. A scoping written
           by dropping the null-flow condition rather than by the ring fails
           here, which is finding CR-502 held rather than undone (the
           comment recording it at overview-repository.ts:263 through :268).
@@ -10449,16 +10520,21 @@ phases:
           the accounts table only and no transaction column, because
           Account.iban is a declaration and a transaction's counterparty
           column is a fact that is never rewritten. The migration is SQL and
-          its canonical form must be the PLATFORM'S: a unit test asserts the
-          migration's own expression and canonicalAccountNumber
-          (src/platform/account-number.ts:57) produce identical results over
-          every rendering the seed harness writes, because the codebase
-          already carries the rule that an SQL mirror of the canonical form
-          agrees with it or reddens
+          its canonical form must be the PLATFORM'S: a slow-gate spec
+          executes the committed migration's own expression through a
+          direct PrismaClient against the local stack (the
+          test/e2e/merchant-rule-write.spec.ts:75 pattern) and asserts it
+          and canonicalAccountNumber (src/platform/account-number.ts:57)
+          produce identical results over every rendering the seed harness
+          writes; a TypeScript reimplementation of the expression does not
+          satisfy this, because a reimplementation agreeing with the
+          platform function says nothing about the committed migration
+          SQL, which is the lesson the mirror-rule comment records
           (src/modules/overview/adapters/overview-repository.ts:161 records
           the rule and the whitespace-class lesson). TWO, THE DOOR OPENS,
           exercised on the migration's OWN statements rather than on a
-          reimplementation: a test seeds the pre-phase household, executes
+          reimplementation: a slow-gate test seeds the pre-phase household,
+          executes
           the migration's statements over it, and asserts through the
           browser that the upload refused before them, captured by the
           verification-first step, is accepted after them, its rows ingested
@@ -10474,15 +10550,15 @@ phases:
           FOUR, IDEMPOTENT AND A NO-OP WHERE THERE IS NOTHING TO DO: running
           the migration logic twice leaves every row byte identical to one
           run, and over a household whose stored numbers are already
-          canonical, M3-P14's own writes, it changes nothing, asserted by an
-          application-level test over both populations, because whether the
-          deployed rows actually carry a non-canonical rendering cannot be
+          canonical, M3-P14's own writes, it changes nothing, asserted by a
+          slow-gate direct-client test over both populations, because
+          whether the deployed rows carry a non-canonical rendering cannot be
           read from this tree and the migration must be correct in either
           case. A card account with no number is untouched throughout.
       - id: "18.5"
         criterion: >-
           ONE REAL ACCOUNT CANNOT BECOME TWO ROWS, AND A PAIR THAT ALREADY
-          EXISTS IS NAMED, NEVER GUESSED AT. THE TYPED HALF: the
+          EXISTS IS LEFT DETECTABLE, NEVER GUESSED AT. THE TYPED HALF: the
           already-registered check at
           src/modules/accounts/application/register-accounts.ts:46 through
           :53 compares CANONICAL forms, so a typed row whose canonical form
@@ -10504,13 +10580,18 @@ phases:
           seeded with a PAIR of Account rows that are one real account, one
           spaced as the delimited parse stores a cell
           (src/modules/import/domain/parse-statement.ts:114 through :124)
-          and one compact, answered with two different rings, an
-          application-level test asserts the backfill of criterion 18.4
-          COMPLETES, leaves both rows of the pair byte identical to their
-          seeded state, canonicalises every other row of that household, and
-          names the pair in its output by row id and nothing else, never an
-          account number; a migration that rewrites one member, picks a
-          winner, or dies on the unique index fails this criterion. The
+          and one compact, answered with two different rings, a slow-gate
+          test through the direct client (the
+          test/e2e/merchant-rule-write.spec.ts:75 pattern) asserts the
+          backfill of criterion 18.4 COMPLETES, leaves both rows of the
+          pair byte identical to their seeded state and canonicalises
+          every other row of that household, and asserts that one run of
+          the committed detection script,
+          scripts/detect-account-collisions.ts, outputs exactly the pair's
+          two row ids and no account number; a migration that rewrites one
+          member, picks a winner, or dies on the unique index fails this
+          criterion, and so does a naming that lands only in migration
+          output nothing captures. The
           MERGE of such a pair, moving transactions and deleting the emptied
           row, is real migration work this phase deliberately does not
           carry; a test asserts imports for the paired account behave after
@@ -10605,7 +10686,8 @@ phases:
       rewritten to the canonical form, the accounts table only, no
       transaction column, idempotent, a no-op over already-canonical rows,
       and where two rows of one household would collide on one canonical
-      form it leaves both exactly as they are and names the pair by row id.
+      form it leaves both exactly as they are, detectable afterwards by one
+      run of the committed read-only script this phase adds.
       Account.iban is a declaration, which is what makes the rewrite legal
       (pulse-domain section 2); no new column, no new table, no enum change.
     conflicts-with:
@@ -11735,7 +11817,16 @@ decisions:
       scoping every read that can see them, which is the machinery three
       earlier rounds of this plan spent themselves on for a state the new shape
       cannot reach. Criterion 14.8 holds the refusal and is the reason this
-      plan carries no clearing and no read scoping.
+      plan carries no clearing and no read scoping. PREMISE CORRECTED
+      WITHOUT REOPENING (this sentence added when DR-0030 rewrote D-55):
+      the clause above reading "it has no statement of its own, because
+      savings statements are not imported (decision D-55)" cites D-55's
+      superseded form, quoted here so the correction is visible; under
+      DR-0030 a savings account now can have a statement of its own, so
+      the no-rows window this decision relies on can close at the first
+      import. The freeze itself is DR-0031's chosen option and stands, and
+      the consequence for a mis-ringed account is recorded as the lane's
+      inference in the parked list, awaiting an owner record.
   - id: D-52
     statement: >-
       M3-P14 IS DISPATCHED BEFORE M3-P12 AND M3-P13, AND THE REASON IS NOT
@@ -11796,7 +11887,7 @@ decisions:
       RULE. That question qualifies where the other three did not, because the
       two answers produce different software and a different set of facts the
       household can see, and because the alternative is cheap in a way the
-      first draft of D-55 did not admit. THE OWNER ANSWERED IT ON 2026-08-24
+      first draft of D-55 did not admit. THE OWNER ANSWERED IT ON 2026-08-27
       AS DR-0030 AND THE ANSWER REVERSED THE DECISION: Pulse accepts a reserve
       account's statement in v1 and holds its rows without counting them. D-55
       is rewritten to that position and records it as chosen with the price of
