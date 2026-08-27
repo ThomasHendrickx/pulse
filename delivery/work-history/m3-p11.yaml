@@ -547,6 +547,55 @@ claims:
       /home/user), so the probes could not be built here. Every value in
       this phase's diff and history comes from committed synthetic
       fixtures or invented probe strings.
+fix-round:
+  - mechanism: >-
+      HZ-M3P11-02. THE MECHANISM IS A SHARED SINGLE-WRITER RECORD READ BY
+      MANY INDEPENDENT CONSUMERS, not "the difference notice is wrong". One
+      module slot was written by whichever row submitted last and claimed by
+      whichever row matched first, so every consumer could destroy every
+      other consumer's pending state. The fix is one entry per submitting
+      row, additive on write, retired only by the row it belongs to, and a
+      claim that must agree on the direction as well as the label.
+    derivation:
+      command: >-
+        grep -n "recentNaming\|useFormStatus\|namingClaims" -r
+        src/modules/merchants/ui/ src/platform/ui/submit-button.tsx (the
+        enumeration of every writer and reader of the shared record and of
+        the per-form scope that lets two rows fly at once), then npx vitest
+        run test/app/naming-claims.test.ts against the ported shipped
+        behaviour and again after the fix
+      output: >-
+        Writers and readers at b278d87: merchant-row.tsx:80 (the slot),
+        :161-:174 (the claim, label-only, no row identity), :205 (write,
+        unconditional overwrite), :223 and :229 (clear, on any row's
+        failure); the per-form busy scope is submit-button.tsx:94
+        useFormStatus, which is why two rows can be in flight. RED, against
+        the shipped behaviour ported verbatim into the new module: "Tests 3
+        failed | 3 passed (6)"; the three failures were "tells the FIRST row
+        its answer differed even after a second row is named" (expected
+        differs, received none), "tells the FIRST row its answer differed
+        even after the second row FAILS" (expected differs, received none),
+        and "does not raise a notice on a row in the OTHER direction
+        section" (expected none, received differs). GREEN after the fix:
+        "Tests 6 passed (6)", and the whole fast gate 685 passed (685),
+        typecheck 0, lint 0.
+    not-covered: >-
+      The search covered src/modules/merchants/ui and the submit leaf, which
+      is the whole of this mechanism's call graph today because the record
+      is module-private to the merchants ui folder and nothing else imports
+      it; it did NOT cover other surfaces, because no other surface predicts
+      anything (decision D-31 lists the six pending-only ones). What the fix
+      still cannot do: the row that ANSWERS is not the row that submitted,
+      since naming changes a group's key from the counterparty identity to
+      the merchant id and the review projection carries no link back to the
+      key that was named. Building that link is a projection change and
+      criterion 11.8 pins the domain and application layers to an empty
+      diff, so the match stays on direction plus label. Within one direction
+      a resolved group is one row per merchant and merchant names are unique
+      per household, so that pair is exact today; if a later phase widens
+      the projection, the two-row pin in test/app/naming-claims.test.ts is
+      what keeps the replacement honest. Not measured in a browser: no arm
+      of this round could run test:e2e (no Docker, CR-M3P11-01).
 environment-warnings:
   - warning: >-
       The playwright browser install under /opt/pw-browsers did not match
