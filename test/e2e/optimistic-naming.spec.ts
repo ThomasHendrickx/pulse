@@ -208,6 +208,48 @@ const waitForRawLabel = async (
     );
 };
 
+// The row whose group-label textContent is EXACTLY this string, returned
+// by its data-group-key. Raw equality rather than a substring filter (fix
+// round, finding CR-M3P11-04): "  Typed  " CONTAINS "Typed", so a
+// substring match is satisfied by the untrimmed prediction and cannot tell
+// the confirmed answer from the predicted one, which is the whole of what
+// criterion 11.5 measures. Refuses ambiguity rather than taking the first.
+const rowKeyWithRawLabel = async (
+  page: Page,
+  text: string,
+  timeoutMs: number,
+): Promise<string> =>
+  page.evaluate(
+    ({ text, timeout }) =>
+      new Promise<string>((resolve, reject) => {
+        const started = Date.now();
+        const check = () => {
+          const matches = [
+            ...document.querySelectorAll("[data-group-key]"),
+          ].filter(
+            (row) =>
+              row.querySelector('[data-testid="group-label"]')?.textContent ===
+              text,
+          );
+          if (matches.length > 1) {
+            reject(new Error(`${matches.length} rows carry that exact label`));
+            return;
+          }
+          if (matches.length === 1) {
+            resolve(matches[0]?.getAttribute("data-group-key") ?? "");
+            return;
+          }
+          if (Date.now() - started > timeout) {
+            reject(new Error("no row reached that exact label"));
+            return;
+          }
+          setTimeout(check, 25);
+        };
+        check();
+      }),
+    { text, timeout: timeoutMs },
+  );
+
 const namableGroup = (page: Page): Locator =>
   page
     .getByTestId("unresolved-group")
@@ -268,6 +310,20 @@ const expectMarkedPrediction = async (
     describedBy ?? "",
   );
   expect(described).toBe(unconfirmedCopy);
+  // AND IT IS REACHABLE (fix round, finding CR-M3P11-02): the submit
+  // control is disabled for exactly this window, so the naming field
+  // inside the same form carries the same description and can still take
+  // keyboard focus.
+  const fieldDescribedBy = await row
+    .locator('input[name="merchantName"]')
+    .getAttribute("aria-describedby");
+  expect(fieldDescribedBy).toBe(describedBy);
+  await row.locator('input[name="merchantName"]').focus();
+  expect(
+    await page.evaluate(
+      () => document.activeElement?.getAttribute("name") ?? null,
+    ),
+  ).toBe("merchantName");
   // THE CARVE-OUT (11.2(d)): aria-busy on the submit control, and nowhere
   // else on the row.
   await expect(row).not.toHaveAttribute("aria-busy", "true");
@@ -391,6 +447,16 @@ for (const language of LANGUAGES) {
       await submitControl(row).click();
       // (a) the prediction was on the row: the reader saw what reverts.
       await waitForRawLabel(row, typed, PREDICT_CEILING_MS);
+      // (e), AN EXTRA READING WHILE THE REQUEST IS STILL IN FLIGHT.
+      // Criterion 11.4(e) says the figures are byte identical THROUGHOUT,
+      // so they are read here too, with the prediction on the row, and not
+      // only before the click and after the revert (fix round, finding
+      // CR-M3P11-04).
+      expectFiguresUnmoved(
+        before,
+        await captureFigures(page),
+        before.groupKeys.indexOf(rowKey),
+      );
       // (b) the failure reaches the client: label back, marking gone.
       await expect(row.locator('[data-testid="group-label"]')).toHaveText(
         labelBefore ?? "",
@@ -429,6 +495,16 @@ for (const language of LANGUAGES) {
       route.armFail();
       await submitControl(row).click();
       await waitForRawLabel(row, typed, PREDICT_CEILING_MS);
+      // (e), AN EXTRA READING WHILE THE REQUEST IS STILL IN FLIGHT.
+      // Criterion 11.4(e) says the figures are byte identical THROUGHOUT,
+      // so they are read here too, with the prediction on the row, and not
+      // only before the click and after the revert (fix round, finding
+      // CR-M3P11-04).
+      expectFiguresUnmoved(
+        before,
+        await captureFigures(page),
+        before.groupKeys.indexOf(rowKey),
+      );
       await expect(row.locator('[data-testid="group-label"]')).toHaveText(
         labelBefore ?? "",
         { timeout: 15_000 },
@@ -463,9 +539,11 @@ for (const language of LANGUAGES) {
       await waitForRawLabel(row, typed, PREDICT_CEILING_MS);
       route.disarm();
       // After the response the confirmed row carries the TRIMMED string
-      // and the polite difference notice, on that row.
-      const named = page.getByTestId("merchant-group").filter({ hasText: trimmed });
-      await expect(named).toHaveCount(1, { timeout: 15_000 });
+      // and the polite difference notice, on that row. Raw equality, not a
+      // substring: the predicted label CONTAINS the trimmed one.
+      const namedKey = await rowKeyWithRawLabel(page, trimmed, 15_000);
+      const named = rowByKey(page, namedKey);
+      await expect(named).toHaveAttribute("data-testid", "merchant-group");
       const notice = named.getByTestId("naming-differs");
       await expect(notice).toBeVisible();
       await expect(notice).toHaveText(copy["namingDiffers"] ?? "");
@@ -480,6 +558,77 @@ for (const language of LANGUAGES) {
     }
   });
 }
+
+// M3-P11 fix round, finding HZ-M3P11-01. Two notices raised on two
+// different rows before either is dismissed. Every notice is drawn in the
+// same fixed rectangle, so this is the journey where one would have
+// covered the other; the queue makes that impossible instead, and nothing
+// is removed that the reader has not dismissed.
+test("a second notice waits for the first rather than covering it", async ({
+  page,
+}) => {
+  const copy = catalogue("en");
+  await signUpFresh(page, "two-notices");
+  await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+  await importFixture(page, SMALL_FIXTURE);
+  await openMerchants(page, "en");
+
+  const route = await routeServerActions(page);
+
+  // Row one fails and its notice stays up, undismissed.
+  const firstTarget = namableGroup(page);
+  const firstKey = (await firstTarget.getAttribute("data-group-key")) ?? "";
+  const firstRow = rowByKey(page, firstKey);
+  await nameInput(firstRow).fill("   ");
+  route.armDelay();
+  await submitControl(firstRow).click();
+  await expect(page.getByTestId("naming-failed")).toBeVisible({
+    timeout: 15_000,
+  });
+  route.disarm();
+
+  // Row two fails while it is still there.
+  const secondTarget = page
+    .getByTestId("unresolved-group")
+    .filter({ has: page.locator(".merchant-name-form") })
+    .filter({ hasNot: page.locator(`[data-group-key="${firstKey}"]`) })
+    .first();
+  const secondKey = (await secondTarget.getAttribute("data-group-key")) ?? "";
+  expect(secondKey).not.toBe(firstKey);
+  const secondRow = rowByKey(page, secondKey);
+  await nameInput(secondRow).fill("   ");
+  route.armFail();
+  await submitControl(secondRow).click();
+
+  // EXACTLY ONE NOTICE IS ON SCREEN, so neither can be hidden behind the
+  // other, and the dismiss control is unambiguous.
+  await expect(page.locator(".pulse-toast")).toHaveCount(1, {
+    timeout: 15_000,
+  });
+  await expect(page.locator(".pulse-toast-dismiss")).toHaveCount(1);
+  const first = page.getByTestId("naming-failed");
+  await expect(first).toHaveText(copy["namingFailed"] ?? "");
+
+  // Dismissing it REVEALS the one that was waiting rather than losing it.
+  await page.locator(".pulse-toast-dismiss").click();
+  await expect(page.locator(".pulse-toast")).toHaveCount(1);
+  await expect(page.getByTestId("naming-failed")).toBeVisible();
+  await expect(page.getByTestId("naming-failed")).toHaveText(
+    copy["namingFailed"] ?? "",
+  );
+  // The second notice belongs to the SECOND row, and that row says so.
+  const describedBy = await secondRow.getAttribute("aria-describedby");
+  expect(describedBy).not.toBeNull();
+  const noticeId = await page
+    .getByTestId("naming-failed")
+    .getAttribute("id");
+  expect(noticeId).toBe(describedBy);
+
+  // And dismissing that one leaves the screen with none.
+  await page.locator(".pulse-toast-dismiss").click();
+  await expect(page.locator(".pulse-toast")).toHaveCount(0);
+  route.disarm();
+});
 
 // Criterion 11.3's two further datasets, in English: the dense month
 // M3-P7's criterion 7.13 introduced, and the naming whose typed name is an

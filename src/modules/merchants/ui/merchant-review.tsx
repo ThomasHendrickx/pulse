@@ -24,8 +24,14 @@ import type { NamingCopy } from "./merchant-row";
 
 const GroupRow = async ({
   group,
+  direction,
 }: {
   readonly group: ReviewGroup;
+  // Which section renders this row. It reaches the client leaf because the
+  // claim that raises the difference notice must agree on it (fix round,
+  // finding HZ-M3P11-02): one merchant with groups on both sides renders
+  // two rows carrying the same label.
+  readonly direction: "income" | "spend";
 }) => {
   const t = await getTranslations();
   const unresolved = group.merchantId === undefined;
@@ -67,6 +73,17 @@ const GroupRow = async ({
   // failure message, and the transport failure shares it.
   const copy: NamingCopy = {
     unconfirmed: t("nameUnconfirmed"),
+    // THE FAILURE SENTENCE CLAIMS ONLY WHAT THE CLIENT KNOWS (fix round,
+    // finding HZ-M3P11-04). It used to say the name was not saved, and
+    // that is a claim about the server which the client cannot make: the
+    // use case writes the MerchantRule and only THEN awaits recompute
+    // (src/modules/merchants/application/assign-merchant.ts, upsertRule
+    // before await deps.recompute), so an exception in recompute or a
+    // connection lost on the response leg leaves the declaration stored
+    // while this notice is on screen. The wording now says the answer did
+    // not arrive, describes the SCREEN rather than storage, and tells the
+    // reader how to find out. It stays true on the other arm too, where
+    // the server did answer and wrote nothing.
     failed: t("namingFailed"),
     differs: t("namingDiffers"),
     dismiss: t("noticeDismiss"),
@@ -96,6 +113,7 @@ const GroupRow = async ({
       countText={`${group.count} ${t("rows")}`}
       totalCents={group.totalCents}
       unresolved={unresolved}
+      direction={direction}
       copy={copy}
       {...(unresolved && group.counterpartyText !== undefined
         ? {
@@ -137,7 +155,7 @@ const DirectionSection = async ({
       </header>
       <ul className="merchant-list">
         {groups.map((group) => (
-          <GroupRow key={group.key} group={group} />
+          <GroupRow key={group.key} group={group} direction={titleKey} />
         ))}
       </ul>
     </section>

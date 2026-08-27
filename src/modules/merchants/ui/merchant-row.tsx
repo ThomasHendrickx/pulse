@@ -29,10 +29,32 @@
 // src/platform/ui and React (criterion 11.7(e)). The action reference
 // arrives as a prop for the same reason.
 
-import { useEffect, useId, useOptimistic, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useOptimistic,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { Amount } from "@/platform/ui/amount";
+import { maskCardNumbers } from "@/platform/ui/mask-card-number";
 import { SubmitButton } from "@/platform/ui/submit-button";
 import { Toast } from "@/platform/ui/toast";
+import {
+  enterNoticeQueue,
+  isNoticeShowing,
+  leaveNoticeQueue,
+  noticeQueue,
+  subscribeToNotices,
+} from "./notice-queue";
+import {
+  claimNaming,
+  forgetNaming,
+  namingClaims,
+  recordNaming,
+  type NamingDirection,
+} from "./naming-claims";
 
 // The action's result, typed STRUCTURALLY rather than imported from the
 // action module: the boundary rule keeps this leaf's import closure inside
@@ -41,6 +63,23 @@ import { Toast } from "@/platform/ui/toast";
 type NamingActionResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly error: { readonly kind: string } };
+
+// THE ANSWER IS CHECKED RATHER THAN ASSUMED (fix round, finding
+// HZ-M3P11-06). The success path ends in redirect(), which throws, so the
+// awaited call can only produce a rejection carrying a NEXT_REDIRECT
+// digest and the ok: true arm above is unreachable today. Reading
+// result.ok on that assumption means that a framework version which ever
+// RESOLVED the call instead would throw a TypeError inside a transition,
+// and the reader would meet an error boundary instead of a notice. One
+// guard turns that into the loud failure this phase already knows how to
+// show.
+const isNamingActionResult = (value: unknown): value is NamingActionResult => {
+  if (typeof value !== "object" || value === null || !("ok" in value)) {
+    return false;
+  }
+  const { ok } = value as { readonly ok: unknown };
+  return typeof ok === "boolean";
+};
 
 export type NamingCopy = {
   // The unconfirmed marking's accessible text (the fourth catalogue key,
@@ -60,28 +99,12 @@ export type NamingCopy = {
   readonly refusals: Readonly<Record<string, string>>;
 };
 
-// THE MOST RECENT SUCCESSFUL NAMING, module scope on purpose. RULE AT THE
-// MECHANISM'S DEFINITION: a successful naming redirects and refreshes the
-// review, which unmounts the predicting row (its key leaves the
-// projection) and mounts or re-renders the row carrying the server's
-// answer, so no single component instance ever sees both the typed and the
-// stored name. This module-level record is the bridge: the submitting row
-// writes it, and after the refresh every row runs the claim check below
-// exactly once per render. It holds only what the reader themselves just
-// typed, never an amount, and it never leaves the browser. Sibling
-// implementations: none today; this is the product's first optimistic
-// surface. If a second surface copies this mechanism, move the record and
-// the claim rules somewhere both can share rather than duplicating them.
-type RecentNaming = {
-  readonly typed: string;
-  readonly at: number;
-};
-
-let recentNaming: RecentNaming | null = null;
-
-// A record nobody claimed within this window is stale and is dropped, so a
-// much later unrelated mount can never claim it.
-const RECENT_NAMING_WINDOW_MS = 30_000;
+// The record that carries the server's answer back to the reader lives in
+// ./naming-claims, which is a PURE module: its rules are the ones criterion
+// 11.5 turns on, and test/app/naming-claims.test.ts exercises them in the
+// fast gate rather than only through a browser. The rules, the two-row
+// defect that shaped them and what they still cannot do are written at
+// that module's definition.
 
 type Notice =
   | { readonly kind: "failed"; readonly message: string }
@@ -100,6 +123,7 @@ export const MerchantGroupRow = ({
   countText,
   totalCents,
   unresolved,
+  direction,
   copy,
   naming,
   action,
@@ -114,6 +138,11 @@ export const MerchantGroupRow = ({
   readonly countText: string;
   readonly totalCents: number;
   readonly unresolved: boolean;
+  // Which section this row is rendered in. The claim below must agree on
+  // it: a merchant with groups on both sides renders two rows carrying the
+  // same label, and without the direction a naming made on one side raises
+  // its notice on the other (finding HZ-M3P11-02).
+  readonly direction: NamingDirection;
   readonly copy: NamingCopy;
   readonly naming?: {
     // The counterparty IDENTITY KEY, unmasked, exactly as the rule subject
@@ -136,42 +165,73 @@ export const MerchantGroupRow = ({
   );
   const [notice, setNotice] = useState<Notice | null>(null);
 
+  // ONE NOTICE ON SCREEN AT A TIME (fix round, finding HZ-M3P11-01). Every
+  // notice is drawn in the same fixed rectangle, so a second one would
+  // cover the first and the covered one would go unread, which is the harm
+  // decision D-32 removed the timer to prevent. The queue in
+  // ./notice-queue holds this row's place instead: a notice raised while
+  // another is up waits and appears when the reader dismisses the one in
+  // front, so nothing overlaps and nothing disappears undismissed. The
+  // decision's own words, and why a shared host is not the fix here, are
+  // quoted at that module's definition.
+  const noticeId = useId();
+  const showing = useSyncExternalStore(
+    useCallback(
+      (onStoreChange: () => void) =>
+        subscribeToNotices(noticeQueue, onStoreChange),
+      [],
+    ),
+    () => isNoticeShowing(noticeQueue, noticeId),
+    // On the server nothing is queued, so nothing is showing.
+    () => false,
+  );
+  useEffect(() => {
+    if (notice === null) {
+      leaveNoticeQueue(noticeQueue, noticeId);
+      return;
+    }
+    enterNoticeQueue(noticeQueue, noticeId);
+    // A row that leaves the screen with a notice up must not hold the
+    // queue closed behind it.
+    return () => {
+      leaveNoticeQueue(noticeQueue, noticeId);
+    };
+  }, [notice, noticeId]);
+
+  const dismissNotice = useCallback(() => {
+    leaveNoticeQueue(noticeQueue, noticeId);
+    setNotice(null);
+  }, [noticeId]);
+
   // THE CLAIM CHECK (criterion 11.5, hazard H11.5): a different answer is
-  // not swapped in silently. Runs after every render on purpose (the
-  // refresh that carries the server's answer re-renders every row), and is
-  // idempotent through the module record. The exact-match branch clears
-  // the record silently: the server agreed with the prediction. The
-  // trimmed-match branch marks the difference. String.prototype.trim here
-  // is DETECTION AND ATTACHMENT, not prediction: the predicted label above
-  // shows what was typed, untouched (decision D-31); this comparison only
-  // finds the row now carrying the server's answer, because the projection
-  // deliberately has no link from a merchant back to the key that was
-  // named. The honest limit: if the use case ever stores something other
-  // than the trimmed name, that new difference is not recognised here and
-  // the label would change silently; criterion 11.5's deterministic
-  // whitespace witness is the tripwire that stays green only while this
-  // claim rule and the use case agree.
+  // not swapped in silently. It runs after every render on purpose, because
+  // the refresh that carries the server's answer re-renders every row, and
+  // it is idempotent: claimNaming retires the entry it answers. The rules
+  // and their residues live at ./naming-claims.
+  //
+  // The comparison is made in the alphabet the SCREEN uses: the label this
+  // row renders has been through maskCardNumbers, so the typed string is
+  // rendered the same way before the two are compared (finding
+  // HZ-M3P11-03). A name the masking rewrites therefore reads as the server
+  // agreeing, which it did: the difference this notice is about is the
+  // SERVER's answer differing, and the masking is a rendering rule this
+  // screen applies to every label it draws.
+  //
   // No dependency list ON PURPOSE, against the exhaustive-deps advice: the
   // merge case re-renders this row with an UNCHANGED label (only its total
   // moved), so a [label, unresolved] list would skip exactly the render
-  // that carries the server's answer. The body cannot loop: it updates
-  // state only after clearing the module record that gates it.
+  // that carries the server's answer. The body cannot loop: claimNaming
+  // retires the entry before this row raises anything.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (recentNaming === null) {
-      return;
-    }
-    if (Date.now() - recentNaming.at > RECENT_NAMING_WINDOW_MS) {
-      recentNaming = null;
-      return;
-    }
-    if (label === recentNaming.typed) {
-      // The server's answer equals the prediction character for character.
-      recentNaming = null;
-      return;
-    }
-    if (!unresolved && label === recentNaming.typed.trim()) {
-      recentNaming = null;
+    const outcome = claimNaming(namingClaims, {
+      direction,
+      label,
+      resolved: !unresolved,
+      now: Date.now(),
+      render: maskCardNumbers,
+    });
+    if (outcome === "differs") {
       setNotice({ kind: "differs" });
     }
   });
@@ -179,6 +239,11 @@ export const MerchantGroupRow = ({
   const predicted = predictedLabel !== null;
   const rowUnresolved = unresolved && !predicted;
 
+  // WHICH ROW THE NOTICE IS ABOUT (fix round, finding HZ-M3P11-05). The
+  // notice is a descendant of this row but is drawn fixed at the bottom of
+  // the viewport, so proximity tells a reader nothing about which row it
+  // concerns. While it is up, the row points at it with aria-describedby,
+  // which is the same mechanism the unconfirmed marking already uses.
   return (
     <li
       className={
@@ -187,6 +252,7 @@ export const MerchantGroupRow = ({
       data-testid={rowUnresolved ? "unresolved-group" : "merchant-group"}
       data-group-key={groupKey}
       {...(predicted ? { "data-unconfirmed": "" } : {})}
+      {...(notice !== null && showing ? { "aria-describedby": noticeId } : {})}
     >
       <span className="merchant-row-label" data-testid="group-label">
         {predictedLabel ?? label}
@@ -202,34 +268,50 @@ export const MerchantGroupRow = ({
             const typed = String(formData.get("merchantName") ?? "");
             setPredictedLabel(typed);
             setNotice(null);
-            recentNaming = { typed, at: Date.now() };
-            let result: NamingActionResult;
+            recordNaming(namingClaims, {
+              rowKey: groupKey,
+              direction,
+              typed,
+              at: Date.now(),
+            });
+            let answer: unknown;
             try {
-              result = await action(formData);
+              answer = await action(formData);
             } catch (error) {
               if (isRedirectSignal(error)) {
                 // The SUCCESS path: the action revalidated and redirected,
                 // and the framework signals that redirect as a rejection
                 // with a NEXT_REDIRECT digest (measured in this phase's
                 // verification-first probe). Rethrow so the router handles
-                // it; the module record above stays for the refreshed row
-                // to claim.
+                // it; this row's claim stays for the refreshed row to
+                // answer.
                 throw error;
               }
               // The TRANSPORT failure: the request never produced the
               // action's own answer. Revert is automatic (the optimistic
               // label dies with the transition); the notice is the loud
-              // half (DR-0025).
-              recentNaming = null;
+              // half (DR-0025). Only THIS row's claim is retired, never a
+              // sibling's (finding HZ-M3P11-02).
+              forgetNaming(namingClaims, groupKey);
               setNotice({ kind: "failed", message: copy.failed });
               return;
             }
-            if (!result.ok) {
+            if (!isNamingActionResult(answer)) {
+              // The action resolved with something this client does not
+              // recognise, which today can only mean the framework stopped
+              // signalling the redirect as a rejection. Treated as the
+              // transport arm: loud, reverted, and true, since the client
+              // still does not know what the server did.
+              forgetNaming(namingClaims, groupKey);
+              setNotice({ kind: "failed", message: copy.failed });
+              return;
+            }
+            if (!answer.ok) {
               // The DOMAIN refusal, reported as a value by the action.
-              recentNaming = null;
+              forgetNaming(namingClaims, groupKey);
               setNotice({
                 kind: "failed",
-                message: copy.refusals[result.error.kind] ?? copy.failed,
+                message: copy.refusals[answer.error.kind] ?? copy.failed,
               });
             }
           }}
@@ -241,11 +323,25 @@ export const MerchantGroupRow = ({
           />
           <label className="merchant-name-field">
             <span className="visually-hidden">{naming.fieldLabel}</span>
+            {/* THE DESCRIPTION HANGS ON A CONTROL THE READER CAN STILL
+                REACH (fix round, finding CR-M3P11-02). Criterion 11.2(c)
+                puts the unconfirmed description on the naming submit so a
+                reader who moves focus back to the control they pressed is
+                told again, and it is there. But that control is DISABLED
+                for exactly the window the description exists, because
+                M3-P10's busy state renders disabled while the form is in
+                flight (criterion 10.3, a decided design this phase does
+                not reverse), and a disabled button takes no keyboard
+                focus. This field is not disabled, sits inside the same
+                form, and carries the same description, so the second
+                telling is reachable by keyboard as well as by a screen
+                reader's virtual cursor. */}
             <input
               type="text"
               name="merchantName"
               placeholder={naming.placeholder}
               required
+              {...(predicted ? { "aria-describedby": regionId } : {})}
             />
           </label>
           {/* The unconfirmed live region: ALWAYS in the tree, filled only
@@ -271,13 +367,14 @@ export const MerchantGroupRow = ({
           </SubmitButton>
         </form>
       ) : null}
-      {notice === null ? null : notice.kind === "failed" ? (
+      {notice === null || !showing ? null : notice.kind === "failed" ? (
         <Toast
           role="alert"
           message={notice.message}
           dismissLabel={copy.dismiss}
           testId="naming-failed"
-          onDismiss={() => setNotice(null)}
+          regionId={noticeId}
+          onDismiss={dismissNotice}
         />
       ) : (
         <Toast
@@ -285,7 +382,8 @@ export const MerchantGroupRow = ({
           message={copy.differs}
           dismissLabel={copy.dismiss}
           testId="naming-differs"
-          onDismiss={() => setNotice(null)}
+          regionId={noticeId}
+          onDismiss={dismissNotice}
         />
       )}
     </li>
