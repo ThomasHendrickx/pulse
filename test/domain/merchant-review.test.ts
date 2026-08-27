@@ -667,6 +667,10 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     "rawLine",
     "label",
     "text",
+    // M3-P11: the review form's subject travels into the client leaf as
+    // naming.identityKey, so the field name joins the list or the walk
+    // goes blind on the one surface that is deliberately unmasked.
+    "identityKey",
   ] as const;
 
   // Keyed by FILE and EXPRESSION TEXT, never by a line number, because a
@@ -682,8 +686,17 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     readonly why: string;
   }[] = [
     {
-      file: "modules/merchants/ui/merchant-review.tsx",
-      expression: "group.counterpartyText",
+      // MOVED IN M3-P11 (was merchant-review.tsx, group.counterpartyText):
+      // the review row is now the MerchantGroupRow client leaf and the
+      // identity key reaches the hidden field through its naming prop. The
+      // walk's KNOWN blind spot after this move, stated rather than left
+      // to be found: the server component hands group.counterpartyText to
+      // the leaf inside a JSX SPREAD attribute, which is a
+      // JsxSpreadAttribute and not the JsxExpression this walk visits, so
+      // that hand-off is invisible here; the surface the DOM actually
+      // renders is the one below and it is what this table excuses.
+      file: "modules/merchants/ui/merchant-row.tsx",
+      expression: "naming.identityKey",
       why: "The hidden field the review form submits. It becomes the EXACT MerchantRule pattern, and a masked subject would match nothing (decision D-12, hazard H6.4).",
     },
     {
@@ -813,8 +826,15 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     // (DR-0030) renders each held row's counterparty text MASKED, and the
     // block's heading is the account's own declared label, which joins the
     // exclusion table with its reason. Fourteen sites, six files.
+    //
+    // UPDATED IN M3-P11 (was fourteen sites in six files, and briefly
+    // thirteen while the review row moved): the review row is now the
+    // MerchantGroupRow client leaf. The masked label surface became the
+    // leaf's label attribute in merchant-review.tsx, and the identity-key
+    // surface moved into merchant-row.tsx's hidden field, where it is the
+    // declared exclusion above. Fourteen sites, seven files, six masked.
     expect(surfaces.length).toBe(14);
-    expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(6);
+    expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(7);
     expect(surfaces.filter((surface) => surface.masked).length).toBe(6);
   });
 

@@ -1,0 +1,584 @@
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { FIXTURE_ACCOUNT_A, registerCurrentAccount, signUpFresh } from "./setup-accounts";
+
+// M3-P11: THE NAMING ACTION PREDICTS ITS RESULT (DR-0025) AND FAILS LOUDLY
+// (DR-0026). This spec measures the prediction contract end to end, against
+// the PRODUCTION build only (decision D-34): it is registered under the
+// chromium-phone-prod project at 390 by 844 and under the chromium-prod
+// desktop project, and deliberately NOT under the development projects,
+// because it drives en, nl and fr itself (finding DELTA-M0P4-09).
+//
+// What is measured, criterion by criterion:
+//   11.2  the predicted label is on the row within 200ms, marked
+//         data-unconfirmed with the mark drawn, announced through a polite
+//         live region whose text is OBSERVED ENTERING, described from the
+//         submit control, with aria-busy on the submit control ONLY.
+//   11.3  no money figure and no row moves while the prediction is on
+//         screen: small seed, dense seed, and a naming into an EXISTING
+//         merchant's name.
+//   11.4  a forced DOMAIN failure (whitespace-only name) and a forced
+//         TRANSPORT failure (the route handler fulfils the action POST
+//         with a 500, the form criterion 11.1(e) settled) revert the label
+//         and raise a dismiss-only assertive notice with the catalogue
+//         copy of the reader's language.
+//   11.5  a name typed with surrounding whitespace is stored trimmed: the
+//         difference is told on the row in a polite notice, never swapped
+//         in silently.
+//
+// THE ROW UNDER TEST IS ADDRESSED BY ITS data-group-key, captured before
+// the click: criterion 11.2 requires the prediction to change the row's
+// testid and label, so any locator built on those two identities loses the
+// row at the exact moment the measurement starts. The key is the one
+// identity the prediction never changes (criterion 11.3).
+//
+// Every merchant name typed here is invented, and every fixture row is
+// synthetic (test/fixtures/belfius-account-a.csv, mv-dense.csv). The prod
+// server runs without the frozen clock; nothing below depends on "now".
+
+const FIXTURES = join(__dirname, "..", "fixtures");
+const SMALL_FIXTURE = join(FIXTURES, "belfius-account-a.csv");
+const DENSE_FIXTURE = join(FIXTURES, "mv-dense.csv");
+
+const LANGUAGES = ["en", "nl", "fr"] as const;
+type Language = (typeof LANGUAGES)[number];
+
+const catalogue = (language: Language): Record<string, string> =>
+  JSON.parse(
+    readFileSync(join(__dirname, "..", "..", "messages", `${language}.json`), "utf8"),
+  ) as Record<string, string>;
+
+// The delay that keeps the prediction observable: 2000ms against the 200ms
+// ceiling and the 1000ms mid-flight checkpoint. Failures are HELD for the
+// same reason: a refusal answered faster than the first poll would revert
+// the label before the spec could witness the prediction it reverts.
+const DELAY_MS = 2000;
+const FAIL_DELAY_MS = 1000;
+const PREDICT_CEILING_MS = 200;
+
+// Hold every server-action POST for DELAY_MS and let it through, or hold
+// it for FAIL_DELAY_MS and fulfil it with a 500 (the transport-failure
+// form criterion 11.1(e) settled: the fulfilled 500 reaches the awaiting
+// client wrapper as a rejection).
+type ActionRoute = {
+  armDelay: () => void;
+  armFail: () => void;
+  disarm: () => void;
+};
+
+const routeServerActions = async (page: Page): Promise<ActionRoute> => {
+  let mode: "off" | "delay" | "fail" = "off";
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST" || request.headers()["next-action"] === undefined) {
+      await route.fallback();
+      return;
+    }
+    if (mode === "fail") {
+      await new Promise((resolve) => setTimeout(resolve, FAIL_DELAY_MS));
+      await route.fulfill({
+        status: 500,
+        contentType: "text/plain",
+        body: "forced transport failure",
+      });
+      return;
+    }
+    if (mode === "delay") {
+      await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
+    }
+    await route.continue();
+  });
+  return {
+    armDelay: () => {
+      mode = "delay";
+    },
+    armFail: () => {
+      mode = "fail";
+    },
+    disarm: () => {
+      mode = "off";
+    },
+  };
+};
+
+const importFixture = async (page: Page, fixture: string): Promise<void> => {
+  await page.goto("/import");
+  await page.getByLabel("Bank export file").setInputFiles(fixture);
+  await page.getByRole("button", { name: "Upload" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Confirm the detected format" }),
+  ).toBeVisible();
+  await page.getByLabel("Format name").fill("Demobank current account");
+  await page.getByTestId("confirm-import").click();
+  await expect(page.getByTestId("import-result")).toBeVisible();
+};
+
+const openMerchants = async (page: Page, language: Language): Promise<void> => {
+  const origin = new URL(page.url()).origin;
+  await page.context().addCookies([{ name: "locale", value: language, url: origin }]);
+  await page.goto("/merchants");
+  await expect(page.getByTestId("unresolved-group").first()).toBeVisible();
+};
+
+// Everything criterion 11.3 compares: the three counters, every group
+// total, the data-group-key sequence in DOM order, and every row's testid
+// and label.
+type Figures = {
+  readonly income: string;
+  readonly spend: string;
+  readonly unresolved: string;
+  readonly groupTotals: readonly string[];
+  readonly groupKeys: readonly (string | null)[];
+  readonly rows: readonly { readonly testid: string | null; readonly label: string }[];
+};
+
+const captureFigures = async (page: Page): Promise<Figures> => ({
+  income: (await page.getByTestId("income-total").textContent()) ?? "",
+  spend: (await page.getByTestId("spend-total").textContent()) ?? "",
+  unresolved: (await page.getByTestId("unresolved-count").textContent()) ?? "",
+  groupTotals: await page.getByTestId("group-total").allTextContents(),
+  groupKeys: await page
+    .locator("[data-group-key]")
+    .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-group-key"))),
+  rows: await page.locator("[data-group-key]").evaluateAll((rows) =>
+    rows.map((row) => ({
+      testid: row.getAttribute("data-testid"),
+      label: row.querySelector('[data-testid="group-label"]')?.textContent ?? "",
+    })),
+  ),
+});
+
+// Byte-identical figure comparison; the NAMED row's testid and label are
+// the only two identities criterion 11.2 requires to change, so the row
+// list comparison exempts exactly that index and nothing else. Pass -1 to
+// exempt nothing (the failure journeys, where the revert restores
+// everything).
+const expectFiguresUnmoved = (
+  before: Figures,
+  after: Figures,
+  namedRowIndex: number,
+): void => {
+  expect(after.income).toBe(before.income);
+  expect(after.spend).toBe(before.spend);
+  expect(after.unresolved).toBe(before.unresolved);
+  expect(after.groupTotals).toEqual(before.groupTotals);
+  expect(after.groupKeys).toEqual(before.groupKeys);
+  expect(after.rows.length).toBe(before.rows.length);
+  for (const [index, row] of after.rows.entries()) {
+    if (index === namedRowIndex) {
+      continue;
+    }
+    expect(row).toEqual(before.rows[index]);
+  }
+};
+
+// The raw textContent of the row's label, compared WITHOUT whitespace
+// normalisation: toHaveText normalises, and criterion 11.5 turns on the
+// difference between " typed " and "typed".
+const waitForRawLabel = async (
+  row: Locator,
+  expected: string,
+  timeoutMs: number,
+): Promise<void> => {
+  await row
+    .locator('[data-testid="group-label"]')
+    .evaluate(
+      (element, { text, timeout }) =>
+        new Promise<void>((resolve, reject) => {
+          const started = Date.now();
+          const check = () => {
+            if (element.textContent === text) {
+              resolve();
+              return;
+            }
+            if (Date.now() - started > timeout) {
+              reject(
+                new Error(
+                  `label did not reach the expected raw text within ${timeout}ms`,
+                ),
+              );
+              return;
+            }
+            setTimeout(check, 10);
+          };
+          check();
+        }),
+      { text: expected, timeout: timeoutMs },
+    );
+};
+
+const namableGroup = (page: Page): Locator =>
+  page
+    .getByTestId("unresolved-group")
+    .filter({ has: page.locator(".merchant-name-form") })
+    .first();
+
+// The key-addressed handle on the row under test: survives the testid and
+// label changing at the moment the prediction lands.
+const rowByKey = (page: Page, key: string): Locator =>
+  page.locator(`[data-group-key="${key}"]`);
+
+const nameInput = (row: Locator): Locator =>
+  row.locator('input[name="merchantName"]');
+
+const submitControl = (row: Locator): Locator =>
+  row.locator(".merchant-name-button");
+
+const observeUnconfirmedRegion = async (row: Locator): Promise<void> => {
+  await row.getByTestId("unconfirmed-note").evaluate((region) => {
+    const bag = window as unknown as { __observedUnconfirmed: string[] };
+    bag.__observedUnconfirmed = [];
+    const observer = new MutationObserver(() => {
+      bag.__observedUnconfirmed.push(region.textContent ?? "");
+    });
+    observer.observe(region, { childList: true, characterData: true, subtree: true });
+  });
+};
+
+const observedUnconfirmed = async (page: Page): Promise<readonly string[]> =>
+  page.evaluate(
+    () => (window as unknown as { __observedUnconfirmed: string[] }).__observedUnconfirmed,
+  );
+
+// The full 11.2 marking check on the predicting row, valid at any moment
+// between the click and the release.
+const expectMarkedPrediction = async (
+  row: Locator,
+  page: Page,
+  unconfirmedCopy: string,
+): Promise<void> => {
+  await expect(row).toHaveAttribute("data-unconfirmed", "");
+  // The visual mark M3-P9 shipped for [data-unconfirmed] is drawn.
+  const afterContent = await row.evaluate(
+    (element) => getComputedStyle(element, "::after").content,
+  );
+  expect(afterContent).not.toBe("none");
+  // The row leaves the unresolved treatment while predicted (11.2, D-31).
+  await expect(row).toHaveAttribute("data-testid", "merchant-group");
+  // The polite region inside the row carries the catalogue copy.
+  const region = row.getByTestId("unconfirmed-note");
+  await expect(region).toHaveText(unconfirmedCopy);
+  await expect(region).toHaveAttribute("role", "status");
+  // The submit control is described by that region (11.2(c)).
+  const describedBy = await submitControl(row).getAttribute("aria-describedby");
+  expect(describedBy).not.toBeNull();
+  const described = await page.evaluate(
+    (id) => document.getElementById(id)?.textContent ?? null,
+    describedBy ?? "",
+  );
+  expect(described).toBe(unconfirmedCopy);
+  // THE CARVE-OUT (11.2(d)): aria-busy on the submit control, and nowhere
+  // else on the row.
+  await expect(row).not.toHaveAttribute("aria-busy", "true");
+  await expect(row.locator('[data-testid="group-label"]')).not.toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
+  await expect(region).not.toHaveAttribute("aria-busy", "true");
+  await expect(submitControl(row)).toHaveAttribute("aria-busy", "true");
+};
+
+const expectMarkingGone = async (page: Page): Promise<void> => {
+  await expect(page.locator("[data-unconfirmed]")).toHaveCount(0);
+  for (const text of await page.getByTestId("unconfirmed-note").allTextContents()) {
+    expect(text).toBe("");
+  }
+  await expect(page.locator("button[aria-describedby]")).toHaveCount(0);
+};
+
+// Criterion 11.6(a): the three catalogues carry the SAME complete key set,
+// compared as sorted lists, and (d) the copy rules made checkable: no new
+// key's English value carries an exclamation mark, sorry, oops, or the
+// word error.
+test("the catalogues agree and the new copy follows the rules", () => {
+  const keySets = LANGUAGES.map((language) =>
+    Object.keys(catalogue(language)).sort(),
+  );
+  expect(keySets[1]).toEqual(keySets[0]);
+  expect(keySets[2]).toEqual(keySets[0]);
+  const english = catalogue("en");
+  for (const key of ["namingFailed", "namingDiffers", "nameUnconfirmed", "noticeDismiss"]) {
+    const value = english[key] ?? "";
+    expect(value).not.toBe("");
+    expect(value).not.toContain("!");
+    expect(value.toLowerCase()).not.toContain("sorry");
+    expect(value.toLowerCase()).not.toContain("oops");
+    expect(value.toLowerCase()).not.toContain("error");
+  }
+});
+
+for (const language of LANGUAGES) {
+  test(`the prediction is shown, marked, and moves nothing (${language})`, async ({
+    page,
+  }) => {
+    const copy = catalogue(language);
+    await signUpFresh(page, `opt-${language}`);
+    await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+    await importFixture(page, SMALL_FIXTURE);
+    await openMerchants(page, language);
+
+    const route = await routeServerActions(page);
+    const target = namableGroup(page);
+    await expect(target).toBeVisible();
+    const rowKey = (await target.getAttribute("data-group-key")) ?? "";
+    expect(rowKey).not.toBe("");
+    const row = rowByKey(page, rowKey);
+    const before = await captureFigures(page);
+    const namedRowIndex = before.groupKeys.indexOf(rowKey);
+    expect(namedRowIndex).toBeGreaterThanOrEqual(0);
+
+    await observeUnconfirmedRegion(row);
+    expect(await row.getByTestId("unconfirmed-note").textContent()).toBe("");
+
+    const typed = "Bakkerij Demo";
+    await nameInput(row).fill(typed);
+    route.armDelay();
+    const clickAt = Date.now();
+    await submitControl(row).click();
+
+    // (a) the typed string is the label within 200ms of the click.
+    await waitForRawLabel(row, typed, PREDICT_CEILING_MS);
+    // (b)-(d) the two-part marking with the exact carve-out.
+    await expectMarkedPrediction(row, page, copy["nameUnconfirmed"] ?? "");
+    // (c) the copy was OBSERVED ENTERING the region, not found sitting
+    // there (criterion 11.1(g)'s lesson).
+    expect(await observedUnconfirmed(page)).toContain(copy["nameUnconfirmed"] ?? "");
+
+    // (e) at 1000ms, before the response is released, everything above
+    // still holds and nothing else on the screen has moved (11.3).
+    const elapsed = Date.now() - clickAt;
+    if (elapsed < 1000) {
+      await page.waitForTimeout(1000 - elapsed);
+    }
+    await waitForRawLabel(row, typed, 50);
+    await expectMarkedPrediction(row, page, copy["nameUnconfirmed"] ?? "");
+    expectFiguresUnmoved(before, await captureFigures(page), namedRowIndex);
+
+    // After the release: the confirmed row, no marking anywhere, and no
+    // difference notice, because the server agreed with the prediction.
+    route.disarm();
+    const named = page.getByTestId("merchant-group").filter({ hasText: typed });
+    await expect(named).toHaveCount(1, { timeout: 15_000 });
+    await expectMarkingGone(page);
+    await expect(page.getByTestId("naming-differs")).toHaveCount(0);
+    await expect(page.getByTestId("naming-failed")).toHaveCount(0);
+  });
+
+  test(`a failed naming reverts loudly, twice, and a different answer is told (${language})`, async ({
+    page,
+  }) => {
+    const copy = catalogue(language);
+    await signUpFresh(page, `fail-${language}`);
+    await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+    await importFixture(page, SMALL_FIXTURE);
+    await openMerchants(page, language);
+
+    const route = await routeServerActions(page);
+
+    // --- The DOMAIN failure: a whitespace-only name, which the required
+    // attribute does not block and the use case refuses. Held in flight
+    // long enough for the prediction to be witnessed before it reverts. ---
+    {
+      const target = namableGroup(page);
+      const rowKey = (await target.getAttribute("data-group-key")) ?? "";
+      const row = rowByKey(page, rowKey);
+      const labelBefore = await row.locator('[data-testid="group-label"]').textContent();
+      const before = await captureFigures(page);
+      const typed = "   ";
+      await nameInput(row).fill(typed);
+      route.armDelay();
+      await submitControl(row).click();
+      // (a) the prediction was on the row: the reader saw what reverts.
+      await waitForRawLabel(row, typed, PREDICT_CEILING_MS);
+      // (b) the failure reaches the client: label back, marking gone.
+      await expect(row.locator('[data-testid="group-label"]')).toHaveText(
+        labelBefore ?? "",
+        { timeout: 15_000 },
+      );
+      // (c) the notice: visible, assertive, catalogue copy of THIS language.
+      const notice = page.getByTestId("naming-failed");
+      await expect(notice).toBeVisible();
+      await expect(notice).toHaveText(copy["namingFailed"] ?? "");
+      const box = await notice.boundingBox();
+      expect(box !== null && box.width > 0 && box.height > 0).toBe(true);
+      expect(
+        await notice.evaluate((element) => element.closest('[role="alert"]') !== null),
+      ).toBe(true);
+      await expectMarkingGone(page);
+      // (d) the notice WAITS: still there 5000ms later, gone on dismiss.
+      await page.waitForTimeout(5000);
+      await expect(notice).toBeVisible();
+      await page.locator(".pulse-toast-dismiss").click();
+      await expect(notice).toHaveCount(0);
+      // (e) no figure moved at any point.
+      expectFiguresUnmoved(before, await captureFigures(page), -1);
+      route.disarm();
+    }
+
+    // --- The TRANSPORT failure: the route handler fulfils the action POST
+    // with a 500, the form criterion 11.1(e) settled. ---
+    {
+      const target = namableGroup(page);
+      const rowKey = (await target.getAttribute("data-group-key")) ?? "";
+      const row = rowByKey(page, rowKey);
+      const labelBefore = await row.locator('[data-testid="group-label"]').textContent();
+      const before = await captureFigures(page);
+      const typed = "Vervoer Test";
+      await nameInput(row).fill(typed);
+      route.armFail();
+      await submitControl(row).click();
+      await waitForRawLabel(row, typed, PREDICT_CEILING_MS);
+      await expect(row.locator('[data-testid="group-label"]')).toHaveText(
+        labelBefore ?? "",
+        { timeout: 15_000 },
+      );
+      const notice = page.getByTestId("naming-failed");
+      await expect(notice).toBeVisible();
+      await expect(notice).toHaveText(copy["namingFailed"] ?? "");
+      expect(
+        await notice.evaluate((element) => element.closest('[role="alert"]') !== null),
+      ).toBe(true);
+      await expectMarkingGone(page);
+      await page.waitForTimeout(5000);
+      await expect(notice).toBeVisible();
+      await page.locator(".pulse-toast-dismiss").click();
+      await expect(notice).toHaveCount(0);
+      expectFiguresUnmoved(before, await captureFigures(page), -1);
+      route.disarm();
+    }
+
+    // --- The DIFFERENCE (11.5): surrounding whitespace, stored trimmed,
+    // and the row says so instead of swapping the value in silently. ---
+    {
+      const target = namableGroup(page);
+      const rowKey = (await target.getAttribute("data-group-key")) ?? "";
+      const row = rowByKey(page, rowKey);
+      const typed = "  Verschil Proef  ";
+      const trimmed = typed.trim();
+      await nameInput(row).fill(typed);
+      route.armDelay();
+      await submitControl(row).click();
+      // Within 200ms the label carries the string AS TYPED.
+      await waitForRawLabel(row, typed, PREDICT_CEILING_MS);
+      route.disarm();
+      // After the response the confirmed row carries the TRIMMED string
+      // and the polite difference notice, on that row.
+      const named = page.getByTestId("merchant-group").filter({ hasText: trimmed });
+      await expect(named).toHaveCount(1, { timeout: 15_000 });
+      const notice = named.getByTestId("naming-differs");
+      await expect(notice).toBeVisible();
+      await expect(notice).toHaveText(copy["namingDiffers"] ?? "");
+      const box = await notice.boundingBox();
+      expect(box !== null && box.width > 0 && box.height > 0).toBe(true);
+      expect(
+        await notice.evaluate((element) => element.closest('[role="status"]') !== null),
+      ).toBe(true);
+      // Still present 5000ms later: no timer takes it away.
+      await page.waitForTimeout(5000);
+      await expect(notice).toBeVisible();
+    }
+  });
+}
+
+// Criterion 11.3's two further datasets, in English: the dense month
+// M3-P7's criterion 7.13 introduced, and the naming whose typed name is an
+// EXISTING merchant's name, which is the case that would merge and sum two
+// totals if anything predicted them.
+test("no figure and no row moves on the dense dataset", async ({ page }) => {
+  const copy = catalogue("en");
+  await signUpFresh(page, "dense");
+  await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+  await importFixture(page, DENSE_FIXTURE);
+  await openMerchants(page, "en");
+
+  const route = await routeServerActions(page);
+  const target = namableGroup(page);
+  await expect(target).toBeVisible();
+  const rowKey = (await target.getAttribute("data-group-key")) ?? "";
+  const row = rowByKey(page, rowKey);
+  const before = await captureFigures(page);
+  const namedRowIndex = before.groupKeys.indexOf(rowKey);
+  expect(namedRowIndex).toBeGreaterThanOrEqual(0);
+
+  const typed = "Dichte Reeks";
+  await nameInput(row).fill(typed);
+  route.armDelay();
+  const clickAt = Date.now();
+  await submitControl(row).click();
+  await waitForRawLabel(row, typed, PREDICT_CEILING_MS);
+  const elapsed = Date.now() - clickAt;
+  if (elapsed < 1000) {
+    await page.waitForTimeout(1000 - elapsed);
+  }
+  await expectMarkedPrediction(row, page, copy["nameUnconfirmed"] ?? "");
+  expectFiguresUnmoved(before, await captureFigures(page), namedRowIndex);
+  route.disarm();
+  await expect(
+    page.getByTestId("merchant-group").filter({ hasText: typed }),
+  ).toHaveCount(1, { timeout: 15_000 });
+});
+
+test("naming into an existing merchant predicts no merge and no sum", async ({
+  page,
+}) => {
+  const copy = catalogue("en");
+  await signUpFresh(page, "merge");
+  await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+  await importFixture(page, SMALL_FIXTURE);
+  await openMerchants(page, "en");
+
+  const route = await routeServerActions(page);
+
+  // First naming, allowed to settle: creates the existing merchant.
+  const shared = "Gedeelde Naam";
+  {
+    const target = namableGroup(page);
+    await nameInput(target).fill(shared);
+    await submitControl(target).click();
+    await expect(
+      page.getByTestId("merchant-group").filter({ hasText: shared }),
+    ).toHaveCount(1, { timeout: 15_000 });
+  }
+
+  // Second naming with the SAME name, held in flight: while the prediction
+  // is on screen the two groups must still be two rows with two totals.
+  const target = namableGroup(page);
+  await expect(target).toBeVisible();
+  const rowKey = (await target.getAttribute("data-group-key")) ?? "";
+  const row = rowByKey(page, rowKey);
+  const before = await captureFigures(page);
+  const namedRowIndex = before.groupKeys.indexOf(rowKey);
+  expect(namedRowIndex).toBeGreaterThanOrEqual(0);
+
+  await nameInput(row).fill(shared);
+  route.armDelay();
+  const clickAt = Date.now();
+  await submitControl(row).click();
+  await waitForRawLabel(row, shared, PREDICT_CEILING_MS);
+  const elapsed = Date.now() - clickAt;
+  if (elapsed < 1000) {
+    await page.waitForTimeout(1000 - elapsed);
+  }
+  await expectMarkedPrediction(row, page, copy["nameUnconfirmed"] ?? "");
+  expectFiguresUnmoved(before, await captureFigures(page), namedRowIndex);
+  // Two rows carry the shared name mid-flight: the existing merchant row
+  // and the predicting row. Nothing has merged and no total moved.
+  await expect(
+    page.locator('[data-group-key] [data-testid="group-label"]', {
+      hasText: shared,
+    }),
+  ).toHaveCount(2);
+
+  // After the release the server merges: one row, whose total is the SUM
+  // of the two originals, which is exactly what the browser refused to
+  // predict (the 11.1(b) browser witness records the merged figure).
+  route.disarm();
+  await expect(
+    page.getByTestId("merchant-group").filter({ hasText: shared }),
+  ).toHaveCount(1, { timeout: 15_000 });
+  const after = await captureFigures(page);
+  expect(after.groupTotals.length).toBe(before.groupTotals.length - 1);
+  expect(after.income).toBe(before.income);
+  expect(after.spend).toBe(before.spend);
+});
