@@ -1330,12 +1330,19 @@ test("the reserve rows are measured by the same bar as the spend rows", async ({
 }) => {
   test.setTimeout(180_000);
   await signUp(page, "mv-reserve-phone");
-  // The savings account is REGISTERED and its statement is never imported,
-  // which is what a household actually does: a reserve account is
-  // registered for its account number only (pulse-domain section 1,
-  // decision D-55). The reserve row on the month view comes from the POT
-  // side, which is the only side there is. Zero new fixtures, exactly as
-  // before.
+  // The savings account is REGISTERED and BY THIS TEST its own statement
+  // is not uploaded, so the reserve row on the month view comes from the
+  // POT side. Zero new fixtures, exactly as before.
+  //
+  // CORRECTED LOUDLY (M3-P18 fix round two, clause R-087, findings
+  // CR2-M3P18-03 and CR-HAZ-P18-04). This comment used to read "its
+  // statement is never imported, which is what a household actually
+  // does: a reserve account is registered for its account number only
+  // (pulse-domain section 1, decision D-55)". DR-0030 superseded that:
+  // a savings account's own statement IS accepted now and its rows are
+  // shown held. Nothing about this test changes, because it simply does
+  // not upload that statement; what changes is that "never imported" was
+  // a claim about the PRODUCT and is now only a fact about this test.
   await ensureRegistered(page, {
     label: "Savings account",
     bank: "Demobank",

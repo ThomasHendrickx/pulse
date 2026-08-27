@@ -12,7 +12,11 @@ import { makeFakeImportWorld } from "./fake-import-world";
 // is ACCEPTED, its rows stored as facts, and they keep NO flow by
 // construction because interpretation runs over the pot accounts alone.
 // This is the application-level witness for criterion 18.1's acceptance
-// half; the browser-level witness lives in test/e2e/import.spec.ts.
+// half; the browser-level witness lives in test/e2e/accounts.spec.ts.
+// CORRECTED LOUDLY (M3-P18 fix round two, clause R-087, finding
+// CR2-M3P18-03): the pointer above used to name test/e2e/import.spec.ts,
+// a file this phase never touched, so a reader following it to run the
+// browser witness would have found nothing there.
 //
 // RED WITNESS (clause R-037a): this test was run against the unfixed code
 // (the account-in-savings-ring refusal arm still present) and failed with

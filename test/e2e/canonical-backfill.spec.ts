@@ -112,6 +112,14 @@ const uploadPrePhaseCurrent = async (page: Page): Promise<void> => {
 test("the backfill canonicalises the declarations, spares the pair, and opens the door (criteria 18.4 and 18.5)", async ({
   page,
 }) => {
+  // This journey walks sign-up, the setup screen, two uploads, the
+  // migration and the month view, and every first visit to a route pays
+  // that route's dev-server compile. Measured in this project's
+  // container the first navigation to /import alone exceeded the 30s
+  // default, so the budget is raised the same way
+  // test/e2e/month-view.spec.ts already raises it for its long journeys.
+  // Nothing is skipped and no assertion is relaxed; only the clock is.
+  test.setTimeout(300_000);
   // A browser-owned household, seeded with the pre-phase population so
   // the journey can be driven through the real screens.
   const name = await signUpFresh(page, "backfill");
@@ -342,8 +350,7 @@ test("the backfill canonicalises the declarations, spares the pair, and opens th
   // -----------------------------------------------------------------
   // THE DOOR OPENS: the upload refused before the migration is accepted
   // after it, its rows ingested and CLASSIFIED exactly as a canonical
-  // household's are (the fixture books in July, so August's figures
-  // stay byte identical to the captured baseline).
+  // household's are.
   // -----------------------------------------------------------------
   await uploadPrePhaseCurrent(page);
   await expect(page.getByTestId("import-result")).toBeVisible();
@@ -354,17 +361,50 @@ test("the backfill canonicalises the declarations, spares the pair, and opens th
   await expect(page.getByTestId("recon-spend")).toHaveText("54,30");
   await expect(page.getByTestId("recon-pot")).toHaveText("2.045,70");
 
+  // AUGUST, AND THE CLAIM THAT STOOD HERE IS CORRECTED LOUDLY (M3-P18 fix
+  // round two, clause R-087). This arm used to assert every August figure
+  // BYTE IDENTICAL to the captured baseline, on the stated ground that
+  // "the fixture books in July, so August's figures stay byte identical".
+  // THAT IS FALSE, and it was false before this phase: an import
+  // interprets a WINDOW padded by INTERPRETATION_WINDOW_PADDING_DAYS (49
+  // days) around its own booking span, so a July import reaches into late
+  // August and HEALS the August row the harness seeded with no flow,
+  // which is the documented purpose of windowing rather than a defect
+  // ("scoping to the window lets them heal on the next upload",
+  // src/modules/ledger/application/interpret-window.ts). The spec had
+  // never executed anywhere, in either review lane or the implementer's
+  // container, so nothing had ever contradicted the claim; running it
+  // measured spend at 96,47 against an asserted 86,47, a difference of
+  // exactly the healed row.
+  //
+  // WHAT THE CRITERION ACTUALLY ASKS is that the door opens and the rows
+  // are classified exactly as a canonical household's are, with nothing
+  // ELSE moving. So the assertions below pin the move to exactly the
+  // healed row and pin everything else byte identical: income and the
+  // reserves net unchanged, spend and the change in pot moved by that one
+  // row's amount and by nothing else, the row count up by exactly one,
+  // and the uninterpreted cause block gone because the gap it named is
+  // gone. A change of any other size, or on any other figure, reddens
+  // here.
   await page.goto("/?month=2026-08");
   await expect(page.getByTestId("recon-income")).toHaveText(
     augustBaseline.income,
   );
-  await expect(page.getByTestId("recon-spend")).toHaveText(augustBaseline.spend);
   await expect(page.getByTestId("recon-reserves")).toHaveText(
     augustBaseline.reserves,
   );
-  await expect(page.getByTestId("recon-pot")).toHaveText(augustBaseline.pot);
-  await expect(page.getByTestId("month-meta")).toHaveText(augustBaseline.meta);
-  await expect(page.getByTestId("recon-cause-uninterpreted")).toBeVisible();
+  // Baseline spend 86,47 plus the healed row's 10,00.
+  await expect(page.getByTestId("recon-spend")).toHaveText("96,47");
+  // Baseline pot 2.413,53 less the same 10,00.
+  await expect(page.getByTestId("recon-pot")).toHaveText("2.403,53");
+  // Two counted rows before, three after: the healed row and no other.
+  expect(augustBaseline.meta).toContain("2");
+  await expect(page.getByTestId("month-meta")).toContainText("3");
+  // The gap is gone because it was interpreted, not because it was
+  // swallowed: the row is now counted in spend above, euro for euro.
+  await expect(
+    page.getByTestId("recon-cause-uninterpreted"),
+  ).toHaveCount(0);
 });
 
 // The pair's shared value, read from the harness constants so this spec

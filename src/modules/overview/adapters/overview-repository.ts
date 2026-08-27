@@ -300,9 +300,30 @@ export const monthFigures = async (
     FROM "transactions" t
     JOIN "accounts" a ON a."id" = t."accountId" AND a."householdId" = t."householdId"
     WHERE t."householdId" = ${context.householdId}::uuid
+      AND a."role" = 'POT'::"AccountRole"
       AND t."bookingDate" >= ${plainDateToDbDate(period.from)}
       AND t."bookingDate" <= ${plainDateToDbDate(period.to)}
   `;
+  // ONE QUERY, ONE ANSWER TO WHAT THE POT IS (M3-P18 fix round two,
+  // hazard finding CR-HAZ-P18-05). The uninterpreted count carried the
+  // ring predicate while changeInPot, rowCount and every named sum in
+  // the same aggregate carried none, so the query held two answers, and
+  // the only thing keeping them in agreement was a property of ANOTHER
+  // file: interpretation stamps a flow over the pot account ids alone
+  // (src/modules/ledger/application/interpret-window.ts), so no
+  // reserve-ring row carries a non-null flow today. The ring predicate
+  // now sits in the WHERE, which makes the agreement a property of THIS
+  // query. It is a behavioural no-op over any household the product can
+  // currently produce, and it is the arm that keeps the identity exact
+  // if a stamped row ever reaches a reserve-ring account. Measured over
+  // the seed harness before and after: every figure byte identical.
+  //
+  // The uninterpreted count's OWN inline ring predicate is kept even
+  // though the WHERE now makes it redundant: criterion 18.3 pins the
+  // admission AT THE SITE, so a reader (and the sweep test) can see the
+  // scoping beside the null-flow condition rather than have to carry the
+  // WHERE in their head.
+  //
   // The WHERE deliberately carries NO flow filter (fix round 1, finding
   // CR-502): a row committed by ingest whose interpretation never ran
   // (flow NULL) must be COUNTED here as uninterpreted, not vanish from
@@ -370,6 +391,7 @@ export const listGapRows = async (
     FROM "transactions" t
     JOIN "accounts" a ON a."id" = t."accountId" AND a."householdId" = t."householdId"
     WHERE t."householdId" = ${context.householdId}::uuid
+      AND a."role" = 'POT'::"AccountRole"
       AND t."bookingDate" >= ${plainDateToDbDate(period.from)}
       AND t."bookingDate" <= ${plainDateToDbDate(period.to)}
       AND (
@@ -380,6 +402,16 @@ export const listGapRows = async (
       )
     ORDER BY t."bookingDate" ASC, t."id" ASC
   `;
+  // THE RING PREDICATE IN THE WHERE covers the OTHER three arms too
+  // (M3-P18 fix round two, hazard finding CR-HAZ-P18-05). The null-flow
+  // arm carried it and the UNRESOLVED and INTERNAL arms did not, so this
+  // listing held two answers to what the pot is, exactly as monthFigures
+  // did; the arms agreed only because interpretation stamps a flow over
+  // the pot account ids alone, which is a property of another file. It
+  // is a no-op over any household the product can currently produce.
+  // The null-flow arm keeps its own inline predicate for the reason
+  // recorded at the count above: criterion 18.3 pins the admission at
+  // the site.
   // THE NULL-FLOW ARM IS SCOPED BY THE ACCOUNT'S RING, exactly as the
   // uninterpreted count above and for the same reason (M3-P18, decision
   // D-56; DR-0030): a savings account's rows keep no flow by

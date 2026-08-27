@@ -40,6 +40,21 @@ const walk = (dir: string): readonly string[] => {
 
 const sourceFiles = (): readonly string[] => walk(join(ROOT, "src"));
 
+// The same walk over text of any kind, so a superseded SENTENCE can be
+// swept out of markdown and specs as well as out of source.
+const walkAll = (dir: string): readonly string[] => {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) {
+      out.push(...walkAll(path));
+    } else if (/\.(ts|tsx|md|json|css)$/.test(entry)) {
+      out.push(path);
+    }
+  }
+  return out;
+};
+
 describe("the savings-ring refusal is gone root and branch (criterion 18.1)", () => {
   test("no source file and no catalogue carries the refusal reason or its key", () => {
     const offenders: string[] = [];
@@ -64,6 +79,83 @@ describe("the savings-ring refusal is gone root and branch (criterion 18.1)", ()
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  // THE SWEEP IS OVER THE TREE, NOT OVER THE ONE FILE (M3-P18 fix round
+  // two, findings CR2-M3P18-03 and CR-HAZ-P18-04). Round one asserted the
+  // three superseded sentences were gone from the domain skill alone, and
+  // both clean-room lanes then found survivors elsewhere: one a
+  // load-bearing safety argument in src, where the ring-change guard
+  // reasoned from a premise DR-0030 had made false, and one in a
+  // Playwright spec. Criterion 18.1's whole argument is that a sentence
+  // contradicting shipped behaviour is read BEFORE the plan by whoever
+  // works next, and that argument does not care which file it sits in.
+  const SUPERSEDED_SENTENCES = [
+    "registered for their IBAN only",
+    "registered for its account number only",
+    "Their statements are not imported in v1",
+    "statements are not imported in v1",
+    "its statement is never imported",
+    "A reserve movement is classified entirely from the pot side",
+  ];
+
+  // WHERE A SUPERSEDED SENTENCE MAY STILL STAND, by name and with the
+  // reason. Clause R-087 requires a correction to QUOTE the wording it
+  // supersedes rather than delete it, so these files carry the sentence
+  // on purpose, inside a correction that says so. Any OTHER file
+  // carrying one is an uncorrected survivor and reddens here. Listed BY
+  // NAME, never asserted by count.
+  const CORRECTION_SITES = new Set([
+    // The ring-change guard: its whole justification was rewritten and
+    // quotes the premise DR-0030 falsified.
+    "src/modules/accounts/application/change-account-ring.ts",
+    // The Playwright reserve-row test, whose setup comment claimed of the
+    // PRODUCT what is only true of that test.
+    "test/e2e/month-view.spec.ts",
+    // This sweep itself, which must carry the sentences to look for them.
+    "test/domain/savings-decision.test.ts",
+  ]);
+
+  test("no superseded sentence survives anywhere outside a loud correction", () => {
+    const roots = ["src", "test", "scripts", join(".claude", "skills")];
+    const survivors: string[] = [];
+    for (const root of roots) {
+      for (const file of walkAll(join(ROOT, root))) {
+        const relative = file.slice(ROOT.length + 1);
+        const lines = readFileSync(file, "utf-8").split("\n");
+        lines.forEach((line, index) => {
+          if (
+            !SUPERSEDED_SENTENCES.some((sentence) => line.includes(sentence))
+          ) {
+            return;
+          }
+          // A hit is admitted only inside a LOUD correction: the file is a
+          // named correction site, the hit is on a comment line, and a
+          // line within the preceding block says the wording is
+          // superseded. A file on the list is not thereby free to grow a
+          // fresh uncorrected instance.
+          const isComment = /^\s*(\/\/|--|\*|<!--)/.test(line);
+          const nearby = lines
+            .slice(Math.max(0, index - 25), index + 1)
+            .join("\n");
+          // THE ONE EXEMPTION, stated rather than hidden: this file. A
+          // sweep must carry the sentences as data to look for them, so
+          // it is the one file this sweep cannot police, and the clean
+          // room lanes are the check on it.
+          const isTheSweepItself =
+            relative === "test/domain/savings-decision.test.ts";
+          const admitted =
+            isTheSweepItself ||
+            (CORRECTION_SITES.has(relative) &&
+              isComment &&
+              /superseded|corrected/i.test(nearby));
+          if (!admitted) {
+            survivors.push(`${relative}:${index + 1}`);
+          }
+        });
+      }
+    }
+    expect(survivors.sort()).toEqual([]);
   });
 
   test("the three superseded sentences are gone from the domain skill", () => {
