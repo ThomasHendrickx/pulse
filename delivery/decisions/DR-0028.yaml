@@ -1,0 +1,49 @@
+# DR-0028: where a model is allowed to act in merchant resolution, and which
+# one. Raised when the owner asked whether a model was needed to make
+# counterparty matching work, or whether normalising an account number was
+# enough. Decided by the owner in session on 2026-08-23.
+kind: decision-record
+id: DR-0028
+project: pulse
+task: v02-merchant-identity
+question: >-
+  Does counterparty matching need a model in the loop, or is deterministic
+  normalisation enough, and if a model is used anywhere, which one?
+options:
+  - label: Deterministic identity, a model only for naming
+    consequence: >-
+      IDENTITY is decided deterministically and never by a model: the
+      counterparty account where the row carries a trustworthy one, the
+      descriptor grammar where it does not. Canonicalising an account number
+      is a pure total function, uppercase and strip separators, in the domain
+      layer and testable without a database. A model on that path would be
+      non-deterministic, could transpose a digit, and decides whether a row
+      is SPEND or INTERNAL, which is the silent-merge failure the identity
+      work exists to prevent. NAMING is where a model belongs, as the
+      resolution chain already specifies (pulse-domain section 7, step 3,
+      slice 5 onward): it takes distinct unresolved strings, batched, and
+      every accepted answer becomes a MerchantRule, so the model proposes a
+      DECLARATION and deterministic matching carries it from then on. The
+      model never groups two descriptors into one counterparty; a grouping
+      is proposed for confirmation, never applied. The model chosen is
+      claude-sonnet-5. Cost is not the criterion at this volume, roughly one
+      import a month and a few dozen distinct strings in a single batched
+      call; accuracy on Belgian merchant descriptors is. Chosen by the owner.
+  - label: A model in the matching loop
+    consequence: >-
+      A model decides which rows are the same counterparty. Rejected: a wrong
+      answer merges two counterparties' money with nothing on screen to say
+      so, and the failure is not recoverable by the reader.
+reversibility: reversible
+vetoable: true
+revert-cost: >-
+  The naming step is not built. Changing the model is a string. Removing the
+  step leaves the deterministic chain, which is what runs today.
+status: decided
+decided: >-
+  Deterministic identity, a model only for naming, with claude-sonnet-5 as
+  the model (owner, 2026-08-23).
+date: "2026-08-23"
+evidence:
+  - decisions/DR-0027.yaml
+  - backlog.md
