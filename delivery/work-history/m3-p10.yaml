@@ -1320,6 +1320,104 @@ fix-round:
       at the letter, exactly as the first record says, and criterion 11.7(a)
       carries the same defect unrecorded by M3-P11's own history, which this
       round has no mandate to edit either.
+  - mechanism: >-
+      CR-M3P10-02, THE MEASUREMENT HALF. THE MECHANISM IS A RESERVED BOX THAT
+      EVERY SUBMIT CONTROL NOW CARRIES AT REST, AND NO PHONE-WIDTH SPEC HAS
+      RUN SINCE. Fix round 1 moved the busy mark out of the inline flow of
+      the press and into the control's resting box ([aria-busy]::after rather
+      than [aria-busy="true"]::after), so every submit control is one mark
+      box wider at rest than it was: --space-5 of width plus --space-4 of
+      left margin, 18 CSS pixels. The specs that would see a layout
+      consequence of that, M3-P7's phone sweep in test/e2e/month-view.spec.ts
+      and M3-P9's control sweep in test/e2e/pressed-and-disabled.spec.ts, are
+      in the suite recorded did-not-run for that round, and they cannot run
+      here either. So the widening was measured DIRECTLY instead, in real
+      chromium over this head's own built stylesheet through page.setContent,
+      at the two phone widths and the two text scales the existing specs
+      apply, in all three languages, on every row that carries a submit
+      control, on the navigation row, and on the two rows where two controls
+      sit side by side. Each row was rendered TWICE from the same markup and
+      the same stylesheet, once with the leaf's resting attribute as it
+      shipped at 1ed44c3 (no aria-busy at rest, so no box) and once as it
+      ships now (aria-busy="false", so the box is laid out), which isolates
+      the 18 pixels from everything else on the screen. NOTHING WAS CHANGED
+      AS A RESULT: no document overflows, nothing is clipped, and no tap
+      target that was above the floor falls below it.
+    derivation:
+      command: >-
+        npm run build with DATABASE_URL and DIRECT_URL pinned to an invented
+        127.0.0.1 target and PULSE_DIST_DIR set to a scratch directory, then
+        an untracked chromium probe (deleted after the run) over the CSS file
+        that build emitted, driving 2 viewport widths (360 and 390 by 844,
+        isMobile and hasTouch) by 3 text scales (100, 150 and 200 percent,
+        applied with the shipped test/e2e/phone-helpers.ts applyTextScale
+        algorithm) by 3 languages by 6 screens by the 2 resting variants, 216
+        renders, reading per render: every control's bounding rect, each
+        row's scrollWidth against its clientWidth, the document's scrollWidth
+        against its clientWidth, the shipped clippingOffenders sweep and the
+        shipped tapTargetOffenders sweep on BOTH axes at the 44 pixel floor.
+      output: >-
+        CONTROL WIDTHS AT REST, before to after, identical at 360 and at 390
+        because these controls are content-sized: app-signout 49.64 to 67.64;
+        import upload submit 69.56 to 87.56; confirm-import 150.89 to 168.89;
+        preview-again 111.72 to 129.72; merchant naming submit 64.36 to
+        82.36; accounts ring switch 194.56 to 212.56; accounts register
+        submit 180.47 to 198.47. Every one of them grows by exactly 18.00.
+        THE AUTH SUBMIT DOES NOT GROW AT ALL, 246.00 at 360 and 276.00 at 390
+        in both variants, because .auth-submit is a full-width control and
+        the box is absorbed inside it.
+        DOCUMENT OVERFLOW: scrollWidth is IDENTICAL in the two variants in
+        every one of the 108 pairs. The only overflow anywhere is the
+        merchants screen at 360 at 200 percent text, 373 against a 360
+        client, and it measures 373 BEFORE the change as well: it is the
+        naming field's fixed width, it predates this phase and this round did
+        not move it.
+        CLIPPING: the clippingOffenders sweep returns the same set in both
+        variants in all 108 pairs, empty everywhere.
+        TAP TARGETS, both axes at the 44 pixel floor: in ENGLISH and in DUTCH
+        the offender set is IDENTICAL in the two variants at both widths and
+        all three scales. In FRENCH the four navigation links narrow, because
+        the header is a two-column grid and a wider sign-out control in
+        column 2 takes width from the navigation column: 43.75 to 39.25 at
+        360 at 150 percent, 32.02 to 27.52 at 360 at 200 percent, 39.52 to
+        35.02 at 390 at 200 percent. All six of those numbers are BELOW the
+        floor before the change as well as after it.
+        THE TIGHTEST MEASURED CASE THAT STILL PASSES is English at 360 at 200
+        percent: each navigation link is 54.17 wide before and 49.67 after,
+        so the widening consumed 4.50 of the 10.17 pixels of headroom the row
+        had above the floor and 5.67 remain.
+        THE ONE ROW THAT WRAPS DIFFERENTLY is the merchant naming row at 360
+        in DUTCH at 100 percent text, and it wraps IN THE OWNER'S FAVOUR. The
+        naming submit moves onto its own line below the field and the row
+        grows from 115.50 to 155.00 CSS pixels tall. It is the same wrap that
+        used to happen ON THE PRESS: the pre-fix mark used the same
+        --space-5 and --space-4 tokens, so the pre-fix BUSY width of that
+        control is exactly the post-fix RESTING width, 114.02 against a field
+        that leaves it too little room at 360. Before this change the row
+        reflowed under the reader's finger at the moment they pressed it,
+        which is finding HZ-M3P10-07 itself; after it the row is 155.00 in
+        both states and nothing moves on the press. English never wraps at
+        either width, French never wraps at either width, and Dutch does not
+        wrap at 390.
+    not-covered: >-
+      THIS IS A STYLESHEET MEASUREMENT AND NOT THE SUITE. The markup is
+      reconstructed from the shipped components rather than served by the
+      app, so it carries their classes and their catalogue strings but not a
+      real projection: a row whose real content is longer than the fixture
+      used here could wrap where this says it does not. The measurement is
+      also static, taken at rest and not through a press, so it says nothing
+      about the timing criteria. npm run test:e2e is the instrument that
+      settles M3-P7's and M3-P9's phone sweeps over the widened controls and
+      it CANNOT RUN IN THIS CONTAINER: no Docker, therefore no Supabase auth
+      service, therefore no journey can sign up. It is recorded
+      environment-limited below and is not claimed. Two things this
+      measurement found and did not fix, both deliberately left because
+      neither is caused by this phase and neither overflows: the French
+      navigation row is under the 44 pixel floor at 150 and 200 percent text
+      at 360 and at 200 percent at 390, before this change as well as after,
+      and no spec measures a non-English locale under text scaling; and the
+      merchants screen scrolls sideways at 360 at 200 percent text in every
+      language, also before this change.
 environment-warnings:
   - warning: >-
       THE WORKTREE ARRIVED WITH NO node_modules AND NO .env, unlike the M3-P9
