@@ -1,0 +1,274 @@
+# M3-P18 CRITERIA REVIEW, ROUND ONE, SECOND INDEPENDENT LANE (file suffix -b).
+# Clean-room reviewer, CRITERIA contract.
+# Worktree /home/user/wt-m3p18-crit on claude/m3-p18-rev-crit at the implementer's
+# head 85da7f6. Clean room: the implementation session was not read; every claim
+# below is witnessed in this worktree by a command I ran, or recorded as NOT
+# WITNESSED.
+#
+# WHY THIS FILE IS NOT AT delivery/review/m3-p18-criteria.yaml. A SECOND criteria
+# reviewer was working the same head on this same branch from a different
+# worktree and pushed 107eaf6 while I worked; I found it only when my push was
+# rejected. Its verdict occupies the canonical path. I did not clobber it:
+# destroying another lane's measurement is worse than an awkward filename, so
+# this document lands beside it and my finding ids are prefixed CR2 so the two
+# sets cannot be confused. I formed and committed this verdict BEFORE reading a
+# line of theirs; I then read their findings only to confirm the ids did not
+# collide and to say in my report what this lane adds. Nothing below was changed
+# after that reading. What this lane adds, stated plainly for the orchestrator:
+# their five findings are two medium and three low, and neither of my two HIGH
+# findings appears among them; on criteria we differ on 18.1 and 18.5, which
+# they mark not-met on the unexecuted browser arms and I mark met on the
+# non-browser witnesses of the same facts.
+#
+# BEACON LOG, appended as the work happened, kept as comments because the verdict
+# schema forbids additional properties.
+#
+# Base measured: git log dee3d32..85da7f6 carries four commits (e14e3d0 harness
+# and fixtures, 4ef4c01 acceptance and held read, e7f539c migration, script and
+# canonical duplicate check, 85da7f6 work history). git diff --stat dee3d32..85da7f6
+# lists 36 files, 2888 insertions, 87 deletions. Read in full: DR-0030, the
+# migration SQL (64 lines), the detection script (151), the overview repository
+# diff, month-projection, ports, month-overview, month-view, confirm-import,
+# register-accounts, change-account-ring, the seed harness (251), both new e2e
+# specs, both new fast-gate test files, the three catalogues, the skill diff, the
+# work history (484 lines) and its notes (263), and all four commit messages.
+#
+# GATES, all run by me at 85da7f6 in this worktree (node_modules installed fresh,
+# npx prisma generate exit 0 first):
+#   npm run typecheck       EXIT 0
+#   npm run lint            EXIT 0
+#   npm test                EXIT 0, "Test Files  50 passed (50)  Tests  678 passed (678)"
+#   npm run gate:privacy    EXIT 0, "gate:privacy clean"
+#   npm run gate:tokens     EXIT 0
+#   npm run gate:decisions  EXIT 0, "gate:decisions clean"
+#   npm run test:e2e        NOT RUN AS A WHOLE, and it cannot pass here. A
+#     database IS reachable: I started a throwaway PostgreSQL 16.13 cluster
+#     (initdb, trust auth) on 127.0.0.1:54399, database pulsecrit, UTF8 with
+#     C.UTF-8 collation, and pinned DATABASE_URL and DIRECT_URL to it for every
+#     database command. npx prisma migrate deploy applied ALL SEVEN migrations on
+#     that fresh database, EXIT 0, the canonical backfill included. But there is
+#     no Docker daemon and therefore no Supabase AUTH service, so every browser
+#     spec dies at sign-up. Measured rather than assumed: npx playwright test
+#     --project=chromium -g "held rows are shown under the account's label"
+#     EXIT 1, "element(s) not found" on getByTestId('household-context') inside
+#     signUp at test/e2e/month-view.spec.ts:63, 9.3s, before one held-block
+#     assertion ran. The phase's own record says the same of every browser arm
+#     (delivery/work-history/m3-p18.yaml:334 records gate suite-e2e as
+#     result: error with no wrapper exit code).
+#   THE ONE SLOW-GATE SPEC THAT DRIVES NO BROWSER, run by me against that
+#     cluster: npx playwright test --project=chromium -g "every port method sees
+#     the pot gap" EXIT 0, "1 passed (58.0s)". The criterion 18.3 port sweep is
+#     green over the REAL repository in my hands.
+#
+# MY OWN SQL WITNESSES against that cluster, executing the COMMITTED artifacts
+# rather than a reimplementation. I seeded one household with the harness's
+# shapes plus two probes of my own (a lower-case spaced rendering and a
+# U+00A0-separated rendering) and a SECOND household holding the same number as
+# the first, then ran the committed migration.sql three times with psql -f:
+#   run 1 "UPDATE 5", run 2 "UPDATE 0", run 3 "UPDATE 0".
+# After run 1: the spaced pot row became BE11910000000001; the checksum-failing
+# row was canonicalised and neither refused nor nulled; the card row's NULL was
+# untouched; the lower-case row was upper-cased and de-spaced; BOTH members of
+# the collision pair were byte identical to their seeded state; and the second
+# household's identical number was canonicalised independently, so the NOT EXISTS
+# is per household. A snapshot after run 2 equalled the snapshot after run 1, and
+# a control household whose numbers were already canonical was unchanged.
+# scripts/detect-account-collisions.ts against the same cluster: EXIT 0, two
+# stdout lines of space-separated row ids and nothing else, one of them exactly
+# my seeded pair; the stderr line carried only the group count.
+#
+# THE DIVERGENCE THIS ROUND FOUND (finding CR2-M3P18-01), measured codepoint by
+# codepoint. Postgres [[:space:]] on this cluster does NOT match U+00A0, U+2007,
+# U+202F or U+FEFF; JavaScript /\s/ matches all four. The migration's "SQL
+# mirror" is therefore not a mirror, and the phase's equivalence spec cannot see
+# it, because it compares only "every rendering the seed harness writes" and the
+# harness writes ASCII spaces only.
+#
+# THE DOUBLE-COUNT THIS ROUND FOUND (finding CR2-M3P18-02). I executed the
+# COMMITTED listReserveMovements SQL over exactly the collision pair the phase's
+# own harness writes, plus one RESERVE-flow transfer to it. Captured:
+#     BE54910000000003 | Buffer account | -50000 | 1
+#     BE54910000000003 | Buffer savings | -50000 | 1
+# Two groups where one movement exists, and the reserves block's net is the SUM
+# OF THE GROUPS, so it reads double the reconciliation's own netToReserves.
+#
+# PLAIN ANSWERS TO THE FOUR QUESTIONS THIS ROUND WAS SENT TO SETTLE.
+#   Does a held savings row keep the books closing? YES, measured: it is in no
+#   sum, in no count, and in neither gap read.
+#   Does an uninterpreted pot row still hold them open? YES, measured: counted 1,
+#   listed as uninterpreted, deriveMonthFigures reconciles false.
+#   Is the identity intact with savings rows present? YES, measured in integer
+#   cents: 250000 - 8647 - 0 = 241353 = changeInPot, over a household holding a
+#   savings row.
+#   Is the migration idempotent and blocking on collision? Idempotent YES,
+#   measured over three runs. On collision it does not block, by design: it
+#   EXCLUDES the pair, leaves both members untouched and completes silently, and
+#   the naming lives in a script nothing in the deploy runs. That is what
+#   criterion 18.5 asks for and it is honoured, but see finding CR2-M3P18-02 for
+#   what the excluded pair already does to the month view.
+#
+# WHAT THIS CONTRACT DID NOT REACH, left to nobody. Every browser-rendered arm of
+# criteria 18.1, 18.2, 18.4 and 18.5 (no auth service here, none there). Whether
+# the owner's deployed rows carry a non-canonical rendering, which the phase
+# itself records as unreadable from this tree. Whether a Belgian bank export
+# emits U+00A0 inside an account cell, which decides how live CR2-M3P18-01 is. And
+# per this contract's own sentence: three of six criteria are met and the phase is
+# not shippable, because both high findings sit outside what any criterion asks.
+#
+# CLEANUP: the build artifacts my Playwright runs produced (.next, .next-prod,
+# test-results) were removed; git status carries only this review file. Nothing
+# of the work was edited.
+#
+# VALIDATION. npx tiphys validate --type verdict --context /home/user/wt-m3p18-crit
+# exits 1, but the three INVALID lines are Kind B cross-document checks looking
+# for the fixed paths plan.yaml, work-history.yaml and assurance-modes.yaml at
+# the context root, which this repository keeps at delivery/plan/pulse-v02.yaml
+# and delivery/work-history/m3-p18.yaml; no schema violation is reported. Re-run
+# against a scratch context holding copies under the expected names: the schema
+# passes and both completeness checks pass, verdict-criteria-complete over the
+# six acceptance ids and verdict-deviations-judged over the three declared
+# deviations. The one remaining line is dual-review-decorrelation reporting that
+# only one verdict document exists for M3-P18, which is the sibling HAZARD review
+# and is outside one document's reach, exactly as the M3-P17 precedent recorded
+# at delivery/review/m3-p17-criteria.yaml:100. With BOTH criteria verdicts in the
+# context the same check reports three lines instead, that framing, produced-by
+# and review-contract each occur in 2 of 2 verdicts, which is the accurate
+# statement of the situation: two lanes ran the SAME contract and the HAZARD lane
+# is still owed. That is a dispatch fact for the orchestrator, not a defect in
+# either document.
+kind: verdict
+phase: M3-P18
+verdict: FIX-ROUND-NEEDED
+produced-by: claude
+framing: criteria-contract
+review-contract: criteria
+
+findings:
+  - id: CR2-M3P18-01
+    severity: high
+    evidence:
+      - "The migration's canonical expression is at prisma/schema/migrations/20260827120000_canonical_account_iban_backfill/migration.sql:53, upper over regexp_replace with the class [[:space:]], repeated at :55, :62 and :63, and the same expression is the detection script's grouping key at scripts/detect-account-collisions.ts:77. The platform function it claims to mirror is at src/platform/account-number.ts:67 and applies a JavaScript backslash-s replace before upper-casing."
+      - "MEASURED, not read. Against PostgreSQL 16.13, database UTF8 with C.UTF-8 collation, regexp_replace over [[:space:]] removes U+0020, U+0009, U+1680, U+2000, U+2009, U+205F and U+3000, and DOES NOT remove U+00A0 (no-break space), U+2007 (figure space), U+202F (narrow no-break space) or U+FEFF. Captured, one row per codepoint with X and Y bracketing the character: U+00A0 gave X Y, U+2007 gave X Y, U+202F gave X Y, U+FEFF gave X then the mark then Y, while the other seven gave XY."
+      - "MEASURED on the other side. A node one-liner over the same eleven codepoints, testing whether the JavaScript replace collapses X plus the character plus Y to XY, returned true for ALL ELEVEN, U+00A0, U+2007, U+202F and U+FEFF included. The two expressions therefore disagree on four characters, and U+00A0 is the one a bank export realistically prints between account-number groups."
+      - "WHAT THAT COSTS, in the exact mechanism criterion 18.4 exists to close. src/modules/accounts/adapters/account-repository.ts:107 canonicalises the PROBE with the JavaScript function and exact-matches the STORED column. A stored declaration separated with U+00A0 is rewritten by this migration into an upper-cased value that STILL contains U+00A0, so the probe (which strips it) still never matches, the statement is still refused account-not-registered, and the row now LOOKS canonical to anyone inspecting it. Review finding P14-001's live exposure survives for that rendering class, silently, after the least reversible artifact in this project has run."
+      - "AND THE DETECTION MISSES IT TOO. scripts/detect-account-collisions.ts:77 groups by the same SQL expression, so a pair consisting of a U+00A0-separated row and its compact twin does not group together and is never named, while the typed duplicate check at src/modules/accounts/application/register-accounts.ts:57 canonicalises both sides in JavaScript and treats them as one account. The two halves of criterion 18.5 disagree about what a collision is."
+      - "THE PHASE'S OWN TEST CANNOT FAIL ON THIS. Criterion 18.4 arm one asks for equivalence over every rendering the seed harness writes, and test/e2e/canonical-backfill.spec.ts:216 asserts exactly that, over the renderings declared at test/e2e/seed-pre-phase-household.ts:48 through :113, which are ASCII spaces only. The criterion is literally satisfied while the guarantee it was written to buy is not established for any non-ASCII separator."
+      - "AND IT IS ASSERTED AS TRUE IN THREE PLACES (clause R-087). The migration header states at migration.sql:24 through :26 that the expression IS an SQL mirror of the platform function; scripts/detect-account-collisions.ts:18 through :22 repeats it; src/platform/account-number.ts:54 through :59 lists both as SQL mirrors that must agree with it by test. Measured, they do not agree."
+      - "Locale-dependence makes it worse rather than better: POSIX character classes in Postgres depend on the server's ctype, so the set of characters this migration strips is a property of the deployed cluster and not of the committed SQL. My cluster is C.UTF-8; the deployed Supabase cluster's ctype was not read here."
+    concrete-fix: "Make the two expressions agree explicitly rather than by name. Either write the SQL class out so it covers what the JavaScript class covers, pinning the exact codepoint set in the migration and in the detection script, or narrow src/platform/account-number.ts:67 to the same ASCII class the SQL strips, which is the smaller change and is defensible because an account number carrying an exotic separator is no more matchable for having it stripped. Either way, add at least one U+00A0 rendering and one U+FEFF rendering to test/e2e/seed-pre-phase-household.ts:48 so the equivalence arm at test/e2e/canonical-backfill.spec.ts:216 can fail, and add a fast-gate test that walks a fixed codepoint list through the platform function so the JavaScript half is pinned too. The reserves join at src/modules/overview/adapters/overview-repository.ts:193 carries the same expression and must move with them, or the three mirrors will disagree in a fourth way."
+    analysis: "This is the phase's central promise and the promise is scoped by a test whose input alphabet cannot contradict it. The defect is not the choice of class: [[:space:]] over the backslash form was a deliberate and correct fix for the template-literal escaping trap recorded at src/modules/overview/adapters/overview-repository.ts:166 through :180. The defect is that the class was then DECLARED a mirror in three comments and pinned by a spec that only ever feeds it ASCII spaces. I have not witnessed U+00A0 in the owner's data and cannot from this tree, which is why this is high rather than critical; but the migration is the artifact the brief calls least reversible, and a rendering it silently fails to repair leaves the household exactly where P14-001 found them, holding a row that now looks fixed."
+  - id: CR2-M3P18-02
+    severity: high
+    evidence:
+      - "MEASURED. I executed the COMMITTED listReserveMovements SQL (src/modules/overview/adapters/overview-repository.ts:192 through :211) against a real PostgreSQL 16.13, over a household holding exactly the collision pair the phase's own harness writes (test/e2e/seed-pre-phase-household.ts:82 through :95: one row spaced and POT, one row compact and RESERVE, one real account) plus one pot-account row with flow RESERVE whose counterparty is that account. Captured output, two rows where one movement exists: BE54910000000003 with label Buffer account, total -50000, count 1; and BE54910000000003 with label Buffer savings, total -50000, count 1."
+      - "The cause is the LEFT JOIN at src/modules/overview/adapters/overview-repository.ts:200 through :203, which joins the transaction to EVERY account row whose canonical number matches, together with the GROUP BY on number and label at :210, so a pair carrying two labels yields two groups each holding the full amount."
+      - "The screen figure is the SUM OF THE GROUPS: src/modules/overview/application/month-overview.ts:175 through :177 sets the reserves block's netCents to a reduce over the groups' parkedCents. So the block reads 1.000,00 where the reconciliation's own netToReservesCents, taken from the single-row aggregate at src/modules/overview/adapters/overview-repository.ts:245, reads 500,00. The same euro appears under two headings on one screen, the two figures on that screen disagree, and the verdict still computes from the aggregate and can still say the books close."
+      - "This phase is the one that decides such a pair STAYS: prisma/schema/migrations/20260827120000_canonical_account_iban_backfill/migration.sql:56 through :64 leaves both members exactly as they are, deliberately, and criterion 18.5 asserts only that the pair is no worse off for the migration having run. It is no worse off; it was already this bad, and nothing in the phase looks."
+      - "Hazard H18.2 in the phase's own text names this shape exactly, the same euro under two headings on one screen, and is addressed-by criterion 18.2, which forbids summing HELD rows. The held rows are indeed never summed, witnessed at test/domain/savings-decision.test.ts:179 and by my reading of src/modules/overview/ui/month-view.tsx:280 through :331. The hazard arrives through the reserves block instead, which no criterion of this phase covers."
+      - "Reachability is not hypothetical for this household: the phase exists because pre-M3-P14 rows carry non-canonical renderings, and the whole reason the migration refuses to merge a pair is that such pairs are expected in exactly the owner's data."
+    concrete-fix: "Make the reserves join match at most one account row per canonical number: join through a de-duplicated subquery over accounts (one row per household and canonical number, chosen by lowest id) instead of joining the accounts table directly at src/modules/overview/adapters/overview-repository.ts:200, and group on the canonical number and the one surviving label. Then add a slow-gate arm to test/e2e/canonical-backfill.spec.ts that seeds the harness pair, books one RESERVE-flow transfer to it, and asserts listReserveMovements returns exactly one group whose parkedCents equals the transfer and that the reserves block net equals figures.netToReservesCents. Note in passing that the surviving label is then arbitrary between the pair's two rows, which is a second reason to name the pair to the household rather than only to an operator who happens to run the script."
+    analysis: "The phase asked whether HELD rows could double count and answered it well. It did not ask whether the population it deliberately leaves behind already double counts through the block that was already there. The mechanism is M3-P14's, so this is not a regression introduced by the diff; it is a defect this diff decides to live with without measuring it, and the measurement is one query. I rate it high because it is a wrong money figure on the month view, visible to the owner, in exactly the household shape this phase is built for, and because the phase's own hazard register names the shape and then checks only one of the two places it can arrive from."
+  - id: CR2-M3P18-03
+    severity: medium
+    evidence:
+      - "Criterion 18.1 requires the three superseded sentences to be gone, with a grep asserting each one gone. The sweep at test/domain/savings-decision.test.ts:69 through :83 reads ONE file, the domain skill, so the sentences survive elsewhere in the tree with nothing going red."
+      - "SURVIVOR ONE, and it is load-bearing: src/modules/accounts/application/change-account-ring.ts:7 states that savings statements are not imported in v1 and cites pulse-domain section 1, the very section this phase rewrote. It is not decoration: that sentence is the ARGUMENT for why the ring guard's scope is sufficient, made at src/modules/accounts/application/change-account-ring.ts:5 through :18."
+      - "SURVIVOR TWO, verbatim one of the three sentences: test/e2e/month-view.spec.ts:1333 through :1337 states that the savings account's statement is never imported and that a reserve account is registered for its account number only, citing pulse-domain section 1 and decision D-55, the decision DR-0030 superseded."
+      - "A THIRD FALSE CLAIM, about where a witness lives: test/application/savings-held.test.ts:15 states that the browser-level witness lives in test/e2e/import.spec.ts, and delivery/work-history/m3-p18-notes.md:97 repeats it. MEASURED: git diff --stat dee3d32..85da7f6 over test/e2e/import.spec.ts is EMPTY, the file is untouched by this branch, and a case-insensitive grep over it for savings, held, RESERVE or DR-0030 returns one unrelated hit at test/e2e/import.spec.ts:159. The browser witness actually lives at test/e2e/accounts.spec.ts:452."
+      - "A FOURTH, and this one is about evidence rather than prose: delivery/work-history/m3-p18.yaml:420 through :422 states of the temporary witness run that there were 42 assertion lines, all prefixed ok, none failing, and that the full verbatim output is preserved in the notes under a named heading. MEASURED: that section, delivery/work-history/m3-p18-notes.md:205 through :231, carries a prose summary beginning Highlights and NO assertion lines at all, and a grep for lines beginning ok over the whole notes file returns 0. The witness script was deleted, so the settled-by evidence for claim M3P18-C3 is a restatement of its conclusion, which is the shape the red-witness rule exists to refuse."
+    concrete-fix: "Correct all four in place rather than deleting them (clause R-087). Rewrite the rationale at src/modules/accounts/application/change-account-ring.ts:5 through :18 to say that a savings account's own statement IS imported and that importing it is therefore what closes the ring-correction window (see CR2-M3P18-04). Rewrite test/e2e/month-view.spec.ts:1333 to say the statement is simply not imported BY THIS TEST. Point test/application/savings-held.test.ts:15 and delivery/work-history/m3-p18-notes.md:97 at test/e2e/accounts.spec.ts:452. And either paste the 42 captured lines into the notes under that heading or downgrade the claim at delivery/work-history/m3-p18.yaml:420 to say the output was not preserved. Then widen the sweep at test/domain/savings-decision.test.ts:69 from the one skill file to the whole tree, excluding delivery, so a fifth copy cannot appear."
+    analysis: "Raised under clause R-087, loudly rather than as a nit, because criterion 18.1's whole argument is that a sentence contradicting shipped behaviour is read BEFORE the plan by whoever works next, and the phase then checked exactly one file for it. The change-account-ring survivor is the worst of the four: a reader deciding whether that guard is still sufficient reasons from a sentence this phase made false. The fourth is the one that matters to this review's own trust: a work history claiming preserved captured output that does not exist is indistinguishable, after the fact, from one that never captured it."
+  - id: CR2-M3P18-04
+    severity: medium
+    evidence:
+      - "Before this phase, a household that declared a spending account as SAVINGS by mistake had its statement REFUSED, and the refusal message named the remedy and its price. That message is deleted by this phase: the importAccountInSavingsRing key is gone from messages/en.json, messages/nl.json and messages/fr.json in commit 4ef4c01, which criterion 18.1 requires."
+      - "After this phase the same upload is ACCEPTED (src/modules/import/application/confirm-import.ts:117 through :125), so the account acquires imported rows of its own."
+      - "And the ring can then never be corrected: src/modules/accounts/application/change-account-ring.ts:45 through :47 refuses with kind account-has-own-rows once the account carries any imported row, and the plan parks the ring correction rather than carrying it here."
+      - "The resulting state misreports money with no in-product remedy: transfers into that account keep classifying RESERVE, so they read as money set aside, while every row of the account's own statement is held and counted in no total, so the household's real spending through it is invisible. Both are permanent in v1."
+      - "The phase text knows the general shape, its grounding paragraph records that the ring is correctable only while the account has no imported rows of its own and parks the correction, but nothing records that ACCEPTING the statement is what closes the window, and no criterion, no copy and no screen state says so to the household before the upload."
+    concrete-fix: "Two options, and the cheap one is enough for this round. To say it, add one line of copy to the three catalogues on the import confirmation for a statement whose own account sits in the savings ring, stating that importing it fixes that account's ring, and assert it in test/e2e/accounts.spec.ts:452 beside the acceptance. To hold it, exempt a RESERVE-ring account whose only imported rows are its own held rows from the has-own-rows refusal at src/modules/accounts/application/change-account-ring.ts:45, which is safe by that guard's own argument because those rows carry no flow and a recompute rewrites nothing about them. Whichever is chosen, record it as a decision rather than leaving it implied."
+    analysis: "This is downstream of the owner's own decision and the plan parks the repair, so it is not a criterion failure. It is a finding because the phase removes the only screen that named the remedy in the same change that makes the remedy unreachable, and because the guard's justification still argues from the world before DR-0030 (finding CR2-M3P18-03). The owner would feel this one: four of their ten documents land on accounts whose ring answer becomes final at upload."
+  - id: CR2-M3P18-05
+    severity: low
+    evidence:
+      - "Criterion 18.2 arm THREE requires a grep asserting that no read the phase adds sums the amount column OR READS OUTSIDE THE REQUESTED PERIOD. The static arm at test/domain/savings-decision.test.ts:155 through :180 asserts only the two halves it names: that the held read carries no flow text (line 175) and that it carries no SUM (line 179). Nothing asserts the period bounds."
+      - "The property itself HOLDS in the shipped read: src/modules/overview/adapters/overview-repository.ts:395 and :396 bound the held read by period.from and period.to. So this is an unasserted true property rather than a defect, and a later edit that dropped the bounds would go red nowhere."
+    concrete-fix: "Add one expectation beside the two already at test/domain/savings-decision.test.ts:179, asserting the held read's SQL slice contains both bookingDate comparisons against the period bounds, so the period bound is pinned by the same sweep that pins the absent sum."
+    analysis: "Small, and recorded because the criterion states two obligations for its grep and the tree carries one. A held read that lost its period bounds would show a savings account's whole history under a month heading, which is precisely the kind of quiet wrong the rest of this criterion is unusually careful about."
+
+criteria:
+  - id: "18.1"
+    quote: "A SAVINGS STATEMENT IS ACCEPTED AND THE REFUSAL IS GONE ROOT AND BRANCH. A Playwright test over a household that has completed setup uploads a statement whose own account is registered in the SAVINGS ring and asserts it is ACCEPTED, its rows ingested and shown as held under criterion 18.2 ... A grep asserts the reason account-in-savings-ring is gone from the union, from the routing, from the whitelist, from the SETUP_LINKED membership and from all three catalogues ... The Playwright test shipped by M3-P14's criterion 14.5 that asserts the refusal is REWRITTEN into the acceptance test this criterion specifies rather than deleted ... The other two arms of the built gate stand unchanged and are asserted still standing ... And the skill is corrected in the same commit."
+    evidence:
+      - "THE REFUSAL IS GONE at every one of the six named sites, read by me: the union member is gone at src/modules/import/application/confirm-import.ts:25 through :33, the refusal arm is gone at src/modules/import/application/confirm-import.ts:117 through :125 (an unregistered account is now the only refusal there), the routing is gone at src/modules/import/ui/actions.ts:103 through :110, the whitelist entry is gone at src/modules/import/ui/status-keys.ts:10 through :14, the SETUP_LINKED member is gone at src/modules/import/ui/import-status-line.tsx:15 through :17, and the importAccountInSavingsRing key is gone from messages/en.json, messages/nl.json and messages/fr.json."
+      - "THE SWEEP IS THE FULL ENUMERATION, not a sample, and I ran it myself over the whole tree: a recursive grep for the reason, its camel-case form and its catalogue key outside node_modules, .git and delivery returns eleven hits, and every one is a COMMENT recording the removal or the sweep's own regex source. No string literal, no key, no set member. The phase's own sweep at test/domain/savings-decision.test.ts:44 through :67 encodes exactly that distinction and is green in my npm test run."
+      - "ACCEPTANCE IS WITNESSED, at the application level rather than the browser: test/application/savings-held.test.ts:40 through :80 uploads the savings fixture through uploadStatement and confirmImport over the fake world, asserts kind ingested with 6 rows added, and asserts every ingested row's flow is undefined. That file is inside my green npm test run of 678 tests. The mechanism behind it is real: src/modules/ledger/application/interpret-window.ts:34 through :40 builds the window from potAccountIds alone, so a RESERVE account's rows are never loaded and keep no flow."
+      - "THE REWRITE RATHER THAN A DELETION: test/e2e/accounts.spec.ts:452 stands at the same test position M3-P14 shipped, now asserting acceptance, rows-added 6, no import-status line, and a visible held-rows block headed by the typed label. The other two arms are untouched in the diff and still present: the unregistered refusal test immediately above it and the card-acceptance test immediately below it."
+      - "THE SKILL IS CORRECTED IN THE SAME COMMIT (4ef4c01): .claude/skills/pulse-domain/SKILL.md:22 and :98 are rewritten in place and say what the product now does, and the three superseded sentences are asserted gone at test/domain/savings-decision.test.ts:74 through :78, green in my run."
+      - "NOT WITNESSED: the Playwright arm itself. test/e2e/accounts.spec.ts:452 has never executed, here or in the implementer's container. I count this criterion met because its acceptance claim is witnessed by a green fast-gate test over the same code path and its grep claims are witnessed by my own greps, so the browser arm is a second witness of one fact rather than the only witness. See finding CR2-M3P18-03 for the two superseded sentences that survive OUTSIDE the skill file, which this criterion's grep does not reach."
+    met: true
+  - id: "18.2"
+    quote: "A SAVINGS STATEMENT'S ROWS ARE SHOWN, MARKED HELD AND COUNTED NOWHERE ... Five assertions. ONE, THE ROWS ARE ON THE PAGE: an element with data-testid held-rows renders under that account, one line per held row of the requested period ... and the block is HEADED BY THE LABEL the household typed for that account, never by its number ... TWO, THE WORDS ... in all three catalogues ... THREE, NOTHING IS SUMMED ... FOUR, THE MONEY PATH AND THE TOKENS ... FIVE, NOTHING MOVES: with the held rows rendered, income, spend, net to reserves, the change in the pot, the difference, the uninterpreted count and the row count are each byte identical to the values recorded before the savings statement was imported ... and the verdict still reads as books closing."
+    evidence:
+      - "ALL FIVE ASSERTIONS ARE BROWSER-LEVEL AND NONE HAS EVER EXECUTED. They live in test/e2e/month-view.spec.ts:1390 onward. delivery/work-history/m3-p18.yaml:334 records gate suite-e2e as result: error with no wrapper exit code, and my own attempt in this worktree, against a real database, EXITED 1 at sign-up: element not found for getByTestId('household-context') at test/e2e/month-view.spec.ts:63, 9.3s, no auth service. The criterion's own instrument is unrun everywhere, which is why this reads not-met rather than met."
+      - "WHAT IS WITNESSED, so the reader knows how narrow the gap is. COUNTED NOWHERE is witnessed at the repository level by my green port-sweep run (EXIT 0, 1 passed): the savings null-flow row is absent from listIncomeGroups, listSpendGroups, listReserveMovements, the uninterpreted count and listGapRows, and present only in listHeldRows carrying the typed label Savings."
+      - "NOTHING IS SUMMED is witnessed statically and by reading: src/modules/overview/adapters/overview-repository.ts:370 through :407 selects rows with no aggregate; src/modules/overview/domain/month-projection.ts:341 through :360 folds them with no arithmetic on the amounts at all; src/modules/overview/ui/month-view.tsx:280 through :331 renders no total element; and test/domain/savings-decision.test.ts:179 asserts the read carries no SUM, green in my npm test run."
+      - "THE WORDS ARE IN ALL THREE CATALOGUES, read by me: heldOnSavings and heldNote exist in messages/en.json, messages/nl.json and messages/fr.json, and the note renders as visible text at src/modules/overview/ui/month-view.tsx:303 through :305, not as an attribute."
+      - "THE MONEY PATH AND THE TOKENS hold by reading: the amount renders through the one shared component at src/modules/overview/ui/month-view.tsx:319, which is src/platform/ui/amount.tsx:23 formatting integer cents; npm run gate:tokens exits 0 in my run; and a grep over src/modules/overview/ui/month-view.tsx finds no px, rem or em length and no colour literal anywhere in the added block."
+      - "NOTHING MOVES is sound by construction rather than by rendered measurement here: every named sum at src/modules/overview/adapters/overview-repository.ts:243 through :246 filters on flow, rowCount at :258 filters flow IS NOT NULL, and a savings row's flow is NULL by construction. My port-sweep run measured the same household's figures directly with a savings null-flow row present: income 250000, spend -8647, changeInPot 241353, rowCount 2, and 250000 - 8647 - 0 equals 241353 exactly, in integer cents."
+      - "THE FIXTURE CARRIES THE THREE SHAPES the criterion demands, read by me at test/fixtures/savings-statement.csv:3 through :8: a base-rate interest credit and a loyalty premium, a transfer to the household's other savings account, and a payment straight out of savings, plus two ordinary rows. Its two account numbers pass the validity test, asserted at test/application/savings-held.test.ts:81 through :86 and green in my run, and both are on test/fixtures/allowed-identifiers.txt with a written provenance note."
+      - "AND THE BLOCK CANNOT LEAK A NUMBER: the held read selects only the coalesced counterparty text (src/modules/overview/adapters/overview-repository.ts:385), never counterpartyIban, and the heading is the declared account label (src/modules/overview/ui/month-view.tsx:299), which test/domain/merchant-review.test.ts records as a declared exclusion with its reason."
+    met: false
+  - id: "18.3"
+    quote: "BOTH READS THAT CAN SEE A DELIBERATELY UNINTERPRETED ROW ARE SCOPED THE SAME WAY, AND A GAP ON A SPENDING ACCOUNT IS STILL A GAP ... The test asserts BOTH are scoped by the account's ring and that no third read carrying a flow condition appears ... AND THE SCOPING MAY NOT SWALLOW A REAL GAP, WITNESSED AT THE ONLY LEVEL THAT CAN SEE IT ... One assertion is stated on the listing ALONE ... THE SWEEP IS OVER THE WHOLE PORT ... A scoping written by dropping the null-flow condition rather than by the ring fails here."
+    evidence:
+      - "WITNESSED BY ME, at the level the criterion names. npx playwright test --project=chromium -g \"every port method sees the pot gap\" against a real PostgreSQL 16.13 in this worktree: EXIT 0, \"1 passed (58.0s)\", the spec at test/e2e/held-and-gap-rows.spec.ts:57. It seeds through the one harness, calls the REAL repository, and asserts the pot null-flow row is counted by the uninterpreted count (exactly 1), returned by listGapRows labelled uninterpreted, and holds the verdict open (deriveMonthFigures reconciles false), while the savings null-flow row is in neither and is returned by listHeldRows carrying the typed label."
+      - "THE LISTING-ALONE ASSERTION is present and green: test/e2e/held-and-gap-rows.spec.ts:118 through :133 asserts listGapRows itself returns no savings-account row over that household, which is the only witness that can see an unscoped listing whose rows the gated cause block would render nowhere."
+      - "THE WHOLE-PORT SWEEP is present and green, with a completeness pin that parses src/modules/overview/application/ports.ts and asserts every published method was swept BY NAME (test/e2e/held-and-gap-rows.spec.ts:149 through :171). All six published methods are covered."
+      - "THE SCOPING IS BY THE RING PREDICATE, never by dropping the null-flow condition, read by me at src/modules/overview/adapters/overview-repository.ts:257 for the count and :335 for the listing's WHERE arm, both spelled as flow IS NULL AND the account role is POT. Finding CR-502 is held, not undone, and the comment recording it stands at src/modules/overview/adapters/overview-repository.ts:264 through :281."
+      - "THE THREE-ARM STATIC SWEEP exists and passes in my npm test run: test/domain/savings-decision.test.ts:98 through :137 pins the SQL absent-flow form to exactly three textual occurrences, all in the overview repository, identified individually as the count line, the WHERE line and the CASE line rather than by count alone, and asserts the two ADMISSION lines carry the ring predicate; test/domain/savings-decision.test.ts:139 through :153 separately asserts no COALESCE-over-flow form and no Prisma null-flow form exists anywhere under src."
+      - "THE HELD READ IS CORRECTLY ABSENT from that enumeration, asserted rather than assumed: test/domain/savings-decision.test.ts:155 through :180 slices the listHeldRows body out of the repository text and asserts it contains no flow reference at all and does carry the RESERVE ring predicate."
+    met: true
+  - id: "18.4"
+    quote: "THE STORED DECLARATIONS BECOME CANONICAL, AND THE HOUSEHOLD THE BUILT GATE LOCKED OUT IS LET BACK IN ... ONE, ONLY THE DECLARATION MOVES ... a slow-gate spec executes the committed migration's own expression through a direct PrismaClient against the local stack and asserts it and canonicalAccountNumber produce identical results over every rendering the seed harness writes; a TypeScript reimplementation of the expression does not satisfy this ... TWO, THE DOOR OPENS ... THREE, VALIDITY IS NOT SMUGGLED IN ... FOUR, IDEMPOTENT AND A NO-OP WHERE THERE IS NOTHING TO DO ... A card account with no number is untouched throughout."
+    evidence:
+      - "ARM ONE, ONLY THE DECLARATION MOVES: MET. The whole migration is one statement at prisma/schema/migrations/20260827120000_canonical_account_iban_backfill/migration.sql:52 through :64, an UPDATE of accounts and nothing else: no transactions table, no counterparty column, no INSERT, DELETE, DROP, ALTER or TRUNCATE. Asserted at test/domain/canonical-backfill.test.ts:39 through :51, green in my npm test run, and confirmed by my own read of all 64 lines. My own run over a seeded household left every transaction row byte identical."
+      - "ARM ONE, THE MIRROR: NOT MET, and this is finding CR2-M3P18-01. The spec at test/e2e/canonical-backfill.spec.ts:216 compares only the renderings the harness writes and those are ASCII spaces only, so the assertion cannot fail on the four characters where the two expressions actually disagree. MEASURED here: Postgres [[:space:]] leaves U+00A0, U+2007, U+202F and U+FEFF in place while the JavaScript class removes all four, so a stored declaration separated with a no-break space is backfilled into a value the canonical probe still cannot match."
+      - "ARM TWO, THE DOOR OPENS: NOT WITNESSED anywhere. The arm is browser-driven, at test/e2e/canonical-backfill.spec.ts:307 onward, and the spec has never executed; my own run of the sibling browser test in this worktree died at sign-up for want of an auth service, and delivery/work-history/m3-p18.yaml:334 records suite-e2e as an error rather than a run. What I CAN witness is the mechanism either side of it: before my run of the migration a canonical probe did not match the spaced row and after it did, because the stored value had become BE11910000000001."
+      - "ARM THREE, VALIDITY IS NOT SMUGGLED IN: MET, witnessed by me. I ran the committed migration over a row stored in the harness's checksum-failing rendering; it was rewritten to BE82910000000002 and was neither refused nor nulled, and nothing in the 64 lines validates (test/domain/canonical-backfill.test.ts:65 asserts no mod97, checksum or validity text appears, green in my run). That the value really fails ISO 7064 is pinned at test/application/savings-held.test.ts:88 through :95, also green."
+      - "ARM FOUR, IDEMPOTENT AND A NO-OP: MET, witnessed by me. Three consecutive psql runs of the committed migration over the same seeded household reported UPDATE 5, then UPDATE 0, then UPDATE 0, and a full snapshot after the second run was identical to the snapshot after the first. Over a control household whose stored numbers were already canonical the run changed nothing. The card account's NULL number was untouched throughout, which the IS NOT NULL guard at prisma/schema/migrations/20260827120000_canonical_account_iban_backfill/migration.sql:54 makes structural."
+      - "AND THE MIGRATION DEPLOYS: npx prisma migrate deploy against a fresh database applied all seven migrations including this one, EXIT 0, so the new folder sits where package.json points prisma (prisma/schema) and its timestamp orders after 20260822070000."
+      - "Not met on the strength of arm one's hollow equivalence and arm two never having executed. Arms three and four are met and I witnessed them directly."
+    met: false
+  - id: "18.5"
+    quote: "ONE REAL ACCOUNT CANNOT BECOME TWO ROWS, AND A PAIR THAT ALREADY EXISTS IS LEFT DETECTABLE, NEVER GUESSED AT. THE TYPED HALF: the already-registered check compares CANONICAL forms ... an application test over a household whose stored number is non-canonical and whose typed number is canonical asserts the refusal and that no second row was created ... A domain test states what would otherwise follow ... THE MIGRATION HALF ... asserts the backfill of criterion 18.4 COMPLETES, leaves both rows of the pair byte identical to their seeded state and canonicalises every other row of that household, and asserts that one run of the committed detection script outputs exactly the pair's two row ids and no account number; a migration that rewrites one member, picks a winner, or dies on the unique index fails this criterion."
+    evidence:
+      - "THE TYPED HALF: MET, witnessed in my green npm test run. src/modules/accounts/application/register-accounts.ts:52 through :62 builds the known set over the canonical form of the STORED value and compares the typed row's canonical form against it. test/application/account-setup.test.ts:448 through :539 asserts the dangerous pair (stored spaced, typed compact) is refused with kind already-registered pointing at row 0 and that no second row is created, and asserts the reverse direction too."
+      - "THE DOMAIN TEST IS PRESENT AND GREEN: test/domain/canonical-backfill.test.ts:125 through :165 derives the declared sets from a spaced POT row and a compact RESERVE row, asserts the one canonical member sits in BOTH sets so both rows claim the same fact rows, and asserts classifyFlow returns RESERVE for a pot row moving money to it, which is the reserve arm winning first."
+      - "THE MIGRATION HALF: MET, witnessed by me directly rather than by reading. Over a household seeded with the harness's pair (test/e2e/seed-pre-phase-household.ts:82 through :95), the committed migration completed with UPDATE 5, did not die on the unique index, left BOTH members byte identical to their seeded state (one still spaced, one still compact), and canonicalised every other row of that household. A second household holding the same number was canonicalised independently, which shows the NOT EXISTS at prisma/schema/migrations/20260827120000_canonical_account_iban_backfill/migration.sql:56 through :64 is scoped per household rather than globally."
+      - "THE DETECTION SCRIPT: MET, witnessed by me. With PULSE_ALLOW_REMOTE_DB_IN_DEV unset, NODE_ENV development and DATABASE_URL pinned to the local cluster, npx tsx scripts/detect-account-collisions.ts EXIT 0. Stdout carried exactly two lines of space-separated row ids, one of them exactly my seeded pair's two ids; stderr carried only the group count and the note that stored numbers are deliberately not printed. No account-shaped string appeared anywhere in the output. The selection is a GROUPING over all rows (scripts/detect-account-collisions.ts:74 through :81), which is finding R2-M3P18-01 honoured, and the script imports only src/platform/db/guard.ts and src/platform/db/resolve-env.ts, which is R2-M3P18-02 honoured and is pinned at test/domain/canonical-backfill.test.ts:94 through :107."
+      - "THE PAIR IS NO WORSE OFF: because both members were left untouched, the pair's compact member remains the only exact match for a canonical probe both before and after the migration, so an import for that account lands where it always did. I confirmed both stored values are unchanged after two migration runs."
+      - "NOT WITNESSED: the browser arm of the typed half at test/e2e/canonical-backfill.spec.ts:160 through :182, for the same auth reason as everywhere else. The application-level test above asserts the same refusal over the same code path and is green, so the criterion's substance is witnessed rather than assumed."
+      - "RECORDED AGAINST THIS CRITERION RATHER THAN FAILING IT: the pair this criterion deliberately preserves already makes the reserves block show one movement twice (finding CR2-M3P18-02, measured), and the collision the script can see is narrower than the collision the typed check can see (finding CR2-M3P18-01, measured). Neither is what 18.5 asks of the artifact, so 18.5 stands met and the two findings carry the harm."
+    met: true
+  - id: "18.6"
+    quote: "npm run typecheck, npm run lint, npm test, npm run gate:tokens, npm run gate:privacy and npm run gate:decisions all exit 0, and npm run test:e2e exits 0 with the new specs reporting their tests as passed. Every account-shaped identifier the phase adds anywhere in the tree ... is in test/fixtures/allowed-identifiers.txt with a note saying how it was invented, in the same commit that introduces it ... The phase work history carries the captured output of the verification-first step, one block per claim and per baseline that step enumerates, each showing the command and its output rather than a restatement of the conclusion; a claim or baseline listed in step 1 with no captured output under it fails this criterion. And the work history records that every new fixture and every new line of copy was read back line by line against the real documents before commit."
+    evidence:
+      - "THE SIX FAST GATES: MET, all six run by me at 85da7f6 in this worktree. typecheck EXIT 0; lint EXIT 0; npm test EXIT 0 with \"Test Files  50 passed (50)\" and \"Tests  678 passed (678)\"; gate:tokens EXIT 0; gate:privacy EXIT 0 printing \"gate:privacy clean\"; gate:decisions EXIT 0 printing \"gate:decisions clean\"."
+      - "npm run test:e2e: NOT MET. It has not exited 0 anywhere. delivery/work-history/m3-p18.yaml:334 through :341 records gate suite-e2e as result: error with no wrapper exit code, naming the missing Docker-based auth service. In this container a database IS reachable and I used it, but there is still no auth service, and my run of the criterion 18.2 browser test EXITED 1 at sign-up. The one slow-gate spec that drives no browser passed for me, EXIT 0, 1 passed, which is exactly the subset the implementer also witnessed and is not the gate this criterion names."
+      - "THE ALLOW LIST: MET. Every account-shaped value the phase introduces is listed with a written provenance note in the same commit that introduces it (e14e3d0): test/fixtures/allowed-identifiers.txt gained BE11910000000001, BE54910000000003, BE27910000000004, BE97910000000005 and BE82910000000002 with a paragraph explaining the invented run and the computed check digits. I checked each of the eight numbers the new harness, the two new fixtures and the new specs use, one grep per number, all present exactly once. npm run gate:privacy exits 0 over the whole tree."
+      - "THE WORK HISTORY'S CAPTURED OUTPUT: NOT MET, on two counts. First, three of step 1's enumerated captures carry no command and no output at all: the baseline refusal of the non-canonical stored account's statement, the retype-creates-a-second-row trap, and the full MonthFigures of the seeded household appear at delivery/work-history/m3-p18-notes.md:87 through :104 as environment-limited pointers to specs rather than as captures, and the criterion says a baseline listed in step 1 with no captured output under it fails. Second, captures B and C at delivery/work-history/m3-p18-notes.md:39 through :57 show no command at all: they are prose naming file line ranges, which is the restatement-of-the-conclusion shape the criterion's own sentence rules out. Captures A, D and E do carry commands and output."
+      - "AND ONE CAPTURE THAT CLAIMS TO EXIST DOES NOT: delivery/work-history/m3-p18.yaml:420 through :422 says the 42-line witness output is preserved verbatim in the notes under a named heading. It is not: that section at delivery/work-history/m3-p18-notes.md:205 through :231 is a prose summary, and a grep for lines beginning ok over the whole notes file returns 0. See finding CR2-M3P18-03."
+      - "THE READ-BACK RECORD: NOT MET. A case-insensitive grep for \"read back\", \"read it back\" and \"line by line\" over delivery/work-history/m3-p18.yaml and delivery/work-history/m3-p18-notes.md returns no hit, so the sentence the criterion requires is absent. I did the reading myself instead and record it as mine, not as the phase's: test/fixtures/savings-statement.csv and test/fixtures/pre-phase-current.csv carry only invented account numbers that are on the allow list, plus generic Dutch descriptors and invented counterparty names, and the six new catalogue strings in the three message files carry no amount, no date and no counterparty."
+    met: false
+
+deviations-judged:
+  - deviation: files-to-touch (M3-P18 declaration)
+    serves-plan-intent: true
+    reasoning: "The first declared deviation is src/modules/overview/application/index.ts, the overview module's composition root, edited to bind the new listHeldRows port method. I diffed it: three added lines, two type re-exports and one binding at src/modules/overview/application/index.ts:57. The declaration names src/modules/overview/application/ports.ts as the held read's home, and a port method that is declared but not bound does not compile, so the omission is a gap in the declaration rather than a widening of scope. No behaviour beyond the declared held read arrives with it."
+  - deviation: files-to-touch (M3-P18 declaration)
+    serves-plan-intent: true
+    reasoning: "The second covers comment-only edits to src/modules/ledger/domain/ledger-transaction.ts and src/platform/account-number.ts. I diffed both: src/modules/ledger/domain/ledger-transaction.ts:35 through :44 rewrites the sentence saying reserve statements are not imported, which DR-0030 made false and clause R-087 requires correcting in place loudly; src/platform/account-number.ts:51 through :60 grows the mechanism-sibling list with the new consumer and the two new SQL mirrors. Neither changes a line of executable code, and both are obligations the phase's own clauses impose. Serving the intent, and the tree would be worse without them. I note against the second that the list it grows now names two mirrors that measurably do not mirror, which is finding CR2-M3P18-01 rather than a fault of the deviation."
+  - deviation: step 1 ordering (capture before any other edit)
+    serves-plan-intent: true
+    reasoning: "The database-dependent captures could not precede editing because no database existed in the implementer's container at the time; the static captures were taken first as ordered and the database captures were taken later against a locally started Postgres. I judge the deviation itself sound: the ordering exists so a baseline is not measured against already-changed code, and the later captures were taken over the COMMITTED harness and the COMMITTED migration text, which is the property the ordering protects, and I reproduced most of them myself at this head. What the deviation does not excuse is the three baselines never captured in any order, and that is recorded as criterion 18.6 not met rather than as a fault of this deviation."
