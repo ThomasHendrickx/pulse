@@ -250,3 +250,18 @@ may take instead of assuming a number.
     gate:decisions   exit 0
     gate:tokens      exit 0
     npm run build    exit 0
+
+## THE AFTER LIST: the slow gate is green
+
+    npm run test:e2e   exit 0
+    118 passed, 0 failed, 1 skipped, 30.0 minutes, 119 discovered
+
+Nothing is red. The one skipped test is skipped by its own condition and
+was skipped in the baseline too: pressed-and-disabled.spec.ts:1780 declares
+test.skip when the project has no touch emulation, and it runs under the
+phone projects.
+
+The database was truncated to empty before this run and every command was
+pinned to 127.0.0.1:54322 with the host asserted before it ran. No command
+in this lane reached a deployed database. prisma migrate reset was never
+run and no owner-consent variable was set.
