@@ -16,10 +16,23 @@ export type CountedGroupRow = {
   readonly merchantName: string | null;
   readonly primaryTag: string | null;
   readonly counterpartyText: string;
+  // M3-P12: the counterparty ACCOUNT the read now returns beside the text,
+  // so this fold can key on the same counterparty IDENTITY the merchant
+  // review keys on. Null where the row carries none.
+  readonly counterpartyAccount: string | null;
   readonly isCash: boolean;
   readonly totalCents: Cents;
   readonly rowCount: number;
 };
+
+// The counterparty identity as this fold consumes it. STRUCTURAL on purpose:
+// the derivation lives in the merchants domain and is injected by the
+// application layer, exactly as the normaliser it replaces was, so the
+// overview module still imports nothing from merchants.
+export type CountedGroupIdentity = (input: {
+  readonly description: string;
+  readonly counterpartyAccount?: string;
+}) => { readonly key: string; readonly basis: "account" | "descriptor" };
 
 export type OverviewGroupKind = "tag" | "merchant" | "cash" | "unresolved";
 
@@ -50,6 +63,7 @@ export const foldGroups = (
   options: {
     readonly useTags: boolean;
     readonly normalise: (text: string) => string;
+    readonly identity: CountedGroupIdentity;
   },
 ): readonly OverviewGroup[] => {
   const groups = new Map<
@@ -77,10 +91,26 @@ export const foldGroups = (
       kind = "merchant";
       label = row.merchantName ?? "";
     } else {
-      const normalised = options.normalise(row.counterpartyText);
-      key = `text:${normalised}`;
+      // The unresolved key is the counterparty IDENTITY, still under this
+      // fold's own `text:` prefix so the overview's four key spaces stay
+      // disjoint. The identity key carries its own namespace inside it, so
+      // an account group and a descriptor group can never collide.
+      const normalisedText = options.normalise(row.counterpartyText);
+      const identity = options.identity({
+        description: row.counterpartyText,
+        ...(row.counterpartyAccount === null
+          ? {}
+          : { counterpartyAccount: row.counterpartyAccount }),
+      });
+      key = `text:${identity.key}`;
       kind = "unresolved";
-      label = normalised;
+      // THE LABEL IS UNCHANGED BY M3-P12: still the normalised counterparty
+      // text. An account-basis group now holds several of them, and the one
+      // shown is the lexicographically smallest, which is the same rule the
+      // merchant review builder applies, so the two screens agree without
+      // depending on the order rows leave SQL in. Naming the group properly
+      // is decision D-41 and belongs to M3-P13.
+      label = normalisedText;
     }
     const existing = groups.get(key);
     if (existing === undefined) {
@@ -93,6 +123,9 @@ export const foldGroups = (
     } else {
       existing.total += row.totalCents;
       existing.rowCount += row.rowCount;
+      if (kind === "unresolved" && label < existing.label) {
+        existing.label = label;
+      }
     }
   }
   return [...groups.entries()]

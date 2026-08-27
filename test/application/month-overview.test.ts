@@ -5,7 +5,10 @@ import { fixedClock } from "@/platform/clock";
 import { cents } from "@/platform/money";
 import { plainDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
-import { normaliseCounterparty } from "@/modules/merchants/application";
+import {
+  counterpartyIdentity,
+  normaliseCounterparty,
+} from "@/modules/merchants/application";
 import { getMonthOverviewWith } from "@/modules/overview/application";
 import type {
   CountedGroupRow,
@@ -67,6 +70,7 @@ const fakeWorld = (byMonth: Record<string, MonthData>) => {
   const deps: OverviewDependencies = {
     overview,
     clock: fixedClock(new Date("2026-09-15T12:00:00Z")),
+    counterpartyIdentity,
     normaliseCounterparty,
   };
   return { deps, reads };
@@ -77,6 +81,7 @@ const incomeRow = (totalCents: number): CountedGroupRow => ({
   merchantName: null,
   primaryTag: null,
   counterpartyText: "Acme Salaris BV",
+  counterpartyAccount: null,
   isCash: false,
   totalCents: cents(totalCents),
   rowCount: 1,
