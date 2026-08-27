@@ -38,22 +38,17 @@
 # ATTACK DIRECTIONS (progress board, updated as the review runs)
 # ==========================================================
 # A1  busy state that NEVER CLEARS                                PROBED, see P5/P6
-# A2  busy state that NEVER APPEARS: hydration delay, listener
-#     attaching after the press, a submit control outside the
-#     mechanism                                                  not-yet-probed
-# A3  double submission while busy (H10.5)                       not-yet-probed
-# A4  the busy signal LYING: shown for an action that already
-#     failed or already completed                                not-yet-probed
+# A2  busy state that NEVER APPEARS                               PROBED, see P14
+# A3  double submission while busy (H10.5)                        PROBED, see P12
+# A4  the busy signal LYING                                       PROBED, see P14
 # A5  interaction with the M3-P9 machinery                        PROBED, see P9/P10/P11
 # A6  reduced-motion behaviour                                   PROBED, see P8
 # A7  client boundary width and import closure (H10.2)           PROBED, see P1/P2
 # A8  the phase's own e2e spec going VACUOUS through project
 #     membership, testIgnore or prod-only projects               not-yet-probed
-# A9  the hidden counterpartyText field (H10.7) and the copy
-#     gate glob (H10.10)                                         not-yet-probed
-# A10 scope discipline: new dependency, new stylesheet rule
-#     (H10.6)                                                    not-yet-probed
-# A11 gates and build run by this lane with DB env pinned        not-yet-probed
+# A9  counterpartyText (H10.7) and the copy gate (H10.10)         PROBED, see P15
+# A10 scope discipline, dependencies, pinned paths (H10.6)        PROBED, see P16
+# A11 gates and build run by this lane                            PROBED, see the gates table
 #
 # ==========================================================
 # PROBES, in the order run (output captured at run time)
@@ -266,13 +261,788 @@
 #      control grows from 64.36 to 82.36 CSS pixels wide when the mark
 #      appears, so a press reflows the row it sits in.
 #
+#
+# P14. THE APPEAR AND THE LIE DIRECTIONS.
+#      (a) NO CONTROL IS OUTSIDE THE MECHANISM. Nine submit controls exist
+#      (P4); eight render through src/platform/ui/submit-button.tsx and the
+#      ninth carries the same aria-busy plus disabled from its own
+#      transition flag. Every Link in the tree that the plan's categories
+#      name, and four it does not (the two back-to-import links and the two
+#      alternate-auth links), render LinkPending as a child.
+#      (b) THE ONE PLACE NO BUSY STATE APPEARS IS CORRECT AND IS RECORDED
+#      IN THE SPEC ITSELF (test/e2e/busy-state.spec.ts:378 through :390): a
+#      control whose form has a `required` field the browser refuses on
+#      sends no request, so nothing is in flight and nothing should light
+#      up. Both the preview-again submit and the merchant naming submit sit
+#      behind a required field.
+#      (c) THE BUSY STATE IS FORM-WIDE, so on the ONE two-control form
+#      (src/modules/import/ui/profile-confirmation.tsx:187 and :218)
+#      pressing either control marks BOTH. This is deliberate, is argued at
+#      submit-button.tsx:46 through :55 against the stale-armed-flag
+#      alternative, and criterion 10.3 admits either answer. It is not a
+#      lie in the sense this direction hunts: no control is marked busy for
+#      an action that is over. The stale-flag shape the leaf rejected is
+#      the one that would have been.
+#      (d) NOT WITNESSED HERE: the hydration window. Before hydration a
+#      press falls through to the framework's progressive-enhancement
+#      submission and no client leaf has mounted, so no busy state can
+#      appear. Nothing in the phase measures that window and this lane
+#      cannot open it without a server.
+#
+# P15. H10.7 AND H10.10 ARE BOTH CLEAR.
+#      git show 785e611 -- src/modules/merchants/ui/merchant-review.tsx is
+#      a three-line change swapping the raw button for the leaf. The hidden
+#      field at :51 through :55 still carries value={group.counterpartyText}
+#      UNMASKED; maskCardNumbers is applied only to the display span at :45.
+#      git diff --name-only 785e611^ d7db0ff -- test/e2e/merchants.spec.ts
+#      test/e2e/golden-journey.spec.ts prints nothing, so neither spec's
+#      assertions were weakened.
+#      eslint.config.mjs's glob is now
+#      ["src/modules/**/ui/**/*.tsx", "src/platform/ui/**/*.tsx"] and the
+#      red witness is captured with both runs at
+#      delivery/work-history/m3-p10-notes.md:11 through :22, naming the file
+#      and the react/jsx-no-literals rule at exit 1 and exit 0 reverted.
+#
+# P16. SCOPE DISCIPLINE HOLDS.
+#      git show --stat 785e611 d7db0ff -- package.json package-lock.json
+#      prints NOTHING, so the phase adds no dependency (H10.6 clear).
+#      git diff --name-only 785e611^ d7db0ff -- styles/ src/app/globals.css
+#      messages/ prisma/ test/fixtures/ 'src/modules/*/application/'
+#      'src/modules/*/domain/' 'src/modules/*/adapters/'
+#      src/platform/ui/amount.tsx src/platform/ui/mask-card-number.ts
+#      prints NOTHING, so every path criterion 10.7 pins is untouched: this
+#      phase consumed M3-P9's stylesheet and contributed nothing back.
+#      grep -rn "useOptimistic" src/ returns nothing (H10.3 clear).
+#
+# P17. NO ERROR AND NO LOADING BOUNDARY EXISTS.
+#      find src/app -name "error.tsx" -o -name "global-error.tsx" -o
+#      -name "loading.tsx" returns nothing. So there is no route-level
+#      place for a failed action to land, which is the context for finding
+#      HZ-M3P10-04, and no loading boundary for a prefetched dynamic route
+#      to render behind, which is the fact criterion 10.1 asked the phase to
+#      discover and which decides criterion 10.5's branch.
+#
+# ==========================================================
+# GATES, RUN BY THIS LANE at e499d64 in /home/user/wt-m3p10-haz, Node from
+# /opt/nvm, DATABASE_URL and DIRECT_URL pinned in the invoking shell to an
+# INVENTED localhost string (127.0.0.1 port 55999, a database name that
+# exists nowhere), the parsed host printed by node and read 127.0.0.1
+# before the first gate ran. The worktree's node_modules was EMPTY on
+# arrival (364 stub directories, 2.1MB) and npm ci was run first, exit 0.
+# ==========================================================
+#   npm run typecheck       EXIT=0
+#   npm run lint            EXIT=0
+#   npm test                EXIT=0   50 files, 679 tests, 0 skipped
+#   npm run gate:privacy    EXIT=0   "gate:privacy clean"
+#   npm run gate:decisions  EXIT=0   "gate:decisions clean"
+#   npm run gate:tokens     EXIT=0
+#   npm run build           EXIT=0   production bundle built, eleven routes,
+#                           103 kB shared first-load JS
+#   npm run test:e2e        NOT RUN HERE: no Docker daemon in this
+#                           container, so no local Supabase auth service and
+#                           no seeded database. Every journey in
+#                           test/e2e/busy-state.spec.ts starts with a real
+#                           sign-up, so all three of its tests are
+#                           unreachable from this lane and the interval,
+#                           double-press and navigation measurements are
+#                           NOT WITNESSED here. What this lane witnessed
+#                           instead is the DOM and computed-style half, in a
+#                           real chromium over the head's real stylesheet
+#                           (P9 through P13), which is where every finding
+#                           below comes from.
+#
 kind: verdict
 phase: M3-P10
-verdict: IN-PROGRESS
+verdict: FIX-ROUND-NEEDED
 produced-by: claude-family
 framing: destructive-paths
 review-contract: hazard
-findings: []
-criteria: []
-deviations-judged: []
-hazard-classes-addressed: []
+
+findings:
+  - id: HZ-M3P10-01
+    severity: high
+    analysis: >-
+      LIVE IN PRODUCTION TODAY. The phase exists to make a press visibly
+      acknowledged. What it actually renders is the product's own DISABLED
+      appearance, and the busy mark that is supposed to say "working" is
+      below any visibility threshold. src/platform/ui/submit-button.tsx sets
+      disabled={pending} at :98 and aria-busy at :99 on the SAME element.
+      M3-P9's stylesheet declares those as two different states with two
+      different appearances, and their selectors are not equal: button:disabled
+      at src/app/globals.css:1590 has specificity (0,1,1) and
+      [aria-busy="true"] at :1687 has (0,1,0), so the disabled rule wins every
+      property they share. Measured in chromium on a button carrying the
+      shipped .merchant-name-button class, the busy control computes opacity
+      0.55, cursor default, background --color-surface-disabled and colour
+      --color-ink-disabled; the busy appearance the stylesheet designed
+      (opacity 0.7, cursor progress, the control's own colours) is unreachable
+      through the shipped leaf. The mark then inherits currentColor, which is
+      now the disabled ink, sits inside an element painted at 0.55, and
+      animates its own opacity between 0.25 and 1, giving a measured contrast
+      against the button it sits on of 1.09:1 at the cycle's low point and
+      1.43:1 at its peak, against a 3:1 floor for a meaningful non-text
+      graphic. So the owner, who complained twice about this exact surface,
+      presses and sees the control go flat pale grey with no perceptible
+      motion in it: the product's own vocabulary for UNAVAILABLE, on a control
+      that is in fact working. Every criterion stays green because 10.3 asks
+      only that ::after content is not "none" and 10.2(c) asks only that the
+      computed appearance CHANGED, and it does change, into the wrong state.
+      Nothing in the phase work history mentions specificity, cursor, contrast
+      or the collision at all.
+    evidence:
+      - "src/platform/ui/submit-button.tsx:98 and :99 set disabled and aria-busy on one element"
+      - "src/app/globals.css:1590 button:disabled (0,1,1) versus :1687 [aria-busy=\"true\"] (0,1,0); the disabled rule is declared first and still wins on specificity"
+      - "chromium over the head's real stylesheet, probe P9: at rest opacity 1 / cursor pointer / bg oklch(0.23 0.008 265); busy opacity 0.55 / cursor default / bg oklch(0.91 0.005 265) / color oklch(0.7 0.007 265); aria-busy alone opacity 0.7 / cursor progress"
+      - "chromium colour compositing through a canvas 2D context, probe P10: page rgb(252,250,247), button as painted rgb(236,236,237), mark rgb(227,227,228) at animation opacity 0.25 and rgb(199,199,201) at 1.0, contrast 1.09:1 and 1.43:1"
+      - "grep -in \"specificity|cursor: progress|contrast\" over delivery/work-history/m3-p10.yaml and m3-p10-notes.md returns nothing"
+    concrete-fix: >-
+      Stop letting the disabled rule dress the busy control. Two edits, both
+      small and both in files this phase already owns the relationship with.
+      (1) In src/app/globals.css raise the busy selector above the disabled
+      one for the properties they share, by qualifying it the same way the
+      disabled rule is qualified: add button[aria-busy="true"],
+      button:disabled[aria-busy="true"] to the busy rule's selector list so it
+      carries at least (0,2,1), and give it an explicit background-color and
+      color so a busy control keeps its own surface instead of taking
+      --color-surface-disabled. (2) Give the mark a colour that does not
+      depend on currentColor resolving to a disabled ink: set background-color
+      on [aria-busy="true"]::after to a token that contrasts at 3:1 or better
+      against the busy control's own surface, adding it to styles/tokens.css
+      first, and raise the animation's floor from 0.25 so the low point of the
+      cycle stays above that threshold. Then add to
+      test/e2e/busy-state.spec.ts, inside the existing 1000ms settle window
+      the spec already opens, an assertion that the pressed control's computed
+      background-color is NOT --color-surface-disabled and that the composited
+      contrast between getComputedStyle(control, "::after").backgroundColor
+      and the control's own background is at least 3:1, so this cannot
+      regress silently. Note that this fix touches the stylesheet, which
+      criterion 10.7 pins to an empty diff for M3-P10; that pin belongs to the
+      merged phase and the fix round should record the stylesheet edit as its
+      own deliberate change rather than pretend the pin still holds.
+
+  - id: HZ-M3P10-02
+    severity: medium
+    analysis: >-
+      LIVE IN PRODUCTION TODAY. Every press of every submit control in the
+      product destroys keyboard focus. The leaf sets disabled={pending} on the
+      control that was just activated; a focused element that becomes disabled
+      is removed from the tab order and the browser moves focus to
+      document.body. Measured in chromium: activeElement goes from the button
+      to BODY and the control is no longer tabbable. Nothing in the leaf, in
+      any caller, or in the spec restores it. The worst case is the merchant
+      naming submit, which is both the control the owner presses most and the
+      only one whose action revalidates in place rather than navigating: after
+      each name the keyboard user is at document.body and must tab from the
+      top of the document to reach the next row, and there are five unresolved
+      groups in the committed fixture. On the assistive-technology path the
+      phase therefore delivers the opposite of its purpose: aria-busy on an
+      unfocused, disabled control is not a live region and is announced to
+      nobody, so the press produces no acknowledgement at all. M3-P9's
+      stylesheet comment at src/app/globals.css:1616 through :1626 explicitly
+      handed M3-P10 the keyboard half of this state and the phase answered
+      only the activation half of it.
+    evidence:
+      - "src/platform/ui/submit-button.tsx:98, disabled={pending} on the control that was pressed"
+      - "chromium, probe P11: focus a button then set disabled = true; activeElement before \"focusme\", after \"BODY\", stillTabbable false"
+      - "src/modules/merchants/ui/merchant-review.tsx:51, the naming form posts assignMerchantAction and the screen revalidates in place; test/e2e/merchants.spec.ts:54 pins five unresolved groups"
+      - "src/app/globals.css:1616 through :1626, M3-P9 naming the keyboard half as M3-P10's to own"
+      - "grep -in \"focus|activeElement\" over delivery/work-history/m3-p10.yaml and m3-p10-notes.md returns nothing"
+    concrete-fix: >-
+      In src/platform/ui/submit-button.tsx keep the control FOCUSABLE while
+      refusing the activation, rather than using the native disabled
+      attribute alone. Replace disabled={pending} with aria-disabled={pending
+      ? "true" : undefined} plus an onClick that calls preventDefault and
+      returns when pending is true, which is exactly the split M3-P9's comment
+      at globals.css:1618 through :1621 describes and which keeps the element
+      in the tab order and focused. Because aria-disabled alone does NOT stop
+      the browser's own implicit form submission from Enter on a focused
+      submit button, ALSO keep a guard in the same handler for the keyboard
+      path, and verify the request count stays at one. Then extend
+      test/e2e/busy-state.spec.ts's existing per-control measurement with two
+      assertions inside the 1000ms window: document.activeElement is still the
+      pressed control, and the route handler's request count is still exactly
+      1 after a second Enter press. If the fix round judges aria-disabled too
+      risky against criterion 10.4, the alternative that keeps disabled is to
+      move focus deliberately rather than lose it: focus a live region that
+      announces the busy state, and return focus to the control (or to the
+      next row's field, on the naming form) when pending clears.
+
+  - id: HZ-M3P10-03
+    severity: medium
+    analysis: >-
+      LIVE IN PRODUCTION TODAY, as an unguarded deployment rather than a
+      witnessed misbehaviour. Criterion 10.3's second half asks that, for EACH
+      submit control, after the response is released and the resulting
+      navigation or revalidation settles, no element in the document carries
+      aria-busy="true". The spec contains exactly one assertion of that shape
+      and it cannot fail. It sits at test/e2e/busy-state.spec.ts:444, at the
+      very end of the nine-press sequence, immediately after the SIGN-IN
+      submit, whose server action redirects into the application shell. By the
+      time the locator is evaluated the document has been replaced and holds
+      no control that was ever pressed, so the assertion passes whatever the
+      leaf does. This is the vacuity class this project has already been
+      bitten by twice, in a different disguise: not a spec excluded by project
+      membership, but an assertion placed where its subject cannot exist. The
+      consequence is that the entire "busy state that never clears" hazard is
+      unmeasured for all nine controls, and it is unmeasured precisely on the
+      controls where it would matter, the ones that revalidate in place
+      (merchant naming, the ring switch) rather than navigating away.
+    evidence:
+      - "grep -n 'aria-busy' test/e2e/busy-state.spec.ts returns four lines: :159 (the observed attribute list), :255 and :302 (asserting busy IS present at 1000ms) and :444, the only clears-assertion"
+      - "test/e2e/busy-state.spec.ts:444, await expect(page.locator('[aria-busy=\"true\"]')).toHaveCount(0), preceded at :412 through :419 by the sign-in press whose action redirects"
+      - "test/e2e/busy-state.spec.ts:262, pressAndMeasure waits DELAY_MS + 500 after each press and returns no post-response reading, so no per-control clears value is ever collected"
+      - "plan criterion 10.3 asks for this \"for each of the seven submit controls\""
+    concrete-fix: >-
+      Move the check inside the per-control measurement instead of leaving it
+      at the end of the journey. In pressAndMeasure, after the existing
+      page.waitForTimeout(DELAY_MS + 500) that lets the delayed response
+      through, read and return two more values: whether the PRESSED control
+      still carries aria-busy and is still unpressable (guarded for the case
+      where it has been detached by a navigation, which is a pass), and the
+      document-wide count of [aria-busy="true"]. Then assert both in
+      assertAcknowledged, so every one of the nine controls is checked rather
+      than none. Add one control specifically for the revalidate-in-place
+      path: press the merchant naming submit, let the response through, and
+      assert the newly rendered naming control for the NEXT row is pressable
+      and carries no aria-busy.
+
+  - id: HZ-M3P10-04
+    severity: medium
+    analysis: >-
+      LIVE IN PRODUCTION TODAY. The one submit control that does not render
+      through the shared leaf ties its busy and disabled state to a promise
+      whose rejection path is unwritten. src/modules/accounts/ui/account-setup-form.tsx
+      submits through an onSubmit handler and startTransition(async () => {
+      setState(await registerAccountsAction(INITIAL, data)); }) with no catch
+      and no finally, and the button at :291 through :295 reads disabled={pending}
+      and aria-busy={pending ? "true" : undefined} off that transition. If the
+      call rejects rather than returning a refusal, which on the owner's phone
+      means a dropped connection mid-submit, setState is never reached and
+      whether pending clears is the framework's business rather than this
+      file's. There is nowhere for that error to land either: find over
+      src/app for error.tsx, global-error.tsx and loading.tsx returns nothing,
+      so no route-level boundary exists. Nothing exercises the path: the only
+      press of this control in the suite is on the happy path at
+      test/e2e/busy-state.spec.ts:353, and the only clears-assertion in the
+      file is the vacuous one finding HZ-M3P10-03 describes. This lane could
+      NOT witness what React actually does with a rejected async transition
+      here, because that needs a running server and an auth service this
+      container has no Docker for; the finding is that the phase shipped a
+      busy state whose failure path is neither written nor tested, not that a
+      stuck spinner was observed.
+    evidence:
+      - "src/modules/accounts/ui/account-setup-form.tsx:148 through :154, the onSubmit handler and the uncaught async transition"
+      - "src/modules/accounts/ui/account-setup-form.tsx:291 through :295, disabled={pending} and aria-busy driven by that transition"
+      - "find src/app -name error.tsx -o -name global-error.tsx -o -name loading.tsx returns nothing (probe P17)"
+      - "test/e2e/busy-state.spec.ts:353, the sole press of register-accounts, on the happy path only"
+    concrete-fix: >-
+      Give the transition an explicit failure path in
+      src/modules/accounts/ui/account-setup-form.tsx: wrap the awaited call in
+      try/catch inside the transition, set a refusal state the form already
+      knows how to render on catch, and let the transition end either way, so
+      pending clears on both branches by construction rather than by
+      framework behaviour. Then add a test that presses the control with the
+      action made to reject (a Playwright route handler fulfilling the
+      server-action POST with a 500), and assert that within a bounded window
+      the control is pressable again and carries no aria-busy. If the fix
+      round would rather not add a case to the e2e suite, the same assertion
+      is reachable in the fast gate against the component with the action
+      stubbed to reject.
+
+  - id: HZ-M3P10-05
+    severity: low
+    analysis: >-
+      A documentation and instrument defect, live only in the record. Criterion
+      10.6(a) names `grep -rln "use client" src/` as its own instrument, and on
+      the deployed head that command returns FIVE paths while only FOUR files
+      open the boundary: src/app/layout.tsx matches on the phrase inside
+      M3-P9's comment "WHY A SCRIPT AND NOT A CLIENT COMPONENT ... a \"use
+      client\" file would open", not on a directive. This lane's own first
+      pass read the grep at face value and was wrong, which is the point: the
+      criterion's stated instrument cannot answer the criterion's question,
+      and any later phase re-running it will reach the same wrong answer. The
+      phase itself replaced the grep with a directive-aware closure walk in the
+      fast gate (test/app/client-boundary.test.ts), which is the right
+      instrument and is the reason the phase's own count is correct, but the
+      criterion text was never updated to say so and the work history's third
+      deviation records "FOUR files carry the directive" without noting that
+      the criterion's own command disagrees.
+    evidence:
+      - "grep -rln \"use client\" src/ returns five paths on e499d64"
+      - "per-file directive check (head -1 of each match): four DIRECTIVE, src/app/layout.tsx MENTION ONLY, its first occurrence at line 25 with six non-comment lines above it"
+      - "test/app/client-boundary.test.ts:166 through :171 asserts the client file list BY NAME as exactly four, and src/app/layout.tsx is correctly absent"
+      - "delivery/work-history/m3-p10.yaml, third deviation, claims four without reconciling the grep"
+    concrete-fix: >-
+      In delivery/plan/pulse-v02.yaml, criterion 10.6(a), replace the `grep
+      -rln` instrument with the closure walk the phase actually shipped: state
+      that the client file list is the one asserted by name in
+      test/app/client-boundary.test.ts and that a bare grep over the tree is
+      not admissible because it counts comments. Because 10.6(a) belongs to a
+      merged phase, the honest place for that edit is the next plan revision
+      rather than a silent rewrite; at minimum add a sentence to
+      delivery/work-history/m3-p10.yaml's third deviation recording that the
+      criterion's own command returns five and why the fifth is not a client
+      file, so the next reader does not re-derive it.
+
+  - id: HZ-M3P10-06
+    severity: low
+    analysis: >-
+      Criterion 10.9(b) is still NOT WITNESSED, and the escape clause the
+      criterion provides does not cover the reason it was skipped. The
+      criterion says the whole-worktree probe grep may be recorded as not
+      witnessed "if the real statements are ABSENT from the executing
+      container". The work history's fifth deviation records something
+      different: the real uploads WERE present and the implementing agent's
+      environment refused the read. So the criterion's condition for a
+      not-witnessed record was not the condition that occurred, and the work
+      history itself calls half (b) "a review-time task". This lane cannot
+      close it either: it has no access to the owner's real statements. What
+      this lane did run is the mechanical half, npm run gate:privacy at exit 0,
+      and a read of the phase's own added lines and notes for data shapes,
+      which found only millisecond figures. CLAUDE.md non-negotiable 8 says
+      plainly that the gate does not see a merchant name or a place name and
+      that two real merchant descriptors have already reached this public
+      repository that way, so recording the residue precisely matters more
+      than the gate's exit code.
+    evidence:
+      - "npm run gate:privacy EXIT=0, \"gate:privacy clean\", run by this lane at e499d64 with DATABASE_URL pinned to an invented localhost"
+      - "delivery/work-history/m3-p10.yaml, fifth deviation, records half (b) as NOT WITNESSED with the reason that the read was blocked, not that the statements were absent"
+      - "grep for identifier, card-number, thousands-form amount and date shapes over delivery/work-history/m3-p10-notes.md returns only the millisecond measurement table at :180 through :189"
+      - "plan criterion 10.9(b) admits a not-witnessed record only when the real statements are absent from the executing container"
+    concrete-fix: >-
+      Run half (b) once, in a container that can read the owner's real
+      statements, and record the result against phase M3-P10 in
+      delivery/work-history/m3-p10.yaml: build the identifier, holder-name,
+      merchant-string, thousands-form amount and date probes from those files,
+      grep the whole worktree and the phase's added lines with them, and
+      record exit 1 with the command beside it. Do not commit the probes. If
+      no container can read them, change criterion 10.9(b)'s escape clause in
+      the next plan revision so it names the blocked-read case as well as the
+      absent-file case, rather than leaving a criterion whose only admissible
+      answers are green and a condition that did not occur.
+
+  - id: HZ-M3P10-07
+    severity: low
+    analysis: >-
+      LIVE IN PRODUCTION TODAY, cosmetic. The busy mark is a pseudo-element
+      added to the control's inline flow, with width --space-5 and margin-left
+      --space-4 and no space reserved for it at rest, so a submit control
+      grows when it is pressed: measured in chromium, a shipped
+      .merchant-name-button goes from 64.36 to 82.36 CSS pixels wide. On the
+      merchant review screen, which renders one such control per unresolved
+      row on a 390 pixel viewport, a press reflows the row it sits in at the
+      moment the owner is looking at it. The navigating controls do not have
+      this problem because .month-nav is a fixed 46 by 46 tap target and the
+      18 by 10 marker fits inside it.
+    evidence:
+      - "src/app/globals.css:1695 through :1708, the ::after mark with width var(--space-5) and margin-left var(--space-4), present only while aria-busy is set"
+      - "chromium, probe P2 geometry: .merchant-name-button at rest 64.359375 px wide, the same control busy 82.359375 px, both height 29 px, overflow visible"
+      - "chromium, probe P2: .month-nav 46 by 46 both with and without the marker; the marker's box is 18 by 10 with markRight 35.59 inside linkRight 46"
+    concrete-fix: >-
+      Reserve the mark's box at rest instead of inserting it on press. In
+      src/app/globals.css give the controls that can become busy a
+      ::after that is always laid out at the same width, margin and height and
+      is merely invisible until aria-busy is set (opacity 0 plus the existing
+      transition, rather than content: none), so the control's width is the
+      same in both states. Then assert it: in test/e2e/busy-state.spec.ts read
+      the pressed control's bounding rect immediately before the click and
+      again inside the 1000ms window and require the width to be unchanged.
+
+criteria:
+  - id: "10.1"
+    quote: >-
+      The phase work history records an answer to each of the SEVEN
+      verification-first questions with the command and its captured output
+      beside it.
+    met: true
+    evidence:
+      - "delivery/work-history/m3-p10.yaml carries report-code-disagreement entries lettered (a) through (g), each naming a command"
+      - "entry (f) records that src/modules/ledger/ui/actions.ts is behind no rendered control, verified independently here: grep for recomputeAction across src/ and test/ finds no importer of the ui action"
+      - "entry (g) records the production-mode server serving the journey without PULSE_FIXED_NOW; playwright.config.ts:35 through :39 strips it, confirmed by this lane"
+      - "the loading-boundary question added in fix round 2 is confirmed independently: find src/app for loading.tsx returns nothing (probe P17)"
+  - id: "10.2"
+    quote: >-
+      THE INTERVAL BETWEEN THE PRESS AND THE FIRST DOM CHANGE, AND THE CHANGE
+      MUST BE ONE A READER COULD SEE.
+    met: true
+    evidence:
+      - "test/e2e/busy-state.spec.ts:111 through :160, the observer is scoped to the pressed control's nearest ancestor form and discards every record outside the pressed control's subtree, with the attribute list at :159 restricted to aria-busy, aria-disabled, disabled and class"
+      - "assertAcknowledged at :282 through :312 asserts intervalMs <= 200, kind not \"none\", appearanceChanged true, requests == 1 and releaseGapMs >= 1500"
+      - "the control run (e) and the five-row median are recorded in delivery/work-history/m3-p10-notes.md:180 through :189"
+      - "NOT WITNESSED BY THIS LANE: no Docker, so the spec cannot run here. The criterion's letter is met by the spec's construction; what it does NOT measure is whether the appearance it changed into is the right one, which is finding HZ-M3P10-01"
+  - id: "10.3"
+    quote: >-
+      THE BUSY STATE IS NOT A BLINK ... and after the response is released and
+      the resulting navigation or revalidation settles, no element in the
+      document carries aria-busy="true".
+    met: false
+    evidence:
+      - "the first half is asserted per control at test/e2e/busy-state.spec.ts:302 through :304 (aria-busy true, not pressable, ::after content not \"none\" at 1000ms)"
+      - "the second half is asserted exactly once, at :444, after the sign-in press at :412 through :419 whose action redirects, so it is evaluated on a document that holds no pressed control and cannot fail: finding HZ-M3P10-03"
+      - "the criterion asks for it \"for each of the seven submit controls\"; it is checked for none of them"
+  - id: "10.4"
+    quote: >-
+      A CONTROL CANNOT BE PRESSED TWICE ... the control is pressed twice 100
+      milliseconds apart inside the delay window ... the count is exactly 1.
+    met: true
+    evidence:
+      - "test/e2e/busy-state.spec.ts:243 through :248, the first click, a 100ms wait and a forced second click past actionability"
+      - "assertAcknowledged :294, expect(result.requests).toBe(1), applied to all nine controls"
+      - "the mechanism is the NATIVE disabled attribute (src/platform/ui/submit-button.tsx:98), which this lane confirmed in chromium refuses activation from pointer and keyboard alike, unlike the aria-busy route which computes pointer-events auto and still delivers a click (probe P12)"
+      - "registered under the desktop and both phone projects (playwright.config.ts:72, :109, :136); NOT RUN by this lane"
+  - id: "10.5"
+    quote: >-
+      THE NAVIGATING CONTROLS, which are not forms and carry the same dead
+      interval, MEASURED IN THE BUILD THE OWNER PRESSES.
+    met: true
+    evidence:
+      - "test/e2e/busy-state.spec.ts:497 through :623, the third test, sweeping the set and recording which branch each control took, printed per project at :623"
+      - "the two month step controls were given data-testid values by this phase (src/modules/overview/ui/month-view.tsx:475 and :486), which criterion 10.5(a) explicitly permits"
+      - "the marker has a real box: chromium measures the .pulse-busy span inside a .month-nav Link at 18 by 10 CSS pixels, inside the 46 by 46 tap target (probe P13)"
+      - "chromium-phone-prod exists at playwright.config.ts:127 through :137 bound to prodBaseURL, and the prod webServer at :147 runs npm run build && npx next start; npm run build was run by this lane at EXIT=0"
+      - "NOT WITNESSED BY THIS LANE: the branch recording itself needs both servers"
+  - id: "10.6"
+    quote: >-
+      THE CLIENT BOUNDARY IS AS SMALL AS THE JOB ALLOWS, AND THE DIFF PROVES
+      IT. (a) ... AT MOST three files, all of them under src/platform/ui/ ...
+      (b) ... no file under any module's ui/ directory carries "use client".
+    met: false
+    evidence:
+      - "four files open the boundary on e499d64 and one of them, src/modules/accounts/ui/account-setup-form.tsx, is under a module's ui/ directory (probe P1)"
+      - "both halves were ALREADY false at the phase base: git grep -ln \"use client\" 785e611^ -- src/ shows account-setup-form.tsx already carrying the directive (probe P2). The phase added two files, both under src/platform/ui/"
+      - "(b)'s src/app/ and layout.tsx clauses ARE met: src/app/layout.tsx matches only in a comment"
+      - "(c) is met: no file carrying the directive imports @/modules/, ../application, ../domain, ../adapters, next-intl or getTranslations"
+      - "(d) is met: grep -rn useOptimistic src/ returns nothing"
+      - "(e) is met and exceeded: test/app/client-boundary.test.ts walks the transitive import closure including re-exports and type-only imports, fails closed on an unresolvable specifier, and runs in the fast gate (npm test EXIT=0, 679 tests)"
+      - "recorded as UNMET on the letter rather than reinterpreted, which is also how the work history's third deviation records it"
+  - id: "10.7"
+    quote: >-
+      NO STYLESHEET, NO COPY, NO SCHEMA, NO PACKAGE ... git diff against this
+      phase's base over package.json and over package-lock.json is EMPTY ...
+      and git diff --name-only over styles/, src/app/globals.css, messages/,
+      prisma/, test/fixtures/ ... prints NOTHING.
+    met: true
+    evidence:
+      - "git show --stat 785e611 d7db0ff -- package.json package-lock.json prints nothing: no dependency added"
+      - "git diff --name-only 785e611^ d7db0ff over styles/, src/app/globals.css, messages/, prisma/, test/fixtures/, every module application, domain and adapters directory, src/platform/ui/amount.tsx and src/platform/ui/mask-card-number.ts prints nothing"
+      - "npm run typecheck, npm run lint and npm test all EXIT=0 in this lane"
+      - "the test rig grew by two files rather than one, which the work history's seventh deviation declares and this lane judges below"
+      - "NOT WITNESSED: npm run test:e2e under every project"
+  - id: "10.8"
+    quote: >-
+      THE MERCHANT SCREEN'S EXISTING GUARANTEES SURVIVE ... and grep -n
+      "maskCardNumbers" against the hidden counterpartyText input returns
+      nothing, so the value submitted by the busy-capable form is still the
+      unmasked subject decision D-12 requires.
+    met: true
+    evidence:
+      - "git diff --name-only 785e611^ d7db0ff -- test/e2e/merchants.spec.ts test/e2e/golden-journey.spec.ts prints nothing: neither spec was touched, so no assertion was weakened"
+      - "src/modules/merchants/ui/merchant-review.tsx:51 through :55, the hidden input still carries value={group.counterpartyText}; maskCardNumbers appears only on the display span at :45"
+      - "the phase's whole change to that file is a three-line swap of the raw button for the leaf (git show 785e611 -- src/modules/merchants/ui/merchant-review.tsx)"
+      - "NOT WITNESSED: the two specs passing, which needs the e2e gate"
+  - id: "10.9"
+    quote: >-
+      PRIVACY ... (b) A whole-worktree grep for the real statements'
+      identifier, holder-name, merchant-string, thousands-form amount and date
+      probes ... exits 1 ... If the real statements are absent from the
+      executing container, half (b) is recorded as NOT WITNESSED rather than
+      green.
+    met: false
+    evidence:
+      - "(a) is green and was re-run by this lane: npm run gate:privacy EXIT=0, \"gate:privacy clean\""
+      - "(b) is recorded NOT WITNESSED in the work history's fifth deviation, but for a reason the criterion's escape clause does not cover: the statements were PRESENT and the read was refused, whereas the clause admits a not-witnessed record only when they are ABSENT. Finding HZ-M3P10-06"
+      - "(c) holds as far as this lane can see: every measurement quoted in delivery/work-history/m3-p10-notes.md is a millisecond figure produced against the committed synthetic fixture, and no captured request line carrying FormData appears in either work-history file"
+  - id: "10.10"
+    quote: >-
+      NOTHING IS PREDICTED IN THIS PHASE ... the spec captures the pair of
+      testid and trimmed textContent for every element carrying a data-testid
+      immediately before the click, and again at 1000 milliseconds after the
+      click and before the response is released, and the two collections are
+      deeply equal.
+    met: true
+    evidence:
+      - "test/e2e/busy-state.spec.ts:240 and :261, collectTestidText before the click and after the settle wait, compared at :277 and asserted at :306 through :311 for every control except the merchant naming submit"
+      - "assertAcknowledged is called with predicts true only for \"merchant naming submit\" (:439), which is the exemption the criterion names"
+      - "grep -rn useOptimistic src/ returns nothing"
+      - "the busy mark is a pseudo-element and carries no testid, so nothing had to be exempted by name (confirmed in chromium: the mark is ::after content \"\", probe P9)"
+  - id: "10.11"
+    quote: >-
+      THE HARDCODED-STRING GATE COVERS WHERE THE NEW COMPONENTS LIVE, and the
+      widening is proved by making it fail.
+    met: true
+    evidence:
+      - "(a) eslint.config.mjs:37 files: [\"src/modules/**/ui/**/*.tsx\", \"src/platform/ui/**/*.tsx\"], and npm run lint EXIT=0 in this lane"
+      - "(b) the red witness with both captured runs is at delivery/work-history/m3-p10-notes.md:11 through :22, naming src/platform/ui/submit-button.tsx and the react/jsx-no-literals rule at exit 1, and exit 0 with the edit reverted"
+      - "(c) src/app/** is not in the glob and the one reason is written at eslint.config.mjs:44 through :47, the brand word at src/app/(app)/layout.tsx"
+
+deviations-judged:
+  - deviation: >-
+      The phase intent and step 3: "all seven submit controls", enumerated as
+      the upload submit, the preview-again and confirm submits, the merchant
+      naming submit, the sign-in and sign-up submits and the sign-out submit.
+    serves-plan-intent: true
+    reasoning: >-
+      Confirmed independently: nine submit controls exist at the head, not
+      seven, because M3-P14's accounts screen merged after the plan section
+      was written at 89ed187. Leaving the newest screen as the one place a
+      press still goes quiet would have defeated the phase's own intent. The
+      spec asserts the set by name in both directions at
+      test/e2e/busy-state.spec.ts:422 through :433, so a control the spec
+      never reaches fails rather than being skipped, which is the guarantee
+      criterion 10.2(a) exists for. The one control outside the leaf has a
+      mechanical reason that this lane checked and agrees with: that form
+      submits through onSubmit and a transition, so useFormStatus would report
+      nothing. The residue it left is finding HZ-M3P10-04.
+  - deviation: >-
+      Step 4 and criterion 10.5(a): "the seven navigating controls",
+      enumerated as nav-overview, nav-import, nav-merchants, unresolved-pill,
+      empty-state-import-link and the two month step controls.
+    serves-plan-intent: true
+    reasoning: >-
+      Same cause and same judgement. Nine exist in the plan's own categories
+      and the spec measures nine. The four Links outside the plan's categories
+      (the two back-to-import links at src/modules/import/ui/import-result.tsx
+      and the two alternate-auth links) are covered by the same leaf without
+      being measured, and the work history says so rather than leaving it as
+      an unstated difference, which is the honest shape.
+  - deviation: >-
+      Criterion 10.6(a), "grep -rln 'use client' src/ returns AT MOST three
+      files, all of them under src/platform/ui/", and 10.6(b), "no file under
+      any module's ui/ directory carries use client".
+    serves-plan-intent: true
+    reasoning: >-
+      The judgement is that recording the letter as UNMET, rather than
+      reinterpreting it, was correct, and this lane verified the underlying
+      facts independently at probes P1 and P2: the offending file predates the
+      phase and the phase added two files, both under src/platform/ui/. The
+      substance the criterion protects, that no domain type, application
+      function, repository or message catalogue reaches the browser, is not
+      just met but is now enforced better than the criterion asked, by a
+      transitive closure walk in the fast gate. What the deviation does not
+      say, and should, is that the criterion's own instrument returns five on
+      this tree because it counts a comment: finding HZ-M3P10-05.
+  - deviation: "Criterion 10.6(e), the five rules for the closure walk."
+    serves-plan-intent: true
+    reasoning: >-
+      The sixth rule, treating a "use server" module as a boundary rather than
+      entering it, is correct on the mechanism: the bundler never puts an
+      action module's body in a client bundle, so entering it would report a
+      leak that exists in no bundle. The rule is not a widening that hides
+      anything, because the walk PINS which modules it treated as action
+      boundaries (test/app/client-boundary.test.ts:190, exactly
+      src/modules/accounts/ui/actions.ts), so a new one is visible the moment
+      it appears, and the cost is written at the rule rather than left to be
+      found. That is the shape a guard's own exception should have.
+  - deviation: >-
+      Criterion 10.9(b), the whole-worktree grep for probes built from the
+      real statements.
+    serves-plan-intent: false
+    reasoning: >-
+      Recording it rather than hiding it was right, and the shape-grep
+      substitute was better than nothing. But the criterion admits a
+      not-witnessed record only when the real statements are ABSENT from the
+      container, and the work history says they were PRESENT and the read was
+      refused, so the branch taken is not the branch the criterion offers. The
+      work history itself calls half (b) a review-time task and this review
+      cannot close it either, so it is carried rather than cleared: finding
+      HZ-M3P10-06. Judged against the plan's intent, a privacy criterion left
+      open across a merge and a deploy does not serve it.
+  - deviation: >-
+      The plan's branch name for this phase, claude/m3-p10-pending-feedback.
+    serves-plan-intent: true
+    reasoning: >-
+      A naming difference with no behavioural consequence, flagged by the
+      implementer precisely because clause R-031 makes the branch name
+      load-bearing for the scope auditor. The work is on the dispatched
+      branch and is now merged to main, so the plan's name is stale rather
+      than violated. Recording it was the right call.
+  - deviation: >-
+      Criterion 10.7, "Two files outside the surfaces and the test rig may be
+      touched, and only these two: playwright.config.ts and eslint.config.mjs".
+    serves-plan-intent: true
+    reasoning: >-
+      The second test file exists because criterion 10.6(e) requires the
+      closure walk to run in the FAST gate, and the fast gate does not run
+      test/e2e. Two criteria of the same plan pulled in opposite directions
+      and the implementer read them together rather than choosing one
+      silently, which is what a deviation record is for. This lane confirmed
+      the boundary the criterion actually protects is intact: git diff over
+      every pinned path (styles/, globals.css, messages/, prisma/, fixtures/,
+      application, domain, adapters, amount.tsx, mask-card-number.ts) prints
+      nothing, and both package files are untouched.
+
+hazard-classes-addressed:
+  - class-id: H10.1
+    probed: >-
+      Read the spec's measurement construction before reading criterion 10.2.
+      test/e2e/busy-state.spec.ts installs a route handler that identifies a
+      server-action POST by the framework's next-action header (:60 through
+      :71), holds it 2000ms, and asserts the response was released at least
+      1500ms after the click (:296 through :299), so the interval cannot be
+      satisfied by a fast server or by a handler that never matched. The DOM
+      change is timed by a MutationObserver scoped to the pressed control's
+      own form. This is a real interval measurement rather than a transition,
+      and the phase's own numbers (2.30 to 4.80 ms, notes :180 through :189)
+      are consistent with React's synchronous pending render.
+    cleared-because: >-
+      The interval itself is genuinely measured and genuinely short. The
+      hazard as stated, an animation shipped while the dead interval remains,
+      is not what happened: the DOM changes within single-digit milliseconds
+      of the press. What the phase got wrong is WHICH state it changes into,
+      which is finding HZ-M3P10-01 and belongs to H10.4's neighbourhood rather
+      than here.
+  - class-id: H10.2
+    probed: >-
+      Counted the directive-carrying files by hand rather than by the
+      criterion's grep (probes P1 and P2), read all four, and read the closure
+      guard the phase added. Checked that no page.tsx, layout.tsx or route.ts
+      carries the directive, that src/modules/overview/ui/month-view.tsx and
+      src/modules/merchants/ui/merchant-review.tsx are still server
+      components, and that npm run build reports 103 kB shared first-load JS
+      with the largest route at 106 kB.
+    cleared-because: >-
+      The boundary is as small as the job allows. The phase added exactly two
+      client files, both under src/platform/ui/, neither importing a domain
+      type, an application function, a repository or a message catalogue, and
+      the guard against a transitive leak is stronger than the criterion asked
+      for: a closure walk that follows re-exports and type-only imports and
+      fails closed. The month projection and the merchant review projection
+      stay on the server. The letter of 10.6(a) fails only on a file this
+      phase did not create.
+  - class-id: H10.3
+    probed: >-
+      grep -rn "useOptimistic" src/ (nothing), and read the spec's
+      before-and-after testid collection at test/e2e/busy-state.spec.ts:240,
+      :261 and :277, which compares every rendered data-testid and its trimmed
+      text across the delay window for eight of the nine controls.
+    cleared-because: >-
+      Nothing is predicted. No optimistic API is imported anywhere, and the
+      one surface DR-0025 will make predict is the one the spec deliberately
+      exempts, with the reason written. The busy mark carries no testid, being
+      a pseudo-element, so nothing had to be exempted by name to make the
+      comparison pass.
+  - class-id: H10.4
+    probed: >-
+      Read every aria-busy occurrence in the spec, then traced where its only
+      clears-assertion sits in the journey, then measured the busy appearance
+      itself in chromium over the head's real stylesheet.
+    finding: HZ-M3P10-03
+  - class-id: H10.5
+    probed: >-
+      Read the guard, then tested the two candidate mechanisms in chromium
+      (probe P12): an element carrying only aria-busy="true" computes
+      pointer-events auto and delivers a click, while the native disabled
+      attribute the leaf actually uses refuses activation from every input
+      path. Confirmed the spec forces a second click past actionability
+      (:248) and asserts the request count is exactly 1 for all nine controls.
+    cleared-because: >-
+      The control is guarded, not merely decorated. The leaf uses the native
+      disabled attribute rather than the aria-disabled route M3-P9's own
+      comment warns takes nothing away, so a second press inside the window
+      cannot produce a second import or a second merchant rule. The cost of
+      that choice is paid on the keyboard, which is finding HZ-M3P10-02, but
+      the double-submission hazard itself is closed.
+  - class-id: H10.6
+    probed: >-
+      git show --stat 785e611 d7db0ff -- package.json package-lock.json, and
+      read every import in the two new client leaves.
+    cleared-because: >-
+      Neither package file is touched by either commit of the phase. The
+      leaves import only useFormStatus from react-dom and useLinkStatus from
+      next/link, both built into the framework the repository already depends
+      on. No spinner component, no form library, no toast library and no state
+      store entered the tree.
+  - class-id: H10.7
+    probed: >-
+      Read the whole of the phase's change to
+      src/modules/merchants/ui/merchant-review.tsx, then read the current
+      hidden field and the display span, then checked that the merchants and
+      golden-journey specs were not touched.
+    cleared-because: >-
+      The submitted value is untouched. The phase's entire change to that file
+      is swapping the raw button for the leaf; the hidden counterpartyText
+      input still carries the UNMASKED group.counterpartyText, and
+      maskCardNumbers is applied only to the display span, exactly as decision
+      D-12 requires. Neither spec that guards the screen was edited, so no
+      assertion was weakened to accommodate the change.
+  - class-id: H10.8
+    probed: >-
+      Checked that the measurements are a committed spec rather than a
+      one-time run, and that it is registered under every project M3-P8 will
+      have to keep green: playwright.config.ts:72 (chromium, testIgnore
+      /prod-smoke/ does not exclude it), :109 (chromium-phone, testMatch names
+      busy-state) and :136 (chromium-phone-prod). Confirmed the spec carries
+      no test.skip, no test.fixme and no project-conditional branch, so it
+      cannot go vacuous by membership.
+    cleared-because: >-
+      The guard M3-P8 will run into is real and unconditional. The naming
+      submit is measured by name in both tests one and two, so a rebuild of
+      the merchant review that drops the busy control turns M3-P8 red under
+      its own criterion 8.7 rather than silently spending this phase. The one
+      way this guard is weaker than it looks is the clears-assertion, which is
+      finding HZ-M3P10-03 rather than this class.
+  - class-id: H10.9
+    probed: >-
+      Read both work-history files for a captured server-action request line
+      or any FormData body, and grepped them for identifier, card-number,
+      thousands-form amount and date shapes. Re-ran npm run gate:privacy at
+      e499d64 with the database environment pinned to an invented localhost.
+    cleared-because: >-
+      No captured request line reached the repository. The only measurements
+      quoted are millisecond figures, produced against the committed synthetic
+      fixture, and gate:privacy is clean at exit 0. The hazard as stated, a
+      request line carrying real counterparty text reaching a public
+      repository, did not occur. The separate residue is that criterion
+      10.9(b)'s probe grep was never run at all, which is finding HZ-M3P10-06
+      against criterion 10.9 rather than against this class.
+  - class-id: H10.10
+    probed: >-
+      Read the glob, then read the red witness the phase captured, which is
+      the half that decides this class. The witness at
+      delivery/work-history/m3-p10-notes.md:11 through :22 names the file and
+      the react/jsx-no-literals rule at exit 1 with a literal temporarily
+      added to src/platform/ui/submit-button.tsx, and exit 0 with it reverted.
+      Re-ran npm run lint at EXIT=0.
+    cleared-because: >-
+      The glob matches something and is proved to fire. It was widened to
+      cover exactly where the new leaves live and where M3-P11's toast will
+      live, the red witness is against a real file inside the new half of the
+      glob rather than the old half, and the src/app/** omission is parked
+      with its one measured reason rather than left silent.
+  - class-id: H10.11
+    probed: >-
+      Read the observer's scope and filter before reading the criterion.
+      test/e2e/busy-state.spec.ts:111 through :160 scopes the
+      MutationObserver to the pressed control's nearest ancestor form,
+      discards every record whose target is not the pressed control or inside
+      its subtree, restricts the surviving attribute records to aria-busy,
+      aria-disabled, disabled and class, and then requires the control's
+      computed appearance to differ from a pre-click snapshot inside the
+      callback that stopped the clock.
+    cleared-because: >-
+      The defeat the class describes is closed. A data attribute set on
+      document.body would be discarded twice over: its target is outside the
+      form scope and outside the pressed control's subtree. The appearance
+      check inside the stopping callback means the record must have changed
+      what is on screen. What that check does NOT ask is whether the changed
+      appearance is the RIGHT one, which is how finding HZ-M3P10-01 passes
+      every criterion while rendering the wrong state.
+  - class-id: H10.12
+    probed: >-
+      Read playwright.config.ts in full. Confirmed chromium-phone-prod exists
+      at :127 through :137 with the same mobile descriptor, isMobile, hasTouch
+      and a 390 by 844 viewport as chromium-phone but bound to prodBaseURL;
+      that its webServer at :147 is npm run build && npx next start with its
+      own PULSE_DIST_DIR and its own port; that prodEnv at :35 strips
+      PULSE_FIXED_NOW; and that busy-state.spec.ts is the spec it matches. Ran
+      npm run build myself at EXIT=0, so the gate this phase chose to depend
+      on is real and passing.
+    cleared-because: >-
+      The measurement environment is the one the owner presses. The
+      production-mode phone project exists, is bound to a real production
+      build rather than the dev server, and the navigation test records which
+      branch each control took in each run (:623) so the development and
+      production answers can be compared rather than substituted for one
+      another. The clock cost is paid explicitly by reaching a month through
+      the query parameter. NOT WITNESSED by this lane: the runs themselves,
+      for want of Docker.
