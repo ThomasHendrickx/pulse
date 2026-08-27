@@ -667,6 +667,10 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     "rawLine",
     "label",
     "text",
+    // M3-P11: the review form's subject travels into the client leaf as
+    // naming.identityKey, so the field name joins the list or the walk
+    // goes blind on the one surface that is deliberately unmasked.
+    "identityKey",
   ] as const;
 
   // Keyed by FILE and EXPRESSION TEXT, never by a line number, because a
@@ -682,8 +686,22 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     readonly why: string;
   }[] = [
     {
-      file: "modules/merchants/ui/merchant-review.tsx",
-      expression: "group.counterpartyText",
+      file: "modules/merchants/ui/merchant-row.tsx",
+      expression: "predictedLabel ?? label",
+      why: "The row's rendered label inside the client leaf. It arrives ALREADY MASKED from the server component, which passes label={maskCardNumbers(group.label)}, and the predicted alternative is the string the reader typed into this row a moment ago. Masking here a second time would be masking a masked value (M3-P11 fix round, finding HZ-M3P11-03).",
+    },
+    {
+      // MOVED IN M3-P11 (was merchant-review.tsx, group.counterpartyText):
+      // the review row is now the MerchantGroupRow client leaf and the
+      // identity key reaches the hidden field through its naming prop. The
+      // walk's KNOWN blind spot after this move, stated rather than left
+      // to be found: the server component hands group.counterpartyText to
+      // the leaf inside a JSX SPREAD attribute, which is a
+      // JsxSpreadAttribute and not the JsxExpression this walk visits, so
+      // that hand-off is invisible here; the surface the DOM actually
+      // renders is the one below and it is what this table excuses.
+      file: "modules/merchants/ui/merchant-row.tsx",
+      expression: "naming.identityKey",
       why: "The hidden field the review form submits. It becomes the EXACT MerchantRule pattern, and a masked subject would match nothing (decision D-12, hazard H6.4).",
     },
     {
@@ -772,12 +790,47 @@ describe("every rendering surface that shows descriptor text is derived, not rem
       ts.forEachChild(node, look);
       return found;
     };
+    // A JSX expression that renders a descriptor-derived value HELD IN A
+    // VARIABLE rather than read off an object, which is the shape a value
+    // takes once it has been passed to a component as a prop and
+    // destructured (M3-P11 fix round, finding HZ-M3P11-03). It is decided
+    // on the AST and not on the text: only an identifier from the field
+    // list, or a coalescing or conditional expression one of whose
+    // branches is such an identifier, counts. A textual rule would drag in
+    // an object literal's key, a translation argument and a class-name
+    // ternary that merely contain the word, and an exclusion table full of
+    // those stops meaning anything.
+    const rendersBareDescriptorIdentifier = (node: ts.Node): boolean => {
+      if (ts.isParenthesizedExpression(node)) {
+        return rendersBareDescriptorIdentifier(node.expression);
+      }
+      if (ts.isIdentifier(node)) {
+        return (DESCRIPTOR_FIELDS as readonly string[]).includes(node.text);
+      }
+      if (ts.isConditionalExpression(node)) {
+        return (
+          rendersBareDescriptorIdentifier(node.whenTrue) ||
+          rendersBareDescriptorIdentifier(node.whenFalse)
+        );
+      }
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken
+      ) {
+        return (
+          rendersBareDescriptorIdentifier(node.left) ||
+          rendersBareDescriptorIdentifier(node.right)
+        );
+      }
+      return false;
+    };
     const visit = (node: ts.Node): void => {
       if (ts.isJsxExpression(node) && node.expression !== undefined) {
         const expression = node.expression.getText(sourceFile);
-        const readsDescriptor = DESCRIPTOR_FIELDS.some((field) =>
-          new RegExp(`\\.${field}\\b`).test(expression),
-        );
+        const readsDescriptor =
+          DESCRIPTOR_FIELDS.some((field) =>
+            new RegExp(`\\.${field}\\b`).test(expression),
+          ) || rendersBareDescriptorIdentifier(node.expression);
         if (readsDescriptor && !containsJsx(node.expression)) {
           surfaces.push({
             file: relative(srcRoot, file),
@@ -813,8 +866,24 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     // (DR-0030) renders each held row's counterparty text MASKED, and the
     // block's heading is the account's own declared label, which joins the
     // exclusion table with its reason. Fourteen sites, six files.
-    expect(surfaces.length).toBe(14);
-    expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(6);
+    //
+    // UPDATED IN M3-P11 (was fourteen sites in six files, and briefly
+    // thirteen while the review row moved): the review row is now the
+    // MerchantGroupRow client leaf. The masked label surface became the
+    // leaf's label attribute in merchant-review.tsx, and the identity-key
+    // surface moved into merchant-row.tsx's hidden field, where it is the
+    // declared exclusion above.
+    //
+    // UPDATED AGAIN IN THE M3-P11 FIX ROUND (finding HZ-M3P11-03): the
+    // walk now also sees a descriptor value rendered from a VARIABLE
+    // rather than from a property access, which is the shape it takes once
+    // a component receives it as a prop. That shape existed at the head
+    // this file last counted and was invisible, which is exactly the blind
+    // spot this test exists to refuse. Fifteen sites, seven files, six
+    // masked; the fifteenth is the leaf's own label render, declared above
+    // with the reason it is not masked twice.
+    expect(surfaces.length).toBe(15);
+    expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(7);
     expect(surfaces.filter((surface) => surface.masked).length).toBe(6);
   });
 

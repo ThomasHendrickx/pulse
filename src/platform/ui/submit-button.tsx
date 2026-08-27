@@ -82,6 +82,7 @@ export const SubmitButton = ({
   name,
   value,
   formAction,
+  describedBy,
   children,
 }: {
   readonly className?: string;
@@ -89,6 +90,12 @@ export const SubmitButton = ({
   readonly name?: string;
   readonly value?: string;
   readonly formAction?: (formData: FormData) => void | Promise<void>;
+  // M3-P11: the id of an element describing this control's current state,
+  // wired to aria-describedby. The merchant naming control points it at the
+  // row's unconfirmed live region while a prediction is on screen, so a
+  // reader who moves focus back to the control they pressed is told the
+  // value beside it is not stored yet (criterion 11.2(c), decision D-30).
+  readonly describedBy?: string;
   readonly children: React.ReactNode;
 }) => {
   const { pending } = useFormStatus();
@@ -102,6 +109,7 @@ export const SubmitButton = ({
       {...(name === undefined ? {} : { name })}
       {...(value === undefined ? {} : { value })}
       {...(formAction === undefined ? {} : { formAction })}
+      {...(describedBy === undefined ? {} : { "aria-describedby": describedBy })}
     >
       {children}
     </button>

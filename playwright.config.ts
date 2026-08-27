@@ -69,12 +69,19 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-      testIgnore: /prod-smoke/,
+      // optimistic-naming runs against the PRODUCTION server only (M3-P11,
+      // decision D-34, finding DELTA-M0P4-09): the spec drives en, nl and
+      // fr itself, so a development pass would repeat the whole matrix a
+      // third time for nothing the dev-server specs do not already record.
+      testIgnore: /prod-smoke|optimistic-naming/,
     },
     {
       name: "chromium-prod",
       use: { ...devices["Desktop Chrome"], baseURL: prodBaseURL },
-      testMatch: /prod-smoke/,
+      // M3-P11: the prediction, failure and difference measurements run at
+      // the desk width against the production build as well (criteria 11.2
+      // and 11.4 name both widths).
+      testMatch: /(prod-smoke|optimistic-naming)\.spec\.ts/,
     },
     // THE PHONE PROJECT (M3-P7, DR-0022, criterion 7.12). A chromium mobile
     // device descriptor at the mockup's own frame size. The two specs that
@@ -133,7 +140,9 @@ export default defineConfig({
         viewport: { width: 390, height: 844 },
         baseURL: prodBaseURL,
       },
-      testMatch: /busy-state\.spec\.ts/,
+      // M3-P11 adds the optimistic-naming measurements here: criterion 11.2
+      // names this project for the 390 by 844 half of the matrix.
+      testMatch: /(busy-state|optimistic-naming)\.spec\.ts/,
     },
   ],
   ...(externalBaseUrl
