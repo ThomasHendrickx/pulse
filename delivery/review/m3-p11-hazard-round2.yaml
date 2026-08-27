@@ -93,41 +93,142 @@ round: 2
 
 closures:
   - id: HZ-M3P11-01
+    disposition: CLOSED
     claim: >-
       Fixed by making the collision impossible rather than by stacking: a
       pure queue shows one notice at a time, a waiting notice appears on
       dismissal, nothing is removed undismissed, D-32 quoted at the code.
-    status: not-yet-verified
+    verified: >-
+      The claim holds and the reasoning behind it is better than the one
+      this lane asked for. A shared host was refused with D-32's own words
+      quoted at the module rather than paraphrased
+      (src/modules/merchants/ui/notice-queue.ts:11 through :26), and the
+      two pins that close the other routes, criterion 11.5 requiring the
+      notice on the row and criterion 11.9 pinning the stylesheet, are
+      named there too, which is why the fix this lane proposed in round one
+      would not have been admissible. At most one notice is in the DOM at
+      all: the leaf renders nothing unless it is at the front of the queue
+      (src/modules/merchants/ui/merchant-row.tsx:319). A row that leaves
+      the screen with a notice up releases the queue in its effect cleanup
+      (merchant-row.tsx:195 through :198), which is the state that would
+      otherwise have closed the queue behind it forever, and it is handled.
+      Driven directly, the queue shows the front notice, reveals the waiting
+      one on dismissal and drops nothing undismissed. WHAT IT DOES INSTEAD
+      OF COVERING is reorder, which is HZ2-M3P11-02 and is a smaller harm
+      than the one that is closed.
   - id: HZ-M3P11-02
+    disposition: NOT CLOSED
     claim: >-
       Fixed by keying the record per submitting row in a new pure module
       naming-claims.ts with additive writes, per-row retirement and a claim
       that must agree on direction; witnessed red then green.
-    status: not-yet-verified
+    verified: >-
+      Every part of that sentence is true of the module and the module is
+      not the whole mechanism. The writes are additive
+      (src/modules/merchants/ui/naming-claims.ts:65), the retirement is
+      per key (naming-claims.ts:73), and the claim agrees on direction
+      (naming-claims.ts:103). The defect is the IDENTITY those three
+      operations are keyed by: the leaf passes the row's data-group-key
+      (merchant-row.tsx:271 and :295), and that value is not unique on the
+      screen, because the review groups each direction separately over the
+      same counterparty identity
+      (src/modules/merchants/domain/merchant-review.ts:178 and :179 over
+      the key defined at merchant-review.ts:49). One counterparty with a
+      spend row and a refund therefore renders two rows carrying the same
+      key, and this lane drove the shipped domain and the shipped claim
+      module together to see both of HZ-M3P11-02's named arms happen
+      anyway. The unit tests that witnessed the fix red then green use two
+      DISTINCT row keys throughout
+      (test/app/naming-claims.test.ts:31, :37, :56, :62, :85), which is an
+      assumption the screen does not supply, and the direction test at
+      test/app/naming-claims.test.ts:79 describes exactly the two-row case
+      while giving the two rows different keys. See HZ2-M3P11-01.
   - id: HZ-M3P11-03
+    disposition: CLOSED, both halves
     claim: >-
       Both halves fixed: the comparison is now in the alphabet the screen
       renders, and the masking walk decides on the AST, pinned at fifteen
       sites.
-    status: not-yet-verified
+    verified: >-
+      The comparison half is closed STRUCTURALLY and not by luck. The
+      render function is injected into the claim rather than imported, so
+      the rule stays pure and is exercised in the fast gate
+      (naming-claims.ts:76 through :121, with the render parameter
+      defaulting to identity), and the leaf passes maskCardNumbers
+      (merchant-row.tsx:227 through :233). Because the label the screen
+      shows is mask(stored), the stored value is the trimmed typed string,
+      and the two branches compare against mask(typed) and
+      mask(typed.trim()), the trimmed branch matches whatever the masking
+      does to either side; the closure does not depend on the masking being
+      injective, which is the property this lane tried to break. The walk
+      half is closed properly too: the rule is now an AST decision over an
+      identifier, a coalescing expression or a conditional
+      (test/domain/merchant-review.test.ts:793 through :824) rather than a
+      regular expression over the expression's text, the reason a textual
+      rule was refused is written down, and the leaf's own label render is
+      declared with its reason at test/domain/merchant-review.test.ts:688
+      through :692. The pin moved to fifteen sites in seven files with six
+      masked (test/domain/merchant-review.test.ts:882 through :884) and
+      npm test exited 0 over it.
   - id: HZ-M3P11-04
+    disposition: CLOSED
     claim: >-
       Fixed after verifying upsertRule runs before the recompute await; all
       three catalogues now claim only what the client observed and tell the
       reader to reload, never that the name was not saved.
-    status: not-yet-verified
+    verified: >-
+      The English now reads that the name was not CONFIRMED, describes the
+      SCREEN rather than storage, and tells the reader to reload to see
+      what is stored (messages/en.json:170). The Dutch and French are
+      translations of that sentence and not of the old one
+      (messages/nl.json:170, messages/fr.json:170), so the three
+      catalogues agree in substance and not only in key set. The reason is
+      recorded where the copy is resolved, naming the write-before-recompute
+      order it turns on
+      (src/modules/merchants/ui/merchant-review.tsx:76 through :86). The
+      sentence stays true on the other arm, where the server did answer and
+      wrote nothing, so the single key still serves both callers and no
+      fifth key was spent. This lane tried and failed to construct a state
+      in which the new sentence is false.
   - id: HZ-M3P11-05
+    disposition: HALF CLOSED, and the open half is a question for the owner
     claim: >-
       Half fixed (the row points at its notice with aria-describedby), half
       left open as a question, because naming the stored value needs
       interpolation the server cannot resolve while criterion 11.5 measures
       the notice text as exactly the catalogue value.
-    status: not-yet-verified
+    verified: >-
+      The association half is done and done in the mechanism this lane
+      named: the row carries aria-describedby pointing at the notice while
+      that notice is the one on screen
+      (merchant-row.tsx:255), and the Toast takes the id as a prop rather
+      than inventing one (src/platform/ui/toast.tsx:44 and :62 through
+      :66). The guard against a dangling reference is the same condition
+      that renders the notice at all (merchant-row.tsx:319), so the
+      attribute cannot outlive its target. The open half is correctly
+      identified as a conflict between naming the stored value and
+      criterion 11.5 measuring the notice text as exactly the catalogue
+      value, which is an owner question and not a reviewer's to settle; it
+      rides the brief as the open work it is. One consequence worth stating
+      so it is not discovered later: the description resolves to the whole
+      notice element, so the row's accessible description now ends with the
+      dismiss control's label.
   - id: HZ-M3P11-06
+    disposition: HALF CLOSED
     claim: >-
       Fixed by parsing the answer's shape, with an unrecognised resolution
       degrading to the loud failure.
-    status: not-yet-verified
+    verified: >-
+      Four of the five shapes this lane threw at it degrade exactly as the
+      finding asked (merchant-row.tsx:299 through :308), and the
+      unreachable ok arm is kept with the reason written at the type
+      (src/modules/merchants/ui/actions.ts:36 through :41), which answers
+      the second half of the finding. The guard checks that ok is a boolean
+      and stops there (the predicate at merchant-row.tsx, isNamingActionResult),
+      so an answer of ok false carrying no error passes it and then reaches
+      the dereference at merchant-row.tsx:314, which throws the same
+      TypeError inside the same transition that HZ-M3P11-06 was raised to
+      prevent. See HZ2-M3P11-03.
 
 reattack:
   - id: R1
