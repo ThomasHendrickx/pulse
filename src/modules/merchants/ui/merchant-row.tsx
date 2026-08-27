@@ -296,11 +296,25 @@ export const MerchantGroupRow = ({
           />
           <label className="merchant-name-field">
             <span className="visually-hidden">{naming.fieldLabel}</span>
+            {/* THE DESCRIPTION HANGS ON A CONTROL THE READER CAN STILL
+                REACH (fix round, finding CR-M3P11-02). Criterion 11.2(c)
+                puts the unconfirmed description on the naming submit so a
+                reader who moves focus back to the control they pressed is
+                told again, and it is there. But that control is DISABLED
+                for exactly the window the description exists, because
+                M3-P10's busy state renders disabled while the form is in
+                flight (criterion 10.3, a decided design this phase does
+                not reverse), and a disabled button takes no keyboard
+                focus. This field is not disabled, sits inside the same
+                form, and carries the same description, so the second
+                telling is reachable by keyboard as well as by a screen
+                reader's virtual cursor. */}
             <input
               type="text"
               name="merchantName"
               placeholder={naming.placeholder}
               required
+              {...(predicted ? { "aria-describedby": regionId } : {})}
             />
           </label>
           {/* The unconfirmed live region: ALWAYS in the tree, filled only

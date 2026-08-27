@@ -268,6 +268,20 @@ const expectMarkedPrediction = async (
     describedBy ?? "",
   );
   expect(described).toBe(unconfirmedCopy);
+  // AND IT IS REACHABLE (fix round, finding CR-M3P11-02): the submit
+  // control is disabled for exactly this window, so the naming field
+  // inside the same form carries the same description and can still take
+  // keyboard focus.
+  const fieldDescribedBy = await row
+    .locator('input[name="merchantName"]')
+    .getAttribute("aria-describedby");
+  expect(fieldDescribedBy).toBe(describedBy);
+  await row.locator('input[name="merchantName"]').focus();
+  expect(
+    await page.evaluate(
+      () => document.activeElement?.getAttribute("name") ?? null,
+    ),
+  ).toBe("merchantName");
   // THE CARVE-OUT (11.2(d)): aria-busy on the submit control, and nowhere
   // else on the row.
   await expect(row).not.toHaveAttribute("aria-busy", "true");
