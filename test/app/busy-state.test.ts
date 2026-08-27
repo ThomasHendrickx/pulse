@@ -95,6 +95,34 @@ describe("the busy state does not take the keyboard's place", () => {
     expect(form?.text).toMatch(/onSubmit=\{[\s\S]*?if \(pending\) \{\s*return;/);
   });
 
+  // THE TWO HALVES THE KEYBOARD MEASUREMENT PROVED LOAD-BEARING (fix round
+  // 2, criteria finding CR-M3P10-01). The guard is a handler plus a
+  // stylesheet rule, and a chromium run over the built stylesheet counted
+  // real submit events on each half separately:
+  //   shipped guard, busy: real Enter 0, real Space 0, forced pointer click
+  //     0, scripted click 0; two presses 100 ms apart total exactly 1
+  //   the SAME markup with the handler removed, busy: real Enter 1, real
+  //     Space 1, forced pointer click 0, two presses 100 ms apart total 2
+  // So the stylesheet closes the pointer path and ONLY the pointer path,
+  // and the handler closes the keyboard path. Deleting either one produces
+  // criterion 10.4's own falsifying count of 2, and neither deletion was
+  // visible to any fast-gate test before these two assertions.
+  //
+  // WHAT THESE DO NOT SAY, and it is the whole of CR-M3P10-01: a source
+  // shape is not a request count. The count against a real server action
+  // lives in test/e2e/busy-state.spec.ts and needs the Docker-based stack.
+  it("the stylesheet still refuses the pointer on an aria-disabled control", () => {
+    // Not merely "the selector is unscoped" (the test above): the
+    // DECLARATION. Removing the body of this rule leaves every selector
+    // assertion in this file green and reopens the pointer path.
+    expect(rules).toMatch(/\[aria-disabled="true"\]\s*\{\s*pointer-events:\s*none;\s*\}/);
+  });
+
+  it("the leaf's guard stops the event as well as its default", () => {
+    const leaf = sources.find(({ path }) => path.endsWith("platform/ui/submit-button.tsx"));
+    expect(leaf?.text).toMatch(/if \(pending\)[\s\S]*?stopPropagation\(\)/);
+  });
+
   it("the transition that drives a busy state has both branches written", () => {
     const form = sources.find(({ path }) =>
       path.endsWith("accounts/ui/account-setup-form.tsx"),
