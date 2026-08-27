@@ -64,6 +64,23 @@ type NamingActionResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly error: { readonly kind: string } };
 
+// THE ANSWER IS CHECKED RATHER THAN ASSUMED (fix round, finding
+// HZ-M3P11-06). The success path ends in redirect(), which throws, so the
+// awaited call can only produce a rejection carrying a NEXT_REDIRECT
+// digest and the ok: true arm above is unreachable today. Reading
+// result.ok on that assumption means that a framework version which ever
+// RESOLVED the call instead would throw a TypeError inside a transition,
+// and the reader would meet an error boundary instead of a notice. One
+// guard turns that into the loud failure this phase already knows how to
+// show.
+const isNamingActionResult = (value: unknown): value is NamingActionResult => {
+  if (typeof value !== "object" || value === null || !("ok" in value)) {
+    return false;
+  }
+  const { ok } = value as { readonly ok: unknown };
+  return typeof ok === "boolean";
+};
+
 export type NamingCopy = {
   // The unconfirmed marking's accessible text (the fourth catalogue key,
   // decision D-27 as amended).
@@ -257,9 +274,9 @@ export const MerchantGroupRow = ({
               typed,
               at: Date.now(),
             });
-            let result: NamingActionResult;
+            let answer: unknown;
             try {
-              result = await action(formData);
+              answer = await action(formData);
             } catch (error) {
               if (isRedirectSignal(error)) {
                 // The SUCCESS path: the action revalidated and redirected,
@@ -279,12 +296,22 @@ export const MerchantGroupRow = ({
               setNotice({ kind: "failed", message: copy.failed });
               return;
             }
-            if (!result.ok) {
+            if (!isNamingActionResult(answer)) {
+              // The action resolved with something this client does not
+              // recognise, which today can only mean the framework stopped
+              // signalling the redirect as a rejection. Treated as the
+              // transport arm: loud, reverted, and true, since the client
+              // still does not know what the server did.
+              forgetNaming(namingClaims, groupKey);
+              setNotice({ kind: "failed", message: copy.failed });
+              return;
+            }
+            if (!answer.ok) {
               // The DOMAIN refusal, reported as a value by the action.
               forgetNaming(namingClaims, groupKey);
               setNotice({
                 kind: "failed",
-                message: copy.refusals[result.error.kind] ?? copy.failed,
+                message: copy.refusals[answer.error.kind] ?? copy.failed,
               });
             }
           }}

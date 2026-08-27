@@ -33,6 +33,12 @@ import type { AssignMerchantError } from "../application";
 // /merchants?status=<kind> (merchant-review.tsx REFUSAL_MESSAGE), so the
 // banner path remains renderable, but nothing sets that status any more.
 export type AssignMerchantActionResult =
+  // UNREACHABLE TODAY, AND KEPT DELIBERATELY (fix round, finding
+  // HZ-M3P11-06): the success path ends in redirect(), which throws, so
+  // this action never returns an ok value. The arm exists so the client
+  // leaf's structural type has a success shape to match, and so a later
+  // change that stops redirecting has somewhere to land. The client checks
+  // the shape it receives rather than trusting either assumption.
   | { readonly ok: true }
   | {
       readonly ok: false;

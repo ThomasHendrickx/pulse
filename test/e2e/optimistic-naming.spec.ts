@@ -208,6 +208,48 @@ const waitForRawLabel = async (
     );
 };
 
+// The row whose group-label textContent is EXACTLY this string, returned
+// by its data-group-key. Raw equality rather than a substring filter (fix
+// round, finding CR-M3P11-04): "  Typed  " CONTAINS "Typed", so a
+// substring match is satisfied by the untrimmed prediction and cannot tell
+// the confirmed answer from the predicted one, which is the whole of what
+// criterion 11.5 measures. Refuses ambiguity rather than taking the first.
+const rowKeyWithRawLabel = async (
+  page: Page,
+  text: string,
+  timeoutMs: number,
+): Promise<string> =>
+  page.evaluate(
+    ({ text, timeout }) =>
+      new Promise<string>((resolve, reject) => {
+        const started = Date.now();
+        const check = () => {
+          const matches = [
+            ...document.querySelectorAll("[data-group-key]"),
+          ].filter(
+            (row) =>
+              row.querySelector('[data-testid="group-label"]')?.textContent ===
+              text,
+          );
+          if (matches.length > 1) {
+            reject(new Error(`${matches.length} rows carry that exact label`));
+            return;
+          }
+          if (matches.length === 1) {
+            resolve(matches[0]?.getAttribute("data-group-key") ?? "");
+            return;
+          }
+          if (Date.now() - started > timeout) {
+            reject(new Error("no row reached that exact label"));
+            return;
+          }
+          setTimeout(check, 25);
+        };
+        check();
+      }),
+    { text, timeout: timeoutMs },
+  );
+
 const namableGroup = (page: Page): Locator =>
   page
     .getByTestId("unresolved-group")
@@ -405,6 +447,16 @@ for (const language of LANGUAGES) {
       await submitControl(row).click();
       // (a) the prediction was on the row: the reader saw what reverts.
       await waitForRawLabel(row, typed, PREDICT_CEILING_MS);
+      // (e), AN EXTRA READING WHILE THE REQUEST IS STILL IN FLIGHT.
+      // Criterion 11.4(e) says the figures are byte identical THROUGHOUT,
+      // so they are read here too, with the prediction on the row, and not
+      // only before the click and after the revert (fix round, finding
+      // CR-M3P11-04).
+      expectFiguresUnmoved(
+        before,
+        await captureFigures(page),
+        before.groupKeys.indexOf(rowKey),
+      );
       // (b) the failure reaches the client: label back, marking gone.
       await expect(row.locator('[data-testid="group-label"]')).toHaveText(
         labelBefore ?? "",
@@ -443,6 +495,16 @@ for (const language of LANGUAGES) {
       route.armFail();
       await submitControl(row).click();
       await waitForRawLabel(row, typed, PREDICT_CEILING_MS);
+      // (e), AN EXTRA READING WHILE THE REQUEST IS STILL IN FLIGHT.
+      // Criterion 11.4(e) says the figures are byte identical THROUGHOUT,
+      // so they are read here too, with the prediction on the row, and not
+      // only before the click and after the revert (fix round, finding
+      // CR-M3P11-04).
+      expectFiguresUnmoved(
+        before,
+        await captureFigures(page),
+        before.groupKeys.indexOf(rowKey),
+      );
       await expect(row.locator('[data-testid="group-label"]')).toHaveText(
         labelBefore ?? "",
         { timeout: 15_000 },
@@ -477,9 +539,11 @@ for (const language of LANGUAGES) {
       await waitForRawLabel(row, typed, PREDICT_CEILING_MS);
       route.disarm();
       // After the response the confirmed row carries the TRIMMED string
-      // and the polite difference notice, on that row.
-      const named = page.getByTestId("merchant-group").filter({ hasText: trimmed });
-      await expect(named).toHaveCount(1, { timeout: 15_000 });
+      // and the polite difference notice, on that row. Raw equality, not a
+      // substring: the predicted label CONTAINS the trimmed one.
+      const namedKey = await rowKeyWithRawLabel(page, trimmed, 15_000);
+      const named = rowByKey(page, namedKey);
+      await expect(named).toHaveAttribute("data-testid", "merchant-group");
       const notice = named.getByTestId("naming-differs");
       await expect(notice).toBeVisible();
       await expect(notice).toHaveText(copy["namingDiffers"] ?? "");
