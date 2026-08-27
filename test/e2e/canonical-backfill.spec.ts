@@ -354,17 +354,43 @@ test("the backfill canonicalises the declarations, spares the pair, and opens th
   await expect(page.getByTestId("recon-spend")).toHaveText("54,30");
   await expect(page.getByTestId("recon-pot")).toHaveText("2.045,70");
 
+  // AUGUST IS NOT BYTE IDENTICAL, and the reason is the product's own
+  // interpretation window rather than the import's rows (slow-gate repair
+  // round). This block used to assert every August figure unchanged
+  // "because the fixture books in July". The window is padded by
+  // SETTLEMENT_DATE_WINDOW_DAYS (45) plus TRANSFER_DATE_TOLERANCE_DAYS (4)
+  // on each side, so an import booking 3 to 6 July interprets everything
+  // from mid-May to 24 August, and the padding is there so a transfer leg
+  // imported later can pair with one imported earlier. The seeded
+  // pre-phase row t3 books 8 August, inside it.
+  //
+  // What happens to that row is the point. classifyFlow never returns
+  // null: a null flow is a row NOT YET INTERPRETED, never a gap the reader
+  // has to close, and the seed writes one deliberately to model a
+  // pre-phase household. The first interpretation that reaches it gives it
+  // the flow its own description and sign earn, which for a 10,00 debit on
+  // a pot account is SPEND. So August's spend rises by exactly that row and
+  // the pot falls by it, the income and the reserves do not move, and the
+  // uninterpreted cause goes because the one pot-ring row that raised it
+  // has now been read. The savings row t4 is untouched: it is held by
+  // construction, counted nowhere, and outside the ring-scoped count.
+  //
+  //   income   2.500,00  (t1, unchanged)
+  //   spend       96,47  (t2 86,47 plus t3 10,00, now interpreted)
+  //   reserves     0,00  (unchanged)
+  //   pot      2.403,53  (250000 - 8647 - 1000)
+  //   rows            3  (flow IS NOT NULL; was 2)
   await page.goto("/?month=2026-08");
   await expect(page.getByTestId("recon-income")).toHaveText(
     augustBaseline.income,
   );
-  await expect(page.getByTestId("recon-spend")).toHaveText(augustBaseline.spend);
+  await expect(page.getByTestId("recon-spend")).toHaveText("96,47");
   await expect(page.getByTestId("recon-reserves")).toHaveText(
     augustBaseline.reserves,
   );
-  await expect(page.getByTestId("recon-pot")).toHaveText(augustBaseline.pot);
-  await expect(page.getByTestId("month-meta")).toHaveText(augustBaseline.meta);
-  await expect(page.getByTestId("recon-cause-uninterpreted")).toBeVisible();
+  await expect(page.getByTestId("recon-pot")).toHaveText("2.403,53");
+  await expect(page.getByTestId("month-meta")).toHaveText("3 rows");
+  await expect(page.getByTestId("recon-cause-uninterpreted")).toHaveCount(0);
 });
 
 // The pair's shared value, read from the harness constants so this spec
