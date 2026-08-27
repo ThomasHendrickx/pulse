@@ -5,6 +5,7 @@
 // order-dependent: the same bytes always detect the same spec, which is
 // what lets a re-upload be recognised by spec equality (criterion 1.5).
 
+import { canonicalAccountNumber } from "@/platform/account-number";
 import { err, ok, type Result } from "@/platform/result";
 import {
   decodeStatementBytes,
@@ -310,7 +311,19 @@ export const detectSourceProfile = (
       continue;
     }
     const values = nonEmptyValues(table, column);
-    if (values.length === 0 || !values.every((value) => IBAN.test(value))) {
+    // THE SHAPE TEST RUNS OVER THE CANONICAL FORM (M3-P14, criterion
+    // 14.4). A Belgian statement prints account numbers in groups of four,
+    // and this test used to require the compact form, so a column of
+    // SPACED account numbers was not recognised as an account column at
+    // all and fell through to be read as free text. Canonicalising here
+    // only ADDS recognitions: every value that passed before still passes,
+    // because canonicalisation is the identity on a compact uppercase
+    // value. The cell itself is still stored VERBATIM by the parser, which
+    // is why every comparison downstream canonicalises both sides.
+    if (
+      values.length === 0 ||
+      !values.every((value) => IBAN.test(canonicalAccountNumber(value)))
+    ) {
       continue;
     }
     const header = headerOf(column);

@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { LinkPending } from "@/platform/ui/link-pending";
 import { getTranslations } from "next-intl/server";
 import { signInAction } from "@/platform/auth/actions";
+import { SubmitButton } from "@/platform/ui/submit-button";
 import { AuthStatus } from "../auth-status";
 
 export default async function SignInPage({
@@ -30,11 +32,14 @@ export default async function SignInPage({
             required
           />
         </label>
-        <button type="submit" className="auth-submit">
+        <SubmitButton className="auth-submit">
           {t("signin")}
-        </button>
+        </SubmitButton>
         <p className="auth-alt">
-          <Link href="/sign-up">{t("signup")}</Link>
+          <Link href="/sign-up">
+            {t("signup")}
+            <LinkPending />
+          </Link>
         </p>
       </form>
     </main>

@@ -53,11 +53,31 @@ model MerchantRule {
   householdId String           @db.Uuid
   merchantId  String           @db.Uuid
   kind        MerchantRuleKind
-  // The rule's subject, ALWAYS in normalised form (normaliseCounterparty):
-  // the exact normalised string for EXACT, a normalised prefix for PREFIX,
-  // a normalised glob (with `*` wildcards) for PATTERN. Matching runs on
-  // normalised strings only, so a pattern stored raw would never match;
-  // the application layer normalises before writing.
+  // The rule's subject: a counterparty IDENTITY KEY, or a prefix or glob
+  // over one (M3-P12, DR-0027). A key is `account:<COMPACT ACCOUNT>` where
+  // the row carries a TRUSTED counterparty account and
+  // `descriptor:<NORMALISED DESCRIPTOR>` otherwise; the namespaces are
+  // lowercase and normaliseCounterparty uppercases, so the two key spaces
+  // cannot collide. Matching runs on identity keys only, so a pattern
+  // stored as raw text would never match; the application layer validates
+  // the namespace before writing and stores the key verbatim.
+  //
+  // CORRECTED RATHER THAN QUIETLY REWRITTEN (clause R-087): this comment
+  // used to say the pattern was "ALWAYS in normalised form
+  // (normaliseCounterparty)" and that the application layer normalises
+  // before writing. Both were true before M3-P12 and are false now: the
+  // application layer stores the submitted key verbatim, because
+  // normalising an identity key would upper-case its namespace into a
+  // string no derivation can produce.
+  //
+  // NO PRODUCT SURFACE WRITES PREFIX OR PATTERN today.
+  // assignMerchant writes kind EXACT and only EXACT
+  // (application/assign-merchant.ts), and it is the only writer of a rule
+  // in the tree. Both kinds are LIVE in the matcher and are reserved for
+  // the slice-5 accepted-answer path, where an accepted answer may declare
+  // a broader subject than one exact key. Neither is ever applied to an
+  // account-basis key: a prefix of an account number is a different
+  // account.
   pattern     String
   createdAt   DateTime         @default(now())
 
