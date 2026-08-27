@@ -4,6 +4,7 @@
 // order. Any change to the MEANING of a correction is an escalation per
 // the charter's stop-for list, never a local call.
 
+import { canonicalAccountNumber } from "@/platform/account-number";
 import {
   CASH_WITHDRAWAL_PATTERNS,
   SETTLEMENT_CREDIT_PATTERNS,
@@ -130,9 +131,11 @@ export const correctReserveDrawdown = (
   transaction: LedgerTransaction,
   reserveIbans: ReadonlySet<string>,
 ): "RESERVE" | undefined =>
+  // Canonical on both sides (M3-P14, criterion 14.4): the declared set is
+  // canonical and the stored fact column is whatever the source printed.
   transaction.amountCents > 0 &&
   transaction.counterpartyIban !== undefined &&
-  reserveIbans.has(transaction.counterpartyIban)
+  reserveIbans.has(canonicalAccountNumber(transaction.counterpartyIban))
     ? "RESERVE"
     : undefined;
 
