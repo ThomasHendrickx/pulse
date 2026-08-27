@@ -118,3 +118,41 @@ returns for it: classifyFlow never returns null, so a null flow means "not
 interpreted yet", never "a gap the reader must close". The padding exists
 so a transfer leg imported later can pair with one imported earlier, which
 is the same mechanism. The spec asserted an identity the window forbids.
+
+## THE COMPLETE BEFORE LIST, merged main 4f38dbb
+
+`npm run test:e2e` exit 1. 16 failed, 102 passed, 30.6 minutes, 119
+discovered. The sixteen are eight distinct defects, each red in every
+project that runs it.
+
+    1  chromium            accounts.spec.ts:697        the accounts screen at 360
+    2  chromium            busy-state.spec.ts:537      every submit control acknowledges the press
+    3  chromium            busy-state.spec.ts:652      the naming submit, five rows
+    4  chromium            canonical-backfill.spec.ts:112 the backfill opens the door
+    5  chromium            month-view.spec.ts:1390     held rows are shown
+    6  chromium-prod       optimistic-naming.spec.ts:567 a second notice waits
+    7  chromium-prod       optimistic-naming.spec.ts:668 the notice is the last action's
+    8  chromium-prod       optimistic-naming.spec.ts:771 naming into an existing merchant
+    9  chromium-phone      busy-state.spec.ts:537      (same as 2)
+    10 chromium-phone      busy-state.spec.ts:652      (same as 3)
+    11 chromium-phone      month-view.spec.ts:1390     (same as 5)
+    12 chromium-phone-prod busy-state.spec.ts:537      (same as 2)
+    13 chromium-phone-prod busy-state.spec.ts:652      (same as 3)
+    14 chromium-phone-prod optimistic-naming.spec.ts:567 (same as 6)
+    15 chromium-phone-prod optimistic-naming.spec.ts:668 (same as 7)
+    16 chromium-phone-prod optimistic-naming.spec.ts:771 (same as 8)
+
+Nothing crashed, nothing ran out of disk, and no test was lost to a
+renderer trap. The gate ran; it is simply red.
+
+### 5. month-view.spec.ts:1390, held rows
+
+    getByRole('heading', { name: 'Confirm the detected format' })
+    expected visible, element(s) not found
+
+INSTRUMENT. The page the spec was looking at reads "Import complete", with
+the account "Savings" and the rows already in. The test imports the current
+account's statement first and TEACHES the household the format under a
+name; the savings statement is the same format, so the second upload is
+recognised and needs no confirmation. The spec drives a confirmation step
+the product legitimately skips once it has been taught the format.
