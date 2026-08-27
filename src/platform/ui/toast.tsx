@@ -41,15 +41,25 @@ export const Toast = ({
   message,
   dismissLabel,
   testId,
+  regionId,
   onDismiss,
 }: {
   readonly role: "alert" | "status";
   readonly message: string;
   readonly dismissLabel: string;
   readonly testId?: string;
+  // An id for the notice, so the surface that raised it can point a reader
+  // at it with aria-describedby: this notice is drawn at the bottom of the
+  // viewport rather than where it belongs, so nothing else says which row
+  // it is about.
+  readonly regionId?: string;
   readonly onDismiss: () => void;
 }) => (
-  <div className="pulse-toast" role={role}>
+  <div
+    className="pulse-toast"
+    role={role}
+    {...(regionId === undefined ? {} : { id: regionId })}
+  >
     <p
       className="pulse-toast-message"
       {...(testId === undefined ? {} : { "data-testid": testId })}

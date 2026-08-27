@@ -175,3 +175,36 @@ and over the whitespace-flattened text. Hits and their disposition:
   region is rendered with the naming form from the row's first render).
 After the rewording the only remaining hits are the two verbatim prompt
 lines.
+
+## Fix round (round one findings from both clean-room lanes)
+
+Read in full before any edit: delivery/review/m3-p11-hazard.yaml at
+origin/claude/m3-p11-rev-haz 816687e (six findings) and
+delivery/review/m3-p11-criteria.yaml at origin/claude/m3-p11-rev-crit
+f8ec02b (five findings). Each finding's evidence was re-derived in this
+worktree before anything changed; the derivations and their captured
+output are in the yaml's fix-round entries.
+
+HZ-M3P11-02 red witness, captured before the fix, against the shipped
+behaviour ported verbatim into the new pure module:
+  npx vitest run test/app/naming-claims.test.ts
+  Tests 3 failed | 3 passed (6)
+   - tells the FIRST row its answer differed even after a second row is
+     named: expected "differs", received "none"
+   - tells the FIRST row its answer differed even after the second row
+     FAILS: expected "differs", received "none"
+   - does not raise a notice on a row in the OTHER direction section:
+     expected "none", received "differs"
+Green after the fix: Tests 6 passed (6); whole fast gate 690 passed (690).
+
+### Claim grep (clause claim-grep), run over the updated work history
+
+Four hits outside the verbatim prompt block, each disposed of rather than
+left: a commit subject quoted in per-step-commits (settled by the
+HZ-M3P11-01 fix-round entry's captured command and output in the same
+document); "needs an interpolated catalogue value", which sits inside an
+open-question and is restated there as open; "IMPOSSIBLE instead of
+survivable", which carries its captured derivation adjacent; and "a
+redirect always rejects", which describes the assumption the new guard
+removes and whose not-covered says plainly that the guard is reasoned and
+not measured, because no browser ran here.
