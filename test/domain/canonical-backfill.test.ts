@@ -51,19 +51,37 @@ describe("the canonical backfill touches only the declaration (criterion 18.4)",
     expect(sql.match(/\bUPDATE\b/gi)).toHaveLength(1);
   });
 
-  test("the expression is the SQL mirror of the canonical form, the ONE shared whitespace class inlined", () => {
+  test("every inlined whitespace class in the migration is byte-equal to the shared constant", () => {
     const sql = statements();
     // CORRECTED IN THE M3-P18 FIX ROUND (hazard finding HZ-M3P18-01):
     // this pin used to hold the migration to bare [[:space:]], which
     // retains U+00A0, U+202F and U+FEFF where the platform \s strips
-    // them. The migration cannot import, so it INLINES the class; this
+    // them. The migration cannot import, so it INLINES the class.
+    //
+    // STRENGTHENED IN ROUND TWO (hazard finding HZ2-M3P18-01, clause
+    // R-087), superseded wording quoted: the comment here read "this
     // assertion is what keeps the inlined copy byte-equal to
-    // ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS at the mechanism's definition.
-    // Executable equivalence with canonicalAccountNumber over renderings
-    // carrying the divergent characters is the slow-gate spec's arm.
-    expect(sql).toContain(
-      `upper(regexp_replace(a."iban", '${ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS}', '', 'g'))`,
-    );
+    // ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS", and the assertion was ONE
+    // containment, satisfied by any one of the three a-side occurrences
+    // while the migration carries FOUR (the SET expression, the IS
+    // DISTINCT FROM guard, and both sides of the NOT EXISTS collision
+    // comparison). The collision guard is sound only while ALL FOUR are
+    // one expression: the round-two reviewer witnessed that a copy
+    // mutated in the collision comparison alone stayed green under the
+    // old pin and fired the unique index mid-statement on the NBSP twin
+    // pair, the H18.6 deploy death. So the pin now EXTRACTS every
+    // regexp_replace pattern literal from the comment-stripped text,
+    // asserts the count is exactly four, and asserts each occurrence
+    // byte-equal to the constant. Executable equivalence with
+    // canonicalAccountNumber over renderings carrying the divergent
+    // characters remains the slow-gate spec's arm.
+    const patterns = [
+      ...sql.matchAll(/regexp_replace\([ab]\."iban", '([^']*)', '', 'g'\)/g),
+    ].map((match) => match[1]);
+    expect(patterns).toHaveLength(4);
+    for (const pattern of patterns) {
+      expect(pattern).toBe(ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS);
+    }
     // And no site in the migration falls back to the bare POSIX class.
     expect(sql).not.toContain(`'[[:space:]]'`);
     // Canonicalisation is applied WITHOUT validation (findings P14-006,

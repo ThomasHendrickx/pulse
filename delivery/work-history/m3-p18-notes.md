@@ -320,9 +320,19 @@ GREEN, captured after the edits against the same cluster:
     form exercised through the real repository).
     Fast gate: the new class-equivalence test DERIVES the JS \s set by
     sweeping every Unicode code point and asserts the class enumerates it
-    exactly; the migration pin now asserts byte equality between the
-    inlined class and the platform constant, and both the migration and
-    the script are pinned free of the bare POSIX class.
+    exactly; the migration pin asserts byte equality with the platform
+    constant PER OCCURRENCE, extracting every regexp_replace pattern
+    literal from the comment-stripped SQL and asserting exactly four,
+    each byte-equal; and both the migration and the script are pinned
+    free of the bare POSIX class. CORRECTED IN ROUND TWO (finding
+    HZ2-M3P18-01, clause R-087): this sentence used to read "the
+    migration pin now asserts byte equality between the inlined class
+    and the platform constant", which was true of one occurrence and
+    false of the artifact, since the pin was a single containment any
+    one of the three a-side occurrences satisfied while the migration
+    carries four; the reviewer witnessed a copy mutated in the collision
+    comparison staying green under that pin and firing the unique index
+    on the NBSP twin pair.
 
 ### HZ-M3P18-02 (high): the ring freeze now interacts with acceptance
 
