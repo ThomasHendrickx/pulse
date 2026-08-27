@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { UNSTAMPED } from "./build-stamp";
 
 // DELIBERATE, BOUNDED DIAGNOSTIC ENDPOINT, sibling of /api/health/db and
 // /api/health/pdf (M3-P17). The fleet cannot read Vercel function logs, so
@@ -10,12 +11,18 @@ import { NextResponse } from "next/server";
 // deployment environment describe a build of a public repository (DR-0024);
 // neither names a household, an account, an amount or a date.
 //
-// THE MARKER "unstamped" AND THE TWO VARIABLE NAMES BELOW ARE FIXED BY THE
-// PLAN, not chosen here: M3-P16 decides a terminal state by comparing
-// against the marker, and a wrong variable name is indistinguishable from a
-// platform that stamps nothing at all, so both are pinned rather than
-// recalled. The marker carries no hexadecimal-only characters, so it can
-// never be mistaken for a commit sha.
+// THE MARKER "unstamped" (defined in ./build-stamp.ts, see that file for
+// why it is not exported from here) AND THE TWO VARIABLE NAMES BELOW ARE
+// FIXED BY THE PLAN, not chosen here: M3-P16 decides a terminal state by
+// comparing against the marker, and a wrong variable name is
+// indistinguishable from a platform that stamps nothing at all, so both are
+// pinned rather than recalled. CORRECTED (R-087, fix round 1 finding
+// CR-M3P17-03): this comment used to say the marker "carries no
+// hexadecimal-only characters", which is false as written (the marker
+// contains a, d and e, each a hexadecimal digit). The true property, the
+// plan's own wording: the marker carries characters that are NOT
+// hexadecimal digits (u, n, s, t, m, p), so no reader and no test can take
+// it for a commit.
 //
 // THIS ROUTE READS process.env DIRECTLY rather than through
 // src/platform/config.ts's confinement (pulse-typescript section 6). That is
@@ -31,14 +38,21 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export const UNSTAMPED = "unstamped";
-
 const buildFact = (value: string | undefined): string =>
   value === undefined || value === "" ? UNSTAMPED : value;
 
 export async function GET() {
-  return NextResponse.json({
-    sha: buildFact(process.env.VERCEL_GIT_COMMIT_SHA),
-    deploymentEnvironment: buildFact(process.env.VERCEL_ENV),
-  });
+  return NextResponse.json(
+    {
+      sha: buildFact(process.env.VERCEL_GIT_COMMIT_SHA),
+      deploymentEnvironment: buildFact(process.env.VERCEL_ENV),
+    },
+    // Fix round 1 (finding HZ-M3P17-02): force-dynamic stops Next's own
+    // static caching but emits no freshness header itself, so without an
+    // explicit directive a shared cache may apply heuristic freshness to
+    // this 200, which is exactly wrong for a route whose whole job is
+    // telling a waiting phase which build is currently live. A stale
+    // cached sha here is exactly what M3-P16 must never read.
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }

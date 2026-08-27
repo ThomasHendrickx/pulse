@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { GET, UNSTAMPED } from "../../src/app/api/health/version/route";
+import { GET } from "../../src/app/api/health/version/route";
+import { UNSTAMPED } from "../../src/app/api/health/version/build-stamp";
 
 // M3-P17. Covers both branches of both fields over the handler directly
 // (criterion 17.1): the platform-set case and the unset/empty case, kept
@@ -86,5 +87,11 @@ describe("GET /api/health/version", () => {
     const body = (await response.json()) as Record<string, unknown>;
 
     expect(Object.keys(body).sort()).toEqual(["deploymentEnvironment", "sha"]);
+  });
+
+  test("fix round 1, HZ-M3P17-02: the response is never cached", async () => {
+    const response = await GET();
+
+    expect(response.headers.get("cache-control")).toBe("no-store");
   });
 });

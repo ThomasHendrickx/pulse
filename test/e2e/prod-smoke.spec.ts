@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { join } from "node:path";
 import { registerCurrentAccount } from "./setup-accounts";
-import { UNSTAMPED } from "@/app/api/health/version/route";
+import { UNSTAMPED } from "@/app/api/health/version/build-stamp";
 
 // PRODUCTION-MODE smoke (deploy-verify defect round). The owner's
 // production 500 (a server-action throw when the deployed runtime could
