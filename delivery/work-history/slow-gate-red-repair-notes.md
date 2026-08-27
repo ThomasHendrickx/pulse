@@ -156,3 +156,66 @@ account's statement first and TEACHES the household the format under a
 name; the savings statement is the same format, so the second upload is
 recognised and needs no confirmation. The spec drives a confirmation step
 the product legitimately skips once it has been taught the format.
+
+## Verdicts and repairs
+
+Seven of the eight are INSTRUMENT defects: a spec addressing a control by an
+identity the product legitimately changes, driving a step the product
+legitimately removed, asserting a state the product's own documented rule
+forbids, or reading a state before the action that produces it has
+answered. One is a PRODUCT defect.
+
+1. accounts.spec.ts:697, the nav link at 360 and 200 percent. PRODUCT, and
+   the fix is in the stylesheet. Measured in chromium at 360 by 844 with
+   every font size doubled: each of the four links had 42px of content
+   width; Overview, Import and Merchants wrapped onto three lines and
+   Accounts onto four. The cause is not the label's length, Merchants is
+   longer: overflow-wrap anywhere fills each line greedily and "Acc"
+   measured 43.5px against 42px of room, so the fourth link lost a
+   character per line and paid a line for it. The horizontal padding on
+   .app-nav-link is now --space-1 rather than --space-2, which is 46px of
+   content width. Re-measured: Accounts lands on three lines with 2.9px
+   spare and Overview has 2.1px, so the added link is neither the outlier
+   nor the tightest, and the row is 105px tall there rather than 138px.
+   Tokens only, no literal length, and neither the link's width (flex 1 1 0)
+   nor its height (--tap-target-min) moves, so no tap target changes.
+
+2 and 3. busy-state.spec.ts:537 and :652. INSTRUMENT, as set out above. The
+   naming row is now held by its POSITION among the rows carrying
+   data-group-key, which criterion 11.3 fixes across a prediction, rather
+   than by .first() of a set the press empties. Nothing was weakened: the
+   assertions are the same assertions, now applied to the control that was
+   pressed.
+
+4. canonical-backfill.spec.ts:112. INSTRUMENT. See the reasoning above. The
+   after-block now states the one August figure that legitimately moves and
+   why, with its arithmetic, instead of an identity the 49-day
+   interpretation window forbids.
+
+5. month-view.spec.ts:1390. INSTRUMENT. The confirmation step is not driven
+   any more, and the spec asserts instead that it did NOT appear, which is
+   the ask-once rule stated rather than assumed.
+
+6. optimistic-naming.spec.ts:567. INSTRUMENT. The spec required BOTH rows to
+   carry aria-describedby at once. That is unreachable by construction: the
+   row points at its notice only while that notice is ON SCREEN, and the
+   queue shows one at a time. What is asserted now is stronger, not weaker:
+   exactly one row points, it points at the notice that is showing and not
+   the other, and after the dismissal the OTHER row is the one pointing at
+   a different notice. The old form would have passed with both rows
+   pointing at the same notice.
+
+7. optimistic-naming.spec.ts:668. INSTRUMENT, a race in the spec. It waited
+   for .pulse-toast to have count 1, which was already true of the FIRST
+   row's notice, and then read the second row's aria-describedby while the
+   second action was still held by the delay. The wait is now on the
+   condition that actually says the notice has changed hands, the row
+   pointing at it, so the assertion fails on a product that never gets
+   there.
+
+8. optimistic-naming.spec.ts:771. INSTRUMENT. The merge measurement named
+   one INCOME group and one SPEND group into a single name, and a merchant
+   with groups on both sides renders TWO rows by design (HZ-M3P11-02), so
+   the "one row after the merge" assertion was measuring the product being
+   right. Both namings now target the spend section, where a merge really
+   does produce one row with the summed total.
