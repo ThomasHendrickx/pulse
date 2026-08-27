@@ -21,6 +21,7 @@
 // classification's: an unmatched leg STAYS INTERNAL and is flagged by the
 // interpretation (pulse-domain section 4).
 
+import { canonicalAccountNumber } from "@/platform/account-number";
 import type { Flow } from "./flow";
 import {
   correctCardSettlement,
@@ -56,12 +57,21 @@ export const classifyFlow = (
   context: ClassificationContext,
 ): Classification => {
   const { sets } = context;
+  // BOTH SIDES CANONICALISE AT COMPARISON TIME (M3-P14, criterion 14.4).
+  // The stored counterparty column is a FACT and is never rewritten, and
+  // one account reaches this tree spaced on the delimited path and compact
+  // on the PDF path. The declared sets are canonical (deriveDeclaredSets);
+  // this is the other half.
+  const counterparty =
+    transaction.counterpartyIban === undefined
+      ? undefined
+      : canonicalAccountNumber(transaction.counterpartyIban);
 
   // 1. Declared reserve set, both directions. Outgoing parks money;
   // incoming is the drawdown correction: RESERVE, never INCOME.
   if (
-    transaction.counterpartyIban !== undefined &&
-    sets.reserveIbans.has(transaction.counterpartyIban)
+    counterparty !== undefined &&
+    sets.reserveIbans.has(counterparty)
   ) {
     return transaction.amountCents > 0
       ? { flow: correctReserveDrawdown(transaction, sets.reserveIbans) ?? "RESERVE" }
@@ -71,8 +81,8 @@ export const classifyFlow = (
   // 2. Declared pot set: a movement between two of the household's own
   // pot accounts, excluded from both sides whatever pairing finds.
   if (
-    transaction.counterpartyIban !== undefined &&
-    sets.potIbans.has(transaction.counterpartyIban)
+    counterparty !== undefined &&
+    sets.potIbans.has(counterparty)
   ) {
     return { flow: "INTERNAL" };
   }
