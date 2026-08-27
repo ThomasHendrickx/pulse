@@ -44,6 +44,15 @@ npm run db:migrate    # prisma migrate dev
 
 Next.js App Router, TypeScript, Prisma, Postgres (Supabase in deployed environments, Docker locally), Tailwind v4, Playwright, Vitest. Claude API server side only, and only from slice 5 onward.
 
+## Talking to the owner
+
+This session is compacted and resumed often. Before reporting anything to the
+owner, read `/home/user/pulse-fleet/notes/owner-ledger.md`, and append to it
+the same turn. It records what they have already been told, what they have
+already decided, and which corrections have already been issued. Without it
+the same conclusions get re-derived from the same branches and delivered
+again as if new, which is what happened up to 2026-08-27.
+
 ## Scope discipline
 
 The plan is deliberately lean and the list of things left out is deliberate, not an oversight. Do not add: a queue, cron, an event bus, caching, a state management library, a component library, per-transaction overrides, or goal and budget features. If a task seems to need one, say so and stop rather than adding it.
