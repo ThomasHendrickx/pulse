@@ -318,6 +318,19 @@ const HeldBlocks = async ({
                 >
                   <Amount cents={row.amountCents} />
                 </span>
+                {/* THE ROW META LINE'S DATE IS THE ISO DAY, RAW, AND THAT
+                    IS THE HOUSE FORM RATHER THAN AN OVERSIGHT (M3-P18 fix
+                    round two, hazard finding CR-HAZ-P18-06, which asked
+                    for the choice to be recorded rather than inherited).
+                    The gap list below renders its booking date the same
+                    way in the same meta line, so the two row meta lines on
+                    this screen read alike, and an ISO day is unambiguous
+                    in all three locales where a numeric locale form is
+                    not. The one mandatory rendering path applies to the
+                    AMOUNT, and the amount above goes through it. If a
+                    localized date is ever wanted here it is wanted in both
+                    places at once, which is a design decision rather than
+                    a fix. */}
                 <span className="month-row-count month-row-meta">
                   {row.bookingDate}
                 </span>
