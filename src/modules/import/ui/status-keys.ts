@@ -8,12 +8,10 @@ export const IMPORT_STATUS_KEYS = {
   "bad-spec": "importBadSpec",
   "declaration-needed": "importDeclarationNeeded",
   // M3-P14: the file's own account is not one the household registered at
-  // setup, and the file's own account is registered in the savings ring
-  // whose statements are not imported in v1 (decision D-55). Two selectors
-  // because the two messages differ: the second names the ring correction
-  // AND what that correction costs.
+  // setup. The account-in-savings-ring selector that stood beside this
+  // one is removed with its refusal (M3-P18, DR-0030): a savings
+  // account's own statement is accepted and its rows are shown held.
   "account-not-registered": "importAccountNotRegistered",
-  "account-in-savings-ring": "importAccountInSavingsRing",
 } as const;
 
 export type KnownImportStatus = keyof typeof IMPORT_STATUS_KEYS;

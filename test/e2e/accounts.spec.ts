@@ -443,35 +443,58 @@ test("a statement whose own account is not registered is refused, and the messag
   await expect(page.getByTestId("empty-state")).toBeVisible();
 });
 
-test("a statement whose own account is registered in the SAVINGS ring is refused, and the message names what the correction costs", async ({
+// REWRITTEN FROM THE REFUSAL TEST M3-P14's CRITERION 14.5 SHIPPED
+// (M3-P18, criterion 18.1): DR-0030 supersedes decision D-55, so a
+// statement whose own account is registered in the SAVINGS ring is now
+// ACCEPTED, its rows ingested and shown as held. The gate keeps its
+// three-arm coverage: the unregistered refusal above and the card
+// acceptance below stand unchanged.
+test("a statement whose own account is registered in the SAVINGS ring is accepted, its rows held (DR-0030)", async ({
   page,
 }) => {
-  await signUpFresh(page, "acc-savings-ring");
-  // The same account number the file carries, registered as savings.
-  await registerAccounts(page, [{ ...CURRENT, ring: "RESERVE" }]);
+  await signUpFresh(page, "acc-savings-accept");
+  // The savings account the file belongs to, registered in the SAVINGS
+  // ring at setup. Invented for M3-P18; provenance in
+  // test/fixtures/allowed-identifiers.txt.
+  await registerAccounts(page, [
+    {
+      label: "Savings",
+      bank: "Demobank",
+      accountNumber: "BE27910000000004",
+      ring: "RESERVE",
+    },
+  ]);
 
   await page.goto("/import");
-  await page.getByLabel("Bank export file").setInputFiles(join(FIXTURES, FIXTURE));
+  await page
+    .getByLabel("Bank export file")
+    .setInputFiles(join(FIXTURES, "savings-statement.csv"));
   await page.getByRole("button", { name: "Upload" }).click();
   await expect(
     page.getByRole("heading", { name: "Confirm the detected format" }),
   ).toBeVisible();
-  await page.getByLabel("Format name").fill("Demobank current account");
+  // The account is registered, so there is nothing to declare and no
+  // unregistered warning.
+  await expect(page.getByTestId("account-declaration")).toHaveCount(0);
+  await expect(page.getByTestId("landing-unregistered")).toHaveCount(0);
+
+  await page.getByLabel("Format name").fill("Demobank savings statement");
   await page.getByTestId("confirm-import").click();
 
-  const status = page.getByTestId("import-status");
-  await expect(status).toBeVisible();
-  await expect(status).toContainText("registered as a savings account");
-  // THE REMEDY, and its PRICE. A message naming the remedy without its
-  // price fails this criterion (decision D-55's standing debt).
-  await expect(status).toContainText("change its ring");
-  await expect(status).toContainText("out of the reserves block");
-  await expect(status).toContainText("stops counting as money set aside");
-  await expect(
-    status.getByRole("link", { name: "accounts screen" }),
-  ).toHaveAttribute("href", "/accounts");
+  // ACCEPTED: the import completes and every row lands. A tree in which
+  // this upload is refused for its ring fails criterion 18.1.
+  await expect(page.getByTestId("import-result")).toBeVisible();
+  await expect(page.getByTestId("rows-added")).toHaveText("6");
+  await expect(page.getByTestId("import-status")).toHaveCount(0);
 
-  await expect(page.getByTestId("import-result")).toHaveCount(0);
+  // And the rows are SHOWN, as held, under the account's typed label
+  // (the full held-block contract is asserted in
+  // test/e2e/month-view.spec.ts under criterion 18.2).
+  await page.goto("/?month=2026-08");
+  await expect(page.getByTestId("held-rows")).toBeVisible();
+  await expect(
+    page.getByTestId("held-rows").getByRole("heading", { name: "Savings" }),
+  ).toBeVisible();
 });
 
 test("a card statement, which carries no own-account column, is accepted and declared at first sight", async ({
