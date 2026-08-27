@@ -3,9 +3,18 @@
 import { useFormStatus } from "react-dom";
 
 // THE ONE SUBMIT LEAF (M3-P10). Every submit control in the product that
-// posts to a server action renders through here, and this file plus
-// link-pending.tsx plus nav-link.tsx are the only "use client" files under
-// src/platform/ui.
+// posts through a form action renders through here.
+//
+// CORRECTED IN FIX ROUND 2 (clause R-087, criteria finding CR-M3P10-07).
+// The sentence above used to end "and this file plus link-pending.tsx plus
+// nav-link.tsx are the only \"use client\" files under src/platform/ui".
+// That was true at the phase head and is false now: M3-P11 added
+// src/platform/ui/toast.tsx, which makes four, and a present-tense list
+// written into a comment cannot see the phase that appends to it. The list
+// that stays true lives where something checks it. The client file set is
+// asserted BY NAME in the fast gate by test/app/client-boundary.test.ts,
+// which is red when a file is added to it or removed from it, and that
+// test is the thing to read for the current set rather than this file.
 //
 // WHY THE BOUNDARY IS HERE AND NOWHERE ELSE (pulse-frontend section 1,
 // decision D-23). useFormStatus reports the pending state of the NEAREST
