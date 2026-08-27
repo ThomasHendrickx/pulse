@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { join } from "node:path";
+import { registerCurrentAccount } from "./setup-accounts";
 
 // PRODUCTION-MODE smoke (deploy-verify defect round). The owner's
 // production 500 (a server-action throw when the deployed runtime could
@@ -48,6 +49,11 @@ test("production build: health probe ok, PDF upload lands, month reconciles", as
   await page.getByRole("button", { name: "Create household" }).click();
   await expect(page.getByTestId("household-context")).toHaveText(unique);
 
+  // M3-P14: the account the statement belongs to is registered at setup
+  // before it is imported. Its number is invented and listed with its
+  // provenance in test/fixtures/allowed-identifiers.txt.
+  await registerCurrentAccount(page, "BE72012345678944", "Daily account", "Belfius");
+
   // The exact journey that 500ed in production: /import renders, the
   // upload posts, and the outcome is a real import state, never an
   // application-error page.
@@ -59,10 +65,8 @@ test("production build: health probe ok, PDF upload lands, month reconciles", as
   await expect(
     page.getByRole("heading", { name: "Confirm the detected format" }),
   ).toBeVisible();
-  await expect(page.getByTestId("account-declaration")).toBeVisible();
-  await page.getByLabel("Label").fill("Daily account");
-  await page.getByLabel("Bank").fill("Belfius");
-  await page.getByLabel("Ring").selectOption("POT");
+  await expect(page.getByTestId("account-declaration")).toHaveCount(0);
+  await expect(page.getByTestId("landing-account")).toContainText("Daily account");
   await page.getByTestId("confirm-import").click();
 
   await expect(page.getByTestId("import-result")).toBeVisible();

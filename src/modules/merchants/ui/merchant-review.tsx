@@ -1,6 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { Amount } from "@/platform/ui/amount";
 import { maskCardNumbers } from "@/platform/ui/mask-card-number";
+import { SubmitButton } from "@/platform/ui/submit-button";
 import type { HouseholdContext } from "@/platform/tenancy";
 import { listMerchantReview } from "../application";
 import type { ReviewGroup } from "../application";
@@ -58,9 +59,9 @@ const GroupRow = async ({
               required
             />
           </label>
-          <button type="submit" className="merchant-name-button">
+          <SubmitButton className="merchant-name-button">
             {t("nameIt")}
-          </button>
+          </SubmitButton>
         </form>
       ) : null}
     </li>
