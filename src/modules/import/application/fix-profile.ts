@@ -103,7 +103,11 @@ export const fixSourceProfile = async (
   );
   const assignedKeys = new Set<string>();
 
-  const reparsedImports: { importId: string; rows: ReparseRow[] }[] = [];
+  const reparsedImports: {
+    importId: string;
+    rows: ReparseRow[];
+    settlementTotalCents?: number;
+  }[] = [];
   let rowsReparsed = 0;
 
   for (const importId of importIds) {
@@ -236,7 +240,16 @@ export const fixSourceProfile = async (
       }
     }
 
-    reparsedImports.push({ importId, rows });
+    // The re-parsed figure travels with the re-parsed rows (HZ2-M3P3-04):
+    // both come from the same parse of the same stored bytes under the
+    // corrected spec, and they are written in one transaction.
+    reparsedImports.push({
+      importId,
+      rows,
+      ...(parsedFile.value.settlementTotalCents === undefined
+        ? {}
+        : { settlementTotalCents: parsedFile.value.settlementTotalCents }),
+    });
     rowsReparsed += rows.length;
   }
 

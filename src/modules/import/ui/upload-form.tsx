@@ -1,4 +1,5 @@
 import { getTranslations } from "next-intl/server";
+import { SubmitButton } from "@/platform/ui/submit-button";
 import { uploadStatementAction } from "./actions";
 import { ImportStatusLine } from "./import-status-line";
 
@@ -26,9 +27,9 @@ export const UploadForm = async ({
             required
           />
         </label>
-        <button type="submit" className="import-primary">
+        <SubmitButton className="import-primary">
           {t("uploadButton")}
-        </button>
+        </SubmitButton>
       </form>
     </section>
   );

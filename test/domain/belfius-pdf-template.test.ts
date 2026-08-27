@@ -53,7 +53,7 @@ describe("Belfius current-account template over the synthetic fixture (criterion
     expect(statement.rows).toHaveLength(FIXTURE_A_TRANSACTIONS.length);
     const sum = statement.rows.reduce((total, row) => total + row.amountCents, 0);
     expect(sum).toBe(FIXTURE_A_TOTAL_CENTS);
-    expect(statement.accountIbans).toEqual(["BE90012345678944"]);
+    expect(statement.accountIbans).toEqual(["BE72012345678944"]);
   });
 
   test("the annex page contributes zero rows WHILE the in-description annex phrase row parses with the phrase verbatim in rawLine (finding PR2-002)", async () => {

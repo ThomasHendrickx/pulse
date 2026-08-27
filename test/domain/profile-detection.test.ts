@@ -382,7 +382,7 @@ describe("signed values in directional columns fail loud (finding CR-208)", () =
 describe("amount parsing never leaves integer cents (both decimal styles)", () => {
   const cases: readonly (readonly ["comma" | "dot", string, number])[] = [
     ["comma", "1.234,56", 123456],
-    ["comma", "-30.941,50", -3094150],
+    ["comma", "-38.152,75", -3815275],
     ["comma", "+42.000,00", 4200000],
     ["comma", "12,5", 1250],
     ["comma", "850,00", 85000],
