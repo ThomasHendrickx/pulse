@@ -37,8 +37,7 @@
 # ==========================================================
 # ATTACK DIRECTIONS (progress board, updated as the review runs)
 # ==========================================================
-# A1  busy state that NEVER CLEARS: server error, redirect, back
-#     navigation, bfcache restore                                not-yet-probed
+# A1  busy state that NEVER CLEARS                                PROBED, see P5/P6
 # A2  busy state that NEVER APPEARS: hydration delay, listener
 #     attaching after the press, a submit control outside the
 #     mechanism                                                  not-yet-probed
@@ -49,7 +48,7 @@
 #     machinery: same controls, same stylesheet, aria-disabled
 #     with pointer-events, keyboard reachability of a busy
 #     control                                                    not-yet-probed
-# A6  reduced-motion behaviour                                   not-yet-probed
+# A6  reduced-motion behaviour                                   PROBED, see P8
 # A7  client boundary width and import closure (H10.2)           PROBED, see P1/P2
 # A8  the phase's own e2e spec going VACUOUS through project
 #     membership, testIgnore or prod-only projects               not-yet-probed
@@ -103,6 +102,63 @@
 #     leaf) and src/modules/accounts/ui/account-setup-form.tsx:291 (a raw
 #     button, NOT through the leaf, carrying its own transition pending
 #     flag). The plan's set is stale for the same reason P2 is.
+#
+# P5. THE ONLY ASSERTION THAT THE BUSY STATE EVER CLEARS IS STRUCTURALLY
+#     VACUOUS.
+#       grep -n 'aria-busy' test/e2e/busy-state.spec.ts
+#     returns four lines. Line 302 asserts aria-busy IS present at 1000ms.
+#     Line 444 is the ONLY assertion that it is gone:
+#       await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
+#     commented "Criterion 10.3, second half: the busy state does not
+#     survive the response." It sits at the END of the nine-press sequence
+#     in test one, immediately after the SIGN-IN submit (spec lines 412
+#     through 419), whose server action redirects into the application
+#     shell. By the time the locator is evaluated the document has been
+#     REPLACED and contains no submit control that was ever pressed, so the
+#     assertion cannot fail whatever the leaf does. Criterion 10.3 asks for
+#     this "for each of the seven submit controls"; it is checked for none
+#     of them. The one case it nominally covers is the one where a full
+#     navigation guarantees the answer.
+#
+# P6. THE ONE SUBMIT CONTROL OUTSIDE THE LEAF HAS AN UNCAUGHT ASYNC
+#     TRANSITION.
+#       sed -n '145,155p' src/modules/accounts/ui/account-setup-form.tsx
+#     is
+#       onSubmit={(event) => { event.preventDefault();
+#         const data = new FormData(event.currentTarget);
+#         startTransition(async () => {
+#           setState(await registerAccountsAction(INITIAL, data));
+#         }); }}
+#     with disabled={pending} and aria-busy={pending ? "true" : undefined}
+#     at :291 through :295. There is no catch and no finally. The busy and
+#     disabled state of this control is therefore tied to a promise whose
+#     rejection path is unwritten, and NOTHING in the suite presses it and
+#     then fails the action: busy-state.spec.ts presses it once on the happy
+#     path (spec line 353) and the only clears-assertion is P5's vacuous one.
+#
+# P7. E2E PROJECT MEMBERSHIP IS SOUND, which is recorded because it is the
+#     defect class this project has hit twice.
+#       cat playwright.config.ts
+#     busy-state.spec.ts is matched by chromium (testIgnore /prod-smoke/,
+#     so not excluded), by chromium-phone (testMatch names busy-state
+#     explicitly, config line 109) and by chromium-phone-prod (testMatch
+#     /busy-state\.spec\.ts/, config line 136). It is NOT prod-only and
+#     carries no test.skip, no project-conditional branch and no
+#     fixme:
+#       grep -n "test.skip\|test.fixme\|test.fail" test/e2e/busy-state.spec.ts
+#     returns nothing. The spec is three tests, all unconditional. This
+#     attack direction produced no finding.
+#
+# P8. REDUCED MOTION IS HANDLED AT THE TOKEN.
+#       grep -rn "prefers-reduced-motion" src/ styles/
+#     one block, styles/tokens.css:273, redefining --duration-state: 0s and
+#     --duration-busy-cycle: 0s at :root. src/app/globals.css:1706 spends
+#     --duration-busy-cycle as the animation duration of the busy mark and
+#     :1716 spends --duration-state as the unconfirmed marking's transition,
+#     so both stand still under the preference with no variant of their own.
+#     M3-P9 already measures this (test/e2e/pressed-and-disabled.spec.ts
+#     :1937 and :1950 run the same control at both settings). This attack
+#     direction produced no finding against M3-P10.
 #
 kind: verdict
 phase: M3-P10
