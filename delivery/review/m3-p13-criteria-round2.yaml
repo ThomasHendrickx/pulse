@@ -62,17 +62,165 @@ produced-by: claude
 framing: criteria-contract
 review-contract: criteria
 findings:
-  - id: CR2-M3P13-00
+  - id: CR2-M3P13-01
+    severity: medium
+    analysis: >-
+      THE DERIVATION THE FIX ROUND NOW LEANS ON AS ITS AUTHORITY IS KEYED ON A
+      DESCRIPTOR VOCABULARY, AND AN ACCOUNT NUMBER IS NOT A DESCRIPTOR. This is
+      the one place where the remedy is weaker than the claim made for it, and
+      the claim is load-bearing: the corrected header of the masker deletes the
+      residue LIST and says the enumeration is now derived, on the stated
+      ground that "a list here would be a second source and this project has
+      recorded three times that a convention between two sources does not
+      survive". The instrument that replaces the list walks JSX leaf
+      expressions and keeps only those reading a field named in
+      DESCRIPTOR_FIELDS, which is description, counterpartyText,
+      counterpartyName, rawLine, label, text and identityKey. Not one of those
+      is an account-bearing name. So a surface that renders an account WITHOUT
+      touching a descriptor field is invisible to the walk, and the tree
+      contains one: the accounts list renders the household's registered
+      account number in full through a field called iban. That surface is
+      almost certainly correct by design, since the owner must be able to check
+      what they typed, but the point is that the derivation cannot see it in
+      order to say so, and the same blindness covers group.accountAlias, which
+      is caught today only because it shares one JSX expression with
+      group.label. The fix round closed the gap it was shown and left the
+      instrument that would have shown it unable to find the next one.
+    evidence:
+      - "test/domain/merchant-review.test.ts at 2a0cc03, DESCRIPTOR_FIELDS: description, counterpartyText, counterpartyName, rawLine, label, text, identityKey. No account-bearing name is present, and none was added in this round."
+      - "src/modules/accounts/ui/accounts-screen.tsx:123 renders {account.iban ?? t(\"accountsCardNoNumber\")} with no mask, under a span carrying data-testid registered-account-number. The field name is iban, so the walk never collects the site and it is neither counted nor excluded."
+      - "src/modules/merchants/ui/merchant-review.tsx:255 through :257: the label expression is a conditional whose second arm is maskAccountNumbers(group.accountAlias). It is collected only because the FIRST arm reads group.label, which is in the vocabulary; the alias arm alone would not be."
+      - "src/platform/ui/mask-account-number.ts at 2a0cc03, the corrected header: 'THE ENUMERATION IS NOW DERIVED RATHER THAN WRITTEN DOWN. It is not a list in this comment ... A list here would be a second source'. The authority claimed is the walk, and the walk's reach is the vocabulary above."
+    concrete-fix: >-
+      Add the account-bearing field names to DESCRIPTOR_FIELDS in
+      test/domain/merchant-review.test.ts: iban, counterpartyIban,
+      counterpartyAccount, accountAlias and accountNumber. Then run the walk
+      and dispose of each surface it newly collects, which will be the accounts
+      list's number cell and any sibling: mask it, or declare it in EXCLUSIONS
+      with the reason that it is the household's own registered number shown
+      back to them for checking. Rename the constant to something that says
+      what it now covers, since it is no longer descriptor fields alone, and
+      keep the count assertions honest by updating the three totals in the same
+      commit.
+  - id: CR2-M3P13-02
+    severity: medium
+    analysis: >-
+      TWO OPEN QUESTIONS IN THE WORK HISTORY WERE CLOSED BY THE SAME HEAD THAT
+      STILL DECLARES THEM OPEN, and one of them points at a paragraph this
+      round deleted. C13-4 says the month view "still renders unnormalised
+      counterparty text on its gap rows and its held rows and masks CARD
+      numbers there only, so an account number inside one of those descriptors
+      is shown in full on that screen. This phase did not change it." This
+      phase did change it: all three month-view surfaces now pass through
+      maskAccountNumbers. C13-4 then says the residue "is recorded at the
+      definition of src/platform/ui/mask-account-number.ts", and that residue
+      paragraph was replaced in this round by the corrected header, so the
+      cross-reference resolves to nothing. C13-5 says a token of an
+      unregistered country "or one written with a separator other than a single
+      space, is left in full", and gives as its reason that the reporter "did
+      not find a way to close either without inventing a second definition of
+      an account number". Both halves are now false and both were closed here,
+      the separator half by asking platform for the answer rather than
+      inventing one. The work history is the document the next phase reads to
+      learn what is still owed, and it currently owes two things that are done.
+      This is precisely the two-sources failure the round's own corrections
+      were written against, reappearing inside the same head.
+    evidence:
+      - "delivery/work-history/m3-p13.yaml at 2a0cc03, lines 709 through 733: C13-4 and C13-5, both kind open-question, both carrying still-open-because prose, neither superseded. A grep of the whole file for supersede, closed-in-the-fix-round or no-longer-open returns nothing."
+      - "Against C13-4: src/modules/overview/ui/month-view.tsx at 2a0cc03 lines 110, 324 and 362 now read maskAccountNumbers(maskCardNumbers(...)), and line 254 masks the reserves label; the exclusion that excused the reserves label was removed from test/domain/merchant-review.test.ts in this round."
+      - "Against C13-4's cross-reference: the residue paragraph in src/platform/ui/mask-account-number.ts is gone, quoted inside the replacement as what the file 'used to say'."
+      - "Against C13-5: src/platform/ui/mask-account-number.ts, accountSpanAt now has a second branch redacting an unregistered country when accountNumberChecksumHolds is true, and isSeparator accepts the whole isAccountNumberWhitespace class plus a full stop and a hyphen; test/domain/identity-on-review.test.ts pins nine separator members and derives the agreement with canonicalAccountNumber over twenty-five whitespace characters."
+    concrete-fix: >-
+      Rewrite C13-4 and C13-5 in delivery/work-history/m3-p13.yaml as closed,
+      in the same corrected-loudly form this round used everywhere else: keep
+      the question, quote what it said, and say which change closed it and
+      where. C13-4's residue sentence must lose its pointer to the deleted
+      paragraph and point at the derived enumeration instead. If either is
+      judged still partly open, say which part and against what, because as
+      written both are wholly false at this head.
+  - id: CR2-M3P13-03
     severity: low
     analysis: >-
-      PLACEHOLDER, checkpoint 1. This entry exists only so the document
-      validates on its first push and is replaced before the verdict is set.
-      Round one's six findings and their claimed dispositions are listed in the
-      beacon log above, every one of them NOT YET VERIFIED.
+      THE FAIL-CLOSED BRANCH IS RIGHT AND ITS STATED REASON IS NOT. Redacting
+      an unregistered country when the checksum holds is the correct direction
+      and it closes a real fail-open hole. But the justification written at
+      both the platform predicate and the masker is that a checksum "is a
+      grammar test rather than a shape test, so it cannot fire on a mandate
+      reference, a card number or a phone number". Card numbers and phone
+      numbers are safe, because the scan needs two letters followed by two
+      digits at a word boundary and they have none. A mandate or creditor
+      reference is not safe, and one family of them is not merely possible but
+      certain: the ISO 11649 structured creditor reference is literally RF plus
+      two check digits plus an alphanumeric body, and its check is the SAME
+      mod-97-equals-1 over the same rearrangement that this predicate applies.
+      Every valid RF reference whose length falls inside the registry's own
+      length bounds will therefore be redacted as though it were an account
+      number. That is the safe direction and it costs nothing that matters
+      against printing an account, so this is low; what is wrong is the
+      sentence, which tells the next reader the branch cannot do the thing it
+      will reliably do, on a screen whose whole purpose is letting the owner
+      recognise what they are looking at.
     evidence:
-      - "NOT YET VERIFIED at checkpoint 1."
+      - "src/platform/account-number.ts at 2a0cc03, accountNumberChecksumHolds: /^[A-Z]{2}[0-9]{2}[A-Z0-9]+$/ over the canonical form and mod97(compact) === 1, with the comment 'it cannot fire on a mandate reference, a card number or a phone number'. The same claim is restated in src/platform/ui/mask-account-number.ts at accountSpanAt."
+      - "ISO 11649 assigns the structured creditor reference the form RF, two check digits, then up to twenty-one alphanumeric characters, and computes those check digits by moving RF and the digits to the end and requiring mod 97 to equal 1, which is the IBAN rearrangement this predicate implements. Such a reference satisfies both the pattern and the arithmetic by construction."
+      - "src/platform/ui/mask-account-number.ts, accountSpanAt: for an unregistered country the loop tries every length from ACCOUNT_NUMBER_LENGTH_BOUNDS.longest down to .shortest and accepts the first run whose checksum holds, so any RF reference whose length lies in that window is redacted."
+      - "The existing negative test does not reach this: test/domain/identity-on-review.test.ts asserts maskAccountNumbers('REFERTE 9000000101 20260302') is unchanged, which is a digit run with no country grammar and therefore never a candidate at all."
     concrete-fix: >-
-      Replace this entry with the round-two findings before setting the verdict.
+      Refuse the ISO 11649 prefix in the unregistered-country branch, which is
+      two characters and one comparison: if the first two letters are RF, do
+      not take the checksum path. Then correct both sentences to say what is
+      true, that the fallback cannot fire on a value carrying no country
+      grammar and that the one family sharing this checksum is excluded by
+      name, and pin it with a test that builds a valid RF reference the same
+      way the unregistered helper builds its ZZ value and asserts it is left
+      alone. If redacting an RF reference is judged acceptable, say so at the
+      branch instead and delete the claim that it cannot happen.
+  - id: CR2-M3P13-04
+    severity: low
+    analysis: >-
+      THE PHASE'S STRONGEST ASSERTION SWEEPS FEWER SHAPES THAN ITS SECOND
+      STRONGEST. The primary leak sweep, over the account that IS an identity
+      key, tests five renderings: compact, ASCII-spaced, no-break-spaced,
+      narrow-no-break-spaced and hyphenated. The second-token sweep, which is
+      the one that carries criterion 13.2's literal page-source clause with
+      nothing excluded on the production build, tests three: compact,
+      ASCII-spaced and no-break-spaced. It drops the narrow no-break space and
+      the hyphen. Nothing suggests those two shapes reach that page today, and
+      the mask now normalises every separator, so the risk is small; but the
+      literal clause is the single assertion this phase points at when it says
+      the exclusion set above it is forced rather than convenient, and it
+      should not be the weaker of the two sweeps.
+    evidence:
+      - "test/e2e/identity-on-review.spec.ts at 2a0cc03: the primary sweep builds `shapes` with five entries; cat -A over the file confirms the two visually identical lines carry M-BM- (U+00A0) and M-bM-^@M-/ (U+202F), so the five are genuinely distinct."
+      - "The same file, `secondShapes`: three entries, the third carrying M-BM- (U+00A0); no U+202F entry and no hyphen entry. That array is used for the dev-server assertion, for the production page-source assertion and for the not-vacuous check."
+    concrete-fix: >-
+      Build both arrays from one helper that takes an account and returns the
+      five renderings, so the two sweeps cannot drift apart, and use it in the
+      primary sweep, the second-token dev assertion and the production
+      page-source assertion alike.
+  - id: CR2-M3P13-05
+    severity: low
+    analysis: >-
+      THE ACCOUNTS-SETUP INTERMITTENT IS CARRIED FORWARD RATHER THAN CLOSED.
+      Round one's CR-M3P13-06 was not acted on, by the orchestrator's
+      instruction, and the implementer recorded a second sighting. It is
+      restated here as a round-two finding for one reason: this is the closing
+      round under the cap, so anything living only in a closure line has
+      nothing left to carry it, while a finding rides the implementer's brief
+      as work. The classification is unchanged and is not a product defect: the
+      failure is a five-second default wait on a status element after a server
+      action, in a helper almost every journey in this suite calls, and the
+      test passes in isolation at both heads I ran it against.
+    evidence:
+      - "Round one, my own run at 936fcda: EXIT 1 on test/e2e/accounts.spec.ts:509 inside test/e2e/setup-accounts.ts:58, and the same test passing in isolation at that head, exit 0 in 14.7s."
+      - "delivery/work-history/m3-p13-notes.md at 2a0cc03 records a second sighting of the same failure, in the same helper, by the implementer."
+      - "test/e2e/setup-accounts.ts:58 at 2a0cc03 is unchanged: await expect(page.getByTestId(\"accounts-status\")).toBeVisible() with no explicit timeout, so the five-second default still stands."
+    concrete-fix: >-
+      As stated in round one: give the status wait in
+      test/e2e/setup-accounts.ts:58 an explicit timeout matched to the server
+      action's own budget rather than the five-second default, so a slow
+      round-trip in a loaded container is waited out instead of failing a
+      helper almost every journey depends on. Nothing under src/ changes.
 criteria:
   - id: "13.1"
     quote: >-
