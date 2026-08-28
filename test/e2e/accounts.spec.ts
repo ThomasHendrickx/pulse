@@ -241,11 +241,20 @@ test("CONTROL ARM: with only the current account registered, the seven DO appear
   }
   // And they are offered under the counterparty name the statement prints,
   // which is the naming the owner complained about being asked for.
-  const controlLabels = (
-    await page.getByTestId("group-label").allTextContents()
-  ).join(" ");
-  expect(controlLabels).toContain("EIGEN REKENING");
-  expect(controlLabels).toContain("EIGEN SPAARREKENING");
+  //
+  // UPDATED IN M3-P13 (decision D-41), and the assertion is STRONGER rather
+  // than weaker. It used to read "EIGEN REKENING" and "EIGEN SPAARREKENING",
+  // which are fragments of the NORMALISED DESCRIPTOR the group was labelled
+  // by: uppercased, and matched as substrings of a whole transfer line. An
+  // account-basis group is now labelled by the counterparty NAME the
+  // statement carries where any of its rows carries one, so the label is
+  // that name and nothing else, and it is compared EXACTLY, in the case the
+  // statement printed it. The old form would pass on a label that merely
+  // contained those words somewhere inside a longer string; this one does
+  // not.
+  const controlLabels = await page.getByTestId("group-label").allTextContents();
+  expect(controlLabels).toContain("Eigen rekening");
+  expect(controlLabels).toContain("Eigen spaarrekening");
 
   // And the same movements land in the spend total.
   await page.goto("/?month=2026-08");
