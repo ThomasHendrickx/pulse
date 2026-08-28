@@ -379,10 +379,18 @@ test("criterion 13.5: naming a group on this screen still moves no total", async
 const CSV_FIXTURE = join(__dirname, "..", "fixtures", "belfius-account-a.csv");
 const CARD_FIXTURE = join(__dirname, "..", "fixtures", "card-descriptors.csv");
 
+// EACH UPLOAD DECLARES ITS OWN FORMAT NAME. A source profile's name is
+// unique per household (prisma/schema/import.prisma), so answering the format
+// question twice with one name fails the insert. Measured here as an
+// unhandled server exception on the second upload rather than as a refusal
+// the screen states, which is recorded as an open question in
+// delivery/work-history/m3-p13.yaml: it is a pre-existing defect in the
+// import path and not this phase's to fix.
 const uploadCsv = async (
   page: import("@playwright/test").Page,
   fixture: string,
   expectedAdded: string,
+  formatLabel: string,
 ): Promise<void> => {
   await page.goto("/import");
   await page.getByLabel("Bank export file").setInputFiles(fixture);
@@ -394,7 +402,7 @@ const uploadCsv = async (
   // second upload does not answer it.
   const formatName = page.getByLabel("Format name");
   if ((await formatName.count()) > 0) {
-    await formatName.fill("Demobank current account");
+    await formatName.fill(formatLabel);
   }
   await page.getByTestId("confirm-import").click();
   await expect(page.getByTestId("import-result")).toBeVisible();
@@ -413,8 +421,8 @@ test("criterion 13.4 and finding HZ-M3P13-03: the reach counts every imported tr
   await expect(page.getByTestId("household-context")).toHaveText(unique);
   await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
 
-  await uploadCsv(page, CSV_FIXTURE, "6");
-  await uploadCsv(page, CARD_FIXTURE, "21");
+  await uploadCsv(page, CSV_FIXTURE, "6", "Demobank current account");
+  await uploadCsv(page, CARD_FIXTURE, "21", "Demobank card lines");
 
   await page.goto("/merchants");
   await expect(
