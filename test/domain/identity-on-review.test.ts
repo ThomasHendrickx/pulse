@@ -251,11 +251,26 @@ describe("criterion 13.2 and hazard H13.2: the display mask redacts an account a
 // the two values it needs; restating them is only safe while something
 // compares the two statements, and this is that something.
 describe("the e2e facts module agrees with the fixture generator", () => {
-  test("the account namespace and the two account numbers are the same on both sides", () => {
+  // DERIVED PER KEY AT RUN TIME, never a hand-written list of comparisons,
+  // and the AUTHORITY is the generator (mechanism index, "Checking a
+  // generated artifact against its own generator"): a comparison written
+  // out field by field is silent about a field somebody adds to the restated
+  // copy later, which is the containment failure that entry names.
+  test("every value the e2e module restates is the generator's value under the same name", () => {
     expect(E2E_ACCOUNT_NAMESPACE).toBe(ACCOUNT_NAMESPACE);
-    expect(E2E_ACCOUNTS.own).toBe(IDENTITY_FIXTURE_ACCOUNTS.own);
-    expect(E2E_ACCOUNTS.counterparty1).toBe(
-      IDENTITY_FIXTURE_ACCOUNTS.counterparty1,
-    );
+    const restated = Object.entries(E2E_ACCOUNTS);
+    expect(restated.length).toBeGreaterThan(0);
+    for (const [name, value] of restated) {
+      expect(
+        Object.hasOwn(IDENTITY_FIXTURE_ACCOUNTS, name),
+        `the e2e module restates ${name}, which the fixture generator does not export`,
+      ).toBe(true);
+      expect(
+        value,
+        `the e2e module and the fixture generator disagree on ${name}`,
+      ).toBe(
+        (IDENTITY_FIXTURE_ACCOUNTS as Readonly<Record<string, string>>)[name],
+      );
+    }
   });
 });
