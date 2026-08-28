@@ -11,9 +11,12 @@ import {
 // the account the fixture belongs to, import the committed identity fixture,
 // then read the merchant review at the owner's own phone width.
 //
-// EVERY VALUE IN THIS FILE IS INVENTED and comes from the committed fixture
-// generator by import, so no identifier shape is typed in here and none is
-// quoted from a real document (criterion 13.9).
+// EVERY VALUE IN THIS FILE IS INVENTED. The account numbers come from
+// ./identity-fixture-facts, which restates two values of the committed
+// fixture generator because the Playwright project compiles test/e2e/ alone;
+// a fast-gate test derives the comparison between the two, so a fixture
+// change reddens rather than diverging silently. Nothing here is quoted from
+// a real document (criterion 13.9).
 
 const FIXTURE = join(
   __dirname,
@@ -182,7 +185,7 @@ test("criterion 13.4: the naming form states how far the naming reaches, in Engl
   const single = page
     .getByTestId("unresolved-group")
     .filter({
-      has: page.getByTestId("group-count").filter({ hasText: /^1 rows$/ }),
+      has: page.getByTestId("group-count").filter({ hasText: /^\s*1 rows\s*$/ }),
     })
     .first();
   await expect(single.getByTestId("group-reach")).toHaveText(
