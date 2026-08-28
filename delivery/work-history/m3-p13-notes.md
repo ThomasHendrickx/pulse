@@ -104,3 +104,37 @@ need already had one.
     (no output)
     $ grep -c 't("' src/modules/merchants/ui/merchant-review.tsx
     24
+
+### The second instrument the product legitimately changed under
+
+`test/e2e/pressed-and-disabled.spec.ts` sweeps every interactive control the
+journey reaches and asserts the collected set EQUALS a written enumeration, in
+both directions, with a literal count beside it. The disclosure this phase adds
+to the review row is a `summary`, so the sweep found a twenty-second control:
+
+    Error: the swept control set is not the enumeration
+    +   "summary.merchant-row-detail-summary|Show these transactions",
+
+Criterion 9.2(a) says that when the sweep and the enumeration disagree the
+ENUMERATION is amended and the sweep is never narrowed. It was amended, and the
+literal count went from 21 to 22 with a note saying why it is a literal rather
+than `ENUMERATION.length`. The new control needed no new appearance rule: the
+pressed, disabled and busy rules are declared at element scope for `summary`
+(`summary:active`, `summary[aria-disabled="true"]`, `summary[aria-busy="true"]`
+in `src/app/globals.css`) and `.merchant-row-detail-summary` sits one
+specificity step below each of them, so the whole measured appearance came out
+of the rules that were already there.
+
+Verified in isolation before the final full run:
+
+    $ npx playwright test test/e2e/pressed-and-disabled.spec.ts
+    11 passed (5.7m)   EXIT=0
+
+### Slow-gate run history
+
+| Run | What it measured | Result |
+|---|---|---|
+| 1 | Discarded. Started after a hand-run `npm run build` polluted `.next`, and edits landed under `test/e2e/` while it ran. | invalid |
+| 2 | Diagnostic. Found the accounts control-arm label assertion and the page-source assertion in the new spec; aborted at 39 of 122 once both were understood. | invalid |
+| 3 | Full run at the fixed tree. 117 passed, 4 failed, all four the same control-enumeration mismatch across two projects. | exit 1 |
+| 4 | Full run after the enumeration amendment. | recorded in m3-p13.yaml |
