@@ -421,30 +421,41 @@ test("criterion 13.4 and finding HZ-M3P13-03: the reach counts every imported tr
     page.getByRole("heading", { name: "Merchant review" }),
   ).toBeVisible();
 
-  // The group is chosen by its own rendered COUNT, so this assertion carries
-  // no descriptor from either fixture.
-  const spanning = page
-    .getByTestId("unresolved-group")
-    .filter({
-      has: page.getByTestId("group-count").filter({ hasText: /^\s*5 rows\s*$/ }),
-    })
-    .first();
-  await expect(spanning).toHaveCount(1);
-  await expect(spanning.getByTestId("group-reach")).toHaveText(
-    "Naming this applies to 5 transactions already imported.",
-  );
-
-  // AND THE FIVE ROWS SPAN TWO MONTHS, which is what makes the sentence above
-  // impossible to satisfy with a month word in it.
-  await spanning.getByTestId("group-rows").locator("summary").click();
-  const dates = await spanning
-    .getByTestId("group-row")
-    .getByTestId("group-row-date")
-    .allInnerTexts();
-  expect(dates).toHaveLength(5);
-  const months = new Set(dates.map((date) => date.trim().slice(0, 7)));
+  // EVERY GROUP IS WALKED, and the assertion is made on whichever ones
+  // actually span two months, so it depends on no descriptor, no amount and
+  // no fixture ordering. A group whose rows fall in two calendar months
+  // cannot have a true month-scoped reach in either of them, so asserting
+  // that its reach equals its FULL row count is what refutes the old copy.
+  const groups = page.getByTestId("unresolved-group");
+  const total = await groups.count();
+  expect(total).toBeGreaterThan(0);
+  let spanning = 0;
+  for (let index = 0; index < total; index += 1) {
+    const group = groups.nth(index);
+    const countText = (
+      await group.getByTestId("group-count").innerText()
+    ).trim();
+    const rowCount = Number(countText.split(" ")[0]);
+    if (!Number.isFinite(rowCount) || rowCount < 2) {
+      continue;
+    }
+    await group.getByTestId("group-rows").locator("summary").click();
+    const dates = await group
+      .getByTestId("group-row")
+      .getByTestId("group-row-date")
+      .allInnerTexts();
+    expect(dates).toHaveLength(rowCount);
+    const months = new Set(dates.map((date) => date.trim().slice(0, 7)));
+    if (months.size < 2) {
+      continue;
+    }
+    spanning += 1;
+    await expect(group.getByTestId("group-reach")).toHaveText(
+      `Naming this applies to ${rowCount} transactions already imported.`,
+    );
+  }
   expect(
-    months.size,
-    "the group under test does not span two months, so this case cannot tell a month-scoped reach from a household-wide one",
-  ).toBe(2);
+    spanning,
+    "no group in this household spans two months, so this case cannot tell a month-scoped reach from a household-wide one",
+  ).toBeGreaterThan(0);
 });
