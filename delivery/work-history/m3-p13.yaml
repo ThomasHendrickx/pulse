@@ -107,11 +107,182 @@ files-touched:
 
 per-step-commits: []
 
-key-decisions: []
+key-decisions:
+  - decision: >-
+      The basis and the row count are READ off M3-P12's identity and off the
+      group's own fields, and this phase derives neither. ReviewGroup gains a
+      `basis` field set from counterpartyIdentity(row).basis and nothing else,
+      and the reach sentence is given group.count, the same number the row
+      already prints beside the label.
+    why: >-
+      The plan's grounding says this phase consumes M3-P12's identity and adds
+      no derivation of its own, and hazard H13.6 is exactly the failure of a
+      second, independent count. Two numbers that mean the same thing can
+      disagree; one number cannot.
+  - decision: >-
+      An account-basis group hands the screen its ACCOUNT through a separate
+      field, accountAlias, and never through `label`. `label` keeps the
+      descriptor for those groups, which is what the deterministic sort reads,
+      and the screen renders the masked alias in its place.
+    why: >-
+      Putting a bare account number in `label` would make the screen's masking
+      a matter of remembering: `label` is masked with the CARD mask everywhere
+      it is rendered, and the card mask does not touch an account number, so a
+      single missed call site would print it in full. A separate field forces
+      the display rule to be chosen explicitly at the one place that renders
+      it, and the derivation test in test/domain/merchant-review.test.ts sees
+      that place.
+  - decision: >-
+      The account mask is a TEXT SCRUBBER applied to descriptor text as well
+      as to the alias, not a formatter applied to the alias alone.
+    why: >-
+      This phase puts transaction descriptions on the screen for the first
+      time, and a transfer descriptor carries the counterparty account exactly
+      as the statement printed it. Measured on the shipped normaliser: the
+      label an account-basis group would otherwise carry contains the account
+      in its spaced form. Rendering the lines without a scrubber would have
+      created hazard H13.2 in the act of answering it.
+  - decision: >-
+      The mask identifies an account by the registry's COUNTRY AND LENGTH and
+      consumes exactly that many characters, rather than matching a wide shape
+      and validating afterwards.
+    why: >-
+      The first draft did match-then-validate and was measured wrong on a real
+      sentence: a greedy group-shaped pattern swallowed the following word,
+      the compacted match was then the wrong length, the validity test refused
+      it and the account was printed in full. The failure mode of that design
+      is silent leakage, so the design was replaced rather than patched.
+  - decision: >-
+      The transactions behind a group are a native <details> disclosure inside
+      the existing row, fed by a children slot on the client leaf, and are
+      rendered for RESOLVED groups as well as unresolved ones.
+    why: >-
+      The plan's step forbids a new client component and a new server action,
+      and a native disclosure needs neither and carries its own accessible
+      name. Rendering them for resolved groups too is a deliberate reading of
+      "let the transactions behind a group be seen": DR-0027's merge is the
+      same merge once the group is named, and hiding the lines at the moment
+      the owner has just named something would remove the evidence exactly
+      when it is most likely to be questioned.
+  - decision: >-
+      The row's data-group-key is left UNMASKED for an account-basis group.
+    why: >-
+      Two accounts sharing a country, check digits and last four characters
+      mask to one string, and that attribute is the row identity criterion
+      11.3 and the optimistic-naming spec both address rows by. A collision
+      there is a wrong row targeted, which is worse than an unrendered
+      attribute carrying an account. It is not rendered, so it cannot reach a
+      screenshot, which is what hazard H13.2 is about.
+  - decision: >-
+      CountedTransaction and CountedRow gain bookingDate, selected in the
+      adapter and converted once at the repository boundary.
+    why: >-
+      The lines need each transaction's own date and the read was already
+      ORDERED by that column without selecting it. The conversion to the
+      branded calendar string happens at the boundary, per pulse-typescript
+      section 2, so no Date crosses into the domain.
 
-verification-first: []
+verification-first:
+  - finding: >-
+      Read at the merged head 975d0ce, before any edit. ReviewGroup
+      (src/modules/merchants/domain/merchant-review.ts) exposes: key (the
+      merchant id for a resolved group, the namespaced counterparty identity
+      key otherwise), label (the merchant name, or the lexicographically
+      smallest normalised descriptor for an unresolved group), merchantId,
+      counterpartyText (present only on a nameable unresolved group, and its
+      value is ALREADY the namespaced identity key, not a raw text),
+      unnameableReason, totalCents and count. It exposes no basis, no account
+      and no rows. The naming form's hidden input is named counterpartyText
+      and is fed group.counterpartyText through the MerchantGroupRow client
+      leaf's naming.identityKey prop, so the subject the form submits is
+      already the identity key. The plan's verified-root-cause says that field
+      "has to carry the identity key instead"; M3-P12 already made it so, and
+      that half of the root cause is therefore stale relative to this head.
+      The half that is NOT stale is the other one: an account-basis group has
+      no label a person can recognise, because label is still a descriptor.
+    contradicts-plan: false
+  - finding: >-
+      M3-P8 has NOT merged. There is no origin branch matching
+      claude/m3-p8-mobile-merchant-review (git branch -r | grep p8 returns
+      only origin/claude/m0-p8-plan-testid) and no commit on origin/main names
+      M3-P8. The group row is therefore the BASELINE row: one wrapping flex
+      line, .merchant-row in src/app/globals.css, carrying label, count, total
+      and the naming form, with the wrap added in M3-P6 for the phone width.
+      This phase is built on that row, which is hazard H13.7's second arm and
+      the one the merge state selects.
+    contradicts-plan: false
+  - finding: >-
+      Criterion 13.2 cannot be satisfied as written, because its two halves
+      contradict each other on this screen. It requires that the rendered HTML
+      of /merchants "does NOT contain the unmasked account anywhere, asserted
+      over the full page source" AND that "the hidden field the naming form
+      submits carries the unmasked namespaced identity key, asserted on the
+      same page". For an account-basis group the namespaced identity key IS
+      the string "account:" followed by that account in its canonical form
+      (src/modules/merchants/domain/counterparty-identity.ts, the account
+      branch of counterpartyIdentity), so the second half puts the unmasked
+      account into the page source and the first half forbids it. The plan
+      carries no amendment note resolving this: grep for 13.2 in
+      delivery/plan/pulse-v02.yaml returns the criterion and the two hazard
+      cross-references only, and the plan has no amendment-notes section.
+      Decision D-41 and hazard H13.2 both speak about the account being
+      RENDERED and about a screenshot, which is the reading the rest of the
+      criterion supports.
+    contradicts-plan: true
+    stopped-and-reported: >-
+      Reported to the orchestrator in the phase report with the exact criterion
+      text, and not improvised around. The work continued on everything the
+      question does not block. What was built and asserted instead is the
+      strongest form that is true, stated in the spec beside the assertion:
+      the account appears in NO rendered text of the page in either the
+      compact or the spaced shape, and every occurrence of it in the page
+      source sits in one of the two machine identities that must hold it
+      unmasked, the hidden counterpartyText field the criterion itself
+      requires and the row's data-group-key. Neither is rendered, so neither
+      reaches a screenshot.
+  - finding: >-
+      Measured before the change, on the shipped normaliser, with tsx: for a
+      Belfius transfer descriptor the label an account-basis group carries is
+      the normalised descriptor and it contains the counterparty account in
+      the SPACED form the statement prints. Command: npx tsx over a probe
+      calling normaliseCounterparty(counterpartyText({description})) with the
+      committed fixture's own invented account. Output: "label carries the
+      account spaced: true", "label carries the account compact: false". So
+      /merchants printed a counterparty account in full before this phase, and
+      the assertion that reddens against the unfixed screen is the one on the
+      SPACED shape, not the compact one. The spec asserts both shapes; a
+      compact-only assertion would have passed against the unfixed screen.
+    contradicts-plan: false
+  - finding: >-
+      The Belfius PDF template stores a counterparty ACCOUNT and never a
+      counterparty NAME: grep for counterpartyName in
+      src/modules/import/domain/belfius-current-account-template.ts returns
+      nothing, and the template's row builder sets counterpartyIban only. So
+      on the fixture criterion 13.1 names, every account-basis group takes
+      decision D-41's second branch, the masked account, and the first branch,
+      the carried counterparty name, has no witness in the slow gate. It is
+      witnessed in the fast gate instead, over rows built with a name.
+    contradicts-plan: false
 
-deviations: []
+deviations:
+  - plan-clause: >-
+      Criterion 13.2, "the rendered HTML of /merchants contains the masked form
+      and does NOT contain the unmasked account anywhere, asserted over the
+      full page source; and the hidden field the naming form submits carries
+      the unmasked namespaced identity key, asserted on the same page."
+    why: >-
+      The two halves cannot both hold, because the namespaced identity key of
+      an account-basis group is the namespace followed by that account. The
+      verification-first record above carries the derivation and the
+      escalation. What is asserted is the strongest true form: no rendered
+      text carries the account in either shape, and every occurrence in the
+      page source is inside the hidden subject or the row's data-group-key.
+  - plan-clause: >-
+      Step 5, "Let the transactions behind a group be seen".
+    why: >-
+      Read as unqualified and applied to RESOLVED groups as well as unresolved
+      ones. The criterion only exercises an unresolved group, so this is more
+      than the criterion asks for; the reason is in the key decisions above.
 
 gate-evidence: []
 
