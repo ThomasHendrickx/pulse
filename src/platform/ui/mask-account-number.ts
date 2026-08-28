@@ -48,30 +48,94 @@ import {
   canonicalAccountNumber,
 } from "@/platform/account-number";
 
-// The candidate shape, deliberately WIDER than what is masked: two letters,
-// two digits, then at least eight further letters or digits, written
-// compact or in groups separated by a single space. Every match is then put
-// through the registry test below, and a match that fails it is returned
-// untouched. Widening the candidate costs nothing because the test is what
-// decides; narrowing the TEST is what would cost an owner their privacy.
-const ACCOUNT_CANDIDATE = /\b[A-Za-z]{2}[0-9]{2}(?:[ ]?[A-Za-z0-9]){8,32}\b/g;
+// THE SCAN IS LENGTH-DIRECTED, NOT GREEDY, and that is the whole design.
+// A greedy pattern followed by a validity test does not work here: in
+// "OVERSCHRIJVING NAAR BE78 2222 3333 4444 DEMO VERZEKERING" a greedy
+// group-shaped pattern swallows DEMO as a fifth group, the compacted match
+// is then the wrong length, the test refuses it and the account is printed
+// in full. Measured on exactly that string before this was rewritten.
+//
+// So the registry decides the length BEFORE any consuming happens: a
+// candidate begins at a word boundary with two letters and two digits, the
+// registry says how many characters that country's account numbers have,
+// and the scan consumes EXACTLY that many letters-or-digits, tolerating a
+// single space between them. A run that ends against another letter or
+// digit is refused, because a longer token is not that account number.
+// Nothing is masked on shape alone and nothing is masked on a guess.
+const CANDIDATE_START = /\b[A-Za-z]{2}[0-9]{2}/g;
+const ALPHANUMERIC = /[A-Za-z0-9]/;
 
 const VISIBLE_TAIL = 4;
 const COUNTRY_AND_CHECK = 4;
 const MASK = "****";
 
-export const maskAccountNumbers = (text: string): string =>
-  text.replace(ACCOUNT_CANDIDATE, (match) => {
-    // THE CANONICAL FORM IS PLATFORM'S, NOT A SECOND COPY OF IT (M3-P14
-    // criterion 14.4, pinned by test/domain/account-number.test.ts: a third
-    // whitespace-removal in the tree is red). This helper decides what to
-    // SHOW; it does not decide what an account number is.
-    const compact = canonicalAccountNumber(match);
-    const expected = ACCOUNT_NUMBER_LENGTH_BY_COUNTRY.get(compact.slice(0, 2));
-    if (expected === undefined || expected !== compact.length) {
-      return match;
+// The source span of an account number starting at `from`, or undefined if
+// no account number of a known country and its registry length starts
+// there.
+const accountSpanAt = (
+  text: string,
+  from: number,
+): { readonly end: number; readonly compact: string } | undefined => {
+  const expected = ACCOUNT_NUMBER_LENGTH_BY_COUNTRY.get(
+    text.slice(from, from + 2).toUpperCase(),
+  );
+  if (expected === undefined) {
+    return undefined;
+  }
+  let taken = 0;
+  let at = from;
+  const characters: string[] = [];
+  while (taken < expected && at < text.length) {
+    const character = text[at] ?? "";
+    if (ALPHANUMERIC.test(character)) {
+      characters.push(character);
+      taken += 1;
+      at += 1;
+      continue;
     }
-    return `${compact.slice(0, COUNTRY_AND_CHECK)} ${MASK} ${compact.slice(
-      -VISIBLE_TAIL,
-    )}`;
-  });
+    // Exactly ONE space is tolerated between characters, and only between
+    // them: a run may not begin or end on one.
+    if (character === " " && taken > 0 && taken < expected) {
+      at += 1;
+      continue;
+    }
+    break;
+  }
+  if (taken < expected) {
+    return undefined;
+  }
+  if (ALPHANUMERIC.test(text[at] ?? "")) {
+    return undefined;
+  }
+  return { end: at, compact: characters.join("").toUpperCase() };
+};
+
+export const maskAccountNumbers = (text: string): string => {
+  CANDIDATE_START.lastIndex = 0;
+  let out = "";
+  let copiedTo = 0;
+  let match = CANDIDATE_START.exec(text);
+  while (match !== null) {
+    const from = match.index;
+    if (from < copiedTo) {
+      match = CANDIDATE_START.exec(text);
+      continue;
+    }
+    const span = accountSpanAt(text, from);
+    if (span !== undefined) {
+      // THE CANONICAL FORM IS PLATFORM'S, NOT A SECOND COPY OF IT (M3-P14
+      // criterion 14.4, pinned by test/domain/account-number.test.ts: a
+      // third whitespace-removal in the tree is red). This helper decides
+      // what to SHOW; it does not decide what an account number is.
+      const compact = canonicalAccountNumber(span.compact);
+      out += text.slice(copiedTo, from);
+      out += `${compact.slice(0, COUNTRY_AND_CHECK)} ${MASK} ${compact.slice(
+        -VISIBLE_TAIL,
+      )}`;
+      copiedTo = span.end;
+      CANDIDATE_START.lastIndex = span.end;
+    }
+    match = CANDIDATE_START.exec(text);
+  }
+  return out + text.slice(copiedTo);
+};
