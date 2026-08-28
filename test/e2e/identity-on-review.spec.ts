@@ -38,6 +38,24 @@ const THREE_ROW_KEY = `${ACCOUNT_NAMESPACE}${IDENTITY_FIXTURE_ACCOUNTS.counterpa
 // markup of every row. The hidden field still carries the key, because the
 // criterion requires it to, so it is what a spec can address a group by
 // without knowing the digest.
+// EVERY RENDERING OF ONE ACCOUNT THAT A SWEEP MUST LOOK FOR, IN ONE PLACE
+// (round two, finding CR2-M3P13-04). The primary sweep tested five shapes and
+// the second-token sweep tested three, dropping the narrow no-break space and
+// the hyphen; the second is the one carrying criterion 13.2's literal
+// page-source clause, so the phase's strongest assertion was the weaker of
+// the two. Both now build from here, so they cannot drift apart again.
+//
+// The two visually identical lines are U+00A0 and U+202F. They are written as
+// escapes rather than as the characters themselves precisely because they are
+// indistinguishable on screen, which is what let the gap survive review.
+const renderingsOf = (account: string): readonly string[] => [
+  account,
+  account.replace(/(.{4})(?=.)/g, "$1 "),
+  account.replace(/(.{4})(?=.)/g, "$1\u00a0"),
+  account.replace(/(.{4})(?=.)/g, "$1\u202f"),
+  account.replace(/(.{4})(?=.)/g, "$1-"),
+];
+
 const groupOf = (page: import("@playwright/test").Page, key: string) =>
   page
     .getByTestId("unresolved-group")
@@ -117,14 +135,18 @@ test("criteria 13.1, 13.2, 13.3: the group states its basis, is labelled by its 
   // smallest normalised descriptor and that descriptor carries the account
   // exactly as printed.
   const account = IDENTITY_FIXTURE_ACCOUNTS.counterparty1;
-  const spacedAccount = account.replace(/(.{4})(?=.)/g, "$1 ");
+  const shapes = renderingsOf(account);
   const masked = `${account.slice(0, 4)} **** ${account.slice(-4)}`;
   await expect(group.getByTestId("group-label")).toHaveText(masked);
 
   const visible = await page.locator("body").innerText();
   expect(visible).toContain(masked);
-  expect(visible).not.toContain(account);
-  expect(visible).not.toContain(spacedAccount);
+  for (const shape of shapes) {
+    expect(
+      visible.includes(shape),
+      `the rendered text carries the account in the shape ${JSON.stringify(shape)}`,
+    ).toBe(false);
+  }
 
   // ...and the hidden field the naming form submits carries the UNMASKED
   // namespaced identity key, which is what the stored rule pattern must be
@@ -165,13 +187,6 @@ test("criteria 13.1, 13.2, 13.3: the group states its basis, is labelled by its 
   // byte 0xA0 in Windows-1252, one of exactly two encodings the importer
   // accepts, and this repository has witnessed it inside stored account
   // renderings.
-  const shapes = [
-    account,
-    spacedAccount,
-    account.replace(/(.{4})(?=.)/g, "$1 "),
-    account.replace(/(.{4})(?=.)/g, "$1 "),
-    account.replace(/(.{4})(?=.)/g, "$1-"),
-  ];
   const leak = await page.evaluate(
     ({ shapesIn, maskedForm }) => {
       const clone = document.body.cloneNode(true) as HTMLElement;
@@ -229,11 +244,7 @@ test("criteria 13.1, 13.2, 13.3: the group states its basis, is labelled by its 
   // the assertion below says exactly that and no more: on the dev server the
   // account appears ONLY inside script elements, never in rendered markup.
   const second = IDENTITY_FIXTURE_ACCOUNTS.secondToken;
-  const secondShapes = [
-    second,
-    second.replace(/(.{4})(?=.)/g, "$1 "),
-    second.replace(/(.{4})(?=.)/g, "$1 "),
-  ];
+  const secondShapes = renderingsOf(second);
   const maskedSecond = `${second.slice(0, 4)} **** ${second.slice(-4)}`;
   const devLeak = await page.evaluate(
     ({ shapesIn }) => {
