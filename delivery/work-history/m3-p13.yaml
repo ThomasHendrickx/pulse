@@ -572,6 +572,86 @@ fix-round:
       (e) It cannot see a surface added after it ran; only the derived walk
       can, which is why the enumeration moved into a test.
 
+  - mechanism: >-
+      A REDACTION RULE STATED AS A LIST RATHER THAN AS A PREDICATE, and a
+      SCAN THAT SEARCHES FOR A LENGTH INSTEAD OF BEING TOLD ONE. Not "the
+      mask misses the zero-width space" and not "the fallback ate a word":
+      those are the findings. The mechanism behind both is the same one round
+      one established and round two found two more instances of, one on each
+      side of it. Round one's instance was a rule written locally instead of
+      asked for. Round two's first instance is a rule written as an
+      ENUMERATION: even asking the right module, the answer was still a set of
+      members, so every member nobody had thought of failed OPEN. The cure is
+      to state the rule as a closure over its complement (anything that is not
+      a letter or a digit separates), which covers what nobody has thought of.
+      Round two's second instance is the same shape in the other direction: a
+      scan given no length SEARCHED for one, trying twenty candidates at one
+      in ninety-seven each, and the search direction is what turned a rare
+      wrong answer into a visibly wrong one by consuming a following word.
+      The cure is to make exactly one length a candidate, and where the input
+      cannot say which length that is, to refuse rather than to guess.
+      THE RULE, recorded at the definition in
+      src/platform/ui/mask-account-number.ts and named at its siblings
+      src/platform/ui/mask-card-number.ts and
+      src/modules/merchants/domain/normalise-counterparty.ts: state a
+      redaction rule over the COMPLEMENT of what it protects, never as a list
+      of what it catches; and never let a redaction search a space of
+      candidate parses, because each candidate is another draw and the
+      cheapest draw to win is the greediest one.
+    derivation:
+      command: >-
+        npx tsx over a probe calling maskAccountNumbers on nine renderings of
+        one committed fixture account and on 40,000 constructed
+        reference-shaped descriptors
+      output: |
+        == item 1: separators outside the enumerated set ==
+          zero-width space U+200B    masked=false
+          word joiner U+2060         masked=false
+          soft hyphen U+00AD         masked=false
+          en dash U+2013             masked=false
+          underscore                 masked=false
+          solidus                    masked=false
+          country-space-check        masked=false
+          glued prefix               masked=false
+        == item 2: unregistered-country greediness ==
+          trials=40000 masked=2035 swallowed-a-word=428
+          sample: MANDAAT ZZ89 **** OORD
+          sample: MANDAAT ZZ83 **** OORD
+          sample: MANDAAT ZZ77 **** OORD
+
+        After the change, the same probe on the same tree:
+          zero-width space U+200B    masked=true
+          word joiner U+2060         masked=true
+          soft hyphen U+00AD         masked=true
+          en dash U+2013             masked=true
+          underscore                 masked=true
+          solidus                    masked=true
+          country-space-check        masked=true
+          glued prefix               masked=false   (recorded limit, see below)
+          trials=40000 masked=0 swallowed-a-word=0
+    not-covered: >-
+      WHAT THIS DERIVATION EXCLUDED, and why. (a) The probe sweeps ONE account
+      of ONE country, so it measures the rule and not the registry; the
+      registry's own completeness against ISO 13616 is pinned by
+      test/domain/account-number.test.ts and was not re-derived here. (b) The
+      40,000 descriptors are SYNTHETIC and built to one shape, an unregistered
+      two-letter prefix with five space-separated groups and two trailing
+      words, so the measured rate is a rate on that shape and not on real
+      Belgian descriptors, which were not available to this container. The
+      post-fix zero is stronger than the rate, because the fallback now cannot
+      cross a space at all, which makes the outcome structural rather than
+      statistical. (c) It measures the MASK, not the surfaces: which screens
+      call it is the separate derived walk in
+      test/domain/merchant-review.test.ts, whose own blind spot (a vocabulary
+      with no account-bearing field name) was round two's finding
+      CR2-M3P13-01 and is closed in the same head. (d) The GLUED-PREFIX shape
+      is knowingly left open: an account with no word boundary in front of it
+      is not masked, because dropping the boundary anchor would make every
+      two-letter, two-digit sequence inside every word a candidate. It is
+      recorded at the definition and pinned by a test rather than left to be
+      rediscovered. (e) It says nothing about the CARD mask, whose coverage
+      is M3-P6's and was not re-derived in either round.
+
 claims:
   - id: C13-1
     kind: coverage
