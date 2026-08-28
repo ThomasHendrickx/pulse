@@ -422,6 +422,78 @@ gate-evidence:
     todo: 0
     did-not-run: 0
 
+fix-round:
+  - mechanism: >-
+      A REDACTION THAT DECIDES WHAT TO REMOVE BY A RULE IT WRITES ITSELF,
+      rather than by asking the one module that already answers the question.
+      Not "the mask misses a no-break space", which is the finding: the
+      mechanism is that a second consumer of an identifier's grammar restated
+      the grammar locally, so the tree held two answers and the redaction
+      failed OPEN wherever they disagreed. It has three instances on this
+      branch, and all three are the same shape. ONE: the separator set, which
+      the mask wrote as `character === " "` while importing
+      canonicalAccountNumber, whose /\s/ removes every whitespace character
+      including the three no-break spaces. TWO: the country test, which
+      treated a country the registry does not carry as "not an account
+      number", copying the validity module's REFUSAL semantics into a
+      redaction context where the cost of being wrong has the opposite sign.
+      THREE: the enumeration of where the redaction is applied, which was a
+      sentence in a comment rather than a derivation, and was false.
+      The rule this round establishes, recorded at the definition in
+      src/platform/ui/mask-account-number.ts and named at its siblings
+      src/platform/ui/mask-card-number.ts and
+      src/modules/merchants/domain/normalise-counterparty.ts: a redaction
+      asks the identifier's owning module what the grammar is and never
+      restates it, it FAILS CLOSED where a validity test fails open, and the
+      set of surfaces it covers is derived by a test and never written down.
+    derivation:
+      command: >-
+        grep -rn "maskCardNumbers(" src/ --include=*.tsx | grep -v
+        "mask-card-number"
+      output: |
+        src/modules/overview/ui/month-view.tsx:109:          ? maskCardNumbers(group.label)
+        src/modules/overview/ui/month-view.tsx:313:                  {maskCardNumbers(row.text)}
+        src/modules/overview/ui/month-view.tsx:351:          {maskCardNumbers(row.text)}
+        src/modules/import/ui/profile-confirmation.tsx:143:                    {maskCardNumbers(
+        src/modules/import/ui/profile-confirmation.tsx:148:                    {maskCardNumbers(row.description)}
+        src/modules/merchants/ui/merchant-review.tsx:84:              {maskAccountNumbers(maskCardNumbers(row.description))}
+        src/modules/merchants/ui/merchant-review.tsx:123:        data-group-key={maskCardNumbers(group.key)}
+        src/modules/merchants/ui/merchant-review.tsx:185:      groupKey={maskCardNumbers(group.key)}
+        src/modules/merchants/ui/merchant-review.tsx:201:          ? maskAccountNumbers(maskCardNumbers(group.label))
+        (nine sites at the head the review read. Five of them ran the card
+        mask alone and printed an account in full: the three month-view sites
+        and the two import-preview cells. Two more, the data-group-key sites,
+        put the raw key in an attribute. A SIXTH RENDERING SURFACE THIS GREP
+        DOES NOT REACH was found by reading the exclusion table of
+        test/domain/merchant-review.test.ts: month-view.tsx renders the
+        RESERVES group label with NO mask at all, excused there on the ground
+        that it is "the household's own declared account label or a
+        counterparty IBAN". All six render surfaces now pass through the
+        account mask, and the enumeration is derived by that same test rather
+        than by this grep.)
+    not-covered: >-
+      THE REGIONS THIS DERIVATION EXCLUDED, and why, because a search whose
+      scope is wrong returns an empty result indistinguishable from an absence
+      of defects. (a) It greps for maskCardNumbers, so it CANNOT see a surface
+      that renders counterparty text through NO mask at all; one such surface
+      exists and was found by reading the exclusion table instead, which is
+      how the reserves label was caught, and the derived walk in
+      test/domain/merchant-review.test.ts is what now covers that direction.
+      (b) It is limited to .tsx, so a redaction owed in a route handler, an
+      API response or a server action would not appear; grep over src/ for
+      console, logger and process.stdout returns eleven call sites, none in
+      the merchants module and none carrying a counterparty value, and no JSON
+      endpoint serves these screens. (c) It sees RENDERING only. It says
+      nothing about what is stored, which is correct and deliberate: facts are
+      immutable and a mask must never reach a key, a dedup input or a rule
+      subject, and the fast-gate test that walks src/modules/merchants/domain
+      and src/modules/merchants/application asserting neither mask is called
+      there is what holds that boundary. (d) It does not cover the OTHER
+      identifier class: the card mask's own coverage was not re-derived in
+      this round and is carried by M3-P6's tests unchanged.
+      (e) It cannot see a surface added after it ran; only the derived walk
+      can, which is why the enumeration moved into a test.
+
 claims:
   - id: C13-1
     kind: coverage
