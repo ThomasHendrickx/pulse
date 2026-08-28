@@ -88,14 +88,15 @@ findings:
       "THE ACCOUNT NEVER LEAVES THE DISPLAY LAYER UNMASKED". It is not visible
       in a screenshot, which is why this is medium and not high.
     evidence:
-      - "src/modules/merchants/ui/merchant-review.tsx:123 and :185, both sites: data-group-key={maskCardNumbers(group.key)} and groupKey={maskCardNumbers(group.key)}. maskCardNumbers is anchored on the card-number label grammar (src/platform/ui/mask-card-number.ts) and does not touch an account number, so for an account-basis group whose key is the account namespace followed by the account, the attribute is the account in full."
+      - "src/modules/merchants/ui/merchant-review.tsx:185, groupKey={maskCardNumbers(group.key)}, which the client leaf renders as data-group-key (src/modules/merchants/ui/merchant-row.tsx:268). maskCardNumbers is anchored on the card-number label grammar (src/platform/ui/mask-card-number.ts) and does not touch an account number, so for an account-basis group, whose key is the account namespace followed by the compact account, the attribute is the account in full. THE OTHER SITE IS NOT THE LEAK: merchant-review.tsx:123 is the unnameable branch, and an account-basis group can never reach it, because unnameableReason is set only for a BARE namespace and the account branch emits a non-empty compact account by construction. Named here so the fix is applied for consistency rather than because that row leaks."
       - "delivery/plan/pulse-v02.yaml:6712 through :6725, criterion 11.3(b): the data-group-key sequence is added to the row element MASKED, and 'Two rows whose MASKED keys are equal are indistinguishable to this comparison, which is accepted and stated rather than left to be discovered (finding DELTA-M0P4-08)'."
       - "test/e2e/identity-on-review.spec.ts, the leak sweep: for (const row of clone.querySelectorAll('[data-group-key]')) { row.removeAttribute('data-group-key'); } is one of the three removals, and the comment beside it gives the collision argument this finding refutes."
       - "Reviewer probe, committed helpers, exit 0: maskAccountNumbers over the fixture's counterparty account returns the country code, the check digits and the last four characters, so the masked key remains a per-country, per-check-digit, per-tail identity rather than a constant."
     concrete-fix: >-
-      Mask the account in the row identity as well, at both sites, so the
-      excluded set is two channels rather than three: data-group-key and
-      groupKey become maskAccountNumbers(maskCardNumbers(group.key)). Build the
+      Mask the account in the row identity as well, so the excluded set is two
+      channels rather than three: merchant-review.tsx:185 becomes
+      groupKey={maskAccountNumbers(maskCardNumbers(group.key))}, and :123
+      matches it for consistency. Build the
       locator in test/e2e/identity-on-review.spec.ts from the masked key the
       same way the spec already builds the masked label, drop the
       data-group-key removal from the page-source sweep, and restate the
