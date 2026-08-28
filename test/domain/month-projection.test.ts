@@ -380,8 +380,20 @@ describe("CR3-M3P12-06: a month-view group with no counterparty text says why", 
     ]);
     const review = buildMerchantReview(
       [
-        { id: "a", flow: "SPEND", amountCents: cents(-1500), description: "   " },
-        { id: "b", flow: "SPEND", amountCents: cents(-2000), description: "" },
+        {
+          id: "a",
+          flow: "SPEND",
+          amountCents: cents(-1500),
+          bookingDate: plainDate("2026-03-02"),
+          description: "   ",
+        },
+        {
+          id: "b",
+          flow: "SPEND",
+          amountCents: cents(-2000),
+          bookingDate: plainDate("2026-03-03"),
+          description: "",
+        },
       ],
       [],
     );
