@@ -125,7 +125,7 @@ const GroupRow = async ({
         <span className="merchant-row-label" data-testid="group-label">
           {t("unnameableLabel")}
         </span>
-        <span className="merchant-row-count">
+        <span className="merchant-row-count" data-testid="group-count">
           {group.count} {t("rows")}
         </span>
         <span data-testid="group-total">

@@ -272,7 +272,9 @@ export const MerchantGroupRow = ({
       <span className="merchant-row-label" data-testid="group-label">
         {predictedLabel ?? label}
       </span>
-      <span className="merchant-row-count">{countText}</span>
+      <span className="merchant-row-count" data-testid="group-count">
+        {countText}
+      </span>
       <span data-testid="group-total">
         <Amount cents={totalCents} />
       </span>

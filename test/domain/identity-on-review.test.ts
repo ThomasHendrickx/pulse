@@ -20,6 +20,10 @@ import {
   IDENTITY_FIXTURE_ACCOUNTS,
   IDENTITY_FIXTURE_LONG_SOURCES,
 } from "../fixtures/generate-pdf-fixtures";
+import {
+  ACCOUNT_NAMESPACE as E2E_ACCOUNT_NAMESPACE,
+  IDENTITY_FIXTURE_ACCOUNTS as E2E_ACCOUNTS,
+} from "../e2e/identity-fixture-facts";
 
 const cents = (value: number): Cents => value as Cents;
 
@@ -237,5 +241,21 @@ describe("criterion 13.2 and hazard H13.2: the display mask redacts an account a
   test("ordinary descriptor text carrying no account number is returned unchanged", () => {
     const plain = "SUPERMARKT NOORD BETAALTERMINAL 12345678";
     expect(maskAccountNumbers(plain)).toBe(plain);
+  });
+});
+
+// THE SLOW GATE'S COPY OF THESE VALUES IS PINNED HERE, in the FAST gate, so
+// a fixture change reddens in twelve seconds rather than in thirty minutes.
+// The Playwright project compiles test/e2e/ on its own and the fixture
+// generator reaches into src/ through the "@/" alias, so the spec restates
+// the two values it needs; restating them is only safe while something
+// compares the two statements, and this is that something.
+describe("the e2e facts module agrees with the fixture generator", () => {
+  test("the account namespace and the two account numbers are the same on both sides", () => {
+    expect(E2E_ACCOUNT_NAMESPACE).toBe(ACCOUNT_NAMESPACE);
+    expect(E2E_ACCOUNTS.own).toBe(IDENTITY_FIXTURE_ACCOUNTS.own);
+    expect(E2E_ACCOUNTS.counterparty1).toBe(
+      IDENTITY_FIXTURE_ACCOUNTS.counterparty1,
+    );
   });
 });
