@@ -592,6 +592,66 @@ claims:
           under src/ with the compiler API and returns an empty offender list.
           The red witness for the first is recorded in the fix-round section
           of m3-p13-notes.md: 9 failed, 17 passed before the change.
+  - id: C13-6
+    kind: remedy
+    statement: >-
+      A THIRD SERIALISATION CHANNEL WAS FOUND IN THE FIX ROUND, BEYOND EITHER
+      REVIEW LANE, AND IT WAS THIS PHASE'S OWN. The transaction lines were
+      handed to the client leaf as the ELEMENT <GroupRows rows={group.rows} />
+      inside a prop, and a React element in a client component's props is
+      serialised together with its own props, so the raw rows array crossed
+      the boundary and every unmasked description was in a script element.
+      The leaf is handed the RENDERED MARKUP now, so the value that becomes a
+      prop is a tree of host elements holding already-masked strings.
+    settled-by:
+      executed-construction:
+        command: >-
+          npx playwright test test/e2e/identity-on-review.spec.ts
+          --project=chromium, with a diagnostic printing the source context
+          around each occurrence of row 20's second account
+        exit-code: 0
+        output: >-
+          Before the change the context printed the raw rows array, keyed by
+          id, bookingDate, amountCents and description, with the descriptor of
+          the two-token row intact. After it, the four tests pass, and the
+          remaining occurrences on the development server are shown by the
+          widened trace to sit inside Next's own server-component debug
+          payload, which is a separate matter recorded as C13-7.
+  - id: C13-7
+    kind: open-question
+    statement: >-
+      THE DEVELOPMENT SERVER SERIALISES EVERY SERVER COMPONENT'S PROPS INTO
+      THE PAGE. Measured on this screen: a script chunk of the shape
+      {"name":"GroupRow","env":"Server","stack":[...],"props":{"group":{...}}}
+      carries each ReviewGroup whole, raw transaction descriptions and
+      counterparty accounts included. It is a property of `next dev` and not
+      of the page: the same assertion over the production server this config
+      builds and starts finds none of the three shapes of that account and no
+      debug chunk at all, which the spec now asserts rather than assumes.
+    still-open-because: >-
+      Nothing in this phase can change what the development server emits, and
+      it does not reach the owner, so there is nothing to fix here. It is
+      recorded because it makes a whole class of page-source assertion
+      meaningless against `next dev`, and because the next agent to write one
+      will otherwise spend the time this round spent finding out. Anyone
+      asserting that a value is absent from a page must run that assertion
+      against the production project, as this spec now does.
+  - id: C13-8
+    kind: open-question
+    statement: >-
+      ANSWERING THE IMPORT FORMAT QUESTION TWICE WITH ONE NAME CRASHES THE
+      SERVER. A source profile's name is unique per household, and
+      createProfile lets the Prisma P2002 escape: the reader gets "Application
+      error: a server-side exception has occurred" instead of a sentence
+      saying the name is taken. Met while building the two-statement case
+      here.
+    still-open-because: >-
+      It is a defect in the import path
+      (src/modules/import/adapters/import-repository.ts createProfile, reached
+      through confirm-import.ts and the confirm action), which is not among
+      this phase's files-to-touch, and it is pre-existing rather than
+      introduced here. Handed on with the captured stack rather than fixed,
+      and the spec that met it now gives each upload its own format name.
   - id: C13-4
     kind: open-question
     statement: >-
