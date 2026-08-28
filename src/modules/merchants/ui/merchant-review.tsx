@@ -1,9 +1,10 @@
 import { getTranslations } from "next-intl/server";
 import { Amount } from "@/platform/ui/amount";
+import { maskAccountNumbers } from "@/platform/ui/mask-account-number";
 import { maskCardNumbers } from "@/platform/ui/mask-card-number";
 import type { HouseholdContext } from "@/platform/tenancy";
 import { listMerchantReview } from "../application";
-import type { ReviewGroup } from "../application";
+import type { ReviewGroup, ReviewGroupRow } from "../application";
 import { assignMerchantAction } from "./actions";
 import { MerchantGroupRow } from "./merchant-row";
 import type { NamingCopy } from "./merchant-row";
@@ -21,6 +22,79 @@ import type { NamingCopy } from "./merchant-row";
 // client leaf, which predicts the label per DR-0025 and raises the DR-0026
 // notices. This component stays a server component and resolves every
 // string the leaf renders, so no message catalogue crosses the boundary.
+
+// WHAT THE SCREEN SAYS ABOUT A GROUP (M3-P13). Three small server-rendered
+// pieces, each answering one half of the owner's question quoted in decision
+// D-36: what joined these transactions, how far a naming will reach, and
+// which transactions are actually in here.
+//
+// THE BASIS IS COPY, NEVER A CODE (hazard H13.4): the two strings live in
+// the three catalogues and are resolved here, so a Dutch or French reader
+// meets their own language rather than an English word or a blank.
+const GroupBasis = async ({ basis }: { readonly basis: "account" | "descriptor" }) => {
+  const t = await getTranslations();
+  return (
+    <p className="merchant-row-basis" data-testid="group-basis">
+      {basis === "account" ? t("groupBasisAccount") : t("groupBasisDescriptor")}
+    </p>
+  );
+};
+
+// THE REACH IS THE GROUP'S OWN ROW COUNT, never a prediction (hazard H13.6).
+// It is the same number the row prints beside the label, taken from the same
+// field, so the two can never disagree.
+const GroupReach = async ({ count }: { readonly count: number }) => {
+  const t = await getTranslations();
+  return (
+    <p className="merchant-row-reach" data-testid="group-reach">
+      {t("groupReach", { count })}
+    </p>
+  );
+};
+
+// THE TRANSACTIONS BEHIND THE GROUP (criterion 13.3). A native disclosure,
+// so it opens with no JavaScript and carries its own accessible name; no new
+// client component and no new server action, and the rows come from the same
+// read that built the groups (M3-P13 step 5).
+//
+// Each line renders the row's OWN booking date, its OWN amount through the
+// mandatory money rendering, and its OWN description. The description is raw
+// source text, so it is masked HERE, in the rendering, twice over: the card
+// mask this screen already applied to the label, and the account mask this
+// phase adds, because a transfer descriptor carries the counterparty account
+// in full and putting those lines on screen would otherwise create hazard
+// H13.2 rather than answer it.
+const GroupRows = async ({ rows }: { readonly rows: readonly ReviewGroupRow[] }) => {
+  const t = await getTranslations();
+  return (
+    <details className="merchant-row-detail" data-testid="group-rows">
+      <summary className="merchant-row-detail-summary">
+        {t("groupRowsShow")}
+      </summary>
+      <ul className="merchant-txn-list">
+        {rows.map((row) => (
+          <li className="merchant-txn" data-testid="group-row" key={row.id}>
+            <span className="merchant-txn-date" data-testid="group-row-date">
+              {row.bookingDate}
+            </span>
+            <span
+              className="merchant-txn-description"
+              data-testid="group-row-description"
+            >
+              {maskAccountNumbers(maskCardNumbers(row.description))}
+            </span>
+            <span
+              className="merchant-txn-amount"
+              data-testid="group-row-amount"
+            >
+              <Amount cents={row.amountCents} />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+};
 
 const GroupRow = async ({
   group,
@@ -63,6 +137,13 @@ const GroupRow = async ({
         <p className="merchant-row-unnameable" data-testid="group-unnameable">
           {t("nameRefusedUnidentifiable")}
         </p>
+        {/* The basis is stated on EVERY unresolved group, this one included
+            (M3-P13 step 2). No reach line: there is no form here, and a
+            sentence about how far a naming would reach on a row that offers
+            no naming would be a promise about a control the screen does not
+            show. */}
+        {group.basis === undefined ? null : <GroupBasis basis={group.basis} />}
+        <GroupRows rows={group.rows} />
       </li>
     );
   }
@@ -109,12 +190,31 @@ const GroupRow = async ({
       // because that value is the counterparty IDENTITY KEY that becomes
       // the EXACT MerchantRule pattern, and a masked subject would match
       // nothing.
-      label={maskCardNumbers(group.label)}
+      // DECISION D-41, THE DISPLAY HALF. An account-basis group with no
+      // carried counterparty name hands over its ACCOUNT, and the account is
+      // masked HERE, in the display layer, exactly as the card number beside
+      // it is. The unmasked value never enters the key: the hidden field
+      // below still carries group.counterpartyText, which is the namespaced
+      // identity key and the exact rule subject (hazard H13.1).
+      label={
+        group.accountAlias === undefined
+          ? maskAccountNumbers(maskCardNumbers(group.label))
+          : maskAccountNumbers(group.accountAlias)
+      }
       countText={`${group.count} ${t("rows")}`}
       totalCents={group.totalCents}
       unresolved={unresolved}
       direction={direction}
       copy={copy}
+      detail={{
+        ...(unresolved && group.basis !== undefined
+          ? { beforeForm: <GroupBasis basis={group.basis} /> }
+          : {}),
+        ...(unresolved && group.counterpartyText !== undefined
+          ? { inForm: <GroupReach count={group.count} /> }
+          : {}),
+        afterForm: <GroupRows rows={group.rows} />,
+      }}
       {...(unresolved && group.counterpartyText !== undefined
         ? {
             naming: {

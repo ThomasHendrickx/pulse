@@ -29,6 +29,7 @@
 // src/platform/ui and React (criterion 11.7(e)). The action reference
 // arrives as a prop for the same reason.
 
+import type { ReactNode } from "react";
 import {
   useCallback,
   useEffect,
@@ -115,6 +116,7 @@ export const MerchantGroupRow = ({
   copy,
   naming,
   action,
+  detail,
 }: {
   // The MASKED group key, for the row's stable DOM identity (data-group-key,
   // criterion 11.3): for an unresolved descriptor group the raw key IS the
@@ -142,6 +144,24 @@ export const MerchantGroupRow = ({
     readonly submitLabel: string;
   };
   readonly action?: (formData: FormData) => Promise<NamingActionAnswer>;
+  // WHAT THE ROW SAYS ABOUT ITSELF, rendered by the SERVER component and
+  // passed through as children (M3-P13): the basis line, the reach line and
+  // the disclosure holding the transactions behind this group. It arrives
+  // already rendered so this leaf keeps its closure over src/platform/ui
+  // and React and touches no message catalogue and no domain type
+  // (criterion 11.7(e)). Two slots rather than one: `detail.aboveForm` sits
+  // between the totals and the naming form, because the reach is a sentence
+  // about the control the reader is deciding whether to press, and
+  // `detail.inForm` is rendered INSIDE the form element, because the reach
+  // is a statement about the control the reader is deciding whether to
+  // press and criterion 13.4 asks the FORM to carry it; `detail.afterForm`
+  // sits under it, because the transaction lines are a list rather than
+  // part of the decision.
+  readonly detail?: {
+    readonly beforeForm?: ReactNode;
+    readonly inForm?: ReactNode;
+    readonly afterForm?: ReactNode;
+  };
 }) => {
   const regionId = useId();
   // The predicted label, null while nothing is in flight. Set inside the
@@ -256,6 +276,7 @@ export const MerchantGroupRow = ({
       <span data-testid="group-total">
         <Amount cents={totalCents} />
       </span>
+      {detail?.beforeForm}
       {naming !== undefined && action !== undefined ? (
         <form
           className="merchant-name-form"
@@ -319,6 +340,7 @@ export const MerchantGroupRow = ({
             }
           }}
         >
+          {detail?.inForm}
           <input
             type="hidden"
             name="counterpartyText"
@@ -370,6 +392,7 @@ export const MerchantGroupRow = ({
           </SubmitButton>
         </form>
       ) : null}
+      {detail?.afterForm}
       {notice === null || !showing ? null : notice.kind === "failed" ? (
         <Toast
           role="alert"
