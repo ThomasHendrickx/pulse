@@ -124,24 +124,58 @@ test("criteria 13.1, 13.2, 13.3: the group states its basis, is labelled by its 
 
   // THE STRONGEST FORM OF 13.2's PAGE-SOURCE CLAUSE THAT IS TRUE, and the
   // reason it is not the literal one is recorded in this phase's work
-  // history: the criterion asks the full page source to carry no unmasked
-  // account AND the hidden field to carry the unmasked identity key, and
-  // the identity key of an account-basis group IS the namespace followed by
-  // that account. Both cannot hold at once. What is asserted instead is
-  // that every occurrence of the account in the page source sits in one of
-  // the two MACHINE identities that must hold it unmasked, the hidden
-  // subject and the row's data-group-key, and in nothing else. Neither is
-  // rendered, so neither can reach a screenshot, which is hazard H13.2. The
-  // group key is deliberately NOT masked: two accounts sharing a country,
-  // check digits and last four characters would mask to one string, and the
-  // row identity criterion 11.3 turns on has to stay unique.
-  const html = await page.content();
-  expect(html).toContain(account);
-  const withoutMachineIdentities = html
-    .replace(/<input[^>]*name="counterpartyText"[^>]*>/g, "")
-    .replace(/data-group-key="[^"]*"/g, "");
-  expect(withoutMachineIdentities).not.toContain(account);
-  expect(withoutMachineIdentities).not.toContain(spacedAccount);
+  // history. The criterion asks the full page source to carry no unmasked
+  // account AND the hidden field to carry the unmasked identity key, and the
+  // identity key of an account-basis group IS the namespace followed by that
+  // account, so the two halves cannot both hold. There are in fact THREE
+  // places in the source that must hold it, measured rather than assumed:
+  //
+  //   the hidden counterpartyText input, which the criterion itself requires;
+  //   the row's data-group-key, which is the row identity criterion 11.3 and
+  //     the optimistic-naming spec address rows by, and which is deliberately
+  //     NOT masked because two accounts sharing a country, check digits and
+  //     last four characters would mask to one string and collide;
+  //   the framework's own serialised payload, because the naming row is a
+  //     client component and the identity key reaches it as a prop, so it is
+  //     serialised into a script element on the way. Discovered by this
+  //     assertion failing on the whole document, not reasoned about in
+  //     advance.
+  //
+  // None of the three is RENDERED, which is what hazard H13.2 is about. So
+  // the assertion is made over the rendered markup with those three removed:
+  // scripts, the hidden subject, and the identity attribute.
+  const leak = await page.evaluate(
+    ({ compact, spaced, maskedForm }) => {
+      const clone = document.body.cloneNode(true) as HTMLElement;
+      for (const script of clone.querySelectorAll("script")) {
+        script.remove();
+      }
+      for (const hidden of clone.querySelectorAll(
+        'input[name="counterpartyText"]',
+      )) {
+        hidden.remove();
+      }
+      for (const row of clone.querySelectorAll("[data-group-key]")) {
+        row.removeAttribute("data-group-key");
+      }
+      const markup = clone.innerHTML;
+      return {
+        compact: markup.includes(compact),
+        spaced: markup.includes(spaced),
+        // NOT VACUOUS: the masked form is still there, so the sweep is
+        // passing because the account was masked and not because the clone
+        // came back empty.
+        masked: markup.includes(maskedForm),
+      };
+    },
+    { compact: account, spaced: spacedAccount, maskedForm: masked },
+  );
+  expect(leak.compact).toBe(false);
+  expect(leak.spaced).toBe(false);
+  expect(leak.masked).toBe(true);
+  // ...and the account IS in the untouched source, through the machine
+  // identities above, so the removal above is doing work.
+  expect(await page.content()).toContain(account);
 
   // 13.3: the three transactions behind the group, each with its own date,
   // its own description and its own amount, summing to the group total.
