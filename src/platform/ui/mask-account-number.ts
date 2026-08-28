@@ -59,10 +59,21 @@
 // THE ENUMERATION IS NOW DERIVED RATHER THAN WRITTEN DOWN. It is not a list
 // in this comment: test/domain/merchant-review.test.ts walks every .tsx
 // under src/ with the TypeScript compiler API, collects every leaf JSX
-// expression that renders a descriptor-derived field, and asserts that every
-// surface passing through the card mask passes through THIS mask too, and
-// that any surface passing through neither is a declared exclusion with a
-// reason. A list here would be a second source and this project has recorded
+// expression that renders a field from its SENSITIVE_FIELDS vocabulary, and
+// asserts that every surface passing through the card mask passes through
+// THIS mask too, and that any surface passing through neither is a declared
+// exclusion with a reason.
+//
+// THE VOCABULARY IS THE WALK'S REACH, AND IT WAS TOO NARROW WHEN THIS
+// PARAGRAPH FIRST CLAIMED THE WALK AS THE AUTHORITY (round two, finding
+// CR2-M3P13-01). It was called DESCRIPTOR_FIELDS and every member was a
+// descriptor name, so a surface rendering an ACCOUNT without touching a
+// descriptor field was invisible: the accounts list's number cell was
+// neither counted nor excluded, and this file's own group.accountAlias was
+// seen only because it shares a JSX expression with group.label. The
+// vocabulary now carries the account-bearing names too. ANYONE ADDING A
+// FIELD THAT CAN HOLD AN IDENTIFIER ADDS ITS NAME THERE, or this comment is
+// making a promise the instrument cannot keep. A list here would be a second source and this project has recorded
 // three times that a convention between two sources does not survive; the
 // falsity above is the fourth.
 //

@@ -659,8 +659,22 @@ describe("every rendering surface that shows descriptor text is derived, not rem
   // must either pass through maskCardNumbers or appear in the EXCLUSIONS
   // table below with its reason.
 
-  // A field whose value is, or can be, text a counterparty controls.
-  const DESCRIPTOR_FIELDS = [
+  // A field whose value is, or can be, an IDENTIFIER OR TEXT A COUNTERPARTY
+  // CONTROLS.
+  //
+  // RENAMED AND WIDENED IN ROUND TWO (finding CR2-M3P13-01), and the rename
+  // matters as much as the widening. It was DESCRIPTOR_FIELDS, and every
+  // member was a descriptor name: description, counterpartyText,
+  // counterpartyName, rawLine, label, text, identityKey. NOT ONE OF THEM IS
+  // AN ACCOUNT-BEARING NAME. The fix round then deleted the residue LIST from
+  // src/platform/ui/mask-account-number.ts and named this walk as the
+  // authority in its place, on the ground that a list is a second source. The
+  // walk could not carry that weight: a surface that renders an ACCOUNT
+  // without touching a descriptor field was invisible to it, and the tree
+  // holds one (the accounts list's number cell), while group.accountAlias was
+  // caught only by accident, because it shares one JSX expression with
+  // group.label.
+  const SENSITIVE_FIELDS = [
     "description",
     "counterpartyText",
     "counterpartyName",
@@ -671,6 +685,13 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     // naming.identityKey, so the field name joins the list or the walk
     // goes blind on the one surface that is deliberately unmasked.
     "identityKey",
+    // THE ACCOUNT-BEARING NAMES (round two, finding CR2-M3P13-01). Without
+    // these the walk cannot see the surface it is now the authority for.
+    "iban",
+    "counterpartyIban",
+    "counterpartyAccount",
+    "accountAlias",
+    "accountNumber",
   ] as const;
 
   // Keyed by FILE and EXPRESSION TEXT, never by a line number, because a
@@ -743,6 +764,25 @@ describe("every rendering surface that shows descriptor text is derived, not rem
       expression: "account.label",
       why: "The account's DECLARED label on the accounts list, typed by the household at setup, never parsed from a statement line (M3-P14).",
     },
+    // THE THREE SURFACES THE WIDENED VOCABULARY NEWLY REACHES (round two,
+    // finding CR2-M3P13-01). Each is disposed of here with its reason rather
+    // than left unseen, which is the whole point of the widening: before it,
+    // the walk could not have said any of these three existed.
+    {
+      file: "modules/accounts/ui/accounts-screen.tsx",
+      expression: 'account.iban ?? t("accountsCardNoNumber")',
+      why: "THE HOUSEHOLD'S OWN REGISTERED ACCOUNT NUMBER, SHOWN BACK TO THEM, and it is correct behaviour rather than a leak: the owner types these at setup and must be able to check what they typed against their own statement, which a masked value defeats. It is their own number on their own screen, not a counterparty's, and the account mask is deliberately NOT applied. Named here so the derivation can say so; before this round it could not see the surface at all.",
+    },
+    {
+      file: "modules/accounts/ui/account-setup-form.tsx",
+      expression: "row.accountNumber",
+      why: "The setup form's own input value, which is the string the household is typing at this moment. Masking a field while it is being filled would make it impossible to correct, and the value has not left the browser yet.",
+    },
+    {
+      file: "modules/overview/ui/month-view.tsx",
+      expression: "group.counterpartyIban",
+      why: "A React key, not rendered text: React does not emit the key prop into the DOM, so this value reaches no markup, no attribute and no screenshot. It is collected because the walk reads JSX expressions rather than knowing which props render, which is the right way round for a guard.",
+    },
   ];
 
   const collectSourceFiles = (dir: string): readonly string[] => {
@@ -810,7 +850,7 @@ describe("every rendering surface that shows descriptor text is derived, not rem
         return rendersBareDescriptorIdentifier(node.expression);
       }
       if (ts.isIdentifier(node)) {
-        return (DESCRIPTOR_FIELDS as readonly string[]).includes(node.text);
+        return (SENSITIVE_FIELDS as readonly string[]).includes(node.text);
       }
       if (ts.isConditionalExpression(node)) {
         return (
@@ -833,7 +873,7 @@ describe("every rendering surface that shows descriptor text is derived, not rem
       if (ts.isJsxExpression(node) && node.expression !== undefined) {
         const expression = node.expression.getText(sourceFile);
         const readsDescriptor =
-          DESCRIPTOR_FIELDS.some((field) =>
+          SENSITIVE_FIELDS.some((field) =>
             new RegExp(`\\.${field}\\b`).test(expression),
           ) || rendersBareDescriptorIdentifier(node.expression);
         if (readsDescriptor && !containsJsx(node.expression)) {
@@ -908,7 +948,15 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     // test could not see the defect. What changed is that eight sites now
     // pass through the ACCOUNT mask as well, the eighth being the reserves
     // label, which used to be a declared exclusion.
-    expect(surfaces.length).toBe(16);
+    //
+    // UPDATED IN ROUND TWO (finding CR2-M3P13-01): the vocabulary gained the
+    // account-bearing field names, so the walk now reaches NINETEEN sites in
+    // the same seven files. The three it newly sees are the accounts list's
+    // number cell, the setup form's number input and the reserves list's
+    // React key, and all three are declared exclusions with their reasons.
+    // The card and account counts are unchanged, which is the point: the
+    // widening added no masking work, it added SIGHT.
+    expect(surfaces.length).toBe(19);
     expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(7);
     expect(surfaces.filter((surface) => surface.masked).length).toBe(7);
     expect(surfaces.filter((surface) => surface.accountMasked).length).toBe(8);
