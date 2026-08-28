@@ -210,44 +210,46 @@ test("criteria 13.1, 13.2, 13.3: the group states its basis, is labelled by its 
   // above, so the removal is doing work.
   expect(await page.content()).toContain(account);
 
-  // CRITERION 13.2's LITERAL PAGE-SOURCE CLAUSE, MET WITH NOTHING EXCLUDED,
-  // for the account it can be met for (fix round, finding CR-M3P13-02). The
-  // contradiction bites only on an account that IS an identity key. Row 20 of
-  // this fixture carries two account-shaped tokens and the importer's
-  // first-wins rule stores the first, so the SECOND token's account is never
-  // a subject, never a row identity and never in the payload: it reaches the
-  // screen only through row 20's own description, which the transaction lines
-  // render and mask. For that account the criterion holds exactly as written,
-  // which is what shows the exclusion set above is forced by the
-  // contradiction rather than chosen for convenience.
+  // ROW 20'S SECOND ACCOUNT, ON THE DEVELOPMENT SERVER (fix round, finding
+  // CR-M3P13-02, and a channel neither review lane named). The contradiction
+  // in 13.2 bites only on an account that IS an identity key. Row 20 carries
+  // two account-shaped tokens and the importer's first-wins rule stores the
+  // first, so the SECOND is never a subject, never a row identity and never a
+  // client prop: it reaches the screen only through row 20's description,
+  // which the transaction lines render and mask.
+  //
+  // On the DEVELOPMENT server it is nevertheless in the page source, and
+  // finding out why was worth the round: `next dev` emits a
+  // server-component DEBUG payload into script elements, carrying every
+  // server component's name, source location, stack AND ITS PROPS. Measured
+  // directly, the chunk reads {"name":"GroupRow","env":"Server","stack":
+  // [...],"props":{"group":{...,"rows":[...raw descriptions...]}}}. So on the
+  // dev server every ReviewGroup crosses whole, raw descriptions included.
+  // That is a property of the development server and not of the page, and
+  // the assertion below says exactly that and no more: on the dev server the
+  // account appears ONLY inside script elements, never in rendered markup.
   const second = IDENTITY_FIXTURE_ACCOUNTS.secondToken;
   const secondShapes = [
     second,
     second.replace(/(.{4})(?=.)/g, "$1 "),
     second.replace(/(.{4})(?=.)/g, "$1 "),
   ];
-  const fullSource = await page.content();
-  for (const shape of secondShapes) {
-    let at = fullSource.indexOf(shape);
-    while (at !== -1) {
-      console.log(
-        `SECOND-TOKEN-CONTEXT [${JSON.stringify(shape)}] @${at}: ` +
-          JSON.stringify(fullSource.slice(Math.max(0, at - 220), at + 120)),
-      );
-      at = fullSource.indexOf(shape, at + 1);
-    }
-  }
-  for (const shape of secondShapes) {
-    expect(
-      fullSource.includes(shape),
-      `the full page source carries row 20's second account in the shape ${JSON.stringify(shape)}`,
-    ).toBe(false);
-  }
+  const maskedSecond = `${second.slice(0, 4)} **** ${second.slice(-4)}`;
+  const devLeak = await page.evaluate(
+    ({ shapesIn }) => {
+      const clone = document.body.cloneNode(true) as HTMLElement;
+      for (const script of clone.querySelectorAll("script")) {
+        script.remove();
+      }
+      const markup = clone.innerHTML;
+      return shapesIn.filter((shape) => markup.includes(shape));
+    },
+    { shapesIn: secondShapes },
+  );
+  expect(devLeak).toEqual([]);
   // NOT VACUOUS: that account does reach this page, masked, on the
   // transaction line of the row that carries it.
-  expect(fullSource).toContain(
-    `${second.slice(0, 4)} **** ${second.slice(-4)}`,
-  );
+  expect(await page.content()).toContain(maskedSecond);
 
   // 13.3: the three transactions behind the group, each with its own date,
   // its own description and its own amount, summing to the group total.
@@ -269,6 +271,36 @@ test("criteria 13.1, 13.2, 13.3: the group states its basis, is labelled by its 
   for (const description of descriptions) {
     expect(description).not.toContain(account);
   }
+
+  // CRITERION 13.2's LITERAL PAGE-SOURCE CLAUSE, MET WITH NOTHING EXCLUDED,
+  // ON THE BUILD THE OWNER ACTUALLY RUNS (fix round, finding CR-M3P13-02).
+  // The clause is unachievable for an account that is an identity key,
+  // because the criterion itself requires that key in a hidden field on the
+  // same page; it IS achievable for row 20's second token, which is never a
+  // key. Asserted here against the PRODUCTION server this config already
+  // starts and builds, because the development server's server-component
+  // debug payload carries every component's props and is not what ships.
+  // Same host, so the session cookie is sent: cookies ignore the port.
+  //
+  // This is the only assertion on this screen that can show the exclusion set
+  // used above is forced by the contradiction rather than chosen for
+  // convenience, and it is made with NOTHING removed from the source.
+  await page.goto("http://127.0.0.1:3100/merchants");
+  await expect(
+    page.getByRole("heading", { name: "Merchant review" }),
+  ).toBeVisible();
+  const prodSource = await page.content();
+  for (const shape of secondShapes) {
+    expect(
+      prodSource.includes(shape),
+      `the production page source carries row 20's second account in the shape ${JSON.stringify(shape)}`,
+    ).toBe(false);
+  }
+  // NOT VACUOUS on this server either.
+  expect(prodSource).toContain(maskedSecond);
+  // AND THE DEBUG PAYLOAD IS A DEVELOPMENT-ONLY CHANNEL, asserted rather than
+  // assumed: the production source carries no server-component debug chunk.
+  expect(prodSource).not.toContain('\\"env\\":\\"Server\\"');
 });
 
 // Criterion 13.4: the reach is stated BEFORE the naming, it is the group's
