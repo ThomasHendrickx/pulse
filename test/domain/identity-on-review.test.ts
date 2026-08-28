@@ -14,7 +14,11 @@ import { buildMerchantReview } from "@/modules/merchants/domain/merchant-review"
 import type { CountedRow } from "@/modules/merchants/domain/merchant-review";
 import { ACCOUNT_NAMESPACE } from "@/modules/merchants/domain/counterparty-identity";
 import { maskAccountNumbers } from "@/platform/ui/mask-account-number";
-import { canonicalAccountNumber } from "@/platform/account-number";
+import {
+  ACCOUNT_NUMBER_LENGTH_BY_COUNTRY,
+  accountNumberChecksumHolds,
+  canonicalAccountNumber,
+} from "@/platform/account-number";
 import type { Cents } from "@/platform/money";
 import { plainDate } from "@/platform/plain-date";
 import {
@@ -252,16 +256,70 @@ describe("criterion 13.2 and hazard H13.2: the display mask redacts an account a
     expect(maskAccountNumbers(spaced)).toBe(expected);
   });
 
-  test("a token whose country the registry does not know, or whose length the registry disagrees with, is LEFT ALONE", () => {
+  // CORRECTED LOUDLY RATHER THAN QUIETLY REWRITTEN (clause R-087, fix round,
+  // finding HZ-M3P13-04). This test used to be titled "a token whose country
+  // the registry does not know, OR whose length the registry disagrees with,
+  // is LEFT ALONE" and it asserted both halves. The first half was a
+  // FAIL-OPEN defect rather than a property: an account of a country the
+  // pinned table does not carry was printed in full. Only the second half
+  // survives, and the first is now its opposite, below.
+  test("a token whose length the registry disagrees with, for a country it DOES carry, is left alone", () => {
     // The truncated long source: a real country code, the wrong length for
     // it. Masking on shape alone would rewrite it; this helper does not.
     const truncated = IDENTITY_FIXTURE_LONG_SOURCES.storedPrefix;
     expect(maskAccountNumbers(truncated)).toBe(truncated);
-    // ...and the full-length source IS masked, which is what says the test
-    // above is about the length and not about the helper being inert.
+    // ...and the full-length source IS masked, which is what says the
+    // assertion above is about the length and not about the helper being
+    // inert.
     const full = IDENTITY_FIXTURE_LONG_SOURCES.spacedA;
     expect(maskAccountNumbers(full)).not.toBe(full);
     expect(maskAccountNumbers(full)).toContain("****");
+  });
+
+  // AN UNREGISTERED COUNTRY NOW FAILS CLOSED (fix round, finding
+  // HZ-M3P13-04). The value is BUILT here rather than written down, so no new
+  // identifier shape enters the tree: the country letters are a code ISO 13616
+  // does not assign, the body is the committed fixture account's own body, and
+  // the two check digits are found by asking the platform predicate rather
+  // than by repeating its arithmetic.
+  const unregistered = (body: string): string => {
+    for (let candidate = 0; candidate < 100; candidate += 1) {
+      const value = `ZZ${String(candidate).padStart(2, "0")}${body}`;
+      if (accountNumberChecksumHolds(value)) {
+        return value;
+      }
+    }
+    throw new Error("no check digits satisfy the checksum for this body");
+  };
+
+  test("an account of a country the registry does not carry is REDACTED when the checksum holds", () => {
+    const body = IDENTITY_FIXTURE_ACCOUNTS.counterparty1.slice(4);
+    const value = unregistered(body);
+    expect(ACCOUNT_NUMBER_LENGTH_BY_COUNTRY.has("ZZ")).toBe(false);
+    expect(accountNumberChecksumHolds(value)).toBe(true);
+    const masked = maskAccountNumbers(value);
+    expect(masked).toBe(`${value.slice(0, 4)} **** ${value.slice(-4)}`);
+    expect(masked).not.toContain(value);
+    // ...and inside a sentence, where the scan must not swallow the next word.
+    expect(maskAccountNumbers(`NAAR ${value} DEMO COUNTERPARTY`)).toBe(
+      `NAAR ${value.slice(0, 4)} **** ${value.slice(-4)} DEMO COUNTERPARTY`,
+    );
+  });
+
+  test("an unregistered-country token whose checksum does NOT hold is left alone, so the fallback is a grammar test and not a shape test", () => {
+    const body = IDENTITY_FIXTURE_ACCOUNTS.counterparty1.slice(4);
+    const valid = unregistered(body);
+    // Move the check digits off by one: same shape, same length, broken
+    // checksum.
+    const digits = Number(valid.slice(2, 4));
+    const broken = `ZZ${String((digits + 1) % 100).padStart(2, "0")}${body}`;
+    expect(accountNumberChecksumHolds(broken)).toBe(false);
+    expect(maskAccountNumbers(broken)).toBe(broken);
+    // A long run of digits with no country grammar at all is untouched, which
+    // is what keeps a mandate reference and a phone number readable.
+    expect(maskAccountNumbers("REFERTE 9000000101 20260302")).toBe(
+      "REFERTE 9000000101 20260302",
+    );
   });
 
   // THE SEPARATOR TABLE (fix round, finding HZ-M3P13-01). The mask used to
