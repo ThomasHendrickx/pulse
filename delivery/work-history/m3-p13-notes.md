@@ -242,3 +242,47 @@ Two reasons the read was not scoped instead.
 
 English written first: "Naming this applies to N transactions already
 imported."
+
+## Three things the fix round found that neither lane named
+
+1. **This phase was serialising every raw transaction description into the
+   page.** The transaction lines were handed to the client leaf as the element
+   `<GroupRows rows={group.rows} />` inside the `detail` prop. A React element
+   in a client component's props is serialised together with ITS OWN props, so
+   the raw rows array crossed the boundary. Traced directly:
+
+       SECOND-TOKEN-CONTEXT: "...\"rows\":[{\"id\":\"...\",\"bookingDate\":\"2026-03-19\",
+       \"amountCents\":-8600,\"description\":\"OVERSCHRIJVING NAAR BE25 ... VIA BE72 ...\"}"
+
+   Fixed by handing the leaf the RENDERED markup instead of an element that
+   carries data. The mechanism and its sibling sites are recorded at the
+   definition in `merchant-review.tsx`: pass the RESULT, never an element
+   whose props hold data the screen does not render, because serialisation
+   follows the element and not the pixels.
+
+2. **`next dev` serialises every server component's props into the page.**
+   After fix 1 the account was still in the dev source, inside a chunk of the
+   shape `{"name":"GroupRow","env":"Server","stack":[...],"props":{"group":
+   {...}}}`. That is the development server's own debug payload. Verified to
+   be development-only rather than assumed: the same assertions against the
+   production server this config already builds and starts find none of the
+   three shapes and no debug chunk. Criterion 13.2's literal page-source
+   clause for row 20's second token is therefore asserted against the
+   PRODUCTION build, with nothing excluded, which is stronger evidence than
+   the dev-server form the finding asked for.
+
+   CARRY THIS: a page-source absence assertion run against `next dev` proves
+   nothing.
+
+3. **Answering the import format question twice with one name crashes the
+   server.** Met while building the two-statement case:
+
+       ⨯ Error [PrismaClientKnownRequestError]: Invalid `prisma.sourceProfile.create()`
+         Unique constraint failed on the fields: (`householdId`,`name`)
+           at async Object.createProfile (src/modules/import/adapters/import-repository.ts:147:15)
+           at async confirmImport (src/modules/import/application/confirm-import.ts:146:6)
+           at async confirmImportAction (src/modules/import/ui/actions.ts:88:19)
+
+   The reader sees "Application error: a server-side exception has occurred"
+   instead of a sentence saying the name is taken. Pre-existing, outside this
+   phase's files, handed on as an open question with the stack.
