@@ -154,14 +154,22 @@ export const MerchantGroupRow = ({
   // the disclosure holding the transactions behind this group. It arrives
   // already rendered so this leaf keeps its closure over src/platform/ui
   // and React and touches no message catalogue and no domain type
-  // (criterion 11.7(e)). Two slots rather than one: `detail.aboveForm` sits
-  // between the totals and the naming form, because the reach is a sentence
-  // about the control the reader is deciding whether to press, and
-  // `detail.inForm` is rendered INSIDE the form element, because the reach
-  // is a statement about the control the reader is deciding whether to
-  // press and criterion 13.4 asks the FORM to carry it; `detail.afterForm`
-  // sits under it, because the transaction lines are a list rather than
-  // part of the decision.
+  // (criterion 11.7(e)).
+  //
+  // THREE SLOTS, AND THIS PARAGRAPH IS CORRECTED RATHER THAN QUIETLY
+  // REWRITTEN (clause R-087, fix round, finding CR-M3P13-05). It used to say
+  // "Two slots rather than one: `detail.aboveForm` sits between the totals
+  // and the naming form", naming a slot that does not exist beside the
+  // declared type that lists three, and it then gave the same reason for the
+  // reach line twice in consecutive clauses, which reads as an unfinished
+  // edit. What is true: `detail.beforeForm` sits between the totals and the
+  // naming form and carries the basis line, because the basis is a statement
+  // about the GROUP; `detail.inForm` is rendered INSIDE the form element and
+  // carries the reach, because the reach is a statement about the control the
+  // reader is deciding whether to press and criterion 13.4 asks the FORM to
+  // carry it; `detail.afterForm` sits under the form and carries the
+  // transaction lines, because they are a list rather than part of the
+  // decision.
   readonly detail?: {
     readonly beforeForm?: ReactNode;
     readonly inForm?: ReactNode;
@@ -229,13 +237,22 @@ export const MerchantGroupRow = ({
   // it is idempotent: claimNaming retires the entry it answers. The rules
   // and their residues live at ./naming-claims.
   //
-  // The comparison is made in the alphabet the SCREEN uses: the label this
-  // row renders has been through maskCardNumbers, so the typed string is
-  // rendered the same way before the two are compared (finding
-  // HZ-M3P11-03). A name the masking rewrites therefore reads as the server
-  // agreeing, which it did: the difference this notice is about is the
+  // The comparison is made in the alphabet the SCREEN uses: the typed string
+  // is rendered the same way as the label before the two are compared
+  // (finding HZ-M3P11-03). A name the masking rewrites therefore reads as the
+  // server agreeing, which it did: the difference this notice is about is the
   // SERVER's answer differing, and the masking is a rendering rule this
   // screen applies to every label it draws.
+  //
+  // HALF-TRUE SINCE M3-P13 AND CORRECTED HERE (clause R-087, fix round,
+  // finding CR-M3P13-05). This paragraph used to say the label "has been
+  // through maskCardNumbers" and name that one mask. Since M3-P13 the label
+  // arrives through the ACCOUNT mask as well
+  // (src/modules/merchants/ui/merchant-review.tsx, the label prop). The
+  // comparison below still renders the typed string through the card mask
+  // ALONE, and that is correct rather than an oversight: a merchant name a
+  // reader types is not an account number, so the account mask is a no-op on
+  // it, and running it would only add a way for the two sides to disagree.
   //
   // No dependency list ON PURPOSE, against the exhaustive-deps advice: the
   // merge case re-renders this row with an UNCHANGED label (only its total
