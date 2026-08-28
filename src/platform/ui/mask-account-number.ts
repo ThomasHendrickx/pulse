@@ -349,10 +349,15 @@ const maximalRunLength = (text: string, from: number): number => {
 //   WHAT THAT COSTS, stated rather than left to be found: an account of a
 //   country the registry does not carry, written in SPACE-SEPARATED groups,
 //   is not redacted. It is redacted when written compactly or grouped with
-//   any non-whitespace separator. The registry is complete against ISO 13616
-//   as published, so this branch is a safety net for a country that joins
-//   later rather than a path with a known member today, and the cost of the
-//   alternative is measured text loss on three shipped screens.
+//   any non-whitespace separator. HOW BIG THAT COST IS DEPENDS ON A CLAIM
+//   THIS FILE DID NOT MEASURE: the round-one hazard review recorded the
+//   pinned table as complete against ISO 13616 as published, which would make
+//   this branch a safety net for a country that joins later rather than a
+//   path with a known member today. That is attributed rather than asserted;
+//   test/domain/account-number.test.ts is where the table is pinned, and
+//   whoever adds a country there should re-read this paragraph. What IS
+//   measured is the other side of the trade: crossing spaces here cost 428
+//   eaten words in 40,000 constructed descriptors, on three shipped screens.
 const accountSpanAt = (
   text: string,
   from: number,

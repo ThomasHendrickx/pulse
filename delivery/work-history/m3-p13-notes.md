@@ -402,9 +402,11 @@ one-in-ninety-seven draw. Measured before choosing. So the fallback DOES NOT
 CROSS WHITESPACE AT ALL: its run ends at the first space, which makes swallowing
 impossible by construction rather than rare. The cost, pinned by a test: an
 account of a country the registry does not carry, written in space-separated
-groups, is not redacted. The registry is complete against ISO 13616 as
-published, so that branch has no known member today, and the alternative cost
-was measured text loss on three shipped screens.
+groups, is not redacted. Whether that branch has a known member today rests on
+the round-one hazard lane's record that the pinned table is complete against
+ISO 13616 as published, which is attributed here rather than measured by me.
+What I did measure is the other side: crossing spaces cost 428 eaten words in
+40,000 constructed descriptors, on three shipped screens.
 
 ## Per-item disposition
 
