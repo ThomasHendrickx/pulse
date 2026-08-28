@@ -228,6 +228,16 @@ test("criteria 13.1, 13.2, 13.3: the group states its basis, is labelled by its 
   ];
   const fullSource = await page.content();
   for (const shape of secondShapes) {
+    let at = fullSource.indexOf(shape);
+    while (at !== -1) {
+      console.log(
+        `SECOND-TOKEN-CONTEXT [${JSON.stringify(shape)}] @${at}: ` +
+          JSON.stringify(fullSource.slice(Math.max(0, at - 220), at + 120)),
+      );
+      at = fullSource.indexOf(shape, at + 1);
+    }
+  }
+  for (const shape of secondShapes) {
     expect(
       fullSource.includes(shape),
       `the full page source carries row 20's second account in the shape ${JSON.stringify(shape)}`,

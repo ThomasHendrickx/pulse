@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { ReactNode } from "react";
 import { getTranslations } from "next-intl/server";
 import { Amount } from "@/platform/ui/amount";
 import { maskAccountNumbers } from "@/platform/ui/mask-account-number";
@@ -91,7 +92,30 @@ const GroupReach = async ({ count }: { readonly count: number }) => {
 // phase adds, because a transfer descriptor carries the counterparty account
 // in full and putting those lines on screen would otherwise create hazard
 // H13.2 rather than answer it.
-const GroupRows = async ({ rows }: { readonly rows: readonly ReviewGroupRow[] }) => {
+//
+// IT IS A FUNCTION RETURNING MARKUP, NOT A COMPONENT RENDERED AS AN ELEMENT,
+// AND THAT IS LOAD-BEARING (fix round). It was `<GroupRows rows={group.rows} />`
+// placed in the `detail` object, which is a prop of the CLIENT component
+// MerchantGroupRow. A React ELEMENT in a client component's props is
+// serialised into the flight payload TOGETHER WITH ITS OWN PROPS, so the raw
+// `rows` array crossed the boundary and every unmasked description, account
+// numbers included, was in a script element on the page. Measured directly:
+// the page source carried the whole raw descriptor of the two-token row, in
+// JSON, beside its id and booking date. Calling the function here means the
+// value that becomes a prop is a tree of HOST elements whose children are the
+// already-masked strings, so nothing raw is left to serialise.
+//
+// MECHANISM RULE, RECORDED AT THE DEFINITION (clause mechanism-sibling). The
+// mechanism is HANDING A SERVER-RENDERED SUBTREE TO A CLIENT COMPONENT. Its
+// rule: pass the RESULT, never an element whose props hold data the screen
+// does not render. Serialisation follows the element, not the pixels, so a
+// prop that is never displayed still ships. THE SIBLING SITES in this tree
+// are the other two detail slots below (both carry only a short union or a
+// number) and the `copy` prop of MerchantGroupRow, which is already resolved
+// to strings for the same class of reason (criterion 11.7(e)).
+const groupRowsMarkup = async (
+  rows: readonly ReviewGroupRow[],
+): Promise<ReactNode> => {
   const t = await getTranslations();
   return (
     <details className="merchant-row-detail" data-testid="group-rows">
@@ -171,7 +195,7 @@ const GroupRow = async ({
             no naming would be a promise about a control the screen does not
             show. */}
         {group.basis === undefined ? null : <GroupBasis basis={group.basis} />}
-        <GroupRows rows={group.rows} />
+        {await groupRowsMarkup(group.rows)}
       </li>
     );
   }
@@ -244,7 +268,12 @@ const GroupRow = async ({
         ...(unresolved && group.counterpartyText !== undefined
           ? { inForm: <GroupReach count={group.count} /> }
           : {}),
-        afterForm: <GroupRows rows={group.rows} />,
+        // AWAITED HERE, so what becomes a prop is the MARKUP and not an
+        // element carrying the raw rows. The two slots above pass elements
+        // whose only props are a two-value union and a number, neither of
+        // which is data the screen withholds; this one carried every raw
+        // description on the screen. See groupRowsMarkup.
+        afterForm: await groupRowsMarkup(group.rows),
       }}
       {...(unresolved && group.counterpartyText !== undefined
         ? {
