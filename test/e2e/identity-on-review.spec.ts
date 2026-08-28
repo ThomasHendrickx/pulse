@@ -95,15 +95,22 @@ test("criteria 13.1, 13.2, 13.3: the group states its basis, is labelled by its 
     .filter({ hasText: "Grouped on a shared description." });
   expect(await descriptorBases.count()).toBeGreaterThan(0);
 
-  // 13.2: the label is the MASKED account, and the account never reaches
-  // the reader unmasked.
+  // 13.2: the label is the MASKED account, and the account never reaches the
+  // reader unmasked in EITHER of the two shapes it exists in: the COMPACT
+  // form the importer stores, and the SPACED form the statement prints and
+  // the descriptor therefore carries. The spaced form is the one that leaked
+  // before this phase, because an account-basis group was labelled by the
+  // smallest normalised descriptor and that descriptor carries the account
+  // exactly as printed.
   const account = IDENTITY_FIXTURE_ACCOUNTS.counterparty1;
+  const spacedAccount = account.replace(/(.{4})(?=.)/g, "$1 ");
   const masked = `${account.slice(0, 4)} **** ${account.slice(-4)}`;
   await expect(group.getByTestId("group-label")).toHaveText(masked);
 
   const visible = await page.locator("body").innerText();
   expect(visible).toContain(masked);
   expect(visible).not.toContain(account);
+  expect(visible).not.toContain(spacedAccount);
 
   // ...and the hidden field the naming form submits carries the UNMASKED
   // namespaced identity key, which is what the stored rule pattern must be
@@ -118,16 +125,20 @@ test("criteria 13.1, 13.2, 13.3: the group states its basis, is labelled by its 
   // account AND the hidden field to carry the unmasked identity key, and
   // the identity key of an account-basis group IS the namespace followed by
   // that account. Both cannot hold at once. What is asserted instead is
-  // that EVERY occurrence of the unmasked account in the page source is
-  // inside a hidden counterpartyText field: nothing the reader sees, and
-  // nothing a screenshot can carry, holds it.
+  // that every occurrence of the account in the page source sits in one of
+  // the two MACHINE identities that must hold it unmasked, the hidden
+  // subject and the row's data-group-key, and in nothing else. Neither is
+  // rendered, so neither can reach a screenshot, which is hazard H13.2. The
+  // group key is deliberately NOT masked: two accounts sharing a country,
+  // check digits and last four characters would mask to one string, and the
+  // row identity criterion 11.3 turns on has to stay unique.
   const html = await page.content();
-  const withoutHiddenSubjects = html.replace(
-    /<input[^>]*name="counterpartyText"[^>]*>/g,
-    "",
-  );
-  expect(withoutHiddenSubjects).not.toContain(account);
   expect(html).toContain(account);
+  const withoutMachineIdentities = html
+    .replace(/<input[^>]*name="counterpartyText"[^>]*>/g, "")
+    .replace(/data-group-key="[^"]*"/g, "");
+  expect(withoutMachineIdentities).not.toContain(account);
+  expect(withoutMachineIdentities).not.toContain(spacedAccount);
 
   // 13.3: the three transactions behind the group, each with its own date,
   // its own description and its own amount, summing to the group total.

@@ -189,6 +189,31 @@ describe("criterion 13.2 and decision D-41: the account is the label of last res
   });
 });
 
+describe("hazard H13.2: the label the group would otherwise have carried prints the account in full", () => {
+  test("the normalised descriptor of an account-basis row carries the account exactly as the statement printed it", () => {
+    const account = IDENTITY_FIXTURE_ACCOUNTS.counterparty1;
+    const spaced = account.replace(/(.{4})(?=.)/g, "$1 ");
+    const descriptor = `OVERSCHRIJVING NAAR ${spaced} DEMO COUNTERPARTY`;
+    const review = buildMerchantReview(
+      [
+        spendRow("h1", "02", -12000, descriptor, {
+          counterpartyAccount: account,
+        }),
+      ],
+      [],
+    );
+    const group = review.spend[0];
+    // This is what the screen showed before this phase, and it is why the
+    // account label exists: the descriptor label prints the account.
+    expect(group?.label).toContain(spaced);
+    // The screen no longer renders that label for this group; it renders the
+    // masked alias instead, and the alias carries neither shape.
+    expect(group?.accountAlias).toBe(account);
+    expect(maskAccountNumbers(group?.accountAlias ?? "")).not.toContain(account);
+    expect(maskAccountNumbers(group?.accountAlias ?? "")).not.toContain(spaced);
+  });
+});
+
 describe("criterion 13.3: the transactions behind a group are carried, dated and summing to the group total", () => {
   test("three rows to one account produce one group of three lines whose amounts sum to the group total in integer cents", () => {
     const group = buildMerchantReview(THREE_TO_ONE_ACCOUNT, []).spend[0];
