@@ -286,3 +286,37 @@ imported."
    The reader sees "Application error: a server-side exception has occurred"
    instead of a sentence saying the name is taken. Pre-existing, outside this
    phase's files, handed on as an open question with the stack.
+
+## The accounts-setup intermittent, met a second time and classified the same way
+
+The first full fix-round suite ended 121 passed, 1 failed, and the one failure
+was `test/e2e/accounts.spec.ts:350`, "a mistyped account number is refused by
+name and the other rows survive", timing out on the FINAL step: after
+correcting the bad row and submitting again, `registered-account` did not
+appear within the five-second default.
+
+Classified INTERMITTENT rather than a regression of this phase, on evidence:
+
+- The test passes in isolation at this head:
+
+      $ npx playwright test test/e2e/accounts.spec.ts --project=chromium \
+          -g "a mistyped account number is refused by name"
+      1 passed (44.3s)   EXIT 0
+
+- This branch changes nothing in the registration path. The fix round added
+  three EXPORTS to `src/platform/account-number.ts`
+  (`isAccountNumberWhitespace`, `ACCOUNT_NUMBER_LENGTH_BOUNDS`,
+  `accountNumberChecksumHolds`) and changed neither `accountNumberProblem`
+  nor `isValidAccountNumber` nor `canonicalAccountNumber`, which are the
+  three the setup screen consults.
+- It is the same SHAPE the criteria lane recorded as CR-M3P13-06: a
+  five-second default wait on the accounts setup submit, on a loaded
+  container, in a suite where every other journey drove the same action
+  successfully. That lane met it at `setup-accounts.ts:58`; this round met it
+  one screen later in the same flow.
+- The lane's own remedy (an explicit timeout matched to the action's budget)
+  was NOT applied here, by instruction: this round was told not to touch that
+  helper and to re-run rather than chase it.
+
+TWO INDEPENDENT SIGHTINGS NOW. It is worth a phase of its own: two lanes and
+one implementer have each lost a run to it, and the next one will too.
