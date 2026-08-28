@@ -118,10 +118,15 @@ export const MerchantGroupRow = ({
   action,
   detail,
 }: {
-  // The MASKED group key, for the row's stable DOM identity (data-group-key,
-  // criterion 11.3): for an unresolved descriptor group the raw key IS the
-  // descriptor, so an unmasked copy would reach spec failure messages and
-  // retained traces for no gain.
+  // The row's stable DOM identity (data-group-key, criterion 11.3). An
+  // OPAQUE DIGEST of the group key, computed by the server component
+  // (merchant-review.tsx, groupDomId), never the key itself: for an
+  // unresolved descriptor group the raw key IS the descriptor, and for an
+  // account-basis group it is the counterparty account in full, and neither
+  // belongs in an attribute, in a spec failure message or in a retained
+  // trace. It is also this row's key in the naming-claims store, which is
+  // why it is a digest rather than a mask: a digest stays injective, so a
+  // claim can never land on a sibling row.
   readonly groupKey: string;
   // The already-masked label the server rendered.
   readonly label: string;
