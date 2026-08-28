@@ -82,3 +82,25 @@ that name and nothing else. The assertion was updated to compare the label
 EXACTLY, in the case the statement printed it, which is stronger than the
 substring form it replaces: the old form passed on any label that happened to
 contain those words inside a longer string.
+
+### Criterion 13.6, run as a grep over the ADDED lines rather than over the files
+
+Running the criterion's grep over the whole changed files returns three hits in
+`src/app/globals.css` (`width: 1px` and `height: 1px` inside the pre-existing
+`.visually-hidden` clip, and the `min-width: 768px` media query), none of them
+added by this phase. Over the added lines only:
+
+    $ git diff origin/main...HEAD -- src/app/globals.css src/platform/ui src/modules \
+        | grep "^+" | grep -vE "^\+\+\+" \
+        | grep -nEi "#[0-9a-f]{3,8}\b|rgb\(|hsl\(|oklch\(|[0-9.]+(px|rem)"
+    (no output)
+
+No token was added to `styles/tokens.css`, because every value the new rules
+need already had one.
+
+### Criterion 13.7, the hardcoded-string grep
+
+    $ grep -nE '>[A-Za-z][A-Za-z ]{3,}<' src/modules/merchants/ui/merchant-review.tsx | grep -v "t("
+    (no output)
+    $ grep -c 't("' src/modules/merchants/ui/merchant-review.tsx
+    24
