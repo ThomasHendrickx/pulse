@@ -1542,7 +1542,12 @@ const runJourney = async (page: Page, reduced: boolean, cdp: CDPSession | null):
   console.log(`swept control set (${found.length}):\n  ${found.join("\n  ")}`);
   const expected = [...ENUMERATION].sort();
   expect(found, "the swept control set is not the enumeration").toEqual(expected);
-  expect(found).toHaveLength(21);
+  // A LITERAL, not ENUMERATION.length, which would be vacuous. UPDATED IN
+  // M3-P13 (was 21): the review row's disclosure summary is a twenty-second
+  // control. The number is written out so that a later phase which SHRINKS
+  // the enumeration to match a sweep, rather than amending it, is red here
+  // as well as in the equality above.
+  expect(found).toHaveLength(22);
 
   if (cdp !== null) {
     // Criterion 9.9(b) is taken over the SET, so the count of controls the
