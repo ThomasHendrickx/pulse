@@ -882,9 +882,16 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     // spot this test exists to refuse. Fifteen sites, seven files, six
     // masked; the fifteenth is the leaf's own label render, declared above
     // with the reason it is not masked twice.
-    expect(surfaces.length).toBe(15);
+    //
+    // UPDATED IN M3-P13 (was fifteen sites, six masked): the review screen
+    // now renders the TRANSACTIONS BEHIND A GROUP, and each line renders
+    // that transaction's own raw description. That is a sixteenth leaf
+    // site, in a file already on this list, and it masks. The group label
+    // beside it is still one site: its expression grew an account mask
+    // around the card mask, and the walk reads the whole expression.
+    expect(surfaces.length).toBe(16);
     expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(7);
-    expect(surfaces.filter((surface) => surface.masked).length).toBe(6);
+    expect(surfaces.filter((surface) => surface.masked).length).toBe(7);
   });
 
   test("every unmasked descriptor surface is a DECLARED exclusion with a reason", () => {

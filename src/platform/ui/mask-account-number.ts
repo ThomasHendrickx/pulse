@@ -43,7 +43,10 @@
 // belongs to the overview module and is not this phase's to change; it is
 // recorded here so the next reader of this file meets it.
 
-import { ACCOUNT_NUMBER_LENGTH_BY_COUNTRY } from "@/platform/account-number";
+import {
+  ACCOUNT_NUMBER_LENGTH_BY_COUNTRY,
+  canonicalAccountNumber,
+} from "@/platform/account-number";
 
 // The candidate shape, deliberately WIDER than what is masked: two letters,
 // two digits, then at least eight further letters or digits, written
@@ -59,7 +62,11 @@ const MASK = "****";
 
 export const maskAccountNumbers = (text: string): string =>
   text.replace(ACCOUNT_CANDIDATE, (match) => {
-    const compact = match.replace(/\s/g, "").toUpperCase();
+    // THE CANONICAL FORM IS PLATFORM'S, NOT A SECOND COPY OF IT (M3-P14
+    // criterion 14.4, pinned by test/domain/account-number.test.ts: a third
+    // whitespace-removal in the tree is red). This helper decides what to
+    // SHOW; it does not decide what an account number is.
+    const compact = canonicalAccountNumber(match);
     const expected = ACCOUNT_NUMBER_LENGTH_BY_COUNTRY.get(compact.slice(0, 2));
     if (expected === undefined || expected !== compact.length) {
       return match;
