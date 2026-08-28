@@ -14,6 +14,11 @@ import { buildMerchantReview } from "@/modules/merchants/domain/merchant-review"
 import type { CountedRow } from "@/modules/merchants/domain/merchant-review";
 import { ACCOUNT_NAMESPACE } from "@/modules/merchants/domain/counterparty-identity";
 import { maskAccountNumbers } from "@/platform/ui/mask-account-number";
+import {
+  ACCOUNT_NUMBER_LENGTH_BY_COUNTRY,
+  accountNumberChecksumHolds,
+  canonicalAccountNumber,
+} from "@/platform/account-number";
 import type { Cents } from "@/platform/money";
 import { plainDate } from "@/platform/plain-date";
 import {
@@ -251,16 +256,149 @@ describe("criterion 13.2 and hazard H13.2: the display mask redacts an account a
     expect(maskAccountNumbers(spaced)).toBe(expected);
   });
 
-  test("a token whose country the registry does not know, or whose length the registry disagrees with, is LEFT ALONE", () => {
+  // CORRECTED LOUDLY RATHER THAN QUIETLY REWRITTEN (clause R-087, fix round,
+  // finding HZ-M3P13-04). This test used to be titled "a token whose country
+  // the registry does not know, OR whose length the registry disagrees with,
+  // is LEFT ALONE" and it asserted both halves. The first half was a
+  // FAIL-OPEN defect rather than a property: an account of a country the
+  // pinned table does not carry was printed in full. Only the second half
+  // survives, and the first is now its opposite, below.
+  test("a token whose length the registry disagrees with, for a country it DOES carry, is left alone", () => {
     // The truncated long source: a real country code, the wrong length for
     // it. Masking on shape alone would rewrite it; this helper does not.
     const truncated = IDENTITY_FIXTURE_LONG_SOURCES.storedPrefix;
     expect(maskAccountNumbers(truncated)).toBe(truncated);
-    // ...and the full-length source IS masked, which is what says the test
-    // above is about the length and not about the helper being inert.
+    // ...and the full-length source IS masked, which is what says the
+    // assertion above is about the length and not about the helper being
+    // inert.
     const full = IDENTITY_FIXTURE_LONG_SOURCES.spacedA;
     expect(maskAccountNumbers(full)).not.toBe(full);
     expect(maskAccountNumbers(full)).toContain("****");
+  });
+
+  // AN UNREGISTERED COUNTRY NOW FAILS CLOSED (fix round, finding
+  // HZ-M3P13-04). The value is BUILT here rather than written down, so no new
+  // identifier shape enters the tree: the country letters are a code ISO 13616
+  // does not assign, the body is the committed fixture account's own body, and
+  // the two check digits are found by asking the platform predicate rather
+  // than by repeating its arithmetic.
+  const unregistered = (body: string): string => {
+    for (let candidate = 0; candidate < 100; candidate += 1) {
+      const value = `ZZ${String(candidate).padStart(2, "0")}${body}`;
+      if (accountNumberChecksumHolds(value)) {
+        return value;
+      }
+    }
+    throw new Error("no check digits satisfy the checksum for this body");
+  };
+
+  test("an account of a country the registry does not carry is REDACTED when the checksum holds", () => {
+    const body = IDENTITY_FIXTURE_ACCOUNTS.counterparty1.slice(4);
+    const value = unregistered(body);
+    expect(ACCOUNT_NUMBER_LENGTH_BY_COUNTRY.has("ZZ")).toBe(false);
+    expect(accountNumberChecksumHolds(value)).toBe(true);
+    const masked = maskAccountNumbers(value);
+    expect(masked).toBe(`${value.slice(0, 4)} **** ${value.slice(-4)}`);
+    expect(masked).not.toContain(value);
+    // ...and inside a sentence, where the scan must not swallow the next word.
+    expect(maskAccountNumbers(`NAAR ${value} DEMO COUNTERPARTY`)).toBe(
+      `NAAR ${value.slice(0, 4)} **** ${value.slice(-4)} DEMO COUNTERPARTY`,
+    );
+  });
+
+  test("an unregistered-country token whose checksum does NOT hold is left alone, so the fallback is a grammar test and not a shape test", () => {
+    const body = IDENTITY_FIXTURE_ACCOUNTS.counterparty1.slice(4);
+    const valid = unregistered(body);
+    // Move the check digits off by one: same shape, same length, broken
+    // checksum.
+    const digits = Number(valid.slice(2, 4));
+    const broken = `ZZ${String((digits + 1) % 100).padStart(2, "0")}${body}`;
+    expect(accountNumberChecksumHolds(broken)).toBe(false);
+    expect(maskAccountNumbers(broken)).toBe(broken);
+    // A long run of digits with no country grammar at all is untouched, which
+    // is what keeps a mandate reference and a phone number readable.
+    expect(maskAccountNumbers("REFERTE 9000000101 20260302")).toBe(
+      "REFERTE 9000000101 20260302",
+    );
+  });
+
+  // THE SEPARATOR TABLE (fix round, finding HZ-M3P13-01). The mask used to
+  // tolerate the ASCII space and NOTHING else, so an account grouped with any
+  // other separator broke the run, fell short of the registry length and was
+  // COPIED THROUGH IN FULL. That is the failure direction that costs: an
+  // unrecognised rendering is printed rather than redacted.
+  //
+  // U+00A0 is not hypothetical in this project. It is the single byte 0xA0 in
+  // Windows-1252, one of exactly two encodings the importer accepts
+  // (src/modules/import/domain/source-profile.ts), and this repository has
+  // already witnessed it live inside stored account renderings (M3-P18
+  // finding HZ-M3P18-01, recorded at src/platform/account-number.ts).
+  //
+  // The table is a CLASS witness, not one member: it reddens under a
+  // no-break space, a narrow no-break space, a thin space, a tab, a newline,
+  // a full stop and a hyphen, which are structurally different members
+  // (three invisible spaces, two control-ish whitespace characters and two
+  // punctuation marks).
+  test.each([
+    ["no-break space U+00A0", "\u00a0"],
+    ["narrow no-break space U+202F", "\u202f"],
+    ["thin space U+2002", "\u2002"],
+    ["tab U+0009", "\t"],
+    ["newline U+000A", "\n"],
+    ["full stop", "."],
+    ["hyphen", "-"],
+    ["ASCII space U+0020", " "],
+    ["form feed U+000C", "\f"],
+  ])(
+    "an account grouped with %s is redacted, not printed",
+    (_name, separator) => {
+      const compact = IDENTITY_FIXTURE_ACCOUNTS.counterparty1;
+      const expected = `${compact.slice(0, 4)} **** ${compact.slice(-4)}`;
+      const rendered = compact.replace(/(.{4})(?=.)/g, `$1${separator}`);
+      expect(maskAccountNumbers(rendered)).toBe(expected);
+      expect(
+        maskAccountNumbers(`OVERSCHRIJVING NAAR ${rendered} DEMO COUNTERPARTY`),
+      ).toBe(`OVERSCHRIJVING NAAR ${expected} DEMO COUNTERPARTY`);
+    },
+  );
+
+  test("the separator set the mask accepts is the set the canonical form removes, plus the two the card mask already tolerates", () => {
+    // ONE ANSWER, NOT TWO (finding HZ-M3P13-01). This file used to hold a
+    // separator rule of its own while importing canonicalAccountNumber, whose
+    // \s strips every whitespace character including all three no-break
+    // spaces, so the file gave two different answers to what separates an
+    // account number. Derived rather than asserted from memory: every
+    // character the canonical form removes must also be a separator the mask
+    // tolerates.
+    const compact = IDENTITY_FIXTURE_ACCOUNTS.counterparty1;
+    const expected = `${compact.slice(0, 4)} **** ${compact.slice(-4)}`;
+    const whitespace = [
+      "\u0009", "\u000a", "\u000b", "\u000c", "\u000d", "\u0020",
+      "\u00a0", "\u1680", "\u2000", "\u2001", "\u2002", "\u2003",
+      "\u2004", "\u2005", "\u2006", "\u2007", "\u2008", "\u2009",
+      "\u200a", "\u2028", "\u2029", "\u202f", "\u205f", "\u3000",
+      "\ufeff",
+    ];
+    for (const character of whitespace) {
+      expect(
+        canonicalAccountNumber(`X${character}Y`),
+        `canonicalAccountNumber does not remove ${character.codePointAt(0)}`,
+      ).toBe("XY");
+      expect(
+        maskAccountNumbers(compact.replace(/(.{4})(?=.)/g, `$1${character}`)),
+        `the mask does not tolerate ${character.codePointAt(0)}`,
+      ).toBe(expected);
+    }
+  });
+
+  test("a separator at the start or the end of the run does not extend it, so the mask cannot swallow a neighbouring word", () => {
+    const compact = IDENTITY_FIXTURE_ACCOUNTS.counterparty1;
+    // A run that would need a leading separator is not an account number: the
+    // country code and the check digits are the first four characters.
+    expect(maskAccountNumbers(`BE 78 DEMO`)).toBe("BE 78 DEMO");
+    // The token immediately followed by another alphanumeric is refused, so
+    // a longer identifier is never partially redacted.
+    expect(maskAccountNumbers(`${compact}9`)).toBe(`${compact}9`);
   });
 
   test("ordinary descriptor text carrying no account number is returned unchanged", () => {
@@ -298,4 +436,43 @@ describe("the e2e facts module agrees with the fixture generator", () => {
       );
     }
   });
+});
+
+// THE REACH SENTENCE MAY NOT NAME A PERIOD (fix round, finding HZ-M3P13-03).
+// The read behind it is HOUSEHOLD-WIDE: listCountedTransactions filters on
+// householdId and flow and carries no date bound, listMerchantReview takes no
+// period and the route passes no month. The first version of this copy said
+// "of this month" in all three languages, which was true only of a household
+// with a single imported month and UNDERSTATED what the reader was about to
+// do, because assignMerchant's recompute carries the rule to every past
+// matching transaction. This assertion is what stops the claim coming back.
+describe("the reach copy states no period, because the read it renders has none", () => {
+  const MONTH_TOKENS = [
+    "this month", "month", "months",
+    "deze maand", "maand", "maanden",
+    "ce mois", "mois",
+  ];
+  test.each(["en", "nl", "fr"])(
+    "the %s reach string names no period",
+    (locale) => {
+      const catalogue = JSON.parse(
+        readFileSync(
+          join(__dirname, "..", "..", "messages", `${locale}.json`),
+          "utf8",
+        ),
+      ) as Readonly<Record<string, string>>;
+      const reach = catalogue["groupReach"];
+      expect(reach, `${locale} has no groupReach`).toBeDefined();
+      for (const token of MONTH_TOKENS) {
+        expect(
+          (reach ?? "").toLowerCase(),
+          `the ${locale} reach string names the period "${token}", which the read behind it does not carry`,
+        ).not.toContain(token);
+      }
+      // NOT VACUOUS: the string is the plural form the screen renders and it
+      // still carries the count placeholder, so this is a test about a live
+      // sentence rather than about an absent key.
+      expect(reach).toContain("{count, plural,");
+    },
+  );
 });

@@ -15,4 +15,12 @@ export const ACCOUNT_NAMESPACE = "account:";
 export const IDENTITY_FIXTURE_ACCOUNTS = {
   own: "BE31111122223333",
   counterparty1: "BE78222233334444",
+  // ROW 20'S SECOND ACCOUNT-SHAPED TOKEN (fix round, finding CR-M3P13-02).
+  // The importer's first-wins rule stores the FIRST token, so this account is
+  // never an identity key, never a hidden subject and never a row identity.
+  // It reaches the screen only through row 20's description, which the
+  // transaction lines render and mask. For this account criterion 13.2's
+  // literal page-source clause is reachable with NOTHING excluded, and the
+  // spec asserts it that way.
+  secondToken: "BE72666677778888",
 } as const;

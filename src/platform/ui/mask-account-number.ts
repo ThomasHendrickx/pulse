@@ -32,20 +32,58 @@
 // normaliser, which strips rather than masks and states the same rule one
 // tier down). The rule is not local to this file.
 //
-// WHERE THIS IS APPLIED. On the merchant review screen: the group label of
-// an account-basis group that carries no counterparty name, the group
-// label of any other unresolved group (whose descriptor can carry an
-// account token of its own), and every description on the transaction
-// lines behind a group. RESIDUE, stated rather than left to be found: the
-// month view renders unnormalised counterparty text on its gap rows and
-// its held rows and masks CARD numbers there only, so an account number
-// inside one of those descriptors is still shown in full. That surface
-// belongs to the overview module and is not this phase's to change; it is
-// recorded here so the next reader of this file meets it.
+// WHERE THIS IS APPLIED, CORRECTED LOUDLY RATHER THAN QUIETLY REWRITTEN
+// (clause R-087, fix round, findings HZ-M3P13-02 and CR-M3P13-03).
+//
+// WHAT THIS PARAGRAPH USED TO SAY, and it was false in the direction that
+// costs, because a reader trusts a residue note and stops looking:
+//
+//   "WHERE THIS IS APPLIED. On the merchant review screen: the group label
+//    of an account-basis group that carries no counterparty name, the group
+//    label of any other unresolved group, and every description on the
+//    transaction lines behind a group. RESIDUE, stated rather than left to
+//    be found: the month view renders unnormalised counterparty text on its
+//    gap rows and its held rows and masks CARD numbers there only, so an
+//    account number inside one of those descriptors is still shown in full.
+//    That surface belongs to the overview module and is not this phase's to
+//    change."
+//
+// It named ONE remaining surface and there were FOUR, and the one it left
+// out is the worst of them: src/modules/import/ui/profile-confirmation.tsx
+// renders the import preview, and its counterparty column falls back to the
+// counterparty ACCOUNT when a row carries no name, so that column printed an
+// account number whole, in a cell of its own, on every import. The comment
+// directly above that cell records it as the screen the owner photographed
+// when a card number leaked there.
+//
+// THE ENUMERATION IS NOW DERIVED RATHER THAN WRITTEN DOWN. It is not a list
+// in this comment: test/domain/merchant-review.test.ts walks every .tsx
+// under src/ with the TypeScript compiler API, collects every leaf JSX
+// expression that renders a descriptor-derived field, and asserts that every
+// surface passing through the card mask passes through THIS mask too, and
+// that any surface passing through neither is a declared exclusion with a
+// reason. A list here would be a second source and this project has recorded
+// three times that a convention between two sources does not survive; the
+// falsity above is the fourth.
+//
+// The nine call sites at the head of this fix round, for orientation only,
+// with the derivation above as the authority: the merchant review's group
+// label and transaction descriptions, the import preview's counterparty and
+// descriptor cells, and the month view's group label, reserves label, held
+// rows and gap rows.
+//
+// WHAT REMAINS UNMASKED, and it is a list of things that are NOT identifiers
+// rather than a list of surfaces: the declared exclusions in that test. Each
+// is a value the household typed (an account label, a format name) or
+// translated copy, and each carries its reason there where it is checked
+// rather than here where it is only asserted.
 
 import {
+  ACCOUNT_NUMBER_LENGTH_BOUNDS,
   ACCOUNT_NUMBER_LENGTH_BY_COUNTRY,
+  accountNumberChecksumHolds,
   canonicalAccountNumber,
+  isAccountNumberWhitespace,
 } from "@/platform/account-number";
 
 // THE SCAN IS LENGTH-DIRECTED, NOT GREEDY, and that is the whole design.
@@ -59,29 +97,57 @@ import {
 // candidate begins at a word boundary with two letters and two digits, the
 // registry says how many characters that country's account numbers have,
 // and the scan consumes EXACTLY that many letters-or-digits, tolerating a
-// single space between them. A run that ends against another letter or
-// digit is refused, because a longer token is not that account number.
-// Nothing is masked on shape alone and nothing is masked on a guess.
+// separator between them. A run that ends against another letter or digit
+// is refused, because a longer token is not that account number. Nothing is
+// masked on shape alone and nothing is masked on a guess.
+//
+// THE SEPARATOR SET, CORRECTED LOUDLY RATHER THAN QUIETLY REWRITTEN (clause
+// R-087, fix round, findings HZ-M3P13-01 and CR-M3P13-04). This file used to
+// test `character === " "` and carry the comment:
+//
+//   "Exactly ONE space is tolerated between characters, and only between
+//    them: a run may not begin or end on one."
+//
+// BOTH HALVES WERE WRONG. The loop skips each separator individually with no
+// counter, so ANY number of them is tolerated, and the comment said one. And
+// the accepted separator was the ASCII space ALONE, while the canonical form
+// this same file imports strips the whole /\s/ class, so the tree held two
+// answers and the masker FAILED OPEN on the difference: an account grouped
+// with U+00A0, U+202F, U+2002, a tab, a newline, a full stop or a hyphen
+// broke the run, fell short of the registry length and was COPIED THROUGH IN
+// FULL. That is not a hypothetical character. U+00A0 is the single byte 0xA0
+// in Windows-1252, one of exactly two encodings the importer accepts
+// (src/modules/import/domain/source-profile.ts), and this repository has
+// already witnessed it inside stored account renderings (M3-P18 finding
+// HZ-M3P18-01, recorded at src/platform/account-number.ts).
+//
+// The whitespace half is now ASKED of src/platform/account-number.ts rather
+// than answered here, so there is exactly one answer; the two punctuation
+// separators are the ones the sibling card mask already tolerates
+// (src/platform/ui/mask-card-number.ts, the [\s.-]* between its groups).
+// test/domain/identity-on-review.test.ts DERIVES the agreement: every
+// character canonicalAccountNumber removes must be a separator this mask
+// tolerates.
 const CANDIDATE_START = /\b[A-Za-z]{2}[0-9]{2}/g;
 const ALPHANUMERIC = /[A-Za-z0-9]/;
+
+const isSeparator = (character: string): boolean =>
+  isAccountNumberWhitespace(character) ||
+  character === "." ||
+  character === "-";
 
 const VISIBLE_TAIL = 4;
 const COUNTRY_AND_CHECK = 4;
 const MASK = "****";
 
-// The source span of an account number starting at `from`, or undefined if
-// no account number of a known country and its registry length starts
-// there.
-const accountSpanAt = (
+// Consume EXACTLY `expected` letters-or-digits from `from`, tolerating
+// separators between them but never at either end, and refuse a run that
+// ends against another letter or digit.
+const runOfLength = (
   text: string,
   from: number,
+  expected: number,
 ): { readonly end: number; readonly compact: string } | undefined => {
-  const expected = ACCOUNT_NUMBER_LENGTH_BY_COUNTRY.get(
-    text.slice(from, from + 2).toUpperCase(),
-  );
-  if (expected === undefined) {
-    return undefined;
-  }
   let taken = 0;
   let at = from;
   const characters: string[] = [];
@@ -93,9 +159,10 @@ const accountSpanAt = (
       at += 1;
       continue;
     }
-    // Exactly ONE space is tolerated between characters, and only between
-    // them: a run may not begin or end on one.
-    if (character === " " && taken > 0 && taken < expected) {
+    // Separators are skipped BETWEEN characters only, and any number of them
+    // is skipped: a run may not begin or end on one, which is what keeps the
+    // scan from swallowing the following word.
+    if (isSeparator(character) && taken > 0 && taken < expected) {
       at += 1;
       continue;
     }
@@ -107,7 +174,45 @@ const accountSpanAt = (
   if (ALPHANUMERIC.test(text[at] ?? "")) {
     return undefined;
   }
-  return { end: at, compact: characters.join("").toUpperCase() };
+  return { end: at, compact: canonicalAccountNumber(characters.join("")) };
+};
+
+// The source span of an account number starting at `from`, or undefined if
+// none starts there.
+//
+// TWO BRANCHES, AND THE SECOND ONE IS THE FAIL-CLOSED HALF (fix round,
+// finding HZ-M3P13-04). A country the registry carries takes the fast path:
+// the table gives the length and the scan consumes it. A country the
+// registry does NOT carry used to be passed through in full, which is the
+// same fail-open direction as the separator defect: for the VALIDITY test in
+// src/platform/account-number.ts refusing an unknown country is right,
+// because the cost of being wrong there is a registration the owner can see
+// refused, but here the cost of being wrong is that the value is SHOWN. So
+// an unknown country is now redacted when a run of a registry-plausible
+// length satisfies ISO 7064, longest candidate first. That is a checksum and
+// not a shape, so it cannot fire on a mandate reference, a card number or a
+// phone number, which is this file's own rule applied to itself.
+const accountSpanAt = (
+  text: string,
+  from: number,
+): { readonly end: number; readonly compact: string } | undefined => {
+  const expected = ACCOUNT_NUMBER_LENGTH_BY_COUNTRY.get(
+    text.slice(from, from + 2).toUpperCase(),
+  );
+  if (expected !== undefined) {
+    return runOfLength(text, from, expected);
+  }
+  for (
+    let length = ACCOUNT_NUMBER_LENGTH_BOUNDS.longest;
+    length >= ACCOUNT_NUMBER_LENGTH_BOUNDS.shortest;
+    length -= 1
+  ) {
+    const span = runOfLength(text, from, length);
+    if (span !== undefined && accountNumberChecksumHolds(span.compact)) {
+      return span;
+    }
+  }
+  return undefined;
 };
 
 export const maskAccountNumbers = (text: string): string => {
@@ -127,7 +232,7 @@ export const maskAccountNumbers = (text: string): string => {
       // criterion 14.4, pinned by test/domain/account-number.test.ts: a
       // third whitespace-removal in the tree is red). This helper decides
       // what to SHOW; it does not decide what an account number is.
-      const compact = canonicalAccountNumber(span.compact);
+      const compact = span.compact;
       out += text.slice(copiedTo, from);
       out += `${compact.slice(0, COUNTRY_AND_CHECK)} ${MASK} ${compact.slice(
         -VISIBLE_TAIL,

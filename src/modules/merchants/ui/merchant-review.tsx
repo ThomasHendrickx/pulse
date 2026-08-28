@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import type { ReactNode } from "react";
 import { getTranslations } from "next-intl/server";
 import { Amount } from "@/platform/ui/amount";
 import { maskAccountNumbers } from "@/platform/ui/mask-account-number";
@@ -31,6 +33,32 @@ import type { NamingCopy } from "./merchant-row";
 // THE BASIS IS COPY, NEVER A CODE (hazard H13.4): the two strings live in
 // the three catalogues and are resolved here, so a Dutch or French reader
 // meets their own language rather than an English word or a blank.
+// THE ROW'S DOM IDENTITY IS DELIBERATELY OPAQUE (fix round, findings
+// CR-M3P13-01 and HZ-M3P13-05). data-group-key used to be
+// maskCardNumbers(group.key), and the card mask does not touch an account
+// number, so every account-basis row carried the counterparty account in full
+// in a DOM attribute on the screen whose headline criterion reads "THE
+// ACCOUNT NEVER LEAVES THE DISPLAY LAYER UNMASKED".
+//
+// IT WAS EXCLUDED FROM THAT CRITERION'S SWEEP AS NECESSARY AND IT IS NOT
+// NECESSARY. The argument given was that masking the key would collide two
+// accounts sharing a country, check digits and last four characters and break
+// criterion 11.3's row identity. Criterion 11.3 says the attribute is added
+// MASKED and accepts that collision in terms (finding DELTA-M0P4-08), so the
+// argument was wrong about the criterion; but the collision itself is real
+// for the OTHER consumer, the client naming-claims store, which keys on this
+// value. A DIGEST answers both: it carries no identifier, and it stays
+// injective wherever the key is, so no claim can land on a sibling row.
+//
+// Every consumer needs stability and uniqueness and nothing else: criterion
+// 11.3's sweep compares the sequence to itself (test/e2e/busy-state.spec.ts),
+// the optimistic-naming spec captures a value and uses it to re-find its own
+// row, and naming-claims.ts uses it as half of an equality. THE VALUE IS NOT
+// A KEY AND MUST NOT BE TURNED BACK INTO ONE: a later phase that helpfully
+// restores group.key here puts the account back in the markup of every row.
+const groupDomId = (key: string): string =>
+  createHash("sha256").update(key).digest("hex").slice(0, 16);
+
 const GroupBasis = async ({ basis }: { readonly basis: "account" | "descriptor" }) => {
   const t = await getTranslations();
   return (
@@ -64,7 +92,30 @@ const GroupReach = async ({ count }: { readonly count: number }) => {
 // phase adds, because a transfer descriptor carries the counterparty account
 // in full and putting those lines on screen would otherwise create hazard
 // H13.2 rather than answer it.
-const GroupRows = async ({ rows }: { readonly rows: readonly ReviewGroupRow[] }) => {
+//
+// IT IS A FUNCTION RETURNING MARKUP, NOT A COMPONENT RENDERED AS AN ELEMENT,
+// AND THAT IS LOAD-BEARING (fix round). It was `<GroupRows rows={group.rows} />`
+// placed in the `detail` object, which is a prop of the CLIENT component
+// MerchantGroupRow. A React ELEMENT in a client component's props is
+// serialised into the flight payload TOGETHER WITH ITS OWN PROPS, so the raw
+// `rows` array crossed the boundary and every unmasked description, account
+// numbers included, was in a script element on the page. Measured directly:
+// the page source carried the whole raw descriptor of the two-token row, in
+// JSON, beside its id and booking date. Calling the function here means the
+// value that becomes a prop is a tree of HOST elements whose children are the
+// already-masked strings, so nothing raw is left to serialise.
+//
+// MECHANISM RULE, RECORDED AT THE DEFINITION (clause mechanism-sibling). The
+// mechanism is HANDING A SERVER-RENDERED SUBTREE TO A CLIENT COMPONENT. Its
+// rule: pass the RESULT, never an element whose props hold data the screen
+// does not render. Serialisation follows the element, not the pixels, so a
+// prop that is never displayed still ships. THE SIBLING SITES in this tree
+// are the other two detail slots below (both carry only a short union or a
+// number) and the `copy` prop of MerchantGroupRow, which is already resolved
+// to strings for the same class of reason (criterion 11.7(e)).
+const groupRowsMarkup = async (
+  rows: readonly ReviewGroupRow[],
+): Promise<ReactNode> => {
   const t = await getTranslations();
   return (
     <details className="merchant-row-detail" data-testid="group-rows">
@@ -114,13 +165,14 @@ const GroupRow = async ({
   // server rendered: nothing about it can be predicted because nothing
   // about it can be submitted, so it pays for no client boundary. It still
   // carries the stable data-group-key identity every row shares
-  // (criterion 11.3), masked like the label beside it.
+  // (criterion 11.3), as the opaque digest described above rather than as
+  // the key itself (fix round, findings CR-M3P13-01 and HZ-M3P13-05).
   if (unresolved && group.unnameableReason !== undefined) {
     return (
       <li
         className="merchant-row merchant-row-unresolved"
         data-testid="unresolved-group"
-        data-group-key={maskCardNumbers(group.key)}
+        data-group-key={groupDomId(group.key)}
       >
         <span className="merchant-row-label" data-testid="group-label">
           {t("unnameableLabel")}
@@ -143,7 +195,7 @@ const GroupRow = async ({
             no naming would be a promise about a control the screen does not
             show. */}
         {group.basis === undefined ? null : <GroupBasis basis={group.basis} />}
-        <GroupRows rows={group.rows} />
+        {await groupRowsMarkup(group.rows)}
       </li>
     );
   }
@@ -178,11 +230,14 @@ const GroupRow = async ({
   };
   return (
     <MerchantGroupRow
-      // The row's stable DOM identity, MASKED (criterion 11.3, finding
-      // DELTA-M0P4-08): for an unresolved group the raw key IS the
-      // normalised descriptor, and criterion 11.3 only ever compares the
-      // sequence to itself.
-      groupKey={maskCardNumbers(group.key)}
+      // The row's stable DOM identity, an OPAQUE DIGEST of the key
+      // (criterion 11.3, finding DELTA-M0P4-08, and this round's findings
+      // CR-M3P13-01 and HZ-M3P13-05). It used to be the key put through the
+      // card mask, which for a descriptor group is the descriptor and for an
+      // account group is the account in full. Criterion 11.3 only ever
+      // compares the sequence to itself, so an opaque value serves it
+      // exactly as well and carries no identifier at all.
+      groupKey={groupDomId(group.key)}
       // The label of an unresolved group is the normalised descriptor for
       // a descriptor-basis group, so a card descriptor rendered the card
       // number here. Masked in the RENDERING only (M3-P6, decision D-12):
@@ -213,7 +268,12 @@ const GroupRow = async ({
         ...(unresolved && group.counterpartyText !== undefined
           ? { inForm: <GroupReach count={group.count} /> }
           : {}),
-        afterForm: <GroupRows rows={group.rows} />,
+        // AWAITED HERE, so what becomes a prop is the MARKUP and not an
+        // element carrying the raw rows. The two slots above pass elements
+        // whose only props are a two-value union and a number, neither of
+        // which is data the screen withholds; this one carried every raw
+        // description on the screen. See groupRowsMarkup.
+        afterForm: await groupRowsMarkup(group.rows),
       }}
       {...(unresolved && group.counterpartyText !== undefined
         ? {
