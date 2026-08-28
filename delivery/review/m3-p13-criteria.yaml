@@ -47,14 +47,39 @@
 #   new mask prints the country, the check digits and the last four.
 #   Nine awkward shapes were put through the new mask; two are reported below.
 #
-# CHECKPOINT 4. Findings CR-M3P13-01 through CR-M3P13-05 written and pushed;
-# criteria 13.6, 13.7 and 13.9 walked and MET on evidence that does not need the
-# slow gate. 13.1 through 13.5 and 13.8 wait on my own e2e run, which started at
-# 08:42:21 UTC and is still running at 09:11 with exactly ONE retained failure
-# artifact so far, in test/e2e/accounts.spec.ts:509 (a card statement declared
-# at first sight), a spec this phase does not touch at that line. It will be
-# classified as environment or as regression by an isolated re-run once the
-# suite finishes, never assumed.
+# CHECKPOINT 4, FINAL. THE SLOW GATE, RUN BY ME AT 936fcda in this worktree
+# against the local Supabase stack, every database variable parsed and asserted
+# to resolve to 127.0.0.1 before any command:
+#   npx prisma migrate deploy   EXIT 0, 7 migrations found, none pending
+#   npm run test:e2e            EXIT 1, 32.1 minutes
+#                               122 discovered, 120 passed, 1 FAILED, 1 skipped
+# THE ONE FAILURE, and its classification, measured rather than assumed:
+#   [chromium] test/e2e/accounts.spec.ts:509 "a card statement, which carries no
+#   own-account column, is accepted and declared at first sight", failing inside
+#   the shared helper test/e2e/setup-accounts.ts:58 on
+#   expect(getByTestId("accounts-status")).toBeVisible(), element not found
+#   within the 5s default. Classified INTERMITTENT, NOT A REGRESSION OF THIS
+#   PHASE, on four independent grounds: the line is not touched by this branch
+#   (git diff 975d0ce..936fcda on test/e2e/accounts.spec.ts changes only the
+#   control-arm label assertion around line 241); the failing call is a shared
+#   helper that every other spec in the same run used successfully, the three
+#   new tests among them; the retained error context shows the setup form
+#   correctly filled with the household's own values, so the failure is the
+#   status not rendering rather than the form being wrong; and the same test
+#   RE-RUN IN ISOLATION in this worktree at this head PASSES, exit 0, 14.7s
+#   (a first isolated attempt was invalid, refused at "Port 3000 is in use",
+#   which is the config's deliberate no-reuse guard, not a test result).
+#   Recorded as finding CR-M3P13-06 so it is not lost, and NOT counted against
+#   any product criterion.
+# THE THREE NEW TESTS PASSED. The reporter's failure list at the end of the run
+# names exactly one test and it is the one above, so identity-on-review.spec.ts
+# contributed three passes; 118 + 3 = 121 and the run shows 120 passed with one
+# of the 121 flaking, which is the branch's claimed arithmetic witnessed.
+# A SECOND ISOLATED RUN OF identity-on-review.spec.ts ALONE COULD NOT BE MADE:
+# by then another lane's gate held ports 3000 and 3100 in this shared container
+# and this config refuses to reuse a server it did not start. So the three new
+# tests are witnessed through the suite's own reporter rather than a second
+# time in isolation, and that is stated rather than glossed.
 #
 # ORCHESTRATOR RULING CARRIED INTO THIS LANE: criterion 13.2 is
 # self-contradictory as written and the implementer's escalation is not counted
@@ -237,6 +262,41 @@ findings:
       Rename `aboveForm` to `beforeForm` in the comment, delete the duplicated
       clause and keep one reason, and extend the line 228 comment to name both
       masks the label has been through.
+  - id: CR-M3P13-06
+    severity: low
+    analysis: >-
+      AN INTERMITTENT IN A SHARED SLOW-GATE HELPER, WHICH THIS LANE MET AND THE
+      IMPLEMENTER DID NOT, AND WHICH IS NOT THIS PHASE'S. In my run of the whole
+      suite at this head the wrapper exited 1 on a single test,
+      test/e2e/accounts.spec.ts:509, failing inside test/e2e/setup-accounts.ts's
+      registerAccounts helper on the five-second default wait for the
+      accounts-status element after the register submit. Four things say
+      intermittent rather than regression: the line is untouched by this branch;
+      the same helper was used successfully by every other spec in the same run,
+      including the three this phase adds; the retained error context shows the
+      setup form correctly filled, so what did not happen is the status
+      rendering; and the test passes in isolation at the same head. It is
+      recorded because a gate that fails once every few runs on a helper that
+      almost every journey calls will cost some later lane an hour, and because
+      a review that saw a red gate and said nothing would be the worse error.
+      It is explicitly NOT a reason to hold this phase.
+    evidence:
+      - "My npm run test:e2e at 936fcda: EXIT 1, 32.1 minutes, '1 failed / 1 skipped / 120 passed', the failure list naming only '[chromium] test/e2e/accounts.spec.ts:509:5 a card statement, which carries no own-account column, is accepted and declared at first sight'."
+      - "The failing assertion, from the run's own output: 'at setup-accounts.ts:58 ... await expect(page.getByTestId(\"accounts-status\")).toBeVisible()', Timeout 5000ms, 'element(s) not found'."
+      - "test-results/accounts-a-card-statement--9fa4c-and-declared-at-first-sight-chromium/error-context.md: the accessibility snapshot shows the /accounts setup form with Label, Bank, Account number and Ring all correctly filled for the household under test, and no status element."
+      - "Isolated re-run in this worktree at this head, same pinned loopback environment: 'npx playwright test test/e2e/accounts.spec.ts --project=chromium -g \"a card statement, which carries no own-account column\"' PASSED, 1 passed in 51.6s, test duration 14.7s, exit 0."
+      - "git diff 975d0ce..936fcda -- test/e2e/accounts.spec.ts: the only change is the control-arm label assertion near line 241, nowhere near :509."
+    concrete-fix: >-
+      Give the status wait in test/e2e/setup-accounts.ts:58 an explicit timeout
+      matched to the server action's own budget rather than the five-second
+      default, the way the other post-submit waits in this suite do, so a slow
+      round-trip in a loaded container is waited out instead of failing a helper
+      that almost every journey depends on. Nothing in src/ needs to change: the
+      product rendered the form correctly and the action is the same one the
+      other twenty journeys drove successfully in the same run. If a fix round
+      runs for CR-M3P13-01 anyway, re-run the whole suite after that change and
+      record the exit code, which is the cheapest way to confirm the
+      classification.
 criteria:
   - id: "13.1"
     quote: >-
@@ -249,8 +309,12 @@ criteria:
       Asserting that the strings exist in the catalogue does not meet this
       criterion; the assertion is on the rendered page.
     evidence:
-      - "PENDING-E2E"
-    met: false
+      - "MET. test/e2e/identity-on-review.spec.ts, first test: page.setViewportSize({ width: 390, height: 844 }), sign-up, registerCurrentAccount on the fixture's own account, then the committed fixture test/fixtures/belfius-counterparty-identity.pdf uploaded through the real /import flow with rows-added asserted to be 24, then page.goto('/merchants')."
+      - "The count is asserted BY TESTID on the rendered page: await expect(group.getByTestId('group-count')).toHaveText('3 rows'), where `group` is located by the account-basis identity key. The testid is new on both row branches (src/modules/merchants/ui/merchant-row.tsx:274 and src/modules/merchants/ui/merchant-review.tsx:128); before this phase the count span carried no testid."
+      - "The basis is asserted by testid against the CATALOGUE STRING and not against its presence in the catalogue: await expect(group.getByTestId('group-basis')).toHaveText('Grouped on a shared counterparty account.'), which is messages/en.json's groupBasisAccount verbatim. The descriptor arm is asserted on the rendered page too, by filtering the unresolved-group rows on hasText 'Grouped on a shared description.' and requiring the count to be greater than zero."
+      - "The value rendered is M3-P12's basis read off the identity and not re-derived (src/modules/merchants/domain/merchant-review.ts, ...(merchantId === undefined ? { basis: identity.basis } : {})), pinned in the fast gate by test/domain/identity-on-review.test.ts, which also pins that a RESOLVED group reports no basis."
+      - "Witnessed in my own slow-gate run at 936fcda: 122 discovered, 120 passed, 1 failed, 1 skipped, and the reporter's failure list names only test/e2e/accounts.spec.ts:509, so this test passed."
+    met: true
   - id: "13.2"
     quote: >-
       THE ACCOUNT NEVER LEAVES THE DISPLAY LAYER UNMASKED AND NEVER ENTERS THE
@@ -262,7 +326,12 @@ criteria:
       function is not called anywhere in src/modules/merchants/domain or
       src/modules/merchants/application.
     evidence:
-      - "PENDING-E2E"
+      - "NOT MET, and NOT because the criterion is self-contradictory. The contradiction is real and is the orchestrator's ruling, not a miss: for an account-basis group the namespaced identity key IS the namespace followed by that account, so a page source that carries the key unmasked cannot also be free of the account. This walk therefore judges the criterion against the STRONGEST TRUE FORM available at this head, and what shipped is not it. Findings CR-M3P13-01 and CR-M3P13-02."
+      - "THE THREE HALVES THAT ARE MET, each witnessed. (a) The masked form is on the page: await expect(group.getByTestId('group-label')).toHaveText(`${account.slice(0,4)} **** ${account.slice(-4)}`), and the label expression is maskAccountNumbers applied in the display layer only (src/modules/merchants/ui/merchant-review.tsx:201 and :202). (b) The hidden field carries the unmasked namespaced key: await expect(group.locator('input[name=\"counterpartyText\"]')).toHaveValue(THREE_ROW_KEY). (c) The derivation half is met and is STRONGER than the criterion asks: test/domain/identity-on-review.test.ts walks every .ts and .tsx under src/modules/merchants/domain and src/modules/merchants/application, asserts the walk found more than five files first so a broken path cannot pass by scanning nothing, and requires zero call sites of maskAccountNumbers OR maskCardNumbers, where the criterion names only 'the same masking function'."
+      - "THE SWEEP IS NON-VACUOUS, which was the first thing I checked and it holds: the spec asserts leak.masked is true on the same cloned markup the two negative assertions read, and separately asserts that `await page.content()` on the UNTOUCHED source DOES contain the account, so the three removals are demonstrably doing work rather than emptying the document."
+      - "WHY IT IS STILL NOT MET. Of the three channels excluded from the sweep, two are forced and one is not. The hidden counterpartyText input is required by the criterion itself. The framework's serialised payload is forced by the first: the naming row is a client component (src/modules/merchants/ui/merchant-row.tsx:1, 'use client'), the identity key must reach it, and a prop is serialised whatever shape it is given, including as pre-rendered children. THE ROW IDENTITY IS NOT FORCED, and the reason given for it is refuted by criterion 11.3's own text, which states the attribute is added MASKED and that masked-key collision is 'accepted and stated rather than left to be discovered'. See CR-M3P13-01."
+      - "AND THE SWEEP IS NARROWER THAN THE FIXTURE ALLOWS. It runs on one account. The same fixture carries an account that is never an identity key at all, so for that one the criterion's literal page-source clause is reachable with nothing excluded, and it is not asserted. See CR-M3P13-02."
+      - "NOTHING ELSE ON /merchants LEAKS THE ACCOUNT, checked rather than assumed: the four rendering leaves of this screen are the group label (masked, both branches), the transaction-line description (maskAccountNumbers(maskCardNumbers(row.description)), src/modules/merchants/ui/merchant-review.tsx:84), the count and the amount (neither derived from descriptor text). The unnameable branch's data-group-key cannot carry an account, because unnameableReason is set only for a BARE namespace and the account branch emits a non-empty compact account by construction. The predicted-label render in the client leaf renders the reader's own typed name."
     met: false
   - id: "13.3"
     quote: >-
@@ -271,8 +340,12 @@ criteria:
       a distinct booking date and its own amount, and that the three amounts sum
       to the group total shown on the group row, compared in integer cents.
     evidence:
-      - "PENDING-E2E"
-    met: false
+      - "MET, in the same test and on the same page load. The disclosure is opened (group.getByTestId('group-rows').locator('summary').click()), then await expect(rows).toHaveCount(3), then Set(dates).size === 3 and Set(descriptions).size === 3 over the rendered testids group-row-date and group-row-description."
+      - "The sum is compared in integer cents and the comparison is NOT VACUOUS, which I checked because a NaN on both sides would pass under Object.is: the rendered amount is formatCents (src/platform/ui/amount.tsx), which emits a Belgian form with '.' thousands and ',' decimals and no currency symbol, so the spec's centsOf, which strips '.' and turns ',' into '.', parses it to a real integer. A group total of -39825 is independently pinned in the fast gate."
+      - "The rows come from the same read that builds the groups, as step 5 requires: src/modules/merchants/adapters/merchant-repository.ts adds bookingDate to the EXISTING select of listCountedTransactions (the column was already the read's ORDER and was not selected), and src/modules/merchants/domain/merchant-review.ts pushes each row onto the group it is already visiting. No second query and no new server action."
+      - "The disclosure is native (<details>/<summary>), so it opens with no JavaScript, and the phase amended test/e2e/pressed-and-disabled.spec.ts's control enumeration to twenty-two rather than narrowing the sweep, which is what criterion 9.2(a) requires when the two disagree; the literal 22 is kept beside the set equality so a later shrink is red twice."
+      - "Witnessed in my own slow-gate run at 936fcda, in the same passing test as 13.1."
+    met: true
   - id: "13.4"
     quote: >-
       THE REACH IS STATED BEFORE THE NAMING. The naming form for that group
@@ -280,8 +353,13 @@ criteria:
       group of 1 renders the same string carrying 1, asserted on the rendered
       page in English and, with the locale switched, in Dutch and in French.
     evidence:
-      - "PENDING-E2E"
-    met: false
+      - "MET. test/e2e/identity-on-review.spec.ts, second test: the three-row group's group-reach is asserted to equal 'Naming this reaches 3 transactions of this month.' and a one-row group's to equal 'Naming this reaches 1 transaction of this month.', then the locale cookie is set to nl and to fr and both assertions are repeated against the Dutch and French catalogue strings, together with the basis line in each language."
+      - "The reach is INSIDE the form, which is what 'the naming form ... renders' asks: await expect(three.locator('form.merchant-name-form').getByTestId('group-reach')).toHaveCount(1). It is passed to the client leaf as an already-rendered ReactNode in the detail.inForm slot, so the leaf touches no catalogue and criterion 11.7(e)'s closure holds."
+      - "THE NUMBER IS THE GROUP'S OWN ROW COUNT AND NOT A SECOND ONE (hazard H13.6): GroupReach is called with group.count, the same field the count span beside it renders, so the two cannot disagree by construction."
+      - "THE ONE-ROW GROUP IS FOUND BY ITS RENDERED COUNT rather than by any fixture text, and re-found after the locale switch by the data-group-key captured in English, which is household data rather than copy. That is what lets the assertion carry no descriptor and no amount, which is criterion 13.9's concern met inside 13.4."
+      - "The plural is a real ICU plural in all three catalogues with distinct one and other arms, so '1 transaction' is not printed as '1 transactions' in any language. Parity across the three is asserted by test/app/catalog-parity.test.ts inside npm test."
+      - "Witnessed in my own slow-gate run at 936fcda: the reporter's failure list does not name this test."
+    met: true
   - id: "13.5"
     quote: >-
       A NAMING STILL MOVES NO TOTAL. The existing hazard H3.2 journey stays
@@ -289,8 +367,11 @@ criteria:
       asserts they are byte-identical, so this screen change cannot have moved a
       cent between income and spend.
     evidence:
-      - "PENDING-E2E"
-    met: false
+      - "MET, twice over. New: test/e2e/identity-on-review.spec.ts, third test, reads income-total and spend-total textContent before a naming made on the account-basis group and compares them with toBe after it, which is a byte comparison of the rendered strings rather than a numeric one."
+      - "The same test also witnesses that the naming reached exactly the number the screen promised (the resolved group's group-count is '3 rows'), which closes the loop between criterion 13.4's statement and criterion 13.5's invariant, and that the resolved group carries NO basis line, which is the domain rule pinned in the fast gate."
+      - "Existing: test/e2e/merchants.spec.ts, the H3.2 journey, is UNCHANGED by this phase (git diff 975d0ce..936fcda names no file under test/e2e/ other than accounts.spec.ts, identity-fixture-facts.ts, identity-on-review.spec.ts and pressed-and-disabled.spec.ts) and it passed in my run."
+      - "Witnessed in my own slow-gate run at 936fcda: the reporter's failure list does not name either test."
+    met: true
   - id: "13.6"
     quote: >-
       TOKENS ONLY. grep over the files this phase touches finds no literal hex
@@ -319,7 +400,10 @@ criteria:
       gate:privacy all exit 0, and npm run test:e2e exits 0, each with its
       captured output in the phase work history.
     evidence:
-      - "PENDING-E2E"
+      - "THE FAST HALF IS MET, run by me at 936fcda in this worktree with the database variables pinned to an unreachable loopback target: npm run typecheck EXIT 0; npm run lint EXIT 0; npm test EXIT 0, 'Test Files 55 passed (55) Tests 719 passed (719)', which is the work history's discovered and passed figures exactly; npm run gate:privacy EXIT 0 'gate:privacy clean'; and beyond what the criterion asks, npm run gate:decisions EXIT 0 and npm run gate:tokens EXIT 0."
+      - "THE SLOW HALF IS NOT WITNESSED AT EXIT 0 BY ME. npm run test:e2e at 936fcda, against the local Supabase stack with DATABASE_URL, DIRECT_URL and E2E_DATABASE_URL each parsed and asserted to resolve to 127.0.0.1 before any command, and npx prisma migrate deploy EXIT 0 first: EXIT 1 in 32.1 minutes, 122 discovered, 120 passed, 1 FAILED, 1 skipped."
+      - "THE FAILURE IS NOT THIS PHASE'S, and it is classified rather than excused: [chromium] test/e2e/accounts.spec.ts:509, failing inside the shared helper test/e2e/setup-accounts.ts:58 waiting for the accounts-status element. The line is untouched by this branch; every other spec in the same run used that same helper successfully; the retained error context shows the form correctly filled, so the status did not render rather than the input being wrong; and the same test RE-RUN IN ISOLATION at this head in this worktree PASSES, exit 0, 14.7s. Recorded as CR-M3P13-06."
+      - "SO THE CRITERION IS RECORDED NOT MET ON ITS OWN LITERAL TERMS, because the reviewer must record what was witnessed and a whole-suite exit 0 was not, while the finding it produced is ranked low and is explicitly not a reason to hold this phase. The implementer's captured exit 0 on the same head remains plausible and unrefuted; two runs of one suite disagreeing on one intermittent is what an intermittent is."
     met: false
   - id: "13.9"
     quote: >-
