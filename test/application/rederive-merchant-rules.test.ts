@@ -1,3 +1,4 @@
+import { plainDate } from "@/platform/plain-date";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -1872,6 +1873,7 @@ describe("the before set over a seed of un-namespaced rules", () => {
     id,
     flow: "SPEND",
     amountCents: cents(-1_000),
+    bookingDate: plainDate("2026-03-02"),
     description: TEXT,
     ...(account === undefined ? {} : { counterpartyAccount: account }),
   });
@@ -1916,6 +1918,7 @@ describe("the before set over a seed of un-namespaced rules", () => {
         id: "unreached",
         flow: "SPEND" as const,
         amountCents: cents(-1_000),
+        bookingDate: plainDate("2026-03-04"),
         description: "SOME OTHER COUNTERPARTY TEXT",
       },
     ];
@@ -1941,6 +1944,7 @@ describe("the before set breaks a tie between the two key spaces toward the BASE
     id,
     flow: "SPEND",
     amountCents: cents(-1_000),
+    bookingDate: plainDate("2026-03-02"),
     description: SHARED_TIE,
     ...(account === undefined ? {} : { counterpartyAccount: account }),
   });
@@ -2007,6 +2011,7 @@ describe("CR4-M3P12-01 (hazard): the superseded exclusion is narrowed to the row
     id,
     flow: "SPEND",
     amountCents: cents(-1_000),
+    bookingDate: plainDate("2026-03-02"),
     description: SHARED,
     ...(account === undefined ? {} : { counterpartyAccount: account }),
   });
