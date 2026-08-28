@@ -437,3 +437,42 @@ describe("the e2e facts module agrees with the fixture generator", () => {
     }
   });
 });
+
+// THE REACH SENTENCE MAY NOT NAME A PERIOD (fix round, finding HZ-M3P13-03).
+// The read behind it is HOUSEHOLD-WIDE: listCountedTransactions filters on
+// householdId and flow and carries no date bound, listMerchantReview takes no
+// period and the route passes no month. The first version of this copy said
+// "of this month" in all three languages, which was true only of a household
+// with a single imported month and UNDERSTATED what the reader was about to
+// do, because assignMerchant's recompute carries the rule to every past
+// matching transaction. This assertion is what stops the claim coming back.
+describe("the reach copy states no period, because the read it renders has none", () => {
+  const MONTH_TOKENS = [
+    "this month", "month", "months",
+    "deze maand", "maand", "maanden",
+    "ce mois", "mois",
+  ];
+  test.each(["en", "nl", "fr"])(
+    "the %s reach string names no period",
+    (locale) => {
+      const catalogue = JSON.parse(
+        readFileSync(
+          join(__dirname, "..", "..", "messages", `${locale}.json`),
+          "utf8",
+        ),
+      ) as Readonly<Record<string, string>>;
+      const reach = catalogue["groupReach"];
+      expect(reach, `${locale} has no groupReach`).toBeDefined();
+      for (const token of MONTH_TOKENS) {
+        expect(
+          (reach ?? "").toLowerCase(),
+          `the ${locale} reach string names the period "${token}", which the read behind it does not carry`,
+        ).not.toContain(token);
+      }
+      // NOT VACUOUS: the string is the plural form the screen renders and it
+      // still carries the count placeholder, so this is a test about a live
+      // sentence rather than about an absent key.
+      expect(reach).toContain("{count, plural,");
+    },
+  );
+});
