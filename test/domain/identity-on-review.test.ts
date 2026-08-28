@@ -356,6 +356,36 @@ describe("criterion 13.2 and hazard H13.2: the display mask redacts an account a
     expect(maskAccountNumbers(`NAAR ${longer} DEMO WOORD`)).toContain("DEMO WOORD");
   });
 
+  // THE TWO COSTS OF THE ROUND-TWO RULES, PINNED RATHER THAN ONLY WRITTEN
+  // DOWN, so a later reader meets them as checked facts and a later change
+  // that alters either one is red rather than silent.
+  test("an unregistered-country account written in SPACE-separated groups is not redacted, which is what buys the no-swallowing guarantee", () => {
+    const body = IDENTITY_FIXTURE_ACCOUNTS.counterparty1.slice(4);
+    const value = unregistered(body);
+    const spaced = value.replace(/(.{4})(?=.)/g, "$1 ");
+    expect(maskAccountNumbers(spaced)).toBe(spaced);
+    // ...while the same account grouped with a NON-whitespace separator, or
+    // written compactly, is redacted. Words are separated by spaces and
+    // identifiers are not, which is the whole of the distinction.
+    const hyphenated = value.replace(/(.{4})(?=.)/g, "$1-");
+    expect(maskAccountNumbers(hyphenated)).toBe(
+      `${value.slice(0, 4)} **** ${value.slice(-4)}`,
+    );
+    expect(maskAccountNumbers(value)).toBe(
+      `${value.slice(0, 4)} **** ${value.slice(-4)}`,
+    );
+  });
+
+  test("an account GLUED to a preceding word is not redacted, because the scan anchors on a word boundary", () => {
+    const compact = IDENTITY_FIXTURE_ACCOUNTS.counterparty1;
+    expect(maskAccountNumbers(`NAAR${compact}`)).toBe(`NAAR${compact}`);
+    // The same account with a boundary in front of it IS redacted, so this
+    // is about the anchor and not about the mask being inert.
+    expect(maskAccountNumbers(`NAAR ${compact}`)).toBe(
+      `NAAR ${compact.slice(0, 4)} **** ${compact.slice(-4)}`,
+    );
+  });
+
   // ROUND TWO, FINDING CR2-M3P13-03. The ISO 11649 structured creditor
   // reference is RF, two check digits and an alphanumeric body, and its check
   // is the SAME mod-97 over the same rearrangement, so it satisfies the
