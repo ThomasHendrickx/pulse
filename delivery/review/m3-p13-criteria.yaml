@@ -57,7 +57,176 @@ verdict: FIX-ROUND-NEEDED
 produced-by: claude
 framing: criteria-contract
 review-contract: criteria
-findings: []
+findings:
+  - id: CR-M3P13-01
+    severity: medium
+    analysis: >-
+      THE SECOND OF THE THREE EXCLUDED CHANNELS IS NOT NECESSARY, AND THE
+      REASON GIVEN FOR ITS NECESSITY IS CONTRADICTED BY THE CRITERION IT
+      CITES. The escalation on criterion 13.2 excludes three channels from the
+      page-source sweep. Two of them survive this lane's scrutiny. The hidden
+      counterpartyText input is required by the criterion itself. The
+      framework's serialised payload is downstream of that requirement and
+      cannot be removed while the naming row is a client component, because
+      the identity key must reach it as a prop and a prop is serialised
+      whatever shape it is given. THE THIRD, the row's data-group-key, is a
+      free choice, and the justification offered for it is that masking it
+      would collide two accounts sharing a country, check digits and last four
+      characters and thereby break criterion 11.3's row identity. Criterion
+      11.3 says the opposite in its own text: it states that the data-group-key
+      sequence is added to the row MASKED, and that "Two rows whose MASKED keys
+      are equal are indistinguishable to this comparison, which is accepted and
+      stated rather than left to be discovered (finding DELTA-M0P4-08)".
+      Collision under masking is not a breach of 11.3; it is a limitation 11.3
+      already declares and accepts, and the card mask that IS applied to this
+      same expression already produces exactly that class of collision for card
+      descriptors. So the strongest true form of 13.2 available at this head
+      excludes TWO channels, not three, and what shipped excludes three. The
+      consequence in the product is small but real and it is live: every
+      account-basis row of /merchants carries the unmasked counterparty account
+      in a DOM attribute, on the very screen whose headline criterion reads
+      "THE ACCOUNT NEVER LEAVES THE DISPLAY LAYER UNMASKED". It is not visible
+      in a screenshot, which is why this is medium and not high.
+    evidence:
+      - "src/modules/merchants/ui/merchant-review.tsx:123 and :185, both sites: data-group-key={maskCardNumbers(group.key)} and groupKey={maskCardNumbers(group.key)}. maskCardNumbers is anchored on the card-number label grammar (src/platform/ui/mask-card-number.ts) and does not touch an account number, so for an account-basis group whose key is the account namespace followed by the account, the attribute is the account in full."
+      - "delivery/plan/pulse-v02.yaml:6712 through :6725, criterion 11.3(b): the data-group-key sequence is added to the row element MASKED, and 'Two rows whose MASKED keys are equal are indistinguishable to this comparison, which is accepted and stated rather than left to be discovered (finding DELTA-M0P4-08)'."
+      - "test/e2e/identity-on-review.spec.ts, the leak sweep: for (const row of clone.querySelectorAll('[data-group-key]')) { row.removeAttribute('data-group-key'); } is one of the three removals, and the comment beside it gives the collision argument this finding refutes."
+      - "Reviewer probe, committed helpers, exit 0: maskAccountNumbers over the fixture's counterparty account returns the country code, the check digits and the last four characters, so the masked key remains a per-country, per-check-digit, per-tail identity rather than a constant."
+    concrete-fix: >-
+      Mask the account in the row identity as well, at both sites, so the
+      excluded set is two channels rather than three: data-group-key and
+      groupKey become maskAccountNumbers(maskCardNumbers(group.key)). Build the
+      locator in test/e2e/identity-on-review.spec.ts from the masked key the
+      same way the spec already builds the masked label, drop the
+      data-group-key removal from the page-source sweep, and restate the
+      escalation in delivery/work-history/m3-p13.yaml as two necessary
+      channels with 11.3's own acceptance quoted for the third. If the
+      residual collision in the client naming-claims store
+      (src/modules/merchants/ui/merchant-row.tsx, rowKey: groupKey) is judged
+      unacceptable at this tier, use a stable digest of the unmasked key
+      instead of the masked key: it keeps the identity injective for the claims
+      store and for 11.3's sequence comparison, and it removes the account from
+      the attribute completely.
+  - id: CR-M3P13-02
+    severity: medium
+    analysis: >-
+      THE PAGE-SOURCE SWEEP IS OVER ONE ACCOUNT, AND THE FIXTURE CONTAINS AN
+      ACCOUNT FOR WHICH THE CRITERION'S LITERAL CLAUSE IS ACHIEVABLE AND
+      UNTESTED. The contradiction in 13.2 bites only on an account that IS an
+      identity key: such an account must appear in the hidden subject, so it
+      must appear in the source. The identity fixture carries an account for
+      which that is not true. Row 20 carries TWO account-shaped tokens and the
+      importer's first-wins rule stores the first, so the SECOND token's
+      account is never an identity key, never a hidden subject and never a
+      data-group-key. It reaches the screen only through row 20's description,
+      which the new transaction lines render and which is masked there. For
+      that account the criterion's literal clause, no unmasked account anywhere
+      in the FULL page source with nothing excluded, should hold exactly as
+      written, and asserting it is strictly stronger than what shipped: it
+      shows the exclusion set is forced by the contradiction rather than
+      chosen for convenience, and it is the only assertion on this screen that
+      can demonstrate that. The same gap applies more weakly to the other three
+      trusted counterparty accounts, which the sweep does not name at all: the
+      sweep proves masking for counterparty1 and infers it for the rest.
+    evidence:
+      - "test/fixtures/generate-pdf-fixtures.ts:1268 through :1289: 'Row 20 carries TWO distinct account-shaped tokens, and the record below says which one the generator wrote FIRST, so criterion 12.16 pins the importer's first-wins rule', and IDENTITY_FIXTURE_TWO_TOKEN exports rowOrdinal 20 with firstTokenSpaced and secondTokenSpaced; IDENTITY_FIXTURE_ACCOUNTS exports a secondToken entry described as existing 'only as row 20's SECOND token and must therefore never appear in any identity key'."
+      - "test/e2e/identity-on-review.spec.ts: the sweep is parameterised on `account` and `spacedAccount` derived from IDENTITY_FIXTURE_ACCOUNTS.counterparty1 alone; test/e2e/identity-fixture-facts.ts restates only `own` and `counterparty1`, so no other account is reachable from the spec at all."
+      - "src/modules/merchants/ui/merchant-review.tsx:84, the transaction line: maskAccountNumbers(maskCardNumbers(row.description)), which is the only surface row 20's second token reaches."
+    concrete-fix: >-
+      Add the second-token account to test/e2e/identity-fixture-facts.ts (and
+      to the derived agreement test in test/domain/identity-on-review.test.ts,
+      which compares that module to the generator per key and will pick it up
+      with no edit), then assert in the same spec, over `await page.content()`
+      with NOTHING removed, that neither its compact nor its spaced shape
+      appears, while the masked shape does. That is criterion 13.2's page-source
+      clause met literally for the account it can be met for, beside the
+      escalated form for the account it cannot.
+  - id: CR-M3P13-03
+    severity: medium
+    analysis: >-
+      THE RESIDUE ENUMERATION IN THE NEW MASKER IS INCOMPLETE, AND THE SURFACE
+      IT OMITS IS THE ONE THE OWNER ALREADY PHOTOGRAPHED. The masker's header
+      states its residue "rather than left to be found" and names the month
+      view's gap and held rows. It does not name the import confirm-format
+      preview, which renders the RAW parsed descriptor through the card mask
+      only, and which src/platform/ui/mask-card-number.ts identifies as "the
+      screen the owner photographed" when the card number leaked. Nor does it
+      name the month view's own group label, a third site in that file. All
+      five sites render descriptor text through maskCardNumbers alone, and this
+      phase has now demonstrated, in its own fast-gate test, that a transfer
+      descriptor carries the counterparty account exactly as the statement
+      prints it. So the defect this phase found and fixed on /merchants is
+      still live on /import and on the month view. This is outside criterion
+      13.2, which names /merchants, and it is therefore not a reason to call
+      13.2 unmet; it is a reason the phase's own statement of what is left is
+      wrong, and a claim of that kind is the thing a reader will trust and be
+      misled by.
+    evidence:
+      - "src/modules/import/ui/profile-confirmation.tsx:143 and :148: maskCardNumbers over the parsed counterparty and description cells, with no account mask."
+      - "src/modules/overview/ui/month-view.tsx:109, :313 and :351: maskCardNumbers over the group label, the reconciliation gap row and the held row, with no account mask. Only :313 and :351 are described in the residue note."
+      - "src/platform/ui/mask-card-number.ts, the enumeration comment: profile-confirmation.tsx's two cells 'render the RAW parsed descriptor. This is the screen the owner photographed.'"
+      - "src/platform/ui/mask-account-number.ts, the RESIDUE paragraph, which names the month view's gap rows and held rows and nothing else."
+      - "Reviewer probe, committed helpers, exit 0: maskCardNumbers over a normalised transfer descriptor carrying the fixture's counterparty account returns the account in its spaced shape unchanged."
+    concrete-fix: >-
+      Either apply maskAccountNumbers at the five sites beside the card mask
+      that is already there, which is a four-line change in two files and needs
+      no new token, no new copy and no domain change; or, if that is judged
+      out of this phase's scope, correct the RESIDUE paragraph in
+      src/platform/ui/mask-account-number.ts to name all five sites with their
+      file and line, and record the remainder as a defect on the fleet backlog
+      so the next reader meets a true statement rather than a partial one.
+  - id: CR-M3P13-04
+    severity: low
+    analysis: >-
+      THE MASKER'S WHITESPACE RULE IS MIS-DOCUMENTED, AND THE RULE IT ACTUALLY
+      IMPLEMENTS IS ASYMMETRIC IN A WAY THE COMMENT HIDES. The comment says
+      "Exactly ONE space is tolerated between characters". The loop skips each
+      space character individually with no counter, so ANY number of consecutive
+      spaces is tolerated: a double-spaced account masks. In the other
+      direction the tolerated separator is U+0020 alone, so an account split by
+      a tab, a newline or a non-breaking space is left in full. The shipped
+      path is safe today and this is why the finding is low: the Belfius
+      template joins its description lines with a single space
+      (src/modules/import/domain/belfius-current-account-template.ts:269), so a
+      wrapped account arrives space-separated. But the transaction lines this
+      phase adds render the RAW description rather than the whitespace-collapsed
+      normalised form, which is the first surface in this product where a
+      separator the template did not choose can survive to the screen, and a
+      comment that misstates the rule is how the next reader concludes the case
+      is covered.
+    evidence:
+      - "src/platform/ui/mask-account-number.ts, accountSpanAt: the branch `if (character === \" \" && taken > 0 && taken < expected) { at += 1; continue; }` has no counter, and the comment above it reads 'Exactly ONE space is tolerated between characters, and only between them'."
+      - "Reviewer probe, committed helper, exit 0: the fixture account written with two spaces between every group masks to the country, check digits and last four; the same account with a single newline between the eighth and ninth character is returned unchanged, every character intact."
+      - "src/modules/merchants/ui/merchant-review.tsx:84 renders row.description, the raw stored fact, rather than normaliseCounterparty's collapsed output."
+    concrete-fix: >-
+      Correct the comment to say that whitespace between characters is skipped
+      without limit, and widen the tolerated separator from the literal space to
+      /\s/ so a tab, a newline or a non-breaking space cannot defeat the mask;
+      add the newline shape to the mask's own describe block in
+      test/domain/identity-on-review.test.ts beside the spaced and compact
+      shapes it already pins. If U+0020 alone is deliberate, say at the branch
+      which separator the shipped parsers can emit and why the others cannot
+      reach a rendered description.
+  - id: CR-M3P13-05
+    severity: low
+    analysis: >-
+      TWO COMMENTS IN THE CLIENT LEAF ARE WRONG AT THIS HEAD, in a repository
+      whose clause R-087 treats a comment as a claim to be corrected rather
+      than quietly rewritten. The `detail` prop's own documentation names a
+      slot `detail.aboveForm` that does not exist; the three declared slots are
+      beforeForm, inForm and afterForm. The same paragraph gives the reason for
+      the reach line twice in two consecutive clauses, which reads as an
+      unfinished edit. And the comment introducing the predicted-label render
+      still says every label the row renders "has been through maskCardNumbers",
+      which stopped being the whole truth in this phase: the label now arrives
+      through the account mask as well.
+    evidence:
+      - "src/modules/merchants/ui/merchant-row.tsx, the `detail` prop comment: 'Two slots rather than one: `detail.aboveForm` sits between the totals and the naming form', against the declared type `{ beforeForm?, inForm?, afterForm? }` immediately below it; and 'because the reach is a sentence about the control the reader is deciding whether to press' followed by 'because the reach is a statement about the control the reader is deciding whether to press'."
+      - "src/modules/merchants/ui/merchant-row.tsx:228: 'row renders has been through maskCardNumbers, so the typed string is', against src/modules/merchants/ui/merchant-review.tsx:201 and :202, where the label expression is maskAccountNumbers(maskCardNumbers(group.label)) or maskAccountNumbers(group.accountAlias)."
+    concrete-fix: >-
+      Rename `aboveForm` to `beforeForm` in the comment, delete the duplicated
+      clause and keep one reason, and extend the line 228 comment to name both
+      masks the label has been through.
 criteria:
   - id: "13.1"
     quote: >-
@@ -70,7 +239,7 @@ criteria:
       Asserting that the strings exist in the catalogue does not meet this
       criterion; the assertion is on the rendered page.
     evidence:
-      - "NOT YET WALKED at checkpoint 1."
+      - "PENDING-E2E"
     met: false
   - id: "13.2"
     quote: >-
@@ -83,7 +252,7 @@ criteria:
       function is not called anywhere in src/modules/merchants/domain or
       src/modules/merchants/application.
     evidence:
-      - "NOT YET WALKED at checkpoint 1."
+      - "PENDING-E2E"
     met: false
   - id: "13.3"
     quote: >-
@@ -92,7 +261,7 @@ criteria:
       a distinct booking date and its own amount, and that the three amounts sum
       to the group total shown on the group row, compared in integer cents.
     evidence:
-      - "NOT YET WALKED at checkpoint 1."
+      - "PENDING-E2E"
     met: false
   - id: "13.4"
     quote: >-
@@ -101,7 +270,7 @@ criteria:
       group of 1 renders the same string carrying 1, asserted on the rendered
       page in English and, with the locale switched, in Dutch and in French.
     evidence:
-      - "NOT YET WALKED at checkpoint 1."
+      - "PENDING-E2E"
     met: false
   - id: "13.5"
     quote: >-
@@ -110,7 +279,7 @@ criteria:
       asserts they are byte-identical, so this screen change cannot have moved a
       cent between income and spend.
     evidence:
-      - "NOT YET WALKED at checkpoint 1."
+      - "PENDING-E2E"
     met: false
   - id: "13.6"
     quote: >-
@@ -119,8 +288,10 @@ criteria:
       spacing value outside styles/tokens.css, and any token added is declared in
       styles/tokens.css in the same commit.
     evidence:
-      - "NOT YET WALKED at checkpoint 1."
-    met: false
+      - "MET. git diff 975d0ce..936fcda -- src/app/globals.css is the phase's only stylesheet change: 75 added lines, 12 rules, and every value in them is either a token reference (var(--text-sm), var(--color-ink-muted), var(--leading-normal), var(--focus-ring), var(--radius-md), var(--space-3), var(--space-2), var(--color-ink-subtle), var(--color-ink)) or a unitless keyword or zero (flex-basis: 100%, margin: 0, flex: 1, min-width: 0, list-style: none, cursor: pointer, white-space: nowrap, overflow-wrap: anywhere, font-variant-numeric: tabular-nums). No hex, no rgb(), no hsl(), no px and no rem anywhere in the added lines."
+      - "styles/tokens.css is UNCHANGED by this phase, and every one of the nine tokens named above is already declared there (checked by name, each present). So the clause 'any token added is declared in styles/tokens.css in the same commit' is vacuously satisfied: no token was added."
+      - "npm run gate:tokens run by me at 936fcda: EXIT 0."
+    met: true
   - id: "13.7"
     quote: >-
       THREE LANGUAGES, NO ORPHANS. Every key added to messages/en.json exists in
@@ -128,15 +299,17 @@ criteria:
       and no user-facing string is hardcoded in a component, asserted by grep
       over src/modules/merchants/ui/merchant-review.tsx.
     evidence:
-      - "NOT YET WALKED at checkpoint 1."
-    met: false
+      - "MET. Four keys added to each of the three catalogues, the same four names in each: groupBasisAccount, groupBasisDescriptor, groupReach, groupRowsShow. git diff 975d0ce..936fcda -- messages/ shows the identical key set in en.json, nl.json and fr.json, and the reach string is an ICU plural in all three with a distinct singular and plural arm, so 1 transaction is not printed as 1 transactions in any language."
+      - "The copy gate is test/app/catalog-parity.test.ts, which reads the real committed catalogues and compares DEEP leaf paths including array indices between en and each of nl and fr, naming missing and extra paths rather than pinning a count. It runs inside npm test, which I ran at 936fcda: EXIT 0, 719 passed."
+      - "grep over src/modules/merchants/ui/merchant-review.tsx for a quoted human-readable string: every user-facing string in the file resolves through t(), including the three this phase adds (lines 38, 50, 72). The only quoted literals left are class names, testids, the two basis discriminants and the two direction discriminants, none of which is rendered as copy."
+    met: true
   - id: "13.8"
     quote: >-
       THE STANDING GATE. npm run typecheck, npm run lint, npm test and npm run
       gate:privacy all exit 0, and npm run test:e2e exits 0, each with its
       captured output in the phase work history.
     evidence:
-      - "NOT YET WALKED at checkpoint 1."
+      - "PENDING-E2E"
     met: false
   - id: "13.9"
     quote: >-
@@ -147,6 +320,64 @@ criteria:
       counterparty, place, amount or date from either real document. The branch's
       commit messages carry no data of any kind.
     evidence:
-      - "NOT YET WALKED at checkpoint 1."
-    met: false
-deviations-judged: []
+      - "MET. npm run gate:privacy run by me at 936fcda: EXIT 0, 'gate:privacy clean'. It decides three things: no data in the branch's commit messages, every identifier shape in the tree on the allow list, no tracked PDF with a compressed stream."
+      - "No new fixture is added by this phase: test/fixtures/belfius-counterparty-identity.pdf and its generator arrived with M3-P12 and are unchanged here. The one new file carrying identifiers is test/e2e/identity-fixture-facts.ts, and both values in it (the fixture's own account and its first counterparty account) are already on the allow list at test/fixtures/allowed-identifiers.txt:194 and :195, so the phase introduces no unlisted identifier shape."
+      - "Those two restated values are pinned against the generator by a derived test rather than by a hand-written comparison (test/domain/identity-on-review.test.ts, the last describe block, which iterates the restated keys and requires each to exist in and equal the generator's export), so a fixture change reddens in the fast gate instead of diverging silently."
+      - "The branch's five commit messages read as subjects about what changed. Every literal in the new fast-gate test and the new spec is either derived from the committed generator or invented in place (TRANSFER ONE, TRANSFER TWO, TRANSFER THREE, SHARED DESCRIPTOR, Demo Insurer, Alpha Syndic, Zeta Syndic, SUPERMARKT NOORD BETAALTERMINAL 12345678, dates in March 2026); none is quoted from a real document, and I read every one of them."
+      - "The phase work history and notes were read for quoted data. delivery/work-history/m3-p13.yaml and m3-p13-notes.md carry no descriptor, no counterparty name, no place, no amount and no date drawn from either real document; where a value had to be discussed it is described by its ROLE (the fixture's first counterparty account, the long source's stored prefix) rather than printed."
+    met: true
+deviations-judged:
+  - deviation: >-
+      Criterion 13.2, "the rendered HTML of /merchants contains the masked form
+      and does NOT contain the unmasked account anywhere, asserted over the
+      full page source; and the hidden field the naming form submits carries
+      the unmasked namespaced identity key, asserted on the same page."
+    serves-plan-intent: true
+    reasoning: >-
+      The deviation itself is right and the escalation was the correct move:
+      the two halves of the clause cannot both hold for an account-basis
+      group, because that group's namespaced identity key IS the namespace
+      followed by that account, and the criterion demands the key be carried
+      unmasked in a field that is part of the page source. Stopping, reporting
+      and asserting a true weaker form serves the intent, which is that the
+      account is not shown to a person; a phase that silently asserted a
+      half-truth or masked the key would have served neither. The judgement
+      this lane adds is on the WEAKER FORM CHOSEN rather than on the decision
+      to choose one: two of the three excluded channels are forced and the
+      third is not, which is finding CR-M3P13-01, and the sweep is over one
+      account when the fixture holds one for which the literal clause is
+      reachable, which is CR-M3P13-02. Both are findings against the work, not
+      against the deviation.
+  - deviation: >-
+      files-to-touch, which declares test/domain/ and test/e2e/ but neither
+      test/application/ nor test/property/, and which declares
+      src/modules/merchants/application/merchant-review.ts but not that
+      module's index.ts.
+    serves-plan-intent: true
+    reasoning: >-
+      Witnessed and mechanical, exactly as declared. CountedTransaction and
+      CountedRow gained a REQUIRED bookingDate, so every construction of those
+      types had to supply one: test/application/fake-import-world.ts gains one
+      line mapping the stored row's own date, and
+      test/application/rederive-merchant-rules.test.ts and
+      test/property/rederive-loss-reporting.test.ts gain invented dates on
+      their row builders. The diff of those three files is 8 lines and adds no
+      assertion and removes none. ReviewGroupRow is re-exported from
+      src/modules/merchants/application/index.ts, which the module boundary
+      requires because the UI may import only through the published interface.
+      The declaration is read from the merge base and cannot be amended on
+      this branch, so reporting is the only available move and it was taken.
+  - deviation: >-
+      Step 5, "Let the transactions behind a group be seen".
+    serves-plan-intent: true
+    reasoning: >-
+      Applied to RESOLVED groups as well as unresolved ones, which is more
+      than criterion 13.3 exercises. It serves the intent: the phase exists so
+      that DR-0027's accepted cost, two purposes paid to one counterparty
+      landing in one group, reads as two lines the owner can point at, and
+      naming that group does not make the two purposes stop being two. Hiding
+      the lines the moment a name is given would answer the owner's question
+      and then withdraw the answer. It costs one disclosure element per
+      resolved row and no query, since the rows come from the read that
+      already built the groups, and it is witnessed by a fast-gate test that a
+      resolved group still carries its rows.
