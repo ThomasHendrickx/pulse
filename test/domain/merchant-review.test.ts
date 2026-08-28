@@ -704,11 +704,15 @@ describe("every rendering surface that shows descriptor text is derived, not rem
       expression: "naming.identityKey",
       why: "The hidden field the review form submits. It becomes the EXACT MerchantRule pattern, and a masked subject would match nothing (decision D-12, hazard H6.4).",
     },
-    {
-      file: "modules/overview/ui/month-view.tsx",
-      expression: "group.label",
-      why: "The RESERVES group label, which is the household's own declared account label or a counterparty IBAN, never a descriptor: the reserves query requires counterpartyIban IS NOT NULL and falls back to the account's declared label.",
-    },
+    // REMOVED IN THE M3-P13 FIX ROUND (finding HZ-M3P13-02). This entry
+    // excused the RESERVES group label on the ground that it is "the
+    // household's own declared account label or a counterparty IBAN, never a
+    // descriptor". The second half of that sentence is the defect: an IBAN
+    // rendered bare IS an account number on screen, and the exclusion was
+    // reasoning about whether the value is DESCRIPTOR text rather than about
+    // whether it can carry an identifier. The surface now passes through
+    // maskAccountNumbers, which leaves a typed label untouched, so it needs
+    // no exclusion at all.
     {
       file: "modules/overview/ui/month-view.tsx",
       expression: "part.label",
@@ -760,6 +764,7 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     readonly file: string;
     readonly expression: string;
     readonly masked: boolean;
+    readonly accountMasked: boolean;
   };
 
   const surfaces: Surface[] = [];
@@ -836,6 +841,13 @@ describe("every rendering surface that shows descriptor text is derived, not rem
             file: relative(srcRoot, file),
             expression: expression.replace(/\s+/g, " ").trim(),
             masked: expression.includes("maskCardNumbers("),
+            // M3-P13 FIX ROUND (findings HZ-M3P13-02 and CR-M3P13-03). The
+            // walk used to ask ONE question, does this surface pass through
+            // the card mask, and the phase that added a second mask left
+            // five surfaces rendering an account number in full while this
+            // test stayed green. It now records both answers, and the two
+            // assertions below ask them separately.
+            accountMasked: expression.includes("maskAccountNumbers("),
           });
         }
       }
@@ -889,13 +901,45 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     // site, in a file already on this list, and it masks. The group label
     // beside it is still one site: its expression grew an account mask
     // around the card mask, and the walk reads the whole expression.
+    //
+    // UPDATED IN THE M3-P13 FIX ROUND (findings HZ-M3P13-02 and
+    // CR-M3P13-03): the count of sites is unchanged at sixteen and the count
+    // of CARD-masked sites is unchanged at seven, which is exactly why this
+    // test could not see the defect. What changed is that eight sites now
+    // pass through the ACCOUNT mask as well, the eighth being the reserves
+    // label, which used to be a declared exclusion.
     expect(surfaces.length).toBe(16);
     expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(7);
     expect(surfaces.filter((surface) => surface.masked).length).toBe(7);
+    expect(surfaces.filter((surface) => surface.accountMasked).length).toBe(8);
+  });
+
+  // THE INVERTED DERIVATION (M3-P13 fix round, findings HZ-M3P13-02 and
+  // CR-M3P13-03). The test below asks whether an UNMASKED surface is
+  // declared. This one asks the other question, which is the one the phase
+  // that added the account mask got wrong: every surface that IS masked must
+  // be masked against BOTH identifiers. A transfer descriptor carries the
+  // counterparty account exactly as the statement prints it, so a surface
+  // that runs the card mask and not the account mask prints an account in
+  // full, and five of them did while this file stayed green.
+  test("every surface that masks a descriptor masks it against the ACCOUNT as well as the card", () => {
+    const cardOnly = surfaces.filter(
+      (surface) => surface.masked && !surface.accountMasked,
+    );
+    expect(
+      cardOnly.map((surface) => `${surface.file}: ${surface.expression}`),
+      "these surfaces run the card mask and not the account mask, so a transfer descriptor prints the counterparty account in full",
+    ).toEqual([]);
   });
 
   test("every unmasked descriptor surface is a DECLARED exclusion with a reason", () => {
-    const unmasked = surfaces.filter((surface) => !surface.masked);
+    // UNMASKED MEANS NEITHER MASK (M3-P13 fix round). It used to mean "does
+    // not call the card mask", which since this round would count the
+    // reserves label as unmasked while it is redacted against the identifier
+    // that surface can actually carry.
+    const unmasked = surfaces.filter(
+      (surface) => !surface.masked && !surface.accountMasked,
+    );
     expect(unmasked.length).toBe(EXCLUSIONS.length);
     for (const surface of unmasked) {
       const declared = EXCLUSIONS.find(
@@ -917,12 +961,19 @@ describe("every rendering surface that shows descriptor text is derived, not rem
       "merchant-review.tsx",
       "month-view.tsx",
     ];
+    // Each of the three must carry at least one ACCOUNT-masked surface too
+    // (M3-P13 fix round): the check above was satisfiable by the card mask
+    // alone, which is the state the fix round found.
     for (const file of mustMask) {
       const inFile = surfaces.filter((surface) => surface.file.endsWith(file));
       expect(inFile.length, file).toBeGreaterThan(0);
       expect(
         inFile.some((surface) => surface.masked),
         file,
+      ).toBe(true);
+      expect(
+        inFile.some((surface) => surface.accountMasked),
+        `${file} carries no account-masked surface`,
       ).toBe(true);
     }
     // The confirm preview is the screen the owner photographed: BOTH of its

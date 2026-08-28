@@ -32,16 +32,51 @@
 // normaliser, which strips rather than masks and states the same rule one
 // tier down). The rule is not local to this file.
 //
-// WHERE THIS IS APPLIED. On the merchant review screen: the group label of
-// an account-basis group that carries no counterparty name, the group
-// label of any other unresolved group (whose descriptor can carry an
-// account token of its own), and every description on the transaction
-// lines behind a group. RESIDUE, stated rather than left to be found: the
-// month view renders unnormalised counterparty text on its gap rows and
-// its held rows and masks CARD numbers there only, so an account number
-// inside one of those descriptors is still shown in full. That surface
-// belongs to the overview module and is not this phase's to change; it is
-// recorded here so the next reader of this file meets it.
+// WHERE THIS IS APPLIED, CORRECTED LOUDLY RATHER THAN QUIETLY REWRITTEN
+// (clause R-087, fix round, findings HZ-M3P13-02 and CR-M3P13-03).
+//
+// WHAT THIS PARAGRAPH USED TO SAY, and it was false in the direction that
+// costs, because a reader trusts a residue note and stops looking:
+//
+//   "WHERE THIS IS APPLIED. On the merchant review screen: the group label
+//    of an account-basis group that carries no counterparty name, the group
+//    label of any other unresolved group, and every description on the
+//    transaction lines behind a group. RESIDUE, stated rather than left to
+//    be found: the month view renders unnormalised counterparty text on its
+//    gap rows and its held rows and masks CARD numbers there only, so an
+//    account number inside one of those descriptors is still shown in full.
+//    That surface belongs to the overview module and is not this phase's to
+//    change."
+//
+// It named ONE remaining surface and there were FOUR, and the one it left
+// out is the worst of them: src/modules/import/ui/profile-confirmation.tsx
+// renders the import preview, and its counterparty column falls back to the
+// counterparty ACCOUNT when a row carries no name, so that column printed an
+// account number whole, in a cell of its own, on every import. The comment
+// directly above that cell records it as the screen the owner photographed
+// when a card number leaked there.
+//
+// THE ENUMERATION IS NOW DERIVED RATHER THAN WRITTEN DOWN. It is not a list
+// in this comment: test/domain/merchant-review.test.ts walks every .tsx
+// under src/ with the TypeScript compiler API, collects every leaf JSX
+// expression that renders a descriptor-derived field, and asserts that every
+// surface passing through the card mask passes through THIS mask too, and
+// that any surface passing through neither is a declared exclusion with a
+// reason. A list here would be a second source and this project has recorded
+// three times that a convention between two sources does not survive; the
+// falsity above is the fourth.
+//
+// The nine call sites at the head of this fix round, for orientation only,
+// with the derivation above as the authority: the merchant review's group
+// label and transaction descriptions, the import preview's counterparty and
+// descriptor cells, and the month view's group label, reserves label, held
+// rows and gap rows.
+//
+// WHAT REMAINS UNMASKED, and it is a list of things that are NOT identifiers
+// rather than a list of surfaces: the declared exclusions in that test. Each
+// is a value the household typed (an account label, a format name) or
+// translated copy, and each carries its reason there where it is checked
+// rather than here where it is only asserted.
 
 import {
   ACCOUNT_NUMBER_LENGTH_BOUNDS,
