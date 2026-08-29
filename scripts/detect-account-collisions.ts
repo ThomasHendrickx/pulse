@@ -81,12 +81,21 @@ export type CollisionGroup = {
 // JavaScript's \s strips them, so a pair the application layer treats as
 // ONE account (an NBSP-spaced rendering beside its compact twin) was two
 // unrelated rows to this grouping and the post-deploy check reported no
-// collision. The class now comes from ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS
-// at the mechanism's definition, passed as a BIND PARAMETER (a regexp
-// pattern is an ordinary string argument, so binding is safe and keeps
-// exactly one copy in importable code). The canonical form itself is
-// grouped on and never selected, so no account-shaped value can reach
-// the output.
+// collision. CORRECTED AGAIN IN FIX ROUND TWO: the first correction kept
+// the POSIX class and bolted the missing escapes onto it, which left this
+// grouping's membership owned by the DEPLOYED CLUSTER'S ctype rather than
+// by the committed text, so the groups this script emits could differ
+// between the cluster a test reaches and the cluster an operator runs it
+// against. The class now enumerates code points and names no POSIX class
+// (the rule, and the measurements behind it, are at
+// src/platform/account-number.ts), and a fast-gate test asserts this
+// script's comment-stripped code carries no POSIX class in any spelling.
+//
+// The class comes from ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS at the
+// mechanism's definition, passed as a BIND PARAMETER (a regexp pattern is
+// an ordinary string argument, so binding is safe and keeps exactly one
+// copy in importable code). The canonical form itself is grouped on and
+// never selected, so no account-shaped value can reach the output.
 export const detectAccountCollisions = async (
   client: PrismaClient,
 ): Promise<readonly CollisionGroup[]> => {
