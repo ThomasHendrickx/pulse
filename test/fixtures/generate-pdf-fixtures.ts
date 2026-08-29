@@ -115,7 +115,7 @@ const buildPdf = (pages: readonly PageContent[]): Uint8Array => {
 // Belfius-layout page building blocks (all content invented).
 // ---------------------------------------------------------------------
 
-const ACCOUNT_IBAN_SPACED = "BE90 0123 4567 8944";
+const ACCOUNT_IBAN_SPACED = "BE72 0123 4567 8944";
 const COUNTERPARTY_DEPOSIT = "BE45 6789 0123 4515";
 const COUNTERPARTY_SAVINGS = "BE77 1234 5678 9012";
 

@@ -63,6 +63,15 @@ const setupWrongProfile = async (): Promise<{
   if (uploaded.kind !== "awaiting-declaration") {
     throw new Error("unreachable");
   }
+  // SETUP FIRST (M3-P14): the account a statement belongs to is registered
+  // before the file is confirmed, because confirmImport now refuses a file
+  // whose own account is not one the household registered. A card carries no
+  // own-account column and registers nothing.
+  await world.registerAccountForStatement(context, bytes, wrongSpec, {
+    label: "Mastercard",
+    bank: "Demobank",
+    role: "POT",
+  });
   const confirmed = await confirmImport(context, world.deps, {
     importId: uploaded.importId,
     profileName: "Card export",
@@ -128,6 +137,16 @@ const setupOverlapWorld = async (
   if (uploadedA.kind !== "awaiting-declaration") {
     throw new Error("unreachable");
   }
+  // SETUP FIRST (M3-P14): the account a statement belongs to is registered
+  // before the file is confirmed, because confirmImport now refuses a file
+  // whose own account is not one the household registered. A card carries no
+  // own-account column and registers nothing.
+  await world.registerAccountForStatement(
+    context,
+    bytesA,
+    confirmSpec(detected.value),
+    { label: "Mastercard", bank: "Demobank", role: "POT" },
+  );
   const confirmed = await confirmImport(context, world.deps, {
     importId: uploadedA.importId,
     profileName: "Card export",
@@ -411,6 +430,11 @@ describe("unchanged-spec re-parse of an ingested PDF import (criterion 2.3)", ()
       throw new Error("unreachable");
     }
     expect(detected.value.kind).toBe("pdf-layout");
+    await world.registerAccountForStatement(context, bytesA, detected.value, {
+      label: "Daily account",
+      bank: "Belfius",
+      role: "POT",
+    });
     const confirmed = await confirmImport(context, world.deps, {
       importId: uploaded.importId,
       profileName: "belfius-current-account-nl",

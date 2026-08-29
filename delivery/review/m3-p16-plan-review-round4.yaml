@@ -1,0 +1,804 @@
+# ROUND FOUR adversarial plan review, TWO phases: M3-P16 (the deployed run)
+# and M3-P17 (the build stamp and the target interlock it now also ships).
+# Reviewed on claude/m3-p12-plan-amend-review in /home/user/wt-amend-adv,
+# fix-round head 63d4bfd on claude/m3-p12-plan-amend, carried in as aeeee4f.
+# Input report: delivery/review/m3-p16-plan-review-round3.yaml on this branch.
+#
+# THE STANCE. This reviews PLANS, not implementations. For each criterion
+# the question is the brief's: find the implementation that satisfies every
+# word of it and is still wrong, and name it. Where one was constructed the
+# walk records NOT SOUND and writes it out. Where none could be constructed
+# it records SOUND, which says what was tried rather than that nothing was
+# found.
+#
+# WORK LOG, oldest first.
+# - Structural claim verified rather than believed, by loading both
+# revisions and comparing field by field. Result matches the claim exactly:
+# kind, status, baseline-commit, binding-rule, process-summary,
+# standing-context, report-code-disagreement, decisions and open-questions
+# all compare EQUAL. M3-P12 compares EQUAL, and so does every other phase.
+# parked went from 27 entries to 28. M3-P16 and M3-P17 are rewritten.
+# Nothing else moved.
+#
+# - The parked entry read and its schema ground CHECKED, because round
+# three's own concrete edit said to use open-questions instead. The fix
+# round was right and I was wrong: schemas/plan.schema.json constrains
+# open-questions items to `"pattern": "^DR-[0-9]{4}$"`, decision-record
+# references only, so a prose remainder cannot go there. Parked was the
+# correct register. Its discharge condition is observable: a work history
+# for M3-P16 recording the run as MET, which is a file a later reader can
+# open.
+#
+# - The interlock's resolution equivalence attacked directly, by reading
+# what Prisma actually opens rather than what the criterion says it opens.
+# prisma/schema/schema.prisma declares `url = env("DATABASE_URL")` and
+# `directUrl = env("DIRECT_URL")`, with a header recording that runtime
+# queries go over DATABASE_URL and only migrations use DIRECT_URL; the
+# routine runs no migration. src/platform/db/client.ts constructs `new
+# PrismaClient()` with NO datasource override, so the client resolves that
+# one variable from the environment. src/platform/db/guard-cli.ts resolves
+# shell-then-.env. The interlock's view is therefore a SUPERSET of the
+# client's, which means a divergence can only make it approve a target the
+# client then fails to open, which errors before writing. I could not
+# construct an unsafe divergence through the environment path and I say so
+# in the walk. The unsafe divergence is through the MATCHING path instead,
+# which is finding R4-M3P17-01.
+#
+# - src/platform/db/guard.ts read in full, because 17.5 names it as the
+# posture to follow. It extracts `new URL(value).hostname` at :55 and
+# compares against LOCAL_HOSTS at :31, and touches no other part of a
+# connection URL. That is what produced the first finding: the named
+# precedent demonstrates the half of the check that is nearly vacuous on the
+# endpoint this run must use.
+#
+# - Every phase in the plan searched for anything that invokes the routine.
+# Exactly one does, M3-P16 step 5, which runs after M3-P17. M3-P12 searched
+# for "interlock", "target guard", "target-guard", "M3-P17" and "do not
+# invoke": no match on any. That is finding R4-M3P16-02.
+#
+# - The routine's write gate re-confirmed at
+# origin/claude/m3-p12-counterparty-identity, since criterion 16.1 now also
+# requires the further recompute to be recorded: `applied = exitCode === 0
+# && input.dryRun !== true` at
+# src/modules/merchants/application/rederive-rules.ts:528 is the sole
+# condition on the block at :529 through :537 containing the updates, the
+# inserts and `deps.recompute`. The criterion's new clause about the further
+# recompute is correct.
+#
+#
+# SCOPE DISCIPLINE, examined and CLEAR on the forbidden list, with one
+# observation that is not a finding.
+# CLAUDE.md forbids a queue, cron, an event bus, caching, a state library, a
+# component library, per-transaction overrides, goals and budgets. Neither
+# phase reaches for any of them: M3-P16 adds no code, M3-P17 adds one route,
+# one pure assessment module and a wiring block, criterion 17.4 pins that
+# with git diff --name-only and names "no scheduler, poller, queue or
+# persisted deploy record" explicitly, and H17.7 is the declared hazard on
+# exactly that growth. No finding. THE OBSERVATION, recorded because the
+# brief asked whether M3-P17 still has one subject: it does not, and it says
+# so itself. Its intent opens "Two instruments ... neither of them a
+# consumer of the other", and files-to-touch has gone from three entries to
+# six. That is defensible, because the two instruments share one entry
+# condition and one consumer and splitting again costs a whole cycle, but it
+# is the one place where this plan is drifting rather than converging, and
+# it should now be closed to further additions. Raised in the trajectory
+# note below rather than as a finding, because no criterion is wrong because
+# of it.
+#
+# WHAT I COULD NOT BREAK, said plainly because a review that lists only defects
+# misreports the round, and because three of these are round-three findings
+# fixed at the mechanism rather than by wording.
+# Criterion 16.3's deployment-environment field closes the preview attack I
+# built last round, and closes it at the instrument rather than by
+# attestation: a preview deployment answers preview, the field is quoted
+# from the captured body, and no URL choice gets round it. I tried and could
+# not. Criterion 16.1's blocked branch is now genuinely residual, "FOR ANY
+# REASON AT ALL", with the foreseen cases kept as examples explicitly not
+# the boundary; that is the right shape and my remaining objection is from
+# the opposite side. Criterion 17.5 exists at all, which is the round's real
+# work: the critical finding asked for a terminal state and got a MECHANISM,
+# with no override flag and the reason for its absence stated, and with the
+# deliberate contrast against guard.ts's escape hatch explained rather than
+# left as an inconsistency. Criterion 16.4 now bans a connection string,
+# password or host on every path including inside a quoted command line,
+# which is the right response to the hazard the round introduced. And
+# criteria 17.1, 17.2 and 17.3 I again could not break.
+#
+#
+# ROUND-THREE FINDINGS, DISPOSITION. All six fixed; none parked; one fixed by
+# correcting the reviewer rather than by complying with it.
+#   R3-M3P16-01, the credential and the missing terminal state: FIXED, and
+#     further than asked. The fix is a mechanism (17.5) rather than only a
+#     branch, the management-API transport is admitted for the read-only
+#     halves, and H16.2 is rewritten to state that an instruction is not a
+#     mechanism.
+#
+#   R3-M3P16-02, the origin proved by attestation: FIXED at the instrument.
+#     The route carries a deployment-environment field and 16.3 requires it
+#     to read production, quoted from the body.
+#
+#   R3-M3P16-03, the enumerated blocked branch: FIXED. It is residual now.
+#     The new objection, R4-M3P16-03, is about what the branch costs rather
+#     than what it covers.
+#
+#   R3-M3P16-04, step 7's false claim about writing: FIXED. The step and
+#     criterion 16.1 both now record that the further invocation runs a
+#     recompute, since the write gate covers it.
+#
+#   R3-M3P16-05, the blocked remainder unowned: FIXED, and my proposed edit
+#     was WRONG. I said to add an open-questions entry; the schema permits
+#     only decision-record references there. The fix round used parked
+#     instead and said why. Recorded here because a reviewer whose edit is
+#     refused for a good reason should say so rather than let it pass
+#     silently.
+#
+#   R3-M3P17-06, the unnamed marker: FIXED. The literal word is fixed in the
+#     plan with the reason stated. Finding R4-M3P17-05 asks for the same
+#     treatment for the two variable names, using this fix as its precedent.
+#
+# THE CRITERIA WALK, ten criteria across the two phases.
+#
+# --- criterion 16.1: NOT SOUND ---
+#   quote: THE RUN HAPPENED, AGAINST THE DATABASE THE RUN NAMED, AND IT LEFT
+#          RESIDUE A LATER READER CAN CHECK ... WHERE THE RUN IS NOT MADE,
+#          FOR ANY REASON AT ALL, this criterion is met instead by a BLOCKED
+#          record which names that reason rather than matching it against a
+#          list ... ANY OTHER REASON IS ALSO THIS BRANCH.
+#   - The residual branch is the right shape and round three's objection is
+#     closed. The residue leg, the idempotence anchor and the new recompute
+#     clause are all correct against the routine, which I re-read to check
+#     the last of those.
+#   - It fails from the other side. Five of the six foreseen reasons cost an
+#     artefact; the sixth, an unanswered ask for the origin, costs nothing
+#     at all and is the cheapest exit from the phase (R4-M3P16-03).
+#   - It also now carries the interlock's confirmation line and the
+#     remains-owed paragraph, both of which are real requirements a
+#     fabricated record would have to invent alongside everything else.
+#
+# --- criterion 16.2: SOUND ---
+#   quote: NO ASSIGNMENT IS LOST AND A BLOCKING EXIT IS NEVER MADE GREEN
+#          QUIETLY ... WHERE --accept APPEARS IN ANY INVOCATION OF THE
+#          ROUTINE, INCLUDING A DRY RUN ... THE CRITERION IS KEYED ON THE
+#          FLAG AND NEVER ON THE EXIT CODE.
+#   - Unchanged this round and I could not break it last round or this one.
+#     Keying on the flag removes the implementer's control over whether the
+#     obligation fires.
+#   - It is also the model the phase should follow elsewhere: its demand for
+#     a dated work-history entry carrying the rule ids is exactly the
+#     artefact requirement the blocked branch's ask lacks, which is why
+#     R4-M3P16-03 cites it.
+#
+# --- criterion 16.3: SOUND ---
+#   quote: THE DEPLOY ORDER IS OBSERVED RATHER THAN ASSUMED, AND THE
+#          INSTRUMENT PROVES THE ORIGIN INSTEAD OF THE IMPLEMENTER ASSERTING
+#          IT ... THE BODY'S DEPLOYMENT-ENVIRONMENT FIELD READS production,
+#          quoted from the captured body beside the sha.
+#   - I could not construct a satisfying-and-wrong implementation. Round
+#     three's construction, a preview of the phase's own branch answering
+#     with a descendant sha, now fails on the environment field, and the
+#     criterion refuses preview, development and the marker by name whatever
+#     the URL was.
+#   - The ancestor test keeps its argument-order pinning and its refusal of
+#     a bare exit code, and the local-ref refusal is retained.
+#   - The premise the field rests on is the platform supplying it, which is
+#     unverifiable from here and is carried honestly as H17.6 rather than
+#     assumed. The related risk that the variable is simply named wrong is
+#     not carried anywhere, which is R4-M3P17-05.
+#
+# --- criterion 16.4: SOUND ---
+#   quote: NOTHING OF THE OWNER'S DATA REACHES THE REPOSITORY ... NO
+#          CONNECTION STRING, PASSWORD OR DATABASE HOST IS COMMITTED
+#          ANYWHERE, on any path, including inside a quoted command line,
+#          which is quoted with its target argument shown as the interlock
+#          prints it and never as a URL.
+#   - I could not construct a satisfying-and-wrong implementation. Listing
+#     what MAY be committed as well as what may not is the right shape, and
+#     the new clause closes the leak the round's own mechanism introduced:
+#     an interlock takes a connection on a command line, and a phase that
+#     quotes command lines would otherwise commit one.
+#   - The addition of the project ref to the permitted list is correct and
+#     grounded, since M3-P6's work history already records it.
+#   - Its checkable factual claim still holds, probed last round: a
+#     household id is a uuid and matches none of the gate's four shapes.
+#
+# --- criterion 16.5: SOUND ---
+#   quote: THE DEPLOYED HALF IS WITNESSED BY THIS PHASE AND THE RECORD SAYS
+#          SO ... THE SMOKE SPEC IS NOT POINTED AT PRODUCTION TO GET THAT
+#          WITNESS.
+#   - I could not construct a satisfying-and-wrong implementation. It
+#     refuses the cheap observation by name and gives the consequence rather
+#     than the rule, which is what makes it survive a later implementer
+#     hunting for coverage.
+#   - It correctly extends to both fields now that the route carries two, so
+#     the witness obligation grew with the instrument rather than being left
+#     behind.
+#   - Its grounding was checked in an earlier round and holds: the prod
+#     smoke spec does sign in and upload through the declaration.
+#
+# --- criterion 17.1: SOUND ---
+#   quote: THE ROUTE ANSWERS WITH THE BUILD'S FACTS OR SAYS IT HAS NONE ...
+#          THE MARKER IS THE LITERAL WORD unstamped, fixed by this plan so
+#          that this phase and M3-P16 are written against one value rather
+#          than against each other's code.
+#   - I could not construct a satisfying-and-wrong implementation of the
+#     criterion as stated. Fixing the literal marker in the plan closes the
+#     cross-phase gap round three raised, and the shape constraint still
+#     closes the wider family of confusable answers.
+#   - Both branches of both fields are testable in the phase's own tree with
+#     no deploy and no platform.
+#   - What it cannot test is that the route reads the RIGHT variables,
+#     because the test sets whatever names the handler reads. That is
+#     R4-M3P17-05 and it is a gap in the plan rather than in this sentence.
+#
+# --- criterion 17.2: SOUND ---
+#   quote: IT DISCLOSES TWO BUILD FACTS AND NOTHING ELSE. The response body
+#          carries those two fields and no others, asserted by a test over
+#          the parsed response's key set, and grep of the route shows it
+#          reads exactly two environment variables ... and no third.
+#   - I could not construct a satisfying-and-wrong implementation. Widening
+#     the route from one field to two did NOT reopen the
+#     general-environment-probe hole: the bound is still two independent
+#     instruments, a key-set assertion catching a third field in the body
+#     and a grep catching a third variable read even if it never reaches the
+#     body.
+#   - The second field is the right kind of value for a public repository: a
+#     deployment environment names a build, not a household, an account, an
+#     amount or a date, and the criterion says so.
+#   - The count is a count and not an identity, which is the small gap
+#     R4-M3P17-05's second edit closes.
+#
+# --- criterion 17.3: SOUND ---
+#   quote: THE GATE THAT RUNS THE SPEC IS THE GATE THIS CRITERION NAMES. npm
+#          run typecheck, npm run lint, npm test AND npm run test:e2e all
+#          exit 0 with these tests in them, each with its captured output.
+#   - I could not construct a satisfying-and-wrong implementation. Naming
+#     the gate that can actually see the spec, with captured output per
+#     command, removes the green-by-never-executing path.
+#   - It stays honest about what it cannot witness and hands that to
+#     M3-P16's 16.3 by name, and 16.5 accepts the handoff explicitly, so the
+#     seam is covered from both sides.
+#   - It grew to cover both fields with the route rather than being left at
+#     one.
+#
+# --- criterion 17.4: NOT SOUND ---
+#   quote: THE PHASE ADDS TWO INSTRUMENTS AND NOTHING ELSE. git diff
+#          --name-only against the phase base shows exactly one new route
+#          ... one new module under src/platform/db, their two unit tests,
+#          the one-assertion change to test/e2e/prod-smoke.spec.ts and the
+#          wiring line in scripts/rederive-merchant-rules.ts.
+#   - Almost every clause is a command anyone can run against a stable phase
+#     base, and it is the declared guard on the scope hazard H17.7, which it
+#     genuinely reaches: a poller or a persisted deploy record cannot be
+#     added without failing the file list or the dependency clause.
+#   - It fails on its own arithmetic. A correct interlock is an import, two
+#     argument reads, a call and a refusal exit, which is not "the wiring
+#     line", so a reviewer must either reject a correct implementation or
+#     stop using the criterion as a gate (R4-M3P17-04).
+#   - The file list itself is correct and matches files-to-touch and extras;
+#     only the count of what may change inside the script is wrong.
+#
+# --- criterion 17.5: NOT SOUND ---
+#   quote: THE ROUTINE REFUSES A DATABASE IT WAS NOT TOLD TO WRITE TO, AND
+#          THE REFUSAL IS A MECHANISM RATHER THAN AN INSTRUCTION ... it
+#          proceeds only where the host AND the project ref it resolves
+#          match values given EXPLICITLY on that invocation's own command
+#          line ... THE INTERLOCK HAS NO OVERRIDE FLAG.
+#   - Much of this is right and it is the round's real work. Fail-closed on
+#     five named inputs, refusal before any repository call asserted with a
+#     call-recording fake, no override flag with the reason stated, the
+#     deliberate contrast against guard.ts's escape hatch, and no connection
+#     string or host printed on any path asserted over captured output. The
+#     posture is correct and the checkable boundary it picked, before any
+#     repository call, is the right one given the client is constructed at
+#     import time.
+#   - It fails on WHERE the project ref is read from. The two endpoint
+#     shapes put it in different fields, the pooler host it is paired with
+#     is shared by every project in the region, and the precedent the
+#     criterion names extracts only the host. Both wrong implementations
+#     pass every test the criterion lists (R4-M3P17-01).
+#   - Its resolution claim also diverges from the module it names on the
+#     empty-variable case, which is fail-closed here and is recorded as
+#     R4-M3P17-06 rather than inflated.
+#
+# WHY THIS IS A FINDING DOCUMENT AND NOT A VERDICT DOCUMENT, re-captured
+# this round rather than carried over. `--type verdict` was tried first as
+# instructed and fails for the same structural reason, now with the current
+# plan: with a full constructed context the probe returned "acceptance
+# criterion 16.2 of phase M3-P16 ... has no entry, so this review did not
+# walk it" for 16.2, 16.3, 16.4 and 16.5; "criterion 17.1 is walked here and
+# ... declares no such acceptance criterion on this phase"; and "this
+# verdict is not among the 0 verdict document(s) committed under
+# delivery/review for phase M3-P16". The verdict type's `phase` is one
+# string and its completeness check compares criteria[] against that one
+# phase, so a review covering TWO phases cannot be one verdict document, and
+# this deliverable is one file covering two phases by instruction. The role
+# brief settles the fallback: Outputs: finding, validated by
+# schemas/finding.schema.json, whose field is concrete-edit. Validated at
+# exit 0 under --type finding and --type auto.
+#
+# TRAJECTORY, in one paragraph here and at length in the report. CONVERGING,
+# not churning. The count is flat at six for a third round, but the severity
+# is falling and, more tellingly, the KIND of finding has changed: rounds
+# two and three argued that these phases could not be satisfied at all, and
+# this round argues about how well a mechanism that now exists is specified.
+# Three of six findings are on surface that did not exist before this round.
+# No finding reopens a closed one. And the fix round corrected the reviewer
+# on the open-questions schema instead of complying, which is what a working
+# loop looks like. What is left is small and named: R4-M3P17-01 and
+# R4-M3P16-02 are the two that must land, both are bounded edits, and
+# neither needs new invention.
+#
+kind: finding
+verdict: FIX-ROUND-NEEDED
+produced-by: claude-opus-5
+findings:
+  - id: R4-M3P17-01
+    severity: high
+    analysis: |-
+      THE INTERLOCK MATCHES TWO VALUES, AND ON THE ONLY ENDPOINT THIS PROJECT
+      CAN ACTUALLY REACH ONE OF THEM IS NEARLY VACUOUS WHILE THE OTHER HAS NO
+      SPECIFIED LOCATION. Criterion 17.5 requires the routine to proceed only
+      where "the host AND the project ref it resolves match values given
+      EXPLICITLY on that invocation's own command line". It never says where in
+      a connection URL the project ref is to be read from, and the answer is not
+      one place.
+
+      THE TWO ENDPOINT SHAPES PUT THE REF IN DIFFERENT FIELDS. On the session
+      pooler, which fleet warning 5 records as the ONLY endpoint reachable from
+      an IPv4 environment and therefore the one this run must use, the host is a
+      regional pooler address and the project ref lives in the USERNAME. On a
+      direct connection the ref is inside the host and the username carries
+      none. So a parser written for either shape finds nothing in the other.
+
+      NOW READ THE HOST HALF ON A POOLER URL. That host is SHARED
+      infrastructure: every Supabase project in the same region resolves to the
+      same pooler hostname. Matching it proves the region and not the project.
+      So on the endpoint this phase must use, the interlock's two matched values
+      are not two independent checks: one is a region check and the other, the
+      only one that identifies the project at all, is the one whose location the
+      criterion leaves to the implementer.
+
+      THE PRECEDENT THE CRITERION POINTS AT DEMONSTRATES THE VACUOUS HALF AND
+      ONLY THAT HALF. 17.5 says the interlock is added "in the posture
+      src/platform/db/guard.ts already sets". That guard extracts
+      `new URL(value).hostname` and compares it against a set of local hosts. It
+      never touches the username, because it never needed to: a local host is a
+      complete answer to its question. An implementer following the named
+      precedent writes a hostname comparison and has to invent the ref half
+      unaided.
+
+      TWO WRONG IMPLEMENTATIONS, BOTH SATISFYING EVERY WORD. First, the
+      implementer writes the direct-connection reading, ref-in-host, which is
+      the reading the phrase "host AND the project ref" most naturally
+      suggests. Every pooler URL then yields no ref, which 17.5 classifies as
+      unparseable, which refuses. The interlock refuses the only reachable
+      endpoint, M3-P16 records BLOCKED naming the interlock refusal, which step
+      5 explicitly instructs, and the migration never happens. That is a
+      fail-closed failure and it is still a failure: the phase blocks forever on
+      a defect in its own guard. Second, and worse, the implementer notices the
+      ref is absent from the pooler host, concludes the host match is the
+      substantive check, and matches on host alone. The interlock then approves
+      ANY project in that region. Every unit test 17.5 lists still passes: "host
+      mismatched" refuses, and "project ref mismatched" can be made to pass on a
+      direct-shape URL where the ref is in the host.
+
+      AND THIS IS WHY TODAY'S NEAR MISS IS NOT EVIDENCE THE DESIGN WORKS. The
+      ambient credential that would have been used points at a project in a
+      DIFFERENT region from the pulse project, so a host-only interlock catches
+      it. It catches it by geography. Move either project into the other's
+      region and the same interlock approves the same accident.
+    evidence:
+      - |-
+        The criterion names two values and locates neither: 17.5, "it proceeds
+        only where the host AND the project ref it resolves match values given
+        EXPLICITLY on that invocation's own command line", with the refusal list
+        "no target given, target given but empty, connection absent, connection
+        unparseable, host mismatched, project ref mismatched, and one matching
+        case that proceeds". No clause says where the ref is read from.
+      - |-
+        The ref's location on the pooler is recorded as a fleet fact and is a
+        username, not a host: fleet environment warning 5 describes the session
+        pooler endpoint with "project ref in the username", and names it as the
+        only IPv4 endpoint, which is the one this run must use.
+      - |-
+        The precedent the criterion names extracts the host and nothing else:
+        src/platform/db/guard.ts:53 through :67 does `hostname = new
+        URL(value).hostname`, normalises it, and compares against LOCAL_HOSTS at
+        :31. There is no username handling anywhere in that module.
+      - |-
+        The pooler host is shared rather than per-project, which is why a host
+        match cannot identify a project: src/platform/db/triage.ts hardcodes
+        aws-0 and aws-1-eu-central-1.pooler.supabase.com as candidate hosts with
+        no project involvement at all, and the health route's header records
+        that those candidates are "HARDCODED public shared Supabase pooler
+        infrastructure (no env involvement at all)".
+      - |-
+        The near miss was caught by region rather than by design: the ambient
+        credential this fleet carries is recorded at
+        delivery/work-history/m1-p1-notes.md:48 as a pooler in a different
+        region from the pulse project's, which fleet warning 5 places in
+        eu-central-1.
+    concrete-edit: |-
+      In delivery/plan/pulse-v02.yaml, criterion 17.5, replace "it proceeds only
+      where the host AND the project ref it resolves match values given
+      EXPLICITLY on that invocation's own command line" with: "it proceeds only
+      where BOTH the host and the PROJECT REF it resolves match values given
+      EXPLICITLY on that invocation's own command line. THE REF IS READ FROM
+      WHICHEVER FIELD CARRIES IT, and the criterion says where rather than
+      leaving it to the implementer, because the two endpoint shapes put it in
+      different places: on a session pooler the ref is in the USERNAME and the
+      host is regional pooler infrastructure shared by every project in that
+      region, and on a direct connection the ref is inside the host and the
+      username carries none. A resolver that reads only one of the two shapes
+      does not meet this criterion. THE HOST MATCH IS NEVER SUFFICIENT ALONE and
+      the criterion states why: on the pooler endpoint, which fleet warning 5
+      records as the only one reachable here, a matching host proves the region
+      and not the project, so an interlock that approves on host alone approves
+      every project the owner has in that region."
+
+      Extend the same criterion's test list to cover both shapes rather than one:
+      replace "host mismatched, project ref mismatched, and one matching case
+      that proceeds" with "host mismatched; project ref mismatched with the ref
+      in the username; project ref mismatched with the ref in the host; a
+      connection whose shape carries no ref in either field, which refuses as
+      unparseable; and one matching case per shape that proceeds. A suite that
+      exercises one endpoint shape does not meet this criterion."
+  - id: R4-M3P16-02
+    severity: high
+    analysis: |-
+      THE INTERLOCK LANDS ONE PHASE AFTER THE THING IT GUARDS, SO THE PLAN
+      DELIBERATELY PUTS AN UNGUARDED WRITING MIGRATION INTO THE TRUNK AND LEAVES
+      IT THERE FOR A FULL PHASE CYCLE. This is an ordering defect rather than a
+      mechanism defect, and the mechanism being correct is what makes it worth
+      raising: 17.5 is the right guard in the wrong place in time.
+
+      M3-P17's own conflicts-with states the constraint honestly: it "runs
+      strictly AFTER M3-P12 is merged, because the file does not exist before
+      that". That is true and unavoidable. What follows from it is not stated
+      anywhere. At the moment M3-P12 merges, the trunk carries a script that
+      writes to whatever database it is handed, a package.json entry that runs
+      it, and a header that documents the command line. It carries no target
+      check of any kind, which M3-P17's own verified-root-cause establishes by
+      measurement. From that moment until M3-P17 merges, the accident the whole
+      round was written about is one command away and nothing in the plan
+      prevents it.
+
+      CHECKED RATHER THAN ASSUMED: NOTHING FORBIDS IT. I searched every phase in
+      the plan for anything that invokes the routine. Exactly one does, M3-P16,
+      and M3-P16 runs after M3-P17, so no PHASE fires in the window. But M3-P12
+      contains no mention of the interlock, of M3-P17, or of any prohibition on
+      running the script, and M3-P12 is unchanged by this round. The protection
+      against an invocation in the window is therefore that nobody happens to
+      make one, which is the same class of protection as an instruction to pin
+      the connection, and this round exists because that class was judged
+      insufficient.
+
+      HOW WIDE, stated as the plan makes it rather than guessed. The window
+      opens when M3-P12 merges and closes only when M3-P17 merges. M3-P17 cannot
+      even be dispatched before M3-P12 merges, so the width is at minimum the
+      whole of M3-P17's cycle: dispatch, implementation of two instruments, the
+      five-command gate, review, fix rounds, merge. Nothing in the plan narrows
+      it and no phase runs concurrently that would.
+
+      THE FIX IS SMALL AND IT BELONGS IN M3-P12. The half of the interlock that
+      stops the ACCIDENT needs no matching logic and no new module: refusing to
+      run at all unless an explicit target was named on the command line. An
+      accidental invocation carries no such flags, so it refuses. A deliberate
+      invocation that passes the flags before the matcher exists is a deliberate
+      act rather than an accident, and the accident is the hazard H16.2
+      describes.
+    evidence:
+      - |-
+        The ordering is stated in the plan and is unavoidable: M3-P17
+        conflicts-with, "M3-P12 (this phase adds the interlock inside
+        scripts/rederive-merchant-rules.ts, which M3-P12 creates): runs strictly
+        AFTER M3-P12 is merged, because the file does not exist before that".
+      - |-
+        The unguarded state at M3-P12's head is measured rather than assumed, by
+        the plan itself: M3-P17's verified-root-cause records that "grep over
+        scripts/rederive-merchant-rules.ts at M3-P12's head returns no
+        DATABASE_URL, no host check and no guard import".
+      - |-
+        The invocation point ships in the same merge as the unguarded script:
+        M3-P12's criterion 12.17 requires package.json to carry a script that
+        runs it, asserted by a test, and the routine's own header documents the
+        command line including its flags.
+      - |-
+        Nothing in M3-P12 forbids an invocation. Searched the whole M3-P12 phase
+        for "interlock", "target guard", "target-guard", "M3-P17" and "do not
+        invoke": no match on any of them. M3-P12 is unchanged by this round, so
+        nothing was added.
+      - |-
+        Only one phase in the plan invokes the routine at all: searched every
+        phase for a reference to the script or its npm entry, and the only
+        invocation is M3-P16's step 5, which runs after M3-P17. So the window is
+        unoccupied by phases and unguarded against everything else.
+      - |-
+        What the window costs is the hazard the plan now states in its own
+        words: H16.2, "The run writes to a database nobody named ... a writing
+        migration lands in the wrong project and succeeds."
+    concrete-edit: |-
+      Put the fail-closed half of the interlock into the phase that ships the
+      script. In delivery/plan/pulse-v02.yaml, append to M3-P12's criterion
+      12.17: "AND THE ROUTINE REFUSES TO RUN AT ALL UNLESS A TARGET IS NAMED ON
+      ITS COMMAND LINE. Before it reads or writes anything the routine requires
+      an explicit target host and project ref as arguments, and exits non-zero
+      issuing no statement of any kind where either is absent or empty, asserted
+      by a unit test using a fake that records repository calls and must record
+      none. THIS IS DELIBERATELY THE ARGUMENT HALF AND NOT THE MATCHING HALF,
+      which is M3-P17's criterion 17.5: the file cannot carry the matcher before
+      M3-P17 exists, but it CAN refuse an invocation that named no target, and
+      that is what stops an accidental run in the window between this phase's
+      merge and M3-P17's. An implementer must not add the matching logic here;
+      17.5 replaces this clause's refusal with a complete one."
+
+      Where M3-P12 is judged frozen mid-fix-round and cannot take a criterion,
+      the alternative that must be written instead is an ordering constraint in
+      both phases' conflicts-with: "M3-P12 and M3-P17 MERGE TOGETHER, and
+      neither is merged to the trunk alone, because the interval between them is
+      an interval in which the trunk carries a writing migration with a
+      documented invocation point and no target check (hazard H16.2)." Say which
+      of the two was taken; do not leave the window unaddressed on the ground
+      that no phase occupies it.
+  - id: R4-M3P16-03
+    severity: high
+    analysis: |-
+      THE BLOCKED BRANCH IS NOW CORRECTLY RESIDUAL, AND ITS CHEAPEST REASON IS
+      THE ONE THAT REQUIRES NO EVIDENCE AT ALL. Round three asked for a branch
+      that catches everything; this round delivered one and the question flips to
+      the other side, which is what the brief asked me to attack. The branch is
+      well defended against most reasons and undefended against one.
+
+      Read what each foreseen reason costs an implementer who wants out. A
+      deployed build predating the merge costs a fetch and an ancestor test, both
+      recorded with command line and exit code. No sha after the one ask costs
+      every fetch made with URL, status and body. An unresolvable value costs the
+      same plus the erroring command. The interlock refusing costs the captured
+      refusal. No database credential costs the transport check. Each of those
+      leaves an artefact the record must carry.
+
+      ONE REASON COSTS NOTHING: "no production origin, because the one ask for it
+      was not answered". An implementer taking it has no origin, therefore made
+      no fetch, therefore satisfies "carries every fetch made with its URL,
+      status and body" vacuously; returned no sha, therefore owes no ancestor
+      test; issued no invocation, therefore owes no interlock line. The entire
+      cost of the cheapest exit from this phase is writing a paragraph saying the
+      ask went unanswered, plus the remains-owed paragraph. Nothing in the record
+      can be checked by anyone, and nothing distinguishes an implementer who
+      asked and waited from one who did neither.
+
+      THE PHASE ALREADY KNOWS HOW TO FIX THIS AND DOES IT ELSEWHERE. Criterion
+      16.2 does not accept "the owner accepted these ids"; it requires "the
+      owner's acceptance of each id by reference to a dated entry in the phase
+      work history carrying the rule ids and nothing else". That converts an
+      assertion about a conversation into an artefact. The origin ask is a
+      conversation of exactly the same kind, with a larger consequence, and it
+      gets an assertion. The asymmetry is the finding: one criterion in this
+      phase demands evidence of an owner exchange and another accepts a claim of
+      one.
+
+      WHAT STOPS BLOCKED BEING THE CHEAP EXIT TODAY, answered plainly: for five
+      of the six foreseen reasons, an artefact requirement does. For the sixth,
+      nothing does, and the honesty of the implementer is the whole mechanism.
+    evidence:
+      - |-
+        The branch's own evidence requirements, which bite on every reason but
+        one: criterion 16.1, a blocked record "names that reason rather than
+        matching it against a list, carries every fetch made with its URL, status
+        and body, carries the ancestor test with its quoted command line and exit
+        code where a sha was returned, and states that NO invocation of the
+        routine was issued against any database".
+      - |-
+        Each of those obligations is conditional on something having happened.
+        "Every fetch made" is satisfied by none; "where a sha was returned" does
+        not fire when none was; the no-invocation clause is a statement rather
+        than an artefact.
+      - |-
+        The reason with no artefact is listed in the criterion itself: among the
+        foreseen examples, "no production origin, because the one ask for it was
+        not answered".
+      - |-
+        The same phase requires an artefact for the structurally identical
+        exchange: criterion 16.2, "the owner's acceptance of each id by reference
+        to a dated entry in the phase work history carrying the rule ids and
+        nothing else", and "A record whose only reported invocation carried
+        --accept does not meet this criterion, whatever its exit code."
+      - |-
+        The consequence of an unearned block is stated by the phase and is not
+        small: hazard H16.10, the deployed run "becomes unowned again", and
+        H16.1, the owner's naming goes on matching nothing.
+    concrete-edit: |-
+      In delivery/plan/pulse-v02.yaml, criterion 16.1, append to the blocked
+      branch: "WHERE THE REASON IS AN ASK THAT WENT UNANSWERED, the record
+      carries that ask as a dated entry in the phase work history quoting what
+      was asked, of whom, and when, in exactly the form this phase already
+      requires for the owner's acceptance of a rule id under criterion 16.2. A
+      blocked record whose reason is an ask that appears nowhere does not meet
+      this criterion, and the asymmetry is deliberate: every other reason this
+      branch admits leaves an artefact behind, a fetch with a status, a command
+      line with an exit code, a captured refusal, so the one reason that leaves
+      none is the one that has to be evidenced on purpose. The record also states
+      what was searched in this repository for the origin before asking, since a
+      previous round established that no deploy-verify has recorded one."
+  - id: R4-M3P17-04
+    severity: medium
+    analysis: |-
+      CRITERION 17.4 COUNTS THE INTERLOCK'S FOOTPRINT AS "THE WIRING LINE", AND A
+      CORRECT INTERLOCK IS NOT ONE LINE. This is a criterion a correct
+      implementation fails, which is the specific thing this review exists to
+      find, and it is small only because the fix is one word.
+
+      17.4 pins the phase's diff and lists what may appear in it, ending "and the
+      wiring line in scripts/rederive-merchant-rules.ts". What criterion 17.5
+      actually requires inside that file is: an import of the new assessment
+      module; the reading of two new command-line arguments, the target host and
+      the target ref, from a script whose existing argument helper handles one
+      flag at a time; the call to the assessment; and a refusal path that exits
+      non-zero and issues no statement. That is a block, not a line.
+
+      THE TENSION IS REAL RATHER THAN PEDANTIC BECAUSE 17.4 IS THE SCOPE GATE.
+      Its whole function is to let a reviewer run `git diff --name-only` and a
+      diff read and say whether the phase stayed inside its declaration. A
+      reviewer holding the literal wording rejects a correct interlock; a
+      reviewer waving it through has stopped using the criterion as a gate. Both
+      readings cost something, and the criterion should not make a reviewer
+      choose.
+    evidence:
+      - |-
+        The criterion's count: 17.4, "git diff --name-only against the phase base
+        shows exactly one new route under src/app/api/health, one new module
+        under src/platform/db, their two unit tests, the one-assertion change to
+        test/e2e/prod-smoke.spec.ts and the wiring line in
+        scripts/rederive-merchant-rules.ts".
+      - |-
+        What 17.5 requires in that same file is more than a line: the interlock
+        must resolve the connection, take the target host and project ref
+        "given EXPLICITLY on that invocation's own command line", assess, and
+        refuse before any repository call, exiting non-zero.
+      - |-
+        The script's existing argument handling is per-flag and would need two
+        further reads: scripts/rederive-merchant-rules.ts, the `argument` helper
+        scanning process.argv and the existing per-flag bindings in main().
+      - |-
+        The same criterion is the declared guard on the scope hazard, so its
+        literal reading matters: H17.7, the instrument growing into
+        infrastructure, addressed-by criterion 17.4.
+    concrete-edit: |-
+      In delivery/plan/pulse-v02.yaml, criterion 17.4, replace "and the wiring
+      line in scripts/rederive-merchant-rules.ts" with "and, in
+      scripts/rederive-merchant-rules.ts, ONLY the interlock wiring: the import
+      of the assessment module, the reading of the two target arguments, the
+      call, and the refusal exit, with no other change to that file and in
+      particular no change to what the routine computes or writes; a diff that
+      touches any other behaviour in that script does not meet this criterion".
+  - id: R4-M3P17-05
+    severity: medium
+    analysis: |-
+      THE PLATFORM VARIABLE NAMES ARE LEFT TO THE IMPLEMENTER, AND A WRONG NAME
+      IS UNTESTABLE IN PHASE AND INDISTINGUISHABLE IN PRODUCTION FROM THE ONE
+      FAILURE THE PLAN HAS ALREADY NAMED. The phase fixed the marker string in
+      the plan for exactly this reason and did not do the same for the variables
+      the marker stands in for.
+
+      Step 1 THREE has the implementer "record the exact names of the platform
+      environment variables the route will read". Criterion 17.1 tests the route
+      "with the platform variables set", which means set to whatever names the
+      route reads: the unit test is written against the route's own choice and
+      therefore cannot detect a wrong choice. Criterion 17.2's grep counts the
+      variables read and does not check their names either. So no instrument in
+      M3-P17 can catch a typo or a wrong variable.
+
+      WHAT IT LOOKS LIKE WHEN IT GOES WRONG. The deployed route answers 200 with
+      both fields reading unstamped, forever. That is byte-identical to hazard
+      H17.6, the platform not supplying the values at all, which the plan
+      classifies as an unverifiable premise to be settled by observation in
+      M3-P16. M3-P16 then records BLOCKED naming a platform that does not stamp
+      builds, raises a missing platform setting to the owner, and the owner looks
+      for a setting that is already correct. The plan has one story for two
+      causes and no way to tell them apart.
+
+      THE PHASE ALREADY SET THE PRECEDENT FOR THE FIX, IN THIS ROUND, ONE
+      PARAGRAPH AWAY. Step 2 says of the marker: "THE MARKER IS FIXED BY THIS
+      PLAN AND NOT CHOSEN BY AN IMPLEMENTER, because M3-P16 decides a terminal
+      state by comparing against it". Every word of that reasoning applies to the
+      variable names, and M3-P16 decides a terminal state on their consequences
+      too.
+    evidence:
+      - |-
+        The names are delegated: M3-P17 step 1 THREE, "the exact names of the
+        platform environment variables the route will read, recorded together
+        with the fact that whether the platform sets them for this project is NOT
+        verifiable from here".
+      - |-
+        Neither criterion can check a name. 17.1 asserts behaviour "with the
+        platform variables set", which the test itself sets on whatever names the
+        handler reads; 17.2 asserts that "grep of the route shows it reads exactly
+        two environment variables", a count and not an identity.
+      - |-
+        The plan already knows the candidate names, so fixing them costs nothing:
+        M3-P17's grounding names VERCEL_GIT_COMMIT_SHA, VERCEL_URL, VERCEL_ENV,
+        commitSha and buildId as the grep it ran over the tree.
+      - |-
+        The two causes are indistinguishable downstream: hazard H17.6 is "The
+        platform does not supply a build commit or a deployment environment to
+        this project's builds at all, so the route answers with the marker
+        forever", addressed-by later-phase M3-P16, and M3-P16 step 1 THREE
+        instructs the implementer to raise "the missing platform setting" to the
+        owner on exactly that observation.
+      - |-
+        The precedent for fixing a value in the plan was set in this same round
+        for the same reason: M3-P17 step 2, "THE MARKER IS FIXED BY THIS PLAN AND
+        NOT CHOSEN BY AN IMPLEMENTER, because M3-P16 decides a terminal state by
+        comparing against it."
+    concrete-edit: |-
+      In delivery/plan/pulse-v02.yaml, M3-P17 step 1 THREE, replace "THREE: the
+      exact names of the platform environment variables the route will read,
+      recorded together with the fact that whether the platform sets them for
+      this project is NOT verifiable from here" with: "THREE: THE TWO PLATFORM
+      VARIABLE NAMES ARE FIXED BY THIS PLAN AND NOT CHOSEN BY AN IMPLEMENTER, for
+      the same reason the marker is: the build commit is read from
+      VERCEL_GIT_COMMIT_SHA and the deployment environment from VERCEL_ENV, both
+      already named in this phase's grounding. Record that whether the platform
+      sets them for this project is NOT verifiable from here, and record that a
+      WRONG NAME and an UNSET VARIABLE are indistinguishable in production, both
+      answering unstamped forever, which is why the names are fixed here rather
+      than recalled."
+
+      And in criterion 17.2, replace "grep of the route shows it reads exactly two
+      environment variables, the build commit and the deployment environment, and
+      no third" with "grep of the route shows it reads exactly the two
+      environment variables step 1 names, by those names, and no third".
+  - id: R4-M3P17-06
+    severity: low
+    analysis: |-
+      THE RESOLUTION CRITERION CLAIMS EQUIVALENCE WITH A MODULE THAT RESOLVES ONE
+      CASE DIFFERENTLY, AND THE DIFFERENCE IS THE EMPTY VARIABLE. Nothing unsafe
+      follows today, and it is recorded because "exactly as the command resolves
+      it" is the kind of claim that gets copied forward once and checked never.
+
+      17.5 says the routine resolves "shell first and the .env file only for a
+      variable the shell does not carry", and step 4 names the resolution
+      src/platform/db/guard-cli.ts already implements. A variable set to the empty
+      string IS carried by the shell on the criterion's wording, so no fallback.
+      guard-cli treats it as absent and falls back to the .env file. The two
+      readings diverge on exactly that input.
+
+      WHY IT IS LOW AND NOT HIGHER, said rather than left implied. I tried to
+      build an unsafe divergence out of this and could not. 17.5 lists an empty
+      connection among the refusals, so the empty case fails closed either way.
+      More generally the interlock's view of the environment is a SUPERSET of the
+      client's: the Prisma client is constructed with no datasource override
+      (src/platform/db/client.ts) so it resolves the datasource variable from
+      process.env, while the interlock additionally consults the .env file. A
+      superset can approve a target the client will then fail to open, which
+      errors before writing, and cannot approve one target while the client opens
+      a different one. The dangerous direction is not reachable through the
+      environment path. It is reachable through the matching path, which is
+      finding R4-M3P17-01.
+    evidence:
+      - |-
+        The criterion's wording: 17.5, "resolves the connection it will use
+        exactly as the command resolves it, shell first and the .env file only
+        for a variable the shell does not carry".
+      - |-
+        The named precedent falls back on empty as well as on absent:
+        src/platform/db/guard-cli.ts, `resolved` returns the process value only
+        when it is `!== undefined && !== ""`, and otherwise calls
+        `dotEnvFallback(name)`.
+      - |-
+        The empty case is fail-closed in the interlock regardless: 17.5's refusal
+        list includes "target given but empty, connection absent, connection
+        unparseable".
+      - |-
+        The client takes no datasource override, so its resolution is the plain
+        environment: src/platform/db/client.ts constructs `new PrismaClient()`
+        with no argument, and prisma/schema/schema.prisma declares `url =
+        env("DATABASE_URL")`.
+    concrete-edit: |-
+      In delivery/plan/pulse-v02.yaml, criterion 17.5, replace "shell first and
+      the .env file only for a variable the shell does not carry" with "shell
+      first and the .env file only for a variable the shell does not carry OR
+      carries empty, which is the resolution src/platform/db/guard-cli.ts already
+      implements and is named here because the two readings differ on the empty
+      case and an interlock that resolves differently from the command it guards
+      is decorative". Make the same substitution in step 4.
