@@ -35,6 +35,14 @@ const DELAY_MS = 2000;
 const CEILING_MS = 200;
 const MEDIAN_CEILING_MS = 100;
 const SETTLE_MS = 1000;
+// How long after its own response was released a control may still be
+// busy because the navigation that response started has not landed yet.
+// A ceiling, not a wait: the loop that uses it stops the moment the
+// control is gone or at rest.
+const AFTER_RESPONSE_CEILING_MS = 5000;
+// The floor a meaningful non-text graphic has to clear against what it sits
+// on. The busy mark is the only thing on screen saying the press was heard.
+const MIN_MARK_CONTRAST = 3;
 
 type ActionProbe = {
   requests: number;
@@ -221,7 +229,117 @@ type PressResult = {
   readonly pressableAtSettle: boolean;
   readonly markAtSettle: string;
   readonly testidsStable: boolean;
+  // FIX ROUND, finding HZ-M3P10-01: the appearance the control changed INTO,
+  // rather than only that it changed.
+  readonly dressedAsDisabled: boolean;
+  readonly markContrast: number;
+  // FIX ROUND, finding HZ-M3P10-02: the keyboard still has its place.
+  readonly focusHeld: boolean;
+  // FIX ROUND, finding HZ-M3P10-07: the press does not resize the control.
+  readonly widthAtRest: number;
+  readonly widthWhileBusy: number;
+  // FIX ROUND, finding HZ-M3P10-03: the busy state cleared, measured on THIS
+  // control after ITS response was released, rather than once at the end of
+  // the journey on a document holding no pressed control.
+  readonly stillBusyAfterResponse: boolean;
+  readonly unpressableAfterResponse: boolean;
+  readonly documentBusyAfterResponse: number;
 };
+
+// THE COMPOSITED CONTRAST OF THE BUSY MARK, measured the way a reader sees
+// it (fix round, finding HZ-M3P10-01). The mark is painted in the control's
+// own box, and the busy state paints that whole box at less than full
+// opacity, so both the mark and the surface under it are composited over the
+// page before they are compared. Resolved through a canvas 2D context
+// because the stylesheet's colours are oklch() and getComputedStyle hands
+// them back in that form.
+const readBusyAppearance = (control: Locator): Promise<{
+  readonly background: string;
+  readonly dressedAsDisabled: boolean;
+  readonly markContrast: number;
+  readonly width: number;
+}> =>
+  control.evaluate((node) => {
+    const element = node as HTMLElement;
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (context === null) {
+      throw new Error("no 2D context to resolve colours through");
+    }
+    const parse = (value: string): { r: number; g: number; b: number; a: number } => {
+      context.globalCompositeOperation = "copy";
+      context.fillStyle = value;
+      context.fillRect(0, 0, 1, 1);
+      context.globalCompositeOperation = "source-over";
+      const data = context.getImageData(0, 0, 1, 1).data;
+      return { r: data[0] ?? 0, g: data[1] ?? 0, b: data[2] ?? 0, a: (data[3] ?? 0) / 255 };
+    };
+    const over = (
+      fg: { r: number; g: number; b: number },
+      bg: { r: number; g: number; b: number },
+      alpha: number,
+    ) => ({
+      r: bg.r * (1 - alpha) + fg.r * alpha,
+      g: bg.g * (1 - alpha) + fg.g * alpha,
+      b: bg.b * (1 - alpha) + fg.b * alpha,
+    });
+    const luminance = (colour: { r: number; g: number; b: number }): number => {
+      const channel = (value: number): number => {
+        const scaled = value / 255;
+        return scaled <= 0.03928
+          ? scaled / 12.92
+          : Math.pow((scaled + 0.055) / 1.055, 2.4);
+      };
+      return (
+        0.2126 * channel(colour.r) +
+        0.7152 * channel(colour.g) +
+        0.0722 * channel(colour.b)
+      );
+    };
+    const contrast = (
+      one: { r: number; g: number; b: number },
+      other: { r: number; g: number; b: number },
+    ): number => {
+      const [high, low] = [luminance(one), luminance(other)].sort((a, b) => b - a);
+      return ((high ?? 0) + 0.05) / ((low ?? 0) + 0.05);
+    };
+    const own = getComputedStyle(element);
+    const mark = getComputedStyle(element, "::after");
+    const page = parse(getComputedStyle(document.body).backgroundColor);
+    const declared = parse(own.backgroundColor);
+    const surface = declared.a === 0 ? page : over(declared, page, declared.a);
+    const markColour = parse(mark.backgroundColor);
+    const paintedControl = over(surface, page, Number(own.opacity));
+    const paintedMark = over(
+      over(markColour, surface, Number(mark.opacity) * markColour.a),
+      page,
+      Number(own.opacity),
+    );
+    // The disabled surface is resolved through a real element rather than
+    // read off :root, because a semantic token points at a primitive and
+    // getPropertyValue would hand back the var() and not a colour.
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--color-surface-disabled)";
+    document.body.append(probe);
+    const disabled = parse(getComputedStyle(probe).backgroundColor);
+    probe.remove();
+    const same = (
+      one: { r: number; g: number; b: number },
+      other: { r: number; g: number; b: number },
+    ): boolean =>
+      Math.abs(one.r - other.r) <= 1 &&
+      Math.abs(one.g - other.g) <= 1 &&
+      Math.abs(one.b - other.b) <= 1;
+    return {
+      background: own.backgroundColor,
+      dressedAsDisabled: declared.a > 0 && same(declared, disabled),
+      markContrast:
+        mark.content === "none" ? 0 : Number(contrast(paintedMark, paintedControl).toFixed(2)),
+      width: element.getBoundingClientRect().width,
+    };
+  });
 
 // ONE PRESS SEQUENCE, CARRYING FOUR CRITERIA. The control is pressed, then
 // pressed again 100ms later inside the delay window (criterion 10.4); the
@@ -236,10 +354,24 @@ const pressAndMeasure = async (
 ): Promise<PressResult> => {
   console.log(`[busy-state] pressing ${name}`);
   const before = await collectTestidText(page);
+  const atRest = await readBusyAppearance(control);
   await armMeasurement(control);
   const clickAt = Date.now();
   probe.reset(clickAt);
   await control.click();
+  // THE FOCUS READING IS TAKEN HERE AND NOT AT 1000ms, and the order is the
+  // measurement (fix round, finding HZ-M3P10-02). A press leaves focus on
+  // the control it activated; the finding is that the busy state then threw
+  // that focus away. The forced second press below lands on whatever sits
+  // under a control that refuses the pointer, which moves focus by itself,
+  // so a reading taken after it would measure the test and not the product.
+  const focusHeld = await control
+    .evaluate((node) => document.activeElement === node)
+    .catch(() => false);
+  // THE KEYBOARD PATH, driven while the control is busy and still focused.
+  // A control that keeps its place in the tab order can still be activated
+  // by Enter, and the request count below is what says the guard held.
+  await page.keyboard.press("Enter").catch(() => undefined);
   await page.waitForTimeout(100);
   // THE SECOND PRESS, forced past actionability on purpose: a control that
   // refuses the press is exactly what is being measured, and waiting for it
@@ -257,10 +389,59 @@ const pressAndMeasure = async (
       mark: getComputedStyle(element, "::after").content,
     };
   });
+  const whileBusy = await readBusyAppearance(control);
   const after = await collectTestidText(page);
 
   // Let the delayed response through and the resulting navigation settle.
   await page.waitForTimeout(DELAY_MS + 500);
+  // THE SETTLING ALLOWANCE IS A CEILING AND NOT A SLEEP (slow-gate repair
+  // round). The 500ms above assumed that whatever the released response
+  // starts has finished 500ms later, and for the upload control that is a
+  // guess about the SERVER: its action redirects to the import detail
+  // route, which re-runs statement detection and parsing on the stored
+  // bytes before it renders anything. On a loaded machine that render
+  // passed 500ms and the reading below caught a control still busy while
+  // the navigation it started was still in flight, which is the control
+  // working rather than failing. So the reading is retaken until the
+  // control is gone or at rest, up to the ceiling below, and the LAST
+  // reading is the one asserted. A control that never comes back to rest
+  // still fails, which is the whole point of the assertion: this bounds
+  // how long the product may take, it does not stop asking.
+  const readRestingState = async (): Promise<{
+    readonly busy: boolean;
+    readonly unpressable: boolean;
+  }> => {
+    const remaining = await control.count();
+    if (remaining === 0) {
+      return { busy: false, unpressable: false };
+    }
+    return control.evaluate((node) => {
+      const element = node as HTMLButtonElement;
+      return {
+        busy: element.getAttribute("aria-busy") === "true",
+        unpressable:
+          element.disabled || element.getAttribute("aria-disabled") === "true",
+      };
+    });
+  };
+  const restDeadline = Date.now() + AFTER_RESPONSE_CEILING_MS;
+  let resting = await readRestingState();
+  while ((resting.busy || resting.unpressable) && Date.now() < restDeadline) {
+    await page.waitForTimeout(100);
+    resting = await readRestingState();
+  }
+
+  // CRITERION 10.3'S SECOND HALF, MEASURED PER CONTROL (fix round, finding
+  // HZ-M3P10-03). This used to be one assertion at the very end of the
+  // journey, immediately after the sign-in press, on a document that had
+  // been replaced by the redirect and held no control that was ever pressed:
+  // it could not fail. It is now read here, after THIS control's own
+  // response was released. A control the response navigated away from is
+  // gone, which is a pass; a control that is still on screen must have come
+  // back to rest, and the revalidate-in-place surfaces are where that
+  // matters.
+  const cleared = resting;
+  const documentBusyAfterResponse = await page.locator('[aria-busy="true"]').count();
 
   return {
     name,
@@ -276,6 +457,14 @@ const pressAndMeasure = async (
     pressableAtSettle: settle.pressable,
     markAtSettle: settle.mark,
     testidsStable: JSON.stringify(before) === JSON.stringify(after),
+    dressedAsDisabled: whileBusy.dressedAsDisabled,
+    markContrast: whileBusy.markContrast,
+    focusHeld,
+    widthAtRest: atRest.width,
+    widthWhileBusy: whileBusy.width,
+    stillBusyAfterResponse: cleared.busy,
+    unpressableAfterResponse: cleared.unpressable,
+    documentBusyAfterResponse,
   };
 };
 
@@ -302,6 +491,47 @@ const assertAcknowledged = (result: PressResult, predicts: boolean): void => {
   expect(result.busyAtSettle, `${result.name}: aria-busy at 1000ms`).toBe(true);
   expect(result.pressableAtSettle, `${result.name}: pressable at 1000ms`).toBe(false);
   expect(result.markAtSettle, `${result.name}: busy mark at 1000ms`).not.toBe("none");
+  // FIX ROUND, finding HZ-M3P10-01: the appearance it changed INTO. The
+  // merged phase set the disabled attribute and aria-busy on one element and
+  // the disabled rules outranked the busy rule, so a working control wore
+  // the product's vocabulary for unavailable and the mark measured 1.09 to 1
+  // against it. Both halves are asserted, because either alone comes back
+  // green on the shipped defect.
+  expect(
+    result.dressedAsDisabled,
+    `${result.name}: busy control painted in the disabled surface`,
+  ).toBe(false);
+  expect(
+    result.markContrast,
+    `${result.name}: composited contrast of the busy mark against its control`,
+  ).toBeGreaterThanOrEqual(MIN_MARK_CONTRAST);
+  // FIX ROUND, finding HZ-M3P10-02: the press does not throw away the
+  // keyboard's place, and the second activation from the keyboard is still
+  // refused (the request count above is the other half of that).
+  expect(
+    result.focusHeld,
+    `${result.name}: focus was still on the pressed control`,
+  ).toBe(true);
+  // FIX ROUND, finding HZ-M3P10-07: the mark's box is reserved at rest, so
+  // the press does not widen the control and reflow the row it sits in.
+  expect(
+    result.widthWhileBusy,
+    `${result.name}: width at rest ${result.widthAtRest}, busy ${result.widthWhileBusy}`,
+  ).toBeCloseTo(result.widthAtRest, 1);
+  // FIX ROUND, finding HZ-M3P10-03: criterion 10.3's second half, on THIS
+  // control after ITS OWN response was released.
+  expect(
+    result.stillBusyAfterResponse,
+    `${result.name}: still marked busy after its response was released`,
+  ).toBe(false);
+  expect(
+    result.unpressableAfterResponse,
+    `${result.name}: still refusing the press after its response was released`,
+  ).toBe(false);
+  expect(
+    result.documentBusyAfterResponse,
+    `${result.name}: elements still marked busy anywhere in the document`,
+  ).toBe(0);
   // criterion 10.10, nothing is predicted
   if (!predicts) {
     expect(
@@ -309,6 +539,46 @@ const assertAcknowledged = (result: PressResult, predicts: boolean): void => {
       `${result.name}: no rendered testid changed before the server answered`,
     ).toBe(true);
   }
+};
+
+// THE NAMEABLE ROW, HELD BY AN IDENTITY THE PRESS CANNOT MOVE (slow-gate
+// repair round). Every other control this file measures keeps the identity
+// it was found by for the whole of the measurement. The merchant naming
+// control does not, and the reason is a cross-phase interaction rather than
+// a fault in either phase: M3-P11 predicts the typed name inside the form
+// action, BEFORE the await, and a predicted row stops being unresolved at
+// that instant, so src/modules/merchants/ui/merchant-row.tsx renders it with
+// data-testid="merchant-group" from the press onwards. A Playwright locator
+// is lazy. A control rooted at getByTestId("unresolved-group").first()
+// therefore re-resolved after the press to the first row that was STILL
+// unresolved, which is a row nobody pressed: the aria-busy reading at
+// 1000ms, the appearance reading and the after-response reading all
+// described the wrong control, and the suite reported a busy state that
+// never appeared. The product behaviour it tripped over is the one DR-0025
+// and DR-0026 asked for and criterion 11.2 requires.
+//
+// WHAT IS HELD INSTEAD is the row's POSITION among the rows carrying
+// data-group-key. Criterion 11.3 fixes that sequence in DOM order across a
+// prediction (test/e2e/optimistic-naming.spec.ts measures it), so the
+// position is stable in exactly the window where the testid is not. The key
+// alone would not do as a selector: a counterparty with a spend row and a
+// refund renders TWO rows sharing one key (finding HZ-M3P11-02), and the
+// position separates them.
+const namableRow = async (page: Page): Promise<Locator> => {
+  const rows = await page
+    .locator("[data-group-key]")
+    .evaluateAll((elements) =>
+      elements.map((element) => ({
+        unresolved: element.getAttribute("data-testid") === "unresolved-group",
+        namable: element.querySelector(".merchant-name-form") !== null,
+      })),
+    );
+  const index = rows.findIndex((row) => row.unresolved && row.namable);
+  expect(
+    index,
+    "an unresolved row carrying a naming form",
+  ).toBeGreaterThanOrEqual(0);
+  return page.locator("[data-group-key]").nth(index);
 };
 
 const signUpFreshAndMeasure = async (
@@ -400,7 +670,7 @@ test.describe("the busy state", () => {
 
     // 7. the merchant naming submit, the one surface M3-P11 will make predict
     await page.goto("/merchants");
-    const group = page.getByTestId("unresolved-group").first();
+    const group = await namableRow(page);
     await group.getByPlaceholder("Name this counterparty").fill("Named once");
     results.push(
       await pressAndMeasure(page, probe, "merchant naming submit", group.getByRole("button", { name: "Name" })),
@@ -439,8 +709,13 @@ test.describe("the busy state", () => {
       assertAcknowledged(result, result.name === "merchant naming submit");
     }
 
-    // Criterion 10.3, second half: the busy state does not survive the
-    // response.
+    // Criterion 10.3, second half, at the end of the journey. THIS LINE IS
+    // NO LONGER THE MEASUREMENT (fix round, finding HZ-M3P10-03): it sits
+    // after the sign-in press, whose action redirects, so the document it
+    // reads holds no control that was ever pressed and it cannot fail. The
+    // criterion is measured per control inside pressAndMeasure, on each
+    // control after its own response was released. It is kept as the
+    // journey's closing sweep and nothing rests on it alone.
     await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
   });
 
@@ -472,7 +747,7 @@ test.describe("the busy state", () => {
     for (let index = 0; index < 5; index += 1) {
       const remaining = await page.getByTestId("unresolved-group").count();
       expect(remaining, "a naming that fails does not satisfy this").toBe(5 - index);
-      const group = page.getByTestId("unresolved-group").first();
+      const group = await namableRow(page);
       const label = (await group.getByTestId("group-label").textContent()) ?? "";
       await group.getByPlaceholder("Name this counterparty").fill(`Named ${index}`);
       const result = await pressAndMeasure(
@@ -483,8 +758,22 @@ test.describe("the busy state", () => {
       );
       expect(result.requests, `${label.slice(0, 0)}row ${index}: one request`).toBe(1);
       expect(result.appearanceChanged).toBe(true);
+      assertAcknowledged(result, true);
       intervals.push(result.intervalMs);
       await expect(page.getByTestId("unresolved-group")).toHaveCount(4 - index);
+      // THE REVALIDATE-IN-PLACE PATH, which is where a busy state that never
+      // clears would actually strand the owner (fix round, finding
+      // HZ-M3P10-03). The naming action revalidates rather than navigating,
+      // so the NEXT row's control is freshly rendered rather than replaced
+      // by a new document: it must be pressable and carry no busy mark.
+      if (index < 4) {
+        const next = page
+          .getByTestId("unresolved-group")
+          .first()
+          .getByRole("button", { name: "Name" });
+        await expect(next).not.toHaveAttribute("aria-busy", "true");
+        await expect(next).toBeEnabled();
+      }
     }
 
     const median = [...intervals].sort((a, b) => a - b)[2] as number;

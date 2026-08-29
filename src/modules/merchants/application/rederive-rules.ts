@@ -99,6 +99,32 @@ import type {
   RecomputeInterpretation,
 } from "./ports";
 
+// THE ERROR A RECOMPUTE FAILURE THROWS, and why it is its own type (fix
+// round three, findings CR3-M3P12-02 and CR3-M3P12-01 of the criteria lane).
+// The rule writes go through one port member the adapter runs in a database
+// transaction; the recompute runs AFTER it and outside it, deliberately. So
+// there are two failure sources with two opposite answers to the only
+// question an operator has, and the command's rejection handler could not
+// tell them apart: it printed, for both, that the table is as the run found
+// it. After a recompute failure that sentence is false in both halves, and
+// the action a false "nothing happened" invites is rolling the code deploy
+// back, which is the one action that turns every migrated pattern into a rule
+// that matches nothing under the pre-deploy derivation.
+//
+// The error therefore carries the fact that the writes COMMITTED and the
+// report describing exactly what was written, so the operator gets the record
+// rather than an exit code and a false sentence.
+export class RederiveRecomputeError extends Error {
+  readonly writesCommitted = true;
+  readonly report: RederiveReport;
+
+  constructor(report: RederiveReport, cause: unknown) {
+    super("the rule writes committed and the recompute then failed", { cause });
+    this.name = "RederiveRecomputeError";
+    this.report = report;
+  }
+}
+
 export type RederivePass = "one" | "two";
 
 export type RederiveOutcomeKind =
@@ -112,7 +138,51 @@ export type RederiveOutcomeKind =
   // second run and is what makes "already migrated" visible.
   | "descriptor-namespaced"
   | "empty-pattern-left-alone"
+  // A SAME-MERCHANT TWIN ALREADY HOLDS THE TARGET PATTERN (fix round two,
+  // findings CR2-M3P12-02 and HZ-M3P12-R2-01). The declaration table's key is
+  // (householdId, kind, pattern), so rewriting this rule's pattern would
+  // collide with a live rule of the same kind that already carries it. When
+  // that rule belongs to a DIFFERENT merchant it is a genuine ambiguity and
+  // blocks; when it belongs to the SAME merchant there is no ambiguity at
+  // all, because the two rules already say the same thing about the same
+  // merchant. The rewrite is redundant, so it is not made. The source rule is
+  // left exactly as it is, which loses nothing: every row it reached under
+  // the old key is reached by the twin under the new one, and the superset
+  // test proves that rather than assuming it. Deleting it is forbidden
+  // (decision D-39).
+  //
+  // THIS IS THE SHAPE DECISION D-46's DEPLOY WINDOW INVITES. The code deploys
+  // before this routine runs, the owner's pre-migration rules match nothing
+  // and their rows show as unresolved, so the owner names those groups again;
+  // findMerchantByName reuses the merchant, and a namespaced EXACT rule lands
+  // beside the old un-namespaced one for the same merchant.
+  | "already-held-by-same-merchant-twin"
+  // The same structural fact with a DIFFERENT merchant on the claiming rule
+  // (fix round three, finding CR3-M3P12-01). It is NOT a conflict a person
+  // must settle. A rule whose pattern carries no namespace can never be
+  // applied again by the shipped matcher, because every key it is handed
+  // carries a lowercase namespace and normaliseCounterparty emits no
+  // lowercase letter: the namespaced rule is what the deployed resolver has
+  // been applying since the code deployed, whatever merchant it points at,
+  // and the un-namespaced one is already dead. Calling that a conflict
+  // blocked the whole migration on a decision the owner had already made on
+  // the screen, and reported a LOST assignment for a row that in production
+  // carries the owner's current merchant and never carried the old one.
+  | "superseded-by-namespaced-rule"
   // Pass two.
+  //
+  // WHAT "promoted" MEANS, said because a reviewer read it as "a rule was
+  // inserted on this run" and that is not what it says (fix round five,
+  // CRITERIA finding CR5-M3P12-11, and see the deviation this phase records
+  // against that finding). It means: after this run, this rule's naming is
+  // expressed in the account key space. Sometimes that took an insert and
+  // sometimes the pattern was already held by a rule of the same merchant and
+  // nothing needed writing. THE TWO CANNOT BE DISTINGUISHED IN THIS TOKEN
+  // without breaking criterion 12.8, whose whole content is that a second run
+  // prints the report of the first BYTE FOR BYTE: run two always finds the
+  // rule run one inserted, so a token that separated the cases would differ
+  // between the two runs by construction. HOW MANY RULES A RUN ACTUALLY ADDED
+  // is reported, on its own line, as rules-added.
   | "promoted"
   // A promotion whose whole evidence is ONE row (fix round, finding
   // HZ-M3P12-06). It is still a promotion, and the reason it is not refused
@@ -161,6 +231,16 @@ export type LostAssignment = {
   readonly ruleId: string;
 };
 
+// A row that ends at the claimant's own merchant through a rule outside the
+// lineage. It carries the id of the rule that HELD it and the id of the rule
+// that HOLDS it now, because the operator's question is which declaration
+// took it over.
+export type ClaimantMerchantReport = {
+  readonly transactionId: string;
+  readonly heldByRuleId: string;
+  readonly nowHeldByRuleId: string;
+};
+
 export type RederiveReport = {
   readonly decisions: readonly RuleDecision[];
   readonly counts: readonly RuleCounts[];
@@ -180,8 +260,55 @@ export type RederiveReport = {
   // from a run that lost nothing. Acceptance removes an assignment from the
   // BLOCKING decision and from nothing else.
   readonly acceptedLostAssignments: readonly LostAssignment[];
+  // THE CLAIMANT-MERCHANT CLASS (criterion 12.7, fix round six). A row whose
+  // merchant changed, whose change is NOT licensed by the lineage, and which
+  // ends at the CLAIMANT'S OWN merchant through a rule outside that lineage.
+  // It is reported, printed and counted under its own name, and it exits 0.
+  //
+  // WHY IT IS NOT A LOST ASSIGNMENT, and the criterion states the cost rather
+  // than estimating it: this is the ordinary shape of a MIXED-BASIS group.
+  // The claimant's promotion is declined because one row of the group carries
+  // no trusted account, while the account half of that same counterparty is
+  // already held by the owner's own later naming, so under the deployed code
+  // the row ALREADY carries that merchant and nothing moved. Blocking it
+  // would stop an ordinary migration on a loss that did not happen and spend
+  // an acceptance ceremony on an outcome that is not a loss. A run that
+  // reports this class and a lost assignment under one name does not meet
+  // criterion 12.7.
+  readonly claimantMerchantReports: readonly ClaimantMerchantReport[];
   // Rules promoted on the evidence of exactly one row (finding HZ-M3P12-06).
   readonly promotedOnOneRow: readonly string[];
+  // Rules pass one left alone because a same-merchant twin already holds the
+  // pattern they would have been rewritten to (fix round two).
+  readonly alreadyHeldBySameMerchantTwin: readonly string[];
+  // Rules pass one left alone because a namespaced rule of the same kind for
+  // a DIFFERENT merchant already holds the pattern they would have been
+  // rewritten to (fix round three). Printed and counted, never blocking.
+  // EXACT ONLY (fix round four, CRITERIA finding CR4-M3P12-03): the argument
+  // a rule is dead is an argument about EQUALITY, and a colliding PREFIX or
+  // PATTERN rule of another merchant blocks as a conflict instead.
+  readonly supersededByNamespacedRule: readonly string[];
+  // THE LINEAGE THE LOSS EXEMPTION RESTS ON, published rather than kept
+  // private (fix round five, hazard finding HAZ5-1). Ids only, never a
+  // pattern. Two relations, and between them they say why any dismissed
+  // claim was dismissed:
+  //
+  //   supersededBy: the dead rule, and the namespaced rule that already held
+  //   the pattern it would have been rewritten to.
+  //
+  //   promotedFrom: a rule that now carries an account-basis promotion, and
+  //   the descriptor rule the promotion was made from. For a promotion this
+  //   run INSERTED, ruleId is the placeholder `pending-<n>`, where n is the
+  //   one-based index of that insert in the batch handed to applyRuleWrites,
+  //   in that order. It is not a database id and must not be used as one.
+  readonly supersededBy: readonly {
+    readonly ruleId: string;
+    readonly claimantRuleId: string;
+  }[];
+  readonly promotedFrom: readonly {
+    readonly ruleId: string;
+    readonly sourceRuleId: string;
+  }[];
   // Whether the writes this report describes were ISSUED. False on a dry run
   // and false on a blocked run, which are the only two ways a report can
   // describe work that did not happen.
@@ -191,18 +318,41 @@ export type RederiveReport = {
   readonly exitCode: number;
 };
 
+// THE DECLARED CAPABILITY IS THE USED CAPABILITY (fix round ten, HAZARD
+// finding CR9-M3P12-HZ-05). This Pick used to include "upsertRule", which this
+// routine has never called: the three call sites are listRules,
+// listCountedTransactions and applyRuleWrites. It was not free to leave there.
+// upsertRule is the one port member that REPOINTS an existing declaration
+// rather than rejecting a collision, which is why the in-memory fake stopped
+// routing inserts through it, and a routine whose declared dependencies
+// include it reads as a routine that may use it. This is the one module whose
+// whole contract is that it overwrites and deletes nothing, so the type now
+// says exactly what it needs. Test fakes are unaffected: they implement the
+// full port.
 export type RederiveDependencies = {
   readonly merchants: Pick<
     MerchantRepositoryPort,
-    "listRules" | "listCountedTransactions" | "upsertRule" | "updateRulePattern"
+    "listRules" | "listCountedTransactions" | "applyRuleWrites"
   >;
   readonly recompute: RecomputeInterpretation;
 };
 
 export type RederiveInput = {
-  // Rule ids whose merchant-conflict or lost assignment a PERSON has seen
-  // and accepted. It clears exactly the ids it names and nothing else.
+  // Rule ids whose MERCHANT-CONFLICT a person has seen and accepted. It
+  // clears exactly the ids it names and nothing else, and it no longer
+  // clears a lost assignment: see acceptedLosses (criterion 12.7, fix round
+  // six).
   readonly acceptedRuleIds?: readonly string[];
+  // THE PAIR IS THE GRANULARITY FOR A LOSS AND A BARE RULE ID IS NOT
+  // (criterion 12.7). One rule can hold a real loss on one row and an
+  // ordinary claimant-merchant report on another, so a flag that clears a
+  // RULE clears rows the person never saw. Accepting is therefore by the pair
+  // of rule id and transaction id, and no flag form clears a loss by rule
+  // alone.
+  readonly acceptedLosses?: readonly {
+    readonly ruleId: string;
+    readonly transactionId: string;
+  }[];
   // A REAL DRY RUN (fix round, finding HZ-M3P12-02). Decide everything,
   // write nothing, recompute nothing, and return the report a real run would
   // return. The flag used to live only in the script, where it swapped the
@@ -230,14 +380,89 @@ const matchedBy = (
 ): readonly CountedTransaction[] =>
   rows.filter((row) => matchRules(key(row), [rule]) !== undefined);
 
-const assignmentSet = (
+// WHICH KEY A STORED RULE IS ACTUALLY WRITTEN AGAINST (fix round two,
+// finding HZ-M3P12-R2-03). The before-set used to be computed with the
+// BASELINE key for every rule, which is right on the FIRST run and dead on
+// every run after it: once a pattern carries a namespace it can never match a
+// bare key, because EXACT compares unequal, a PREFIX cannot start with a
+// longer string and a PATTERN glob is anchored. So the before-set came back
+// EMPTY, the lost-assignment set was empty by construction, and the
+// lost-assignment half of the exit code could not be reached at all, while
+// the run still wrote and still recomputed. A guard that reports safe by
+// construction is worse than no guard, because the operator is told it
+// checked. It matters on a table that is NOT in the clean post-run state the
+// routine assumes: a partially migrated one, or a hand-edited one.
+const keyForRule = (rule: MerchantRuleLike): ((row: CountedTransaction) => string) =>
+  identityBasisOfKey(rule.pattern) === undefined ? baselineKey : identityKey;
+
+// EXPORTED FOR THE PROPERTY TEST (fix round five, hazard finding HAZ5-1),
+// with the identity key beside it. The property that keeps the loss
+// exemption honest has to ask, of a generated world, which merchant each row
+// carried before the run and which it carries after, and it must ask that
+// question the way the routine asks it or the two are not comparing the same
+// thing. This function's own correctness is pinned separately by the
+// half-migrated-table cases (finding HZ-M3P12-R2-03); what the property tests
+// is the exemption, which is the part that has been rewritten three times.
+export const identityKeyOfRow = identityKey;
+// The OLD key, exported for the same reason (fix round six): verifying a
+// published promotion pair against the seed means asking which rows the
+// source rule reached when the owner wrote it, and that question is asked
+// with this key.
+export const baselineKeyOfRow = baselineKey;
+
+export const assignmentSet = (
   rows: readonly CountedTransaction[],
   rules: readonly MerchantRuleLike[],
-  key: (row: CountedTransaction) => string,
+  key?: (row: CountedTransaction) => string,
 ): ReadonlyMap<string, { merchantId: string; ruleId: string }> => {
   const pairs = new Map<string, { merchantId: string; ruleId: string }>();
   for (const row of rows) {
-    const match = matchRules(key(row), rules);
+    // EACH RULE UNDER ITS OWN KEY when no single key is imposed, so a table
+    // holding both migrated and un-migrated patterns is read correctly rather
+    // than reported empty. The tie-break WITHIN a key space is the matcher's
+    // own: the most specific declaration wins, so the candidates are collected
+    // and handed to matchRules together per space.
+    //
+    // THE TIE-BREAK BETWEEN THE TWO SPACES IS THE BASELINE SPACE, and it is
+    // load bearing rather than incidental, which is why it is written down
+    // here instead of living in the order of a ?? (fix round six). The before
+    // set is a model of what the owner's declarations MEANT before the
+    // migration, and before the migration the un-namespaced rule is the
+    // declaration; the namespaced one is the naming they made afterwards, in
+    // decision D-46's deploy window. So a row both spaces reach is credited to
+    // the BARE rule, the after set credits the namespaced one, and the row
+    // changes hands, which is what makes the supersede exception reachable at
+    // all.
+    //
+    // MEASURED, NOT ARGUED, because the opposite order looks harmless. With
+    // the identity space given precedence, the deploy-window row is credited
+    // to the claimant on BOTH sides and nothing appears to change hands; the
+    // named H12.31 regression then goes red because the row an unrelated
+    // account rule took over is credited to that same unrelated rule before
+    // the run as well as after, so its loss is hidden. Over the generated
+    // worlds the reassignment shape drops sharply.
+    //
+    // CORRECTED IN FIX ROUND EIGHT, CRITERIA finding CR6-M3P12-04, clause
+    // R-087, and the lesson is the one worth carrying: a comment that boasts
+    // about being measured is the one most worth re-measuring. This paragraph
+    // used to end "The property's own biconditional stays GREEN under the
+    // flip, because both of its sides are computed here and move together,
+    // which is the same shape of blind spot a forged lineage pair has." BOTH
+    // THE CONCLUSION AND ITS REASON ARE FALSE. The property goes RED under the
+    // flip, on the FIRST biconditional. And its two sides are NOT both
+    // computed here: since the amended criterion the property derives the
+    // before merchant, the after merchant and the claimant's merchant in the
+    // test file, from the seed and the issued write batch, with its own model
+    // of the two spaces and the pre-phase space first. Only the REPORTED side
+    // comes from here, so a flip here moves one side and not both. The
+    // sentence was written before that rewrite and was not re-measured after
+    // it. M6 in test/property/mutants.mts is now the permanent guard, and its
+    // anchor is the coalescing operator below.
+    const match =
+      key === undefined
+        ? matchRules(baselineKey(row), rules.filter((r) => keyForRule(r) === baselineKey)) ??
+          matchRules(identityKey(row), rules.filter((r) => keyForRule(r) === identityKey))
+        : matchRules(key(row), rules);
     if (match !== undefined) {
       pairs.set(row.id, { merchantId: match.merchantId, ruleId: match.ruleId });
     }
@@ -257,7 +482,73 @@ export const rederiveMerchantRules = async (
   // resolves a merchant for INCOME and SPEND rows and for nothing else, so a
   // counted row is the only kind a rule can ever reach. Widening this read
   // would change no decision and would count rows no assignment can land on.
-  const assignmentsBefore = assignmentSet(rows, before, baselineKey);
+  // ---- LINEAGE --------------------------------------------------------
+  // WHICH RULE SUPERSEDED WHICH, AND WHICH RULE CARRIES WHOSE PROMOTION.
+  //
+  // These two maps replace a bare Set of superseded ids (fix round five,
+  // hazard finding HAZ5-1), and the replacement is the point rather than a
+  // refactor. The loss exemption has been rewritten three times, each time as
+  // a boolean short-circuit reacting to the last counterexample: round two
+  // reported false losses, round three hid real ones by dropping the rule
+  // from the before-set, round four asked only "is the row covered by
+  // ANYTHING afterwards" and thereby hid a silent REASSIGNMENT to a merchant
+  // no one in the relationship names. A predicate phrased as "is there any
+  // subsequent coverage" cannot be right, because the supersede argument is
+  // not about coverage in general: it is about ONE relationship, between the
+  // dead rule and the namespaced rule that took its pattern.
+  //
+  // So the relationship itself is recorded where it is known, and the
+  // exemption asks whether the row's eventual coverage DESCENDS FROM IT. That
+  // is decidable from the lineage alone and needs no case analysis, which is
+  // what makes it correct by construction rather than correct against three
+  // witnesses.
+  //
+  // supersededByClaimant: the dead rule's id, to the id of the namespaced
+  // rule of the same kind that already held the pattern it would have been
+  // rewritten to. Filled in pass one, which is the only place a claimant is
+  // identified, and read when the before-set is compared AFTER pass two.
+  const supersededByClaimant = new Map<string, string>();
+  // promotionSource: the id of a rule that now carries an account-basis
+  // promotion, to the id of the descriptor rule the promotion was made FROM.
+  // Both outcomes are recorded, because both are the source rule's naming
+  // expressed in the account key space: a promotion this run INSERTS, and a
+  // pre-existing rule of the same merchant that already held the pattern and
+  // therefore made the insert unnecessary. Pass two matches under the OLD
+  // key, so a promotion made from a claimant can and does cover rows the
+  // superseded rule used to claim, which is exactly why one link is not
+  // enough and the exemption has to follow a chain.
+  const promotionSource = new Map<string, string>();
+  // WHAT A PROMOTION PAIR MAY BE, checked at the point of recording rather
+  // than left true by construction (fix round six, review of the amended
+  // criterion 12.7). The exemption follows this link, so a pair that does not
+  // mean what the exemption assumes it means licenses a row to change
+  // merchant, which is hazard H12.31 verbatim.
+  //
+  // A PROMOTION IS THE SOURCE RULE'S OWN NAMING, expressed in the account key
+  // space. That is the whole content of the link, and it has one consequence
+  // that can be checked here: the holder must carry the SAME merchant as the
+  // source. It holds on both branches below by construction, an inserted
+  // promotion copies rule.merchantId and an absorbed one is only reached when
+  // the existing holder's merchant already equals it, and that is exactly why
+  // it is worth asserting: the two branches are three hundred lines from the
+  // comparison that trusts them, and the last three rounds of this mechanism
+  // were each locally correct too. A future edit that lets them diverge fails
+  // here, loudly, instead of quietly licensing a reassignment.
+  const recordPromotion = (
+    holder: { readonly id: string; readonly merchantId: string },
+    source: { readonly id: string; readonly merchantId: string },
+  ): void => {
+    if (holder.merchantId !== source.merchantId) {
+      throw new Error(
+        "rederiveMerchantRules: refusing to record a promotion whose holder and source name different merchants. A promotion is the source rule's own naming in the account key space; a pair that is not that would license a row to change merchant unreported.",
+      );
+    }
+    promotionSource.set(holder.id, source.id);
+  };
+  // The rule a row's coverage ultimately descends from: itself, unless it is
+  // carrying somebody's promotion.
+  const lineageRoot = (ruleId: string): string =>
+    promotionSource.get(ruleId) ?? ruleId;
 
   const decisions: RuleDecision[] = [];
   const counts: RuleCounts[] = [];
@@ -265,6 +556,8 @@ export const rederiveMerchantRules = async (
   const acceptedConflicts: string[] = [];
   const broadened: string[] = [];
   const promotedOnOneRow: string[] = [];
+  const alreadyHeldBySameMerchantTwin: string[] = [];
+  const supersededByNamespacedRule: string[] = [];
   let patternsRewritten = 0;
   let alreadyNamespaced = 0;
   let rulesAdded = 0;
@@ -350,7 +643,86 @@ export const rederiveMerchantRules = async (
     }
     const newPattern = `${DESCRIPTOR_NAMESPACE}${rule.pattern}`;
     const collision = claimant(rule.kind, newPattern, rule.id);
-    if (collision !== undefined && collision.merchantId !== rule.merchantId) {
+    // A CLAIMANT MEANS THIS RULE IS ALREADY SUPERSEDED, WHICHEVER MERCHANT
+    // THE CLAIMANT CARRIES (fix round two for the same-merchant half, fix
+    // round three for the rest, finding CR3-M3P12-01).
+    //
+    // WHY THE CLAIMANT IS ALWAYS A PRE-EXISTING NAMESPACED RULE, which is
+    // what makes one treatment correct for both cases: the table's unique key
+    // is (householdId, kind, pattern), so no two rules of one kind share a
+    // bare pattern, so no rule pass one rewrote EARLIER in this same run can
+    // be holding this rule's target pattern. The claimant existed before the
+    // run, already namespaced, which is the shape decision D-46's deploy
+    // window produces when the owner names a group again.
+    //
+    // AN EXACT SOURCE RULE IS DEAD, not contested, AND A PREFIX OR PATTERN
+    // ONE IS NOT. Corrected in fix round four under CRITERIA finding
+    // and corrected loudly, because the sentence that stood here claimed an
+    // impossibility that a reviewer disproved against the shipped matcher.
+    //
+    // WHAT IT USED TO SAY: "The shipped matcher can never apply an
+    // un-namespaced pattern again: every key carries a lowercase namespace,
+    // EXACT is equality, and PREFIX and PATTERN would need a pattern that is
+    // a strict prefix of a lowercase namespace, which the uppercasing
+    // normaliser cannot emit."
+    //
+    // THE HALF THAT HOLDS, and it was verified exhaustively rather than
+    // sampled: over every Unicode code point, none uppercases into a string
+    // containing an ASCII lowercase letter, and none survives the shipped
+    // normaliser as one. So a bare pattern can never EQUAL a namespaced key,
+    // and an EXACT rule holding one is dead by construction.
+    //
+    // THE HALF THAT IS FALSE: a glob is not required to be a prefix of
+    // anything. Witnessed against the shipped matcher, a PATTERN rule whose
+    // pattern begins with a star matches a namespaced key, and a bare star
+    // matches every key of every basis; a PREFIX rule whose pattern is a
+    // prefix of the NAMESPACE itself matches too. Neither needs a pattern the
+    // normaliser could emit, and merchant-rule.ts says in as many words that
+    // PREFIX and PATTERN exist for rules written by hand.
+    //
+    // SO THE TREATMENT SPLITS ON KIND rather than resting on a claim that
+    // covers only one of them. An EXACT collision is recorded as superseded
+    // and left in place, because decision D-39 forbids deleting a declaration
+    // and blocking on a dead row would stop a migration for nothing. A
+    // PREFIX or PATTERN collision is NOT assumed dead: for the same merchant
+    // it is still a skip, since no assignment can change hands between one
+    // merchant and itself, and for a different merchant it BLOCKS with the
+    // ordinary conflict outcome and the ordinary acknowledge path, which is
+    // what a live rule whose target pattern another merchant holds deserves.
+    //
+    // THIS IS A MEASURED FACT ABOUT TODAY'S TABLE, not a structural one:
+    // assignMerchant writes EXACT and only EXACT, so the deployed declaration
+    // holds no row of either other kind and the split changes nothing about
+    // the owner's own migration. The day a PREFIX rule is written, the
+    // conservative branch is the one that runs.
+    if (collision !== undefined) {
+      const sameMerchant = collision.merchantId === rule.merchantId;
+      if (sameMerchant) {
+        // Safe for every kind: the claimant carries the same merchant, so
+        // whether the source rule is dead or live, no row can change hands.
+        if (rule.kind === "EXACT") {
+          supersededByClaimant.set(rule.id, collision.id);
+        }
+        alreadyHeldBySameMerchantTwin.push(rule.id);
+        decisions.push({
+          ruleId: rule.id,
+          pass: "one",
+          basis: "descriptor",
+          outcome: "already-held-by-same-merchant-twin",
+        });
+        continue;
+      }
+      if (rule.kind === "EXACT") {
+        supersededByClaimant.set(rule.id, collision.id);
+        supersededByNamespacedRule.push(rule.id);
+        decisions.push({
+          ruleId: rule.id,
+          pass: "one",
+          basis: "descriptor",
+          outcome: "superseded-by-namespaced-rule",
+        });
+        continue;
+      }
       const isAccepted = accepted.has(rule.id);
       (isAccepted ? acceptedConflicts : conflicts).push(rule.id);
       decisions.push({
@@ -452,16 +824,43 @@ export const rederiveMerchantRules = async (
         pattern: accountPattern,
       });
       // The id is a placeholder because the real one is only known once the
-      // insert is issued, and nothing downstream reads it: `working` uses it
-      // to exclude a rule from its own collision test, and the decision
-      // report is keyed on the SOURCE rule's id, never on an added rule's.
+      // insert is issued. It is NOT private any more: assignmentsAfter is
+      // keyed on it, the lineage below names it, and the report publishes it,
+      // so the correspondence is part of the contract. It is
+      // `pending-<n>` where n is the ONE-BASED index of the insert in the
+      // batch handed to applyRuleWrites, in that same order. Nothing may
+      // treat it as a database id.
+      const promotedRuleId = `pending-${pendingInserts.length}`;
       working.push({
-        id: `pending-${pendingInserts.length}`,
+        id: promotedRuleId,
         merchantId: rule.merchantId,
         kind: "EXACT",
         pattern: accountPattern,
       });
+      recordPromotion(
+        { id: promotedRuleId, merchantId: rule.merchantId },
+        rule,
+      );
       rulesAdded += 1;
+    } else {
+      // NO INSERT, BUT STILL THIS RULE'S PROMOTION. Control only reaches here
+      // when the existing holder carries the SAME merchant, because a
+      // different one took the conflict branch above. That existing rule is
+      // the source rule's naming already recorded in the account key space,
+      // which is precisely why the insert is unnecessary, so it belongs to
+      // the source rule's lineage exactly as an inserted one would. Leaving
+      // it out would make the exemption depend on whether the owner happened
+      // to have named the account group already.
+      //
+      // TWO SOURCES CAN LAND ON ONE HOLDER, and the last one written wins.
+      // Checked rather than left to chance: it happens when two descriptor
+      // rules of the SAME merchant promote onto one account pattern, so the
+      // holder expresses both namings and either attribution is true of it.
+      // The only consequence is for the exemption, where the source that is
+      // not recorded stops licensing its own dead rule's rows, and those rows
+      // are then REPORTED as changes rather than dismissed. That is the safe
+      // direction and it is the direction this predicate must fail in.
+      recordPromotion(collision, rule);
     }
     const matchedAfter = matchedBy(
       { id: rule.id, merchantId: rule.merchantId, kind: "EXACT", pattern: accountPattern },
@@ -488,6 +887,46 @@ export const rederiveMerchantRules = async (
     });
   }
 
+  // THE BEFORE-SET IS COMPUTED AFTER PASS ONE, and that ordering is the fix
+  // for finding CR3-M3P12-01 rather than a tidy-up. It reads each stored rule
+  // under the key it is actually written against (fix round two, finding
+  // HZ-M3P12-R2-03), so a migrated or half-migrated table produces the
+  // assignment set it really holds. What it must NOT do is credit a rule the
+  // deployed matcher can no longer apply: a pattern superseded by a
+  // namespaced rule of the same kind is dead in production, and counting it
+  // as a live assignment made the next ordinary re-naming report a LOST
+  // assignment for a row whose merchant the owner had themselves changed, and
+  // block the whole migration on it, permanently, since decision D-39 forbids
+  // deleting the dead row.
+  //
+  // THE EXCLUSION IS NARROWED TO THE ROWS THE CLAIMANT ACTUALLY REACHES, and
+  // it happens at the COMPARISON rather than by removing the source rule from
+  // the before-set (fix round four, HAZARD finding CR4-M3P12-01). Round three
+  // excluded the whole superseded rule, and that traded a false loss for a
+  // hidden one, witnessed by executing this routine against a constructed
+  // seed rather than by reading it.
+  //
+  // WHY THE WHOLESALE EXCLUSION WAS WRONG. The before-set reads a rule under
+  // the key it is written against, so an un-namespaced rule is read under the
+  // BASELINE key, and the baseline key is basis-agnostic: it is computed for
+  // every row whatever basis that row takes under the new scheme. A
+  // superseded rule therefore claims two kinds of row. The first is a
+  // DESCRIPTOR-basis row, which the namespaced claimant matches by
+  // construction, because the identity key of such a row is exactly the
+  // namespace plus its baseline key. The second is an ACCOUNT-basis row,
+  // which the claimant can NEVER match, because a descriptor-namespaced
+  // pattern cannot match an account-namespaced key (decision D-40), and which
+  // pass two's promotion covers only when every row routed to the rule
+  // carries the same trusted account. Excluding the whole rule dropped the
+  // second kind from BOTH sides of the superset test, so a row that the
+  // owner's naming used to cover and that nothing covers afterwards vanished
+  // with no loss, no count and no line in the report. That is the very shape
+  // criterion 12.7 exists to catch, and hazards H12.3 and H12.18 name it.
+  //
+  // SO THE BEFORE-SET IS WHOLE AGAIN and the artifact is filtered where it
+  // can be told apart from a real loss: below, at allLost.
+  const assignmentsBefore = assignmentSet(rows, before);
+
   // THE AFTER STATE IS THE WORKING COPY, not a re-read. Nothing has been
   // written yet, so there is nothing to read back; `working` IS the state
   // the pending writes would produce, and computing the superset test
@@ -497,23 +936,65 @@ export const rederiveMerchantRules = async (
   // 12.7). A rule left byte-identical survives as a row and, once the key
   // has changed under it, matches nothing: the row count is preserved while
   // the naming is dead, so counting rows would report that clean.
-  const allLost = [...assignmentsBefore.entries()]
-    .filter(
-      ([id, held]) => assignmentsAfter.get(id)?.merchantId !== held.merchantId,
-    )
-    .map(([id, held]) => ({ transactionId: id, ruleId: held.ruleId }));
-  // ACCEPTANCE IS PER RULE ID and clears exactly the ids it names. It
-  // PARTITIONS rather than filters (finding CR-M3P12-01): an accepted loss
-  // leaves the blocking decision and nothing else, so it is still printed,
-  // still counted and still named in the report.
-  const lostAssignments = allLost.filter((lost) => !accepted.has(lost.ruleId));
-  const acceptedLostAssignments = allLost.filter((lost) =>
-    accepted.has(lost.ruleId),
+  // THE THREE-WAY SPLIT criterion 12.7 prescribes, and the order of the tests
+  // below IS the criterion's order. A row whose merchant did not change is
+  // nothing. A change the lineage licenses is the admitted exception. A change
+  // that ends at the claimant's own merchant through a rule outside the
+  // lineage is the CLAIMANT-MERCHANT class, reported and not blocking. Every
+  // other change, including a row nothing covers afterwards, is a LOST
+  // assignment, reported and blocking.
+  //
+  // THE INVARIANT TO READ IT BY, in the criterion's own words: no run may
+  // leave a transaction carrying a merchant that is neither the one it carried
+  // before nor the one carried by the claimant of the rule it previously
+  // resolved through. Both admitted cases end at the claimant's own merchant;
+  // every departure is a loss whatever else is true of it.
+  const merchantOfRule = (ruleId: string): string | undefined =>
+    working.find((rule) => rule.id === ruleId)?.merchantId;
+  const allLost: LostAssignment[] = [];
+  const claimantMerchantReports: ClaimantMerchantReport[] = [];
+  for (const [id, held] of assignmentsBefore) {
+    const after = assignmentsAfter.get(id);
+    if (after?.merchantId === held.merchantId) {
+      continue;
+    }
+    const claimantOfHeld = supersededByClaimant.get(held.ruleId);
+    if (
+      claimantOfHeld !== undefined &&
+      after !== undefined &&
+      lineageRoot(after.ruleId) === claimantOfHeld
+    ) {
+      continue;
+    }
+    const claimantMerchant =
+      claimantOfHeld === undefined ? undefined : merchantOfRule(claimantOfHeld);
+    if (
+      after !== undefined &&
+      claimantMerchant !== undefined &&
+      after.merchantId === claimantMerchant
+    ) {
+      claimantMerchantReports.push({
+        transactionId: id,
+        heldByRuleId: held.ruleId,
+        nowHeldByRuleId: after.ruleId,
+      });
+      continue;
+    }
+    allLost.push({ transactionId: id, ruleId: held.ruleId });
+  }
+  // ACCEPTANCE IS BY THE PAIR, never by the rule (criterion 12.7). A rule can
+  // hold a real loss on one row and an ordinary claimant-merchant report on
+  // another, so clearing a rule clears rows nobody saw.
+  const acceptedLossPairs = new Set(
+    (input.acceptedLosses ?? []).map(
+      (loss) => `${loss.ruleId}\u0000${loss.transactionId}`,
+    ),
   );
+  const isAcceptedLoss = (lost: LostAssignment): boolean =>
+    acceptedLossPairs.has(`${lost.ruleId}\u0000${lost.transactionId}`);
+  const lostAssignments = allLost.filter((lost) => !isAcceptedLoss(lost));
+  const acceptedLostAssignments = allLost.filter(isAcceptedLoss);
 
-  // EXACTLY TWO BLOCKING CONDITIONS. Every other outcome, including a rule
-  // that could not be promoted, is printed, counted and exits 0: a rule
-  // left safely in place is not a reason to block a deploy.
   const exitCode =
     conflicts.length > 0 || lostAssignments.length > 0 ? 1 : 0;
 
@@ -526,17 +1007,11 @@ export const rederiveMerchantRules = async (
   // and decides. The recompute is inside the same gate, so a blocked run
   // never carries a lost assignment onto a transaction row.
   const applied = exitCode === 0 && input.dryRun !== true;
-  if (applied) {
-    for (const update of pendingUpdates) {
-      await deps.merchants.updateRulePattern(context, update);
-    }
-    for (const insert of pendingInserts) {
-      await deps.merchants.upsertRule(context, insert);
-    }
-    await deps.recompute(context);
-  }
 
-  return {
+  // ONE PLACE THAT SHAPES THE REPORT, so the value a recompute failure
+  // carries is the same value a clean run returns, with `applied` the only
+  // difference.
+  const buildReport = (didApply: boolean): RederiveReport => ({
     decisions,
     counts,
     rulesBefore: before.length,
@@ -546,15 +1021,61 @@ export const rederiveMerchantRules = async (
     rulesAdded,
     broadened,
     promotedOnOneRow,
+    alreadyHeldBySameMerchantTwin,
+    supersededByNamespacedRule,
+    supersededBy: [...supersededByClaimant].map(([ruleId, claimantRuleId]) => ({
+      ruleId,
+      claimantRuleId,
+    })),
+    promotedFrom: [...promotionSource].map(([ruleId, sourceRuleId]) => ({
+      ruleId,
+      sourceRuleId,
+    })),
     conflicts,
     acceptedConflicts,
     lostAssignments,
     acceptedLostAssignments,
+    claimantMerchantReports,
     assignmentsBefore: assignmentsBefore.size,
     assignmentsAfter: assignmentsAfter.size,
     exitCode,
-    applied,
-  };
+    applied: didApply,
+  });
+  if (applied) {
+    // ONE CALL, ONE TRANSACTION (fix round two, finding CR2-M3P12-03). The
+    // whole write set goes through a single port member the adapter runs
+    // inside a database transaction, so a rejection anywhere rolls back every
+    // write that preceded it. Before this, the updates and inserts were
+    // separate awaits with nothing around them, and a failure partway through
+    // left the table half migrated while the command's own contract told the
+    // operator that a non-zero exit meant nothing had happened.
+    //
+    // THE RECOMPUTE IS OUTSIDE IT, deliberately and not by omission. It
+    // writes transactions.merchantId, which is INTERPRETATION output rather
+    // than a declaration (pulse-domain section 2), it is idempotent, and it
+    // is the one step that is safe to re-run on its own. Holding a
+    // transaction open across the whole recompute would put a long write lock
+    // on the transactions table for no guarantee the recompute does not
+    // already give.
+    await deps.merchants.applyRuleWrites(context, {
+      updates: pendingUpdates,
+      inserts: pendingInserts,
+    });
+    // THE RECOMPUTE'S FAILURE IS A DIFFERENT EVENT FROM THE WRITE SET'S, and
+    // is thrown as one (fix round three, finding CR3-M3P12-02). Everything
+    // above this line is inside one transaction and rolls back together; by
+    // the time this runs, the rule writes are committed. The caller needs to
+    // know which side failed, because the two have opposite answers to what
+    // the table now holds, and it needs the report so it can say WHAT was
+    // written rather than only that something was.
+    try {
+      await deps.recompute(context);
+    } catch (cause) {
+      throw new RederiveRecomputeError(buildReport(true), cause);
+    }
+  }
+
+  return buildReport(applied);
 };
 
 // The DECISION REPORT, byte-comparable across runs (criterion 12.8). The

@@ -156,13 +156,53 @@ describe("CRITERION 12.19: the governing document says what the code does", () =
     );
   });
 
-  test("no sentence remains saying the key is the normalised counterparty string", () => {
-    // The exact sentence this phase replaced.
-    expect(skill).not.toMatch(
-      /Exact match on normalised counterparty string, from MerchantRule/,
-    );
-    expect(skill).not.toMatch(
-      /[Ee]xact match on the normalised counterparty string/,
-    );
+  // THE CLAIM, NOT TWO SPELLINGS OF IT (fix round five, CRITERIA finding
+  // CR5-M3P12-10). The two regexes this replaces pinned two exact wordings,
+  // and the phrase criterion 12.19 asks be gone still occurs once in the
+  // document, differing from both by a single word, inside a quotation of
+  // what the section USED TO say and immediately negated. That occurrence is
+  // correct and must stay; a REINTRODUCTION phrased the same way would also
+  // have passed. So the check is scoped to the merchant-resolution section
+  // and refuses the phrase anywhere it is not explicitly historical.
+  // THE QUALIFIER WAS THE DOOR (fix round eight, CRITERIA finding
+  // CR6-M3P12-05). Scoping to the section narrowed the hole; exempting any
+  // line carrying "used to" reopened it, because that is exactly how an R-087
+  // correction is written, so a reintroduction of the form "the key is the
+  // normalised counterparty string, as it used to be" passed. The exemption is
+  // gone. What replaces it is an identity rather than a shape: the phrase must
+  // occur EXACTLY ONCE in the section, and that one occurrence must be the
+  // known historical sentence, pinned by its full text. A reintroduction makes
+  // the count two whatever words it carries, and an edit to the historical
+  // sentence itself makes the pinned text stop matching, which is a change
+  // somebody should have to look at.
+  const HISTORICAL_SENTENCE =
+    'This is the whole point of the chain and it used to be wrong here: the first step said "exact match on normalised counterparty string", and for a transfer row that string is the whole description, communication and per-transaction reference included, so a naming matched the one row it was written from and never the next one.';
+
+  // AND THE COUNT IS OVER THE WHOLE DOCUMENT (fix round nine, CRITERIA
+  // finding CR7-M3P12-03). The section slice narrowed the hole a third time
+  // rather than closing it: criterion 12.19's second clause is about the FILE,
+  // "shows no remaining sentence saying the key is the normalised counterparty
+  // string", and a reintroduction one section away passed while the document
+  // carried two occurrences. The two sibling pins in this same block already
+  // read the whole document, so the narrow one was the odd member.
+  //
+  // THREE ASSERTIONS ON TEXT ALREADY READ, and together they are strictly
+  // stronger than the slice was: the phrase occurs exactly once in the
+  // DOCUMENT, that occurrence is inside the merchant-resolution section, and
+  // it is the known historical sentence pinned by its full text.
+  test("the forbidden phrase occurs EXACTLY ONCE in the WHOLE document, inside section 7, in the sentence that negates it", () => {
+    const section = skill.slice(skill.indexOf("## 7. Merchant resolution"));
+    const body = section.slice(0, section.indexOf("\n## ", 1));
+    // The section really was read, so nothing below can pass by having sliced
+    // the wrong text.
+    expect(body.length).toBeGreaterThan(500);
+
+    const documentOccurrences = skill.match(/normalised counterparty string/gi) ?? [];
+    expect(documentOccurrences).toHaveLength(1);
+
+    const sectionOccurrences = body.match(/normalised counterparty string/gi) ?? [];
+    expect(sectionOccurrences).toHaveLength(1);
+
+    expect(body).toContain(HISTORICAL_SENTENCE);
   });
 });
