@@ -181,12 +181,38 @@ export const listSpendGroups = (
 // level up, because POSIX [[:space:]] retains U+00A0, U+202F and U+FEFF
 // where the platform canonical form's \s strips them, so an NBSP-spaced
 // counterparty column joined to nothing exactly like the original
-// defect. The one class both corrections converge on is
-// ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS (src/platform/account-number.ts):
-// the POSIX class unioned with the remaining ECMAScript whitespace, as
-// visible ARE escapes, passed as a BIND parameter so no template-literal
-// escaping can eat it (the first correction's lesson, kept by
-// construction rather than by avoiding backslashes).
+// defect. THIRD correction (M3-P18 fix round two), superseded wording
+// quoted: "the POSIX class UNIONED WITH the remaining ECMAScript
+// whitespace". Keeping [[:space:]] inside the class left the mirror
+// locale-dependent and over-stripping under an ICU collation; the class
+// now enumerates code points and names no POSIX class at all. The one
+// class all three corrections converge on is
+// ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS (src/platform/account-number.ts),
+// passed as a BIND parameter so no template-literal escaping can eat it
+// (the first correction's lesson, kept by construction rather than by
+// avoiding backslashes).
+//
+// AND THE JOIN MATCHES AT MOST ONE ACCOUNT ROW PER TRANSACTION, which is
+// a correctness requirement rather than an optimisation (M3-P18 fix
+// round two, criteria finding CR2-M3P18-02 and hazard finding
+// CR-HAZ-P18-03). Superseded form: a plain LEFT JOIN against "accounts"
+// on the canonical equality. Where one household holds TWO account rows
+// sharing one canonical form, which is exactly the collision pair this
+// phase's migration deliberately PRESERVES, that join matched both rows,
+// and the GROUP BY on the number and the label then produced TWO groups
+// each carrying the FULL amount of every matching transaction. The month
+// view sums the groups (src/modules/overview/application/month-overview.ts),
+// so the reserves block read DOUBLE the money that moved, while
+// monthFigures below, which does not join, read it once and the
+// reconciliation banner still said the books close. Measured, not
+// reasoned: one household, one preserved pair, one RESERVE-flow row, two
+// groups, each the full amount. The LATERAL below returns AT MOST ONE
+// row, chosen deterministically by lowest account id, so one transaction
+// contributes its amount exactly once whatever the number of account
+// rows sharing a canonical form. Which of a pair's labels survives is
+// then arbitrary but stable; naming the pair to the household is the
+// parked merge's work, and scripts/detect-account-collisions.ts is what
+// names it to an operator today.
 export const listReserveMovements = async (
   context: HouseholdContext,
   period: Period,
@@ -206,10 +232,16 @@ export const listReserveMovements = async (
       SUM(t."amountCents")::bigint  AS "totalCents",
       COUNT(*)::bigint              AS "rowCount"
     FROM "transactions" t
-    LEFT JOIN "accounts" a
-      ON upper(regexp_replace(a."iban", ${ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS}, '', 'g'))
-         = upper(regexp_replace(t."counterpartyIban", ${ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS}, '', 'g'))
-     AND a."householdId" = t."householdId"
+    LEFT JOIN LATERAL (
+      SELECT m."label"
+      FROM "accounts" m
+      WHERE m."householdId" = t."householdId"
+        AND m."iban" IS NOT NULL
+        AND upper(regexp_replace(m."iban", ${ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS}, '', 'g'))
+            = upper(regexp_replace(t."counterpartyIban", ${ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS}, '', 'g'))
+      ORDER BY m."id" ASC
+      LIMIT 1
+    ) a ON TRUE
     WHERE t."householdId" = ${context.householdId}::uuid
       AND t."flow" = 'RESERVE'::"Flow"
       AND t."counterpartyIban" IS NOT NULL
