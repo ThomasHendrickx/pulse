@@ -17,6 +17,30 @@ const SEED_HOUSEHOLD_ID = "00000000-0000-4000-8000-000000000001";
 const SEED_USER_ID = "00000000-0000-4000-8000-000000000002";
 const SEED_CLOCK = fixedClock(new Date("2026-08-01T08:00:00.000Z"));
 
+// THE GATE-TARGET ASSERTIONS THAT STOOD HERE ARE WITHDRAWN, loudly (clause
+// R-087, decision D-62, criterion 12.23). This file called
+// assertGateDbTargetIsLocal at module scope ahead of `new PrismaClient()`
+// and assertGateApiTargetIsLocal ahead of `createClient` (M3-P12 fix round
+// eight, CRITERIA finding CR7-M3P12-01); both came from
+// src/platform/db/gate-target.ts, which left the tree with the target
+// interlock D-62 withdrew. What guards this file now is the interlock the
+// repository already has: this is the registered Prisma seed hook, it runs
+// inside db:reset and db:migrate, and both of those run guard-cli.ts FIRST,
+// which refuses unless DATABASE_URL and DIRECT_URL both name the local
+// stack. THE SUPABASE API DOOR IS NOT COVERED BY THAT GUARD and after this
+// withdrawal nothing refuses it here: guard-cli checks the two connection
+// strings and nothing else, so the service-role key and API URL travel
+// unchecked, exactly the state CR7-M3P12-01 found before the withdrawn
+// assertion was added. Criterion 12.23 confines itself to the routine and
+// the destructive database commands and says so; the settled posture for
+// every other non-production entry point is the question the plan's parked
+// surface carries (the assessNonProductionDbTarget entry), and this comment
+// exists so the next reader finds the open door stated rather than papered
+// over. The practical mitigation stands one step earlier: a db:reset whose
+// connection strings are pinned local is being run by an operator who has
+// pinned the environment, and the seed warns and skips when the service-role
+// key is absent.
+
 const prisma = new PrismaClient();
 
 const seedAuthUser = async (email: string, password: string): Promise<string | null> => {
@@ -29,6 +53,10 @@ const seedAuthUser = async (email: string, password: string): Promise<string | n
     return null;
   }
 
+  // A service-role key against a project API is a door to a database exactly
+  // as a connection string is, and this one CREATES A USER. The gate-target
+  // assertion that refused a non-local API here left with decision D-62; the
+  // withdrawal note at the top of this file states what that leaves open.
   const admin = createClient(url, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });

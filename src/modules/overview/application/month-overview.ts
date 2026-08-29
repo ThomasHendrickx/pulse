@@ -22,8 +22,10 @@ import {
   attachDeltas,
   deriveMonthFigures,
   foldGroups,
+  groupHeldRows,
   sumGroups,
   type GapRow,
+  type HeldAccountBlock,
   type MonthFigures,
   type OverviewGroup,
   type ReserveMovementGroup,
@@ -55,6 +57,10 @@ export type MonthOverview = {
     readonly groups: readonly ReserveMovementGroup[];
     readonly netCents: Cents;
   };
+  // The held rows of the viewed month, per savings account (M3-P18,
+  // DR-0030): shown under the account's typed label, marked held, and
+  // counted in no total. Rows only, never a sum (decision D-60).
+  readonly held: readonly HeldAccountBlock[];
   readonly figures: MonthFigures;
   readonly unmatchedLegs: readonly GapRow[];
   readonly unresolvedRows: readonly GapRow[];
@@ -84,18 +90,27 @@ export const getMonthOverview = async (
   const previous = previousMonth(month);
 
   const period = monthBounds(month);
-  const [incomeRows, spendRows, reserveGroups, rawFigures, gapRows, hasAnyData] =
-    await Promise.all([
-      deps.overview.listIncomeGroups(context, period),
-      deps.overview.listSpendGroups(context, period),
-      deps.overview.listReserveMovements(context, period),
-      deps.overview.monthFigures(context, period),
-      deps.overview.listGapRows(context, period),
-      deps.overview.hasAnyTransactions(context),
-    ]);
+  const [
+    incomeRows,
+    spendRows,
+    reserveGroups,
+    rawFigures,
+    gapRows,
+    heldRows,
+    hasAnyData,
+  ] = await Promise.all([
+    deps.overview.listIncomeGroups(context, period),
+    deps.overview.listSpendGroups(context, period),
+    deps.overview.listReserveMovements(context, period),
+    deps.overview.monthFigures(context, period),
+    deps.overview.listGapRows(context, period),
+    deps.overview.listHeldRows(context, period),
+    deps.overview.hasAnyTransactions(context),
+  ]);
 
   const foldOptions = {
     identity: deps.counterpartyIdentity,
+    isBareKey: deps.isBareIdentityKey,
     normalise: deps.normaliseCounterparty,
   };
   let incomeGroups = foldGroups(incomeRows, { ...foldOptions, useTags: false });
@@ -161,6 +176,7 @@ export const getMonthOverview = async (
         reserveGroups.reduce((total, group) => total + group.parkedCents, 0),
       ),
     },
+    held: groupHeldRows(heldRows),
     figures,
     unmatchedLegs: gapRows.filter((row) => row.gap === "unmatched-internal"),
     unresolvedRows: gapRows.filter((row) => row.gap === "unresolved"),

@@ -52,6 +52,7 @@ export type {
 export type {
   MerchantReview,
   ReviewGroup,
+  ReviewGroupRow,
   CountedRow,
 } from "../domain/merchant-review";
 export type {
@@ -87,7 +88,7 @@ const liveRepository: MerchantRepositoryPort = {
   findMerchantByName: repository.findMerchantByName,
   createMerchant: repository.createMerchant,
   upsertRule: repository.upsertRule,
-  updateRulePattern: repository.updateRulePattern,
+  applyRuleWrites: repository.applyRuleWrites,
   findTagByName: repository.findTagByName,
   createTag: repository.createTag,
   setMerchantTag: repository.setMerchantTag,
@@ -102,11 +103,13 @@ const liveRepository: MerchantRepositoryPort = {
 export const merchantRepository: MerchantRepositoryPort = liveRepository;
 
 export {
+  RederiveRecomputeError,
   rederiveMerchantRules,
   formatDecisionReport,
 } from "./rederive-rules";
 export type {
   RederiveReport,
+  RederiveDependencies,
   RuleDecision,
   RuleCounts,
 } from "./rederive-rules";
