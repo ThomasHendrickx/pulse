@@ -105,6 +105,7 @@ export default async function ImportDetailPage({
       specJson={JSON.stringify(spec, null, 2)}
       previewRows={previewRows}
       landingLabel={landingAccount?.label}
+      carriesOwnAccount={fileIban !== undefined}
       parseFailed={!parsed.ok}
       status={status}
     />

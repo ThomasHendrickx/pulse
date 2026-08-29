@@ -1,0 +1,502 @@
+# Round ONE adversarial plan review of the M3-P18 plan iteration: head
+# e8021ff on claude/m0-p6-plan-accounts, reviewer worktree
+# wt-m3p18-review, branch claude/m3-p18-plan-review. Round one of at most
+# two under CLAUDE.md rule 10; every finding below is written to be
+# fixable in one round.
+#
+# THE CALL, STATED FIRST: NOT DISPATCHABLE AS IT STANDS. FIX-ROUND-NEEDED,
+# with two high findings, three medium and three low. Both high findings
+# are about the same underlying property read from two directions: the
+# phase's most load-bearing assertions are assigned to gates that cannot
+# execute them, so an implementation exists that satisfies every criterion
+# as written while the deployed behaviour the criterion names is wrong.
+# Nothing here re-opens DR-0030 or DR-0031, and nothing here asks for the
+# parked ring correction to be built; the parking is correct under rule 9
+# and is checked below as parking, not re-argued.
+#
+# WHY THIS IS A FINDING SET AND NOT A VERDICT DOCUMENT. The same
+# structural reason as every round of the M0-P6 lane, recorded in
+# delivery/review/m0-p6-plan-review-round5.yaml: --type verdict validates
+# a review of an IMPLEMENTED phase against a work history and requires
+# concrete-fix, a fix to CODE. M3-P18 is not built. The finding schema is
+# the plan-review schema and requires concrete-edit, an edit to the PLAN,
+# which is what every finding below carries. Validation command and exit
+# are recorded in the commit that lands this file.
+#
+# ==========================================================================
+# WHAT WAS EXAMINED, WITH THE EMPTY CASES SAID IN THEIR OWN WORDS.
+#
+# THE 18.1 REMOVAL SWEEP, RUN RATHER THAN TRUSTED. Against the merged head
+# (the worktree contains origin/main dc18484 whole; merge-base equals
+# main's tip):
+#
+#   $ grep -rn "account-in-savings-ring" src/ test/ messages/
+#   src/modules/import/ui/actions.ts:109 and :110        (routing)
+#   src/modules/import/ui/status-keys.ts:16              (whitelist)
+#   src/modules/import/ui/import-status-line.tsx:16      (SETUP_LINKED)
+#   src/modules/import/application/confirm-import.ts:32  (union)
+#   src/modules/import/application/confirm-import.ts:121 (refusal arm)
+#
+# plus the message key importAccountInSavingsRing at messages/en.json:166,
+# messages/nl.json:166, messages/fr.json:166, and the shipped Playwright
+# test asserting the refusal at test/e2e/accounts.spec.ts:446 through
+# :475. Criterion 18.1 (plan :10105) enumerates the union, the routing,
+# the whitelist and the three catalogues, four of the six. The two it does
+# not name are finding R1-M3P18-01.
+#
+# THE 18.3 LINE PINS, RUN RATHER THAN TRUSTED. The dispatch asked whether
+# the criterion pins every absent-flow read at line references that exist
+# on the merged head. It does, exactly:
+#
+#   $ grep -in "is null" src/modules/overview/adapters/overview-repository.ts
+#   256  COUNT(*) FILTER (WHERE t."flow" IS NULL)  (the uninterpreted count)
+#   306  CASE WHEN t."flow" IS NULL                (listGapRows' label)
+#   321  t."flow" IS NULL                          (listGapRows' WHERE)
+#
+# Three occurrences in TWO reads, which is precisely what the plan says at
+# :10028 and in criterion 18.3 at :10192, with :256, :306 and :321 all
+# correct on this head. A sweep of the rest of src/ for the criterion's
+# other two arms found no COALESCE or CASE over flow against a sentinel
+# and no Prisma-client absent-flow spelling anywhere: the nearest
+# neighbours are interpret-window.ts:164 and reconciliation.ts:62, both
+# in-memory TypeScript, and merchant-repository.ts:325, an in-list that
+# carries no null. The enumeration in 18.3 is complete on this head and I
+# could not construct a fourth read it misses. WHERE THE CRITERION STILL
+# BREAKS is not the enumeration but the test level its behavioural arms
+# are assigned to, which is finding R1-M3P18-02.
+#
+# THE RECONCILIATION IDENTITY, WALKED. The dispatch asked which side of
+# the identity held rows sit on and whether a criterion measures it. The
+# answer from the code: NEITHER SIDE, by two independent mechanisms. In
+# the domain, reconcile at src/modules/ledger/domain/reconciliation.ts:62
+# through :67 skips any transaction outside the interpreted set, and a
+# savings account's rows never enter the window
+# (interpret-window.ts:37 builds it from pot account ids alone). In the
+# SQL, every named sum and changeInPot itself filter on the flow column
+# (overview-repository.ts:242 through :257; changeInPot is SUM FILTER
+# WHERE flow IS NOT NULL), so a row whose flow is NULL contributes to no
+# figure. The plan says this at step 3 (:9997) and in D-55, and criterion
+# 18.2's assertion FIVE measures it over the real stack: income, spend,
+# net to reserves, changeInPot, difference, uninterpreted count and row
+# count byte identical to the captured baseline after a savings statement
+# lands, with the verdict still reading as books closing. I attempted to
+# construct an implementation that satisfies FIVE while moving the
+# identity and could not: any route by which a held row reaches a total
+# passes through a flow stamp or an unscoped sum, and either moves one of
+# the seven pinned figures or turns the verdict. That criterion is
+# well-formed, PROVIDED the savings statement in that test actually lands
+# on the seeded household, which needs the harness to carry savings-ring
+# accounts it currently does not enumerate: finding R1-M3P18-04.
+#
+# THE 18.5 CLAIM AGAINST THE MERGED CODE. Verified exact:
+# register-accounts.ts:46 through :53 builds its known set from stored
+# strings as they are (account.iban verbatim at :48) while the typed rows
+# were canonicalised at account-registration.ts:125, so a canonical typed
+# number against a non-canonical stored one passes the check, and the
+# index at prisma/schema/accounts.prisma:28 compares stored strings too.
+# The claimed hole exists at the cited lines. The typed-half application
+# test is genuinely specifiable at the fast gate, because the check under
+# test is TypeScript over the accounts port. The migration-half test is
+# not, which is part of finding R1-M3P18-02.
+#
+# THE ROOT-CAUSE CITATIONS, ALL RE-READ AT THE HEAD. confirm-import.ts:27
+# through :32 (union), :115 (account-not-registered), :121 (savings arm);
+# account-repository.ts:34 through :47 (canonical writes) and :107
+# through :117 (canonical probe against stored column, canonicalisation
+# at :114); parse-statement.ts:114 through :124 (verbatim cell);
+# ledger-transaction.ts:70 through :80; classify-flow.ts:74;
+# interpret-window.ts:37; month-view.tsx:366; month-overview.ts:169;
+# month-projection.ts:286; import.prisma:135; accounts.prisma:15 and :28;
+# account-number.ts:57; overview-repository.ts:161 region (the mirror
+# rule comment runs :160 through :176) and :180 through :219 (reserves
+# read). Every one is accurate on this head. No finding.
+#
+# THE INPUT REPORT'S FINDINGS, ACCOUNTED. The input is
+# delivery/review/m3-p14-plan-review-round4.yaml, eighteen findings.
+# Ridden into M3-P18 as work, named in grounding, steps and criteria:
+# P14-001, P14-006, P17-004, P17-006, P17-007, P17-009. Parked beside the
+# ring correction with the parked entry naming all four: P17-001,
+# P17-002, P17-003, P17-005. The remaining eight (P14-002 through
+# P14-005, P14-007 through P14-009, P17-008) were each sampled and each
+# targets lane text that did not survive the harvest: the lane's old
+# criteria 14.5, 14.6, 14.8, 14.12 in their pre-DR-0031 form and the old
+# 17.x set, none of which exists in the merged plan, whose built M3-P14
+# shipped nine criteria through its own review rounds. None is silently
+# dropped while still owning a live subject. No finding.
+#
+# DANGLING REFERENCES. Grep over the whole plan for the lane's old
+# criteria 14.10 through 14.12, 15.x and old 17.x as normative text: every
+# match sits inside the plan-header round narrative (comment lines :630
+# through :700), which is history and reads as history. The 17.1 through
+# 17.4 at :9756 onward belong to the in-flight deployed-build-stamp phase,
+# not the lane. M3-P18's own references to 14.1, 14.3, 14.5, 14.8 resolve
+# against the built M3-P14's criteria 14.1 through 14.9 at :8876 through
+# :9036. The built criterion 14.5 still demands the refusal 18.1 removes,
+# and that interaction is recorded exactly where the contract puts it, in
+# 18.1's own text and in conflicts-with (:10419), not as a retro-edit of
+# the built phase; examined and correct. The review document the phase
+# cites exists on this branch with every finding id it names. The branch
+# name claude/m3-p18-savings-held-and-migration collides with nothing. No
+# finding, except the factual staleness items below (R1-M3P18-06) and the
+# D-62 collision (R1-M3P18-08).
+#
+# D-51, CHECKED BYTE-IDENTICAL AND THEN READ. md5 over the D-51 block on
+# main and on this head agree. Byte-identity was the iteration's stated
+# intent and it is met; what byte-identity preserves is a sentence whose
+# premise the same iteration reverses, which is finding R1-M3P18-05, an
+# annotation and not a reversal.
+#
+# THE PARKED RING CORRECTION, CHECKED AS PARKING. The parked entry
+# attributes the falsified-premise argument as the lane's inference,
+# states it decides nothing by sitting there, names the owner record that
+# would be needed, and carries the four engineering findings so they are
+# not re-derived. That is rule 9 done correctly and no finding asks to
+# move it.
+#
+# SCOPE DISCIPLINE. The phase adds one port method, one MonthOverview
+# field, one rendered block, one data migration, one seed harness. No
+# queue, cron, event bus, cache, state library, component library,
+# per-transaction override, goal or budget feature. Nothing to report.
+#
+# HOUSE RULES. git diff origin/main..e8021ff over the plan: zero em
+# dashes added. English throughout. No account-shaped identifier appears
+# anywhere in this document; no amount, counterparty or date from any
+# real row appears anywhere in it.
+kind: finding
+verdict: FIX-ROUND-NEEDED
+produced-by: claude (Fable 5, claude-fable-5)
+findings:
+  - id: R1-M3P18-01
+    severity: medium
+    evidence:
+      - >-
+        The full sweep for the refusal reason on the merged head returns SIX
+        consumers: the union (confirm-import.ts:27 through :32), the arm
+        (confirm-import.ts:121), the routing (actions.ts:109 through :110),
+        the whitelist (status-keys.ts:16), the SETUP_LINKED set at
+        src/modules/import/ui/import-status-line.tsx:14 through :17, and the
+        shipped Playwright test asserting the refusal at
+        test/e2e/accounts.spec.ts:446 through :475.
+      - >-
+        Criterion 18.1 (plan :10105) greps four of them: union, routing,
+        whitelist, three catalogues. Step 3 (:9997) enumerates the same
+        four. import-status-line.tsx appears nowhere in the phase, including
+        files-to-touch (:10080 through :10103), which lists actions.ts and
+        status-keys.ts but not import-status-line.tsx.
+      - >-
+        The e2e refusal test is implied dead by 18.1's acceptance arm ("a
+        tree in which a savings statement is refused for its ring fails this
+        criterion") but is never named as removed or rewritten, and
+        files-to-touch's test/e2e/accounts.spec.ts entry does not say why
+        that file is touched.
+    analysis: >-
+      The criterion's own theory is that a dead reason left wired is how a
+      refusal comes back, and its instrument is an enumeration presented as
+      complete. The enumeration is not complete. The SETUP_LINKED member
+      happens to be caught by tsc today, because removing the key from
+      IMPORT_STATUS_KEYS narrows KnownImportStatus and the literal in the
+      Set generic stops compiling; but the criterion does not get to lean on
+      an accident it never states, and a later refactor of the set to plain
+      strings removes the accident while the criterion stays green. The
+      refusal test is the exact "tree in which a savings statement is
+      refused" the criterion fails, sitting in the tree the implementer
+      starts from; naming it costs one clause and saves the implementer
+      rediscovering why the e2e gate is red.
+    concrete-edit: >-
+      In step 3 and criterion 18.1, extend the enumeration with two entries:
+      "the SETUP_LINKED membership at
+      src/modules/import/ui/import-status-line.tsx:14 through :17" and "the
+      Playwright test shipped by criterion 14.5 that asserts the refusal
+      (test/e2e/accounts.spec.ts:446 through :475), which this phase
+      REWRITES into the acceptance test 18.1 specifies rather than deletes,
+      so the three-arm structure of the gate keeps its coverage". Add
+      src/modules/import/ui/import-status-line.tsx to files-to-touch.
+  - id: R1-M3P18-02
+    severity: high
+    evidence:
+      - >-
+        The fast gate is in-process by design: vitest.config.ts's header
+        reads "The fast gate: unit, schema and property tests. In-process,
+        no network, no browser." Application tests run over in-memory fakes
+        of the ports (test/application/month-overview.test.ts:24 through
+        :27: "The month overview use case over an in-memory fake of the
+        repository port"; test/application/fake-import-world.ts:1). No test
+        under test/domain, test/application, test/db or test/schema opens a
+        database connection.
+      - >-
+        Criterion 18.3 (:10192) assigns to "an application test" the
+        row-class assertion (a null-flow row on a SPENDING account counted
+        and listed and holding the verdict open, a null-flow row on a
+        SAVINGS account in neither) and to "the test" a sweep that "calls
+        EVERY method src/modules/overview/application/ports.ts publishes".
+        Over a fake port both assert the fake. The ring scoping under test
+        lives in SQL at overview-repository.ts:256, :306 and :321.
+      - >-
+        The construction that satisfies 18.3 as written and is still wrong:
+        scope the FAKE's count and listing by ring, scope the real SQL COUNT
+        at :256, leave the listing WHERE at :321 unscoped. The grep arms
+        pass (both reads still carry their occurrences), the application
+        tests pass (they see the fake), and every e2e arm passes, because
+        the cause block is gated on the scoped count (month-view.tsx:366),
+        so the unscoped listing's savings rows are returned by the
+        repository and rendered nowhere. That is verbatim the defect D-56
+        calls worse than scoping neither, and no assertion in the phase can
+        see it.
+      - >-
+        Criterion 18.4 (:10239) arm ONE assigns to "a unit test" the
+        assertion that "the migration's own expression and
+        canonicalAccountNumber produce identical results over every
+        rendering the seed harness writes". Executing the migration's SQL
+        expression requires Postgres; a fast-gate unit test can only satisfy
+        this by reimplementing the SQL in TypeScript, and a reimplementation
+        agreeing with the platform function says nothing about the committed
+        migration.sql, which is the exact lesson the criterion itself cites
+        from overview-repository.ts:160 through :176.
+      - >-
+        Criterion 18.4 arm FOUR ("asserted by an application-level test over
+        both populations") and criterion 18.5's migration half (:10288, "an
+        application-level test asserts the backfill of criterion 18.4
+        COMPLETES, leaves both rows of the pair byte identical") both test
+        Postgres behaviour: idempotency of SQL statements and the firing or
+        non-firing of the unique index at accounts.prisma:28. A fake carries
+        no index; an in-process test cannot run the statements.
+      - >-
+        The tree already holds the precedent for the right level:
+        test/e2e/merchant-rule-write.spec.ts:2 and :75 through :87
+        constructs a PrismaClient inside a Playwright spec and asserts
+        database state directly, under the slow gate against the local
+        Docker stack. The seed harness is itself placed at
+        test/e2e/seed-pre-phase-household.ts (:9979) and "writes Account
+        rows directly", which only a database-connected test can use, while
+        step 2 says "every test and capture in this phase" constructs
+        through it.
+    analysis: >-
+      One property, five instances: the phase's database-behaviour
+      assertions are assigned to gate levels that run on fakes or in
+      process, so each can be greened without the SQL it exists to measure
+      ever executing. The most dangerous instance is the unscoped gap
+      listing, because it is invisible from the page by the plan's own
+      argument. This is fixable in one round because it is a re-levelling,
+      not a redesign: every assertion is right, only the word naming where
+      it runs is wrong.
+    concrete-edit: >-
+      Re-level the database-behaviour assertions to the slow gate and name
+      the mechanism, citing the precedent: in criterion 18.3, replace "an
+      application test" and the port-sweep's implicit level with "a spec
+      under test/e2e that constructs a PrismaClient directly (the
+      test/e2e/merchant-rule-write.spec.ts:75 pattern), seeds through the
+      harness, and calls the REAL repository methods", and add one
+      assertion that listGapRows itself returns no savings-account row over
+      the seeded household, stated as the only witness that can see an
+      unscoped listing because the cause block is gated on the count. In
+      criterion 18.4, replace arm ONE's "unit test" with "a slow-gate test
+      that executes the committed migration.sql's expression via the direct
+      client against the local stack and compares its result to
+      canonicalAccountNumber over every harness rendering", and arm FOUR's
+      "application-level test" likewise. In criterion 18.5, replace the
+      migration half's "application-level test" the same way. In step 2,
+      replace "every test and capture in this phase" with "every
+      database-connected test and capture in this phase", and state that
+      fast-gate tests over fakes do not construct households through the
+      harness. Leave at the fast gate what is genuinely in-process: the
+      grep arms, the typed-half duplicate check over the accounts fakes,
+      and the domain folds.
+  - id: R1-M3P18-03
+    severity: high
+    evidence:
+      - >-
+        Step 5 (:10039) requires the migration to detect a colliding pair,
+        leave it, and "name the pair in its output by row id and nothing
+        else"; criterion 18.5 repeats "names the pair in its output by row
+        id". No sentence in the phase names what "its output" is or who
+        reads it.
+      - >-
+        The migration's application path to the deployed database is npx
+        prisma migrate deploy (recorded across work histories, for example
+        delivery/work-history/m3-p3.yaml and m3-p12.yaml; the build script
+        runs prisma generate only). The migrations note forbids the one
+        durable channel: "no new column, no new table, no enum change".
+      - >-
+        The tree contains no client that can capture a Postgres NOTICE or
+        WARNING: package.json's dependencies carry @prisma/client and no pg
+        driver, and the Prisma raw API returns rows only. So the
+        criterion's test, which "executes the migration's statements over" a
+        seeded household, cannot assert on the naming either, and "names
+        the pair in its output" is satisfiable only by a hand-read of the
+        migration source, which asserts nothing.
+      - >-
+        The state the naming exists for is the one the phase says it cannot
+        rule out: whether the deployed rows carry such a pair "cannot be
+        read from this tree (report-code-disagreement, verified false)"
+        (step 1, :9956 region). After the migration, the pair household's
+        statement is still refused account-not-registered (stored rows left
+        non-canonical, probe canonical at account-repository.ts:114), and
+        the setup retype is refused by 18.5's canonical duplicate check.
+        Both refusals are correct and named, but the operator signal that a
+        manual merge is owed exists only in "output" nothing captures.
+    analysis: >-
+      The plan's own ground for leaving the pair untouched is "refusing to
+      guess is what it carries", and refusing to guess only works if the
+      refusal is heard. As specified, the naming lands in a channel that
+      does not exist: migrate deploy surfaces nothing the plan points at, a
+      table is forbidden, and no driver in the tree can catch a notice. An
+      implementer can satisfy the criterion with a notice nobody will ever
+      see, every test green, and the one deployed household the phase
+      exists for stays locked out silently if it holds a pair. The fix is
+      not to carry the merge, which DR-0031's small-migration cut excludes;
+      it is to make the detection re-runnable after the fact, which the
+      pair's left-as-is property already guarantees is possible.
+    concrete-edit: >-
+      Replace "names the pair in its output by row id and nothing else" in
+      step 5 and criterion 18.5 with: "leaves the pair DETECTABLE: a
+      committed read-only script under scripts/ (the
+      rederive-merchant-rules.ts precedent), runnable against any target
+      the db guard admits, lists every household's rows whose stored number
+      is not its canonical form, paired by shared canonical form, by row id
+      and nothing else, and the slow-gate test over the seeded pair
+      household asserts the script's output names exactly the pair's two
+      row ids and no account number. The migration itself stays silent; the
+      phase work history records that the post-deploy check for the parked
+      merge is one run of this script." Add the script to files-to-touch.
+  - id: R1-M3P18-04
+    severity: medium
+    evidence:
+      - >-
+        Step 2 (:9979) enumerates the seeded population: a non-canonical
+        spaced rendering, a validity-failing number, a CARD with no number,
+        ingested Transaction rows, and the two-ring collision pair for
+        18.5. No savings-ring account with a canonical stored number is in
+        the enumeration.
+      - >-
+        Criterion 18.1's acceptance arm uploads "a statement whose own
+        account is registered in the SAVINGS ring", and criterion 18.2's
+        fixture is a savings account's own statement carrying "a TRANSFER
+        TO ANOTHER of the household's own savings accounts", so the seeded
+        household needs at least TWO savings-ring accounts whose canonical
+        stored numbers match the fixture, or the upload is refused
+        account-not-registered before anything 18.2 asserts is reachable.
+      - >-
+        Step 1 captures "the full MonthFigures of the seeded household,
+        which the nothing-moves arms of criteria 18.2 and 18.4 assert
+        against by hand", and step 2's own ground (P17-006, quoted at
+        :9981) is that the seeded shape is what the guarantees are
+        measured against.
+    analysis: >-
+      The harness is the phase's single construction of the pre-phase
+      world, and its enumerated shape is missing the two accounts the
+      phase's first two criteria upload against. An implementer will
+      discover this on the first red run and add them somewhere; the
+      somewhere is exactly the inline drift P17-006 exists to forbid, and
+      the step-1 baseline is captured before the discovery. One sentence
+      closes it.
+    concrete-edit: >-
+      Add to step 2's enumeration: "and at least TWO accounts registered
+      in the SAVINGS ring with canonical stored numbers, the pair of
+      savings accounts criterion 18.2's fixture statement is written
+      against, so the acceptance uploads of criteria 18.1 and 18.2 land on
+      the seeded household and the step-1 MonthFigures baseline is
+      captured over a household that already holds them."
+  - id: R1-M3P18-05
+    severity: medium
+    evidence:
+      - >-
+        D-51 (plan :11528, byte-identical to main, md5-verified) grounds
+        its cheap-correction case on: "it has no statement of its own,
+        because savings statements are not imported (decision D-55)".
+      - >-
+        D-55 as rewritten by this iteration (:11615) states the reverse:
+        "PULSE ACCEPTS A SAVINGS ACCOUNT'S OWN STATEMENT IN v1 AND HOLDS
+        ITS ROWS UNCOUNTED". A reader following D-51's citation lands on a
+        decision that contradicts the sentence citing it.
+      - >-
+        The parked entry already carries the consequence correctly, as the
+        lane's inference awaiting an owner record: a savings account
+        mis-marked as spending acquires imported rows the moment its
+        statement lands.
+    analysis: >-
+      Not a request to reopen anything: DR-0031's freeze stands and the
+      parking is correct. The defect is purely that this iteration rewrote
+      D-55 and left D-51 citing the old D-55 as ground, so the plan now
+      asserts a premise and its reversal in two decisions ninety lines
+      apart. CLAUDE.md routes the next toucher of the ring-freeze code
+      through this text; the false premise reads as "the refused case
+      cannot carry rows", which is exactly what DR-0030 changed. An
+      annotation preserves the rule and repairs the citation.
+    concrete-edit: >-
+      Append one sentence to D-51's statement: "PREMISE CORRECTED WITHOUT
+      REOPENING (this sentence added when DR-0030 rewrote D-55): a savings
+      account now can have a statement of its own, so the no-rows window
+      this decision relies on can close at the first import; the freeze
+      itself is DR-0031's chosen option and stands, and the consequence for
+      a mis-ringed account is recorded as the lane's inference in the
+      parked list, awaiting an owner record."
+  - id: R1-M3P18-06
+    severity: low
+    evidence:
+      - >-
+        delivery/decisions/DR-0030.yaml carries date 2026-08-27 and
+        "Decided by the owner in session on 2026-08-27"; the phase
+        grounding and D-55 both say 2026-08-27.
+      - >-
+        Two plan sites say the owner decided DR-0030 on 2026-08-24: the
+        header narrative at :616 ("The owner decided on 2026-08-24") and
+        D-54 at :11605 ("THE OWNER ANSWERED IT ON 2026-08-24 AS DR-0030").
+        Both predate this iteration on main, and this iteration re-pinned
+        the surrounding text without correcting them.
+    analysis: >-
+      A wrong date on an owner record's citation is small until someone
+      audits which decision preceded which; DR-0030 against DR-0031
+      ordering is load-bearing for the parked entry's provenance story.
+      The record is the authority and the plan should match it.
+    concrete-edit: >-
+      At :616 and :11605 replace 2026-08-24 with 2026-08-27, matching
+      delivery/decisions/DR-0030.yaml. The other 2026-08-24 occurrences in
+      the plan name the M3-P9 amendment and are correct; touch only the
+      two DR-0030 sites.
+  - id: R1-M3P18-07
+    severity: low
+    evidence:
+      - >-
+        files-to-touch (:10090) lists "prisma/migrations/ (the canonical
+        backfill)". That directory does not exist: package.json pins the
+        prisma schema to prisma/schema, and every existing migration lives
+        under prisma/schema/migrations/ (six directories plus
+        migration_lock.toml).
+    analysis: >-
+      A wrong path in files-to-touch is cheap for the implementer to
+      discover and expensive for the conflict registry, which reasons over
+      declared paths; a phase declaring a directory no other phase can
+      collide with defeats the conflicts-with check for the one file class
+      this phase writes that others might.
+    concrete-edit: >-
+      Replace the files-to-touch entry with "prisma/schema/migrations/
+      (the canonical backfill)".
+  - id: R1-M3P18-08
+    severity: low
+    evidence:
+      - >-
+        This iteration adds decision id D-62 at :11804 (the split at the
+        population). The in-flight lane claude/m0-p14-plan-descope-port
+        also adds a D-62 (the deployed-target widening leaving M3-P12), at
+        its plan :11307, with seventeen references to the id across its
+        text.
+      - >-
+        This plan references its D-62 twice, at :686 (header narrative)
+        and :11804 (the decision itself), so renumbering here is two
+        sites; no criterion or phase text hard-codes it. Nothing in either
+        plan records that the id is claimed twice, and both additions sit
+        at the tail of the same decisions list in the same file, so the
+        second merge conflicts textually and the resolver has no
+        instruction.
+    analysis: >-
+      The text passes the renumberability test: nothing here dangles on a
+      renumber. What is missing is the one sentence that tells the person
+      resolving the inevitable same-region conflict that keeping both ids
+      is the wrong resolution and which lane renumbers.
+    concrete-edit: >-
+      Append to the harvest-round header entry (the :681 through :700
+      block): "The id D-62 is concurrently claimed by the descope lane on
+      claude/m0-p14-plan-descope-port for an unrelated decision; whichever
+      lane merges second renumbers its own decision to the next free id,
+      and this lane's references are exactly two, the sentence above and
+      the decision entry itself."

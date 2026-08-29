@@ -383,7 +383,7 @@ describe("amount parsing never leaves integer cents (both decimal styles)", () =
   const cases: readonly (readonly ["comma" | "dot", string, number])[] = [
     ["comma", "1.234,56", 123456],
     ["comma", "-38.152,75", -3815275],
-    ["comma", "+42.000,00", 4200000],
+    ["comma", "+37.512,00", 3751200],
     ["comma", "12,5", 1250],
     ["comma", "850,00", 85000],
     ["dot", "1234.56", 123456],

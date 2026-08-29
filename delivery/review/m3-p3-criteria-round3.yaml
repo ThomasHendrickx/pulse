@@ -1,0 +1,378 @@
+kind: verdict
+phase: M3-P3
+verdict: APPROVE
+#
+# DELTA CRITERIA REVIEW, FIX ROUND 3. Head reviewed: 91a3abf on
+# claude/m3-p3-pdf-kbc. Heads reviewed by this lane before it: a7a16b1
+# (FIX-ROUND-NEEDED) and cf4738e (APPROVE). This round answers the hazard
+# lane, not this one; the delta is 29 files.
+#
+# DR-0003: Claude-family verdict. DR-0012 condition 1 is discharged under
+# the same-family varied-lenses allowance; the pair must differ in
+# review-contract (this one is criteria) and framing (criteria-contract).
+produced-by: claude
+framing: criteria-contract
+review-contract: criteria
+
+# NO DATA IN THIS DOCUMENT. Warnings 11 and 12: the repository is PUBLIC.
+# No amount, no counterparty, no place name, no country name, no account
+# or card number, no data row, and the real uploads are never named, not
+# even by their prefixes, since even those encode a document reference.
+# They are called document A (the card statement) and document B (the
+# current account) throughout.
+
+# BEACON LOG
+# t0: worktree reused, fetched, checked out 91a3abf, tree clean,
+#     npx prisma generate ok. Node v22.12.0 for npm work.
+#
+# t1: GATES, all run by me at 91a3abf.
+#     npm run typecheck    -> EXIT=0  tsc --noEmit, no diagnostics
+#     npm run lint         -> EXIT=0  eslint ., no output
+#     npm test             -> EXIT=0  Test Files 32 passed (32)
+#                                     Tests 420 passed (420), 0 skipped
+#     npm run gate:privacy -> EXIT=0  "gate:privacy clean"
+#     npx prisma migrate deploy -> EXIT=0, 6 migrations found, nothing
+#       pending (a sibling worktree shares the local stack), so the column
+#       was verified directly against information_schema: integer,
+#       nullable.
+#     npm run test:e2e     -> port 3000 was held by another agent and the
+#       run refused it loudly, which is the config's stated intent. Both
+#       webServer ports moved for the run only -> EXIT=0, 22 passed
+#       (3.9m). playwright.config.ts restored from a copy; git diff
+#       --quiet confirms the committed file is byte-identical.
+#
+# t2: THE FOUR EXPOSURES NAMED IN THE DISPATCH, each measured.
+#   (a) SETTLEMENT ARITHMETIC. Read from the committed PDFs through the
+#       shipped extractor and template, no values reprinted here:
+#         refund fixture: three quantities distinct; NEW fallback equals
+#           the stored figure; OLD fallback does not; settlement positive
+#         credit fixture: three quantities distinct; NEW fallback equals
+#           the stored figure; OLD fallback does not; settlement NEGATIVE,
+#           which is the state fix round 3 added
+#         the original fixture: the three quantities are still ONE value
+#       So the new fallback agrees with the stored figure on EVERY fixture
+#       in the tree. That is finding CR3-M3P3-01.
+#   (b) IDENTITY, both directions re-demonstrated at this head through
+#       upload and confirm:
+#         reverse, one card across two different statements: first asked a
+#           declaration, second asked NOTHING, one account, all rows in it
+#         forward, three genuinely different cards: all three asked, three
+#           accounts, rows 9 / 9 / 4, no absorption, and all three imports
+#           carry a stored settlement figure
+#         normalised identity carries no separator and no lower-case glyph
+#   (c) RE-PARSE AND FACTS. Ingested a card statement, then ran the
+#       profile-fix re-parse over its own profile: re-parse ok, the figure
+#       is still present and unchanged, and all rows survive. The write is
+#       inside the same transaction as the rows
+#       (import-repository.ts:296) and entries are pushed only after a
+#       successful re-parse (fix-profile.ts:246), so a failed parse cannot
+#       clear a figure it should have kept.
+#   (d) VERSION BUMP. Registered version is 2
+#       (kbc-mastercard-template.ts:400); a stored version-1 declaration
+#       for this template now fails closed with template-version-mismatch,
+#       measured. The only remaining version-1 literals in the tree name
+#       the OTHER template, whose version is genuinely still 1. My
+#       CR2-M3P3-01 is closed.
+#
+# t3: RED WITNESSES, executed by me at this head, each reverted with git
+#     diff --quiet clean afterwards. Selection: four KBC test files, 40
+#     tests.
+#       A row drop                     -> 14 failed | 26 passed
+#       B FX continuation not folded   ->  1 failed | 39 passed
+#       C bookingDate := settlement    ->  1 failed | 39 passed
+#       D balance gate disabled        ->  2 failed | 38 passed
+#       E dedup ordinal frozen         ->  1 failed | 39 passed
+#       G identity normaliser made to fold digits as well as typography
+#                                      ->  5 failed | 35 passed
+#       F stored figure ignored, everything falls back
+#                                      ->  1 failed | 37 passed of 38, and
+#         over the WHOLE fast gate 1 failed | 419 passed of 420. The one
+#         test is in the round-3 file. See CR3-M3P3-01.
+#
+# t4: THE GATE FIX, verified by construction rather than read. A card that
+#     IS on the allow list, written with hyphens and lower-case mask
+#     glyphs, in a tracked file:
+#       against the script at this head        -> EXIT=0
+#       against the script at cf4738e          -> EXIT=1
+#     and an UNLISTED card at this head        -> EXIT=1, naming the file.
+#     The allow list's promise now holds and the check still bites.
+
+findings:
+  - id: CR3-M3P3-01
+    severity: low
+    evidence:
+      - "The settlement fallback changed from the sum of debit magnitudes to the net of line items excluding the settlement credit (src/modules/ledger/domain/ledger-transaction.ts line 157, predicate at line 130). Measured through the shipped parser over all three committed card fixtures, the new fallback returns EXACTLY the stored figure on every one of them, where the old fallback differed on two."
+      - "Consequence for the witnesses, measured: with the stored figure ignored so that everything falls back, the whole fast gate reports 1 failed and 419 passed of 420, and the single failure is in test/domain/kbc-fix-round-3.test.ts line 137. Criterion 3.3's own witnesses, including the one at test/application/kbc-fix-round-2.test.ts line 142 that I used as this lane's red witness in round 2, now stay GREEN when the stored figure is ignored."
+      - "The two are equal exactly when the settlement credit cancels the previous balance, which every fixture in the tree satisfies. They diverge on an underpaid or disputed statement, which is the case this lane constructed by hand in round 2 to judge the migration, and which no committed fixture reproduces."
+      - "This is a witness-coverage observation, not a behaviour defect: the behaviour is right, the stored figure does win, and one test binds it."
+    concrete-fix: "Give the fixture family one statement whose settlement credit does NOT cancel its previous balance, so the stored figure and the net-of-line-items fallback disagree in a committed fixture rather than only in a hand-built unit case. That restores to criterion 3.3's own witnesses the discrimination the refund fixture was created to give them, and it removes the single point of failure at test/domain/kbc-fix-round-3.test.ts line 137. The shipped behaviour at risk if that one test is ever weakened or deleted: a card import silently settling on a derived number again, which is the defect the whole settlement-total change exists to close."
+
+  - id: CR3-M3P3-02
+    severity: low
+    evidence:
+      - "test/fixtures/allowed-identifiers.txt line 10 promises that spaces and dashes are ignored when matching. The script at scripts/gate-privacy.sh line 74 now also folds letter case and folds both lower-case and asterisk mask glyphs to one form, which is MORE normalisation than the header describes."
+      - "That is the same class of promise-versus-behaviour gap this round just closed, running in the opposite direction: a reader listing an identifier still cannot predict from the header alone which written forms will match."
+      - "The header's first sentence, that the gate fails on any such shape anywhere in the tree, is also slightly wider than the script: scripts/gate-privacy.sh line 78 skips image, font and lockfile paths, and the allow list itself."
+      - "Neither overstatement can cause a false pass on a text file; both cause a reader to trust a green gate for a slightly different reason than the one that made it green."
+    concrete-fix: "Extend the sentence at test/fixtures/allowed-identifiers.txt line 10 to say that spaces, dashes, letter case and the mask-glyph character are all ignored, and that binary and lockfile paths are not scanned. One line, and it makes the file's own contract match the script that enforces it."
+
+  - id: CR3-M3P3-03
+    severity: low
+    evidence:
+      - "The allow-list entry added this round states that the new card was probed against every real statement in the container and returned zero hits in its masked form, its six-digit head and its four-digit tail."
+      - "Re-measured by me: masked form zero, head zero, and the tail returns zero STANDALONE four-digit occurrences but four SUBSTRING occurrences in document B, all four inside a longer alphanumeric mandate reference. The two cards listed before this round return zero even as substrings."
+      - "Under a token-boundary reading the claim is true; under the plain substring reading a reader would apply, it is not. The distinction is not written down, and the entry says zero hits in all three forms without qualification."
+      - "No information is disclosed by the coincidence: four digits buried inside an unrelated reference identify nothing, and a four-digit tail collides somewhere in a digit-rich document by chance."
+    concrete-fix: "Add the four words that make the claim exact in test/fixtures/allowed-identifiers.txt, saying the probe was for standalone occurrences, and say the tail does appear as an incidental digit substring inside an unrelated reference. The value should not be changed. Recorded because an allow-list provenance note is the one place in this repository where an unqualified measurement claim is load-bearing."
+
+  - id: CR-M3P3-08
+    severity: low
+    evidence:
+      - "CARRIED FORWARD FOR THE THIRD TIME, still open, verified present at this head rather than assumed: delivery/intake/pulse-v0.2-pdf-addendum.md line 79 quotes a continuation line from document A verbatim, including its original-currency figure. My sweep at 91a3abf returns it; I did not edit it."
+      - "It remains with the owner. The implementer is forbidden by dispatch to touch that directory and declared the restraint rather than acting; nothing in this round changed it."
+      - "It is outside criterion 3.5 half (a)'s four named categories, so the criterion exits 1 with it present. That is why 3.5 is met and this is still open at the same time."
+      - "Warning 12 and DR-0024 keep the repository public, so the line is world-readable and history retains it after any later correction."
+    concrete-fix: "Owner action. Replace the quoted figure and currency at delivery/intake/pulse-v0.2-pdf-addendum.md line 79 with an invented pair, since the sentence teaches a line shape and loses nothing, and decide separately whether history needs the purge this phase's own earlier leak received. Recorded again so that a third approval does not discharge it."
+
+  - id: CR3-M3P3-04
+    severity: low
+    evidence:
+      - "CARRIED FORWARD, owner-owned, not a regression. The round figure recorded as deviation DEV-M3P3-05 is still in the tree at this head, in the fixture generator and in committed fixtures; my sweep returns it. The disposition is unchanged from round 2: measured, judged a probable coincidence, every location listed, escalated rather than replaced."
+      - "The new open question the round left deliberately unclosed, that a reissued card cannot continue on its existing account, is a direct consequence of making the masked card number the account identity: a reissue prints a different number, so the same household account cannot be continued. This lane verified the mechanism that causes it, that two different numbers give two identities and two declarations, and it is real."
+      - "Neither is a defect introduced by this round; both are decisions the owner has been asked to make."
+    concrete-fix: "For the round figure, either accept the coincidence reading on the record or replace it in the locations already listed; the change is mechanical. For the reissued card, the smallest honest answer is to let a declaration bind a second identity to an EXISTING account rather than always creating a new one, which is a phase of its own and should not be smuggled into this one. Recorded so that approval does not read as a decision on either."
+
+criteria:
+  - id: "3.1"
+    quote: >-
+      npm test exits 0 including new tests asserting, against the
+      synthetic KBC fixture: the expected row count with FX
+      continuation lines contributing zero rows and appearing verbatim
+      in their row's rawLine; the DOMICILIERING credit present as a row
+      with positive cents; the space-thousands Afrekening amount parsed
+      to its expected integer cents; the month-straddling row's stored
+      bookingDate equal to its TRANSACTION date, not its settlement
+      date, so spend lands in the month it happened
+      (pulse-v0.2-pdf-addendum.md:76, finding PR2-004); and the
+      balance identity gate passing this fixture and failing a
+      non-reconciling KBC variant with "balance-mismatch" and zero
+      rows written.
+    evidence:
+      - "npm test at 91a3abf exits 0: Test Files 32 passed (32), Tests 420 passed (420), 0 skipped."
+      - "Row count, and continuation lines contributing none: test/domain/kbc-pdf-template.test.ts line 68 for the count, line 75 for no description being a continuation label, and the full ordered description-list comparison immediately after, which is what makes a silent drop impossible rather than unlikely."
+      - "Continuation lines verbatim in rawLine: test/domain/kbc-pdf-template.test.ts line 89 builds the expected joined value and line 96 compares each row to it."
+      - "The credit as a row with positive cents: test/domain/kbc-pdf-template.test.ts line 109. Space-thousands figures to integer cents: line 141 for the row in that form. Month-straddling bookingDate is the transaction date: line 154."
+      - "Balance identity failing with balance-mismatch: test/domain/kbc-pdf-template.test.ts line 188; zero rows written on the same variant: test/application/kbc-settlement.test.ts line 149."
+      - "FACTS ARE NOT DESTROYED BY A RE-PARSE, which is the new exposure this criterion has. Executed by me: a card statement ingested, then the profile-fix re-parse run over its own profile. Re-parse succeeded, the stored figure was still present and unchanged, and every row survived. The write is inside the same transaction as the rows (src/modules/import/adapters/import-repository.ts line 296), and an import is added to the re-parse batch only after its own parse succeeded (src/modules/import/application/fix-profile.ts line 246), so a failed parse cannot clear a figure. Absent clearing the column is correct rather than lossy: a figure that outlived the reading which produced it would be the defect."
+      - "RED HALVES EXECUTED BY ME AT THIS HEAD, each reverted: dropping the last parsed row reddened 14 of 40; removing the continuation fold reddened 1; setting bookingDate to the settlement date reddened 1; disabling the balance gate reddened 2."
+    met: true
+
+  - id: "3.2"
+    quote: >-
+      npm test exits 0 including the duplicate-pair test through the
+      PDF path: both identical rows survive the first import, and
+      re-importing the same fixture adds zero and reports all known,
+      with both rows still present.
+    evidence:
+      - "npm test EXIT=0 at 91a3abf, 420 tests. The witness is at test/application/kbc-settlement.test.ts line 98, which this round did not touch."
+      - "Both identical rows survive: test/application/kbc-settlement.test.ts line 106; re-import adds zero at line 124; both rows still present after re-import at line 132."
+      - "RED HALF EXECUTED BY ME: freezing the occurrence ordinal at src/modules/import/domain/dedup.ts line 98 reddened this witness, 1 of 40; reverted, tree clean."
+      - "STILL BINDING AFTER THE IDENTITY CHANGE, which is where this criterion was exposed: identity is now normalised at capture, so the dedup scope is per NORMALISED card. Executed by me, both directions. One card printed across two different statements resolves to one account with the second upload asking nothing, so re-import still recognises rather than duplicates. Three genuinely different cards resolve to three accounts with rows 9, 9 and 4 and no absorption, so the widened scope did not collapse."
+    met: true
+
+  - id: "3.3"
+    quote: >-
+      npm test exits 0 including an application-level test importing
+      the KBC fixture and the companion Belfius fixture into one
+      household with declared accounts, asserting the account-side
+      settlement debit is INTERNAL and linked to the KBC import, the
+      DOMICILIERING credit is INTERNAL, and removing the KBC import
+      from the scenario leaves the settlement debit SPEND against the
+      card issuer.
+    evidence:
+      - "The four assertions the criterion names all exist and pass at this head: the linked INTERNAL debit at test/application/kbc-settlement.test.ts line 168, the mirror credit INTERNAL at line 176, the link bound to the card import, and the removal arm leaving SPEND at line 212 with no link."
+      - "THE ARITHMETIC CHANGED UNDER THEM AND THEY STILL BIND WHAT THEY NAME. Read by me from the committed PDFs through the shipped parser: on the refund fixture the previous-balance magnitude, the debit-row sum and the settlement figure remain three DISTINCT quantities, and on the new credit fixture they are three distinct quantities too, with the settlement figure NEGATIVE, which is the state this round added. The original fixture is still the degenerate one, its three quantities a single value, which is why it can no longer be the only fixture behind this criterion and no longer is."
+      - "THE NEW FIXTURE DOES NOT MAKE ANY ASSERTION TRUE FOR A NEW WRONG REASON, checked directly: the credit fixture is a THIRD card, not either of the two the identity witnesses use, so it cannot satisfy an identity assertion by accident; and its settlement figure being non-positive means it matches no direct debit at all, which the round asserts explicitly rather than leaving to the sign."
+      - "The stored figure still wins over the derivation: test/domain/kbc-fix-round-3.test.ts line 137. The delimited card path with no stored figure settles correctly on the new net arithmetic: test/application/kbc-fix-round-2.test.ts line 264. The re-parsed figure is rebuilt: line 292."
+      - "WHAT I FOUND WHILE CHECKING THIS, recorded as finding CR3-M3P3-01 rather than as a failure: the new fallback equals the stored figure on every fixture in the tree, so criterion 3.3's own witnesses no longer redden when the stored figure is ignored. Executed: with the stored figure ignored the whole fast gate reports 1 failed of 420, and that one test is in the round-3 file, not in this criterion's witnesses. The criterion asks for four classification and linkage assertions and they hold; it never asked where the total came from, which is why this is a coverage finding and not a not-met."
+    met: true
+
+  - id: "3.4"
+    quote: >-
+      npm run test:e2e exits 0 with the import journey extended:
+      uploading both fixture PDFs, the month view for the fixture month
+      renders the reconciliation panel with data-state "ok".
+    evidence:
+      - "npm run test:e2e at 91a3abf: EXIT=0, 22 passed in 3.9m, against the local Docker stack with all five env values pinned local per warning 6, after prisma migrate deploy and a direct check that the settlement column exists."
+      - "The named journey is at test/e2e/import.spec.ts line 170 and passed in that run; the reconciliation assertion the criterion names is at line 233."
+      - "Ports: 3000 was held by another agent and the run refused to reuse it, which is the config's own stated intent. Both webServer ports were moved for the run only; playwright.config.ts was restored from a copy and git diff --quiet confirms the committed file is byte-identical."
+    met: true
+
+  - id: "3.5"
+    quote: >-
+      Privacy gate, both halves executed with a probe list read from
+      the real PDFs in the container uploads at review time and never
+      committed (finding PR2-008): (a) git grep across the whole
+      worktree for the real KBC statement's card number fragments,
+      customer reference, statement number and each merchant string
+      from it exits 1; (b) over the files this phase adds or modifies
+      (git diff --name-only against the phase base), the same grep
+      extended to all five promised categories (identifiers, names,
+      merchant strings, thousands-form amounts and dates from the
+      real statement) exits 1. If the real PDFs are absent from the
+      executing container, this criterion is recorded as
+      not-witnessed in the work history and the review escalates for
+      a container that has them, never marked green by vacuity.
+    evidence:
+      - "NOT VACUOUS: both documents are present and were read at review time, extracted with the repository's own pinned library into the session scratchpad. Nothing derived is committed; git status at the end shows only this verdict and the node_modules symlink as untracked."
+      - "METHOD, STATED PRECISELY because three lanes have now produced three numbers. Alphabetic tokens of four characters or more, whole-word, CASE-FOLDED, taken from both documents and from every tracked text file (279 files, excluding lockfile, image and font paths), then intersected. Distinct folded tokens: 125 in document A, 139 in document B, 8852 in the tree. RAW COINCIDENCES: 101, of which 20 occur in both documents."
+      - "CLASSIFICATION of the 101 by inspection: bank and card layout vocabulary in Dutch, ordinary English and Dutch words, and technology names that arrive from the Supabase configuration template and from repository URLs. Every merchant-name-shaped coincidence was located and resolved to an innocent origin: a CSS property, a loop variable, a repository URL, an OAuth provider list in a vendor config file, and the phrase used to describe a mask in review prose. NO MERCHANT DESCRIPTOR FROM EITHER DOCUMENT IS IN THE TREE."
+      - "GEOGRAPHY, which is the part in dispute: three city tokens and one country name coincide. One city token occurs in BOTH documents and is the bank's own registered-address city, printed in the legal footer of every statement of these products; it identifies the bank and not the household. The other two are one per document, and at this head each appears in exactly ONE tracked file, the merchant normaliser's code-owned city vocabulary, and in no fixture at all. The country name appears in a skill document, in a sentence about which file encoding is common in that country. So the tree carries no place token in transaction content."
+      - "Holder-name tokens: the surname occurs in three CSV fixtures and one work-history note, the forename in the charter. Both are the repository owner's own name, which is already the repository's GitHub organisation name, so they self-identify by design rather than leak a third party."
+      - "Half (a) and half (b): the card statement's card-number fragments, customer reference, statement number and merchant strings return no hit in the tree, and the same probes over the files this phase changed return none, so both halves exit 1."
+      - "THE THREE LISTED FIXTURE CARDS were re-probed against both documents in masked form, six-digit head and four-digit tail: all zero except one tail, which occurs only as an incidental digit substring inside an unrelated reference and never as a standalone token. That is finding CR3-M3P3-03."
+      - "MY OWN ROUND-2 NUMBER WAS WRONG AND I SAY SO HERE RATHER THAN IN PROSE ELSEWHERE. Round 2 reported exactly two coinciding place tokens, one per document. Replaying that exact code at this head reproduces 2; running the SAME basis case-folded gives 5, missing 3, because the vocabulary list it probed is upper-case while the documents print those tokens in mixed case in the legal footer. The bank's registered-address city was the token it could not see, and it is the one that occurs in BOTH documents, so round 2's phrase one per document was wrong as well. That is a measurement error by this lane, not a counting convention. The counting convention is a separate and smaller question, and the answer this lane now gives is that the bank's own registered-address city SHOULD be counted in the raw number and then discounted with its reason stated, which is what the round did."
+    met: true
+
+  - id: "3.6"
+    quote: >-
+      npm run typecheck && npm run lint && npm test exit 0 and npm run
+      test:e2e exits 0 at the phase head.
+    evidence:
+      - "All executed by me at 91a3abf: npm run typecheck EXIT=0 with no diagnostics; npm run lint EXIT=0 with no output; npm test EXIT=0 with Test Files 32 passed (32) and Tests 420 passed (420), 0 skipped; npm run test:e2e EXIT=0 with 22 passed in 3.9m."
+      - "The current gate line at CLAUDE.md line 41 carries a fourth command this criterion predates: npm run gate:privacy EXIT=0, printing gate:privacy clean, with the repaired matching rule in force."
+      - "The migration was applied and the column verified present, integer and nullable, by querying information_schema rather than trusting the migrate output, which reported nothing pending because a sibling worktree shares the local stack."
+    met: true
+
+deviations-judged:
+  - deviation: >-
+      M3-P3 "migrations: none, template and fixtures only."
+      (delivery/plan/pulse-v02.yaml, phase M3-P3).
+    serves-plan-intent: true
+    reasoning: >-
+      Judged in round 2 on an executed construction and unchanged by
+      this round: I built a fully paid and an underpaid card document
+      and showe d the storage-free derivations wrong on the underpaid
+      one, so storin g the printed figure is the only correct source.
+      The migration is st ill one nullable column, written once with the
+      rows and never update d. Fix round 3 amends the JUSTIFICATION
+      rather than the change, whic h is deviation 8, and my judgement of
+      the change itself stands.
+  - deviation: >-
+      M3-P3 files-to-touch: src/modules/import/domain/, test/fixtures/,
+      test/domain/, test/application/, test/e2e/import.spec.ts; extras
+      []. Reinforced by decision D-19, which describes M3-P3 as changing
+      no UI file.
+    serves-plan-intent: true
+    reasoning: >-
+      Unchanged and still proportionate. Each extra path is owed by a
+      find ing rather than chosen, and I re-checked the claim that most
+      could q uietly collide with the mobile rebuild: no stylesheet and
+      no overvie w surface appears in this round's delta either.
+  - deviation: >-
+      Fix-round dispatch: "Do not touch anything under
+      delivery/intake/."
+    serves-plan-intent: true
+    reasoning: >-
+      Correct restraint, verified rather than accepted: the real
+      continuat ion line is still present at
+      delivery/intake/pulse-v0.2-pdf-addendum .md line 79 and I left it
+      alone. It is finding CR-M3P3-08 and it sta ys open with the owner.
+      Escalating an owner-authored document under a dispatch that
+      forbids editing it is the only defensible move.
+  - deviation: >-
+      CLAUDE.md non-negotiable 8 and fleet warning 12: nothing from a
+      real statement is committed, in any form, and the repository is
+      public.
+    serves-plan-intent: true
+    reasoning: >-
+      Judged sound in round 2 and re-verified here: the non-round figure
+      o ccurs in a real document and returns no hit anywhere in the tree
+      at this head. Reaching into files this phase does not own to
+      remove it was right, and the honest limit, that head is clean and
+      history is n ot, is still recorded.
+  - deviation: >-
+      Same clause as DEV-M3P3-04, recorded separately because the
+      decision went the other way.
+    serves-plan-intent: true
+    reasoning: >-
+      The asymmetry with the previous deviation remains defensible on
+      info rmation content: a round figure of few significant digits
+      carries al most none. What makes it acceptable rather than merely
+      comfortable i s unchanged, that the gate entry was corrected from
+      a clean count to a count with one failure, the judgement is
+      written where the count used to hide it, every location is listed,
+      and the decision is hande d to the owner. Carried in this verdict
+      as finding CR3-M3P3-04 so ap proval does not read as a decision on
+      it.
+  - deviation: >-
+      Same clause again, for a class no gate and neither review lane
+      reached.
+    serves-plan-intent: true
+    reasoning: >-
+      Still the most valuable unprompted work in the sequence, and this
+      ro und is where it paid: the sweep is what found the place and
+      chain na mes that deviation 10 removes. My round-2 judgement
+      accepted its cou nt of two coinciding place tokens, and that count
+      came from THIS lan e and was wrong; see criterion 3.5. The class
+      the sweep targets is t he right one and the instinct to run it
+      unprompted is right.
+  - deviation: >-
+      Fix-round dispatch: work every finding in both verdicts.
+    serves-plan-intent: true
+    reasoning: >-
+      Answering findings by argument is legitimate where the argument is
+      c heckable, and I checked both again. Correcting a sibling lane's
+      meas urement in the artifact, rather than complying with a claim
+      that ove rstated it, is the behaviour R-087 asks for in the
+      direction that is usually missing.
+  - deviation: >-
+      DEV-M3P3-01 as fix round 2 wrote it: the settlement figure is
+      stored because deriving it is unsafe.
+    serves-plan-intent: true
+    reasoning: >-
+      NEW THIS ROUND, and it is a correction of the reasoning I endorsed
+      r ather than of the code, which is the harder thing to do and the
+      righ t one. My round-2 judgement rejected derivation-from-balances
+      on evi dence I built, and then let the phrase every storage-free
+      alternativ e stand without noticing that the pre-existing fallback
+      was a DIFFER ENT derivation nobody had re-examined. The
+      distinction the round dra ws is correct: netting the line items is
+      what the printed figure is, while deriving from the balances is
+      only true when the settlement c redit cancels the previous
+      balance. I re-measured it: the new fallba ck returns the printed
+      figure exactly on every card fixture in the t ree, and the old one
+      did not on two of the three. The residue the ro und states, that
+      no derivation from rows alone recovers the printed figure on an
+      underpaid previous statement, is precisely what I demon strated in
+      round 2 and is the reason the printed figure is stored. S erves
+      the plan's intent, and it makes my round-2 judgement more accu
+      rate rather than less.
+  - deviation: >-
+      Fix round 3 dispatch: give the confirmation flow a way to bind a
+      card file to an account that already exists.
+    serves-plan-intent: true
+    reasoning: >-
+      NOT DONE, and correctly not done. The gap is real and I verified
+      its mechanism rather than reading about it: two different card
+      numbers give two identities and two declarations, so a card
+      reissued with a new number cannot continue on its existing
+      account. Leaving it open as a named question, on the coordinator's
+      own narrowing of the findi ng, is better than smuggling a
+      confirmation-flow change into a phase whose contract already
+      carries two file-list deviations. Carried in this verdict as part
+      of finding CR3-M3P3-04 so an approval does not read as closing it.
+  - deviation: >-
+      M3-P3 files-to-touch, again: fix round 3 touches three more paths
+      outside it.
+    serves-plan-intent: true
+    reasoning: >-
+      NEW THIS ROUND, and verified by construction rather than accepted.
+      T hree tracked files outside this phase were edited to remove
+      place an d chain tokens measured present in a real document. I
+      diffed all thr ee and probed every token the diff introduced
+      against both documents : three distinct new tokens, NONE present
+      in either document, and th ree tokens removed that WERE present.
+      The replacements are clean and the removals were real. The same
+      reasoning as deviation 4 applies a nd applies more strongly now
+      that the repository is public by decisi on.

@@ -1,5 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { join } from "node:path";
+import {
+  FIXTURE_ACCOUNT_A,
+  FIXTURE_ACCOUNT_B,
+  registerAccounts,
+} from "./setup-accounts";
 
 // THE GOLDEN JOURNEY (criterion 4.1, pulse-v1-architecture.md:243: written
 // FIRST, before the view exists; it is the strongest spec artifact in the
@@ -29,7 +34,7 @@ import { join } from "node:path";
 //           -850,00 MASTERCARD AFREKENING NUMMER 51 (INTERNAL, settles
 //                   the card statement below; card line items are the
 //                   only counted spend)
-// gj-pot-b.csv (account B, IBAN BE20539007547099, same profile 1):
+// gj-pot-b.csv (account B, IBAN BE59539007547099, same profile 1):
 //   August: +300,00 from A (INTERNAL, the other transfer leg)
 //           -20,00 Bakkerij Centrum (SPEND)
 // gj-card.csv (card account, profile 2):
@@ -51,11 +56,15 @@ import { join } from "node:path";
 
 const FIXTURES = join(__dirname, "..", "fixtures");
 
+// M3-P14: the two current accounts are registered at SETUP, before any
+// statement is imported, so only the CARD is still declared at first sight
+// here, and it is declared without a ring (a card is a pot account by
+// definition, decision D-48).
 const uploadAndDeclare = async (
   page: Page,
   file: string,
   declaration:
-    | { readonly profileName: string; readonly label: string; readonly bank: string }
+    | { readonly profileName: string; readonly label?: string; readonly bank?: string }
     | undefined,
   expectedAdded: string,
 ): Promise<void> => {
@@ -67,9 +76,12 @@ const uploadAndDeclare = async (
   ).toBeVisible();
   if (declaration !== undefined) {
     await page.getByLabel("Format name").fill(declaration.profileName);
-    await page.getByLabel("Label").fill(declaration.label);
-    await page.getByLabel("Bank").fill(declaration.bank);
-    await page.getByLabel("Ring").selectOption("POT");
+    if (declaration.label !== undefined) {
+      await page.getByLabel("Label").fill(declaration.label);
+    }
+    if (declaration.bank !== undefined) {
+      await page.getByLabel("Bank").fill(declaration.bank);
+    }
   }
   await page.getByTestId("confirm-import").click();
   await expect(page.getByTestId("import-result")).toBeVisible();
@@ -90,31 +102,55 @@ test("golden journey: three files, two profiles, one month view whose books clos
   await page.getByRole("button", { name: "Create household" }).click();
   await expect(page.getByTestId("household-context")).toHaveText(unique);
 
-  // File 1: the current account (profile 1), declared at first sight.
+  // SETUP: both current accounts at once, before any statement is
+  // imported (M3-P14). The card is deliberately NOT entered here.
+  await registerAccounts(page, [
+    {
+      label: "Daily account",
+      bank: "Demobank",
+      accountNumber: FIXTURE_ACCOUNT_A,
+      ring: "POT",
+    },
+    {
+      label: "Second account",
+      bank: "Demobank",
+      accountNumber: FIXTURE_ACCOUNT_B,
+      ring: "POT",
+    },
+  ]);
+
+  // File 1: the current account (profile 1), landing in the account the
+  // household registered.
   await uploadAndDeclare(
     page,
     "gj-current.csv",
-    { profileName: "Demobank current account", label: "Daily account", bank: "Demobank" },
+    { profileName: "Demobank current account" },
     "8",
   );
 
-  // File 2: the second pot account, same profile, new account. It carries
-  // the OTHER leg of the 300,00 transfer, which heals A's unmatched leg.
+  // File 2: the second pot account, same profile, registered at setup. It
+  // carries the OTHER leg of the 300,00 transfer, which heals A's unmatched
+  // leg.
+  //
+  // NO QUESTIONS ARE ASKED (M3-P14). Before this phase the account was
+  // unknown until its own file introduced it, so this upload stopped at the
+  // confirmation screen to declare it. Now the account is registered and
+  // the profile is spec-identical to file 1's, so the upload resolves both
+  // and ingests straight through, which is the whole point of asking once
+  // at setup.
   await page.goto("/import");
   await page
     .getByLabel("Bank export file")
     .setInputFiles(join(FIXTURES, "gj-pot-b.csv"));
   await page.getByRole("button", { name: "Upload" }).click();
+  await expect(page.getByTestId("import-result")).toBeVisible();
+  await expect(page.getByTestId("landing-account")).toContainText(
+    "Second account",
+  );
+  await expect(page.getByTestId("rows-added")).toHaveText("2");
   await expect(
     page.getByRole("heading", { name: "Confirm the detected format" }),
-  ).toBeVisible();
-  await page.getByLabel("Format name").fill("Demobank current account");
-  await page.getByLabel("Label").fill("Second account");
-  await page.getByLabel("Bank").fill("Demobank");
-  await page.getByLabel("Ring").selectOption("POT");
-  await page.getByTestId("confirm-import").click();
-  await expect(page.getByTestId("import-result")).toBeVisible();
-  await expect(page.getByTestId("rows-added")).toHaveText("2");
+  ).toHaveCount(0);
 
   // File 3: the card (profile 2: no counterparty-account column, no
   // sequence numbers, line items plus the settlement mirror row).
