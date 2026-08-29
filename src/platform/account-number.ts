@@ -48,6 +48,15 @@
 //   src/modules/overview/adapters/overview-repository.ts  the reserves join
 //   src/modules/import/application/confirm-import.ts the registered lookup
 //   src/modules/accounts/adapters/account-repository.ts  the stored form
+//   src/modules/accounts/application/register-accounts.ts  the typed
+//       duplicate check (M3-P18: known set over canonical forms)
+//
+// AND THE SQL MIRRORS, which cannot import this function and must agree
+// with it by test rather than by reading (each is pinned by a spec):
+//   src/modules/overview/adapters/overview-repository.ts  the reserves join
+//   prisma/schema/migrations/20260827120000_canonical_account_iban_backfill
+//       the canonical backfill of stored declarations (M3-P18)
+//   scripts/detect-account-collisions.ts  the collision grouping (M3-P18)
 //
 // A new consumer joins that list rather than growing a second copy.
 
@@ -56,6 +65,34 @@
 // never match a second row), no truncation, no repair.
 export const canonicalAccountNumber = (value: string): string =>
   value.replace(/\s/g, "").toUpperCase();
+
+// THE ONE SQL WHITESPACE CLASS THE MIRRORS STRIP, NOT BARE [[:space:]].
+// Corrected in the M3-P18 fix round under HAZARD finding HZ-M3P18-01 and
+// stated loudly (clause R-087): the sibling note above used to let the
+// mirrors stand on the POSIX class alone, and the delivered mirror tests
+// exercised ASCII renderings only, over which [[:space:]] and
+// JavaScript's \s happen to agree. Witnessed live on Postgres 16.13
+// (C.utf8): POSIX [[:space:]] does NOT match U+00A0, U+202F or U+FEFF,
+// all of which \s strips, and U+00A0 is the single byte 0xA0 in
+// Windows-1252, the encoding common for Belgian exports, so the
+// divergence sat exactly on the population the backfill exists for (a
+// stored NBSP-spaced rendering stayed at its SQL fixed point, the
+// canonical lookup still missed it, and the canonical duplicate check
+// refused the retype: a full lockout).
+//
+// The class below unions the POSIX class with every remaining member of
+// ECMAScript's WhiteSpace and LineTerminator productions (the definition
+// of \s): U+00A0, U+1680, U+2000..U+200A, U+2028, U+2029, U+202F,
+// U+205F, U+3000, U+FEFF. It deliberately does NOT include U+200B, which
+// \s does not match. Written as VISIBLE Postgres ARE escapes, never raw
+// characters, so the source shows what it strips; consumers pass it as a
+// bind parameter or splice it into SQL text, and the migration, which
+// cannot import anything, inlines the same class with a pin in
+// test/domain/canonical-backfill.test.ts asserting byte equality. The
+// same test derives the \s set by sweeping EVERY Unicode code point and
+// asserts this class enumerates exactly that set.
+export const ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS =
+  "[[:space:]\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]";
 
 // THE PINNED COUNTRY-LENGTH TABLE. Source: the ISO 13616 IBAN Registry
 // published by SWIFT as the registration authority, which assigns each
@@ -166,6 +203,53 @@ export const accountNumberProblem = (
     return { kind: "checksum-failed" };
   }
   return undefined;
+};
+
+// THE WHITESPACE CLASS THIS MODULE REMOVES, PUBLISHED SO A SECOND CONSUMER
+// REUSES IT RATHER THAN WRITING A THIRD ANSWER (M3-P13 fix round, finding
+// HZ-M3P13-01). canonicalAccountNumber strips /\s/, which includes the three
+// no-break spaces; the display masker in src/platform/ui/mask-account-number.ts
+// had its own separator rule that accepted the ASCII space alone, so the tree
+// held two different answers to what separates an account number and the
+// masker FAILED OPEN on the difference. It now asks this predicate. Anything
+// else that needs the question answered asks here too.
+export const isAccountNumberWhitespace = (character: string): boolean =>
+  /\s/.test(character);
+
+// The registry's shortest and longest entries, DERIVED from the table rather
+// than written down beside it, so a country added to the table cannot leave
+// a hand-written bound stale.
+export const ACCOUNT_NUMBER_LENGTH_BOUNDS: {
+  readonly shortest: number;
+  readonly longest: number;
+} = {
+  shortest: Math.min(...ACCOUNT_NUMBER_LENGTH_BY_COUNTRY.values()),
+  longest: Math.max(...ACCOUNT_NUMBER_LENGTH_BY_COUNTRY.values()),
+};
+
+// THE ISO 7064 CHECK ALONE, over an already-canonical value, with no country
+// and no length test in front of it (M3-P13 fix round, finding HZ-M3P13-04).
+// It exists so the display masker can FAIL CLOSED on a country this registry
+// does not carry.
+//
+// CORRECTED LOUDLY IN ROUND TWO (clause R-087, finding CR2-M3P13-03). This
+// paragraph used to say: "a checksum is a grammar test rather than a shape
+// test, so it cannot fire on a mandate reference, a card number or a phone
+// number". THE MANDATE-REFERENCE HALF WAS FALSE, and not marginally: the ISO
+// 11649 structured creditor reference is RF, two check digits and an
+// alphanumeric body, and its check is THIS check, over the same
+// rearrangement, so a valid RF reference satisfies this predicate by
+// construction. Probe-confirmed at lengths 16, 20 and 24. What is true: this
+// predicate cannot fire on a value carrying no country-code grammar at all,
+// which is what keeps a card number and a phone number intact, and the one
+// family that shares the arithmetic is the RF family, which the masker
+// refuses BY NAME rather than by hoping it cannot arise
+// (src/platform/ui/mask-account-number.ts, CREDITOR_REFERENCE_PREFIX). It is NOT a validity test and no registration
+// path may use it: DR-0028 requires all four tests, and accountNumberProblem
+// above is the only place that answers "is this an account number".
+export const accountNumberChecksumHolds = (value: string): boolean => {
+  const compact = canonicalAccountNumber(value);
+  return /^[A-Z]{2}[0-9]{2}[A-Z0-9]+$/.test(compact) && mod97(compact) === 1;
 };
 
 // The same four tests read as a predicate. This is what the merchants

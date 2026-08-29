@@ -13,11 +13,13 @@ import type { HouseholdContext } from "@/platform/tenancy";
 import type { MerchantRuleLike } from "../domain/merchant-rule";
 import {
   ACCOUNT_NAMESPACE,
+  DESCRIPTOR_NAMESPACE,
   compactAccount,
   identityBasisOfKey,
   identityRemainder,
   isTrustedCounterpartyAccount,
 } from "../domain/counterparty-identity";
+import { normaliseCounterparty } from "../domain/normalise-counterparty";
 import type {
   MerchantRecord,
   MerchantRepositoryPort,
@@ -43,7 +45,16 @@ export type AssignMerchantError =
   // would attach every other such row of the household to the same merchant.
   // Before this phase the same subject arrived as the empty string and the
   // writer refused it; this is that refusal restored.
-  | { readonly kind: "unidentifiable-counterparty" };
+  | { readonly kind: "unidentifiable-counterparty" }
+  // A DESCRIPTOR-basis subject that is not what the normaliser would emit for
+  // itself (fix round two, findings CR2-M3P12-08 and HZ-M3P12-R2-02). Every
+  // key the derivation produces is already normalised, so a subject that is
+  // not a fixed point of the normaliser did not come from a rendered group,
+  // and storing it verbatim would write a rule no derived key can ever equal.
+  // The account branch REPAIRS instead of refusing, because there is exactly
+  // one canonical form of an account and the gate already computed it; a
+  // descriptor has no such single repair, so this refuses.
+  | { readonly kind: "non-canonical-counterparty" };
 
 export type AssignMerchantInput = {
   // The counterparty IDENTITY KEY being named, exactly as the review screen
@@ -113,6 +124,22 @@ export const assignMerchant = async (
         : ({ kind: "unidentifiable-counterparty" } as const),
     );
   }
+  // THE SUBJECT THE WRITER STORES IS THE SUBJECT THE WRITER VALIDATED (fix
+  // round two, findings CR2-M3P12-08 and HZ-M3P12-R2-02). The trust gate
+  // COMPACTS AND UPPERCASES INTERNALLY before testing, so it accepted an
+  // account written spaced or lowercase; the boundary then stored the
+  // submitted string verbatim, while counterpartyIdentity only ever emits the
+  // compact uppercase form. The two could never be equal, so the naming was
+  // accepted and reached zero rows, with no error anywhere. That is the exact
+  // outcome criterion 12.18 exists to prevent, arriving through a value that
+  // passes the gate the criterion enumerates.
+  //
+  // Today the only submitter is the hidden field on the review screen, which
+  // carries a derived key, so this needs a hand-made post to reach. It stops
+  // needing one the moment anything else writes a subject, which is what the
+  // slice-5 accepted-answer path the schema reserves PREFIX and PATTERN for
+  // will do.
+  let canonical = pattern;
   if (basis === "account") {
     const account = pattern.slice(ACCOUNT_NAMESPACE.length);
     if (
@@ -121,6 +148,18 @@ export const assignMerchant = async (
     ) {
       return err({ kind: "untrusted-counterparty-account" as const });
     }
+    // REPAIRED, not refused: compactAccount is a total function with one
+    // answer, and it is the same function the derivation applies, so the
+    // stored key is the key counterpartyIdentity would derive.
+    canonical = `${ACCOUNT_NAMESPACE}${compactAccount(account)}`;
+  } else {
+    // REFUSED, not repaired: normaliseCounterparty is a lossy grammar rather
+    // than a canonicalisation, so re-running it over a subject that is
+    // already a key is not a repair and could change what the owner named.
+    const descriptor = pattern.slice(DESCRIPTOR_NAMESPACE.length);
+    if (normaliseCounterparty(descriptor) !== descriptor) {
+      return err({ kind: "non-canonical-counterparty" as const });
+    }
   }
   const merchant =
     (await deps.merchants.findMerchantByName(context, name)) ??
@@ -128,7 +167,7 @@ export const assignMerchant = async (
   const rule = await deps.merchants.upsertRule(context, {
     merchantId: merchant.id,
     kind: "EXACT",
-    pattern,
+    pattern: canonical,
   });
   // The declaration is written; recompute is what carries it to every past
   // matching transaction (charter: corrections are declarations, recompute

@@ -11,6 +11,7 @@
 // rule, by construction (criterion 3.2, hazard H3.1).
 
 import type { Cents } from "@/platform/money";
+import type { PlainDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
 import type { MerchantRuleKind, MerchantRuleLike } from "../domain/merchant-rule";
 
@@ -37,6 +38,12 @@ export type CountedTransaction = {
   readonly id: string;
   readonly flow: "INCOME" | "SPEND";
   readonly amountCents: Cents;
+  // The row's OWN booking date (M3-P13). The review screen shows the
+  // transactions behind a group, and a line without its own date cannot be
+  // told from its neighbour: DR-0027's accepted cost is that two purposes
+  // paid to one counterparty land in one group, and the lines are what let
+  // the owner see that rather than distrust the grouping (hazard H13.3).
+  readonly bookingDate: PlainDate;
   readonly description: string;
   readonly counterpartyName?: string;
   // The stored counterparty account, unvalidated (M3-P12). The identity
@@ -72,18 +79,28 @@ export type MerchantRepositoryPort = {
       readonly pattern: string;
     },
   ) => Promise<MerchantRuleLike>;
-  // M3-P12: pass one of the re-derivation rewrites a pattern IN PLACE, which
-  // upsertRule cannot express: its key IS the pattern, so writing a new one
-  // creates a second row rather than moving the existing declaration. This
-  // member exists only for that routine. It never deletes and it never
-  // changes a rule's merchant.
-  readonly updateRulePattern: (
+  // M3-P12 fix round two, finding CR2-M3P12-03. THE RE-DERIVATION'S WHOLE
+  // WRITE SET, APPLIED ALL OR NOTHING. The routine used to issue its updates
+  // and inserts one await at a time with nothing around them, so a failure
+  // partway through left the table half migrated with no report printed,
+  // while the command's own contract told the operator a non-zero exit meant
+  // the database was exactly as it was found. This member exists so that
+  // sentence can be true: the adapter runs the whole set in one database
+  // transaction, and a rejection anywhere rolls the rest back.
+  readonly applyRuleWrites: (
     context: HouseholdContext,
     input: {
-      readonly ruleId: string;
-      readonly pattern: string;
+      readonly updates: readonly {
+        readonly ruleId: string;
+        readonly pattern: string;
+      }[];
+      readonly inserts: readonly {
+        readonly merchantId: string;
+        readonly kind: MerchantRuleKind;
+        readonly pattern: string;
+      }[];
     },
-  ) => Promise<MerchantRuleLike>;
+  ) => Promise<void>;
   readonly findTagByName: (
     context: HouseholdContext,
     name: string,
