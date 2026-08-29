@@ -19,7 +19,7 @@ Every euro sits in one of three places, and every rule below depends on knowing 
 
 `Account.role` is `POT` or `RESERVE`. The user declares it at first sight. Never infer it, never guess it from the account name, never default it.
 
-Reserve accounts are registered for their IBAN only. Their statements are not imported in v1. A reserve movement is classified entirely from the pot side.
+A reserve account is registered at setup with its label, bank, account number and ring, like any other account. Its own statement IS imported (DR-0030, superseding the v1 refusal this paragraph used to state): the rows are stored as facts, shown on that account marked HELD, and counted in no total. The pot side remains the only place a reserve movement is CLASSIFIED (the `RESERVE` flow always comes from a pot account's row); the reserve side is where savings interest, a movement between two savings accounts and a payment straight out of savings become visible at all. A held row keeps no flow by construction, because the interpretation window is built from the pot account ids alone.
 
 ## 2. Facts versus interpretation
 
@@ -95,7 +95,7 @@ Where several candidates fit: match by smallest date difference, then by lowest 
 
 An unmatched leg whose counterparty is a declared pot account stays `INTERNAL` and excluded, and is surfaced in the reconciliation panel. It is a known state, not an error.
 
-Reserve movements are never paired. The other leg is not imported.
+Reserve movements are never paired. The other leg, where a savings statement holding it is imported (DR-0030), is a HELD fact row that interpretation never reads: pairing runs over pot accounts only, so nothing changes here. (This sentence used to say the other leg is not imported; DR-0030 made that false and it is corrected rather than quietly deleted.)
 
 ## 5. Source profiles
 

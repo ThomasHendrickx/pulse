@@ -318,13 +318,21 @@ export type RederiveReport = {
   readonly exitCode: number;
 };
 
+// THE DECLARED CAPABILITY IS THE USED CAPABILITY (fix round ten, HAZARD
+// finding CR9-M3P12-HZ-05). This Pick used to include "upsertRule", which this
+// routine has never called: the three call sites are listRules,
+// listCountedTransactions and applyRuleWrites. It was not free to leave there.
+// upsertRule is the one port member that REPOINTS an existing declaration
+// rather than rejecting a collision, which is why the in-memory fake stopped
+// routing inserts through it, and a routine whose declared dependencies
+// include it reads as a routine that may use it. This is the one module whose
+// whole contract is that it overwrites and deletes nothing, so the type now
+// says exactly what it needs. Test fakes are unaffected: they implement the
+// full port.
 export type RederiveDependencies = {
   readonly merchants: Pick<
     MerchantRepositoryPort,
-    | "listRules"
-    | "listCountedTransactions"
-    | "upsertRule"
-    | "applyRuleWrites"
+    "listRules" | "listCountedTransactions" | "applyRuleWrites"
   >;
   readonly recompute: RecomputeInterpretation;
 };
@@ -432,10 +440,24 @@ export const assignmentSet = (
     // named H12.31 regression then goes red because the row an unrelated
     // account rule took over is credited to that same unrelated rule before
     // the run as well as after, so its loss is hidden. Over the generated
-    // worlds the reassignment shape drops from about 190 to about 40. The
-    // property's own biconditional stays GREEN under the flip, because both
-    // of its sides are computed here and move together, which is the same
-    // shape of blind spot a forged lineage pair has.
+    // worlds the reassignment shape drops sharply.
+    //
+    // CORRECTED IN FIX ROUND EIGHT, CRITERIA finding CR6-M3P12-04, clause
+    // R-087, and the lesson is the one worth carrying: a comment that boasts
+    // about being measured is the one most worth re-measuring. This paragraph
+    // used to end "The property's own biconditional stays GREEN under the
+    // flip, because both of its sides are computed here and move together,
+    // which is the same shape of blind spot a forged lineage pair has." BOTH
+    // THE CONCLUSION AND ITS REASON ARE FALSE. The property goes RED under the
+    // flip, on the FIRST biconditional. And its two sides are NOT both
+    // computed here: since the amended criterion the property derives the
+    // before merchant, the after merchant and the claimant's merchant in the
+    // test file, from the seed and the issued write batch, with its own model
+    // of the two spaces and the pre-phase space first. Only the REPORTED side
+    // comes from here, so a flip here moves one side and not both. The
+    // sentence was written before that rewrite and was not re-measured after
+    // it. M6 in test/property/mutants.mts is now the permanent guard, and its
+    // anchor is the coalescing operator below.
     const match =
       key === undefined
         ? matchRules(baselineKey(row), rules.filter((r) => keyForRule(r) === baselineKey)) ??
