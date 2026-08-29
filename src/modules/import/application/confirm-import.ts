@@ -20,7 +20,17 @@ export type ConfirmOutcome =
         | "import-not-found"
         | "not-awaiting-declaration"
         | "declaration-needed"
-        | "already-confirmed";
+        | "already-confirmed"
+        // M3-P14: the file's own account number is not one the household
+        // registered at setup. Nothing is written and no account is
+        // created; the message names the setup screen and links to it.
+        //
+        // THE account-in-savings-ring REFUSAL THAT STOOD BESIDE THIS ONE
+        // IS REMOVED ROOT AND BRANCH (M3-P18, DR-0030 superseding D-55):
+        // a statement whose own account sits in the SAVINGS ring is now
+        // ACCEPTED, its rows stored as facts, shown on that account
+        // marked held and counted in no total.
+        | "account-not-registered";
     };
 
 export const confirmImport = async (
@@ -75,29 +85,56 @@ export const confirmImport = async (
     return { kind: "failed", importId: record.id, reason: "mixed-accounts" };
   }
 
-  // Account resolution mirrors the upload path EXACTLY, because the
-  // confirmation screen names the landing account from the same rule
-  // (finding F1, transparency): the file's own IBAN first, then the
-  // binding of a spec-identical stored profile, then, and only then, the
-  // user's declaration.
+  // ACCOUNT RESOLUTION, AND THE GATE M3-P14 PUTS IN FRONT OF IT.
+  //
+  // Accounts used to come into existence HERE and only here, one statement
+  // at a time, which is the verified root cause of the owner's complaint:
+  // a transfer to an account no file had yet introduced missed both
+  // declared-set arms in classification, fell to the sign rule, landed in
+  // the spend total and offered its counterparty on the naming screen. So
+  // the file's own account is now either ALREADY REGISTERED, or the file
+  // carries no own-account column at all, which is the card shape.
+  //
+  // Two arms, and a card is the only thing declared at first sight:
+  //
+  //   the file carries an own account -> it must resolve to an account
+  //   registered at setup, in EITHER ring (DR-0030): a savings account's
+  //   own statement is accepted and its rows are held by construction,
+  //   because the interpretation window is built from the pot account
+  //   ids alone. An UNREGISTERED account is a refusal with nothing
+  //   written.
+  //
+  //   the file carries NO own account -> it is a card (decision D-48: a
+  //   card statement carries no account number and is recognised through
+  //   its bound SourceProfile), resolved from a spec-identical stored
+  //   profile or declared here.
   const existingProfile = await findProfileBySpec(context, deps, input.spec);
   const fileIban = parsed.value.accountIbans[0];
   let accountId: string | undefined;
   if (fileIban !== undefined) {
+    // Canonical on both sides inside the repository (criterion 14.4): the
+    // file prints its account spaced on one path and compact on another.
     const existing = await deps.accounts.findAccountByIban(context, fileIban);
-    accountId = existing?.id;
+    if (existing === null) {
+      return { kind: "rejected", reason: "account-not-registered" };
+    }
+    // A RESERVE-ring account's own statement is accepted like any other
+    // (M3-P18, DR-0030, superseding D-55's refusal): its rows land as
+    // facts on that account and keep no flow, because interpretation
+    // runs over the pot accounts alone. Accepting is not interpreting.
+    accountId = existing.id;
   } else {
     accountId = existingProfile?.accountId;
-  }
-  if (accountId === undefined) {
-    if (input.declaration === undefined) {
-      return { kind: "rejected", reason: "declaration-needed" };
+    if (accountId === undefined) {
+      if (input.declaration === undefined) {
+        return { kind: "rejected", reason: "declaration-needed" };
+      }
+      const created = await deps.accounts.declareAccount(
+        context,
+        input.declaration,
+      );
+      accountId = created.id;
     }
-    const created = await deps.accounts.declareAccount(context, {
-      ...input.declaration,
-      ...(fileIban !== undefined ? { iban: fileIban } : {}),
-    });
-    accountId = created.id;
   }
 
   // Reuse a spec-identical stored profile rather than storing a twin; the

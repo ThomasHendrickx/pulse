@@ -13,6 +13,7 @@
 
 import { prisma } from "@/platform/db/client";
 import type { Cents } from "@/platform/money";
+import { plainDateFromDbDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
 import type { MerchantRuleKind, MerchantRuleLike } from "../domain/merchant-rule";
 import type {
@@ -114,42 +115,14 @@ export const upsertRule = async (
   };
 };
 
-// M3-P12, pass one of the re-derivation. Household ownership is verified in
-// the SAME statement as the write (CLAUDE.md non-negotiable 6): the where
-// clause carries the household id, so a foreign rule id updates zero rows
-// and throws rather than silently moving another household's declaration.
-export const updateRulePattern = async (
-  context: HouseholdContext,
-  input: { readonly ruleId: string; readonly pattern: string },
-): Promise<MerchantRuleLike> => {
-  const rows = await prisma.merchantRule.updateManyAndReturn({
-    where: { id: input.ruleId, householdId: context.householdId },
-    data: { pattern: input.pattern },
-  });
-  const row = rows[0];
-  if (row === undefined) {
-    throw new Error("updateRulePattern: rule does not belong to the household");
-  }
-  return {
-    id: row.id,
-    merchantId: row.merchantId,
-    kind: row.kind,
-    pattern: row.pattern,
-  };
-};
+// REMOVED IN M3-P12's THIRD FIX ROUND, finding CR3-M3P12-07: updateRulePattern
+// lived here as a bare updateManyAndReturn outside any transaction, with a
+// comment saying pass one of the re-derivation writes through it. Both halves
+// went false when the fix round moved the whole write set onto applyRuleWrites
+// below, and a declaration rewrite outside a transaction is exactly the thing
+// that round bought. It is gone rather than kept with a corrected comment, so
+// there is one write path for a declaration and it is the atomic one.
 
-// M3-P12 fix round two, finding CR2-M3P12-03. THE RE-DERIVATION'S WHOLE
-// WRITE SET IN ONE TRANSACTION. Prisma's array form runs every operation in
-// a single database transaction, so a rejection anywhere, a unique-key
-// violation, a check constraint, a lost connection, rolls back every write
-// that preceded it. That is what makes the command's contract true: a
-// non-zero exit leaves the table exactly as the run found it.
-//
-// EVERY STATEMENT CARRIES householdId (CLAUDE.md non-negotiable 6). The
-// updates use updateMany so household ownership is verified inside the same
-// statement as the write, and the affected-row counts are checked after the
-// transaction commits: a foreign or vanished rule id updates zero rows,
-// which is a failure of the run rather than a silent no-op.
 export const applyRuleWrites = async (
   context: HouseholdContext,
   input: {
@@ -164,32 +137,75 @@ export const applyRuleWrites = async (
   if (input.updates.length === 0 && input.inserts.length === 0) {
     return;
   }
-  const results = await prisma.$transaction([
-    ...input.updates.map((update) =>
-      prisma.merchantRule.updateMany({
+  // THE INTERACTIVE FORM, so the tenancy check can throw from INSIDE the
+  // transaction (fix round three, finding CR3-M3P12-04). The batch form ran
+  // every statement and returned, and the household check then ran on the
+  // results, AFTER the commit: on the one path that check exists for, a rule
+  // id belonging to another household, the caller got an exception and the
+  // inserts had already landed. A guard that fires after the row exists has
+  // not enforced anything, and CLAUDE.md non-negotiable 6 is not a message,
+  // it is a rule about what reaches the table. Throwing inside the callback
+  // makes the rollback the database's.
+  await prisma.$transaction(async (tx) => {
+    for (const update of input.updates) {
+      // Household ownership is verified in the SAME statement as the write.
+      const result = await tx.merchantRule.updateMany({
         where: { id: update.ruleId, householdId: context.householdId },
         data: { pattern: update.pattern },
-      }),
-    ),
-    ...input.inserts.map((insert) =>
-      prisma.merchantRule.create({
+      });
+      if (result.count === 0) {
+        throw new Error(
+          "applyRuleWrites: one or more rules did not belong to the household",
+        );
+      }
+    }
+    // THE INSERT HALF'S OWN TENANCY CHECK (fix round four, finding
+    // HAZARD finding CR4-M3P12-03). The update loop above verifies ownership
+    // statement as the write; this loop verified nothing at all. A rule row
+    // carries the CALLING household's id in its own column, so every read
+    // that filters on householdId still finds it, but its merchantId pointed
+    // wherever the caller said: the schema's foreign key on
+    // MerchantRule.merchantId references Merchant.id with no household
+    // component, so the database permits a declaration in household A that
+    // names a merchant owned by household B. WITNESSED against real Postgres
+    // before this fix: a cross-household insert succeeded, threw nothing, and
+    // created the row. CLAUDE.md non-negotiable 6 is not a severity
+    // judgement, so this is not one either.
+    //
+    // upsertRule, above in this same file, has always made exactly this
+    // check and calls a foreign merchantId "a bug or an attack". The fake
+    // repository the fast gate binds routes its inserts through upsertRule,
+    // so the fake was STRICTER than the adapter it stands in for and could
+    // not have caught this: the real-database spec is what pins it, with an
+    // INSERT submitted ALONE so the update loop cannot throw first.
+    const insertedMerchantIds = [
+      ...new Set(input.inserts.map((insert) => insert.merchantId)),
+    ];
+    if (insertedMerchantIds.length > 0) {
+      const owned = await tx.merchant.findMany({
+        where: {
+          id: { in: insertedMerchantIds },
+          householdId: context.householdId,
+        },
+        select: { id: true },
+      });
+      if (owned.length !== insertedMerchantIds.length) {
+        throw new Error(
+          "applyRuleWrites: one or more inserted rules point at a merchant that does not belong to the household",
+        );
+      }
+    }
+    for (const insert of input.inserts) {
+      await tx.merchantRule.create({
         data: {
           householdId: context.householdId,
           merchantId: insert.merchantId,
           kind: insert.kind,
           pattern: insert.pattern,
         },
-      }),
-    ),
-  ]);
-  const missed = results
-    .slice(0, input.updates.length)
-    .filter((result) => (result as { count: number }).count === 0).length;
-  if (missed > 0) {
-    throw new Error(
-      "applyRuleWrites: one or more rules did not belong to the household",
-    );
-  }
+      });
+    }
+  });
 };
 
 export const findTagByName = async (
@@ -313,6 +329,10 @@ export const listCountedTransactions = async (
       id: true,
       flow: true,
       amountCents: true,
+      // M3-P13: the review shows the transactions behind a group, each on
+      // its own booking date. The column was already the ORDER of this read
+      // and was not selected, so the rows arrived dated by nothing.
+      bookingDate: true,
       description: true,
       counterpartyName: true,
       // M3-P12: the review keys on the counterparty IDENTITY, whose account
@@ -335,6 +355,10 @@ export const listCountedTransactions = async (
         id: row.id,
         flow: row.flow,
         amountCents: row.amountCents as Cents,
+        // The DATE column comes back as a Date at UTC midnight; the one
+        // conversion to the branded calendar string is platform's
+        // (pulse-typescript section 2).
+        bookingDate: plainDateFromDbDate(row.bookingDate),
         description: row.description,
         ...(row.counterpartyName === null
           ? {}

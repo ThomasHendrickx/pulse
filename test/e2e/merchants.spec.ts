@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { FIXTURE_ACCOUNT_A, registerCurrentAccount } from "./setup-accounts";
+
+// M3-P14: every fixture here belongs to the same invented current account,
+// which the household registers at setup before importing anything.
 
 // Criterion 3.3 (hazard H3.2): name an unresolved counterparty on the
 // merchant review screen and assert the month's data REGROUPS it without a
@@ -30,6 +35,8 @@ test("naming an unresolved counterparty regroups it and changes no total", async
   await expect(page.getByTestId("household-context")).toHaveText(unique);
 
   // One import: declare the account and confirm the detected format.
+  await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+
   await page.goto("/import");
   await page.getByLabel("Bank export file").setInputFiles(FIXTURE);
   await page.getByRole("button", { name: "Upload" }).click();
@@ -37,9 +44,6 @@ test("naming an unresolved counterparty regroups it and changes no total", async
     page.getByRole("heading", { name: "Confirm the detected format" }),
   ).toBeVisible();
   await page.getByLabel("Format name").fill("Demobank current account");
-  await page.getByLabel("Label").fill("Daily account");
-  await page.getByLabel("Bank").fill("Demobank");
-  await page.getByLabel("Ring").selectOption("POT");
   await page.getByTestId("confirm-import").click();
   await expect(page.getByTestId("import-result")).toBeVisible();
   await expect(page.getByTestId("rows-added")).toHaveText("6");
@@ -139,6 +143,8 @@ test.describe("card group labels on a phone", () => {
     await page.getByRole("button", { name: "Create household" }).click();
     await expect(page.getByTestId("household-context")).toHaveText(unique);
 
+    await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+
     await page.goto("/import");
     await page.getByLabel("Bank export file").setInputFiles(CARD_FIXTURE);
     await page.getByRole("button", { name: "Upload" }).click();
@@ -146,9 +152,6 @@ test.describe("card group labels on a phone", () => {
       page.getByRole("heading", { name: "Confirm the detected format" }),
     ).toBeVisible();
     await page.getByLabel("Format name").fill("Demobank current account");
-    await page.getByLabel("Label").fill("Daily account");
-    await page.getByLabel("Bank").fill("Demobank");
-    await page.getByLabel("Ring").selectOption("POT");
     // THE CONFIRM-FORMAT PREVIEW, the screen the owner photographed
     // (finding CR-M3P6-01). It renders the RAW parsed descriptor, which is
     // where a card number sits whole, and no criterion named it before this
@@ -286,6 +289,8 @@ test("submitting a PRE-MIGRATION un-namespaced subject surfaces the refusal to t
   await page.getByRole("button", { name: "Create household" }).click();
   await expect(page.getByTestId("household-context")).toHaveText(unique);
 
+  await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+
   await page.goto("/import");
   await page.getByLabel("Bank export file").setInputFiles(FIXTURE);
   await page.getByRole("button", { name: "Upload" }).click();
@@ -293,9 +298,6 @@ test("submitting a PRE-MIGRATION un-namespaced subject surfaces the refusal to t
     page.getByRole("heading", { name: "Confirm the detected format" }),
   ).toBeVisible();
   await page.getByLabel("Format name").fill("Demobank current account");
-  await page.getByLabel("Label").fill("Daily account");
-  await page.getByLabel("Bank").fill("Demobank");
-  await page.getByLabel("Ring").selectOption("POT");
   await page.getByTestId("confirm-import").click();
   await expect(page.getByTestId("import-result")).toBeVisible();
 
@@ -319,9 +321,20 @@ test("submitting a PRE-MIGRATION un-namespaced subject surfaces the refusal to t
   await group.getByRole("button", { name: "Name" }).click();
 
   // THE REFUSAL REACHES THE READER. This is the half this spec carries, and
-  // it is the half that needs a browser: the banner is rendered from a
-  // redirect status the screen reads, in the reader's own language.
-  await expect(page.getByTestId("naming-refused")).toBeVisible();
+  // it is the half that needs a browser. AMENDED IN M3-P11 (clause R-087):
+  // this block used to assert the naming-refused banner, rendered from a
+  // redirect status the screen read. Since M3-P11 the action RETURNS its
+  // refusal and the row's client leaf raises it as the failure toast
+  // (DR-0026), still carrying this refusal kind's own wording, so the
+  // reader is still told to reload and name again. The banner path remains
+  // renderable from a hand-typed status URL but nothing sets it any more.
+  await expect(page.getByTestId("naming-failed")).toBeVisible();
+  const staleMessages = JSON.parse(
+    readFileSync(join(__dirname, "..", "..", "messages", "en.json"), "utf8"),
+  ) as Record<string, string>;
+  await expect(page.getByTestId("naming-failed")).toHaveText(
+    staleMessages["nameRefusedStale"] ?? "",
+  );
 
   // NOTHING WAS WRITTEN. Corrected in the fix round, finding HZ-M3P12-08:
   // the two assertions below used to be described as showing this, and they
