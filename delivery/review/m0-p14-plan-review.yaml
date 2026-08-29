@@ -1,0 +1,681 @@
+# ROUND ONE adversarial plan review of the interlock-withdrawal port.
+# Subject: plan iteration head 68e5192 on claude/m0-p14-plan-descope-port,
+# which ports c51c731 (decision D-62): M3-P12's target-interlock step becomes
+# the local-only database interlock the repository already has, criterion
+# 12.23 is replaced with a local-only-refusal criterion measured five ways
+# plus a named removal diff, M3-P16 gains criterion 16.6, H12.30 and H16.2
+# are re-scoped, and both parked entries are rewritten.
+# Reviewed in /home/user/wt-descope-review on claude/m0-p14-plan-review.
+#
+# THE CALL, STATED FIRST: NOT DISPATCHABLE AS IT STANDS. FIX-ROUND-NEEDED.
+# One critical finding (the phase's one deployed run is refused by a guard
+# the plan never names), two high, two medium, one low. Every finding is a
+# bounded edit; none reopens decision D-62 or the withdrawal direction.
+#
+# THE STANCE. The DIRECTION, withdraw rather than harden, is the planner's
+# authored answer to witnessed defeats (delivery/review/
+# m3-p12-criteria-round13.yaml and m3-p12-hazard-round13.yaml on main:
+# register evidence forgeable, caller list bypassed by aliasing, lexer
+# defeated four ways) and it is aligned with the owner's simplicity mandate.
+# This review takes the direction as given and attacks the WORK: for each
+# changed criterion, find the implementation that satisfies every word and
+# is still wrong, and name it. This is round ONE of the lane's two; every
+# concrete edit below is written to be applicable in a single fix round, and
+# whatever round two leaves open goes into the implementer's brief as work.
+#
+# WORK LOG, oldest first.
+# - Brief composed: npx --prefix /home/user/pulse-fleet tiphys brief compose
+#   --role adversarial-plan-reviewer --phase delivery/plan/pulse-v02.yaml
+#   --phase-id M3-P12. Exit 0. (The role name the dispatch guessed,
+#   plan-reviewer, is not in the kernel's role list; the usage line names
+#   adversarial-plan-reviewer and that is what was composed.)
+# - Precedent read for form: m3-p16-plan-review-round4.yaml and
+#   m0-p6-plan-review-round5.yaml exist on main; the former read in full
+#   (kind: finding, verdict, findings with concrete-edit; the header records
+#   why --type verdict does not fit a multi-phase review).
+# - The port diff read in full: git diff 7b2dfc0..68e5192 --
+#   delivery/plan/pulse-v02.yaml, 353 insertions, 156 deletions, one file.
+#   The commit message's claim checked: the M3-P12 step, criterion 12.23,
+#   H12.30, D-62, the M3-P16 and M3-P17 rewrites and both parked entries are
+#   all present; the two re-derived hunks (files-to-touch gloss, M3-P9
+#   interference entry) keep main's three-shared-files correction and append
+#   the D-62 narrowing rather than rewriting it, which is clause R-087's
+#   shape.
+# - The tree the removal operates on read at origin/main and at
+#   origin/claude/m3-p12-counterparty-identity: BOTH carry the withdrawn
+#   modules (src/platform/db/target-guard.ts, runtime-target.ts,
+#   gate-target.ts, connection-string.ts and their tests), so the removal is
+#   real work against a live surface, not a paper edit.
+# - Importers of the four withdrawn modules enumerated with git grep over
+#   origin/main. Beyond the files criterion 12.23 names, the modules are
+#   imported by scripts/rederive-merchant-rules.ts:127 and :128,
+#   test/e2e/auth.spec.ts:3, test/e2e/merchant-rule-write.spec.ts:4, and
+#   covered by test/db/db-guard.test.ts, which also opens gate-target.ts
+#   from disk at :238. Finding 02.
+# - src/platform/db/guard.ts read in full on main. It carries TWO exported
+#   assessments: assessDestructiveDbTarget (the contract 12.23 quotes,
+#   hatch PULSE_ALLOW_REMOTE_DB_DESTRUCTION) and assessNonProductionDbTarget
+#   (guard.ts:159 onward), a second local-only refusal consulted by
+#   client.ts at construction (client.ts:57 through :82), whose register
+#   branch is at guard.ts:169 through :190 and whose own separate hatch is
+#   PULSE_ALLOW_REMOTE_DB_IN_DEV at guard.ts:191. That variable appears
+#   ZERO times in the plan (grep -c over pulse-v02.yaml). Finding 01.
+# - The routine's own wiring read at scripts/rederive-merchant-rules.ts:310
+#   through :365. Its comment states the exact trap the port walks into:
+#   without the register, "the client's own guard refusing later, at the
+#   first repository call, with a message about the ambient environment".
+#   That sentence is the tree confirming finding 01 in its own words.
+# - The routine's --dry-run input confirmed real: scripts/
+#   rederive-merchant-rules.ts:375 and src/modules/merchants/application/
+#   rederive-rules.ts:1009 (applied = exitCode === 0 && input.dryRun !==
+#   true). Finding 03's concrete edit uses it and builds no instrument.
+# - Plan-internal consistency swept: every remaining occurrence of
+#   target-guard, gate-target, runtime-target, connection-string,
+#   enforceGateDbTarget and "target interlock" in pulse-v02.yaml sits inside
+#   12.23's removal naming, D-62, a parked entry, or a loud R-087 correction
+#   that quotes the old text deliberately. M3-P17 carries criteria 17.1
+#   through 17.4 only, on the base as well, so no dangling 17.5. H12.30
+#   still addressed-by 12.23; H16.2 now addressed-by 16.6; both resolve.
+# - Decisions checked: the diff adds D-62 and edits no existing decision;
+#   delivery/decisions/ and decided.lock are untouched by 68e5192; no plan
+#   decision other than D-62 mentions the interlock, so D-62 contradicts no
+#   decided record and has nothing it must formally supersede.
+# - Gates run in this worktree (npm install first, 472 packages):
+#   npm run gate:decisions exit 0 ("gate:decisions clean") with this file
+#   present, so the round cap admits this document (stem m0-p14-plan-review,
+#   one round, cap two); npm run gate:privacy exit recorded below in the
+#   validation section beside the tiphys validate exits.
+#
+# STRUCTURAL CLAIM OF THE PORT, verified rather than believed. The base
+# 7b2dfc0 already carried the repaired plan (M3-P17 without the interlock
+# criterion, the corrected M3-P9 entry); 68e5192 touches exactly the
+# surfaces the commit message names and no other phase's criteria. M3-P12's
+# criteria list still runs 12.1 through 12.23 minus the retired 12.21-slot
+# renumbering quirks the base already had; no criterion id vanished and no
+# hazard lost its addressed-by.
+#
+# THE CRITERIA WALK, over the changed surface only.
+#
+# --- M3-P12 interlock step (step 6): NOT SOUND ---
+#   quote: "the routine asks the same guard the same question itself before
+#          its first repository call ... The wiring costs one line of
+#          package.json and no new module."
+#   - The posture is right and the withdrawal narrative is honest, loud and
+#     correctly grounded in D-62.
+#   - It fails on the tree it describes: "the same guard" is guard.ts's
+#     assessDestructiveDbTarget, but the client the routine's repository
+#     uses consults guard.ts's OTHER assessment, whose hatch is a different
+#     variable the plan never names. See finding 01.
+#   - "One line of package.json and no new module" also undercounts the
+#     work its own criterion names: the removal diff edits the routine, two
+#     e2e specs and guard.ts's own test. See finding 02.
+#
+# --- criterion 12.23: NOT SOUND ---
+#   quote: "THE ROUTINE CANNOT OPEN A DATABASE THAT IS NOT THE LOCAL STACK
+#          ... MEASURED FIVE WAYS, each of which fails on its own ... this
+#          criterion names the diff rather than leaving it to judgement."
+#   - The five-way split is the right shape and three of the five hold:
+#     ONE is a text pin but an honest one (package.json chaining with &&,
+#     matching db:reset and db:migrate at package.json:17 through :18);
+#     TWO is executable both as a spawned entry point (exit non-zero) and
+#     in process against the exported main() with a call-recording fake;
+#     FOUR's no-argument-override clause is the right refusal.
+#   - It fails as a whole because measurement FOUR is green for an
+#     implementation whose real deployed run is refused: the in-process
+#     test substitutes a fake repository, so the client is never
+#     constructed and the client's own non-production guard, the one that
+#     actually fires on the deployed run, is never consulted (finding 01).
+#   - The named removal diff is incomplete: following it verbatim leaves
+#     dangling imports and a red fast gate (finding 02).
+#   - Measurement THREE ("a test that finds no second copy of that
+#     shell-first, dot-env-fallback reading") is not a falsifiable
+#     observable, and the register-absence assertion has the same problem
+#     (finding 04). Measurement FIVE collides with the refusal vocabulary
+#     guard.ts actually prints (finding 05).
+#
+# --- H12.30 re-scope: SOUND ---
+#   quote: "the local-only refusal answers this hazard completely ... It
+#          does not tell ONE deployed project from another ... that residue
+#          is hazard H16.2 in the phase that makes that run."
+#   - Correct on its own terms, and the honest half-scope statement is
+#     exactly what a hazard entry should carry. I could not construct a
+#     mechanism that reaches the ambient foreign pooler with no hatch set,
+#     GIVEN that finding 01's client-guard question is settled; the hazard
+#     text itself needs no edit for that, the criterion does.
+#
+# --- files-to-touch gloss (src/platform/db/): NOT SOUND ---
+#   quote: "the only change admitted here is putting the environment
+#          resolution guard-cli.ts already performs in ONE place"
+#   - The resolution is ALREADY in one place on the tree the removal
+#     operates on: src/platform/db/resolve-env.ts exists on main and on the
+#     implementation branch, extracted in M3-P12's second fix round, and
+#     guard-cli.ts already imports it. So the one admitted change is
+#     already made, and the changes the removal actually requires in this
+#     directory (deleting four modules, cutting the register branch out of
+#     guard.ts, cutting the runtime-target import and approval construction
+#     out of client.ts) are not admitted by the sentence that governs them.
+#     Findings 01 and 02 carry the concrete edits.
+#
+# --- parked entry (12.23 against the built implementation): SOUND ---
+#   - OWED rather than not-yet-owed is the right flip after D-62, the
+#     discharge condition is observable, and recording both halves of the
+#     history in one entry is what stops a later reader reading the branch
+#     as contradicting the plan.
+#
+# --- parked entry (non-production process posture): NOT SOUND ---
+#   quote: "src/platform/db/guard.ts is reached today only by db:reset and
+#          db:migrate, through src/platform/db/guard-cli.ts ... so npm run
+#          dev resolves DATABASE_URL with no refusal at all. MEASURED
+#          RATHER THAN THEORETICAL."
+#   - Both factual claims are FALSE against the tree the removal starts
+#     from: client.ts imports assessNonProductionDbTarget from guard.ts
+#     (client.ts:3) and consults it lazily at construction (client.ts:57
+#     through :82), so the dev server DOES refuse a non-local DATABASE_URL
+#     outside production today, with its own hatch. The entry describes the
+#     tree as it stood before M3-P12's fifth fix round. "Measured" here is
+#     the exact failure mode criterion 12.2 exists to forbid one phase
+#     over: a number recorded against a tree nobody can re-run. Finding 01
+#     carries the edit, because the truth of this entry depends on the
+#     disposition that finding demands the plan state.
+#
+# --- M3-P16 intent rewrite and step rewrite: SOUND in direction ---
+#   - The R-087 corrections are loud, quote what stood, and the blocked
+#     branch keeps its any-reason shape. The run step's inline-hatch
+#     requirement with its stated reason (an exported hatch also unlocks
+#     db:reset for the life of the shell) is right.
+#   - The step is however the surface where finding 01 lands operationally
+#     (the command as scripted is refused by the client's guard), and where
+#     finding 03's pre-write gap sits.
+#
+# --- criterion 16.1 rewrite: SOUND with one seam ---
+#   - Recording the command with the hatch shown as the literal assignment,
+#     quoted from captured output, is satisfiable: the guard's hatch-allow
+#     reason carries the literal string PULSE_ALLOW_REMOTE_DB_DESTRUCTION=1
+#     and guard-cli prints its verdict reason, which the verbatim capture
+#     picks up. The seam is the refusal path, where the same verbatim
+#     capture picks up a hostname (finding 05).
+#
+# --- criterion 16.4 rewrite: SOUND ---
+#   - The placeholder-not-URL correction is right and honestly R-087'd. Its
+#     interaction with the capture-verbatim instruction on the refusal path
+#     is finding 05's subject, and the edit lands there, not here.
+#
+# --- criterion 16.6: NOT SOUND ---
+#   quote: "THE TARGET IS PROVEN BY RESIDUE THE RUN LEFT BEHIND AND NEVER
+#          BY WHAT THE RUN SAID ABOUT ITSELF ... the after pair read
+#          through that ref-pinned transport moves exactly as the routine's
+#          own printed counts say it should."
+#   - The residue leg is genuinely non-self-certifying, the
+#     no-instrument statement is right, and binding any future instrument
+#     to the TypeScript compiler API is the correct lesson from the lexer
+#     defeat.
+#   - It fails on WHEN it can first notice a wrong target: only AFTER the
+#     writing invocation. The one mechanism standing between the hatch and
+#     the wrong deployed project before that moment is a prose instruction
+#     to pin the connection, which H16.2's own base text says is only an
+#     instruction. The plan already requires everything needed to notice
+#     BEFORE writing (the before pair through the ref-pinned transport, and
+#     a routine that has a real --dry-run) and does not connect them.
+#     Finding 03.
+#   - Its BLOCKED leg also cannot describe the one outcome it exists to
+#     catch: a run that WAS made whose residue does not move as printed
+#     fits neither MET nor a BLOCKED record that must state "no invocation
+#     was issued against any database". Finding 03's edit closes both.
+#
+# --- H16.2 re-scope: SOUND ---
+#   - "Narrows rather than closes" with the deliberate case named as the
+#     remainder is the honest statement, and addressed-by moving to 16.6 is
+#     right, subject to 16.6 gaining the pre-write clause finding 03 asks
+#     for.
+#
+# --- M3-P17 intent correction and D-62: SOUND ---
+#   - D-62 records what was measured, why each mechanism cannot be made
+#     sound as built, what is kept, and the compiler-API binding. It edits
+#     no decided record and contradicts none. The M3-P17 and M3-P12
+#     interference entries resolve against the current phase declarations.
+#
+# WHAT I COULD NOT BREAK, said plainly. The withdrawal's central safety
+# argument holds: with no hatch set, I could not construct a path by which
+# the routine as re-specified opens the ambient foreign pooler, because
+# both guards that remain (the routine's own consultation and the client's
+# construction-time check) refuse a non-local host, and the npm chaining
+# adds a third refusal in front. The loud R-087 corrections are uniformly
+# real corrections that quote what stood. The round-cap arithmetic holds
+# (this is round one on a fresh stem). And criterion 16.6's residue
+# comparison is the right primitive: I tried to make a run certify itself
+# through it and could not, because the transport is pinned by project ref
+# and the comparison reads counts the run cannot know in advance.
+#
+# VALIDATION RECORD (commands and exits, appended before commit):
+# - npx --prefix /home/user/pulse-fleet tiphys validate --type finding
+#   --context delivery delivery/review/m0-p14-plan-review.yaml: exit 0.
+# - npm run gate:privacy: exit 0.
+# - npm run gate:decisions: exit 0.
+#
+kind: finding
+verdict: FIX-ROUND-NEEDED
+produced-by: claude-fable-5
+findings:
+  - id: PR1-M0P14-01
+    severity: critical
+    analysis: |-
+      THE ONE DEPLOYED RUN THE WITHDRAWAL PRESERVES IS REFUSED BY A GUARD THE
+      PLAN NEVER NAMES, AND EVERY MEASUREMENT IN CRITERION 12.23 STAYS GREEN
+      WHILE IT HAPPENS. guard.ts on the tree the removal operates on carries
+      TWO assessments, and the plan writes as if it carried one. The contract
+      12.23 quotes is assessDestructiveDbTarget, hatch
+      PULSE_ALLOW_REMOTE_DB_DESTRUCTION. The second,
+      assessNonProductionDbTarget (guard.ts:159 onward), is consulted by
+      client.ts at client construction (client.ts:57 through :82), refuses a
+      non-local DATABASE_URL in every non-production process, and its only
+      hatches are the register approval, which this port removes, and
+      PULSE_ALLOW_REMOTE_DB_IN_DEV (guard.ts:191), a variable that appears
+      nowhere in the plan.
+
+      WALK THE DEPLOYED RUN AS M3-P16 NOW SCRIPTS IT. The operator invokes
+      the package.json script with the deployed connection pinned and
+      PULSE_ALLOW_REMOTE_DB_DESTRUCTION=1 inline. guard-cli allows (hatch).
+      The routine's own consultation allows (same hatch). Then the first
+      repository call constructs the client: NODE_ENV is unset under tsx, so
+      the process is not production; the connection is non-local; the
+      register approval no longer exists; PULSE_ALLOW_REMOTE_DB_IN_DEV is not
+      set because no plan text ever mentions it. assertTargetAllowed throws.
+      The run exits non-zero having done nothing, on every attempt, forever.
+      M3-P16 records BLOCKED naming a refusal that is a defect in the plan's
+      own account of the tree. The routine's own header already states this
+      exact trap: without the recorded approval "the client's own guard
+      refusing later, at the first repository call, with a message about the
+      ambient environment" (scripts/rederive-merchant-rules.ts:348 through
+      :352).
+
+      AND 12.23'S MEASUREMENTS CANNOT SEE IT. Measurement FOUR, "with the
+      same non-local connection and the hatch set the routine proceeds", is
+      tested in process with a fake repository, so no client is constructed
+      and the one guard that fires on the real run is never consulted. The
+      spawned-entry-point variant of measurement TWO tests only the refusal
+      direction. So the constructed implementation satisfies every word of
+      the criterion and the phase it feeds still cannot run.
+
+      THE ALTERNATIVE READING IS ALSO WRONG, WHICH IS WHY THIS IS A PLAN
+      DEFECT AND NOT AN IMPLEMENTER'S CHOICE. An implementer who notices the
+      trap can only escape it by removing assessNonProductionDbTarget and
+      assertTargetAllowed entirely, and the plan forbids that three ways:
+      12.23 names only "the register consultation" as what leaves guard.ts
+      and client.ts; the files-to-touch gloss admits only the
+      env-resolution centralisation as a change in src/platform/db/ (which
+      is moreover already done on the tree, resolve-env.ts exists and
+      guard-cli.ts imports it); and the step says the phase "does not
+      weaken" guard.ts. Removing a working local-only refusal from that file
+      is a weakening under any reading, and it would silently reopen the
+      dev-server hazard that guard exists for.
+
+      THE SECOND PARKED ENTRY IS FALSE FOR THE SAME ROOT CAUSE. It states
+      that guard.ts "is reached today only by db:reset and db:migrate" and
+      that "npm run dev resolves DATABASE_URL with no refusal at all",
+      labelled MEASURED. Against main and against the implementation branch
+      both claims are false: client.ts imports the non-production assessment
+      from guard.ts and the dev server IS refused a non-local target, with
+      its own named override. The entry describes the tree before M3-P12's
+      fifth fix round. A parked entry that asserts a gap the tree closes
+      will make some later phase reopen the gap to match the record.
+    evidence:
+      - |-
+        guard.ts carries the second assessment and its separate hatch:
+        src/platform/db/guard.ts:159 (export const
+        assessNonProductionDbTarget), :191 (if
+        (env.PULSE_ALLOW_REMOTE_DB_IN_DEV === "1")), and the register branch
+        at :169 through :190. grep -c PULSE_ALLOW_REMOTE_DB_IN_DEV
+        delivery/plan/pulse-v02.yaml prints 0.
+      - |-
+        The client consults it at construction, lazily, in every process
+        that makes a repository call: src/platform/db/client.ts:3 (import),
+        :57 through :77 (assertTargetAllowed), :80 through :82
+        (constructClient calls it before new PrismaClient()).
+      - |-
+        The routine's own comment names the refusal that follows removing
+        the register without settling the client guard:
+        scripts/rederive-merchant-rules.ts:337 through :352, ending
+        "Refusing here instead, where the reason is legible."
+      - |-
+        M3-P16's run step sets exactly one hatch:
+        "PULSE_ALLOW_REMOTE_DB_DESTRUCTION=1 set INLINE ON THE SAME COMMAND
+        LINE", and no step, criterion or decision in the plan names the
+        client guard or its variable.
+      - |-
+        The parked entry's claims against the tree: "reached today only by
+        db:reset and db:migrate" and "npm run dev resolves DATABASE_URL
+        with no refusal at all", versus client.ts:3 importing
+        assessNonProductionDbTarget from guard.ts on origin/main.
+    concrete-edit: |-
+      One disposition, stated in the plan, and three texts aligned to it.
+      The disposition that removes least and matches D-62's grounds (the
+      register was defeated; the host check was not): the register
+      consultation alone leaves guard.ts and client.ts, meaning the
+      interlockApproval field and its branch (guard.ts:154 through :190) and
+      the runtime-target import plus approval construction in client.ts;
+      assessNonProductionDbTarget, assertTargetAllowed and
+      PULSE_ALLOW_REMOTE_DB_IN_DEV STAY. Then: (1) in criterion 12.23, after
+      the hatch sentence, add: "THE CLIENT KEEPS ITS OWN SECOND REFUSAL:
+      src/platform/db/client.ts consults assessNonProductionDbTarget at
+      construction, its hatch is PULSE_ALLOW_REMOTE_DB_IN_DEV, and the
+      deployed run therefore sets BOTH hatches inline on the one command
+      line. Measurement FOUR asserts the routine proceeds past its own guard
+      with the destruction hatch alone, AND that a repository-backed
+      invocation with only that hatch is refused at client construction,
+      which is the second guard witnessed rather than assumed." (2) In
+      M3-P16's run step and criterion 16.6's first clause, name both inline
+      assignments. (3) Rewrite the second parked entry to the true
+      statement: the dev server IS refused a non-local target by the
+      client's construction-time check with its own override; what remains
+      parked is whether that check plus its override is the settled posture
+      for every non-production entry point, owned by whichever phase next
+      touches src/platform/db/. If the planner instead intends the
+      non-production guard to leave entirely, 12.23 must say so in the
+      removal naming, the files-to-touch gloss must admit it, and the
+      reopened dev-server exposure must be parked as REOPENED BY THIS
+      CHANGE, not recorded as a pre-existing gap.
+  - id: PR1-M0P14-02
+    severity: high
+    analysis: |-
+      THE CRITERION SAYS IT NAMES THE REMOVAL DIFF RATHER THAN LEAVING IT TO
+      JUDGEMENT, AND THE DIFF IT NAMES LEAVES THE TREE RED. 12.23 names: the
+      four modules with "their tests under test/db/", the register
+      consultation in guard.ts and client.ts, and the gate assertions in
+      playwright.config.ts and prisma/seed.ts. Enumerating importers of the
+      four modules over the tree the removal operates on finds four more
+      surfaces the criterion does not name, and an implementer who follows
+      the named diff exactly, which is what naming a diff is FOR, leaves
+      dangling imports that fail typecheck and a test that fails on a file
+      read.
+
+      ONE, THE ROUTINE ITSELF. scripts/rederive-merchant-rules.ts imports
+      assessRederiveTarget and noteInterlockApproved (:127, :128) and calls
+      both (:321, :352), and carries the expect-host, expect-ref and
+      expect-port argument handling around them. The step's replacement
+      wiring (ask guard.ts before the first repository call) is stated as
+      intent, but the criterion's diff naming, the sentence that claims
+      completeness, does not include this file, and the step's own "one line
+      of package.json and no new module" actively suggests the routine is
+      untouched. TWO, THE E2E GATE ASSERTIONS BEYOND THE TWO NAMED FILES:
+      test/e2e/auth.spec.ts:3 and test/e2e/merchant-rule-write.spec.ts:4
+      import gate-target assertions. THREE, GUARD.TS'S OWN TEST:
+      test/db/db-guard.test.ts is not one of the withdrawn modules' tests,
+      so "their tests under test/db/" does not cover it, yet it exercises
+      the interlockApproval branch (:340 through :355 among :289 through
+      :379) and its comment-pinning test opens gate-target.ts from disk by
+      name (:238), which throws ENOENT the moment gate-target.ts is deleted.
+      FOUR, a stale comment reference in
+      test/application/counterparty-identity-surfaces.test.ts:511, harmless
+      to the gates but exactly the kind of pointer to a deleted file that
+      clause R-087 exists to keep honest.
+    evidence:
+      - |-
+        git grep over origin/main for the four module names: importers
+        beyond the criterion's list are scripts/rederive-merchant-rules.ts
+        (:127 assessRederiveTarget from @/platform/db/target-guard, :128
+        noteInterlockApproved from @/platform/db/runtime-target),
+        test/e2e/auth.spec.ts:3 (assertGateApiTargetIsLocal),
+        test/e2e/merchant-rule-write.spec.ts:4 (assertGateDbTargetIsLocal).
+      - |-
+        test/db/db-guard.test.ts:238: for (const name of ["gate-target.ts",
+        "resolve-env.ts", "guard-cli.ts"]) { const source =
+        readFileSync(join(dbDir, name), ...) }, which fails on the deleted
+        file; interlockApproval coverage in the same file at :340 through
+        :355.
+      - |-
+        Criterion 12.23's completeness claim: "this criterion names the
+        diff rather than leaving it to judgement", followed by a list that
+        contains none of the files above.
+    concrete-edit: |-
+      Extend 12.23's removal naming with one sentence: "The removal also
+      reaches the four importers the modules still have:
+      scripts/rederive-merchant-rules.ts loses the target-guard and
+      runtime-target imports, both call sites and the expect-host,
+      expect-ref and expect-port argument handling, gaining in their place
+      the guard.ts consultation the step requires;
+      test/e2e/auth.spec.ts and test/e2e/merchant-rule-write.spec.ts lose
+      their gate-target assertions; test/db/db-guard.test.ts loses its
+      interlock-approval cases and drops gate-target.ts from its
+      comment-pinning file list; and the stale gate-target reference in
+      test/application/counterparty-identity-surfaces.test.ts's comments is
+      corrected." In the step, replace "the wiring costs one line of
+      package.json and no new module" with "the wiring ADDS one line of
+      package.json and no new module; the rest of the diff is removal, and
+      criterion 12.23 names all of it."
+  - id: PR1-M0P14-03
+    severity: high
+    analysis: |-
+      BETWEEN THE HATCH AND THE WRONG DEPLOYED DATABASE STANDS ONLY PROSE,
+      AND THE PLAN ALREADY OWNS EVERYTHING NEEDED TO STAND A CHECK THERE.
+      Once the hatch is set for the M3-P16 run, H16.2's own text says the
+      remainder plainly: "nothing in the routine can tell one deployed
+      project from another and only evidence the run leaves behind can."
+      Criterion 16.6 then reads that evidence AFTER the writing invocation:
+      the after pair through the ref-pinned transport must move as the
+      routine printed. So the first moment the plan can NOTICE that the
+      ambient foreign connection won over the operator's intention (fleet
+      warning 1: the ambient DATABASE_URL names a different deployed project
+      of the owner's, and shell overrides .env) is after pass one has
+      already rewritten patterns in whatever database it reached. Detection
+      is real; prevention is "with the deployed connection PINNED EXPLICITLY
+      on that invocation", an instruction in a step, which is exactly the
+      form H12.30 dismisses as "only an instruction".
+
+      THE PRE-WRITE CHECK COSTS NOTHING NEW. The before pair is ALREADY
+      taken through the management API pinned to the pulse project by its
+      ref, before the run, by an existing step. The routine ALREADY has a
+      real --dry-run (scripts/rederive-merchant-rules.ts:375;
+      rederive-rules.ts:1009 gates every write and the recompute on it) and
+      prints its counts. A dry-run invocation under the same pinned
+      connection and hatches, whose printed rule counts EQUAL the
+      transport's before pair, proves before any write that the connection
+      the routine resolves is the database the ref names, out of evidence
+      two independent transports supplied. No register, no scanner, no new
+      module: this is D-62-compatible by construction.
+
+      TWO SMALLER HOLES IN THE SAME SEAM. First, 16.6 refuses counts "taken
+      only through the same connection string the run used", but the
+      before-numbers step OFFERS that connection as its first choice ("over
+      an explicitly named session pooler connection where a credential
+      exists, and otherwise through the Supabase management API"), so a
+      compliant reading of the step produces a record 16.6 rejects. Second,
+      16.6's BLOCKED leg is written only for a run never made ("stating
+      that no invocation was issued against any database"), so the one
+      outcome the criterion exists to catch, a run MADE whose residue does
+      not move as printed, satisfies neither leg and leaves the phase with
+      no truthful terminal record.
+    evidence:
+      - |-
+        H16.2 as rewritten by this port: "nothing in the routine can tell
+        one deployed project from another and only evidence the run leaves
+        behind can", addressed-by criterion 16.6.
+      - |-
+        Criterion 16.6 compares only the AFTER pair: "the after pair read
+        through that ref-pinned transport moves exactly as the routine's
+        own printed counts say it should"; its BLOCKED leg requires
+        "stating that no invocation was issued against any database".
+      - |-
+        The dry run is real and total: scripts/
+        rederive-merchant-rules.ts:117 ("--dry-run DECIDES AND WRITES
+        NOTHING") and src/modules/merchants/application/
+        rederive-rules.ts:1009 (applied = exitCode === 0 && input.dryRun
+        !== true) gating updates, inserts and recompute together.
+      - |-
+        The before-numbers step's transport choice: "Take them over an
+        explicitly named session pooler connection where a credential
+        exists, and otherwise through the Supabase management API pinned to
+        the pulse project by its ref", versus 16.6: "A record whose before
+        and after counts were taken only through the same connection string
+        the run used does not meet this criterion."
+    concrete-edit: |-
+      Three edits, all to M3-P16. (1) Add to criterion 16.6, after the
+      residue sentence: "AND THE FIRST WRITE WAITS FOR ONE EQUALITY: before
+      the invocation that writes, the routine is invoked once with
+      --dry-run under the same pinned connection and the same inline
+      hatches, and the work history records its printed rule counts EQUAL
+      to the before pair the ref-pinned transport returned. A writing
+      invocation issued before that equality is recorded does not meet this
+      criterion. This builds nothing: it orders two observations the phase
+      already makes." (2) Insert the matching sentence into the run step,
+      before "Run the routine ONCE and WITHOUT --accept". (3) Amend the
+      before-numbers step to "through the Supabase management API pinned to
+      the pulse project by its ref; a session pooler read may be recorded
+      BESIDE it but never in place of it, because criterion 16.6 refuses a
+      pair taken only through the connection the run used", and extend
+      16.6's closing leg: "Where the run was made and the after pair does
+      not move as the routine printed, the record says exactly that, names
+      both pairs, and the phase closes BLOCKED carrying it; that record is
+      the criterion's failure witnessed, never a variant of MET."
+  - id: PR1-M0P14-04
+    severity: medium
+    analysis: |-
+      TWO OF 12.23'S ASSERTIONS ARE NOT OBSERVABLES, AND ONE OF THEM IS THE
+      SHAPE THE PLAN JUST FINISHED OUTLAWING. Measurement THREE requires "a
+      test that finds no second copy of that shell-first, dot-env-fallback
+      reading anywhere under src, scripts or test". A second copy has no
+      fixed surface form: it can read process.env and parse a .env file by
+      hand with no shared token, so no grep can find it and no test can
+      assert its absence; whatever the implementer writes will be a
+      hand-written scan over source text that passes vacuously, which is
+      the family D-62 just spent three rounds retiring, in miniature. The
+      same criterion later requires "a test asserts that src, scripts and
+      test carry no module recording a process-wide database-target
+      approval, and none that reads source text to decide whether a
+      database call site is guarded": "a module recording an approval" is a
+      semantic property no test can decide either, and the second half asks
+      a test to detect tests that read source text, while db-guard.test.ts
+      legitimately reads source text for its comment pins, so the predicate
+      as stated is either false against the tree or quietly narrowed by
+      whoever implements it.
+
+      WHAT IS ACTUALLY CHECKABLE IS STRONGER AND ALREADY HALF-BUILT. The
+      single-copy property has a constructive witness: resolve-env.ts is
+      the one implementation, and both consumers IMPORT it. An import is a
+      fact of the module graph, assertable directly. The register-absence
+      property has a finite witness: the four named paths do not exist and
+      the two named exports resolve nowhere.
+    evidence:
+      - |-
+        Measurement THREE's words: "asserted by a test that finds no second
+        copy of that shell-first, dot-env-fallback reading anywhere under
+        src, scripts or test".
+      - |-
+        Decision D-62's binding in the same iteration: "no hand-rolled
+        scanner over source text", grounded in the lexer defeated four ways
+        in one round.
+      - |-
+        The constructive half exists on the tree already:
+        src/platform/db/resolve-env.ts is imported by guard-cli.ts
+        ("Environment resolution mirrors Prisma's and lives in ONE place"),
+        so the criterion can pin consumers rather than hunt copies.
+      - |-
+        db-guard.test.ts reads source files legitimately at :238 (the
+        comment-pinning loop), which the "none that reads source text"
+        clause would have to condemn or carve around.
+    concrete-edit: |-
+      Replace measurement THREE's test clause with: "asserted structurally:
+      guard-cli.ts and the routine both import resolveDbEnv from
+      src/platform/db/resolve-env.ts, pinned by a unit test that stubs the
+      module and sees both consumers change answer together; and a
+      grep-shaped test pins that no file under src or scripts other than
+      resolve-env.ts opens a .env file by name." Replace the
+      register-absence sentence with: "A test asserts the four withdrawn
+      paths do not exist and that no module under src, scripts or test
+      exports noteInterlockApproved or approvedConnection; nothing broader
+      is claimed, because a semantic absence is not a testable property,
+      which is the lesson D-62 records."
+  - id: PR1-M0P14-05
+    severity: medium
+    analysis: |-
+      MEASUREMENT FIVE FORBIDS PRINTING A HOST, AND THE GUARD THE ROUTINE IS
+      TOLD TO CONSULT PRINTS ONE. assessDestructiveDbTarget's non-local
+      refusal reason embeds the resolved hostname (guard.ts:76: points at
+      non-local host, with the hostname interpolated), and guard-cli prints
+      that reason verbatim on stderr. The criterion tells the routine to ask
+      "the same guard the same question" and then requires "no connection
+      string, password or host is printed on any path, asserted over the
+      captured output of every refusal case". An implementer who wires the
+      guard the way guard-cli already models it prints the ambient host,
+      which in a fleet container is a real deployed pooler host, and the
+      measurement goes red against the very posture the step prescribes;
+      one who redacts silently diverges from the file the plan calls
+      unweakened. The plan must pick one and say it.
+
+      THE SAME VOCABULARY LEAKS INTO M3-P16'S EVIDENCE PATH. The run step
+      requires capturing the WHOLE output verbatim to a file the run wrote,
+      and on the BLOCKED path (guard refuses) that verbatim capture
+      contains guard-cli's refusal line, hostname included, while criterion
+      16.4 forbids a database host committed anywhere on any path. The
+      non-production assessment in the same file already states the correct
+      practice twice ("The resolved value is deliberately not printed: this
+      repository is public"); the destructive assessment predates it and
+      was never brought in line, which is invisible until a criterion
+      starts quoting captured output into a public work history.
+    evidence:
+      - |-
+        src/platform/db/guard.ts:76: the refusal reason template embeds the
+        hostname; src/platform/db/guard-cli.ts prints verdict.reason on
+        both branches.
+      - |-
+        Criterion 12.23 measurement FIVE: "no connection string, password
+        or host is printed on any path, asserted over the captured output
+        of every refusal case above".
+      - |-
+        M3-P16's run step: "Capture the whole of its output verbatim to a
+        file the run wrote"; criterion 16.4: "NO CONNECTION STRING,
+        PASSWORD OR DATABASE HOST IS COMMITTED ANYWHERE, on any path".
+      - |-
+        guard.ts:188 and :219: the sibling assessment's refusals
+        deliberately print no resolved value, stating the public-repository
+        reason inline.
+    concrete-edit: |-
+      Admit the one-line message change and name it in both places. In
+      12.23's measurement FIVE add: "This requires one admitted edit to
+      guard.ts, named here so the unweakened claim stays true: the
+      destructive assessment's non-local refusal drops the interpolated
+      hostname and names the VARIABLE only, matching the practice its
+      sibling assessment already states twice; the refusal logic changes
+      not at all, and the existing db-guard tests pin that." In the
+      files-to-touch gloss, extend the admitted changes to "and that one
+      refusal-message redaction". In M3-P16's run step add: "the captured
+      file is read back before it is committed and can carry no host
+      because the guard no longer prints one; if any line nonetheless
+      carries a host, the line is quoted with the host elided and the
+      elision is marked."
+  - id: PR1-M0P14-06
+    severity: low
+    analysis: |-
+      THE PHASE'S OWN INTERFERENCE ENTRY NAMES TWO FILES ITS DECLARATION
+      DOES NOT CARRY. The rewritten M3-P9 entry, in the half this port
+      appended, states "TWO REMAIN ...: src/app/globals.css, where this
+      phase adds the refusal banner criterion 12.18 surfaces and the muted
+      line an unnameable group renders; and test/e2e/, where it adds the
+      pre-migration submission spec that same criterion requires." Criterion
+      12.18 indeed requires an e2e witness. But M3-P12's files-to-touch
+      lists neither src/app/globals.css nor test/e2e/: the gap predates
+      this iteration, and this iteration re-derived the shared-file count
+      in the same entry, which is exactly the moment to have closed it. A
+      files-to-touch that omits files the phase's own criteria require
+      editing is the defect the M0-P13 iteration existed to remove, and it
+      makes the M3-P9 scheduling entry the only place the truth is
+      recorded.
+    evidence:
+      - |-
+        The appended entry text in this port: "TWO REMAIN after decision
+        D-62 withdrew the target interlock ... src/app/globals.css ... and
+        test/e2e/ ...".
+      - |-
+        M3-P12's files-to-touch after this port: prisma, package.json, the
+        pulse-domain skill, src/platform/db/, scripts/, test/domain/,
+        test/application/, test/db/, test/fixtures/ and the merchants and
+        ledger and overview sources; no globals.css, no test/e2e/.
+      - |-
+        Criterion 12.18: "an e2e test asserts that submitting a
+        PRE-MIGRATION un-namespaced key ... surfaces that error to the
+        reader", which cannot land outside test/e2e/.
+    concrete-edit: |-
+      Add two entries to M3-P12's files-to-touch: "src/app/globals.css (the
+      refusal banner criterion 12.18 surfaces and the muted line an
+      unnameable group renders)" and "test/e2e/ (the pre-migration
+      submission spec criterion 12.18 requires)", so the declaration and
+      the M3-P9 interference entry name the same set.
