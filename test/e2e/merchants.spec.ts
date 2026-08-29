@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { FIXTURE_ACCOUNT_A, registerCurrentAccount } from "./setup-accounts";
 
@@ -320,9 +321,20 @@ test("submitting a PRE-MIGRATION un-namespaced subject surfaces the refusal to t
   await group.getByRole("button", { name: "Name" }).click();
 
   // THE REFUSAL REACHES THE READER. This is the half this spec carries, and
-  // it is the half that needs a browser: the banner is rendered from a
-  // redirect status the screen reads, in the reader's own language.
-  await expect(page.getByTestId("naming-refused")).toBeVisible();
+  // it is the half that needs a browser. AMENDED IN M3-P11 (clause R-087):
+  // this block used to assert the naming-refused banner, rendered from a
+  // redirect status the screen read. Since M3-P11 the action RETURNS its
+  // refusal and the row's client leaf raises it as the failure toast
+  // (DR-0026), still carrying this refusal kind's own wording, so the
+  // reader is still told to reload and name again. The banner path remains
+  // renderable from a hand-typed status URL but nothing sets it any more.
+  await expect(page.getByTestId("naming-failed")).toBeVisible();
+  const staleMessages = JSON.parse(
+    readFileSync(join(__dirname, "..", "..", "messages", "en.json"), "utf8"),
+  ) as Record<string, string>;
+  await expect(page.getByTestId("naming-failed")).toHaveText(
+    staleMessages["nameRefusedStale"] ?? "",
+  );
 
   // NOTHING WAS WRITTEN. Corrected in the fix round, finding HZ-M3P12-08:
   // the two assertions below used to be described as showing this, and they

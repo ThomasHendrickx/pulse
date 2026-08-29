@@ -47,7 +47,7 @@ const REJECTED_FIXTURE = join(__dirname, "..", "fixtures", "unknown-layout.pdf")
 const CONTROL_SELECTOR =
   'button, a[href], summary, input[type="submit"], input[type="button"], [role="button"]';
 
-// THE ENUMERATION, twenty-one controls, the shell's NavLink accounting for
+// THE ENUMERATION, twenty-two controls, the shell's NavLink accounting for
 // four of them.
 //
 // AMENDED IN M3-P14 rather than the sweep narrowed, which is what criterion
@@ -94,6 +94,15 @@ const ENUMERATION: readonly string[] = [
   "a[data-testid=month-step-next]",
   // The spec editor's disclosure summary.
   "summary|Detected format description",
+  // AMENDED IN M3-P13, and amended rather than the sweep narrowed, which is
+  // what criterion 9.2(a) requires when the two disagree. That phase puts the
+  // transactions behind a merchant group behind a native disclosure on the
+  // review screen, which the journey already visits and the sweep already
+  // reaches, so it is a twenty-second control and it is measured like the
+  // rest. It needed no new appearance rule: the pressed, disabled and busy
+  // rules in this product are declared at ELEMENT scope for summary, and this
+  // one's own class rules sit one specificity step below them.
+  "summary.merchant-row-detail-summary|Show these transactions",
   // The four remaining links.
   "a|Create household",
   "a|Sign in",
@@ -1533,7 +1542,12 @@ const runJourney = async (page: Page, reduced: boolean, cdp: CDPSession | null):
   console.log(`swept control set (${found.length}):\n  ${found.join("\n  ")}`);
   const expected = [...ENUMERATION].sort();
   expect(found, "the swept control set is not the enumeration").toEqual(expected);
-  expect(found).toHaveLength(21);
+  // A LITERAL, not ENUMERATION.length, which would be vacuous. UPDATED IN
+  // M3-P13 (was 21): the review row's disclosure summary is a twenty-second
+  // control. The number is written out so that a later phase which SHRINKS
+  // the enumeration to match a sweep, rather than amending it, is red here
+  // as well as in the equality above.
+  expect(found).toHaveLength(22);
 
   if (cdp !== null) {
     // Criterion 9.9(b) is taken over the SET, so the count of controls the
@@ -1563,19 +1577,47 @@ const runJourney = async (page: Page, reduced: boolean, cdp: CDPSession | null):
 // collecting this file. A file no project matches is never LOADED, so nothing
 // inside it can fail; what binds is this assertion running under every
 // project that still collects it.
+//
+// CR2-M3P9-02: Playwright decides collection with BOTH halves,
+// `!testIgnore(file) && testMatch(file)`, and a project with no testIgnore of
+// its own falls back to the top-level config's testIgnore. A predicate that
+// reads testMatch alone reports a project as collecting a file it has since
+// been testIgnore'd out of, which is exactly the silent-empty failure this
+// check exists to catch. matchesPattern below is the shared shape matcher for
+// both halves; matchesSpec combines them the same way Playwright does. An
+// ABSENT testMatch is Playwright's own default and DOES collect the file, so
+// it reads as a match rather than as no match.
 // =====================================================================
-const matchesSpec = (testMatch: unknown, file: string): boolean => {
-  if (testMatch === undefined || testMatch === null) return false;
-  if (Array.isArray(testMatch)) return testMatch.some((m) => matchesSpec(m, file));
-  if (testMatch instanceof RegExp) return testMatch.test(file);
-  if (typeof testMatch === "string") return file.includes(testMatch);
+const matchesPattern = (pattern: unknown, file: string): boolean => {
+  if (pattern === undefined || pattern === null) return false;
+  if (Array.isArray(pattern)) return pattern.some((m) => matchesPattern(m, file));
+  if (pattern instanceof RegExp) return pattern.test(file);
+  if (typeof pattern === "string") return file.includes(pattern);
   return false;
+};
+
+const matchesSpec = (
+  testMatch: unknown,
+  testIgnore: unknown,
+  topLevelTestIgnore: unknown,
+  file: string,
+): boolean => {
+  const effectiveIgnore = testIgnore ?? topLevelTestIgnore;
+  if (matchesPattern(effectiveIgnore, file)) return false;
+  if (testMatch === undefined || testMatch === null) return true;
+  return matchesPattern(testMatch, file);
 };
 
 test("a project with touch collects this spec, and the config still says so", async () => {
   const file = basename(test.info().file);
   type Loaded = {
-    projects?: { name?: string; use?: { hasTouch?: boolean }; testMatch?: unknown }[];
+    projects?: {
+      name?: string;
+      use?: { hasTouch?: boolean };
+      testMatch?: unknown;
+      testIgnore?: unknown;
+    }[];
+    testIgnore?: unknown;
     default?: Loaded;
   };
   // Playwright's own TypeScript loader hands back a module whose default is
@@ -1593,12 +1635,15 @@ test("a project with touch collects this spec, and the config still says so", as
     touchProjects.map((p) => p.name),
     "no Playwright project declares hasTouch, so nothing in this config can press with a finger",
   ).not.toEqual([]);
-  const collecting = touchProjects.filter((p) => matchesSpec(p.testMatch, file));
+  const collecting = touchProjects.filter((p) =>
+    matchesSpec(p.testMatch, p.testIgnore, loaded.testIgnore, file),
+  );
   expect(
     collecting.map((p) => p.name),
     `no project with hasTouch collects ${file}. The touch measurement in this file is the only` +
       ` evidence this product's press feedback reaches a finger, and a project that no longer` +
-      ` collects it empties that measurement silently instead of failing.`,
+      ` collects it (by testMatch or by testIgnore, its own or the top-level config's) empties` +
+      ` that measurement silently instead of failing.`,
   ).not.toEqual([]);
   console.log(
     `config membership: ${file} is collected by ${JSON.stringify(collecting.map((p) => p.name))}` +
@@ -1706,6 +1751,29 @@ test("the press listener is served in the document, on the shell and on the sign
     live,
     "the live script element's text differs from the text the shell's response carried",
   ).toBe((bodies["/"] ?? "").match(SCRIPT_TAG)?.[1] ?? "");
+
+  // CR2-M3P9-03: a BEHAVIOURAL witness beside the two text checks above, so a
+  // script element whose entire body is a comment naming the words
+  // "addEventListener" and "pointerdown" cannot pass this test. This drives a
+  // real pointerdown at a live control on the served, unmodified document and
+  // reads back the attribute the SHIPPED listener is supposed to raise;
+  // nothing has been installed yet at this point in the test, so what answers
+  // is the served script and not this spec's own recorder. It runs here,
+  // outside the touch describe block's hasTouch skip, so the desktop project
+  // witnesses it too and not only chromium-phone.
+  const witness = page.locator("button.app-signout");
+  await expect(witness).toBeVisible();
+  const witnessAt = await centreOf(witness);
+  await page.mouse.move(witnessAt.x, witnessAt.y);
+  await page.mouse.down();
+  const raisedByServedListener = await witness.evaluate((el) => el.matches("[data-pressed]"));
+  await page.mouse.up();
+  expect(
+    raisedByServedListener,
+    "a real pointerdown on a live control did not raise [data-pressed]. The script served for" +
+      " / carries the text \"addEventListener\" and \"pointerdown\" but the listener it" +
+      " registers does not mark the control pressed.",
+  ).toBe(true);
 
   // Criterion 9.9(a): the spec PRINTS what it injected, so a reader checks
   // the claim rather than trusting a grep. Nothing here writes the marking.
