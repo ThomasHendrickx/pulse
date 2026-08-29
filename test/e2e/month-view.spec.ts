@@ -1453,17 +1453,26 @@ test("held rows are shown under the account's label, in every locale, and nothin
   await expect(page.getByTestId("held-rows")).toHaveCount(0);
 
   // The savings account's OWN statement, accepted under DR-0030.
+  //
+  // NO CONFIRMATION STEP IS DRIVEN HERE, and that is the product's rule
+  // rather than a shortcut (slow-gate repair round). The statement above
+  // taught this household the format, and upload-statement.ts asks ONCE:
+  // when a stored profile matches the detected spec and the file's own
+  // account resolves, the import is created PARSED and its rows are
+  // ingested in the same request, so no declaration screen is rendered.
+  // The savings statement is the same Demobank export in the same shape,
+  // so it lands directly. The spec used to wait for the confirmation
+  // heading here and timed out on a page already reading "Import
+  // complete": it drove a step the product had removed.
   await page.goto("/import");
   await page
     .getByLabel("Bank export file")
     .setInputFiles(join(FIXTURES, "savings-statement.csv"));
   await page.getByRole("button", { name: "Upload" }).click();
+  await expect(page.getByTestId("import-result")).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Confirm the detected format" }),
-  ).toBeVisible();
-  await page.getByLabel("Format name").fill("Demobank savings statement");
-  await page.getByTestId("confirm-import").click();
-  await expect(page.getByTestId("import-result")).toBeVisible();
+  ).toHaveCount(0);
   await expect(page.getByTestId("rows-added")).toHaveText("6");
 
   await page.goto("/?month=2026-08");

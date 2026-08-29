@@ -47,7 +47,7 @@ const REJECTED_FIXTURE = join(__dirname, "..", "fixtures", "unknown-layout.pdf")
 const CONTROL_SELECTOR =
   'button, a[href], summary, input[type="submit"], input[type="button"], [role="button"]';
 
-// THE ENUMERATION, twenty-one controls, the shell's NavLink accounting for
+// THE ENUMERATION, twenty-two controls, the shell's NavLink accounting for
 // four of them.
 //
 // AMENDED IN M3-P14 rather than the sweep narrowed, which is what criterion
@@ -94,6 +94,15 @@ const ENUMERATION: readonly string[] = [
   "a[data-testid=month-step-next]",
   // The spec editor's disclosure summary.
   "summary|Detected format description",
+  // AMENDED IN M3-P13, and amended rather than the sweep narrowed, which is
+  // what criterion 9.2(a) requires when the two disagree. That phase puts the
+  // transactions behind a merchant group behind a native disclosure on the
+  // review screen, which the journey already visits and the sweep already
+  // reaches, so it is a twenty-second control and it is measured like the
+  // rest. It needed no new appearance rule: the pressed, disabled and busy
+  // rules in this product are declared at ELEMENT scope for summary, and this
+  // one's own class rules sit one specificity step below them.
+  "summary.merchant-row-detail-summary|Show these transactions",
   // The four remaining links.
   "a|Create household",
   "a|Sign in",
@@ -1533,7 +1542,12 @@ const runJourney = async (page: Page, reduced: boolean, cdp: CDPSession | null):
   console.log(`swept control set (${found.length}):\n  ${found.join("\n  ")}`);
   const expected = [...ENUMERATION].sort();
   expect(found, "the swept control set is not the enumeration").toEqual(expected);
-  expect(found).toHaveLength(21);
+  // A LITERAL, not ENUMERATION.length, which would be vacuous. UPDATED IN
+  // M3-P13 (was 21): the review row's disclosure summary is a twenty-second
+  // control. The number is written out so that a later phase which SHRINKS
+  // the enumeration to match a sweep, rather than amending it, is red here
+  // as well as in the equality above.
+  expect(found).toHaveLength(22);
 
   if (cdp !== null) {
     // Criterion 9.9(b) is taken over the SET, so the count of controls the

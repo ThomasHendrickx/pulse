@@ -29,6 +29,7 @@
 // src/platform/ui and React (criterion 11.7(e)). The action reference
 // arrives as a prop for the same reason.
 
+import type { ReactNode } from "react";
 import {
   useCallback,
   useEffect,
@@ -49,6 +50,10 @@ import {
   subscribeToNotices,
 } from "./notice-queue";
 import {
+  isNamingActionAnswer,
+  type NamingActionAnswer,
+} from "./naming-answer";
+import {
   claimNaming,
   forgetNaming,
   namingClaims,
@@ -56,30 +61,14 @@ import {
   type NamingDirection,
 } from "./naming-claims";
 
-// The action's result, typed STRUCTURALLY rather than imported from the
-// action module: the boundary rule keeps this leaf's import closure inside
-// src/platform/ui and React, and the server component that binds the real
+// The action's answer shape and the guard the client applies to it live
+// in ./naming-answer, a pure module, so the fast gate can hold the rule
+// rather than leaving it to a browser gate this project cannot run. The
+// type is declared there rather than imported from the action module,
+// which is what keeps this leaf's closure inside its own folder,
+// src/platform/ui and React; the server component that binds the real
 // action to this prop is where the compiler checks the two shapes agree.
-type NamingActionResult =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly error: { readonly kind: string } };
 
-// THE ANSWER IS CHECKED RATHER THAN ASSUMED (fix round, finding
-// HZ-M3P11-06). The success path ends in redirect(), which throws, so the
-// awaited call can only produce a rejection carrying a NEXT_REDIRECT
-// digest and the ok: true arm above is unreachable today. Reading
-// result.ok on that assumption means that a framework version which ever
-// RESOLVED the call instead would throw a TypeError inside a transition,
-// and the reader would meet an error boundary instead of a notice. One
-// guard turns that into the loud failure this phase already knows how to
-// show.
-const isNamingActionResult = (value: unknown): value is NamingActionResult => {
-  if (typeof value !== "object" || value === null || !("ok" in value)) {
-    return false;
-  }
-  const { ok } = value as { readonly ok: unknown };
-  return typeof ok === "boolean";
-};
 
 export type NamingCopy = {
   // The unconfirmed marking's accessible text (the fourth catalogue key,
@@ -127,11 +116,17 @@ export const MerchantGroupRow = ({
   copy,
   naming,
   action,
+  detail,
 }: {
-  // The MASKED group key, for the row's stable DOM identity (data-group-key,
-  // criterion 11.3): for an unresolved descriptor group the raw key IS the
-  // descriptor, so an unmasked copy would reach spec failure messages and
-  // retained traces for no gain.
+  // The row's stable DOM identity (data-group-key, criterion 11.3). An
+  // OPAQUE DIGEST of the group key, computed by the server component
+  // (merchant-review.tsx, groupDomId), never the key itself: for an
+  // unresolved descriptor group the raw key IS the descriptor, and for an
+  // account-basis group it is the counterparty account in full, and neither
+  // belongs in an attribute, in a spec failure message or in a retained
+  // trace. It is also this row's key in the naming-claims store, which is
+  // why it is a digest rather than a mask: a digest stays injective, so a
+  // claim can never land on a sibling row.
   readonly groupKey: string;
   // The already-masked label the server rendered.
   readonly label: string;
@@ -153,7 +148,33 @@ export const MerchantGroupRow = ({
     readonly placeholder: string;
     readonly submitLabel: string;
   };
-  readonly action?: (formData: FormData) => Promise<NamingActionResult>;
+  readonly action?: (formData: FormData) => Promise<NamingActionAnswer>;
+  // WHAT THE ROW SAYS ABOUT ITSELF, rendered by the SERVER component and
+  // passed through as children (M3-P13): the basis line, the reach line and
+  // the disclosure holding the transactions behind this group. It arrives
+  // already rendered so this leaf keeps its closure over src/platform/ui
+  // and React and touches no message catalogue and no domain type
+  // (criterion 11.7(e)).
+  //
+  // THREE SLOTS, AND THIS PARAGRAPH IS CORRECTED RATHER THAN QUIETLY
+  // REWRITTEN (clause R-087, fix round, finding CR-M3P13-05). It used to say
+  // "Two slots rather than one: `detail.aboveForm` sits between the totals
+  // and the naming form", naming a slot that does not exist beside the
+  // declared type that lists three, and it then gave the same reason for the
+  // reach line twice in consecutive clauses, which reads as an unfinished
+  // edit. What is true: `detail.beforeForm` sits between the totals and the
+  // naming form and carries the basis line, because the basis is a statement
+  // about the GROUP; `detail.inForm` is rendered INSIDE the form element and
+  // carries the reach, because the reach is a statement about the control the
+  // reader is deciding whether to press and criterion 13.4 asks the FORM to
+  // carry it; `detail.afterForm` sits under the form and carries the
+  // transaction lines, because they are a list rather than part of the
+  // decision.
+  readonly detail?: {
+    readonly beforeForm?: ReactNode;
+    readonly inForm?: ReactNode;
+    readonly afterForm?: ReactNode;
+  };
 }) => {
   const regionId = useId();
   // The predicted label, null while nothing is in flight. Set inside the
@@ -191,12 +212,19 @@ export const MerchantGroupRow = ({
       return;
     }
     enterNoticeQueue(noticeQueue, noticeId);
-    // A row that leaves the screen with a notice up must not hold the
-    // queue closed behind it.
-    return () => {
-      leaveNoticeQueue(noticeQueue, noticeId);
-    };
   }, [notice, noticeId]);
+  // A row that leaves the screen with a notice up must not hold a place in
+  // the queue behind it. Separate from the effect above ON PURPOSE (round
+  // two, finding HZ2-M3P11-02): a cleanup on that one runs on every raise
+  // as well as on unmount, which took the row out of the queue and put it
+  // back, and the module's own comment claimed an idempotence that
+  // sequence defeated.
+  useEffect(
+    () => () => {
+      leaveNoticeQueue(noticeQueue, noticeId);
+    },
+    [noticeId],
+  );
 
   const dismissNotice = useCallback(() => {
     leaveNoticeQueue(noticeQueue, noticeId);
@@ -209,13 +237,22 @@ export const MerchantGroupRow = ({
   // it is idempotent: claimNaming retires the entry it answers. The rules
   // and their residues live at ./naming-claims.
   //
-  // The comparison is made in the alphabet the SCREEN uses: the label this
-  // row renders has been through maskCardNumbers, so the typed string is
-  // rendered the same way before the two are compared (finding
-  // HZ-M3P11-03). A name the masking rewrites therefore reads as the server
-  // agreeing, which it did: the difference this notice is about is the
+  // The comparison is made in the alphabet the SCREEN uses: the typed string
+  // is rendered the same way as the label before the two are compared
+  // (finding HZ-M3P11-03). A name the masking rewrites therefore reads as the
+  // server agreeing, which it did: the difference this notice is about is the
   // SERVER's answer differing, and the masking is a rendering rule this
   // screen applies to every label it draws.
+  //
+  // HALF-TRUE SINCE M3-P13 AND CORRECTED HERE (clause R-087, fix round,
+  // finding CR-M3P13-05). This paragraph used to say the label "has been
+  // through maskCardNumbers" and name that one mask. Since M3-P13 the label
+  // arrives through the ACCOUNT mask as well
+  // (src/modules/merchants/ui/merchant-review.tsx, the label prop). The
+  // comparison below still renders the typed string through the card mask
+  // ALONE, and that is correct rather than an oversight: a merchant name a
+  // reader types is not an account number, so the account mask is a no-op on
+  // it, and running it would only add a way for the two sides to disagree.
   //
   // No dependency list ON PURPOSE, against the exhaustive-deps advice: the
   // merge case re-renders this row with an UNCHANGED label (only its total
@@ -257,17 +294,26 @@ export const MerchantGroupRow = ({
       <span className="merchant-row-label" data-testid="group-label">
         {predictedLabel ?? label}
       </span>
-      <span className="merchant-row-count">{countText}</span>
+      <span className="merchant-row-count" data-testid="group-count">
+        {countText}
+      </span>
       <span data-testid="group-total">
         <Amount cents={totalCents} />
       </span>
+      {detail?.beforeForm}
       {naming !== undefined && action !== undefined ? (
         <form
           className="merchant-name-form"
           action={async (formData) => {
             const typed = String(formData.get("merchantName") ?? "");
             setPredictedLabel(typed);
-            setNotice(null);
+            // THE PREVIOUS NOTICE IS NOT DROPPED HERE (round two, finding
+            // HZ2-M3P11-02). Clearing it at the start of a retry removed a
+            // notice the reader had not dismissed, which is the property
+            // decision D-32 bought by removing the timer, and it took this
+            // row out of the notice queue so another row's sentence took
+            // the screen while the reader was acting on this one. The
+            // outcome below replaces it, and the success path clears it.
             recordNaming(namingClaims, {
               rowKey: groupKey,
               direction,
@@ -284,7 +330,9 @@ export const MerchantGroupRow = ({
                 // with a NEXT_REDIRECT digest (measured in this phase's
                 // verification-first probe). Rethrow so the router handles
                 // it; this row's claim stays for the refreshed row to
-                // answer.
+                // answer. The row's own notice goes, because the naming it
+                // was about has now been answered.
+                setNotice(null);
                 throw error;
               }
               // The TRANSPORT failure: the request never produced the
@@ -292,23 +340,23 @@ export const MerchantGroupRow = ({
               // label dies with the transition); the notice is the loud
               // half (DR-0025). Only THIS row's claim is retired, never a
               // sibling's (finding HZ-M3P11-02).
-              forgetNaming(namingClaims, groupKey);
+              forgetNaming(namingClaims, groupKey, direction);
               setNotice({ kind: "failed", message: copy.failed });
               return;
             }
-            if (!isNamingActionResult(answer)) {
+            if (!isNamingActionAnswer(answer)) {
               // The action resolved with something this client does not
               // recognise, which today can only mean the framework stopped
               // signalling the redirect as a rejection. Treated as the
               // transport arm: loud, reverted, and true, since the client
               // still does not know what the server did.
-              forgetNaming(namingClaims, groupKey);
+              forgetNaming(namingClaims, groupKey, direction);
               setNotice({ kind: "failed", message: copy.failed });
               return;
             }
             if (!answer.ok) {
               // The DOMAIN refusal, reported as a value by the action.
-              forgetNaming(namingClaims, groupKey);
+              forgetNaming(namingClaims, groupKey, direction);
               setNotice({
                 kind: "failed",
                 message: copy.refusals[answer.error.kind] ?? copy.failed,
@@ -316,6 +364,7 @@ export const MerchantGroupRow = ({
             }
           }}
         >
+          {detail?.inForm}
           <input
             type="hidden"
             name="counterpartyText"
@@ -367,6 +416,7 @@ export const MerchantGroupRow = ({
           </SubmitButton>
         </form>
       ) : null}
+      {detail?.afterForm}
       {notice === null || !showing ? null : notice.kind === "failed" ? (
         <Toast
           role="alert"

@@ -55,6 +55,22 @@ export type NamingClaimStore = { entries: NamingClaim[] };
 
 export const createNamingClaimStore = (): NamingClaimStore => ({ entries: [] });
 
+// WHICH ROW AN ENTRY BELONGS TO, and it is the PAIR (round two, finding
+// HZ2-M3P11-01). The row key alone is not unique on this screen: the review
+// groups each direction separately over the same counterparty identity
+// (src/modules/merchants/domain/merchant-review.ts groups income rows and
+// spend rows independently over a key that is the merchant id or the
+// counterparty identity), so a counterparty with a spend row and a refund
+// renders TWO rows carrying the same data-group-key. Writing or retiring on
+// the key alone therefore reached across those two rows and reopened both
+// arms of HZ-M3P11-02: naming the second erased the first row's record, and
+// a failure on either retired the other's. The claim already MATCHED on
+// direction plus label; this makes the identity as specific as the match.
+const isSameRow = (
+  entry: { readonly rowKey: string; readonly direction: NamingDirection },
+  row: { readonly rowKey: string; readonly direction: NamingDirection },
+): boolean => entry.rowKey === row.rowKey && entry.direction === row.direction;
+
 // ADDITIVE, never destructive to a sibling: a row replaces its OWN entry
 // and touches no other row's.
 export const recordNaming = (
@@ -62,15 +78,24 @@ export const recordNaming = (
   claim: NamingClaim,
 ): void => {
   store.entries = [
-    ...store.entries.filter((entry) => entry.rowKey !== claim.rowKey),
+    ...store.entries.filter(
+      (entry) =>
+        !isSameRow(entry, { rowKey: claim.rowKey, direction: claim.direction }),
+    ),
     claim,
   ];
 };
 
 // A refusal or a transport failure retires the entry of the row that
 // failed, and only that one.
-export const forgetNaming = (store: NamingClaimStore, rowKey: string): void => {
-  store.entries = store.entries.filter((entry) => entry.rowKey !== rowKey);
+export const forgetNaming = (
+  store: NamingClaimStore,
+  rowKey: string,
+  direction: NamingDirection,
+): void => {
+  store.entries = store.entries.filter(
+    (entry) => !isSameRow(entry, { rowKey, direction }),
+  );
 };
 
 export const claimNaming = (
@@ -104,7 +129,7 @@ export const claimNaming = (
   const exact = mine.find((entry) => label === render(entry.typed));
   if (exact !== undefined) {
     // The server's answer equals the prediction character for character.
-    forgetNaming(store, exact.rowKey);
+    forgetNaming(store, exact.rowKey, exact.direction);
     return "confirmed";
   }
   if (!resolved) {
@@ -114,7 +139,7 @@ export const claimNaming = (
   if (trimmed === undefined) {
     return "none";
   }
-  forgetNaming(store, trimmed.rowKey);
+  forgetNaming(store, trimmed.rowKey, trimmed.direction);
   return "differs";
 };
 

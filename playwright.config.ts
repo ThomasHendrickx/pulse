@@ -113,7 +113,20 @@ export default defineConfig({
       // touch emulation this project declares: a held press measured
       // without hasTouch is a desktop measurement at a phone width, which
       // is the error class this round exists to avoid.
-      testMatch: /(month-view|navigation|pressed-and-disabled|busy-state)\.spec\.ts/,
+      // M3-P10 FIX ROUND 2 adds merchants (criteria finding CR-M3P10-05).
+      // Criterion 10.8 asks that the merchant journey passes unchanged
+      // "under BOTH PROJECTS", and it was discovered under the desk
+      // project only: no phone project's testMatch reached it, so the arm
+      // was never runnable and nothing said so. The file already drives
+      // its card-label describe at 390 by 844 through its own test.use,
+      // so what this line adds is the FIRST journey (naming an unresolved
+      // counterparty) at the phone width, under this project's touch
+      // emulation. NOT EXECUTED IN THE ROUND THAT ADDED IT: the fix-round
+      // container has no Docker and therefore no auth service, so every
+      // journey here signs up and none can run. The widening is recorded
+      // as owed execution in delivery/work-history/m3-p10.yaml rather
+      // than claimed green.
+      testMatch: /(month-view|navigation|pressed-and-disabled|busy-state|merchants)\.spec\.ts/,
     },
     // THE PRODUCTION-MODE PHONE PROJECT (M3-P10, decision D-34). The same
     // chromium mobile descriptor as the project above, bound to the server
