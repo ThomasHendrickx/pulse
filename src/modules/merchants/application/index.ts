@@ -52,6 +52,7 @@ export type {
 export type {
   MerchantReview,
   ReviewGroup,
+  ReviewGroupRow,
   CountedRow,
 } from "../domain/merchant-review";
 export type {

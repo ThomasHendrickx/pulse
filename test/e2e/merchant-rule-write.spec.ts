@@ -1,7 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { householdId, userId } from "@/platform/tenancy";
-import { assertGateDbTargetIsLocal } from "@/platform/db/gate-target";
 import { applyRuleWrites } from "@/modules/merchants/adapters/merchant-repository";
 
 // M3-P12 FIX ROUND, finding CR-M3P12-02, REPOINTED IN FIX ROUND THREE under
@@ -33,22 +32,17 @@ import { applyRuleWrites } from "@/modules/merchants/adapters/merchant-repositor
 //
 // This spec drives no browser on purpose. It is a database contract test.
 
-// THIS SPEC OPENS A DATABASE, SO IT SAYS WHICH ONE (M3-P12 fix round four,
-// CRITERIA finding CR4-M3P12-02). new PrismaClient() reads process.env and
-// else, so before this round the target of every write below was whatever
-// DATABASE_URL the invoking shell carried, and in this fleet's containers
-// that is a DEPLOYED pooler belonging to a different project with a working
-// password. Nothing in this file, in playwright.config.ts or in the npm
-// script named a target. That is the shape the plan calls hazard H12.30, and
-// this phase shipped an interlock against exactly it for one command while
-// adding a second writing surface without one.
-//
-// TWO THINGS NOW STAND BETWEEN THESE WRITES AND A STRANGER'S DATABASE.
-// playwright.config.ts resolves and PINS the target before a worker starts,
-// refusing anything that is not a local stack; and the beforeAll below reads
-// what the client will actually open and refuses again. The second is not
-// redundant: the config covers every run through `playwright test`, and this
-// covers a spec imported by some other runner, now or later.
+// THE GATE-TARGET ASSERTION THAT STOOD IN beforeAll IS WITHDRAWN, loudly
+// (clause R-087, decision D-62, criterion 12.23). This spec used to call
+// assertGateDbTargetIsLocal from src/platform/db/gate-target.ts before
+// constructing its client (M3-P12 fix rounds four and ten, findings
+// CR4-M3P12-02 and CR9-M3P12-HZ-03), and playwright.config.ts used to pin
+// the gate's target at module scope; both left the tree with the target
+// interlock D-62 withdrew. The writes below therefore open whatever
+// DATABASE_URL the invoking shell carries, which is the reason the gate is
+// run with the local stack's values pinned in the invoking shell (fleet
+// warning 1), and the settled posture for entry points outside criterion
+// 12.23's scope is the plan's parked question rather than this spec's.
 //
 // IN DEPLOY-VERIFY MODE THIS SPEC DOES NOT RUN AT ALL. There the suite drives
 // a DEPLOYED app through its browser and opens no database of its own, and
@@ -61,30 +55,42 @@ test.skip(
   "drives a database directly; in deploy-verify mode the suite opens no database",
 );
 
-const prisma = new PrismaClient();
+// The client is still constructed in beforeAll rather than at module scope:
+// the withdrawn assertion is what used to justify that order (fix round ten,
+// HAZARD finding CR9-M3P12-HZ-03), and keeping construction out of module
+// scope keeps a future guard, if one is decided, able to run first.
+let client: PrismaClient | undefined;
+const prismaClient = (): PrismaClient => {
+  if (client === undefined) {
+    throw new Error(
+      "the Prisma client is constructed in beforeAll. A test reaching it earlier is a test running outside that order.",
+    );
+  }
+  return client;
+};
 
 test.beforeAll(() => {
-  assertGateDbTargetIsLocal();
+  client = new PrismaClient();
 });
 
 test.afterAll(async () => {
-  if (!deployVerify) {
-    await prisma.$disconnect();
+  if (!deployVerify && client !== undefined) {
+    await client.$disconnect();
   }
 });
 
 test("applyRuleWrites is atomic, stays within the household, and rolls back the whole batch on any rejection", async () => {
   const unique = `rulewrite-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
-  const householdA = await prisma.household.create({
+  const householdA = await prismaClient().household.create({
     data: { name: `${unique}-a` },
   });
-  const householdB = await prisma.household.create({
+  const householdB = await prismaClient().household.create({
     data: { name: `${unique}-b` },
   });
-  const merchant = await prisma.merchant.create({
+  const merchant = await prismaClient().merchant.create({
     data: { householdId: householdA.id, name: `${unique}-merchant` },
   });
-  const rule = await prisma.merchantRule.create({
+  const rule = await prismaClient().merchantRule.create({
     data: {
       householdId: householdA.id,
       merchantId: merchant.id,
@@ -109,14 +115,14 @@ test("applyRuleWrites is atomic, stays within the household, and rolls back the 
       { merchantId: merchant.id, kind: "EXACT", pattern: `account:${unique}` },
     ],
   });
-  const afterOwned = await prisma.merchantRule.findUnique({
+  const afterOwned = await prismaClient().merchantRule.findUnique({
     where: { id: rule.id },
   });
   expect(afterOwned?.pattern).toBe(`descriptor:${unique}-BEFORE`);
   expect(afterOwned?.merchantId).toBe(merchant.id);
   expect(afterOwned?.kind).toBe("EXACT");
   expect(
-    await prisma.merchantRule.count({
+    await prismaClient().merchantRule.count({
       where: { householdId: householdA.id, pattern: `account:${unique}` },
     }),
   ).toBe(1);
@@ -126,7 +132,7 @@ test("applyRuleWrites is atomic, stays within the household, and rolls back the 
   // the row the first statement just wrote, which the unique key refuses. The
   // update must not survive. This is what a fake cannot witness, because the
   // rollback is the database's.
-  const beforeRollback = await prisma.merchantRule.findMany({
+  const beforeRollback = await prismaClient().merchantRule.findMany({
     where: { householdId: householdA.id },
     orderBy: { id: "asc" },
     select: { id: true, pattern: true },
@@ -144,7 +150,7 @@ test("applyRuleWrites is atomic, stays within the household, and rolls back the 
     }),
   ).rejects.toThrow();
   expect(
-    await prisma.merchantRule.findMany({
+    await prismaClient().merchantRule.findMany({
       where: { householdId: householdA.id },
       orderBy: { id: "asc" },
       select: { id: true, pattern: true },
@@ -168,11 +174,11 @@ test("applyRuleWrites is atomic, stays within the household, and rolls back the 
     }),
   ).rejects.toThrow(/did not belong to the household/);
   expect(
-    await prisma.merchantRule.count({
+    await prismaClient().merchantRule.count({
       where: { pattern: `descriptor:${unique}-SMUGGLED` },
     }),
   ).toBe(0);
-  const afterForeign = await prisma.merchantRule.findUnique({
+  const afterForeign = await prismaClient().merchantRule.findUnique({
     where: { id: rule.id },
   });
   expect(afterForeign?.pattern).toBe(`descriptor:${unique}-BEFORE`);
@@ -186,7 +192,7 @@ test("applyRuleWrites is atomic, stays within the household, and rolls back the 
   // Postgres, threw nothing, and created a declaration in household A naming
   // a merchant of household B, because the schema's foreign key on
   // merchantId carries no household component and this loop checked nothing.
-  const foreignMerchant = await prisma.merchant.create({
+  const foreignMerchant = await prismaClient().merchant.create({
     data: { householdId: householdB.id, name: `${unique}-foreign-merchant` },
   });
   await expect(
@@ -202,7 +208,7 @@ test("applyRuleWrites is atomic, stays within the household, and rolls back the 
     }),
   ).rejects.toThrow(/does not belong to the household/);
   expect(
-    await prisma.merchantRule.count({
+    await prismaClient().merchantRule.count({
       where: { pattern: `descriptor:${unique}-CROSS-HOUSEHOLD` },
     }),
   ).toBe(0);
@@ -220,7 +226,7 @@ test("applyRuleWrites is atomic, stays within the household, and rolls back the 
     ],
   });
   expect(
-    await prisma.merchantRule.count({
+    await prismaClient().merchantRule.count({
       where: {
         householdId: householdA.id,
         pattern: `descriptor:${unique}-OWNED-INSERT`,
@@ -228,11 +234,11 @@ test("applyRuleWrites is atomic, stays within the household, and rolls back the 
     }),
   ).toBe(1);
 
-  await prisma.merchantRule.deleteMany({ where: { householdId: householdA.id } });
-  await prisma.merchant.deleteMany({ where: { householdId: householdA.id } });
-  await prisma.merchantRule.deleteMany({ where: { householdId: householdB.id } });
-  await prisma.merchant.deleteMany({ where: { householdId: householdB.id } });
-  await prisma.household.deleteMany({
+  await prismaClient().merchantRule.deleteMany({ where: { householdId: householdA.id } });
+  await prismaClient().merchant.deleteMany({ where: { householdId: householdA.id } });
+  await prismaClient().merchantRule.deleteMany({ where: { householdId: householdB.id } });
+  await prismaClient().merchant.deleteMany({ where: { householdId: householdB.id } });
+  await prismaClient().household.deleteMany({
     where: { id: { in: [householdA.id, householdB.id] } },
   });
 });

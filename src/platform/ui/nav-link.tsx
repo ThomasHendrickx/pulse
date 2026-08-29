@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LinkPending } from "./link-pending";
 
 // The shell nav's one client island, pushed to the leaf (pulse-frontend
 // section 1). The reason for "use client": the active-route marker must
@@ -51,6 +52,11 @@ export const NavLink = ({
       {...(active ? { "aria-current": "page" as const } : {})}
     >
       {children}
+      {/* THE PENDING MARKER (M3-P10). useLinkStatus must run in a
+          DESCENDANT of the Link, which is why it is a child here and not
+          a prop. The three shell links and the accounts link all get it
+          from this one place. */}
+      <LinkPending />
     </Link>
   );
 };
