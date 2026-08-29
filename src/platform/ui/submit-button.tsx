@@ -3,9 +3,18 @@
 import { useFormStatus } from "react-dom";
 
 // THE ONE SUBMIT LEAF (M3-P10). Every submit control in the product that
-// posts to a server action renders through here, and this file plus
-// link-pending.tsx plus nav-link.tsx are the only "use client" files under
-// src/platform/ui.
+// posts through a form action renders through here.
+//
+// CORRECTED IN FIX ROUND 2 (clause R-087, criteria finding CR-M3P10-07).
+// The sentence above used to end "and this file plus link-pending.tsx plus
+// nav-link.tsx are the only \"use client\" files under src/platform/ui".
+// That was true at the phase head and is false now: M3-P11 added
+// src/platform/ui/toast.tsx, which makes four, and a present-tense list
+// written into a comment cannot see the phase that appends to it. The list
+// that stays true lives where something checks it. The client file set is
+// asserted BY NAME in the fast gate by test/app/client-boundary.test.ts,
+// which is red when a file is added to it or removed from it, and that
+// test is the thing to read for the current set rather than this file.
 //
 // WHY THE BOUNDARY IS HERE AND NOWHERE ELSE (pulse-frontend section 1,
 // decision D-23). useFormStatus reports the pending state of the NEAREST
@@ -82,6 +91,7 @@ export const SubmitButton = ({
   name,
   value,
   formAction,
+  describedBy,
   children,
 }: {
   readonly className?: string;
@@ -89,19 +99,52 @@ export const SubmitButton = ({
   readonly name?: string;
   readonly value?: string;
   readonly formAction?: (formData: FormData) => void | Promise<void>;
+  // M3-P11: the id of an element describing this control's current state,
+  // wired to aria-describedby. The merchant naming control points it at the
+  // row's unconfirmed live region while a prediction is on screen, so a
+  // reader who moves focus back to the control they pressed is told the
+  // value beside it is not stored yet (criterion 11.2(c), decision D-30).
+  readonly describedBy?: string;
   readonly children: React.ReactNode;
 }) => {
   const { pending } = useFormStatus();
   return (
     <button
       type="submit"
-      disabled={pending}
-      aria-busy={pending ? "true" : undefined}
+      // THE CONTROL STAYS FOCUSABLE WHILE IT REFUSES THE PRESS (fix round,
+      // finding HZ-M3P10-02). This was `disabled={pending}`, and a focused
+      // element that becomes disabled is removed from the tab order, so the
+      // browser moved focus to document.body and nothing put it back:
+      // measured in chromium, activeElement went from the pressed control to
+      // BODY and the control was no longer tabbable. On the merchant naming
+      // form, which revalidates in place rather than navigating, that cost a
+      // keyboard user their place on every row they named, and aria-busy on
+      // an unfocused control is announced to nobody, so the press produced
+      // no acknowledgement at all on the assistive-technology path.
+      //
+      // WHAT REPLACES IT, and it is the split src/app/globals.css describes
+      // where it says the phase that sets the attribute must also refuse the
+      // action in its handler. aria-disabled marks the refusal and keeps the
+      // element in the tab order and focused; the stylesheet's
+      // pointer-events rule refuses a tap or a click; and the handler below
+      // refuses the keyboard path, because an aria-disabled submit button is
+      // still activated by Enter and Space and pointer-events cannot reach
+      // either. Both halves are needed: without the handler a second Enter
+      // posts the form again.
+      aria-busy={pending ? "true" : "false"}
+      aria-disabled={pending ? "true" : undefined}
+      onClick={(event) => {
+        if (pending) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
       {...(className === undefined ? {} : { className })}
       {...(testId === undefined ? {} : { "data-testid": testId })}
       {...(name === undefined ? {} : { name })}
       {...(value === undefined ? {} : { value })}
       {...(formAction === undefined ? {} : { formAction })}
+      {...(describedBy === undefined ? {} : { "aria-describedby": describedBy })}
     >
       {children}
     </button>

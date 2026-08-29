@@ -1,0 +1,687 @@
+# Clean-room review, HAZARD contract, phase M3-P18 (savings statements
+# held, canonical backfill), ROUND ONE.
+#
+# Head reviewed: 85da7f6 on claude/m3-p18-savings-held-and-migration, in
+# an isolated worktree at /home/user/wt-m3p18-haz on branch
+# claude/m3-p18-rev-haz. 85da7f6 adds only the work history; the code
+# under review is the code at e7f539c.
+#
+# HEADER DISCLOSURES. Claude-family verdict, review-contract hazard,
+# framing destructive-paths. The implementation session was not read. The
+# criteria lane's verdict was not read; none exists on this branch at the
+# time of writing. The work history delivery/work-history/m3-p18.yaml was
+# read AFTER the live database probes below had produced their results,
+# because clause R-087 requires its claims checked; nothing below rests
+# on it and every claim carries a command this lane ran.
+#
+# CONTRACT ORDER. Started from the eight declared hazard classes (H18.1
+# through H18.8) and the dispatch attack directions: a backfill collision
+# the detection grouping misses (case, whitespace, empty-canonical,
+# canonicalises-to-another-row's-stored-form), partial application, a
+# household the migration makes worse, fact-column reach, held-row
+# leakage into any money total, merchant naming off a held row, the
+# refusal removal opening a silent-hold or silent-count path, and the
+# ring-scoped reads disagreeing with the verdict. The acceptance criteria
+# arrived embedded in the composed phase brief and were treated as one
+# more input, walked LAST, after the probes.
+#
+# DATABASE SAFETY. The ambient DATABASE_URL in this container points at a
+# deployed pooler for a DIFFERENT project of the owner's. Every command
+# below that could reach a database ran with DATABASE_URL and DIRECT_URL
+# pinned in the invoking shell to a string on 127.0.0.1 port 55432, a
+# THROWAWAY Postgres 16.13 cluster initdb'd for this review (C.utf8,
+# UTF8, unix socket under /tmp/pg-m3p18), and the parsed host was printed
+# by node and read 127.0.0.1 before the first gate ran. The cluster was
+# seeded only with invented rows and is discarded with the container.
+#
+# NO DATA. No account number, no counterparty, no amount and no date from
+# any real document appears in this file. Probe values were invented or
+# were the publicly published specification example numbers; they lived
+# only in the throwaway cluster and in shell history, and none is quoted
+# here, so nothing in this document adds an identifier shape to the tree.
+#
+# EDIT-NOTHING. Nothing of the head's code, tests or documents was
+# changed. git status carries exactly one untracked file, this document.
+#
+# ==========================================================
+# GATES, RUN BY THIS LANE AT 85da7f6, Node from /opt/nvm, DATABASE_URL
+# and DIRECT_URL pinned to the 127.0.0.1:55432 throwaway
+# ==========================================================
+#   npm run typecheck      EXIT=0
+#   npm run lint           EXIT=0
+#   npm test               EXIT=0   50 files, 678 tests, 0 skipped
+#   npm run gate:privacy   EXIT=0   "gate:privacy clean"
+#   npm run gate:decisions EXIT=0   "gate:decisions clean"
+#   npm run gate:tokens    EXIT=0
+#   npm run test:e2e       NOT RUN HERE: no Docker daemon in this
+#                          container, so no local Supabase stack and no
+#                          browser-driving web server. What that leaves
+#                          unwitnessed in this lane: the browser arms of
+#                          criteria 18.1, 18.2 and 18.4 (upload journeys,
+#                          held-block rendering in three locales, the
+#                          door-opens journey) and the Playwright
+#                          execution of the direct-client specs. The
+#                          migration itself, the detection grouping and
+#                          the canonicalisation contracts WERE witnessed
+#                          against a real Postgres 16 by this lane's own
+#                          psql and tsx probes below, independently of
+#                          those specs.
+#
+# ==========================================================
+# LIVE PROBES, in the order run (each output captured at run time)
+# ==========================================================
+# P1. Cluster brought up; all seven committed migrations under
+#     prisma/schema/migrations applied in order via psql with
+#     ON_ERROR_STOP=1: every one exited 0 on an empty database, the
+#     canonical backfill included (a no-op there).
+# P2. Whitespace-class probe, live SQL against live node. In PG 16.13
+#     with a C.utf8 database, regexp_replace with the POSIX class
+#     [[:space:]] does NOT strip U+00A0 (no-break space), U+202F (narrow
+#     no-break space) or U+FEFF, and does strip U+2002 and U+3000; the
+#     JavaScript \s class in canonicalAccountNumber
+#     (src/platform/account-number.ts:67) strips ALL of U+00A0, U+202F
+#     and U+FEFF. The committed migration's expression, the detection
+#     script's grouping and the reserves join therefore all disagree with
+#     the platform canonical form on at least three characters, two of
+#     which are realistic in Belgian source material (U+00A0 is the
+#     single byte 0xA0 in Windows-1252, the encoding the domain skill
+#     itself names as common for Belgian exports; U+202F is the
+#     French-locale group separator).
+# P3. Adversarial seed of nine invented households: an ASCII collision
+#     pair (spaced plus compact twin, rings disagreeing); a lowercase
+#     compact rendering; two DIFFERENT non-canonical renderings of one
+#     canonical form (one padded, one lowercase with an embedded tab); a
+#     rendering spaced with U+00A0; a whitespace-only value; the same
+#     spaced value as the collision pair's in a DIFFERENT household; a
+#     NULL card row beside a validity-failing value; a pair of
+#     whitespace-only values in one household; and a U+00A0-spaced
+#     rendering beside its compact twin in one household. The committed
+#     migration.sql run via psql: UPDATE 4. Both ASCII collision pairs
+#     left byte identical; the lowercase rendering uppercased; the
+#     cross-household duplicate rewritten cleanly (the unique index
+#     accounts_householdId_iban_key is per household, confirmed from the
+#     live catalog); the NULL row untouched; the validity-failing value
+#     canonicalised without refusal; the whitespace-only value rewritten
+#     to the empty string; the U+00A0 rendering LEFT UNTOUCHED (already
+#     uppercase, and the class does not match U+00A0, so the row is
+#     already at its SQL fixed point). No unique-index error at any
+#     point.
+# P4. Second run of the same migration: UPDATE 0, and a full labelled
+#     dump diffed byte identical against the first run's. Idempotent as
+#     claimed, including over the rows the class cannot fully
+#     canonicalise.
+# P5. Lockout chain for the U+00A0 household, witnessed with the repo's
+#     own functions via npx tsx: the U+00A0-spaced rendering PASSES the
+#     validity test (accountNumberProblem returns undefined, because the
+#     TS canonical strips it first); its TS canonical equals the compact
+#     form; the stored value after the migration still carries U+00A0, so
+#     the import lookup, which canonicalises the probe and exact-matches
+#     the stored column (src/modules/accounts/adapters/account-repository.ts:114),
+#     misses it; and the NEW duplicate check
+#     (src/modules/accounts/application/register-accounts.ts:60 and :64)
+#     canonicalises the stored side, so retyping the number canonically
+#     at setup is refused as already registered. Finding HZ-M3P18-01.
+# P6. The detection script's grouping SQL
+#     (scripts/detect-account-collisions.ts:77) run verbatim over the
+#     seeded data: it emits exactly the two ASCII collision groups and
+#     the whitespace-only pair, and does NOT emit the household whose
+#     U+00A0 rendering and compact twin share one TS-canonical form,
+#     even though deriveDeclaredSets and the register check treat those
+#     two rows as one account. Folded into finding HZ-M3P18-01.
+# P7. Flow-acquisition sweep for the held surface: the only writer of
+#     transactions.flow in src/ is replaceInterpretation
+#     (src/modules/ledger/adapters/ledger-repository.ts:173), fed
+#     exclusively from the pot-window transaction ids
+#     (src/modules/ledger/application/interpret-window.ts:37); ingest
+#     writes no flow. Every money aggregate in monthFigures filters on a
+#     flow value (src/modules/overview/adapters/overview-repository.ts:241
+#     through :258), so a held row can reach a total only by acquiring a
+#     flow, and no path in the head does that while the account stays in
+#     the savings ring. Merchant resolution keys are built from counted
+#     INCOME and SPEND rows only (interpret-window.ts:100 and :123), so
+#     no held row's counterparty can reach the resolver or mint a
+#     MerchantRule; the held block renders no naming affordance
+#     (src/modules/overview/ui/month-view.tsx:281 through :330) and masks
+#     its text. The null-flow occurrence sweep over src/ finds exactly
+#     the two scoped reads (overview-repository.ts:257 and :335) plus the
+#     flow IS NOT NULL forms; both reads carry the same POT ring
+#     predicate and the verdict consumes the scoped count
+#     (src/modules/overview/domain/month-projection.ts:281).
+# P8. Import status: replaceInterpretation flips INGESTED to INTERPRETED
+#     only for imports whose rows entered the window
+#     (ledger-repository.ts:252); a savings import's rows never do, so a
+#     savings import stays INGESTED forever, the status the re-parse path
+#     documents as the visible needs-interpretation marker
+#     (src/modules/import/adapters/import-repository.ts:302). Finding
+#     HZ-M3P18-03.
+# P9. Ring-change interaction: changeAccountRing refuses any account that
+#     has own imported rows
+#     (src/modules/accounts/application/change-account-ring.ts:45), and
+#     hasImportedRows is flow-agnostic
+#     (src/modules/ledger/adapters/ledger-repository.ts:144 through
+#     :153). With the savings-ring refusal removed at the import gate
+#     (src/modules/import/application/confirm-import.ts:118 through
+#     :124), one confirmed upload onto a mis-ringed account permanently
+#     blocks the only ring correction the product has. Finding
+#     HZ-M3P18-02.
+#
+# VALIDATION, recorded after the document was finished: see the
+# validation block at the end of this file.
+
+kind: verdict
+phase: M3-P18
+verdict: FIX-ROUND-NEEDED
+produced-by: claude-fable
+framing: destructive-paths
+review-contract: hazard
+findings:
+  - id: HZ-M3P18-01
+    severity: high
+    analysis: >-
+      The migration's SQL expression is not the mirror of
+      canonicalAccountNumber its own comment declares it to be, and the
+      divergence turns the phase's central remedy into a new lockout for
+      exactly the households it exists to let back in. The platform
+      canonical form strips every character JavaScript \s matches
+      (src/platform/account-number.ts:67); the committed SQL strips the
+      POSIX class [[:space:]] (the migration at
+      prisma/schema/migrations/20260827120000_canonical_account_iban_backfill/migration.sql:53,
+      the detection grouping at scripts/detect-account-collisions.ts:77,
+      and the reserves join it inherited the class from). Witnessed live
+      on Postgres 16.13 with a C.utf8 database: the SQL class does not
+      match U+00A0, U+202F or U+FEFF, all three of which the platform
+      function strips. U+00A0 is not exotic here: it is the single byte
+      0xA0 in Windows-1252, the encoding the domain skill names as common
+      for Belgian exports, and the narrow variant U+202F is the standard
+      French-locale group separator, so a pre-P14 stored rendering
+      carrying one is exactly the population this migration was written
+      for. For such a household the phase makes things strictly WORSE
+      than the head it builds on, witnessed end to end with the repo's
+      own functions: the migration leaves the stored value at its SQL
+      fixed point still carrying the character (UPDATE matched nothing,
+      idempotently, on both runs), the import lookup canonicalises its
+      probe and exact-matches the stored column
+      (src/modules/accounts/adapters/account-repository.ts:114), so the
+      statement is still refused as account-not-registered, closing
+      nothing of finding P14-001 for them; and the one workaround that
+      existed before this phase, retyping the number canonically at
+      setup, is now REFUSED by the phase's own canonical duplicate check
+      (src/modules/accounts/application/register-accounts.ts:60 and :64
+      canonicalise both sides with the TS function, which says the two
+      renderings are the same account). Refused as a duplicate on the
+      typed side, unmatched on the import side: a full lockout with no
+      remedy any screen names. The detection script cannot see it either,
+      witnessed against the seeded cluster: a household holding the
+      U+00A0 rendering beside its compact twin, rings disagreeing, is one
+      account to the application layer (deriveDeclaredSets and the
+      register check) and two unrelated rows to the script's SQL
+      grouping, so the post-deploy check reports no collision while the
+      exact harm hazard class H18.6 names, which row future imports land
+      on deciding held versus counted, is live in that household. The
+      criteria cannot catch any of this: criterion 18.4 pins mirror
+      agreement over every rendering THE SEED HARNESS writes, and every
+      rendering the harness writes is spaced with ASCII spaces only
+      (test/e2e/seed-pre-phase-household.ts:55 through :111), so the
+      mirror-agreement arm (test/e2e/canonical-backfill.spec.ts:201) is
+      green over a character set on which the two expressions happen to
+      agree. Clause R-087 attaches to the migration comment's sentence
+      that the expression is an SQL mirror of canonicalAccountNumber
+      (migration.sql:17) and to the sibling list's claim that the mirrors
+      agree by test (src/platform/account-number.ts:55): both state an
+      equivalence that is false as stated and untested where it is false.
+    evidence:
+      - >-
+        Live probe P2: a psql VALUES sweep over twelve characters against
+        regexp_replace with [[:space:]] on the throwaway PG 16.13
+        (C.utf8), beside the same sweep through String.replace with \s in
+        node. SQL retains U+00A0, U+202F, U+FEFF and U+200B; JS strips
+        all but U+200B. Commands and full output captured in this lane's
+        session at run time.
+      - >-
+        Live probe P3/P4: the committed migration.sql run twice via psql
+        over nine seeded households; the U+00A0-spaced rendering was left
+        untouched by both runs while every ASCII rendering outside the
+        collision pairs was canonicalised, and the second run updated
+        zero rows with a byte-identical dump.
+      - >-
+        Live probe P5 via npx tsx against src/platform/account-number.ts:
+        the U+00A0 rendering passes accountNumberProblem, its TS
+        canonical equals the compact form, the migrated stored value does
+        not equal the canonical probe, and a set built the way
+        register-accounts.ts:60 builds it refuses the canonical retype.
+      - >-
+        Live probe P6: the grouping SQL of
+        scripts/detect-account-collisions.ts:77 run verbatim emits the
+        ASCII collision groups and not the U+00A0-beside-compact
+        household.
+      - >-
+        The blindness of the committed test: every iban the harness
+        writes at test/e2e/seed-pre-phase-household.ts:55, :67, :87, :94,
+        :104 and :111 uses ASCII spaces or none, and the mirror arm at
+        test/e2e/canonical-backfill.spec.ts:201 iterates exactly those.
+    concrete-fix: >-
+      Make the SQL strip exactly what the platform function strips, in
+      all three SQL sites, and make the harness prove it where it was
+      blind. Concretely: replace the class [[:space:]] in the migration,
+      in scripts/detect-account-collisions.ts and in the reserves join
+      with a bracket expression that unions the POSIX class with the
+      JavaScript-only whitespace characters, written with Postgres ARE
+      escapes so the source stays visible: the class opening bracket,
+      then the POSIX space class, then backslash-u00A0,
+      backslash-u1680, backslash-u2000 through backslash-u200A as a
+      range, backslash-u2028, backslash-u2029, backslash-u202F,
+      backslash-u205F, backslash-u3000 and backslash-uFEFF, then the
+      closing bracket; pin the exact set to the ECMAScript WhiteSpace
+      plus LineTerminator list the JavaScript class is defined over,
+      and mind the template-literal escape lesson at the reserves join
+      site, where a backslash must be doubled to survive JavaScript
+      string processing. Add to the seed harness one rendering spaced with
+      U+00A0 and one carrying U+202F, allow-listed with provenance, so
+      the mirror-agreement arm and the door-opens arm actually traverse
+      the divergent characters; assert the detection script sees a
+      U+00A0-beside-compact pair as one collision group. Since a new
+      migration file rather than an edit is the deployable form once the
+      original has shipped anywhere, deliver the corrected class as a
+      follow-up migration with the same collision guard, and correct the
+      two false mirror sentences (migration comment and
+      account-number.ts sibling list) in the same change.
+  - id: HZ-M3P18-02
+    severity: high
+    analysis: >-
+      Removing the savings-ring refusal opens a one-way trap that did
+      not exist before this phase: a household that answered a CURRENT
+      account as savings at setup, one wrong dropdown on the setup
+      screen, now has that mistake made permanent by the first upload
+      instead of being pointed at the fix. Before this phase the upload
+      was refused account-in-savings-ring and the refusal message named
+      the ring correction; the correction itself, changeAccountRing, is
+      guarded by a refusal of any account carrying own imported rows
+      (src/modules/accounts/application/change-account-ring.ts:45
+      returning account-has-own-rows at :46), and the import refusal was
+      precisely what kept that guard satisfiable, because a reserve-ring
+      account could never acquire own rows. This phase removes the
+      refusal (src/modules/import/application/confirm-import.ts:118
+      through :124) and touches neither the guard nor its justifying
+      comment. The chain is short and every link is in the head: confirm
+      accepts the statement onto the reserve-ring account, ingestRows
+      writes its rows as transactions on that account, hasImportedRows
+      is flow-agnostic
+      (src/modules/ledger/adapters/ledger-repository.ts:148), so the
+      ring correction is refused from the first confirm onward, forever.
+      The household's real spending month is silently empty, its rows
+      rendered as held under a savings heading with copy telling the
+      reader they are no part of income or spend, and the only control
+      that could make them count is permanently closed with no remedy
+      any screen names; nothing at confirm time warns that the ring
+      decides counting, and no criterion of this phase exercises a
+      ring-corrected account, so the phase passes its contract with the
+      trap armed. The guard's own stated rationale no longer holds and
+      states a falsehood besides, which clause R-087 makes a finding in
+      its own right: change-account-ring.ts:7 justifies the guard's
+      sufficiency with the sentence that savings statements are not
+      imported in v1, the exact sentence DR-0030 superseded, and the
+      phase corrected that sentence in the domain skill and in
+      ledger-transaction.ts but not here, in the one place where it is
+      load-bearing for a refusal. Under the guard's own reasoning at
+      change-account-ring.ts:12 through :16, a stale flow is what the
+      guard exists to make unreachable, and a held row carries NO flow,
+      so a reserve-to-pot correction over held rows is safe by that very
+      argument: the guard is now stricter than its rationale and the
+      strictness is the trap.
+    evidence:
+      - >-
+        The accept arm with no ring test:
+        src/modules/import/application/confirm-import.ts:118 through
+        :124, with ingest at :153 writing rows on the resolved account.
+      - >-
+        The guard and its false justification:
+        src/modules/accounts/application/change-account-ring.ts:45 and
+        :7 (the sentence that savings statements are not imported in v1,
+        superseded by DR-0030 in this same phase).
+      - >-
+        hasImportedRows counts any transaction row regardless of flow:
+        src/modules/ledger/adapters/ledger-repository.ts:148 through
+        :152.
+      - >-
+        The phase corrected the equivalent sentence elsewhere
+        (src/modules/ledger/domain/ledger-transaction.ts:35 through :41
+        and the domain skill), which shows the correction pass ran and
+        missed the one load-bearing site; change-account-ring.ts appears
+        nowhere in the diff at 85da7f6 (git diff origin/main...HEAD name
+        listing).
+    concrete-fix: >-
+      Relax the guard along its own rationale: in changeAccountRing,
+      refuse only when the account carries own rows THAT HOLD A FLOW
+      (replace hasImportedRows with a hasInterpretedRows read testing
+      flow IS NOT NULL on the account's rows), so a reserve-to-pot
+      correction over held rows is allowed and the recompute that
+      already follows at change-account-ring.ts:54 classifies the
+      newly-pot rows from facts plus declarations; the pot-to-reserve
+      direction keeps the strict refusal, because those rows carry
+      flows. Correct the comment at change-account-ring.ts:4 through :16
+      to the DR-0030 world in the same change, and add one application
+      test walking the trap: register reserve by mistake, confirm the
+      account's own statement, change the ring to pot, assert the change
+      succeeds and the recomputed month counts the rows. If the fix
+      round prefers not to touch the guard, the minimum honest change is
+      a confirm-time interstitial naming the ring before first ingest
+      onto a reserve-ring account, but that leaves the guard's false
+      comment standing and D-51's correction unreachable for a real
+      mistake, so the guard change is the fix this finding demands.
+  - id: HZ-M3P18-03
+    severity: low
+    analysis: >-
+      A savings import can never leave the INGESTED status. The
+      INGESTED-to-INTERPRETED flip happens only inside
+      replaceInterpretation for imports whose rows entered the
+      interpretation window
+      (src/modules/ledger/adapters/ledger-repository.ts:252 over the ids
+      collected at src/modules/ledger/application/interpret-window.ts:156),
+      and a savings import's rows never enter the window, so its status
+      is terminal at INGESTED. No current surface renders the
+      difference, which is why this is low, but the codebase documents
+      INGESTED as the pipeline's visible needs-interpretation marker
+      (src/modules/import/adapters/import-repository.ts:302 through
+      :303), so the state machine now carries a permanently-pending
+      state that its own comments say means work is owed, and the first
+      future consumer that acts on that meaning, a re-parse sweep, a
+      pending-work badge, a retry loop, will act on every savings import
+      forever. Clause R-087 applies to the marker comment the moment
+      DR-0030 landed.
+    evidence:
+      - >-
+        src/modules/ledger/adapters/ledger-repository.ts:246 through
+        :253 flips only imports in interpretedImportIds;
+        interpret-window.ts:156 derives those from the pot-window
+        transactions; a savings import's id is never among them, while
+        confirm-import.ts:173 runs interpretation for every accepted
+        import including a savings one.
+      - >-
+        src/modules/import/adapters/import-repository.ts:302 through
+        :303 documents INGESTED as the visible needs-interpretation
+        marker that reinterpretation restores to INTERPRETED.
+    concrete-fix: >-
+      Decide the terminal status explicitly: either flip a held import
+      to INTERPRETED in the same transaction that ingests it when the
+      target account's ring is savings (interpretation of a held import
+      is vacuously complete), or amend the status-machine comments at
+      import-repository.ts:302 and the enum's documentation to record
+      that INGESTED is terminal for savings imports, and add one unit
+      test pinning whichever meaning is chosen so the first
+      pending-work consumer meets a tested contract instead of a stale
+      comment.
+  - id: HZ-M3P18-04
+    severity: low
+    analysis: >-
+      For the parked collision pair whose rings disagree, the refusal
+      removal changes the failure mode from a named refusal to a silent
+      hold, and nothing on any screen names the pair. The import lookup
+      exact-matches the canonical probe against the stored column, so
+      for a spaced-beside-compact pair every statement upload
+      deterministically lands on the COMPACT member (witnessed in this
+      lane's cluster: only the compact stored form equals the canonical
+      probe). Where the compact member is the reserve-ring row, the
+      household's current-account statement, refused with a named
+      reason before this phase, is now accepted and held: counted
+      nowhere, flagged nowhere as a gap (the uninterpreted count is
+      pot-scoped by design), visible only as a held block under the
+      other row's label. Criterion 18.5 measures the pair
+      migration-relative (imports behave after the migration exactly as
+      before it), which is satisfied; phase-relative the pair's owner
+      lost the named refusal that was the only signal pointing at the
+      duplicate registration, and the committed detection script runs
+      only when an operator runs it. Low because the pair requires a
+      pre-P14 double registration, the held block is at least visible
+      on screen, and the phase explicitly parks the merge; recorded
+      because the criteria's no-worse-off framing hides a real
+      signal-for-silence trade this phase made without naming it.
+    evidence:
+      - >-
+        Probe P3: in the seeded pair household only the compact stored
+        form equals the canonical probe, so resolution is deterministic
+        onto the compact member; with that member reserve-ringed the
+        upload is accepted and held under confirm-import.ts:118 through
+        :124 where before the phase it returned the named refusal.
+      - >-
+        The pot-scoped uninterpreted count at
+        src/modules/overview/adapters/overview-repository.ts:257 means
+        the held rows raise no gap and hold no verdict open, by design,
+        so no counting surface signals the situation.
+    concrete-fix: >-
+      Record the trade where the operators will meet it: the work
+      history names one run of the detection script as the post-deploy
+      check; extend that recorded procedure to state that a
+      rings-disagreeing pair now manifests as silently held statements
+      rather than a refusal, so the script run is not optional after
+      deploy. If a later phase adds any surface listing a household's
+      accounts with their rings, list both members of a detected pair
+      there; the merge itself stays parked as the phase decided.
+criteria:
+  # Walked LAST, per the contract. This lane's remit is the hazard set;
+  # browser arms this container cannot run are named as unwitnessed in
+  # the evidence rather than silently assumed.
+  - id: "18.1"
+    quote: >-
+      A SAVINGS STATEMENT IS ACCEPTED AND THE REFUSAL IS GONE ROOT AND
+      BRANCH.
+    evidence:
+      - >-
+        The union at src/modules/import/application/confirm-import.ts:27
+        through :33, the routing in src/modules/import/ui/actions.ts, the
+        whitelist at src/modules/import/ui/status-keys.ts:14 and the
+        status-line membership carry no live account-in-savings-ring
+        member; a grep over src/ and messages/ finds four occurrences,
+        all removal-history comments, none wired.
+      - >-
+        The domain skill sentence set at
+        .claude/skills/pulse-domain/SKILL.md:22 is rewritten to the
+        DR-0030 behaviour; the superseded sentences are gone from that
+        file on this branch.
+      - >-
+        The rewritten accounts spec and the browser acceptance arm were
+        not executable in this container (no Docker, no stack);
+        unwitnessed here, left to the criteria lane. See finding
+        HZ-M3P18-02 for what the removal opens beside this criterion.
+    met: true
+  - id: "18.2"
+    quote: >-
+      A SAVINGS STATEMENT'S ROWS ARE SHOWN, MARKED HELD AND COUNTED
+      NOWHERE.
+    evidence:
+      - >-
+        The held read is ring-keyed with no flow condition
+        (src/modules/overview/adapters/overview-repository.ts:370
+        onward), groupHeldRows folds with no arithmetic
+        (src/modules/overview/domain/month-projection.ts:333 onward),
+        and the blocks render label-headed row lists with masked text
+        and no total (src/modules/overview/ui/month-view.tsx:281
+        through :330).
+      - >-
+        Probe P7: every money aggregate filters on a flow value no held
+        row carries, the only flow writer is fed from the pot window,
+        and merchant resolution keys are built from counted rows only,
+        so no route from a held row into any total or naming exists in
+        the head.
+      - >-
+        Locale rendering, fixture-arithmetic byte comparisons and the
+        nothing-moves browser arm were not executable here; unwitnessed
+        in this lane.
+    met: true
+  - id: "18.3"
+    quote: >-
+      BOTH READS THAT CAN SEE A DELIBERATELY UNINTERPRETED ROW ARE
+      SCOPED THE SAME WAY, AND A GAP ON A SPENDING ACCOUNT IS STILL A
+      GAP.
+    evidence:
+      - >-
+        The null-flow occurrence sweep over src/ run by this lane finds
+        exactly two reads with a null-flow condition, the count at
+        src/modules/overview/adapters/overview-repository.ts:257 and the
+        listing arm at overview-repository.ts:335, both carrying the
+        same POT ring predicate, and the verdict consumes the scoped
+        count at src/modules/overview/domain/month-projection.ts:281.
+      - >-
+        The whole-port sweep spec with its completeness pin exists at
+        test/e2e/held-and-gap-rows.spec.ts:57 and :149; its execution
+        needs the local stack and was not reproducible here. The work
+        history records a passing run with its command and output.
+    met: true
+  - id: "18.4"
+    quote: >-
+      THE STORED DECLARATIONS BECOME CANONICAL, AND THE HOUSEHOLD THE
+      BUILT GATE LOCKED OUT IS LET BACK IN.
+    evidence:
+      - >-
+        Witnessed by this lane against a real Postgres 16.13 (probes P3
+        and P4): declaration-only, idempotent, a no-op over canonical
+        rows, validity never smuggled in, the card NULL untouched, and
+        the door opens for every ASCII spaced rendering.
+      - >-
+        UNMET IN SUBSTANCE for renderings spaced with U+00A0 or U+202F:
+        finding HZ-M3P18-01, witnessed live. The criterion's own mirror
+        arm is scoped to the renderings the seed harness writes
+        (test/e2e/canonical-backfill.spec.ts:201 over
+        test/e2e/seed-pre-phase-household.ts:55 through :111, all ASCII)
+        and therefore passes over the divergence.
+    met: false
+  - id: "18.5"
+    quote: >-
+      ONE REAL ACCOUNT CANNOT BECOME TWO ROWS, AND A PAIR THAT ALREADY
+      EXISTS IS LEFT DETECTABLE, NEVER GUESSED AT.
+    evidence:
+      - >-
+        Typed half witnessed at function level (probe P5): the known
+        set built over canonical forms refuses the canonical retype for
+        every stored rendering this lane constructed.
+      - >-
+        Migration half witnessed live (probes P3, P4, P6): the pair is
+        left byte identical across two runs and the detection grouping
+        emits exactly the pair groups' row ids and nothing
+        account-shaped.
+      - >-
+        Residue recorded in findings HZ-M3P18-01 (a TS-canonical pair
+        the SQL grouping cannot see) and HZ-M3P18-04 (the pair's
+        failure mode changed from named refusal to silent hold).
+    met: true
+  - id: "18.6"
+    quote: >-
+      npm run typecheck, npm run lint, npm test, npm run gate:tokens,
+      npm run gate:privacy and npm run gate:decisions all exit 0, and
+      npm run test:e2e exits 0 with the new specs reporting their tests
+      as passed.
+    evidence:
+      - >-
+        All six fast gates exit 0 in this worktree at 85da7f6, run by
+        this lane with pinned local database strings (the gate block at
+        the top of this file); gate:privacy re-run clean with this
+        document in the tree.
+      - >-
+        The full slow gate was not runnable here (no Docker daemon);
+        the direct-client spec run the work history captures was
+        checked for command-plus-output form but not reproduced. The
+        allow-list carries the harness and fixture identifiers with
+        provenance notes.
+    met: true
+deviations-judged: []
+hazard-classes-addressed:
+  - class-id: H18.1
+    probed: >-
+      Read the whole path from confirm to render: ingest, window
+      exclusion, held read, grouping, month view; checked the held read
+      is wired into getMonthOverview and the blocks render rows with
+      date, masked text and amount.
+    cleared-because: >-
+      The rows are stored, returned by listHeldRows, grouped and
+      rendered under the account label with the held note; they are not
+      invisible. The browser-level witness is the criteria lane's.
+  - class-id: H18.2
+    probed: >-
+      Searched the diff and the rendering path for any sum, count-as-
+      amount or derived figure over held rows; swept every money
+      aggregate in the overview adapter for a route a null-flow savings
+      row could enter (probe P7).
+    cleared-because: >-
+      groupHeldRows folds with no arithmetic, the UI renders row
+      amounts only, and every aggregate filters on a flow value no held
+      row carries. Residue: the trap of HZ-M3P18-02 puts COUNTED rows
+      beside a held block only after a ring flip, which the guard
+      currently prevents at the cost that finding names.
+  - class-id: H18.3
+    probed: >-
+      Ran the null-flow occurrence sweep over src/, compared the two
+      reads' predicates, traced the verdict to the scoped count, and
+      constructed on paper a row per quadrant (pot or savings ring,
+      null or set flow) against each read.
+    cleared-because: >-
+      Exactly two null-flow reads exist, both scoped by the same ring
+      predicate, and the cause block and listing draw from reads scoped
+      alike, so neither direction of the panel lie is constructible in
+      the head.
+  - class-id: H18.4
+    probed: >-
+      Grepped every occurrence of the removed reason and its camel-case
+      and message-key forms across src/ and messages/.
+    cleared-because: >-
+      Four occurrences remain and all are removal-history comments;
+      the union, routing, whitelist, status-line membership and
+      catalogues carry no live member, so nothing can reconnect it
+      without re-adding it wholesale.
+  - class-id: H18.5
+    probed: >-
+      Read the committed migration for any table or column beyond
+      accounts.iban; ran it live over seeded transaction-free and
+      transaction-bearing schemas.
+    cleared-because: >-
+      One UPDATE on the accounts table, one column in SET, no
+      transaction column named anywhere; the live runs touched
+      accounts rows only.
+  - class-id: H18.6
+    probed: >-
+      Live collision probes: case-difference pairs, whitespace-variant
+      pairs, empty-canonical pairs, canonicalises-to-another-row's-
+      stored-form, cross-household twins, chained renderings; two runs
+      each; attempted to construct a transient unique-index fire and
+      argued its impossibility from idempotence self-consistency.
+    finding: HZ-M3P18-01
+  - class-id: H18.7
+    probed: >-
+      Witnessed the canonical duplicate check refusing the retype at
+      function level over the seeded stored renderings, ASCII and
+      U+00A0 alike.
+    cleared-because: >-
+      The typed half holds: no second row is creatable for any stored
+      rendering this lane constructed, because the TS canonical
+      comparison is the one doing the refusing. That same strictness
+      is half of finding HZ-M3P18-01's lockout, recorded there.
+  - class-id: H18.8
+    probed: >-
+      Ran gate:privacy at the head and again with this document in the
+      tree; checked the allow-list carries every harness and fixture
+      identifier with provenance; kept every probe value out of the
+      tree.
+    cleared-because: >-
+      gate:privacy clean both times; the allow-list entries carry
+      provenance notes; this document quotes no identifier shape.
+
+# ==========================================================
+# VALIDATION RECORD, run at the end over this exact file
+# ==========================================================
+#   npx --prefix /home/user/pulse-fleet tiphys validate --type verdict
+#     --context delivery delivery/review/m3-p18-hazard.yaml
+#   EXIT=1 with ZERO schema-level INVALIDs on this document. The three
+#   remaining lines are the STANDING cross-document layout condition:
+#   verdict-criteria-complete, verdict-deviations-judged and
+#   verdict-hazard-classes-addressed each fail only because this
+#   repository keeps its plan at delivery/plan/pulse-v02.yaml and its
+#   work histories under delivery/work-history/, not at the fixed
+#   delivery/plan.yaml and delivery/work-history.yaml paths the
+#   validator's context expects. The MERGED precedent
+#   delivery/review/m3-p17-hazard.yaml records the identical condition
+#   under the same command, so this is the repository layout and not a
+#   property of this document. The dual-review-decorrelation REPORT line
+#   (no charter.yaml, no delivery mode declared) is likewise standing.
+#   An earlier run of the same command against a draft with a
+#   prose-only criteria shape returned 24 INVALIDs; the criteria were
+#   rewritten to the quote, evidence, met shape and those 24 are gone.
+#   npm run gate:privacy with this document in the tree: EXIT=0,
+#   "gate:privacy clean".
