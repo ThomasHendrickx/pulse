@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { join } from "node:path";
 import { registerCurrentAccount } from "./setup-accounts";
+import { UNSTAMPED } from "@/app/api/health/version/build-stamp";
 
 // PRODUCTION-MODE smoke (deploy-verify defect round). The owner's
 // production 500 (a server-action throw when the deployed runtime could
@@ -41,6 +42,33 @@ test("production build: health probe ok, PDF upload lands, month reconciles", as
   expect(body.pdfExtraction).toBe("ok");
   expect(body.moduleLoad).toBe("ok");
   expect(body.extraction).toBe("ok");
+
+  // M3-P17: the build stamp. This spec builds and serves the application
+  // itself (next start over a local production bundle), so no Vercel
+  // platform variable exists in this process and the unstamped branch is
+  // the one this run can ever take; the accepted values below carry both
+  // branches for that reason, and the deployed shape (a real sha and
+  // deploymentEnvironment "production") is witnessed by M3-P16's own fetch
+  // against the production origin, not by this local run.
+  const version = await request.get("/api/health/version");
+  expect(version.status(), "GET /api/health/version").toBe(200);
+  const versionBody = (await version.json()) as {
+    sha: string;
+    deploymentEnvironment: string;
+  };
+  expect(Object.keys(versionBody).sort()).toEqual([
+    "deploymentEnvironment",
+    "sha",
+  ]);
+  expect(
+    versionBody.sha === UNSTAMPED || /^[0-9a-f]{7,40}$/i.test(versionBody.sha),
+  ).toBe(true);
+  expect(
+    versionBody.deploymentEnvironment === UNSTAMPED ||
+      ["production", "preview", "development"].includes(
+        versionBody.deploymentEnvironment,
+      ),
+  ).toBe(true);
 
   const unique = `prod-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
   await page.goto("/sign-up");

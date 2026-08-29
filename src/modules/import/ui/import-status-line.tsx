@@ -6,14 +6,14 @@ import { IMPORT_STATUS_KEYS, isKnownImportStatus, type KnownImportStatus } from 
 // Localized status line for the import screens, driven by whitelisted
 // ?status= values. Unknown values render nothing.
 //
-// TWO STATUSES CARRY A LINK (M3-P14, criterion 14.5). A refusal that names
-// the setup screen without a way to reach it is copy that describes an
-// action instead of offering it, which is the same defect the empty state
-// fixed in M3-P1. The link target is a route, not translated content: URL
-// paths are English only.
+// ONE STATUS CARRIES A LINK (M3-P14, criterion 14.5; narrowed by M3-P18
+// under DR-0030, which removed the account-in-savings-ring refusal and
+// its membership here). A refusal that names the setup screen without a
+// way to reach it is copy that describes an action instead of offering
+// it, which is the same defect the empty state fixed in M3-P1. The link
+// target is a route, not translated content: URL paths are English only.
 const SETUP_LINKED: ReadonlySet<KnownImportStatus> = new Set<KnownImportStatus>([
   "account-not-registered",
-  "account-in-savings-ring",
 ]);
 
 export const ImportStatusLine = async ({

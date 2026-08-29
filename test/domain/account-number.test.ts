@@ -66,6 +66,11 @@ describe("criterion 14.4: one canonical form, one country table, one mod-97", ()
   test("every consumer of the canonical form imports it rather than re-deriving it", () => {
     expect(filesMatching(/canonicalAccountNumber/)).toEqual([
       "modules/accounts/adapters/account-repository.ts",
+      // JOINED IN M3-P18 (criterion 18.5): the already-registered check
+      // builds its known set over canonical forms, because a pre-M3-P14
+      // stored rendering compared as a raw string let one real account
+      // become two rows.
+      "modules/accounts/application/register-accounts.ts",
       "modules/accounts/domain/account-registration.ts",
       "modules/import/domain/belfius-current-account-template.ts",
       "modules/import/domain/detect-profile.ts",
@@ -80,6 +85,12 @@ describe("criterion 14.4: one canonical form, one country table, one mod-97", ()
       // comment there points at it so a change to one meets the other.
       "modules/overview/adapters/overview-repository.ts",
       "platform/account-number.ts",
+      // JOINED IN M3-P13 (decision D-41): the review screen masks an
+      // account number for DISPLAY, and it asks platform what the canonical
+      // form is rather than removing whitespace itself. A masker that
+      // carried its own compaction would be a second definition of what an
+      // account number is, which is what this enumeration exists to refuse.
+      "platform/ui/mask-account-number.ts",
     ]);
   });
 
