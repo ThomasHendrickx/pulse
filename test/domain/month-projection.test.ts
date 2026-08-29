@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { buildMerchantReview } from "@/modules/merchants/domain/merchant-review";
 import { describe, expect, test } from "vitest";
 import { cents } from "@/platform/money";
 import { plainDate } from "@/platform/plain-date";
@@ -20,7 +23,11 @@ import {
   type CountedGroupRow,
   type RawMonthFigures,
 } from "@/modules/overview/domain/month-projection";
-import { normaliseCounterparty } from "@/modules/merchants/application";
+import {
+  counterpartyIdentity,
+  isBareIdentityKey,
+  normaliseCounterparty,
+} from "@/modules/merchants/application";
 
 // The pure projection layer's fast-gate suite (fix round 1, CR-504: the
 // layer shipped with e2e coverage only, so a silent sign flip or an
@@ -97,13 +104,14 @@ describe("calendar month arithmetic (month.ts)", () => {
 });
 
 describe("foldGroups partitions every row into exactly one group", () => {
-  const options = { useTags: true, normalise: normaliseCounterparty };
+  const options = { useTags: true, identity: counterpartyIdentity, isBareKey: isBareIdentityKey, normalise: normaliseCounterparty };
 
   const row = (overrides: Partial<CountedGroupRow>): CountedGroupRow => ({
     merchantId: null,
     merchantName: null,
     primaryTag: null,
     counterpartyText: "SUPERMARKT NOORD GENT",
+    counterpartyAccount: null,
     isCash: false,
     totalCents: cents(-1000),
     rowCount: 1,
@@ -176,22 +184,25 @@ describe("attachDeltas joins by group key and pins the magnitude semantics", () 
   test("deltas join by key across the year boundary, not by array position", () => {
     const january = foldGroups(
       [
-        { merchantId: "m1", merchantName: "Colruyt", primaryTag: null, counterpartyText: "COLRUYT", isCash: false, totalCents: cents(-5000), rowCount: 2 },
-        { merchantId: null, merchantName: null, primaryTag: null, counterpartyText: "BAKKERIJ CENTRUM", isCash: false, totalCents: cents(-1500), rowCount: 1 },
+        { merchantId: "m1", merchantName: "Colruyt", primaryTag: null, counterpartyText: "COLRUYT", counterpartyAccount: null, isCash: false, totalCents: cents(-5000), rowCount: 2 },
+        { merchantId: null, merchantName: null, primaryTag: null, counterpartyText: "BAKKERIJ CENTRUM", counterpartyAccount: null, isCash: false, totalCents: cents(-1500), rowCount: 1 },
       ],
-      { useTags: true, normalise: normaliseCounterparty },
+      { useTags: true, identity: counterpartyIdentity, isBareKey: isBareIdentityKey, normalise: normaliseCounterparty },
     );
     const december = foldGroups(
       [
-        { merchantId: null, merchantName: null, primaryTag: null, counterpartyText: "BAKKERIJ CENTRUM", isCash: false, totalCents: cents(-1000), rowCount: 1 },
-        { merchantId: "m1", merchantName: "Colruyt", primaryTag: null, counterpartyText: "COLRUYT", isCash: false, totalCents: cents(-6000), rowCount: 3 },
+        { merchantId: null, merchantName: null, primaryTag: null, counterpartyText: "BAKKERIJ CENTRUM", counterpartyAccount: null, isCash: false, totalCents: cents(-1000), rowCount: 1 },
+        { merchantId: "m1", merchantName: "Colruyt", primaryTag: null, counterpartyText: "COLRUYT", counterpartyAccount: null, isCash: false, totalCents: cents(-6000), rowCount: 3 },
       ],
-      { useTags: true, normalise: normaliseCounterparty },
+      { useTags: true, identity: counterpartyIdentity, isBareKey: isBareIdentityKey, normalise: normaliseCounterparty },
     );
     const withDeltas = attachDeltas(january, december);
     const byKey = new Map(withDeltas.map((g) => [g.key, g.deltaCents]));
     expect(byKey.get("merchant:m1")).toBe(-1000);
-    expect(byKey.get("text:BAKKERIJ CENTRUM")).toBe(500);
+    // M3-P12: the unresolved key is the counterparty IDENTITY under the
+    // fold's own text: prefix. These rows carry no account, so the identity
+    // is the descriptor basis and the suffix is the key they always had.
+    expect(byKey.get("text:descriptor:BAKKERIJ CENTRUM")).toBe(500);
   });
 
   test("PINNED DECISION (review probe P-F11): the delta is the MAGNITUDE change, |current| minus |previous|, including across a sign flip", () => {
@@ -301,5 +312,112 @@ describe("deriveMonthFigures: the identity and the verdict (CR-501, CR-502)", ()
     expect(figures.reconciles).toBe(true);
     expect(figures.spendCents).toBe(191897);
     expect(figures.netToReservesCents).toBe(0);
+  });
+});
+
+// FIX ROUND THREE, finding CR3-M3P12-06, THE FIFTH CONSUMER. The derivation's
+// floor says a bare namespace is not an identity, and round two enforced it at
+// the matcher, the write boundary and the merchant review. The overview fold
+// was the one place that took an identity and applied no guard: two rows
+// carrying no counterparty information at all landed in ONE group whose label
+// is the empty string, with their money summed and a row count beside it,
+// counted into the unresolved pill as work the reader is being asked to do.
+describe("CR3-M3P12-06: a month-view group with no counterparty text says why", () => {
+  const bareRow = (
+    id: string,
+    counterpartyText: string,
+    counterpartyAccount: string | null,
+    totalCents: number,
+  ): CountedGroupRow => ({
+    merchantId: null,
+    merchantName: null,
+    primaryTag: null,
+    counterpartyText,
+    counterpartyAccount,
+    isCash: false,
+    totalCents: cents(totalCents),
+    rowCount: 1,
+  });
+
+  const fold = (rows: readonly CountedGroupRow[]) =>
+    foldGroups(rows, {
+      useTags: false,
+      identity: counterpartyIdentity,
+      isBareKey: isBareIdentityKey,
+      normalise: normaliseCounterparty,
+    });
+
+  test("the group is still ONE group and its MONEY still counts, so nothing is dropped", () => {
+    const groups = fold([
+      bareRow("a", "   ", null, -1500),
+      bareRow("b", "", "   ", -2000),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.kind).toBe("unresolved");
+    expect(groups[0]?.rowCount).toBe(2);
+    expect(groups[0]?.totalCents).toBe(cents(-3500));
+  });
+
+  test("and it carries the reason it cannot be named, where before it carried an empty label and nothing else", () => {
+    const groups = fold([bareRow("a", "   ", null, -1500)]);
+    expect(groups[0]?.label).toBe("");
+    expect(groups[0]?.unnameableReason).toBe("no-counterparty-text");
+  });
+
+  test("an ordinary unresolved group carries NO reason, so the mark is a measurement and not a constant", () => {
+    const groups = fold([
+      bareRow("a", "BIJDRAGE DEMO VERENIGING JAARLIJKS", null, -400),
+    ]);
+    expect(groups[0]?.kind).toBe("unresolved");
+    expect(groups[0]?.label).not.toBe("");
+    expect(groups[0]?.unnameableReason).toBeUndefined();
+  });
+
+  test("THE TWO SCREENS AGREE: the same rows are unnameable on the month view and on the merchant review", () => {
+    const monthGroups = fold([
+      bareRow("a", "   ", null, -1500),
+      bareRow("b", "", "   ", -2000),
+    ]);
+    const review = buildMerchantReview(
+      [
+        {
+          id: "a",
+          flow: "SPEND",
+          amountCents: cents(-1500),
+          bookingDate: plainDate("2026-03-02"),
+          description: "   ",
+        },
+        {
+          id: "b",
+          flow: "SPEND",
+          amountCents: cents(-2000),
+          bookingDate: plainDate("2026-03-03"),
+          description: "",
+        },
+      ],
+      [],
+    );
+    const reviewGroup = review.spend[0];
+    expect(monthGroups).toHaveLength(1);
+    expect(review.spend).toHaveLength(1);
+    // The month view marks it; the merchant review withholds the naming form
+    // and marks it. Neither offers a naming, and both say why.
+    expect(monthGroups[0]?.unnameableReason).toBe("no-counterparty-text");
+    expect(reviewGroup?.counterpartyText).toBeUndefined();
+    expect(reviewGroup?.unnameableReason).toBe("no-counterparty-text");
+  });
+
+  test("the month view renders the reason instead of the empty label, and the copy is the merchant review's", () => {
+    const source = readFileSync(
+      join(__dirname, "..", "..", "src/modules/overview/ui/month-view.tsx"),
+      "utf8",
+    );
+    expect(source).toContain("group.unnameableReason === undefined");
+    expect(source).toContain('t("unnameableLabel")');
+    const review = readFileSync(
+      join(__dirname, "..", "..", "src/modules/merchants/ui/merchant-review.tsx"),
+      "utf8",
+    );
+    expect(review).toContain('t("unnameableLabel")');
   });
 });

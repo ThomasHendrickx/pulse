@@ -8,8 +8,11 @@ import type { PlainDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
 import type { Clock } from "@/platform/clock";
 import type {
+  CountedGroupBareKey,
+  CountedGroupIdentity,
   CountedGroupRow,
   GapRow,
+  HeldRow,
   RawMonthFigures,
   ReserveMovementGroup,
 } from "../domain/month-projection";
@@ -50,6 +53,16 @@ export type OverviewRepositoryPort = {
     context: HouseholdContext,
     period: Period,
   ) => Promise<readonly GapRow[]>;
+  // THE HELD READ (M3-P18, DR-0030): the rows of the requested period on
+  // accounts whose ring is savings, per account and carrying that
+  // account's LABEL, with booking date, counterparty text and amount. It
+  // carries NO flow condition at all and is keyed on the RING alone,
+  // which is why it is correctly absent from criterion 18.3's null-flow
+  // enumeration. It returns rows, never a sum (decision D-60).
+  readonly listHeldRows: (
+    context: HouseholdContext,
+    period: Period,
+  ) => Promise<readonly HeldRow[]>;
   // The empty state runs before the first import ever lands; one EXISTS.
   readonly hasAnyTransactions: (context: HouseholdContext) => Promise<boolean>;
 };
@@ -57,8 +70,17 @@ export type OverviewRepositoryPort = {
 export type OverviewDependencies = {
   readonly overview: OverviewRepositoryPort;
   readonly clock: Clock;
-  // The merchants module's published normalisation, injected so the
-  // domain fold stays import-free: unresolved rows group under the SAME
-  // key the merchant review screen uses.
+  // M3-P12: the counterparty IDENTITY derivation, injected so the domain
+  // fold stays import-free and unresolved rows group under the SAME key the
+  // merchant review screen uses. It replaces the normaliser the same way the
+  // review builder's own key changed, so the two screens keep agreeing.
+  readonly counterpartyIdentity: CountedGroupIdentity;
+  // THE FLOOR, INJECTED (fix round three, finding CR3-M3P12-06). The overview
+  // must apply the same rule the merchants module states at its derivation:
+  // a bare namespace is not an identity. The predicate is injected rather
+  // than imported so this module keeps importing nothing from merchants.
+  readonly isBareIdentityKey: CountedGroupBareKey;
+  // Still injected beside it: the fold labels an unresolved group with the
+  // normalised counterparty text, which M3-P12 does not change.
   readonly normaliseCounterparty: (text: string) => string;
 };

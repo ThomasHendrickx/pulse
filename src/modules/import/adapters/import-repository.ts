@@ -303,6 +303,21 @@ export const applyReparse = async (
     // marker. The reinterpretation that follows restores INTERPRETED; a
     // death between the two leaves the marker, and recovery is the
     // existing pipeline.
+    //
+    // THE MARKER'S MEANING IS NARROWED, LOUDLY (M3-P18 fix round, hazard
+    // finding HZ-M3P18-03, clause R-087). The sentence above calls
+    // INGESTED "the pipeline's visible needs-interpretation marker", and
+    // under DR-0030 that is no longer the whole truth: a SAVINGS-ring
+    // account's own import is accepted, its rows never enter the
+    // interpretation window, and replaceInterpretation flips only
+    // window imports, so a savings import stays INGESTED forever. For
+    // POT-account imports the sentence stands unchanged; for a savings
+    // import INGESTED is the TERMINAL state and means nothing is owed.
+    // A future consumer that treats INGESTED as pending work (a re-parse
+    // sweep, a badge, a retry loop) must scope itself to pot-ring
+    // imports; test/application/savings-held.test.ts pins the terminal
+    // meaning so that consumer meets a tested contract rather than this
+    // comment alone.
     await tx.import.updateMany({
       where: {
         householdId: context.householdId,

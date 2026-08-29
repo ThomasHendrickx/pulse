@@ -21,7 +21,7 @@ import {
 import {
   listMerchantReview as listMerchantReviewUseCase,
 } from "./merchant-review";
-import { resolveCounterparties as resolveCounterpartiesUseCase } from "./resolve-counterparties";
+import { resolveIdentities as resolveIdentitiesUseCase } from "./resolve-identities";
 import {
   tagMerchant as tagMerchantUseCase,
   type TagMerchantError,
@@ -52,6 +52,7 @@ export type {
 export type {
   MerchantReview,
   ReviewGroup,
+  ReviewGroupRow,
   CountedRow,
 } from "../domain/merchant-review";
 export type {
@@ -62,9 +63,23 @@ export type {
 export { matchRules } from "../domain/merchant-rule";
 export { buildMerchantReview, counterpartyText } from "../domain/merchant-review";
 export { normaliseCounterparty } from "../domain/normalise-counterparty";
+export {
+  counterpartyIdentity,
+  identityBasisOfKey,
+  isTrustedCounterpartyAccount,
+  ACCOUNT_NAMESPACE,
+  DESCRIPTOR_NAMESPACE,
+  isBareIdentityKey,
+  IBAN_LENGTH_BY_COUNTRY,
+} from "../domain/counterparty-identity";
+export type {
+  CounterpartyIdentity,
+  CounterpartyIdentityBasis,
+  CounterpartyIdentityRow,
+} from "../domain/counterparty-identity";
 export { assignMerchant as assignMerchantWith } from "./assign-merchant";
 export { listMerchantReview as listMerchantReviewWith } from "./merchant-review";
-export { resolveCounterparties as resolveCounterpartiesWith } from "./resolve-counterparties";
+export { resolveIdentities as resolveIdentitiesWith } from "./resolve-identities";
 export { tagMerchant as tagMerchantWith } from "./tag-merchant";
 
 const liveRepository: MerchantRepositoryPort = {
@@ -73,6 +88,7 @@ const liveRepository: MerchantRepositoryPort = {
   findMerchantByName: repository.findMerchantByName,
   createMerchant: repository.createMerchant,
   upsertRule: repository.upsertRule,
+  applyRuleWrites: repository.applyRuleWrites,
   findTagByName: repository.findTagByName,
   createTag: repository.createTag,
   setMerchantTag: repository.setMerchantTag,
@@ -80,14 +96,32 @@ const liveRepository: MerchantRepositoryPort = {
   listCountedTransactions: repository.listCountedTransactions,
 };
 
-// The RuleResolver behind the ledger's MerchantResolver port: distinct raw
-// strings in, merchant assignments out, rules only (slice 5 adds the LLM
-// step BEHIND this same interface).
-export const resolveCounterparties = (
+// The live repository, published for the ONE command that needs the
+// declaration-writing port outside a use case: the M3-P12 re-derivation
+// script (scripts/rederive-merchant-rules.ts). Nothing in the app reaches
+// for it; the use cases above are how a route writes a declaration.
+export const merchantRepository: MerchantRepositoryPort = liveRepository;
+
+export {
+  RederiveRecomputeError,
+  rederiveMerchantRules,
+  formatDecisionReport,
+} from "./rederive-rules";
+export type {
+  RederiveReport,
+  RederiveDependencies,
+  RuleDecision,
+  RuleCounts,
+} from "./rederive-rules";
+
+// The RuleResolver behind the ledger's MerchantResolver port: distinct
+// counterparty IDENTITY KEYS in, merchant assignments out, rules only
+// (slice 5 adds the LLM step BEHIND this same interface).
+export const resolveIdentities = (
   context: HouseholdContext,
-  texts: readonly string[],
+  identityKeys: readonly string[],
 ): Promise<ReadonlyMap<string, string>> =>
-  resolveCounterpartiesUseCase(context, { merchants: liveRepository }, texts);
+  resolveIdentitiesUseCase(context, { merchants: liveRepository }, identityKeys);
 
 export const assignMerchant = (
   context: HouseholdContext,
