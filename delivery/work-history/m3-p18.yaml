@@ -72,6 +72,8 @@ files-touched:
   - src/modules/import/ui/status-keys.ts
   - src/modules/import/ui/import-status-line.tsx
   - src/modules/accounts/application/register-accounts.ts
+  - src/modules/accounts/application/change-account-ring.ts
+  - src/modules/import/adapters/import-repository.ts
   - src/modules/overview/application/ports.ts
   - src/modules/overview/application/month-overview.ts
   - src/modules/overview/application/index.ts
@@ -110,6 +112,10 @@ per-step-commits:
     subject: "feat: accept a savings statement and hold its rows out of every total"
   - sha: e7f539c
     subject: "feat: canonical backfill migration, collision detection script, canonical duplicate check"
+  - sha: 85da7f6
+    subject: "history: the M3-P18 work history with captured witnesses"
+  - sha: 20b6b07
+    subject: "fix: the SQL whitespace class mirrors the platform canonical form exactly"
 key-decisions:
   - decision: >-
       The mandated mechanism-index lookup was answered with "the index does
@@ -331,6 +337,79 @@ gate-evidence:
     skipped: 0
     todo: 0
     did-not-run: 0
+  # FIX ROUND ONE, re-run at the committed head 20b6b07.
+  - gate: typecheck-fix-round-1
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: lint-fix-round-1
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-fast-fix-round-1
+    result: green
+    wrapper-exit-code: 0
+    discovered: 679
+    passed: 679
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-privacy-fix-round-1
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-decisions-fix-round-1
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-tokens-fix-round-1
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: build-fix-round-1
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-e2e-held-and-gap-rows-fix-round-1
+    result: green
+    wrapper-exit-code: 0
+    discovered: 1
+    passed: 1
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
   - gate: suite-e2e
     result: error
     no-wrapper-exit-code: >-
@@ -454,6 +533,196 @@ claims:
       duplicated EXISTING account's label in the message, that needs
       account-setup-form.tsx and accounts-screen.tsx, both outside
       files-to-touch, and a base-branch declaration amendment first.
+  - id: M3P18-C7
+    kind: coverage
+    statement: >-
+      The one shared SQL whitespace class enumerates exactly the set the
+      platform canonical form's regex strips, over every Unicode code
+      point, and every executable SQL normalisation site (migration,
+      detection grouping, reserves join) strips that class and no longer
+      the bare POSIX class.
+    settled-by:
+      executed-construction:
+        command: >-
+          export NVM_DIR=/opt/nvm && . /opt/nvm/nvm.sh && cd
+          /home/user/wt-m3p18 && npm test   (the class-equivalence sweep
+          in test/domain/canonical-backfill.test.ts derives the JS set by
+          testing all code points and compares it to the parsed class;
+          the site pins assert the migration inlines the constant
+          byte-equal per occurrence, four of four since round two, and
+          the script and join bind it)
+        exit-code: 0
+        output: >-
+          Test Files 50 passed (50), Tests 679 passed (679), 0 failed.
+          Independently, the psql probe of the escape-form class against
+          Postgres 16.13 stripped codes 9,10,13,32,160,5760,8192,8202,
+          8232,8233,8239,12288,65279 and kept 48,65,117,8203, byte-for-
+          byte the JS answer over the same probe set (full output in
+          delivery/work-history/m3-p18-notes.md, fix round section).
+  - id: M3P18-C8
+    kind: coverage
+    statement: >-
+      Hazard finding HZ-M3P18-01 is closed red-then-green against a real
+      Postgres: before the fix the committed migration left an NBSP-spaced
+      rendering non-canonical and the committed grouping saw no collision
+      in its household; after the fix the committed migration
+      canonicalises a BOM-plus-narrow-NBSP singleton, leaves the NBSP
+      pair byte identical as a detected collision across two runs with no
+      fact column moved, and the committed script emits that pair's two
+      row ids.
+    settled-by:
+      executed-construction:
+        command: >-
+          psql red probes against 127.0.0.1:54322 (the committed
+          statement and grouping verbatim over an NBSP household), then,
+          after the fix: psql -f the committed migration.sql twice over a
+          seeded NBSP household, DATABASE_URL pinned npx tsx
+          witness-fixround.mts (temporary, deleted after the run), and
+          npx tsx scripts/detect-account-collisions.ts
+        exit-code: 0
+        output: >-
+          RED: sql_keeps 1 for codes 160/8239/65279 under the old class
+          while js_keeps 0; NBSP row is_canonical false after the
+          committed migration; probe-household collision groups 0. GREEN:
+          NBSP pair rows len 19/16 unchanged over two runs, BOM row
+          canonicalised to len 16; witness 17 checks all ok exit 0
+          including the full fact byte-compare; the detection CLI's
+          stdout contains the NBSP pair's two row ids on one line and
+          nothing account-shaped. Full transcripts in
+          delivery/work-history/m3-p18-notes.md, fix round section.
+  - id: M3P18-C9
+    kind: open-question
+    statement: >-
+      The DR-0030/D-51 interaction awaits an owner record on the plan's
+      parked ring-change entry: one confirmed upload onto a mis-ringed
+      account now closes the only ring correction the product has, its
+      rows held and counted nowhere. This round delivered the in-contract
+      half only (the guard's stale justification corrected, the held
+      block naming the savings-ring registration as the cause in three
+      catalogues); the guard itself and hasImportedRows stand unchanged,
+      and the plan-side annotation is the orchestrator's to land, because
+      this implementer does not edit the plan (R-007).
+  - id: M3P18-C10
+    kind: open-question
+    statement: >-
+      The criterion 18.6 read-back record: the two real documents are not
+      present in this container, so the line-by-line read-back of the new
+      fixtures, harness strings and catalogue lines against them was not
+      performed and is owed before slice close, alongside the e2e gate,
+      with the exact instruction recorded in
+      delivery/work-history/m3-p18-notes.md (fix round section,
+      CR-M3P18-01). Each new line this phase adds was invented
+      in-session; no external document was available or consulted while
+      writing them.
+  - id: M3P18-C11
+    kind: coverage
+    statement: >-
+      The round-two carried low HZ2-M3P18-01 is settled: the migration
+      pin extracts each regexp_replace pattern literal from the
+      comment-stripped SQL, asserts the count is exactly four, and
+      asserts per-occurrence byte equality with
+      ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS, so single-site drift in any
+      of the four inlined copies, the collision comparison included,
+      reddens the fast gate instead of shipping the H18.6 deploy death
+      the reviewer witnessed; the two overbroad byte-equality sentences
+      (the pin's comment and the fix-round notes paragraph) are
+      corrected loudly with the superseded wording quoted.
+    settled-by:
+      executed-construction:
+        command: >-
+          python one-liner mutating ONLY the b-side collision-comparison
+          occurrence in the committed migration (dropping one escape),
+          then npx vitest run test/domain/canonical-backfill.test.ts;
+          git restore the migration; npx vitest run again and npm test
+        exit-code: 0
+        output: >-
+          RED with the single-site mutation: "every inlined whitespace
+          class in the migration is byte-equal to the shared constant"
+          failed, 1 failed, 7 passed, exactly the site whose drift fires
+          the unique index on the NBSP twin pair. GREEN restored: 8
+          passed in the file, npm test 50 files 679 tests 0 failed exit
+          0, typecheck 0, gate:privacy 0, gate:decisions 0.
+fix-round:
+  - mechanism: >-
+      A cross-language mirror ASSERTED rather than derived: SQL text
+      standing in for a JavaScript character class (POSIX [[:space:]] for
+      the platform canonical form's whitespace class), with the claimed
+      equivalence exercised only over inputs on which the two classes
+      happen to agree (ASCII-spaced renderings), so the divergent members
+      (U+00A0, U+202F, U+FEFF and the rest of the ECMAScript set) were
+      never traversed by any test.
+    derivation:
+      command: >-
+        grep -rn "\[\[:space:\]\]" --include="*.ts" --include="*.tsx"
+        --include="*.sql" src/ scripts/ prisma/ test/ | grep -v
+        node_modules   (run at 85da7f6, before any fix edit)
+      output: |
+        src/modules/overview/adapters/overview-repository.ts:171:// THE WHITESPACE CLASS IS WRITTEN [[:space:]] AND NOT \s ON PURPOSE, and
+        src/modules/overview/adapters/overview-repository.ts:194:      upper(regexp_replace(t."counterpartyIban", '[[:space:]]', '', 'g'))
+        src/modules/overview/adapters/overview-repository.ts:201:      ON upper(regexp_replace(a."iban", '[[:space:]]', '', 'g'))
+        src/modules/overview/adapters/overview-repository.ts:202:         = upper(regexp_replace(t."counterpartyIban", '[[:space:]]', '', 'g'))
+        scripts/detect-account-collisions.ts:65:// migration uses (uppercase, every [[:space:]] removed; the POSIX class
+        scripts/detect-account-collisions.ts:77:    GROUP BY a."householdId", upper(regexp_replace(a."iban", '[[:space:]]', '', 'g'))
+        prisma/schema/migrations/20260827120000_canonical_account_iban_backfill/migration.sql:19:-- removed. The whitespace class is written [[:space:]] and not a
+        prisma/schema/migrations/20260827120000_canonical_account_iban_backfill/migration.sql:53:SET "iban" = upper(regexp_replace(a."iban", '[[:space:]]', '', 'g'))
+        prisma/schema/migrations/20260827120000_canonical_account_iban_backfill/migration.sql:55:  AND a."iban" IS DISTINCT FROM upper(regexp_replace(a."iban", '[[:space:]]', '', 'g'))
+        prisma/schema/migrations/20260827120000_canonical_account_iban_backfill/migration.sql:62:      AND upper(regexp_replace(b."iban", '[[:space:]]', '', 'g'))
+        prisma/schema/migrations/20260827120000_canonical_account_iban_backfill/migration.sql:63:          = upper(regexp_replace(a."iban", '[[:space:]]', '', 'g'))
+        test/domain/canonical-backfill.test.ts:55:    // upper + regexp_replace over [[:space:]]: the same mirror the
+        test/domain/canonical-backfill.test.ts:61:    expect(sql).toContain(`upper(regexp_replace(a."iban", '[[:space:]]', '', 'g'))`);
+    not-covered: >-
+      Reading of the output first: eight executable sites (three
+      reserves-join occurrences, one grouping, four migration
+      occurrences) plus comments and the test pin; every executable site
+      now strips ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS, the pin holds every
+      inlined migration occurrence byte-equal to the constant (four of
+      four since the round-two strengthening under HZ2-M3P18-01; the
+      round-one pin held one containment only), and after the
+      fix the same grep finds the bare class only inside correction
+      comments, the two not-toContain pins, and this record. What the
+      derivation did NOT cover: it searched tracked ts/tsx/sql under src, scripts,
+      prisma and test only: node_modules and delivery/ (review documents
+      quoting the class in prose) were excluded deliberately. It also
+      covers only the WHITESPACE half of the cross-language mirror: the
+      same family contains upper() versus toUpperCase(), which agree over
+      the [A-Za-z0-9] alphabet an account number's canonical form can
+      carry but were not derived over arbitrary input here, and the cash
+      pattern list (CASH_WITHDRAWAL_PATTERNS), which shares one ARE
+      source between JS and SQL rather than translating a class and is
+      therefore a different member, checked by its own sibling note. A
+      semantic divergence outside character classes would not redden any
+      pin this round added.
+  - mechanism: >-
+      A load-bearing comment justifying a behaviour by a sentence a
+      superseded decision made false: the correction pass for DR-0030
+      rewrote the sentence where it was DESCRIPTIVE (the skill,
+      ledger-transaction.ts) and missed the sites where it JUSTIFIES a
+      refusal or a status meaning (the ring-change guard, the INGESTED
+      marker).
+    derivation:
+      command: >-
+        grep -rn "not imported" src/ .claude/skills/ scripts/ | grep -v
+        node_modules   (run after the fix edits)
+      output: |
+        src/modules/ledger/domain/ledger-transaction.ts:39:// are not imported; DR-0030 made that false in M3-P18, corrected here
+        src/modules/accounts/application/change-account-ring.ts:12:// statement of its own (savings statements are not imported in v1,
+        .claude/skills/pulse-domain/SKILL.md:98:Reserve movements are never paired. The other leg, where a savings statement holding it is imported (DR-0030), is a HELD fact row that interpretation never reads: pairing runs over pot accounts only, so nothing changes here. (This sentence used to say the other leg is not imported; DR-0030 made that false and it is corrected rather than quietly deleted.)
+    not-covered: >-
+      Reading of the output first: every remaining occurrence sits inside
+      a loud correction QUOTING the superseded sentence (the
+      change-account-ring hit is the quoted wording inside the new
+      correction block), so no un-corrected justification survives the
+      grep. What the derivation did NOT cover: a stale justification
+      RESTATED in different words is not reachable
+      by this grep: the INGESTED marker comment, for one, carried the
+      same premise as "the pipeline's visible needs-interpretation
+      marker" without the words "not imported" and was found by the
+      hazard lane's reading, not by a pattern. The clean-room lanes are
+      the check for paraphrased instances; this round corrected the two
+      they named (change-account-ring.ts, import-repository.ts) and
+      re-read confirm-import.ts, status-keys.ts, import-status-line.tsx,
+      month-view.tsx and the three catalogues for the same premise,
+      finding none.
 environment-warnings:
   - warning: >-
       The ambient DATABASE_URL in this container points at a deployed

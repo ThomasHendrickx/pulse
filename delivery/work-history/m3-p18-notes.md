@@ -94,9 +94,13 @@ pinned (DATABASE_URL/DIRECT_URL at 127.0.0.1):
 
   1. Baseline refusal of the non-canonical stored account's statement
      (account-not-registered today) and the second-row trap at setup:
-     covered by the new specs in test/e2e/import.spec.ts (savings
-     acceptance) and test/e2e/month-view.spec.ts, plus the migration spec's
-     before-arm; command: npm run test:e2e.
+     covered by the rewritten acceptance test in test/e2e/accounts.spec.ts
+     and the criterion 18.2 test in test/e2e/month-view.spec.ts, plus the
+     refusal-baseline before-arm of test/e2e/canonical-backfill.spec.ts;
+     command: npm run test:e2e. CORRECTED IN THE FIX ROUND (finding
+     CR-M3P18-05, clause R-087): this entry used to point the savings
+     acceptance at test/e2e/import.spec.ts, a file this phase never
+     touched; the false pointer is corrected in place rather than deleted.
   2. The full MonthFigures baseline of the seeded household: hand-derived
      from the harness constants and pinned inside
      test/e2e/seed-pre-phase-household.ts (income +250000, spend -8647,
@@ -261,3 +265,145 @@ The slice does not close until that passes somewhere.
 
 Work history validated: npx --prefix /home/user/pulse-fleet tiphys validate
 --type work-history delivery/work-history/m3-p18.yaml, exit 0.
+
+## FIX ROUND ONE (2026-08-27, after clean-room verdicts m3-p18-criteria.yaml 107eaf6 and m3-p18-hazard.yaml 983ae4e)
+
+### HZ-M3P18-01 (high): the SQL class was not the mirror it claimed to be
+
+RED, captured against the local cluster BEFORE any edit (commands and full
+output in this session, summarised verbatim):
+
+    SELECT length(regexp_replace(chr(code), '[[:space:]]', '', 'g')) ...
+      codes 160 (U+00A0), 8239 (U+202F), 65279 (U+FEFF): sql_keeps = 1
+      (the class retains them); node String.replace(/\s/g,""): js_keeps = 0
+      for all three.
+    An NBSP-spaced rendering beside its compact twin, run through the
+    COMMITTED migration statement: the NBSP row stayed non-canonical
+    (len 19), and the COMMITTED grouping scoped to that household returned
+    0 collision groups while deriveDeclaredSets and the register check
+    treat the two rows as one account.
+
+FIX: one shared class, ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS in
+src/platform/account-number.ts: the POSIX class unioned with U+00A0,
+U+1680, U+2000..U+200A, U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF as
+visible ARE escapes (U+200B deliberately absent: JS \s does not match it).
+Wired: inlined in the migration (edited IN PLACE: at fix time the file
+existed only on this unmerged branch and had been applied to throwaway
+review clusters only, so no deployed database carries the superseded
+statement); bound as a parameter in the detection grouping and in all
+three reserves-join sites (binding is what makes the template-literal
+escape lesson moot). The three false mirror sentences (migration comment,
+account-number.ts sibling note, the reserves-join paragraph) corrected
+loudly with the superseded wording quoted. The harness gained the
+divergent renderings: an NBSP-spaced row beside its compact twin (a
+SECOND collision pair, BE70910000000006) and a U+202F-spaced row behind a
+leading BOM (BE43910000000007), both invented (bodies continue the
+91-run, check digits computed), listed with provenance, written in source
+as visible escapes so no raw invisible byte enters the tree.
+
+GREEN, captured after the edits against the same cluster:
+
+    The escape-form class probe: codes 9,10,13,32,160,5760,8192,8202,
+    8232,8233,8239,12288,65279 all stripped; 48,65,117,8203 all kept;
+    byte-for-byte the JS \s answer over the same probe set.
+    The corrected committed migration over an NBSP household: the NBSP
+    pair left byte identical AS A COLLISION (both runs), the
+    BOM-plus-U+202F row canonicalised to its compact form (len 16), second
+    run byte-stable.
+    The corrected detection CLI: emits the NBSP pair's two row ids as one
+    line (previously invisible), exit 0, nothing account-shaped on stdout.
+    witness-fixround.mts (temporary, deleted): 17 checks over the updated
+    harness through the corrected committed artifacts, all ok, exit 0,
+    including the full fact-column byte compare and idempotency.
+    npx playwright test held-and-gap-rows --project=chromium at the fixed
+    head: 1 passed (35.4s), exit 0 (the reserves join's bound-parameter
+    form exercised through the real repository).
+    Fast gate: the new class-equivalence test DERIVES the JS \s set by
+    sweeping every Unicode code point and asserts the class enumerates it
+    exactly; the migration pin asserts byte equality with the platform
+    constant PER OCCURRENCE, extracting every regexp_replace pattern
+    literal from the comment-stripped SQL and asserting exactly four,
+    each byte-equal; and both the migration and the script are pinned
+    free of the bare POSIX class. CORRECTED IN ROUND TWO (finding
+    HZ2-M3P18-01, clause R-087): this sentence used to read "the
+    migration pin now asserts byte equality between the inlined class
+    and the platform constant", which was true of one occurrence and
+    false of the artifact, since the pin was a single containment any
+    one of the three a-side occurrences satisfied while the migration
+    carries four; the reviewer witnessed a copy mutated in the collision
+    comparison staying green under that pin and firing the unique index
+    on the NBSP twin pair.
+
+### HZ-M3P18-02 (high): the ring freeze now interacts with acceptance
+
+The freeze (D-51/DR-0031) is the OWNER'S and stands untouched:
+hasImportedRows stays flow-agnostic, no ring-change path is added. The
+in-contract half delivered: the stale justifying sentence at
+change-account-ring.ts (which still cited "savings statements are not
+imported in v1") is corrected loudly with the superseded wording quoted
+and the new interaction stated; the held block's note now names the CAUSE
+in all three catalogues ("held because this account is registered in the
+savings ring"), so the state is legible on the one surface this phase
+owns. THE CONSEQUENCE AWAITING AN OWNER RECORD, stated here for the
+orchestrator because this implementer does not edit the plan (R-007): the
+plan's PARKED ring-change entry must carry it. One confirmed upload onto
+a mis-ringed account now closes the only ring correction the product has
+(the account acquires own rows; the guard refuses forever); a household
+that answered a spending account as savings and uploaded sees its real
+month silently empty with its rows held. Whether the guard should admit a
+correction over flow-free held rows (the hazard lane's proposed relaxation
+along the guard's own stale-flow rationale) is exactly the parked ring
+question and is NOT decided in this fix round.
+
+### HZ-M3P18-03 (low): INGESTED is terminal for a savings import
+
+Decided as documentation plus a pin, the smallest honest fix: the marker
+comment at import-repository.ts is corrected in place (R-087, superseded
+meaning quoted: INGESTED remains the needs-interpretation marker for
+pot-ring imports and is TERMINAL, meaning settled, for a savings import),
+and test/application/savings-held.test.ts pins the terminal status over
+the fake world (which mirrors the real flip), so the first pending-work
+consumer meets a tested contract.
+
+### HZ-M3P18-04 (low): the rings-disagreeing pair's silent hold
+
+Visibility delivered through the same held-note change as HZ-02 (the
+block names the savings-ring registration as the cause). The detection
+script's header now states that the post-deploy run is NOT optional and
+why: a rings-disagreeing pair no longer surfaces as a named refusal; its
+statements land deterministically on the canonical-form member and, where
+that member is savings-ringed, are silently held. What remains for the
+parked merge entry: the pair's repair (the merge) and any account-listing
+surface that could show both members.
+
+### CR-M3P18-01 (medium): the read-back record
+
+NOT FABRICATED, recorded precisely: the two real documents named by
+CLAUDE.md rule 8's history are NOT present in this container and were
+never available to this session, so a line-by-line read-back against them
+was not performed and cannot be performed here. Every new fixture line,
+harness label, bank name, description and catalogue line this phase adds
+was INVENTED in-session (typed fresh for this phase; the only strings
+reused are earlier committed inventions: Demobank, Acme Salaris BV,
+Supermarkt Noord, and the previously listed counterparty numbers). No
+external document, real or otherwise, was open or consulted while writing
+them. THE READ-BACK REMAINS OWED before slice close, alongside the e2e
+gate, in a container holding the real documents: read every line of
+test/fixtures/savings-statement.csv, test/fixtures/pre-phase-current.csv,
+the labels/banks/descriptions in test/e2e/seed-pre-phase-household.ts and
+the new catalogue lines in messages/{en,nl,fr}.json against both real
+documents, and record the result here.
+
+### CR-M3P18-03/04/05 (lows)
+
+03: the canonical-backfill spec now snapshots every transaction column
+before the first migration run and deep-compares after the second; the
+comment and the assertion say the same thing. 04: the held-read slice
+test pins both bookingDate bounds by name. 05: the false import.spec.ts
+pointer in this file is corrected in place above, loudly.
+
+### CR-M3P18-02: standing environment debt, not claimed
+
+npm run test:e2e has still executed nowhere at any head of this branch;
+the browser arms need the Supabase auth service. Unchanged, recorded, not
+claimed.

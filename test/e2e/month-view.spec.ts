@@ -1453,17 +1453,26 @@ test("held rows are shown under the account's label, in every locale, and nothin
   await expect(page.getByTestId("held-rows")).toHaveCount(0);
 
   // The savings account's OWN statement, accepted under DR-0030.
+  //
+  // NO CONFIRMATION STEP IS DRIVEN HERE, and that is the product's rule
+  // rather than a shortcut (slow-gate repair round). The statement above
+  // taught this household the format, and upload-statement.ts asks ONCE:
+  // when a stored profile matches the detected spec and the file's own
+  // account resolves, the import is created PARSED and its rows are
+  // ingested in the same request, so no declaration screen is rendered.
+  // The savings statement is the same Demobank export in the same shape,
+  // so it lands directly. The spec used to wait for the confirmation
+  // heading here and timed out on a page already reading "Import
+  // complete": it drove a step the product had removed.
   await page.goto("/import");
   await page
     .getByLabel("Bank export file")
     .setInputFiles(join(FIXTURES, "savings-statement.csv"));
   await page.getByRole("button", { name: "Upload" }).click();
+  await expect(page.getByTestId("import-result")).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Confirm the detected format" }),
-  ).toBeVisible();
-  await page.getByLabel("Format name").fill("Demobank savings statement");
-  await page.getByTestId("confirm-import").click();
-  await expect(page.getByTestId("import-result")).toBeVisible();
+  ).toHaveCount(0);
   await expect(page.getByTestId("rows-added")).toHaveText("6");
 
   await page.goto("/?month=2026-08");
@@ -1502,7 +1511,7 @@ test("held rows are shown under the account's label, in every locale, and nothin
 
   // TWO: the words, visible text, not an attribute.
   await expect(held.getByTestId("held-note")).toHaveText(
-    "These rows are held on a savings account. They are no part of this month's income, spend or reserves.",
+    "These rows are held because this account is registered in the savings ring. They are no part of this month's income, spend or reserves.",
   );
 
   // THREE: nothing is summed. No per-account total, no grand total: the
@@ -1531,11 +1540,11 @@ test("held rows are shown under the account's label, in every locale, and nothin
   const noteByLocale = [
     {
       locale: "nl",
-      note: "Deze rijen staan op een spaarrekening. Ze tellen niet mee in de inkomsten, de uitgaven of de reserves van deze maand.",
+      note: "Deze rijen worden aangehouden omdat deze rekening als spaarrekening is geregistreerd. Ze tellen niet mee in de inkomsten, de uitgaven of de reserves van deze maand.",
     },
     {
       locale: "fr",
-      note: "Ces lignes se trouvent sur un compte d'épargne. Elles ne comptent ni dans les revenus, ni dans les dépenses, ni dans les réserves de ce mois.",
+      note: "Ces lignes sont mises en attente parce que ce compte est enregistré comme compte d'épargne. Elles ne comptent ni dans les revenus, ni dans les dépenses, ni dans les réserves de ce mois.",
     },
   ] as const;
   for (const { locale, note } of noteByLocale) {

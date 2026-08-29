@@ -164,10 +164,16 @@ describe("the client boundary", () => {
     // ASSERTED BY NAME AND NOT BY COUNT: a pinned count is a claim about
     // every future phase and it is false the moment the next one appends.
     expect(clientFiles.map((file) => relative(root, file)).sort()).toEqual([
+      // M3-P11 adds the predicted merchant row (DR-0025) and the
+      // hand-built toast under it (DR-0026). The row leaf reaches its
+      // server action through a PROP bound by the server component, not an
+      // import, so no new action boundary appears in the closure below.
       "src/modules/accounts/ui/account-setup-form.tsx",
+      "src/modules/merchants/ui/merchant-row.tsx",
       "src/platform/ui/link-pending.tsx",
       "src/platform/ui/nav-link.tsx",
       "src/platform/ui/submit-button.tsx",
+      "src/platform/ui/toast.tsx",
     ]);
   });
 

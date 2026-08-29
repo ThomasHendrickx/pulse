@@ -177,5 +177,11 @@ describe("both null-flow reads are ring-scoped and no third exists (criterion 18
     // And NOTHING IS SUMMED (decision D-60): no aggregate over the
     // amount column in the held read.
     expect(heldRead).not.toMatch(/SUM\s*\(/i);
+    // AND THE READ STAYS INSIDE THE REQUESTED PERIOD (criterion 18.2 arm
+    // three's other half, fix round finding CR-M3P18-04): both booking
+    // date bounds are pinned by name, so a later edit that widens the
+    // read beyond the period reddens here rather than shipping.
+    expect(heldRead).toMatch(/t\."bookingDate"\s*>=/);
+    expect(heldRead).toMatch(/t\."bookingDate"\s*<=/);
   });
 });

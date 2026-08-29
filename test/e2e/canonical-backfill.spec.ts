@@ -187,16 +187,31 @@ test("the backfill canonicalises the declarations, spares the pair, and opens th
   // THE MIGRATION, executed as committed.
   // -----------------------------------------------------------------
   const beforeRun = await accountsSnapshot(household.id);
+  // The FULL fact snapshot, every column, before anything runs (fix
+  // round, finding CR-M3P18-03: the comment beneath used to claim byte
+  // identity while the code asserted only a row count).
+  const factsBefore = await prismaClient().transaction.findMany({
+    where: { householdId: household.id },
+    orderBy: { id: "asc" },
+  });
   await runMigration();
   const afterRun = await accountsSnapshot(household.id);
 
   // ARM: the committed expression agrees with canonicalAccountNumber
-  // over EVERY rendering the harness wrote, except the collision pair,
-  // which is left byte identical (criterion 18.5), and the card's NULL
-  // number, which is untouched.
+  // over EVERY rendering the harness wrote, the DIVERGENT-whitespace
+  // rendering included (fix round, hazard finding HZ-M3P18-01: the
+  // narrowNbsp row's U+202F separators and leading U+FEFF must be
+  // stripped, which bare [[:space:]] cannot do), except the TWO
+  // collision pairs, which are left byte identical (criterion 18.5),
+  // and the card's NULL number, which is untouched. The NBSP pair is
+  // the second pair: its members share a canonical form only under the
+  // corrected class, so its byte identity here is what witnesses the
+  // collision guard and the class agreeing.
   const pairIds = new Set([
     seeded.accountIds.collisionSpaced,
     seeded.accountIds.collisionCompact,
+    seeded.accountIds.nbspSpaced,
+    seeded.accountIds.nbspCompact,
   ]);
   for (const before of beforeRun) {
     const after = afterRun.find((row) => row.id === before.id);
@@ -228,18 +243,29 @@ test("the backfill canonicalises the declarations, spares the pair, and opens th
   );
   expect(invalidRow?.iban).toBe("BE82910000000002");
 
-  // ARM: no fact moved. The seeded transactions are byte identical.
-  const transactions = await prismaClient().transaction.findMany({
-    where: { householdId: household.id, importId: seeded.importId },
-    orderBy: { dedupKey: "asc" },
-    select: { counterpartyIban: true, amountCents: true, description: true },
-  });
-  expect(transactions).toHaveLength(4);
+  // ARM: the narrowNbsp rendering, which has no twin, IS canonicalised:
+  // the U+202F separators and the leading BOM are gone (fix round,
+  // hazard finding HZ-M3P18-01; before the corrected class this row
+  // stayed at its SQL fixed point and its statement stayed refused).
+  const narrowRow = afterRun.find(
+    (row) => row.id === seeded.accountIds.narrowNbsp,
+  );
+  expect(narrowRow?.iban).toBe("BE43910000000007");
 
   // ARM: idempotent. A second run leaves every row byte identical.
   await runMigration();
   const afterSecondRun = await accountsSnapshot(household.id);
   expect(afterSecondRun).toEqual(afterRun);
+
+  // ARM: no fact moved, asserted as the byte identity it claims (fix
+  // round, finding CR-M3P18-03): every transaction column, deep-compared
+  // across BOTH migration runs against the pre-run snapshot.
+  const factsAfter = await prismaClient().transaction.findMany({
+    where: { householdId: household.id },
+    orderBy: { id: "asc" },
+  });
+  expect(factsAfter).toEqual(factsBefore);
+  expect(factsAfter).toHaveLength(4);
 
   // ARM: a no-op where there is nothing to do. A household whose stored
   // numbers are already canonical (M3-P14's own write shape) is
@@ -275,8 +301,18 @@ test("the backfill canonicalises the declarations, spares the pair, and opens th
   ]
     .sort()
     .join(" ");
+  // The NBSP pair is a collision only under the corrected whitespace
+  // class: the superseded [[:space:]] grouping saw two unrelated rows
+  // here, which was hazard finding HZ-M3P18-01's blindness half.
+  const expectedNbspLine = [
+    seeded.accountIds.nbspSpaced,
+    seeded.accountIds.nbspCompact,
+  ]
+    .sort()
+    .join(" ");
   const lines = stdout.trim().split("\n").filter((line) => line !== "");
   expect(lines).toContain(expectedLine);
+  expect(lines).toContain(expectedNbspLine);
   // No account number reaches the output, in any rendering: every line
   // is row ids only. (Other concurrently seeded households may
   // legitimately contribute their own pair lines; each is ids only.)
@@ -318,17 +354,43 @@ test("the backfill canonicalises the declarations, spares the pair, and opens th
   await expect(page.getByTestId("recon-spend")).toHaveText("54,30");
   await expect(page.getByTestId("recon-pot")).toHaveText("2.045,70");
 
+  // AUGUST IS NOT BYTE IDENTICAL, and the reason is the product's own
+  // interpretation window rather than the import's rows (slow-gate repair
+  // round). This block used to assert every August figure unchanged
+  // "because the fixture books in July". The window is padded by
+  // SETTLEMENT_DATE_WINDOW_DAYS (45) plus TRANSFER_DATE_TOLERANCE_DAYS (4)
+  // on each side, so an import booking 3 to 6 July interprets everything
+  // from mid-May to 24 August, and the padding is there so a transfer leg
+  // imported later can pair with one imported earlier. The seeded
+  // pre-phase row t3 books 8 August, inside it.
+  //
+  // What happens to that row is the point. classifyFlow never returns
+  // null: a null flow is a row NOT YET INTERPRETED, never a gap the reader
+  // has to close, and the seed writes one deliberately to model a
+  // pre-phase household. The first interpretation that reaches it gives it
+  // the flow its own description and sign earn, which for a 10,00 debit on
+  // a pot account is SPEND. So August's spend rises by exactly that row and
+  // the pot falls by it, the income and the reserves do not move, and the
+  // uninterpreted cause goes because the one pot-ring row that raised it
+  // has now been read. The savings row t4 is untouched: it is held by
+  // construction, counted nowhere, and outside the ring-scoped count.
+  //
+  //   income   2.500,00  (t1, unchanged)
+  //   spend       96,47  (t2 86,47 plus t3 10,00, now interpreted)
+  //   reserves     0,00  (unchanged)
+  //   pot      2.403,53  (250000 - 8647 - 1000)
+  //   rows            3  (flow IS NOT NULL; was 2)
   await page.goto("/?month=2026-08");
   await expect(page.getByTestId("recon-income")).toHaveText(
     augustBaseline.income,
   );
-  await expect(page.getByTestId("recon-spend")).toHaveText(augustBaseline.spend);
+  await expect(page.getByTestId("recon-spend")).toHaveText("96,47");
   await expect(page.getByTestId("recon-reserves")).toHaveText(
     augustBaseline.reserves,
   );
-  await expect(page.getByTestId("recon-pot")).toHaveText(augustBaseline.pot);
-  await expect(page.getByTestId("month-meta")).toHaveText(augustBaseline.meta);
-  await expect(page.getByTestId("recon-cause-uninterpreted")).toBeVisible();
+  await expect(page.getByTestId("recon-pot")).toHaveText("2.403,53");
+  await expect(page.getByTestId("month-meta")).toHaveText("3 rows");
+  await expect(page.getByTestId("recon-cause-uninterpreted")).toHaveCount(0);
 });
 
 // The pair's shared value, read from the harness constants so this spec
