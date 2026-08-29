@@ -35,6 +35,11 @@ const DELAY_MS = 2000;
 const CEILING_MS = 200;
 const MEDIAN_CEILING_MS = 100;
 const SETTLE_MS = 1000;
+// How long after its own response was released a control may still be
+// busy because the navigation that response started has not landed yet.
+// A ceiling, not a wait: the loop that uses it stops the moment the
+// control is gone or at rest.
+const AFTER_RESPONSE_CEILING_MS = 5000;
 // The floor a meaningful non-text graphic has to clear against what it sits
 // on. The busy mark is the only thing on screen saying the press was heard.
 const MIN_MARK_CONTRAST = 3;
@@ -389,6 +394,42 @@ const pressAndMeasure = async (
 
   // Let the delayed response through and the resulting navigation settle.
   await page.waitForTimeout(DELAY_MS + 500);
+  // THE SETTLING ALLOWANCE IS A CEILING AND NOT A SLEEP (slow-gate repair
+  // round). The 500ms above assumed that whatever the released response
+  // starts has finished 500ms later, and for the upload control that is a
+  // guess about the SERVER: its action redirects to the import detail
+  // route, which re-runs statement detection and parsing on the stored
+  // bytes before it renders anything. On a loaded machine that render
+  // passed 500ms and the reading below caught a control still busy while
+  // the navigation it started was still in flight, which is the control
+  // working rather than failing. So the reading is retaken until the
+  // control is gone or at rest, up to the ceiling below, and the LAST
+  // reading is the one asserted. A control that never comes back to rest
+  // still fails, which is the whole point of the assertion: this bounds
+  // how long the product may take, it does not stop asking.
+  const readRestingState = async (): Promise<{
+    readonly busy: boolean;
+    readonly unpressable: boolean;
+  }> => {
+    const remaining = await control.count();
+    if (remaining === 0) {
+      return { busy: false, unpressable: false };
+    }
+    return control.evaluate((node) => {
+      const element = node as HTMLButtonElement;
+      return {
+        busy: element.getAttribute("aria-busy") === "true",
+        unpressable:
+          element.disabled || element.getAttribute("aria-disabled") === "true",
+      };
+    });
+  };
+  const restDeadline = Date.now() + AFTER_RESPONSE_CEILING_MS;
+  let resting = await readRestingState();
+  while ((resting.busy || resting.unpressable) && Date.now() < restDeadline) {
+    await page.waitForTimeout(100);
+    resting = await readRestingState();
+  }
 
   // CRITERION 10.3'S SECOND HALF, MEASURED PER CONTROL (fix round, finding
   // HZ-M3P10-03). This used to be one assertion at the very end of the
@@ -399,18 +440,7 @@ const pressAndMeasure = async (
   // gone, which is a pass; a control that is still on screen must have come
   // back to rest, and the revalidate-in-place surfaces are where that
   // matters.
-  const survivors = await control.count();
-  const cleared =
-    survivors === 0
-      ? { busy: false, unpressable: false }
-      : await control.evaluate((node) => {
-          const element = node as HTMLButtonElement;
-          return {
-            busy: element.getAttribute("aria-busy") === "true",
-            unpressable:
-              element.disabled || element.getAttribute("aria-disabled") === "true",
-          };
-        });
+  const cleared = resting;
   const documentBusyAfterResponse = await page.locator('[aria-busy="true"]').count();
 
   return {
@@ -511,6 +541,46 @@ const assertAcknowledged = (result: PressResult, predicts: boolean): void => {
   }
 };
 
+// THE NAMEABLE ROW, HELD BY AN IDENTITY THE PRESS CANNOT MOVE (slow-gate
+// repair round). Every other control this file measures keeps the identity
+// it was found by for the whole of the measurement. The merchant naming
+// control does not, and the reason is a cross-phase interaction rather than
+// a fault in either phase: M3-P11 predicts the typed name inside the form
+// action, BEFORE the await, and a predicted row stops being unresolved at
+// that instant, so src/modules/merchants/ui/merchant-row.tsx renders it with
+// data-testid="merchant-group" from the press onwards. A Playwright locator
+// is lazy. A control rooted at getByTestId("unresolved-group").first()
+// therefore re-resolved after the press to the first row that was STILL
+// unresolved, which is a row nobody pressed: the aria-busy reading at
+// 1000ms, the appearance reading and the after-response reading all
+// described the wrong control, and the suite reported a busy state that
+// never appeared. The product behaviour it tripped over is the one DR-0025
+// and DR-0026 asked for and criterion 11.2 requires.
+//
+// WHAT IS HELD INSTEAD is the row's POSITION among the rows carrying
+// data-group-key. Criterion 11.3 fixes that sequence in DOM order across a
+// prediction (test/e2e/optimistic-naming.spec.ts measures it), so the
+// position is stable in exactly the window where the testid is not. The key
+// alone would not do as a selector: a counterparty with a spend row and a
+// refund renders TWO rows sharing one key (finding HZ-M3P11-02), and the
+// position separates them.
+const namableRow = async (page: Page): Promise<Locator> => {
+  const rows = await page
+    .locator("[data-group-key]")
+    .evaluateAll((elements) =>
+      elements.map((element) => ({
+        unresolved: element.getAttribute("data-testid") === "unresolved-group",
+        namable: element.querySelector(".merchant-name-form") !== null,
+      })),
+    );
+  const index = rows.findIndex((row) => row.unresolved && row.namable);
+  expect(
+    index,
+    "an unresolved row carrying a naming form",
+  ).toBeGreaterThanOrEqual(0);
+  return page.locator("[data-group-key]").nth(index);
+};
+
 const signUpFreshAndMeasure = async (
   page: Page,
   probe: ActionProbe,
@@ -600,7 +670,7 @@ test.describe("the busy state", () => {
 
     // 7. the merchant naming submit, the one surface M3-P11 will make predict
     await page.goto("/merchants");
-    const group = page.getByTestId("unresolved-group").first();
+    const group = await namableRow(page);
     await group.getByPlaceholder("Name this counterparty").fill("Named once");
     results.push(
       await pressAndMeasure(page, probe, "merchant naming submit", group.getByRole("button", { name: "Name" })),
@@ -677,7 +747,7 @@ test.describe("the busy state", () => {
     for (let index = 0; index < 5; index += 1) {
       const remaining = await page.getByTestId("unresolved-group").count();
       expect(remaining, "a naming that fails does not satisfy this").toBe(5 - index);
-      const group = page.getByTestId("unresolved-group").first();
+      const group = await namableRow(page);
       const label = (await group.getByTestId("group-label").textContent()) ?? "";
       await group.getByPlaceholder("Name this counterparty").fill(`Named ${index}`);
       const result = await pressAndMeasure(

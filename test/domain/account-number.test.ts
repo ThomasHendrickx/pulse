@@ -85,6 +85,12 @@ describe("criterion 14.4: one canonical form, one country table, one mod-97", ()
       // comment there points at it so a change to one meets the other.
       "modules/overview/adapters/overview-repository.ts",
       "platform/account-number.ts",
+      // JOINED IN M3-P13 (decision D-41): the review screen masks an
+      // account number for DISPLAY, and it asks platform what the canonical
+      // form is rather than removing whitespace itself. A masker that
+      // carried its own compaction would be a second definition of what an
+      // account number is, which is what this enumeration exists to refuse.
+      "platform/ui/mask-account-number.ts",
     ]);
   });
 
