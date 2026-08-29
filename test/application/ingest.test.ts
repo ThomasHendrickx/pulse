@@ -347,11 +347,15 @@ describe("racing confirms cannot double-ingest one awaiting import (finding F4)"
       bank: "Demokaart",
       role: "POT",
     });
-    const profile = await world.deps.imports.createProfile(context, {
+    const created = await world.deps.imports.createProfile(context, {
       name: "card",
       spec,
       accountId: accountA.id,
     });
+    if (!created.ok) {
+      throw new Error("the fixture profile name is free in a fresh world");
+    }
+    const profile = created.profile;
 
     // Both racers passed the read-time status check; the claim inside the
     // ingest transaction is what must arbitrate.
@@ -455,5 +459,168 @@ describe("the landing account is resolved as the screens name it (finding F1)", 
     // No second account and no twin profile appeared.
     expect(world.accounts).toHaveLength(1);
     expect(world.profiles).toHaveLength(1);
+  });
+});
+
+// THE FORMAT QUESTION ANSWERED TWICE WITH THE SAME NAME. Live defect,
+// pre-existing: a second format given a name the household already gave a
+// different one hit the (householdId, name) unique index on
+// source_profiles, and the unhandled P2002 reached the framework as an
+// application error page. It is an ordinary thing for a reader to do, so
+// it is an EXPECTED failure and comes back as a typed refusal the screen
+// renders. The fake repository reproduces the index, so this runs without
+// a database; the index itself is asserted by name over the DMMF above.
+describe("a format name already used is refused, not crashed on", () => {
+  const CARD_DECLARATION = {
+    label: "Credit card",
+    bank: "Demokaart",
+    role: "POT",
+  } as const;
+
+  // A first format, named, stored.
+  const withFirstFormat = async (name: string): Promise<FakeImportWorld> => {
+    const world = makeFakeImportWorld();
+    const uploaded = await uploadStatement(context, world.deps, {
+      fileName: "belfius-account-a.csv",
+      bytes: fixture("belfius-account-a.csv"),
+    });
+    if (uploaded.kind !== "awaiting-declaration") {
+      throw new Error("the first file should ask");
+    }
+    await world.registerAccountForStatement(
+      context,
+      fixture("belfius-account-a.csv"),
+      detectedSpec("belfius-account-a.csv"),
+      { label: "Daily account", bank: "Demobank", role: "POT" },
+    );
+    const confirmed = await confirmImport(context, world.deps, {
+      importId: uploaded.importId,
+      profileName: name,
+      spec: detectedSpec("belfius-account-a.csv"),
+    });
+    expect(confirmed.kind).toBe("ingested");
+    return world;
+  };
+
+  // A second, DIFFERENT format reaching the confirm step: the card export
+  // detects a different spec, so no stored profile is reused and the name
+  // is the only thing in the way.
+  const confirmCardAs = async (world: FakeImportWorld, profileName: string) => {
+    const uploaded = await uploadStatement(context, world.deps, {
+      fileName: "kbc-card.csv",
+      bytes: fixture("kbc-card.csv"),
+    });
+    if (uploaded.kind !== "awaiting-declaration") {
+      throw new Error("the card file should ask");
+    }
+    const outcome = await confirmImport(context, world.deps, {
+      importId: uploaded.importId,
+      profileName,
+      spec: detectedSpec("kbc-card.csv"),
+      declaration: CARD_DECLARATION,
+    });
+    return { importId: uploaded.importId, outcome };
+  };
+
+  test("a second format under a used name is rejected with profile-name-taken", async () => {
+    const world = await withFirstFormat("Household export");
+    const { outcome } = await confirmCardAs(world, "Household export");
+    expect(outcome.kind).toBe("rejected");
+    if (outcome.kind !== "rejected") {
+      return;
+    }
+    expect(outcome.reason).toBe("profile-name-taken");
+  });
+
+  test("the refused confirm writes nothing: no twin profile, no account, no rows", async () => {
+    const world = await withFirstFormat("Household export");
+    const rowsBefore = world.transactions.length;
+    const { importId } = await confirmCardAs(world, "Household export");
+    // One profile and one account, both from the first file. The card's
+    // account declaration is NOT written by a refused confirm, which is
+    // why the name check runs ahead of account resolution.
+    expect(world.profiles).toHaveLength(1);
+    expect(world.accounts).toHaveLength(1);
+    expect(world.transactions).toHaveLength(rowsBefore);
+    // And the import is still awaiting, so answering again is all it takes.
+    expect(world.imports.get(importId)?.status).toBe("AWAITING_DECLARATION");
+  });
+
+  test("answering again with a free name imports the same file", async () => {
+    const world = await withFirstFormat("Household export");
+    const refused = await confirmCardAs(world, "Household export");
+    expect(refused.outcome.kind).toBe("rejected");
+    const outcome = await confirmImport(context, world.deps, {
+      importId: refused.importId,
+      profileName: "Card export",
+      spec: detectedSpec("kbc-card.csv"),
+      declaration: CARD_DECLARATION,
+    });
+    expect(outcome.kind).toBe("ingested");
+    if (outcome.kind !== "ingested") {
+      return;
+    }
+    expect(outcome.added).toBe(6);
+    expect(world.profiles).toHaveLength(2);
+  });
+
+  test("the SAME name on a spec-identical file is reuse, not a refusal", async () => {
+    // The refusal is narrow on purpose: re-confirming the format already
+    // stored reuses that profile and stores no twin, exactly as before.
+    const world = await withFirstFormat("Household export");
+    const awaiting = await world.deps.imports.createImport(context, {
+      fileName: "belfius-account-a2.csv",
+      rawContent: fixture("belfius-account-a2.csv"),
+      status: "AWAITING_DECLARATION",
+    });
+    const outcome = await confirmImport(context, world.deps, {
+      importId: awaiting.id,
+      profileName: "Household export",
+      spec: detectedSpec("belfius-account-a2.csv"),
+    });
+    expect(outcome.kind).toBe("ingested");
+    expect(world.profiles).toHaveLength(1);
+  });
+
+  test("the repository's own refusal is honoured, for the race the read cannot close", async () => {
+    // Two confirms both pass the read-time name check and the unique
+    // index arbitrates: the loser gets the SAME typed refusal rather than
+    // an escaping constraint violation.
+    const world = makeFakeImportWorld();
+    const uploaded = await uploadStatement(context, world.deps, {
+      fileName: "kbc-card.csv",
+      bytes: fixture("kbc-card.csv"),
+    });
+    if (uploaded.kind !== "awaiting-declaration") {
+      throw new Error("the card file should ask");
+    }
+    const stored = await world.deps.imports.createProfile(context, {
+      name: "Card export",
+      // A spec no confirm will match, so the name is the only collision.
+      spec: detectedSpec("belfius-account-a.csv"),
+    });
+    expect(stored.ok).toBe(true);
+    // The port refuses the second write of that name, by value.
+    const twin = await world.deps.imports.createProfile(context, {
+      name: "Card export",
+      spec: detectedSpec("kbc-card.csv"),
+    });
+    expect(twin.ok).toBe(false);
+    if (twin.ok) {
+      return;
+    }
+    expect(twin.error).toBe("name-taken");
+    // And the use case in front of it refuses rather than throwing.
+    const outcome = await confirmImport(context, world.deps, {
+      importId: uploaded.importId,
+      profileName: "Card export",
+      spec: detectedSpec("kbc-card.csv"),
+      declaration: CARD_DECLARATION,
+    });
+    expect(outcome.kind).toBe("rejected");
+    if (outcome.kind !== "rejected") {
+      return;
+    }
+    expect(outcome.reason).toBe("profile-name-taken");
   });
 });

@@ -108,6 +108,13 @@ export const confirmImportAction = async (
     if (outcome.reason === "account-not-registered") {
       redirect(`/import/${safeId}?status=account-not-registered`);
     }
+    // The duplicate format name: the confirmation screen re-renders with
+    // the sentence that says the name is taken, and the reader answers
+    // the format question again with a different one. Nothing was
+    // written, so there is nothing to undo.
+    if (outcome.reason === "profile-name-taken") {
+      redirect(`/import/${safeId}?status=profile-name-taken`);
+    }
     redirect(
       outcome.reason === "declaration-needed"
         ? `/import/${safeId}?status=declaration-needed`

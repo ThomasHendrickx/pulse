@@ -125,6 +125,14 @@ export type ImportRepositoryPort = {
   readonly listProfiles: (
     context: HouseholdContext,
   ) => Promise<readonly StoredProfile[]>;
+  // The format name is unique per household (the (householdId, name)
+  // index on source_profiles), and naming a second format the same as an
+  // existing one is an ordinary thing for a reader to do. So a name
+  // already taken is an EXPECTED failure and comes back as a VALUE, the
+  // same discipline ingestRows applies to a lost race: the use case turns
+  // it into a typed refusal the screen renders, and the constraint never
+  // reaches the framework as a thrown error. Every other database failure
+  // stays an exception, because it means a bug.
   readonly createProfile: (
     context: HouseholdContext,
     input: {
@@ -132,7 +140,10 @@ export type ImportRepositoryPort = {
       readonly spec: SourceProfileSpec;
       readonly accountId?: string;
     },
-  ) => Promise<StoredProfile>;
+  ) => Promise<
+    | { readonly ok: true; readonly profile: StoredProfile }
+    | { readonly ok: false; readonly error: "name-taken" }
+  >;
   // Conditional transition to FAILED, claimed only from
   // AWAITING_DECLARATION (finding F4: no unconditional status writes).
   // Returns whether this caller made the transition; false means another

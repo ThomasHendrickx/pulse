@@ -6,9 +6,9 @@
 
 import type { HouseholdContext } from "@/platform/tenancy";
 import { assignDedupKeys, zipRowsWithDedupKeys } from "../domain/dedup";
-import type { SourceProfileSpec } from "../domain/source-profile";
+import { specEquals, type SourceProfileSpec } from "../domain/source-profile";
 import type { NewAccount } from "@/modules/accounts/application";
-import { failureReasonForParseError, findProfileBySpec } from "./upload-statement";
+import { failureReasonForParseError } from "./upload-statement";
 import type { ImportDependencies, ImportFailureReason } from "./ports";
 
 export type ConfirmOutcome =
@@ -30,7 +30,13 @@ export type ConfirmOutcome =
         // a statement whose own account sits in the SAVINGS ring is now
         // ACCEPTED, its rows stored as facts, shown on that account
         // marked held and counted in no total.
-        | "account-not-registered";
+        | "account-not-registered"
+        // The format question answered twice with the same name. The
+        // (householdId, name) index on source_profiles used to raise an
+        // unhandled unique-constraint violation here, which the framework
+        // rendered as an application error page; it is a refusal the
+        // reader can act on, so it is a value like every other one.
+        | "profile-name-taken";
     };
 
 export const confirmImport = async (
@@ -108,7 +114,27 @@ export const confirmImport = async (
   //   card statement carries no account number and is recognised through
   //   its bound SourceProfile), resolved from a spec-identical stored
   //   profile or declared here.
-  const existingProfile = await findProfileBySpec(context, deps, input.spec);
+  // One read of the stored declarations answers two questions: which
+  // profile this spec already is, and whether the name the reader typed
+  // belongs to a different one.
+  const profiles = await deps.imports.listProfiles(context);
+  const existingProfile = profiles.find((candidate) =>
+    specEquals(candidate.spec, input.spec),
+  );
+
+  // THE NAME IS REFUSED BEFORE ANYTHING IS WRITTEN. A spec-identical
+  // profile is reused below and never reaches this check, so what is
+  // refused here is a SECOND format wearing a name the household already
+  // gave a different one. Placing the check ahead of account resolution
+  // is deliberate: a refused confirm must not leave a declared account
+  // behind for a card whose format never landed.
+  if (
+    existingProfile === undefined &&
+    profiles.some((candidate) => candidate.name === input.profileName)
+  ) {
+    return { kind: "rejected", reason: "profile-name-taken" };
+  }
+
   const fileIban = parsed.value.accountIbans[0];
   let accountId: string | undefined;
   if (fileIban !== undefined) {
@@ -141,13 +167,22 @@ export const confirmImport = async (
   // profile is bound to the account exactly when the file itself carries
   // no own-account column (the card shape), so a later re-upload can
   // resolve its account without asking.
-  const profile =
-    existingProfile ??
-    (await deps.imports.createProfile(context, {
+  let profile = existingProfile;
+  if (profile === undefined) {
+    const created = await deps.imports.createProfile(context, {
       name: input.profileName,
       spec: input.spec,
       ...(fileIban === undefined ? { accountId } : {}),
-    }));
+    });
+    if (!created.ok) {
+      // The window the read above cannot close: another confirm stored
+      // that name between the read and this write. The unique index
+      // arbitrates, and its refusal is the SAME value, so the reader sees
+      // one sentence either way rather than a crash on the rarer path.
+      return { kind: "rejected", reason: "profile-name-taken" };
+    }
+    profile = created.profile;
+  }
 
   const keys = assignDedupKeys(accountId, parsed.value.rows, input.spec);
   const ingested = await deps.imports.ingestRows(context, {

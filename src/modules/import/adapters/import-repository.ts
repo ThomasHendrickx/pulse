@@ -143,25 +143,49 @@ export const createProfile = async (
     readonly spec: SourceProfileSpec;
     readonly accountId?: string;
   },
-): Promise<StoredProfile> => {
-  const row = await prisma.sourceProfile.create({
-    data: {
-      householdId: context.householdId,
-      name: input.name,
-      // Outbound serialisation, not an inbound shape assertion: the spec
-      // is validated plain data and Prisma's InputJsonValue just cannot
-      // see through the readonly union. The inbound path (listProfiles)
-      // parses, never casts.
-      spec: input.spec as unknown as Prisma.InputJsonValue,
-      accountId: input.accountId ?? null,
-    },
-  });
-  return {
-    id: row.id,
-    name: row.name,
-    spec: input.spec,
-    ...(row.accountId === null ? {} : { accountId: row.accountId }),
-  };
+): Promise<
+  | { readonly ok: true; readonly profile: StoredProfile }
+  | { readonly ok: false; readonly error: "name-taken" }
+> => {
+  try {
+    const row = await prisma.sourceProfile.create({
+      data: {
+        householdId: context.householdId,
+        name: input.name,
+        // Outbound serialisation, not an inbound shape assertion: the spec
+        // is validated plain data and Prisma's InputJsonValue just cannot
+        // see through the readonly union. The inbound path (listProfiles)
+        // parses, never casts.
+        spec: input.spec as unknown as Prisma.InputJsonValue,
+        accountId: input.accountId ?? null,
+      },
+    });
+    return {
+      ok: true,
+      profile: {
+        id: row.id,
+        name: row.name,
+        spec: input.spec,
+        ...(row.accountId === null ? {} : { accountId: row.accountId }),
+      },
+    };
+  } catch (error) {
+    // P2002 on this table is the (householdId, name) index at
+    // prisma/schema/import.prisma, the only uniqueness source_profiles
+    // carries beyond its generated primary key. It is the reader having
+    // used that format name already, so it becomes a value the use case
+    // can refuse with; the escaping error used to reach the framework and
+    // render as an application error page instead. Anything else is a bug
+    // and rethrows, because an unexpected failure is an exception
+    // (pulse-typescript section 5).
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return { ok: false, error: "name-taken" };
+    }
+    throw error;
+  }
 };
 
 export const getProfile = async (

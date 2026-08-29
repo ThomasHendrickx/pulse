@@ -24,6 +24,10 @@ const BELFIUS_PDF_ACCOUNT = "BE72012345678944";
 // cannot leak into the counts.
 
 const FIXTURE = join(__dirname, "..", "fixtures", "belfius-account-a.csv");
+// A card export: a DIFFERENT format from the current-account file above,
+// so confirming it stores a second profile rather than reusing the first.
+// That is what makes the format name the only thing in the way.
+const CARD_FIXTURE = join(__dirname, "..", "fixtures", "kbc-card.csv");
 
 test("first upload asks once; re-upload adds zero and asks nothing", async ({
   page,
@@ -93,6 +97,46 @@ test("first upload asks once; re-upload adds zero and asks nothing", async ({
   await expect(
     page.getByRole("heading", { name: "Confirm the detected format" }),
   ).toHaveCount(0);
+
+  // THE FORMAT QUESTION ANSWERED TWICE WITH THE SAME NAME. A second
+  // source, a different format, given the name the first format already
+  // has: the (householdId, name) index refused it as an unhandled
+  // constraint violation and the reader got an application error page.
+  // Now the confirmation screen says the name is used, nothing is
+  // written, and answering again is all it takes.
+  await page.goto("/import");
+  await page.getByLabel("Bank export file").setInputFiles(CARD_FIXTURE);
+  await page.getByRole("button", { name: "Upload" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Confirm the detected format" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("account-declaration")).toBeVisible();
+  await page.getByLabel("Format name").fill("Demobank current account");
+  await page.getByLabel("Label").fill("Credit card");
+  await page.getByLabel("Bank").fill("Demokaart");
+  await page.getByTestId("confirm-import").click();
+
+  // A sentence, not a crash: the reader is told the name is taken and
+  // what to do about it, on the same confirmation screen.
+  await expect(page.getByTestId("import-status")).toContainText(
+    "already use that format name",
+  );
+  await expect(
+    page.getByRole("heading", { name: "Confirm the detected format" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("import-result")).toHaveCount(0);
+
+  // Answered again with a free name, the same file lands.
+  await page.getByLabel("Format name").fill("Demobank card");
+  await page.getByLabel("Label").fill("Credit card");
+  await page.getByLabel("Bank").fill("Demokaart");
+  await page.getByTestId("confirm-import").click();
+
+  await expect(page.getByTestId("import-result")).toBeVisible();
+  await expect(page.getByTestId("landing-account")).toHaveText("Credit card");
+  await expect(page.getByTestId("rows-added")).toHaveText("6");
+  await expect(page.getByTestId("rows-known")).toHaveText("0");
 });
 
 // Criterion 2.5: the PDF journey. A recognised Belfius-layout PDF goes

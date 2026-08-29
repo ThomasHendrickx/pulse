@@ -157,6 +157,18 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
     listProfiles: async (context) =>
       profiles.filter((profile) => profile.householdId === context.householdId),
     createProfile: async (context, input) => {
+      // The (householdId, name) unique index on source_profiles,
+      // reproduced like the dedup-key one above: the fast gate sees the
+      // same refusal the database gives, so the duplicate-name path is
+      // testable without a database.
+      const taken = profiles.some(
+        (candidate) =>
+          candidate.householdId === context.householdId &&
+          candidate.name === input.name,
+      );
+      if (taken) {
+        return { ok: false as const, error: "name-taken" as const };
+      }
       const profile = {
         id: id("profile"),
         householdId: context.householdId,
@@ -165,7 +177,7 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
         ...(input.accountId === undefined ? {} : { accountId: input.accountId }),
       };
       profiles.push(profile);
-      return profile;
+      return { ok: true as const, profile };
     },
     getProfile: async (context, profileId) => {
       const profile = profiles.find(
