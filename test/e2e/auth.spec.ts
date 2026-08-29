@@ -63,11 +63,31 @@ test("a wrong password surfaces the localized sign-in failure line", async ({
 // Supabase user with no users row must RECOVER to a rendered sign-in screen,
 // not live-lock between the middleware and the household-context guard. The
 // orphan state is constructed through the admin API exactly as the criteria
-// reviewer constructed it. Skipped when no service role key is in the
-// environment (deployed runs); the skip is visible in the report.
+// reviewer constructed it.
+//
+// THIS IS A LOCAL-STACK SPEC AND IT SKIPS IN DEPLOY-VERIFY (fix round nine,
+// CRITERIA finding CR7-M3P12-05). The comment here used to say only "Skipped
+// when no service role key is in the environment (deployed runs)", and that
+// was true before the target assertion below was added and is quoted rather
+// than deleted (clause R-087). It stopped being the whole story: the
+// deploy-verify config deliberately skips the gate interlock, so that
+// environment legitimately carries a DEPLOYED Supabase URL and key, the
+// absence skip therefore does not fire, and the assertion does, turning a spec
+// that is supposed to skip into a red stage. The direction was safe, a refusal
+// rather than a write, but it was still a red gate on a correct run and
+// nothing in the fast gate could see it. The deploy-verify skip is now
+// explicit and comes FIRST, the way test/e2e/merchant-rule-write.spec.ts
+// already does it. THE TARGET ASSERTION THAT PARAGRAPH DESCRIBES HAS SINCE
+// BEEN WITHDRAWN (decision D-62, criterion 12.23); the explicit skip stays,
+// because a deploy-verify run still must not construct users of its own.
 test("an auth user without a household link recovers to sign-in instead of looping", async ({
   page,
 }) => {
+  test.skip(
+    process.env.PLAYWRIGHT_BASE_URL !== undefined,
+    "constructs an auth user through a service-role key; in deploy-verify mode the suite opens no project of its own",
+  );
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   test.skip(
@@ -75,6 +95,16 @@ test("an auth user without a household link recovers to sign-in instead of loopi
     "needs the local service role key to construct the orphan auth user",
   );
 
+  // THE GATE-TARGET ASSERTION THAT STOOD HERE IS WITHDRAWN, loudly (clause
+  // R-087, decision D-62, criterion 12.23). assertGateApiTargetIsLocal from
+  // src/platform/db/gate-target.ts refused a non-local Supabase API before
+  // this admin client was constructed (M3-P12 fix round five, CRITERIA
+  // finding CR5-M3P12-08); that module left the tree with the target
+  // interlock D-62 withdrew, so this spec opens whichever project the
+  // invoking shell's Supabase variables name. The gate is run against the
+  // local stack with those variables pinned by the operator, and the settled
+  // posture for entry points outside criterion 12.23's scope is the plan's
+  // parked question, not something this spec asserts.
   const admin = createClient(supabaseUrl ?? "", serviceRoleKey ?? "", {
     auth: { autoRefreshToken: false, persistSession: false },
   });

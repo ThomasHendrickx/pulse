@@ -57,6 +57,7 @@ export type AccountSetupCopy = {
   readonly errorNumberChecksum: string;
   readonly errorDuplicate: string;
   readonly errorAlreadyRegistered: string;
+  readonly errorSubmitFailed: string;
 };
 
 type Row = {
@@ -75,14 +76,34 @@ const emptyRow = (key: number): Row => ({
   ring: "",
 });
 
-const INITIAL: RegisterAccountsState = { status: "idle" };
+// WHAT THE FORM KNOWS THAT THE ACTION DOES NOT (fix round, finding
+// HZ-M3P10-04). The action's own type carries the outcomes the SERVER can
+// report. A submission that never reached the server, a connection dropped
+// mid-post on the owner's phone, is not one of them: it is the client's
+// knowledge, so it is a variant of the form's state and not of the action's
+// contract.
+type FormState = RegisterAccountsState | { readonly status: "failed" };
+
+const INITIAL: FormState = { status: "idle" };
+
+// A redirect is how this action reports SUCCESS, and the framework signals
+// it by throwing. Reporting that as a failed submission would put an error
+// on screen at the exact moment the registration worked, so it is re-thrown
+// for the framework to handle and only everything else is caught.
+const isRedirect = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  "digest" in error &&
+  String((error as { readonly digest: unknown }).digest).startsWith(
+    "NEXT_REDIRECT",
+  );
 
 export const AccountSetupForm = ({
   copy,
 }: {
   readonly copy: AccountSetupCopy;
 }) => {
-  const [state, setState] = useState<RegisterAccountsState>(INITIAL);
+  const [state, setState] = useState<FormState>(INITIAL);
   const [pending, startTransition] = useTransition();
   const [rows, setRows] = useState<readonly Row[]>([emptyRow(0)]);
   const [nextKey, setNextKey] = useState(1);
@@ -92,6 +113,9 @@ export const AccountSetupForm = ({
   // problem (no rows at all) has no row and renders above the list.
   const rowMessages = new Map<number, string>();
   let formMessage: string | undefined;
+  if (state.status === "failed") {
+    formMessage = copy.errorSubmitFailed;
+  }
   if (state.status === "refused") {
     const failure = state.failure;
     if (failure.kind === "already-registered") {
@@ -147,9 +171,33 @@ export const AccountSetupForm = ({
       className="account-setup-form"
       onSubmit={(event) => {
         event.preventDefault();
+        // THE SECOND SUBMISSION IS REFUSED HERE (fix round, finding
+        // HZ-M3P10-02). The control keeps its place in the tab order while
+        // it is busy, so the keyboard can still activate it and this is the
+        // guard that stops a second post. The stylesheet refuses the
+        // pointer half.
+        if (pending) {
+          return;
+        }
         const data = new FormData(event.currentTarget);
+        // THE FAILURE PATH IS WRITTEN RATHER THAN LEFT TO THE FRAMEWORK
+        // (fix round, finding HZ-M3P10-04). This transition drives both
+        // aria-busy and the refusal on the submit control below. Before
+        // this, a rejected call, which on a phone means a connection
+        // dropped mid-submit, never reached setState and whether the busy
+        // state ended was the framework's business rather than this file's.
+        // With both branches written the transition ends either way, so the
+        // control comes back by construction and the reader is told the
+        // submission did not land instead of watching a mark loop forever.
         startTransition(async () => {
-          setState(await registerAccountsAction(INITIAL, data));
+          try {
+            setState(await registerAccountsAction(INITIAL, data));
+          } catch (error) {
+            if (isRedirect(error)) {
+              throw error;
+            }
+            setState({ status: "failed" });
+          }
         });
       }}
     >
@@ -285,15 +333,19 @@ export const AccountSetupForm = ({
           nothing here and the leaf would be inert. The transition's own
           pending flag is the same fact, and it drives the same vocabulary:
           aria-busy is what src/app/globals.css draws the busy mark from,
-          and disabled is what stops a second submission. The sibling that
-          shares this mechanism, and the file to change if the mark ever
-          changes, is src/platform/ui/submit-button.tsx. */}
+          and aria-disabled is what marks the refusal while leaving the
+          control focusable, with the form's own onSubmit guard above
+          refusing the second submission (fix round, finding HZ-M3P10-02:
+          the disabled attribute this used to carry moved focus to
+          document.body on every press). The sibling that shares this
+          mechanism, and the file to change if the mark ever changes, is
+          src/platform/ui/submit-button.tsx. */}
       <button
         type="submit"
         className="account-setup-submit"
         data-testid="register-accounts"
-        disabled={pending}
-        aria-busy={pending ? "true" : undefined}
+        aria-busy={pending ? "true" : "false"}
+        aria-disabled={pending ? "true" : undefined}
       >
         {copy.submit}
       </button>
