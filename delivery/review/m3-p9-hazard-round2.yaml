@@ -1,0 +1,1068 @@
+# Clean-room review, HAZARD contract, phase M3-P9, ROUND 2 (judging the fix
+# rounds that followed the 2026-08-24 amendment and its own review round,
+# which added criterion 9.9 and the root-layout listener).
+#
+# Head under review: 6517703c56c00948e6b96d9dca07920b89d6cb72, on
+# claude/m3-p9-rev2-haz, checked out at that head in an isolated worktree at
+# /home/user/wt-m3p9-h2. Phase base (grounding, per the plan's own text):
+# 89ed187. This plan's generic baseline-commit e4ea3ba is NOT the phase base;
+# the plan is explicit that 89ed187 is.
+#
+# CLEAN ROOM. The implementation session was not seen and was not asked for
+# an explanation anywhere in this document. The sibling lane's document under
+# /home/user/wt-m3p9-c2 was not opened before this document was written and
+# pushed. I read delivery/work-history/m3-p9.yaml and
+# delivery/work-history/m3-p9-notes.md, which the brief explicitly permits
+# (they are artifacts, not the session), and I checked their claims against
+# the code myself rather than trusting them; where I could not independently
+# verify a claim (the full e2e run), I say so rather than repeating it.
+#
+# DATABASE / ENV: not touched. The five mandated gates below (typecheck,
+# lint, test, gate:privacy, gate:tokens) open no database connection; I
+# confirmed this by reading package.json's script bodies before running any
+# of them, so no DATABASE_URL pin was needed for this document. I did not run
+# db:reset, db:migrate, dev or the e2e suite.
+#
+# SLOW GATE: NOT RUN BY ME. `ps aux` showed `/home/user/wt-m3p9-c2` actively
+# running `npm run test:e2e` (pid 26993/26994, playwright test, plus live
+# next-server and chrome-headless-shell children) for the whole working
+# session, and a shared local Supabase stack (`supabase_*_m1-p1-skeleton`
+# containers) already up 4+ hours. Per the dispatch's coordination rule I did
+# not start my own e2e run while the sibling's was live, and it was still
+# running at every check I made. This is a disclosed limitation: my
+# confidence in the shipped press mechanism rests on direct, line-by-line
+# reading of the shipped code and of the implementer's own captured command
+# output (cross-checked, not trusted), not on my own execution of the new
+# spec. Where that matters I say so in the relevant criterion below.
+#
+# GATES I RAN MYSELF AT 6517703 IN THIS WORKTREE (Node v26.7.0, npm 11.19.0,
+# `npm install` first, 472 packages):
+#   npm run typecheck    -> EXIT=0 (tsc --noEmit, no output)
+#   npm run lint         -> EXIT=0 (eslint ., no output)
+#   npm test             -> EXIT=0, "Test Files 32 passed (32) / Tests 431 passed (431)"
+#   npm run gate:privacy -> EXIT=0, "gate:privacy clean"
+#   npm run gate:tokens  -> EXIT=0 (the gate's own grep, scoped to
+#                           src/modules/*/ui only, finds nothing; this phase
+#                           touches neither src/modules/*/ui nor any file
+#                           gate:tokens's grep reaches at all, so this exit
+#                           code is not meaningful evidence for THIS phase's
+#                           own token discipline; criterion 9.5(a)-(c), which
+#                           I also ran by hand below, is what actually covers
+#                           the files this phase touches)
+#
+# SCHEMA VALIDATION. `npx tiphys validate --type verdict` was attempted first
+# per the dispatch's instruction; the outcome and any fallback to `--type
+# finding` is recorded at the end of this document, after the content that
+# needs validating exists.
+#
+# WHAT I LOOKED FOR AND DID NOT FIND, recorded up front because a probed
+# hazard that could not be reached is a real result:
+#   - a scope violation from a file outside files-to-touch: `scripts/gate-
+#     privacy.sh` IS in `git diff --name-only 89ed187 HEAD`, and I drafted a
+#     high finding on first seeing that before checking provenance. It does
+#     not belong to this phase: `git log --all --source | grep dc8c505`
+#     traces its one touching commit to `claude/m0-p8-plan-testid`, a
+#     different phase's branch, merged into this one only via `84fe83a`
+#     ("Merge remote-tracking branch 'origin/main' into
+#     claude/m3-p9-pressed-and-disabled"). Withdrawn as a finding; the
+#     residual, weaker point about criterion 9.7's own check technique is
+#     recorded as R2H-04 below.
+#   - a sixth ending that leaves a control STUCK pressed (the failure mode
+#     round one shipped and round two's document-wide sweep exists to
+#     prevent). I could not construct one against the shipped design:
+#     `clear()` sweeps `document.querySelectorAll("[data-pressed]")`
+#     unconditionally on ANY `pointerup` or `pointercancel` ANYWHERE in the
+#     document, so a control that unmounts mid-press simply leaves the
+#     document with nothing to sweep (no visible defect: the node is gone),
+#     and a route change in this app never removes a control without first
+#     letting its own tap's `pointerup`/click fire (Next.js App Router
+#     navigates on click, which happens after pointerup in the standard tap
+#     sequence, and the root layout housing the listener never remounts
+#     across a client-side route change since it is the outermost layout).
+#     What I could NOT reach and could not rule out either, given no real
+#     phone browser is reachable from this container (confirmed again:
+#     `which google-chrome chromium firefox` finds nothing, matching the
+#     work history's own answer to verification-first (f)): whether a real
+#     mobile WebKit or Chrome reliably fires `pointercancel` for an OS-level
+#     gesture interception mid-touch (a long-press context/share sheet, an
+#     edge-swipe back gesture, the app backgrounding while a finger is still
+#     down). That residual risk is recorded as R2H-05, low, exactly because
+#     it is unreached rather than demonstrated.
+#   - a false claim under clause R-087. I ran the implementer's own claim
+#     grep (`grep -nEi 'cannot be|impossible|needs a|is covered|catches|
+#     would catch|recovers|anyway|always|never|no way to'`) over both work
+#     history files, `src/app/layout.tsx` and the new spec myself, beyond
+#     the one file (`m3-p9.yaml`) the work history says it was run over.
+#     Every hit is either a test-assertion message or a comment giving a
+#     structural/logical reason for a design choice ("a listener on the
+#     control cannot be it: the refusal calls stopPropagation on document
+#     and document heads the capture path"), not an unverified empirical
+#     claim. I found one PRIOR false claim that the implementer's own round
+#     one already caught and corrected in place, credited under R-087 in the
+#     comment itself (src/app/globals.css:1596-1598, finding HZ-M3P9-04);
+#     I looked for a second instance of the same failure and did not find
+#     one.
+
+kind: verdict
+phase: M3-P9
+verdict: FIX-ROUND-NEEDED
+produced-by: claude-sonnet-5
+framing: hazard-classes-first
+review-contract: hazard
+
+findings:
+  - id: R2H-01
+    severity: high
+    evidence:
+      - >-
+        Criterion 9.7(c)'s own verification command, run exactly as the plan
+        writes it: `grep -rn '^"use client"' src/` returns exactly
+        `src/platform/ui/nav-link.tsx:1:"use client";` and exits 0, matching
+        the plan's claim.
+      - >-
+        The grep matches the DOUBLE-QUOTE shape of the directive, not its
+        identity. I built two throwaway files outside the tracked tree (never
+        committed, never touching the reviewed worktree's source) containing
+        only `'use client';` and `"use client";` respectively as their first
+        line. The same command against the single-quoted file returns nothing
+        and exits 1; against the double-quoted file it returns the line and
+        exits 0. A single-quoted `'use client';` is a syntactically identical,
+        functionally real Next.js/React client directive (the directive
+        prologue's value is the string "use client" regardless of which quote
+        character encodes it); it would open a real client boundary and
+        criterion 9.7(c)'s check would report "exactly one line, same as
+        base" and PASS.
+      - >-
+        This is the same guard the plan's own text says has "now been wrong
+        twice" (delivery/plan/pulse-v02.yaml, criterion 9.7(c): the first
+        version counted an unanchored grep matching a comment, the second
+        anchored the pattern outside the quoting and matched nothing at all).
+        A third gap in the same guard, in the same direction the first two
+        errors ran (the check reporting a false "clean" state), is the
+        pattern clause 27/29 of this fleet's environment warnings names
+        directly: a guard that matches the SHAPE of the thing rather than its
+        IDENTITY.
+      - >-
+        Not currently exploited: I confirmed no single-quoted `'use client'`
+        directive exists anywhere in this diff or in `src/` at this head (the
+        double-quote grep and a manual read of `src/app/layout.tsx` both
+        confirm the only directive in the tree is the pre-existing one at
+        `nav-link.tsx:1`). The finding is about the INSTRUMENT, which is the
+        sole guard hazard H9.5 relies on to keep this and every future phase
+        from silently reopening a second React client boundary, not about a
+        violation present in this diff.
+    concrete-fix: >-
+      Widen criterion 9.7(c)'s verification command to match the directive's
+      VALUE rather than one of its two legal spellings, e.g.
+      `grep -rnE "^['\"]use client['\"]" src/` (still anchored, still
+      excluding the nav-link.tsx:7 comment that caused round one's defect,
+      still returning exactly one line at this head), or replace the grep
+      with a check that parses the directive prologue rather than matching a
+      quote character. Land the corrected command as the literal, runnable
+      text of criterion 9.7(c) in the next plan amendment, the same way the
+      current wording insists its own quoting is "load-bearing, part of the
+      criterion and not typography" — the fix should carry the same
+      guarantee for the character it currently misses.
+
+  - id: R2H-02
+    severity: medium
+    evidence:
+      - >-
+        `src/app/layout.tsx:34-40`'s comment states "NO INTERPOLATION, EVER
+        (D-61's standing constraint)" and "A later phase that needs a value
+        inside it does not add one: it moves the listener to a client island
+        and reopens D-61." I confirmed the constant itself currently carries
+        no `${` (grep -n '\${' src/app/layout.tsx exits 1) and that nothing
+        in the diff feeds a request-derived, locale-derived or user-derived
+        value into `PRESS_FEEDBACK`; RootLayout is an async server component
+        that reads only `getLocale()`, used for the `<html lang>` attribute
+        and never passed into the constant.
+      - >-
+        Nothing in the tree ENFORCES the "ever" going forward. There is no
+        eslint rule targeting this file or this identifier, no fast-gate
+        test asserting the constant contains no template expression, and no
+        CSP/nonce infrastructure (`src/middleware.ts` sets no headers at all;
+        confirmed by reading the whole file, 57 lines, no
+        Content-Security-Policy or Set-Header call of any kind). A future
+        phase's implementer, reading the comment's normative "does not add
+        one" as description rather than as an unenforced convention, could
+        add a `${...}` to this exact constant without any of the five
+        mandated gates or criterion 9.5's checks (which are scoped to *.css
+        and *.tsx colour/length literals, not to a JS template string in the
+        one permitted *.tsx file) ever turning red for it.
+    concrete-fix: >-
+      Either add a cheap, mechanical check for the constraint (a fast-gate
+      unit test asserting `PRESS_FEEDBACK` contains no `${` substring, or an
+      eslint rule scoped to this file forbidding template-literal
+      interpolation), or soften the comment's own claim so it reads as the
+      decision it actually is rather than as a guarantee nothing backs: "this
+      phase adds no interpolation and no later phase should add one to this
+      constant without reopening D-61" is true; "NO INTERPOLATION, EVER" as
+      currently written reads as a standing, binding property, and it isn't
+      one yet.
+
+  - id: R2H-03
+    severity: low
+    evidence:
+      - >-
+        Criterion 9.9(a)'s prose states plainly: "the spec registers no
+        addInitScript and no page.evaluate that adds a listener for
+        pointerdown, touchstart or mousedown, with ONE exception named here
+        and nowhere else, the capture-phase CLICK REFUSAL". The shipped spec's
+        `INSTALL_RECORDER` (test/e2e/pressed-and-disabled.spec.ts:304-425)
+        registers capture-phase listeners for `pointerdown`, `touchstart`,
+        `pointerup`, `touchend`, `pointercancel`, `mousedown` AND `click`
+        (the `TRACKED_TYPES` array at line ~306), which is a second and third
+        exception beyond the one the prose names.
+      - >-
+        This is necessary, not sloppy: criteria 9.9(c) and 9.9(e) both
+        require the spec to prove pointerdown and touchstart (and the ending
+        events) were actually DELIVERED before concluding anything from a
+        zero or an absence, which is impossible without a listener for
+        exactly those types. The implementer disclosed this openly as a
+        declared deviation (delivery/work-history/m3-p9.yaml, "ROUND TWO"
+        deviations, first entry: "I found no way to obey both") and the
+        comment at spec line 293 names it "THE PASSIVE EVENT RECORDER IS A
+        DECLARED DEVIATION and is written here rather than hidden." I judge
+        this deviation sound; see deviations-judged below.
+      - >-
+        The formal FALSIFIED BY list at the end of criterion 9.9 does not
+        actually forbid this: it says only "by ANY injected script that
+        WRITES data-pressed", which the recorder does not do (verified: every
+        line matching `data-pressed|dataset\.pressed|toggleAttribute` in the
+        spec is a comment, an `el.matches(...)` read, or a
+        `document.querySelectorAll(...)` read — I ran the exact grep myself
+        and it returns the same three lines the work history quotes). So the
+        criterion's descriptive prose sets a stricter bar than its own
+        enforceable falsification clause actually enforces, and the two
+        disagree with each other inside the SAME criterion.
+    concrete-fix: >-
+      Amend criterion 9.9(a)'s prose to explicitly carve out a read-only,
+      non-mutating event-recording listener alongside the click-refusal
+      exception, matching what the FALSIFIED BY clause already, correctly,
+      permits. As written, a future reader who takes the prose literally
+      either concludes the shipped spec violates 9.9(a) (it does not, by the
+      criterion's own enforceable text) or is left to rediscover the same
+      declared-deviation reasoning from scratch.
+
+  - id: R2H-04
+    severity: low
+    evidence:
+      - >-
+        Criterion 9.7's check is "git diff --name-only against this phase's
+        base prints ONLY [six named paths]." Run literally as `git diff
+        --name-only 89ed187 HEAD`, it prints a SEVENTH path,
+        `scripts/gate-privacy.sh`, which is not on the list and is not one of
+        the two standing pre-authorized extras
+        (test/behaviors.json and delivery/work-history/m3-p9*).
+      - >-
+        Investigated: that file's one touching commit (dc8c505) belongs to a
+        different phase's branch (claude/m0-p8-plan-testid) and reached this
+        branch only through a main-merge (84fe83a); it is not M3-P9's own
+        work, alongside a long run of unrelated `delivery/plan/pulse-v02.yaml`
+        amendment commits (accounts, savings, promotion phases) that are also
+        merge-inherited rather than M3-P9's own. So there is no actual scope
+        violation, but the CHECK as literally specified cannot tell the
+        difference between a phase's own commits and commits merged in from
+        main between its base and its head; a reader who runs exactly the
+        command criterion 9.7 gives, with no further step, would flag a
+        phantom violation here.
+    concrete-fix: >-
+      State explicitly, next to criterion 9.7's diff check, that a path
+      appearing in the raw diff must additionally be traced to a commit on
+      the phase's own branch (not merge-inherited from main) before it counts
+      against the criterion, and give the one-line technique for doing that
+      (`git log --all --source | grep <hash>` plus `git merge-base
+      --is-ancestor <hash> origin/main`). This is a general property of every
+      phase in this fleet that merges main before its own head, not unique to
+      M3-P9; recording the technique once here saves the next reviewer from
+      redoing the provenance check that this document had to do to withdraw
+      what looked, at first, like a high finding.
+
+  - id: R2H-05
+    severity: low
+    evidence:
+      - >-
+        The five endings criterion 9.9(e) enumerates and the shipped spec
+        drives (touch release on the control, touch release away, a real
+        engine-taken scroll pointercancel, a mouse press released elsewhere,
+        two presses in flight) are all endings the DOCUMENT ITSELF delivers
+        an event for, and the document-wide `clear()` sweep handles all five
+        correctly by design: it fires on any pointerup/pointercancel
+        anywhere, which is why a control that unmounts mid-press cannot stay
+        visibly stuck (the node is gone) and why a client-side route change
+        cannot interrupt a press before its own pointerup fires (Next.js
+        navigates on click, after pointerup, and the root layout hosting the
+        listener never remounts across a client-side transition).
+      - >-
+        What is NOT witnessed by any of the five, and could not be witnessed
+        in this container: whether a real mobile engine reliably fires
+        `pointercancel` when the OS intercepts a touch for its own gesture
+        mid-press and never hands a corresponding DOM event back to the page
+        at all (a long-press context/share-sheet gesture, an edge-swipe-back
+        gesture, or the app backgrounding while a finger is still down). If
+        an engine ever fails to deliver EITHER pointerup or pointercancel for
+        such a gesture, the control marked at pointerdown has no ending event
+        to answer to and stays visibly pressed until an unrelated touch
+        elsewhere clears the whole document — which is exactly the residual,
+        lower-severity version of the round-one stuck-pressed defect, on a
+        path none of the five enumerated endings exercises.
+      - >-
+        Confirmed unreachable from here rather than assumed: `which
+        google-chrome chromium firefox` finds nothing in this container,
+        matching the work history's own recorded answer to verification-first
+        step (f) ("none reachable; every phone result is emulation and says
+        so"). This is reported as a hazard probed and not reached, per the
+        dispatch's own instruction that such a result is worth recording so
+        the next reviewer does not spend budget re-deriving it, not as a
+        demonstrated defect in the shipped mechanism.
+    concrete-fix: >-
+      No code change is demanded by this finding; it is a residual risk
+      outside what any Playwright-only instrument in this container can
+      reach. Record it explicitly in the plan (a hazard-class addendum or a
+      note beside H9.11) so a future round with access to a real device farm
+      knows to spend a manual pass here: hold a press, then trigger the
+      platform's long-press context menu / edge-swipe-back gesture without
+      lifting the finger, and confirm the control's pressed appearance
+      clears.
+
+criteria:
+  - id: "9.1"
+    quote: >-
+      The phase work history records an answer to each of the SIX
+      verification-first questions with the command and its captured output
+      beside it ... FALSIFIED BY any of the six missing, by a recorded answer
+      that carries a conclusion with no captured output beside it, or by a
+      sweep that returns a control the enumeration does not name with no
+      amendment to the enumeration.
+    evidence:
+      - >-
+        All six answers are present in delivery/work-history/m3-p9-notes.md
+        (a table at lines 12-22) with the underlying commands and captured
+        output in delivery/work-history/m3-p9.yaml's verification-first
+        block. Answer (f), "no google-chrome, chromium or firefox binary is
+        on PATH", I reproduced myself: `which google-chrome chromium
+        firefox` finds nothing in this container either.
+      - >-
+        I re-ran the (a) rule counts myself against `git ls-files "*.css"`
+        (four files) at 89ed187 via `git show 89ed187:<file> | grep ...` for
+        the :hover/:active/cursor counts and reproduce the recorded base
+        state (4 :hover in globals.css, a 5th at styles/tokens.css:201, zero
+        :active/:disabled/transition/animation/@keyframes).
+      - >-
+        The (d) sweep is a real runtime collection, not a hardcoded list:
+        `sweep()` in the new spec (test/e2e/pressed-and-disabled.spec.ts:478)
+        runs `document.querySelectorAll(CONTROL_SELECTOR)` at test time and
+        the ENUMERATION constant (line 54) is asserted equal to the collected
+        set in both directions; I read both and they carry 19 entries
+        (7 submit + 7 nav + 1 summary + 4 remaining links).
+    met: true
+
+  - id: "9.2"
+    quote: >-
+      THE PRESSED APPEARANCE, MEASURED BY PRESSING, OVER A SET THE PLAN NAMES
+      AND WITH A DIFFERENCE BIG ENOUGH TO SEE ... FALSIFIED BY a collected set
+      that is not those nineteen in either direction, by one control whose
+      held snapshot fails either (i) or (ii) at either width, or by any
+      tap-highlight declaration.
+    evidence:
+      - >-
+        (a) the both-directions set assertion is real (test/e2e/pressed-and-
+        disabled.spec.ts:54-77 enumeration vs. :478 sweep); I read the
+        assertion site and it fails on a missing OR an extra control.
+      - >-
+        (b) the magnitude machinery matches the criterion: MIN_CONTRAST_RATIO
+        = 1.1 and MIN_PRESS_TRAVEL_PX = 1 (spec lines 83-85), read from a
+        transform MATRIX's f-component (matrixTranslationY, spec line ~305)
+        rather than the bounding rect alone, exactly as the criterion demands,
+        with the rect delta cross-checked separately.
+      - >-
+        (c) `grep -rn "tap-highlight" src/ styles/` exits 1, run by me. I
+        also read the whole pressed-rule block (src/app/globals.css:1438-
+        1520) for any other property that would trade the platform cue away
+        (touch-action, user-select, pointer-events on a resting rule) and
+        found none.
+      - >-
+        NOT INDEPENDENTLY RE-MEASURED BY ME: the actual held-press pixel and
+        contrast numbers (2.000px, specific composited ratios) come from the
+        work history's captured runs, which I did not reproduce myself
+        because the sibling lane was running the slow gate for the whole of
+        my working session (see the header disclosure). The code that WOULD
+        produce those numbers is present, correctly shaped, and consistent
+        with the stylesheet's own declared --press-offset: 2px
+        (styles/tokens.css:222); I have not personally re-executed it.
+    met: true
+
+  - id: "9.3"
+    quote: >-
+      THE DISABLED, BUSY AND UNCONFIRMED APPEARANCES, MEASURED BY ENTERING
+      THEM, AND WITH A MAGNITUDE ... an activation is REFUSED, observed at
+      the refusal, with the CLICK'S TARGET as the observable ... FALSIFIED BY
+      one control whose disabled, busy or unconfirmed snapshot differs from
+      its at-rest snapshot by less than the stated magnitude, by one that
+      still computes cursor pointer while disabled, by one that still
+      computes pointer-events other than none while carrying aria-disabled,
+      by one that still activates under it, or by a busy/unconfirmed element
+      whose mark has no content or zero width.
+    evidence:
+      - >-
+        `assertActivationRefused` (test/e2e/pressed-and-disabled.spec.ts:
+        1097-1150) uses `page.mouse.click` at raw coordinates (never
+        `dispatchEvent`), pins the bounding rect identical across the marked
+        and unmarked attempts, and reads the CLICK'S TARGET via
+        `clickedTargetRelation`, asserting "ancestor" while marked and
+        "control" while unmarked — this is exactly the isolation the
+        criterion demands (coordinates held fixed, only the marking toggled),
+        and it is observed at the document-level capture refusal, not at a
+        listener on the control (the recorder's click handler is registered
+        on `document` at line ~319, ahead of any control-level listener in
+        the capture order).
+      - >-
+        The stylesheet backs it: `[aria-disabled="true"]` sets
+        `pointer-events: none` alongside the surface/ink change
+        (src/app/globals.css:1563-1587), and a class-plus-attribute override
+        (`button:disabled:active`, `[aria-disabled="true"][data-pressed]` at
+        :1582-1587) stops a disabled control from also rendering the pressed
+        rule, so a control does not look both "cannot be used" and "being
+        used" at once.
+      - >-
+        Busy and unconfirmed marks are drawn as ::after pseudo-elements with
+        non-"none" content and non-zero width (src/app/globals.css:1619-1624,
+        :1643-1652), matching 9.3(b) and 9.3(c); the busy loop is a real
+        `@keyframes` (pulse-busy-cycle) rather than a static opacity, and
+        stands still under reduced motion because --duration-busy-cycle
+        redefines to 0s there (no per-rule variant to forget, matching
+        criterion 9.4's stated intent).
+      - >-
+        NOT INDEPENDENTLY RE-MEASURED BY ME: same disclosure as 9.2 above,
+        the exact contrast/opacity numbers are the work history's captured
+        run, not my own execution.
+    met: true
+
+  - id: "9.4"
+    quote: >-
+      THE REDUCED-MOTION PATH, AND THAT IT REMOVES THE MOTION AND NOT THE
+      FEEDBACK ... FALSIFIED BY a non-zero duration under reduce, by no
+      non-zero duration under no-preference, or by 9.2 or 9.3 failing under
+      reduce.
+    evidence:
+      - >-
+        styles/tokens.css:273-278 redefines exactly the three duration
+        tokens (--duration-press, --duration-state, --duration-busy-cycle) at
+        `:root` under `@media (prefers-reduced-motion: reduce)` and zeroes
+        none of --press-offset, --color-surface-pressed or the other state
+        colours, matching the criterion's "removes the transition and the
+        loop, never the appearance."
+      - >-
+        The spec re-runs the pressed/disabled/busy magnitude checks under
+        both `reducedMotion: "reduce"` and `"no-preference"` contexts
+        (test/e2e/pressed-and-disabled.spec.ts:1772 and :1759 describe
+        blocks) rather than only checking the duration fields in isolation,
+        which is what the criterion's part (c) asks for beyond parts (a)/(b).
+      - >-
+        NOT INDEPENDENTLY RE-EXECUTED BY ME, same disclosure as 9.2/9.3.
+    met: true
+
+  - id: "9.5"
+    quote: >-
+      TOKENS ONLY, AND THE TIME LITERALS ARE COVERED TOO ... FALSIFIED BY a
+      missing token name or by any one of the four checks failing.
+    evidence:
+      - >-
+        All nine named tokens are present in styles/tokens.css by the exact
+        names the plan gives (lines 207, 209, 211, 214, 222, 232, 239, 245,
+        247), under their own heading rather than folded into the
+        pre-existing "Space, radius, elevation" heading (a declared deviation
+        I judge sound; see below).
+      - >-
+        I ran (a), (b) and (c) myself: `grep -rEn "oklch\(|#[0-9a-fA-F]
+        {3,8}|[0-9]+px" src/ --include="*.tsx"` exits 1; the length-literal
+        grep over the three non-tokens.css stylesheets returns the same four
+        lines the base carries (I diffed against 89ed187's output by hand);
+        the duration/easing grep over the same three files returns nothing,
+        exit 1.
+      - (d) `npm run gate:tokens` -> EXIT=0, run by me (see header).
+      - >-
+        gate:tokens's own grep is scoped to `src/modules/*/ui` only and
+        touches none of this phase's files, so (d) is real but not
+        independently informative for THIS phase; (a)-(c), which I also ran
+        directly against the files this phase touches, are what actually
+        cover it, and both pass.
+    met: true
+
+  - id: "9.6"
+    quote: >-
+      THE MEDIA-CONDITION BUDGET, still counted ... FALSIFIED BY a third
+      distinct condition, by a second min-width condition, by a fifth
+      stylesheet, or by the breakpoint token and the condition disagreeing.
+    evidence:
+      - >-
+        `grep -rhoE "@media[^{]+" src/ styles/ --include="*.css" | sort -u`
+        returns exactly two lines, `@media (min-width: 768px)` and `@media
+        (prefers-reduced-motion: reduce)`, run by me.
+      - >-
+        `git ls-files "*.css"` returns exactly the four base files, run by
+        me.
+    met: true
+
+  - id: "9.7"
+    quote: >-
+      THIS IS A STYLESHEET PHASE PLUS ONE LISTENER, AND THE DIFF PROVES IT
+      ... FALSIFIED BY any other printed path, by a second printed file
+      matching *.tsx, by a second "use client" line anywhere under src/, or
+      by a changed package manifest.
+    evidence:
+      - npm run typecheck / lint / test / gate:privacy all exit 0, run by me.
+      - >-
+        `npm run test:e2e` NOT independently run by me this round (sibling
+        contention, see header); the work history's own captured tail
+        (delivery/work-history/m3-p9-notes.md) records "57 passed" at this
+        head, which I have not reproduced myself.
+      - >-
+        `git diff --name-only 89ed187 HEAD` prints
+        delivery/intake/pulse-v0.2-pdf-addendum.md, delivery/plan/pulse-v02.
+        yaml, delivery/work-history/m3-p9-notes.md, delivery/work-history/
+        m3-p9.yaml, playwright.config.ts, scripts/gate-privacy.sh, src/app/
+        globals.css, src/app/layout.tsx, styles/tokens.css, test/e2e/pressed-
+        and-disabled.spec.ts. Investigated and traced: scripts/gate-privacy.sh
+        and the plan/intake documents beyond the work-history pair are all
+        reachable only through main-merge commits belonging to OTHER phases
+        (see R2H-04), not M3-P9's own work; the phase's own commits touch
+        exactly the six paths the criterion names.
+      - >-
+        (c) `grep -rn '^"use client"' src/` returns exactly
+        `src/platform/ui/nav-link.tsx:1:"use client";`, one line, same as
+        base, run by me. AS A GUARD this passes and is also the subject of
+        finding R2H-01: the command itself cannot see a single-quoted
+        directive. Judged separately from whether the CURRENT diff violates
+        it (it does not, verified by manual read of src/app/layout.tsx: no
+        "use client" in any form, no import, no hook, no prop).
+      - >-
+        (d) `src/app/layout.tsx`'s diff renders no string a reader sees: I
+        read the whole diff and it adds a `<script>` element and a comment
+        block only; no JSX text node, no message key referenced, and
+        `messages/` is unchanged in the file list above.
+    met: true
+
+  - id: "9.8"
+    quote: >-
+      PRIVACY, in the three-half shape criteria 7.15 and 8.10 established
+      ... FALSIFIED BY the gate exiting non-zero, by any probe hit, or by a
+      captured measurement whose stated source is the deployed database.
+    evidence:
+      - "(a) bash scripts/gate-privacy.sh -> EXIT=0, run by me."
+      - >-
+        (b) I searched this container for the owner's real statement uploads
+        by their 8-hex prefixes (0f79fa3d, 39bada64, per the fleet warning)
+        and found nothing; the real uploads are absent from this container,
+        so half (b) is correctly NOT WITNESSED rather than green, matching
+        what the work history itself records.
+      - >-
+        (c) the new spec drives only the committed synthetic fixtures
+        test/e2e/merchants.spec.ts and test/e2e/import.spec.ts already use
+        (including test/fixtures/unknown-layout.pdf for the rejected-import
+        journey); I read the spec's setup/journey helpers and it introduces
+        no fixture of its own. Every measurement I quote above traces to
+        either a command I ran myself or the work history's own captured
+        output, never to a deployed household.
+    met: true
+
+  - id: "9.9"
+    quote: >-
+      THE PRESS IS WITNESSED IN THE SHIPPED PRODUCT, UNDER A FINGER, FROM THE
+      MOMENT IT STARTS TO THE MOMENT IT ENDS ... FALSIFIED BY the script
+      element carrying data-press-feedback missing from either served
+      response or carrying no listener text, by a zero passed count under
+      chromium-phone, by any injected script that writes data-pressed, by one
+      control failing any of (b)(i) through (b)(v), by a NON-ZERO :active
+      frame count on any touch path, by a path reporting zero without having
+      been shown to deliver pointerdown and touchstart, by an ending
+      concluded from without its own event having been captured, or by ANY
+      element still carrying data-pressed after ANY of half (e)'s five
+      endings.
+    evidence:
+      - >-
+        (a) THE MECHANISM. src/app/layout.tsx:72-98 is a module-scope string
+        constant with no interpolation (`grep -n '\${' src/app/layout.tsx`
+        exits 1, run by me), rendered once via `dangerouslySetInnerHTML` on a
+        `<script data-press-feedback="">` inside `<body>` (:109-112), served
+        on every route because it lives in the ROOT layout and not the
+        authenticated shell (src/app/(app)/layout.tsx never renders it, so
+        five of the nineteen controls on the sign-in/sign-up screens would
+        otherwise have no listener at all). The script registers exactly
+        three real listeners: a capture-phase `pointerdown` that sets
+        `data-pressed` on `event.target.closest(CONTROL)`, and capture-phase
+        `pointerup`/`pointercancel` that both call the same document-wide
+        `clear()`. I read the whole file; this is the entire mechanism.
+      - >-
+        The marker is deliberately `data-press-feedback`, not `data-testid`:
+        confirmed `grep -rn '\[data-testid\]' test/e2e/` returns exactly one
+        line (month-view.spec.ts:652, the collectTestids helper the plan
+        cites), and layout.tsx carries no data-testid anywhere, run by me.
+      - >-
+        THE SPEC'S OWN "INJECTED NOTHING THAT WRITES" CLAIM: `grep -nE
+        "data-pressed|dataset\.pressed|toggleAttribute"
+        test/e2e/pressed-and-disabled.spec.ts` returns exactly three lines
+        (a comment, an `el.matches(...)` read, a `querySelectorAll(...)`
+        read), run by me, matching the work history's own quoted grep
+        output exactly.
+      - >-
+        THE PASSIVE-RECORDER DEVIATION from 9.9(a)'s stricter prose is real
+        and disclosed (see R2H-03 and deviations-judged below); the property
+        the prohibition actually protects (nothing installed writes
+        data-pressed) holds under my own re-run of the grep.
+      - >-
+        THE CONFIG-MEMBERSHIP INTERLOCK (criterion 9.9(a)'s "no skip
+        condition" half): test/e2e/pressed-and-disabled.spec.ts:1521-1550
+        imports playwright.config.ts at runtime, asserts a project exists
+        with `hasTouch: true` whose `testMatch` matches the spec's own
+        filename, and runs unconditionally (no test.skip anywhere near it,
+        confirmed by reading the surrounding 40 lines). This is exactly the
+        durable interlock the criterion describes: a future testMatch
+        narrowing would redden this assertion rather than silently emptying
+        the phone project's coverage.
+      - >-
+        (b)-(e), the frame-sampled hold and the five endings: the
+        implementation matches the criterion's construction closely on
+        direct reading (matrix f-component read via `matrixTranslationY`,
+        not the bounding rect alone; the anchored sampling window; the
+        second-sampled-frame assertion for each ending; the SIMULTANEOUS
+        tally in (v) via `markedAtBoth`-shaped checks; ending five's overlap
+        proven by an explicit "carried the marking on BOTH controls at once"
+        assertion rather than assumed). I did NOT independently re-execute
+        this suite this round (sibling contention; see header). This is the
+        single biggest evidence gap in this document: the numbers I am
+        relying on for "the press is visible" (28/29 frames, 2.000px, zero
+        :active on three live-shown touch paths, fifteen endings all
+        clearing) are the implementer's own captured output, cross-checked
+        by me against the code that would produce them and against the
+        claim-grep sweep for false statements, but not reproduced by my own
+        keystrokes. I recommend the orchestrator or the sibling lane's own
+        e2e run (already in flight at review time) stand as the independent
+        re-execution this criterion still needs before a clean merge.
+    met: true
+
+deviations-judged:
+  - deviation: >-
+      Step 2 and the token entry in report-code-disagreement: "no further
+      token is expected, with criterion 9.5 failing the phase if a literal
+      duration, curve, colour or length reaches a rule instead."
+    serves-plan-intent: true
+    reasoning: >-
+      Verified the captured claim myself: the length-literal and duration/
+      easing greps over every stylesheet but tokens.css are unchanged from
+      base and empty respectively. The five literals this deviation names
+      (four opacities, one 50% radius) are none of duration, curve, colour or
+      length in the sense criterion 9.5 defines them (colour meaning a
+      colour value, not a unitless opacity multiplier), and adding five
+      single-use tokens for values with no reuse anywhere else in the file
+      would be token-system bloat for its own sake. I agree with the
+      implementer's own reading that the plan's "no further token is
+      expected" describes intent rather than an exhaustive enumeration of
+      every literal a state rule could ever need.
+
+  - deviation: >-
+      Step 5: "A disabled control changes to --color-surface-disabled and
+      --color-ink-disabled and stops computing cursor: pointer."
+    serves-plan-intent: true
+    reasoning: >-
+      Read the rule (src/app/globals.css:1563-1587): both token-backed colour
+      changes are present exactly as specified, and the added opacity change
+      is additive redundancy that gives the disabled appearance a magnitude
+      on transparent controls too, where the colour-composite bar the
+      criterion offers as an alternative would otherwise depend on whatever
+      the control happens to sit over. It strengthens the criterion's own
+      guarantee rather than substituting for it.
+
+  - deviation: >-
+      Step 4: "Write the pressed appearance for every control the criterion
+      9.2 selector finds, which at this phase's base is the seven submit
+      controls, the three shell nav links, ..."
+    serves-plan-intent: true
+    reasoning: >-
+      Confirmed the rules select by ELEMENT (button:active, a:active, etc.)
+      rather than by the enumerated class list, and that the two selections
+      are identical over the tree the sweep measures (the passing
+      both-directions set assertion is the proof). An element-scoped rule is
+      MORE robust to a future control added under the same tags than a
+      hand-maintained class list would be, and does not weaken anything the
+      criterion measures today.
+
+  - deviation: "Criterion 9.2(b)(i), the movement half."
+    serves-plan-intent: true
+    reasoning: >-
+      The spec asserts the element's own bounding box moves in addition to
+      the computed transform, which is a strictly stronger check than the
+      criterion's literal text (satisfiable in principle by a transform a
+      non-replaced inline box never visually renders). Strengthening a
+      criterion beyond its letter, in the direction the criterion's own
+      intent points, is not a deviation that needs forgiving; it is the
+      correct reading of "a difference big enough to see."
+
+  - deviation: >-
+      Criterion 9.2(c): grep -rn "tap-highlight" over every file matching
+      *.css under src/ and styles/ returns nothing.
+    serves-plan-intent: true
+    reasoning: >-
+      Confirmed the comment explaining the -webkit-tap-highlight-color
+      decision spells the property name out in words rather than writing it
+      literally, and that styles/tokens.css:178 already uses the same device
+      for a different word. This keeps both the explanation and the
+      criterion's own grep meaningful; I ran the grep and it exits 1.
+
+  - deviation: >-
+      Step 6: "register it in playwright.config.ts under BOTH the desktop
+      project and the chromium-phone project, by widening that project's
+      testMatch."
+    serves-plan-intent: true
+    reasoning: >-
+      Not a substantive deviation. Confirmed the chromium project declares
+      testIgnore (playwright.config.ts:57) rather than testMatch, so the new
+      spec is collected there with no config edit; only the phone project's
+      testMatch needed widening, which is the only playwright.config.ts
+      change in the diff.
+
+  - deviation: >-
+      files-to-touch, which does not name a base rule for the anchor
+      element.
+    serves-plan-intent: true
+    reasoning: >-
+      `a { display: inline-block; }` (src/app/globals.css:1438-1439) is
+      inside the phase's declared files but changes a base element rule
+      rather than a state rule. I judged the blast radius the same way round
+      one's reviewer did: it is needed because a non-replaced inline box is
+      not transformable, so without it the two bare auth cross-links would
+      report a translated computed transform with no visible movement, which
+      is exactly the "rounding error that satisfies the letter" failure
+      hazard H9.9 exists to catch. The deviation is declared rather than
+      silent, and the fix-round-1 correction (finding CR-M3P9-03, narrowing
+      the claimed count from four controls to two after the import-result
+      links turned out to already be flex items) shows the implementer
+      checked rather than asserted the blast radius.
+
+  - deviation: >-
+      Step 4 and criterion 9.2, which describe the pressed appearance in
+      terms of a press and do not name a selector; the plan's
+      verification-first step (e) pre-authorises "a class or attribute the
+      control carries between pointerdown and pointerup" only IF a held
+      page.mouse.down fails to produce :active under the chromium-phone
+      project.
+    serves-plan-intent: true
+    reasoning: >-
+      This deviation is from FIX ROUND 1, before the plan amendment that
+      formally added the listener step and criterion 9.9. Its own
+      description is honest about the ladder's condition not being literally
+      met (mouse DOES get :active) while adding [data-pressed] anyway because
+      the phase exists to answer a finger question and the touch measurement
+      returns zero on every path. The amendment that followed adopted exactly
+      this reasoning as the phase's own step 5 and D-61, which is the
+      strongest evidence available that the deviation served the plan's
+      intent: the plan itself was rewritten to agree with it.
+
+  - deviation: >-
+      files-to-touch and criterion 9.7, which print no client script, so the
+      pointerdown handler that sets [data-pressed] cannot ship in this
+      phase.
+    serves-plan-intent: true
+    reasoning: >-
+      An open escalation under R-034 rather than an improvised workaround,
+      correctly labelled as such in the work history. This is precisely the
+      instance hazard H9.11 was later added to name, and the amendment that
+      followed resolved it by adding the listener to files-to-touch rather
+      than leaving it parked. Escalating an unresolvable tension between two
+      of the phase's own clauses, instead of silently picking one side, is
+      the behaviour R-034 exists to produce.
+
+  - deviation: >-
+      Criterion 9.9(a): "the spec registers no addInitScript and no
+      page.evaluate that adds a listener for pointerdown, touchstart or
+      mousedown, with ONE exception named here and nowhere else, the
+      capture-phase CLICK REFUSAL".
+    serves-plan-intent: true
+    reasoning: >-
+      Judged in detail above (finding R2H-03). The recorder is read-only
+      about the mechanism under test (pushes event names to an array, writes
+      no attribute), is required by 9.9(c)/(e)'s own text, and the property
+      the prohibition actually protects (nothing installed produces the
+      pressed appearance) holds under my own re-run of the grep the criterion
+      names. I agree the deviation was unavoidable given the plan's two
+      clauses as literally written, and record the plan-text inconsistency
+      itself as R2H-03 rather than holding it against the implementation.
+
+  - deviation: >-
+      Criterion 9.9(e): "After EACH of the five endings, by the SECOND
+      sampled animation frame following it ... the control's computed
+      transform matrix and bounding rect are back at their resting values".
+    serves-plan-intent: true
+    reasoning: >-
+      --duration-press is 90ms (styles/tokens.css:207), so a transform still
+      unwinding at the second animation frame after an ending is a
+      consequence of the transition existing at all, on any correct
+      implementation, not a defect being excused. The marking assertion
+      (data-pressed cleared), which is the half that actually catches a
+      stuck press, is still taken at exactly the second frame as written; only
+      the transform/rect restoration check is moved to the end of the sampled
+      tail, where it is 0.000px on every ending. This reads as a genuine gap
+      in the criterion's own timing assumption rather than a corner cut.
+
+  - deviation: >-
+      Criterion 9.9(e) ending FOUR: "by asserting that the ending's own event
+      was captured on the control, pointerup for endings one, two, four and
+      five".
+    serves-plan-intent: true
+    reasoning: >-
+      Ending four exists specifically because a mouse pointer lacks implicit
+      capture, so asserting its pointerup landed ON the control would assert
+      the opposite of the property the ending is built to demonstrate. The
+      spec's actual assertion (a pointerup was captured, and its target was
+      NOT the control) is the stronger, correct form of the same "this
+      ending really happened" requirement half (e)'s own preamble states, and
+      matches the criterion's own explanatory prose describing the ending
+      one paragraph earlier.
+
+  - deviation: >-
+      Criterion 9.9(e) ending TWO, a touch release AWAY from the control.
+    serves-plan-intent: true
+    reasoning: >-
+      Verified the stated mechanical conflict makes sense: a touchMove on a
+      screen that scrolls IS ending three by the criterion's own definition
+      ("a touch that begins on the control and then moves far enough that the
+      engine takes the gesture"), so driving ending two with a move would
+      make it indistinguishable from ending three on a scrollable screen. Ending
+      the touch at moved coordinates with no move event produces a real,
+      distinct pointerup away from the control without manufacturing a scroll,
+      which is what ending two is actually for.
+
+hazard-classes-addressed:
+  - class-id: H9.1
+    probed: >-
+      Read every pressed-rule selector in src/app/globals.css:1478-1520 and
+      confirmed each has a [data-pressed] twin beside its :active form, so
+      the appearance answers an attribute a listener can set rather than only
+      a pseudo-class the engine may withhold from touch. Cross-checked the
+      spec's own measurement technique (matrix f-component plus rect delta,
+      not a single computed-style grep) against the exact failure mode this
+      hazard names ("a grep for :active rather than a press").
+    cleared-because: >-
+      The mechanism no longer depends on the engine granting :active to a
+      touch at all; it depends on pointerdown firing, which every touch path
+      the spec drives does. I did not re-execute the frame-sampled proof
+      myself this round (see criterion 9.9 evidence); on the code alone this
+      hazard reads as closed.
+
+  - class-id: H9.2
+    probed: >-
+      Read styles/tokens.css:273-278 for what the reduced-motion block
+      actually zeroes (three durations only, not --press-offset or any
+      colour token) and read criterion 9.4(c) and criterion 9.9(d)'s
+      requirement to re-run the full pressed/disabled/busy measurement under
+      reduce. Checked specifically for the "no transition and no pressed
+      appearance either" failure shape this hazard names.
+    cleared-because: >-
+      The appearance-bearing tokens (--press-offset, the four colour tokens)
+      have no reduced-motion variant at all, so a reader who asks for less
+      motion loses only the easing, never the state. This is structurally
+      the failure-resistant shape the criterion asks for (one block at
+      :root, no per-rule variant to forget) rather than a per-rule opt-out
+      that a future rule could omit.
+
+  - class-id: H9.3
+    probed: >-
+      Ran all four of criterion 9.5's checks myself and read every
+      declaration this phase adds to see whether any literal value that is
+      NOT a colour or font-size (the repository's own gate:tokens blind spot,
+      confirmed by reading its grep) slipped through the plan's own
+      supplementary greps.
+    cleared-because: >-
+      The four opacity/radius literals the implementer declared as a
+      deviation (see deviations-judged) are, on my own reading, genuinely
+      outside what criterion 9.5 names (duration, curve, colour, length), and
+      the duration/easing/colour/length checks I ran by hand all pass. The
+      one gap I found in this area is not a literal that slipped through but
+      gate:tokens itself never scanning this phase's files at all, recorded
+      above as a header note rather than a finding since criterion 9.5(a)-(c)
+      already covers the actual paths.
+
+  - class-id: H9.4
+    probed: >-
+      Ran grep -rn "tap-highlight" over every *.css under src/ and styles/
+      (exit 1) and read the whole pressed/disabled rule block for any
+      property that removes the platform cue (-webkit-tap-highlight-color,
+      touch-action, user-select, or pointer-events on a resting rule).
+    cleared-because: >-
+      Nothing traded away; the platform highlight is not suppressed anywhere
+      in this diff, and the comment explaining the decision uses the
+      word-spelled-out device so the criterion's own grep stays meaningful,
+      declared as a deviation rather than done silently.
+
+  - class-id: H9.5
+    probed: >-
+      Ran criterion 9.7's own commands, then went past them: constructed a
+      single-quoted 'use client' directive in a scratch file outside the
+      tracked tree and ran the exact same grep against it, to test whether
+      the guard matches the directive's IDENTITY or only one of its two
+      legal spellings.
+    finding: R2H-01
+
+  - class-id: H9.6
+    probed: >-
+      Grepped src/ for every selector the new state vocabulary defines
+      (aria-busy, aria-disabled, data-unconfirmed) to see what, if anything,
+      enters these states in the product today, then read the busy/
+      unconfirmed rules to check whether a control that DOES carry them
+      (none does yet) could still be double-activated, which is the half the
+      appearance criteria do not measure.
+    cleared-because: >-
+      Confirmed nothing in the product sets any of the three attributes yet,
+      so H9.6's "the state vocabulary is never entered" risk is exactly the
+      known, disclosed, M3-P10-owned gap the plan already names rather than
+      a silent one; the appearance work is measured (criteria 9.3/9.4) and
+      correct on its own terms.
+
+  - class-id: H9.7
+    probed: >-
+      Searched this container for the owner's real statement uploads by
+      their 8-hex prefixes (absent); ran gate:privacy myself; read every
+      line the diff touches for content that could plausibly have come from
+      a real document (merchant names, place names, amounts); swept this
+      review document's own drafts for the same before committing.
+    cleared-because: >-
+      The real uploads are absent from this container, gate:privacy exits 0,
+      and I found nothing in the diff or in my own working notes that
+      resembles content drawn from a real statement. Half (b) of criterion
+      9.8 is correctly recorded NOT WITNESSED.
+
+  - class-id: H9.8
+    probed: >-
+      Read the set-construction code (sweep vs. enumeration, both directions
+      asserted) rather than trusting the criterion's own description of it,
+      and read the journey helpers for how each of the five conditional
+      controls is actually reached (month view before import, the query-
+      parameter month, the disclosure opened on the delimited path, the
+      sign-in screen, the rejected-PDF journey).
+    cleared-because: >-
+      The set is genuinely swept at runtime, not looked up, and the journey
+      reaches all five conditional controls by the specific routes the
+      criterion names rather than by whatever the fixtures or the clock
+      happen to produce, confirmed by reading the relevant helper functions
+      directly.
+
+  - class-id: H9.9
+    probed: >-
+      Recomputed nothing myself this round (sibling e2e contention); instead
+      read the magnitude machinery for internal consistency (the MIN_*
+      constants match the criterion's stated bars, the compositing function
+      composites against the nearest non-transparent ancestor as the
+      criterion requires) and cross-checked the token that sets the travel
+      floor (--press-offset: 2px) against the spec's MIN_PRESS_TRAVEL_PX (1),
+      confirming the shipped token clears the spec's own floor with margin.
+    cleared-because: >-
+      On the code alone, nothing suggests the magnitudes are satisfied by a
+      rounding error the way hazard H9.9's own history names (the "0.995
+      opacity" and "0.01px" failures from earlier rounds); the constants are
+      real, not decorative. This is a WEAKER clearance than the others in
+      this document because I did not independently re-execute the
+      measurement; see criterion 9.9's evidence for the full disclosure.
+
+  - class-id: H9.10
+    probed: >-
+      Ran grep -rn "aria-busy" and grep -rn "aria-disabled" over src/ and
+      test/ to confirm neither is entered by the product today (matching the
+      hazard's own reasoning for why a refusal on the busy state would guard
+      an unreachable state), then read the aria-disabled rule specifically
+      for the one case this phase DOES own: whether a link-shaped control
+      made to look unusable actually refuses to navigate.
+    cleared-because: >-
+      Confirmed via criterion 9.3(a)'s own hit-tested click experiment
+      (finding-free on my reading): pointer-events: none plus the refusal
+      demonstrated by the target-based observable closes exactly the one
+      case this phase can close, and the busy-control double-activation risk
+      is correctly left to M3-P10, which already owns it via its own
+      criterion 10.3.
+
+  - class-id: H9.11
+    probed: >-
+      This is the hazard the whole amendment exists for. Read the shipped
+      listener end to end (src/app/layout.tsx:72-98) for the property that
+      was missing in round one: something in the shipped product actually
+      raises [data-pressed] from a real pointer event, independent of engine
+      :active grants. Checked it is served (not injected by the test) via
+      the raw-response-body assertion's design (test/e2e/pressed-and-
+      disabled.spec.ts:1565 area) and via my own read of the rendered
+      RootLayout JSX.
+    cleared-because: >-
+      The mechanism exists, is served from the root layout on every route
+      including the unauthenticated ones, and is not a test-only fixture:
+      RootLayout is a plain async server component with no test-conditional
+      branching anywhere in it. I did not personally re-execute the frame-
+      sampled proof that the mechanism actually FIRES under a real touch
+      path this round (see criterion 9.9 disclosure); the code that would
+      produce that result is present and correctly shaped, which is the
+      strongest clearance I can give without my own execution.
+
+  - class-id: H9.12
+    probed: >-
+      Read the scoping-deviation clause in criterion 9.9(b) (halves (ii)-(v)
+      may be taken on a named subset if the sweep does not fit) and checked
+      whether the shipped spec actually uses that escape hatch or ran the
+      full nineteen-control sweep, by reading the describe blocks and the
+      controls each measurement loop iterates over.
+    cleared-because: >-
+      On my reading the spec runs the frame-sampled halves over the full
+      collected set rather than a named subset (no DEVIATION comment
+      invoking this clause appears anywhere in the file or the work
+      history's deviations list), so this round did not need the fallback
+      criterion 9.9(b) pre-authorised. I could not confirm this against a
+      real timing run of my own this round (sibling contention); if the
+      suite is red or slow under load when it is next run, the criterion's
+      own pre-authorised scoping is the correct response, not a lowered
+      floor.
+
+# ============================================================================
+# VALIDATION
+# ============================================================================
+# `npx tiphys validate --type verdict --context <private context dir built
+# with cat copies of delivery/plan/pulse-v02.yaml, delivery/work-history/
+# m3-p9.yaml, node_modules/@tiphys/kernel/assurance-modes.yaml and
+# charter.yaml, carrying this document under delivery/review/> delivery/
+# review/m3-p9-hazard-round2.yaml`, run three times as this document was
+# fixed:
+#
+#   Run 1: "delivery/review/m3-p9-hazard-round2.yaml is not valid YAML:
+#   Plain value cannot start with reserved character `" -- a plain scalar
+#   list item starting with a bare backtick (criterion 9.6's evidence, the
+#   `git ls-files "*.css"` line) parses incorrectly under both js-yaml and
+#   the tiphys validator. Reproduced in isolation with a five-line minimal
+#   file before touching the real document. FIXED by rewriting that one
+#   entry as a `>-` block scalar, matching every other evidence entry in
+#   this document, rather than a bare backtick-led plain scalar.
+#
+#   Run 2, after the YAML fix: two schema violations. (a)
+#   "#/hazard-classes-addressed/4/cleared-because expected type string but
+#   found null" -- H9.5's entry carried a `finding` AND an explicit
+#   `cleared-because: null`; the schema's own `oneOf` wants exactly one of
+#   the two present, not the other written as null. FIXED by removing the
+#   null field, leaving only `finding: R2H-01`. (b)
+#   "#/no-findings-statement property no-findings-statement is not permitted
+#   here" -- a placeholder field left over from this document's own
+#   in-progress skeleton, invalid once `findings` is non-empty. FIXED by
+#   removing it.
+#
+#   Run 3, after both fixes: exactly one remaining line, "INVALID #/phase
+#   only 1 verdict document(s) exist under delivery/review for phase M3-P9,
+#   and a delegated grant requires two independent clean-room reviews of
+#   the exact head (check: dual-review-decorrelation)". This is the SAME
+#   benign, expected outcome round one's hazard review recorded at the same
+#   check: the sibling criteria-contract lane's document does not exist in
+#   this private context by clean-room design (I have not read it and this
+#   review does not carry it), so the dual-review Kind B check cannot pass
+#   from inside a single lane's document. Every other check --  schema
+#   shape, criteria completeness against the plan's own acceptance[] for
+#   M3-P9, deviations completeness against the work history's own
+#   deviations[], hazard-class completeness against the plan's own
+#   hazard-classes[], and the finding-reference resolution from
+#   hazard-classes-addressed[4].finding to findings[0].id -- passes.
+#
+# No fallback to --type finding was needed: the verdict-shaped document
+# validates cleanly except for the cross-document check no single lane can
+# satisfy alone.
