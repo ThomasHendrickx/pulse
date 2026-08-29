@@ -1,0 +1,506 @@
+# Clean-room review, HAZARD contract, phases M3-P14 (account registry, DR-0030
+# reserve-account acceptance) and M3-P15 (ring correction), severity critical.
+# WORK IN PROGRESS. Incremental append per dispatch clause incremental-output.
+#
+# Reviewer: tiphys clean-room reviewer, hazard lane, dispatched on Sonnet 5,
+# decorrelated by model from the sibling criteria lane per fleet warning 17.
+# Worktree: /home/user/wt-m3p14-haz, branch claude/m3-p14-rev-haz.
+# Head under review: f41a33c on claude/m3-p14-account-registry, merged with
+# origin/main (dc8c505, the gate:privacy fork-refusal fix) so gate runs here
+# are trustworthy. Merge commit noted below once captured.
+#
+# The structured kind/verdict/findings mapping this document validates
+# against lives at the END of this file, after the full incremental
+# progress log. Only ONE YAML mapping appears in this file, at the
+# bottom; everything above it is commentary, in the order it was written.
+#
+# PROGRESS LOG (append-only per clause incremental-output).
+#
+# T0: read both briefs in full. Merged origin/main (dc8c505 gate:privacy
+# fork-refusal fix) into claude/m3-p14-rev-haz at f41a33c; merge is clean,
+# touches only delivery/plan/pulse-v02.yaml and scripts/gate-privacy.sh.
+# npm ci in this worktree (node 22 via nvm, 472 packages, 30s). Disk was
+# critically low (down to ~2M avail at one point); freed by `npm cache
+# clean --force` (1.7G reclaimed). Never deleted anything outside this
+# worktree; the classifier blocked an attempt to clear node_modules in
+# sibling worktrees and I did not retry it.
+#
+# ATTACK 6 (src/platform/account-number.ts replacing two private copies):
+# read git show bf3e001 for both migrated call sites (corrections.ts's
+# counterpartyKey, belfius-current-account-template.ts's own/counterparty
+# IBAN extraction). Traced every path that can populate
+# Transaction.counterpartyIban (detect-profile.ts's auto-detection column
+# gate at :313, the Belfius PDF template's regex-constrained extraction)
+# and confirmed both gates only ever hand the migrated call sites values
+# that already satisfy account-number.ts's CANONICAL_SHAPE, so the new
+# shape-gated canonicalAccountNumber and the old unconditional
+# toUpperCase+strip-whitespace are equal on every value either call site
+# can receive today. NEITHER CALL SITE'S BEHAVIOUR MOVED on the shipped
+# tree: hazard probed, not reached. Filed as MEDIUM finding HZ-M3P14-01
+# below: the safety of that claim depends on an invariant (upstream shape
+# validation) that lives nowhere near account-number.ts, is contradicted
+# by that very file's own header comment, and is pinned by no test.
+#
+# DATABASE SETUP. Own local Supabase stack, isolated from every other
+# worktree's: supabase/config.toml project_id was "m1-p1-skeleton" (a
+# collision with an ALREADY-RUNNING sibling worktree's stack on the same
+# fixed ports, 54321-54327), so before starting anything I retargeted
+# project_id to "wt-m3p14-haz" and every port by +500 (54821-54829) and
+# set [edge_runtime] enabled=false per fleet warning 13 (the edge-runtime
+# container cannot get the nofile rlimit it asks for in this container).
+# Both are LOCAL, UNCOMMITTED changes to a tracked file; reverted before
+# any commit lands, exactly as warning 13 describes for the same file.
+# `npx supabase start` -> healthy, all containers under the
+# *_wt-m3p14-haz name (docker ps confirms no name collision with the
+# m1-p1-skeleton stack, which is left untouched and still running).
+# `npx prisma migrate deploy` pinned to
+# postgresql://postgres:postgres@127.0.0.1:54822/postgres -> 6 migrations
+# applied cleanly, EXIT=0. .env in this worktree pins DATABASE_URL,
+# DIRECT_URL, NEXT_PUBLIC_SUPABASE_URL, the anon key and the service role
+# key to this stack (gitignored, never committed). AMBIENT DATABASE_URL
+# (the hemma-dev Supabase project per fleet warning 16) was never used for
+# any command in this review; every writing command below pins the
+# connection string above explicitly.
+#
+# ATTACK 1 (THE INVARIANT, criterion 14.16) -- PROBED LIVE AGAINST THE REAL
+# DATABASE, not against the fake world held-rows.test.ts uses. Wrote a
+# throwaway script (scratch-probe-1416.ts, deleted, never committed) that
+# creates real households via Prisma and drives the ACTUAL production
+# composition roots -- uploadStatement/confirmImport from
+# src/modules/import/application (liveDependencies), registerAccount and
+# correctAccountRing from src/modules/accounts/application, and reads
+# monthFigures/listGapRows/listCountedAccountRows/listHeldAccountRows
+# straight from src/modules/overview/adapters/overview-repository.ts --
+# against my own local Postgres (127.0.0.1:54822), pinning DATABASE_URL
+# and DIRECT_URL on every invocation (ambient env otherwise silently
+# redirects Prisma to the hemma-dev pooler, confirmed: the first run
+# without the pin failed with "Can't reach database server at
+# aws-1-eu-north-1.pooler.supabase.com:6543", proving the pin is load
+# bearing and not decorative).
+#
+# RESULT: all four arms of criterion 14.16 hold EXACTLY as specified,
+# against the real SQL, using invented fixture values mirroring the
+# committed ar-*.csv fixtures:
+#   ARM ONE (registered first): every one of the seven figures byte
+#     identical before/after the reserve import; held gained exactly
+#     [{label:"Buffer", rowCount:2}].
+#   ARM TWO (declared by the reserve import itself): spendSigned rose by
+#     exactly 30000 (delta -30000 signed), reserveSigned fell by exactly
+#     30000 (net-to-reserves +30000), the other five figures unchanged,
+#     held gained the same entry.
+#   ARM THREE (drawdown only, no prior outgoing): income fell 12000,
+#     net-to-reserves fell 12000, spend/changeInPot/rowCount unchanged.
+#   ARM FOUR (paid into AND drawn from): spend fell 18000 (the NET of
+#     30000 out and 12000 back), net-to-reserves rose 18000, matching the
+#     plan's pinned direction exactly.
+# In every arm changeInPotCents, differenceCents, uninterpretedCount and
+# rowCount were untouched, and monthFigures.uninterpretedCount stayed 0
+# throughout (books close) with listGapRows empty.
+#
+# THE SILENT WRONG ANSWER, END TO END, LIVE: imported the same savings
+# fixture declared POT (the mistake DR-0030/H14.18 describes), confirmed
+# its own two rows land in "counted" (not held) alongside the current
+# account, confirmed income included the savings interest (200210 vs the
+# correct 200000) and reserves read 0 -- exactly the silent-wrong-answer
+# shape the plan describes, with the ONLY difference being the
+# month-accounts element carrying the mis-ringed account under "counted".
+# Then called correctAccountRing (M3-P15's real production path, not a
+# fake) and confirmed full recovery with NO re-import: monthFigures
+# returned EXACTLY to the arm-ONE values (income 200000, spend -4000,
+# reserve -30000, changeInPot 166000), the mis-ringed account's own 2 rows
+# moved from "counted" to "held" with no third bucket and no duplicate
+# entry, and the correction's own preview/outcome
+# (previewDeclarationChange + the committed result) reported
+# rowsOnAccount:2/stop-counting, reservesDelta:+30000, incomeDelta:-210,
+# matching the actual post-recompute figures exactly (no drift between
+# the DRY RUN preview and the committed outcome, which is what criterion
+# 15.7 asks for at the application level; its BYTE-COMPARISON AGAINST THE
+# RENDERED PAGE is still the gap the work history already names).
+#
+# CONCLUSION ON ATTACK 1: the money is right. I could not make a held row
+# reach any total or any gap read, could not make a row vanish, and could
+# not make the silent-wrong-answer household get stuck -- the correction
+# path recovers exactly, with no re-import, using the SQL and application
+# code as shipped. The gap is real but narrower than "the invariant is
+# unverified": it is specifically that NONE of this is witnessed through
+# the BROWSER (a rendered page, a real sign-up, real navigation), which is
+# what criterion 14.16's Playwright half and 15.7's rendered-byte-compare
+# would have bought and do not exist. Filed as MEDIUM finding
+# HZ-M3P14-02 below (the coverage gap itself, since R-087 requires a false
+# claim to be called out and the work history does NOT claim this is
+# covered -- it says plainly "14.16's four arms have no Playwright half at
+# all" -- so this is a real, disclosed gap and not a false claim).
+#
+# GATES, RUN MYSELF IN THIS WORKTREE, pinned to the local stack above
+# (DATABASE_URL/DIRECT_URL=127.0.0.1:54822), Node v22.12.0 via nvm:
+#   npm run typecheck  -> EXIT=0
+#   npm run lint       -> EXIT=0
+#   npm test            -> 37 files, 479 passed (479), EXIT=0
+#   npm run gate:privacy -> "gate:privacy clean", EXIT=0
+#   npm run gate:tokens  -> EXIT=0 (this gate only greps src/modules/*/ui,
+#     per its own comment and per criterion 14.10's own account of its
+#     blind spot; NOT a claim that src/app/(app)/accounts is covered by it)
+#   scripts/gate-diff-tokens.sh (criterion 14.10's own diff-scoped grep,
+#     not wired into package.json, run manually because it is the actual
+#     guard on the new src/app surface) -> "gate:diff-tokens clean (src/app
+#     and src/modules/*/ui, added lines only)", EXIT=0
+# npm run test:e2e is logged separately below (heavier, run in isolation).
+#
+# ATTACK 3/4 (three null-flow reads; held vs uninterpreted). Grep for every
+# occurrence of an absent-flow test in a database query under src/
+# (`flow"\s+is\s+null` case-insensitive for raw SQL, `flow\s*:\s*null` in
+# adapters/ for the Prisma client form) finds occurrences in EXACTLY the
+# three reads the plan names: the uninterpreted count inline in
+# monthFigures, listGapRows, and accountRowCounts (serving both
+# listCountedAccountRows and listHeldAccountRows via a ring parameter). No
+# fourth read exists in the shipped tree. Traced the two TypeScript-only
+# absent-flow tests the criterion deliberately excludes
+# (interpret-window.ts's isCounted check and reconciliation.ts's flow ===
+# undefined skip) and confirmed neither is a database query. Role is a
+# required two-value enum (POT/RESERVE, prisma/schema/accounts.prisma:5-8)
+# with no third state and no nullable column, so POT_ROW/NON_POT_ROW
+# genuinely partition every account including cards (a card account is
+# role=POT with iban=null, confirmed at
+# src/modules/ledger/domain/ledger-transaction.ts:83-89) -- "an account
+# with no resolvable ring" is not a reachable state.
+#
+# ITEM 4, held vs a genuine gap on a reserve account: probed and NOT
+# reached. Held is "no flow, on a non-pot account" by construction, and
+# interpretation never attempts to classify a non-pot account's rows at
+# all (interpret-window.ts's `heldRows` path unconditionally nulls them;
+# `interpretLedger` is only ever given pot+card transactions). Since no
+# mechanism in the shipped tree can leave a reserve-account row with a
+# flow OR with a flow-classification attempt that failed, there is no
+# state left for "held" to be confused with; the ring-derived rule cannot
+# hide a gap that the interpreter never tries to detect in the first
+# place. This is a hard invariant of the design (every null-flow row on a
+# non-pot account is, by construction, exactly the held state) rather than
+# a soft rule a code path could violate. Recorded as a probed hazard, not
+# a defect.
+#
+# ATTACK 6, closing the loop: `replaceInterpretation`
+# (src/modules/ledger/adapters/ledger-repository.ts:158-198) writes flows,
+# merchants and links inside ONE `prisma.$transaction`, so a mid-write
+# failure cannot leave a row half-cleared and mistakenly readable as
+# either "held" or "uninterpreted" by accident of a partial commit.
+#
+# ============================================================
+# THE THIRD GUARD (dispatch: "the implementer flagged two guards it wrote
+# were green against the states they exist to catch ... find the third").
+# ============================================================
+# MUTATION-VERIFIED, HIGH severity, filed as HZ-M3P14-03 below.
+# test/domain/account-number.test.ts's "one definition, enumerated"
+# test (criterion 14.4) is the guard against a second private copy of the
+# account-number canonicalisation reappearing anywhere under src/. Its
+# duplicate-detector (account-number.test.ts:162-189) matches a SECOND
+# COPY only when it is written as `.replace(...)` on a line that also
+# mentions an account-bearing field name or `.toUpperCase()`. Added, ran,
+# and reverted a scratch function in src/modules/ledger/domain/
+# corrections.ts (never committed):
+#   export const scratchProbeSecondCopy = (iban: string): string =>
+#     iban.replaceAll(/\s/g, "").replaceAll(/-/g, "").toUpperCase();
+# `npx vitest run test/domain/account-number.test.ts` -> 15 passed (15),
+# EXIT=0, WITH THE DUPLICATE PRESENT. The regex requires the literal
+# substring ".replace(" immediately followed by "("; ".replaceAll(" fails
+# that literal match (the seventh character after "replace" is "A", not
+# "("), so a second copy of exactly the transformation this phase's own
+# commit message says it eliminated ("Two private second copies of the
+# same transformation are removed rather than tolerated") can be
+# reintroduced, verbatim in spirit, and the phase's own criterion-14.4
+# guard reports the tree clean. Reverted with `git checkout --
+# src/modules/ledger/domain/corrections.ts`; tree confirmed clean again.
+# THIS IS THE SAME SHAPE AS THE TWO DISCLOSED BUGS (a pattern built for one
+# syntactic rendering of a JS/TS idiom, silently blind to a sibling
+# rendering): the gate-diff-tokens space bug and grep-dialect-mixing bug
+# were both about a literal-vs-semantic mismatch in a hand-rolled pattern,
+# and this is the same failure mode a third time, in a guard the work
+# history's overstatement-check and red-witnesses section does not name.
+#
+# NEW FINDING, R-087 (a false claim in a comment), found while reading
+# src/modules/accounts/application/correct-account-ring.ts directly.
+# CorrectAccountRingOutcome.moved is commented: "What ACTUALLY moved,
+# recomputed after the change rather than restated from the preview, so
+# the two can be compared and criterion 15.7's 'byte identical' is a fact
+# rather than a tautology." The CODE directly beneath it does the
+# opposite: `correctAccountRing` calls `previewAccountRingChange` FIRST
+# (before any write), then `updateAccountRole`, then `recompute`, then
+# returns `ok({ account, moved: movement.value })` where `movement` is
+# the untouched result of the EARLIER preview call. `moved` is never
+# re-derived from a post-recompute read; it is the preview value, echoed.
+# The comment's claim is false of the code exactly as written. Filed as
+# HZ-M3P14-04, HIGH, below.
+#
+# ============================================================
+# npm run test:e2e, ONE FULL RUN, quoted honestly.
+# ============================================================
+# Ports 3000/3100 were already held by a sibling worktree's Playwright run
+# when first attempted (Error: http://127.0.0.1:3100 is already used).
+# Retargeted this worktree's own playwright.config.ts LOCALLY (baseURL
+# 3050, prodBaseURL 3150, PORT env added to both webServer entries) so
+# this run would not contend for or interfere with another worktree's
+# ports; reverted before commit (see below), same discipline as the
+# supabase config.toml port/project_id change.
+#
+# RESULT: 57 passed, 8 failed, 26.3 minutes, all three projects
+# (chromium, chromium-prod, chromium-phone), pinned to the local stack.
+# THE SUITE IS NOT GREEN. Quoted honestly per the dispatch's own
+# instruction, and NOT root-caused as a code defect, per the same
+# instruction and fleet warning 18 (load average measured 10.5-14.3 on
+# this box during the run, with at least three other worktrees' node,
+# next and playwright processes concurrent, matching the disclosed
+# pattern exactly).
+#
+# EVERY ONE OF THE 8 FAILURES IS THE SAME SHAPE, checked individually in
+# test-results/*/error-context.md: a Playwright assertion timing out
+# (5000ms default, one at the spec's own 30000ms) waiting for an element
+# that appears only after a server round trip -- "waiting for
+# getByTestId('household-context')" right after a sign-up submit,
+# "waiting for getByRole('heading', { name: 'Confirm the detected
+# format' })" right after a file upload, "waiting for
+# getByTestId('import-result')" right after a confirm-and-import click.
+# NOT ONE of the 8 is a mismatched VALUE (a wrong count, a wrong figure,
+# wrong text) -- every one is "element(s) not found" within the timeout,
+# which is the signature of a slow server response under contention, not
+# of wrong application behaviour.
+# CORROBORATING EVIDENCE, not merely asserted: five of the eight failing
+# scenarios have a DIRECT sibling in this same run that exercises
+# materially the same code path and PASSED --
+#   accounts.spec.ts:173 (CONTROL ARM) failed under chromium; the fixture
+#     and control-arm mechanism it shares with the REGISTERED ARM,
+#     HEALING and WRONG-ANSWER tests (#8, #9, #10) all passed.
+#   month-view.spec.ts:211 (transfer in transit) failed under chromium
+#     (#24) and PASSED outright under chromium-phone three tests later
+#     (#47) in the SAME run.
+#   month-view.spec.ts:275 (EN/NL/FR truncation) PASSED under chromium
+#     (#26) and failed under chromium-phone (#49) in the SAME run.
+#   golden-journey and import.spec.ts:13 both failed waiting on
+#     import-result/Confirm-the-detected-format, the identical shape as
+#     the sign-up timeout, on specs that predate this phase entirely.
+# A test that fails on one project and passes on the identical or a
+# harder variant of the same scenario elsewhere in the SAME run is not
+# evidence of a deterministic defect in the code under review.
+# THE ACCOUNTS/AUTH-SPECIFIC FAILURES ARE THE ONES THIS PHASE ADDS
+# (accounts.spec.ts:173, :200, :379; auth.spec.ts:11), so this review
+# does not claim certainty they are purely environmental; they are
+# reported with their exact evidence above so a re-run under less
+# contention (or the criteria lane's own run) can confirm or contradict
+# this reading. This review's own LIVE DATABASE PROBE of the same
+# scenarios these specs cover (criterion 14.16's four arms, the silent
+# wrong answer, adoption) -- run directly against the production code
+# and a real Postgres, with no browser and no HTTP round trip -- found no
+# defect, which is independent evidence the underlying mechanism these
+# three specs exercise is sound; if their failure were a real regression
+# rather than server latency, it is very unlikely to also be invisible to
+# a full head-on probe of the same code paths.
+#
+# ============================================================
+# CLEANUP, before pushing.
+# ============================================================
+# scratch-probe-1416.ts (the live-database probe script) deleted, never
+# committed. src/modules/ledger/domain/corrections.ts's mutation probe
+# (HZ-M3P14-03's witness) reverted with `git checkout --`. .env (pins to
+# this review's own local stack) is gitignored, never committed.
+# playwright.config.ts and supabase/config.toml's port/project_id/
+# edge_runtime changes are reverted below, before the final commit, so
+# the pushed tree is byte-identical to the reviewed tree plus this
+# document. Local Supabase stack (project wt-m3p14-haz, ports
+# 54821-54829) stopped and its containers/volumes removed with
+# `npx supabase stop --no-backup` after the last gate run. DATABASE USED
+# THROUGHOUT: a local Postgres reachable only at
+# postgresql://postgres:postgres@127.0.0.1:54822/postgres, started and
+# torn down entirely by this review, pinned explicitly on every command
+# that could write; the ambient DATABASE_URL (the hemma-dev Supabase
+# project per fleet warning 16) was never targeted by anything in this
+# review.
+#
+# ============================================================
+# VERDICT AND FINDINGS
+# ============================================================
+# FIX-ROUND-NEEDED: two HIGH findings. Neither is a live numeric defect
+# this review could reproduce on the shipped tree -- the reconciliation
+# invariant (criterion 14.16, all four arms) and the silent-wrong-answer
+# recovery path both hold exactly, verified against a real database
+# through the real production code, not only against the in-memory fakes
+# the phase's own tests use. Both HIGH findings are about GUARDS: one
+# mechanically enforced guard (the single-definition pin for the
+# account-number canonicalisation) is demonstrably blind to a duplicate
+# written with .replaceAll instead of .replace, mutation-verified; and
+# one doc comment asserts a freshness guarantee (moved is "recomputed
+# after the change") that the code beside it does not implement (it
+# echoes a pre-write preview), which is false under clause R-087 and
+# borders a real, if narrow, concurrent-write hazard on a money-moving
+# screen figure. Two MEDIUM findings round out what a fix round should
+# also take: a latent, untested invariant behind the account-number
+# module's migration, and the disclosed-but-still-real absence of a
+# Playwright half for the phase's central invariant and the
+# ring-correction preview's byte-comparison.
+findings:
+  - id: HZ-M3P14-04
+    severity: high
+    evidence:
+      - "src/modules/accounts/application/correct-account-ring.ts:60-62 (CorrectAccountRingOutcome.moved's doc comment): \"What ACTUALLY moved, recomputed after the change rather than restated from the preview, so the two can be compared and criterion 15.7's 'byte identical' is a fact rather than a tautology.\""
+      - "The implementation directly below (correct-account-ring.ts:110-130): `const movement = await previewAccountRingChange(context, deps, input);` runs FIRST, before any write. Then `await deps.accounts.updateAccountRole(...)` writes the declaration, then `await deps.recompute(context)` runs the real recompute, and the function returns `ok({ account, moved: movement.value })` -- `movement.value` is the untouched result of the EARLIER preview call, never re-read or re-derived after the write or the recompute."
+      - "The comment's claim is false of the code exactly as written: `moved` is restated from the preview, which is the one thing the comment says it is not."
+      - "test/application/account-registry.test.ts:508-558 (criterion 15.7's own test) does verify, in a single-threaded fake-world test with no concurrent writes, that preview.value equals the independently-measured before/after totals AND that outcome.value.moved equals preview.value -- so the VALUES are correct in every case this review or the test suite exercises. What is false is the MECHANISM the comment describes, not (as far as this review could find) any observed number."
+      - "The gap the false comment hides: nothing stands between the preview call and the write+recompute (no transaction, no lock, no re-check), so a concurrent write landing in that window (another import, another registration, another correction on the same household, all real possibilities on a real deployed server serving one request per action) would make the real post-recompute movement differ from the previewed one, and the household would be shown the STALE previewed figure as if it were freshly measured -- exactly the class of silent wrong figure this review was dispatched to hunt for, and exactly what the false comment claims cannot happen (\"recomputed after the change\")."
+    concrete-edit: >-
+      Either correct the comment to say what the code does ("moved is the
+      previewed movement, computed before the write; it is not re-derived
+      after the recompute, so a concurrent write between preview and
+      recompute can make it stale") and accept the narrow race as a known
+      limitation, or make the code match the comment: re-derive `moved`
+      from a genuine post-recompute measurement (e.g. a second preview call
+      against the now-current declared set, or a direct read of the actual
+      delta) rather than echoing the pre-write preview value, so criterion
+      15.7's "byte identical" claim is checked against a fresh number on
+      every request and not only in the single-threaded test.
+    analysis: >-
+      Filed HIGH under clause R-087, which requires a false present-tense
+      claim to be raised loudly rather than as a nit, and because the
+      specific claim being false is precisely about protection against the
+      silent-wrong-figure hazard this review's dispatch names as the
+      central concern of the phase. The values are correct in every
+      configuration this review could exercise (this review's own live
+      database probe of the ring-correction path, and criterion 15.7's own
+      test, both found preview and actual movement equal), so this is not
+      demonstrated as a live numeric defect; it is a false claim about a
+      guarantee on a code path that moves money between totals, with a
+      real (if narrow, single-request-window) mechanism by which the claim
+      could be violated in production and nothing would catch it.
+
+  - id: HZ-M3P14-03
+    severity: high
+    evidence:
+      - "test/domain/account-number.test.ts:162-189, the criterion 14.4 guard against a second private copy of the account-number canonicalisation transformation reappearing anywhere under src/."
+      - "The duplicate detector's pattern requires the literal substring \".replace(\" (account-number.test.ts:176: /\\.replace\\(\\s*\\/.../), so it is blind to the identical transformation written as `.replaceAll(...)`."
+      - "MUTATION-VERIFIED: appended `export const scratchProbeSecondCopy = (iban: string): string => iban.replaceAll(/\\s/g, \"\").replaceAll(/-/g, \"\").toUpperCase();` to src/modules/ledger/domain/corrections.ts (a live account-bearing field, the exact shape the guard exists to catch) and ran `npx vitest run test/domain/account-number.test.ts`: 15 passed (15), EXIT=0, with the duplicate present. Reverted with `git checkout -- src/modules/ledger/domain/corrections.ts`; `git status` confirmed clean again."
+      - "This is the same failure shape as the two guards the implementer's own work history discloses as having been green against the states they exist to catch (delivery/work-history/m3-p14.yaml red-witnesses section: gate-diff-tokens.sh's stray-space bug and its grep-dialect-mixing bug), and it is not named anywhere in that section or in the overstatement-check."
+      - "The phase's own commit message for bf3e001 states as a design goal: \"Two private second copies of the same transformation are removed rather than tolerated ... A fast-gate test enumerates the definitions and reddens on a third.\" The guard does not redden on a third definition that uses .replaceAll."
+    concrete-edit: >-
+      Broaden test/domain/account-number.test.ts's duplicate-detector regex
+      (or replace it with an AST-free but more general string match) so it
+      catches both `.replace(` and `.replaceAll(` -- e.g. match
+      `\.replace(All)?\(` instead of `\.replace\(` -- and add a regression
+      case that asserts a `.replaceAll`-based duplicate reddens the test,
+      mirroring the existing positive case for `.replace`. Apply the same
+      widening to any other guard in this phase or M3-P12 that walks source
+      text for this specific JS idiom, since the same blind spot likely
+      recurs wherever a hand-rolled pattern was built against one call and
+      never tried against its ES2021 sibling.
+    analysis: >-
+      Filed HIGH rather than MEDIUM because this guard is the ONLY
+      mechanical enforcement of decision D-47/D-57 ("one canonical form,
+      one module, everyone imports it") and the hazard it is meant to catch
+      is exactly the one criterion 14.4 names as costly: a second copy that
+      "agreed with the platform form on the day it was written and was a
+      second copy of one transformation from then on." A reviewer or
+      implementer relying on this guard's green result to conclude no
+      duplicate exists is relying on a guard demonstrated here to admit
+      the dangerous state silently. The dispatch's own framing (two
+      disclosed guard failures of this shape, asking for a third) suggests
+      this class of defect is a known recurring pattern in this project
+      worth a systematic sweep, not only a one-line fix.
+
+  - id: HZ-M3P14-01
+    severity: medium
+    evidence:
+      - "src/platform/account-number.ts's canonicalAccountNumber only normalises (uppercases, strips whitespace/hyphens) a value when the result matches CANONICAL_SHAPE; otherwise it returns the value completely unchanged, including original case and whitespace."
+      - "The old, removed expression at src/modules/ledger/domain/corrections.ts:225 (git show bf3e001) was unconditional: `transaction.counterpartyIban.toUpperCase().replace(/\\s+/g, \"\")`, applied regardless of shape."
+      - "account-number.ts's own header comment documents that the field this function is applied to \"sometimes holds nothing shaped like an account number at all\" -- i.e. the file's own stated premise is that a non-canonical-shaped counterpartyIban is a real possibility for this exact call site."
+      - "Traced every path that can populate Transaction.counterpartyIban and confirmed each one already restricts it to CANONICAL_SHAPE-passing values before it is ever compared: detect-profile.ts:308-330's auto-detection column gate (IBAN regex requires the STRICT SUPERSET-COMPATIBLE shape /^[A-Z]{2}\\d{2}[A-Z0-9]{8,30}$/, no whitespace, no lowercase, applied to every non-empty value in a column before that column is assigned the counterpartyIban role) and belfius-current-account-template.ts's DESCRIPTION_IBAN regex (line 89), which only ever matches already-uppercase, digit-only substrings. The KBC card template sets no counterpartyIban at all."
+      - "No test in the tree exercises counterpartyKey (corrections.ts) or canonicalAccountNumber with a non-canonical-shaped counterpartyIban value (grep for counterpartyKey under test/ returns no hits)."
+    concrete-edit: >-
+      Either (a) add a one-line comment at corrections.ts's counterpartyKey
+      recording the invariant this migration now depends on -- every
+      counterpartyIban reaching this function is already shape-validated
+      upstream by detect-profile.ts or the Belfius PDF template's own
+      regex, so a future non-shape-gated source profile assignment would
+      silently change refund-key correlation for malformed values -- or
+      (b) add a small domain test pinning that canonicalAccountNumber and
+      the old unconditional transform agree on every value the two known
+      producers of counterpartyIban can emit, so a future producer that
+      breaks the invariant reddens a test rather than shipping silently.
+    analysis: >-
+      Not a live defect: every path traced in this review hands the
+      migrated call sites only values that already satisfy
+      CANONICAL_SHAPE, so canonicalAccountNumber and the removed
+      unconditional expression agree byte for byte on everything the
+      shipped tree can produce today (ATTACK 6 in the dispatch, probed and
+      not reached as a defect). Filed MEDIUM because the safety of a
+      behaviour-preserving refactor across the whole tree currently rests
+      on an invariant that is asserted nowhere, contradicted by the
+      module's own comment, and would fail silently (a mis-key, not a
+      crash) if a future change violated it -- exactly the shape of defect
+      this phase's own criterion 14.4 was written to prevent for the
+      canonical-form migration itself.
+
+  - id: HZ-M3P14-02
+    severity: medium
+    evidence:
+      - "delivery/work-history/m3-p14.yaml's overstatement-check states plainly: \"criterion 14.16's four arms have no Playwright half at all\"; what-i-did-not-cover repeats \"CRITERION 14.16's Playwright half, all four arms\" and \"CRITERION 15.7's byte-comparison of the RENDERED preview figure against the moved total.\""
+      - "Criterion 14.16 itself requires: \"ALL FOUR ARMS carry a Playwright half asserting the same totals and the same verdict on the rendered page, so the guarantee is one the reader gets and not only one the repository holds.\" That half does not exist in test/e2e/."
+      - "Independently re-ran all four arms plus the silent-wrong-answer-and-recovery scenario against a real local Postgres through the actual production composition roots (src/modules/*/application/index.ts's liveDependencies), not the in-memory fakes test/application/held-rows.test.ts uses: every figure matched the criterion's pinned values exactly (see the review's progress log above), so the underlying mechanism is verified at the application/SQL layer. What remains genuinely unverified is the BROWSER-rendered path: real sign-up, real navigation, real DOM assertions on the rendered totals."
+    concrete-edit: >-
+      Write the missing Playwright half of criterion 14.16 (all four arms,
+      asserting the rendered totals and verdict on the month view page,
+      not only the application-level figures) and criterion 15.7's
+      byte-comparison of the rendered ring-correction preview against the
+      committed outcome, using the same fixtures the application-level
+      tests already use. This is explicitly named as missing by the
+      implementer's own work history, so the edit is to close a disclosed
+      gap rather than to correct a false claim.
+    analysis: >-
+      Filed MEDIUM rather than HIGH or CRITICAL because this review's own
+      live-database probe (see the progress log) found the underlying
+      reconciliation math and the silent-wrong-answer recovery path to be
+      exactly correct against the real production code, which substantially
+      narrows what the missing Playwright coverage is actually protecting
+      against: rendering and routing defects between the correct server-side
+      figures and the page, not the arithmetic itself. That gap is still
+      real -- a regression introduced in month-view.tsx's rendering of these
+      figures would not be caught by any committed test -- so it is filed
+      rather than waved through under R-087 (the work history's disclosure
+      is accurate, not a false claim, so this is a straightforward coverage
+      finding rather than a "loud" R-087 finding).
+# ============================================================
+# VALIDATION
+# ============================================================
+# npx tiphys validate --type verdict delivery/review/m3-p14-hazard.yaml
+#   -> INVALID, 14 lines (missing phase/framing/review-contract/criteria/
+#   deviations-judged, kind mismatch, concrete-edit vs concrete-fix field
+#   name), exactly as the dispatch anticipated: no verdict schema is
+#   registered for this brief and this document does not claim to be one.
+# npx tiphys validate --type finding delivery/review/m3-p14-hazard.yaml
+#   -> EXIT=0, silent (matching the known-good
+#   delivery/review/m3-p6-hazard.yaml, also silent on EXIT=0).
+# npx tiphys validate --type auto delivery/review/m3-p14-hazard.yaml
+#   -> EXIT=0.
+#
+#
+# ============================================================
+# OPERATIONAL INCIDENT, disclosed rather than hidden.
+# ============================================================
+# After the last gate run I ran `npx supabase stop --no-backup` intending
+# to tear down THIS review's own stack, but supabase/config.toml had
+# already been reverted to its committed project_id ("m1-p1-skeleton",
+# a SIBLING worktree's stack, not mine) one step earlier than it should
+# have been in my own cleanup order. The stop command therefore targeted
+# "m1-p1-skeleton" and, checked immediately after with `docker ps -a`,
+# that project's containers AND its database volume are gone entirely
+# (only an unrelated edge_runtime volume remains). That stack had been
+# running for 46+ hours before this review started (seen in this review's
+# own first `docker ps` call, at the very top of this document's progress
+# log) and is very likely a live, in-use stack belonging to a worktree
+# named for an early milestone phase (M1-P1, "skeleton"), NOT reachable or
+# restorable from this worktree. I DID NOT attempt to restart it or
+# otherwise paper over this: I have no legitimate context on that
+# worktree, and starting a fresh empty stack under the same project_id
+# from here would look like a fix while actually discarding the evidence
+# of what happened. Reported here, prominently, so the orchestrator or
+# owner can decide whether that worktree's session needs to be told or
+# its database reseeded. My own stack (wt-m3p14-haz) was then torn down
+# correctly afterward, confirmed empty with `docker ps -a`; no container
+# and no volume under a "wt-m3p14-haz" name remains.
+kind: finding
+verdict: FIX-ROUND-NEEDED
+produced-by: claude (Sonnet 5)
