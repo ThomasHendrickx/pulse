@@ -432,3 +432,108 @@ describe("criterion 14.8: nothing in the setup path writes a fact, and the rebui
     expect(source).not.toContain("prisma.transaction.");
   });
 });
+
+// ---------------------------------------------------------------------
+// M3-P18, criterion 18.5, THE TYPED HALF: the already-registered check
+// compares CANONICAL forms. Before this phase that exact pair, a stored
+// NON-CANONICAL rendering (a pre-M3-P14 row, written verbatim from a
+// delimited cell) beside the same account typed canonically at setup,
+// passed both the check (stored strings) and the unique index (stored
+// strings too), and one real account became two rows.
+//
+// The fake here seeds the STORED row raw, the pre-phase shape, because
+// makeAccountsWorld's create canonicalises on write exactly like the
+// adapter and can therefore never hold a pre-phase rendering.
+// ---------------------------------------------------------------------
+describe("the typed duplicate check compares canonical forms (criterion 18.5)", () => {
+  const makePrePhaseWorld = (storedIban: string) => {
+    const rows: AccountRecord[] = [
+      {
+        id: "account-pre-phase",
+        label: "Daily account",
+        bank: "Demobank",
+        role: "POT",
+        iban: storedIban,
+      },
+    ];
+    let next = 1;
+    const create = (input: NewAccount): AccountRecord => {
+      const record: AccountRecord = {
+        id: `account-new-${next++}`,
+        label: input.label,
+        bank: input.bank,
+        role: input.role,
+        ...(input.iban === undefined
+          ? {}
+          : { iban: canonicalAccountNumber(input.iban) }),
+      };
+      rows.push(record);
+      return record;
+    };
+    const accounts: AccountRepositoryPort = {
+      createAccount: async (_context, input) => create(input),
+      createAccounts: async (_context, input) => input.map(create),
+      updateAccountRole: async () => {},
+      listAccounts: async () => rows,
+      findAccountByIban: async (_context, iban) =>
+        rows.find(
+          (row) =>
+            row.iban !== undefined &&
+            canonicalAccountNumber(row.iban) === canonicalAccountNumber(iban),
+        ) ?? null,
+      getAccountById: async (_context, accountId) =>
+        rows.find((row) => row.id === accountId) ?? null,
+    };
+    const deps: AccountsSetupDependencies = {
+      accounts,
+      ledger: {
+        recompute: async () => {},
+        hasImportedRows: async () => false,
+      },
+    };
+    return { deps, rows };
+  };
+
+  test("a typed row whose canonical form matches a non-canonically stored account is refused, and no second row is created", async () => {
+    // The stored rendering is SPACED, the way the pre-P14 import path
+    // wrote it (invented for M3-P18, provenance in
+    // test/fixtures/allowed-identifiers.txt).
+    const world = makePrePhaseWorld("BE11 9100 0000 0001");
+    const outcome = await registerAccounts(context, world.deps, {
+      rows: [
+        {
+          label: "Daily account again",
+          bank: "Demobank",
+          accountNumber: "BE11910000000001",
+          ring: "POT",
+        },
+      ],
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      throw new Error("unreachable");
+    }
+    // The named error points at the offending typed row by index, the
+    // shape the setup screen renders against that row in all three
+    // catalogues (accountsErrorAlreadyRegistered).
+    expect(outcome.error).toEqual({ kind: "already-registered", row: 0 });
+    // And NO second row was created: one real account stays one row.
+    expect(world.rows).toHaveLength(1);
+  });
+
+  test("a canonical stored row still refuses its spaced typed twin (both directions)", async () => {
+    const world = makePrePhaseWorld("BE11910000000001");
+    const outcome = await registerAccounts(context, world.deps, {
+      rows: [
+        {
+          label: "Daily account spaced",
+          bank: "Demobank",
+          accountNumber: "BE11 9100 0000 0001",
+          ring: "POT",
+        },
+      ],
+    });
+    expect(outcome.ok).toBe(false);
+    expect(world.rows).toHaveLength(1);
+  });
+});

@@ -100,14 +100,13 @@ export const confirmImportAction = async (
       // the settled result; nothing to re-ask.
       redirect(`/import/${safeId}`);
     }
-    // M3-P14: the two new refusals are routed the same way as every other
-    // one, as a whitelisted ?status= selector the screen translates. The
-    // query parameter is a selector, never content.
+    // M3-P14: the refusal is routed the same way as every other one, as a
+    // whitelisted ?status= selector the screen translates. The query
+    // parameter is a selector, never content. The account-in-savings-ring
+    // route that stood beside this one is removed with its reason
+    // (M3-P18, DR-0030): a savings statement is accepted, not refused.
     if (outcome.reason === "account-not-registered") {
       redirect(`/import/${safeId}?status=account-not-registered`);
-    }
-    if (outcome.reason === "account-in-savings-ring") {
-      redirect(`/import/${safeId}?status=account-in-savings-ring`);
     }
     redirect(
       outcome.reason === "declaration-needed"
