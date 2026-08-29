@@ -1,0 +1,176 @@
+# M3-P17 CRITERIA REVIEW, ROUND ONE. Clean-room reviewer, CRITERIA contract.
+# Worktree /home/user/wt-m3p17-crit on claude/m3-p17-rev-crit at the implementer's
+# head 12c20f3. Clean room: the implementation session was not read; every claim
+# below is witnessed in this worktree or recorded as NOT WITNESSED.
+#
+# BEACON LOG, appended as the work happened, kept as comments because the verdict
+# schema forbids additional properties.
+#
+# Worktree added from origin/claude/m3-p17-deployed-build-stamp, npm install done.
+# Brief composed via tiphys brief compose (role clean-room-reviewer, contract
+# criteria). finding.schema.json, verdict.schema.json, assurance-modes.yaml read.
+# Phase base measured: git merge-base origin/main HEAD = f19984b. Branch carries
+# two commits, 8dc9678 (route) and 12c20f3 (work history). git diff --name-only
+# base..HEAD: delivery/work-history/m3-p17.yaml, src/app/api/health/version/route.ts,
+# test/app/health-version.test.ts, test/e2e/prod-smoke.spec.ts. Four files.
+#
+# Read in full: the route (45 lines), its unit test (91 lines, 6 tests), the
+# prod-smoke diff (one added block), the work history (357 lines, deviations: [],
+# gate-decisions recorded RED pre-existing on main, e2e recorded error, no Docker
+# in the implementer's container).
+#
+# GATES, all run by me at 12c20f3 in this worktree (node v26.8.1, npm 11.19.0),
+# with DATABASE_URL and DIRECT_URL pinned to a bogus localhost target for every
+# command that could open a client, per the fleet's database-safety warnings
+# (the ambient env in this container names a deployed pooler for another project):
+#   npm run typecheck      EXIT 0
+#   npm run lint           EXIT 0
+#   npm test               EXIT 0, "Test Files  49 passed (49)  Tests  756 passed (756)"
+#   npm run gate:privacy   EXIT 0, "gate:privacy clean"
+#   npm run gate:tokens    EXIT 0
+#   npm run gate:decisions EXIT 1, six review lanes over the two-round cap
+#                          (m0-p6-plan-review 5, m3-p14-criteria 3,
+#                          m3-p14-plan-review 4, m3-p16-plan-review 5,
+#                          m3-p3-criteria 3, m3-p3-hazard 3)
+#   bash scripts/gate-decisions.sh in a detached worktree at the merge base
+#                          f19984b: EXIT 1 with the IDENTICAL six lanes, so the
+#                          red predates this phase, exactly as the work history
+#                          claims at delivery/work-history/m3-p17.yaml:253.
+#   npm run test:e2e       NOT RUN HERE: docker client exists but the daemon
+#                          does not (docker info: "failed to connect to the
+#                          docker API at unix:///var/run/docker.sock"), so no
+#                          local Supabase stack can start. NOT WITNESSED as a
+#                          full run. But see the build witness below, which
+#                          settles its exit in the failing direction.
+#
+# THE BUILD WITNESS, the decisive measurement of this round. The slow gate's
+# prod-smoke project builds before it serves: playwright.config.ts:155 runs
+# "npm run build && npx next start -p 3100" as its webServer command. I ran
+# npm run build (prisma generate && next build, Next.js 15.5.23) myself in this
+# worktree with the database env pinned to a bogus localhost target. EXIT 1:
+#   Type error: Route "src/app/api/health/version/route.ts" does not match the
+#   required types of a Next.js Route.
+#     "UNSTAMPED" is not a valid Route export field.
+# Compilation itself succeeded; the failure is Next's build-time route-export
+# type check, which tsc --noEmit does not run, which is why the fast gate is
+# green over a head whose production build is broken. Finding CR-M3P17-01.
+# Build side effects on my worktree (tsconfig.json include list, next-env.d.ts,
+# .next-review/) were restored with git checkout and rm; git status carries only
+# this review file. Nothing of the work was edited.
+#
+# HANDLER PROBE, driven directly under node (npx tsx, no vitest, importing the
+# shipped route module), both branches of both fields:
+#   UNSET      status 200 keys ["deploymentEnvironment","sha"] body {"sha":"unstamped","deploymentEnvironment":"unstamped"}
+#   EMPTY      status 200 keys ["deploymentEnvironment","sha"] body {"sha":"unstamped","deploymentEnvironment":"unstamped"}
+#   SET        status 200 keys ["deploymentEnvironment","sha"] body {"sha":"0123456789abcdef0123456789abcdef01234567","deploymentEnvironment":"production"}
+#   MIXED      status 200 keys ["deploymentEnvironment","sha"] body sha kept, deploymentEnvironment "unstamped"
+#   marker "unstamped", /^[0-9a-f]+$/i.test false
+# And the phase's own unit test file alone: npx vitest run
+# test/app/health-version.test.ts, EXIT 0, 6 passed.
+#
+# OTHER WITNESSES. grep -n 'process\.env' over the route: lines 20 (comment),
+# 41, 42; exactly VERCEL_GIT_COMMIT_SHA and VERCEL_ENV, no third variable.
+# git diff --stat f19984b..12c20f3 -- package.json package-lock.json prisma/ is
+# EMPTY. src/middleware.ts:55 excludes api/health from the auth matcher, and the
+# route body carries no auth, matching the sibling probe's owner-accepted
+# disclosure (src/app/api/health/db/route.ts:14 through :22). Both commit
+# messages read in full: no data, no connection string, no host, no project ref.
+#
+# NOTED, NOT A FINDING. The route reads process.env directly, against
+# pulse-typescript section 6 (.claude/skills/pulse-typescript/SKILL.md:94, "No
+# process.env anywhere else"). The work history records this as a key decision
+# rather than a deviation (the skill is not the plan, and the plan's
+# files-to-touch excludes src/platform/config.ts), the route comment carries the
+# same reasoning at src/app/api/health/version/route.ts:20 through :29, and its
+# precedent claim is TRUE: grep -rln 'process\.env' src/ lists exactly
+# config.ts, the four src/platform/db files, and this route. The read is inside
+# the handler at request time, so the build-safety contract of
+# src/platform/config.ts:1 through :10 is honoured. Reasoned, recorded, bounded;
+# I judge it sound.
+#
+# WHAT THIS CONTRACT DID NOT REACH, left to nobody. A full test:e2e run (no
+# Docker daemon here). The deployed shape of the route (owed to M3-P16 by the
+# plan's own text, hazard H17.4). Whether Vercel actually sets the two
+# variables for this project (same hazard, same owner). And per this contract's
+# own sentence: three criteria of four are met and the phase is still not
+# shippable, because the defect sits in a check no fast gate runs.
+# VALIDATION. npx --prefix /home/user/pulse-fleet tiphys validate --type verdict
+# --context delivery delivery/review/m3-p17-criteria.yaml exits 1, but the two
+# INVALID lines are the Kind B cross-document checks looking for the fixed paths
+# delivery/plan.yaml and delivery/work-history.yaml, which this repository keeps
+# at delivery/plan/pulse-v02.yaml and delivery/work-history/m3-p17.yaml; no
+# schema violation is reported. Re-run with a scratch context directory holding
+# copies of those two files under the expected names: EXIT 0, criteria
+# completeness and deviations-judged both checked and clean. The remaining
+# REPORT line (dual-review-decorrelation needs a charter and both lanes) is
+# informational and outside one document's reach.
+kind: verdict
+phase: M3-P17
+verdict: FIX-ROUND-NEEDED
+produced-by: claude
+framing: criteria-contract
+review-contract: criteria
+
+findings:
+  - id: CR-M3P17-01
+    severity: high
+    evidence:
+      - "src/app/api/health/version/route.ts:34 reads: export const UNSTAMPED = \"unstamped\"; which is a named export from a Next.js App Router route module. Next's build-time route type check admits only its whitelisted export names (GET, runtime, dynamic and the other route segment config fields), and UNSTAMPED is not one of them."
+      - "WITNESSED. npm run build (prisma generate && next build, Next.js 15.5.23) at 12c20f3 in this worktree, database env pinned to a bogus localhost target, EXIT 1, with the captured error: Type error: Route \"src/app/api/health/version/route.ts\" does not match the required types of a Next.js Route. \"UNSTAMPED\" is not a valid Route export field. Compilation succeeded first (Compiled successfully in 14.4s); the route-export type check is what fails."
+      - "The slow gate cannot pass at this head in ANY environment, not merely in a container without Docker: playwright.config.ts:155 runs npm run build && npx next start -p 3100 as the prod webServer command, so npm run test:e2e dies at the build before a single spec is collected. The new smoke assertion in test/e2e/prod-smoke.spec.ts has therefore never executed anywhere, which is hazard H17.3 live rather than hypothetical."
+      - "The implementer's container never reached this failure: delivery/work-history/m3-p17.yaml:208 records the e2e run refused EARLIER, at playwright config load (GateDbTargetRefused, no Docker, no .env), so the recorded environment limitation sits in front of a head defect the record does not know about."
+      - "A deploy fails the same way: Vercel runs next build, so merging this branch would break the production deploy, and the instrument this phase exists to put in production could never arrive there. M3-P16's entry condition would then be undecidable by exactly the route built to decide it."
+      - "The fast gates cannot see it, witnessed: npm run typecheck exits 0 at this same head, because tsc --noEmit does not run Next's generated route-type validation. Both consumers of the export are type-level fine: test/app/health-version.test.ts:2 and test/e2e/prod-smoke.spec.ts:4 import UNSTAMPED from the route module."
+    concrete-fix: "Move the marker into a non-route module beside the route, for example src/app/api/health/version/build-stamp.ts exporting UNSTAMPED (still inside the phase's declared files-to-touch, src/app/api/health/), import it from the route instead of exporting it there, and point test/app/health-version.test.ts:2 and test/e2e/prod-smoke.spec.ts:4 at the new module, which as a side effect stops the Playwright process importing next/server transitively through the route. Witness npm run build exit 0 as the cheap local check, then run npm run test:e2e to green in a container with Docker and capture its output in the work history, which is what criterion 17.3 requires and what this head cannot produce."
+    analysis: "The unit test, the smoke assertion and the handler are all correct about behaviour; my own probe confirms every branch. The defect is that sharing the marker constant was done by exporting it from the one module Next forbids extra exports from, and the only check that sees that rule lives in a gate nobody could run: the implementer's e2e attempt died at config load before the build, so the record honestly says environment-limited while the head is actually unbuildable. The criteria contract catches it only because criterion 17.3 refuses to let the fast gate certify an e2e spec, which is exactly the certification hole that criterion was written against."
+  - id: CR-M3P17-02
+    severity: low
+    evidence:
+      - "npm run gate:decisions at 12c20f3 in this worktree EXITS 1, naming six review lanes over the two-round cap: m0-p6-plan-review 5, m3-p14-criteria 3, m3-p14-plan-review 4, m3-p16-plan-review 5, m3-p3-criteria 3, m3-p3-hazard 3."
+      - "PRE-EXISTING, witnessed rather than read: bash scripts/gate-decisions.sh in a detached worktree at the merge base f19984b exits 1 with the identical six lanes, so none of it is introduced by this branch's diff."
+      - "Honestly recorded by the phase: delivery/work-history/m3-p17.yaml:199 records the gate red, the claim at line 253 shows the same merge-base construction, and the open question at line 285 hands the remediation decision to the orchestrator."
+      - "CLAUDE.md's done-definition includes npm run gate:decisions passing, and no acceptance criterion of M3-P17 names that gate, so the criteria contract can neither clear the phase on it nor fail the phase for it; it is recorded here so the merge decision is made with it in view rather than around it."
+    concrete-fix: "Outside this branch's file scope, deliberately: before or alongside merging, whoever is authorized to touch delivery/review/ clears the six over-cap lanes, or the owner records a waiver in a decision record naming them. This branch itself needs no change for this finding."
+    analysis: "Not this phase's defect and not clearable from this phase's declared files. It is a finding rather than a comment because the fast-gate rule it breaks is CLAUDE.md's own, and a merge that walks past a red gate silently is the habit the gate exists to prevent."
+  - id: CR-M3P17-03
+    severity: low
+    evidence:
+      - "src/app/api/health/version/route.ts:17 through :18 states: The marker carries no hexadecimal-only characters, so it can never be mistaken for a commit sha. Read literally that is false: the marker unstamped carries the characters a, d and e, each of which IS a hexadecimal digit."
+      - "The plan's own phrasing is the true one: the marker carries characters that are NOT hexadecimal digits (u, n, s, t, m, p), which is why /^[0-9a-f]+$/i cannot match the whole word, exactly as test/app/health-version.test.ts:68 asserts and as my probe reproduced (is-hex false)."
+    concrete-fix: "Correct the sentence in place at src/app/api/health/version/route.ts:17 to the plan's phrasing: the marker carries characters that are not hexadecimal digits, so no reader and no test can take it for a commit."
+    analysis: "Raised under clause R-087, which asks for a false comment claim as a finding rather than a nit. The property the comment reaches for is real, tested and probe-confirmed; only the sentence stating it is wrong, and a later reader deciding whether a new marker is safe will reason from the sentence."
+
+criteria:
+  - id: "17.1"
+    quote: "THE ROUTE ANSWERS WITH THE BUILD'S FACTS OR SAYS IT HAS NONE, AND THE TWO CANNOT BE CONFUSED. A unit test asserts both branches of both fields over the handler: with the platform variables set, the response is 200 and its two fields are exactly the commit the build was built from and the deployment environment it runs in; with either unset or empty, that field is exactly the marker unstamped. THE MARKER IS THE LITERAL WORD unstamped ... it is lowercase, it is one word, and it carries characters that are not hexadecimal digits ... A route that returns an empty string, a zero, a placeholder that is hexadecimal, or an omitted field does not meet this criterion."
+    evidence:
+      - "test/app/health-version.test.ts covers every named branch over the handler directly: both set with exact values and status 200 at lines 34 through 44, both unset at lines 46 through 53, both empty-string at lines 55 through 64, one set and one absent at lines 71 through 79, and the marker's literal value and non-hexness at lines 66 through 69. My own run: npx vitest run test/app/health-version.test.ts, exit 0, 6 passed."
+      - "WITNESSED INDEPENDENTLY of the test file, driving the shipped handler under node via tsx: UNSET and EMPTY both answer 200 with both fields exactly unstamped; SET answers the exact forty-character sha and production; MIXED stamps only the unset field; the key set is always exactly two. No branch produced an empty string, a zero, a hexadecimal placeholder or an omitted field."
+      - "The marker is the literal lowercase word unstamped (src/app/api/health/version/route.ts:34) and /^[0-9a-f]+$/i over it is false, probe-confirmed."
+    met: true
+  - id: "17.2"
+    quote: "IT DISCLOSES TWO BUILD FACTS AND NOTHING ELSE. The response body carries those two fields and no others, asserted by a test over the parsed response's key set, and grep of the route shows it reads exactly the two environment variables step 1 names, BY THOSE NAMES, VERCEL_GIT_COMMIT_SHA and VERCEL_ENV, and no third ... There is no auth, which is the disclosure level the sibling probe already sets by owner direction ... and neither field names a household, an account, an amount or a date."
+    evidence:
+      - "Key set asserted over the parsed response: test/app/health-version.test.ts:88 expects Object.keys(body).sort() to equal exactly deploymentEnvironment and sha, and the smoke spec asserts the same key set in its added block. My probe printed the same two keys in every branch."
+      - "The grep, by name and not by count: grep -n over src/app/api/health/version/route.ts hits process.env at lines 20 (a comment), 41 (VERCEL_GIT_COMMIT_SHA) and 42 (VERCEL_ENV). Exactly the two names step 1 fixes, no third variable, no header dump, no host."
+      - "No auth: src/middleware.ts:55 excludes api/health from the auth matcher and the route body carries no auth check, the disclosure level owner-accepted for the sibling at src/app/api/health/db/route.ts:14 through :22."
+      - "Neither field names household data: the response carries a commit sha of a public repository and one of the platform's three environment words or the marker, witnessed in the probe output."
+    met: true
+  - id: "17.3"
+    quote: "THE GATE THAT RUNS THE SPEC IS THE GATE THIS CRITERION NAMES. npm run typecheck, npm run lint, npm test AND npm run test:e2e all exit 0 with these tests in them, each with its captured output in the phase work history, because npm test does not reach test/e2e ... The smoke spec's new assertion accepts either branch of each field, and the criterion states plainly that the local prod project builds and serves the application itself, so the unstamped branch is what passes there and the deployed shape is owed by M3-P16's criterion 16.3 rather than claimed here."
+    evidence:
+      - "The three fast commands exit 0 with these tests in them, witnessed by my own runs at 12c20f3: typecheck 0, lint 0, npm test 0 with 49 files and 756 tests including test/app/health-version.test.ts."
+      - "npm run test:e2e does NOT exit 0 and its captured output in the work history is an ERROR, not a run: delivery/work-history/m3-p17.yaml:208 records wrapper exit 1 at config load (GateDbTargetRefused, no Docker in that container). NOT WITNESSED as a full run here either: this container's docker daemon is absent (docker info cannot connect to /var/run/docker.sock)."
+      - "Settled in the FAILING direction regardless of environment: the e2e webServer builds first (playwright.config.ts:155), and npm run build at this head exits 1 on the route's UNSTAMPED export (finding CR-M3P17-01, captured output there), so exit 0 for test:e2e is impossible at 12c20f3 anywhere, and the new smoke assertion has never executed under any gate."
+      - "The halves that ARE present: the added block's assertions accept either branch of each field (test/e2e/prod-smoke.spec.ts:64 and :67), and the spec's comment states in place that the local prod run builds and serves the application itself so the unstamped branch is the one it can take."
+    met: false
+  - id: "17.4"
+    quote: "THE PHASE ADDS ONE INSTRUMENT AND NOTHING ELSE. git diff --name-only against the phase base shows exactly one new route under src/app/api/health, its unit test, and the one-assertion change to test/e2e/prod-smoke.spec.ts, and no other file at all: no dependency added to package.json, no Prisma model or migration, no scheduler, poller, queue or persisted deploy record, and no change to any module outside that route. npm run gate:privacy exits 0 and the branch's commit messages carry no data of any kind, no connection string, no host and no project ref."
+    evidence:
+      - "git diff --name-only f19984b..12c20f3 lists exactly four paths: src/app/api/health/version/route.ts, test/app/health-version.test.ts, test/e2e/prod-smoke.spec.ts, and delivery/work-history/m3-p17.yaml. The fourth is the phase's own work history, the standing pre-authorized process artifact (the full-mode merge conditions in assurance-modes.yaml scope changed files to the files-to-touch list plus the standing pre-authorized extras), read as such rather than as a breach of the no-other-file clause."
+      - "git diff --stat f19984b..12c20f3 over package.json, package-lock.json and prisma/ is EMPTY: no dependency, no lockfile change, no model, no migration."
+      - "No scheduler, poller, queue or persisted record: the route is 45 lines reading two environment variables at request time, read in full; nothing outside src/app/api/health/version/ changed in src."
+      - "npm run gate:privacy exits 0 at 12c20f3, printing gate:privacy clean, my own run. Both commit messages (8dc9678, 12c20f3) read in full: they describe the change and carry no amount, no counterparty, no date, no account or card number, no connection string, no host, no project ref."
+    met: true
+
+deviations-judged: []
