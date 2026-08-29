@@ -390,6 +390,53 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
   // and setMerchantTag's atomic demote-then-promote so at most one primary
   // exists per merchant. Every DECLARATION write bumps the counter the
   // criterion 3.2 test reads.
+  // THE IN-PLACE PATTERN REWRITE, kept as a module-local helper rather than
+  // as a port member (fix round three, finding CR3-M3P12-07). The port no
+  // longer carries updateRulePattern: the routine writes only through
+  // applyRuleWrites, which is atomic, and leaving a second untransactional
+  // write path on the published interface is how that guarantee gets lost.
+  // The fake still needs the per-row behaviour, including the unique key,
+  // so applyRuleWrites below uses this.
+  const rewritePattern = async (
+    context: HouseholdContext,
+    input: { readonly ruleId: string; readonly pattern: string },
+  ): Promise<void> => {
+    const existing = rules.find(
+      (rule) =>
+        rule.householdId === context.householdId && rule.id === input.ruleId,
+    );
+    if (existing === undefined) {
+      // THE SAME SENTENCE THE ADAPTER THROWS (fix round three). The fake and
+      // src/modules/merchants/adapters/merchant-repository.ts must refuse a
+      // foreign rule with one wording, or a caller that matches on the text
+      // passes against one and fails against the other.
+      throw new Error(
+        "applyRuleWrites: one or more rules did not belong to the household",
+      );
+    }
+    // THE UNIQUE KEY THE SCHEMA DECLARES, enforced here (M3-P12 fix round
+    // two, finding CR2-M3P12-02 / HZ-M3P12-R2-01). prisma/schema/merchants.prisma
+    // carries @@unique([householdId, kind, pattern]); this fake used to
+    // model rule identity, kind and pattern and NOT the one constraint the
+    // real table enforces on exactly those three fields, so a routine could
+    // decide a run clean here and throw against Postgres. A fake that is
+    // weaker than its subject reports safe by construction.
+    const clash = rules.find(
+      (rule) =>
+        rule.householdId === context.householdId &&
+        rule.id !== existing.id &&
+        rule.kind === existing.kind &&
+        rule.pattern === input.pattern,
+    );
+    if (clash !== undefined) {
+      throw new Error(
+        "Unique constraint failed on the fields: (householdId,kind,pattern)",
+      );
+    }
+    declarationWriteCount += 1;
+    rules[rules.indexOf(existing)] = { ...existing, pattern: input.pattern };
+  };
+
   const merchantsPort: MerchantRepositoryPort = {
     listRules: async (context) =>
       rules.filter((rule) => rule.householdId === context.householdId),
@@ -408,22 +455,79 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
       merchants.push(merchant);
       return merchant;
     },
-    // M3-P12: pass one of the re-derivation rewrites a pattern in place.
-    // Household ownership is checked here the same way the adapter checks it.
-    updateRulePattern: async (context, input) => {
-      const existing = rules.find(
-        (rule) =>
-          rule.householdId === context.householdId && rule.id === input.ruleId,
-      );
-      if (existing === undefined) {
-        throw new Error(
-          "updateRulePattern: rule does not belong to the household",
-        );
+    // M3-P12 fix round two. The routine's whole write set, applied ALL OR
+    // NOTHING, mirroring the adapter's transaction. It DELEGATES to the two
+    // members below rather than reimplementing them, so a spy bound to
+    // either still sees every call, and it restores the array on any
+    // rejection so a failed apply leaves the fake as the run found it.
+    applyRuleWrites: async (context, input) => {
+      const snapshot = rules.map((rule) => ({ ...rule }));
+      const writesBefore = declarationWriteCount;
+      try {
+        for (const update of input.updates) {
+          await rewritePattern(context, update);
+        }
+        // THE INSERT PATH ROUTES THROUGH upsertRule, WHICH CHECKS OWNERSHIP,
+        // and until fix round four that made this fake STRICTER than the
+        // adapter it stands in for: the real applyRuleWrites checked nothing
+        // on its inserts, so the fast gate could not have caught the
+        // cross-household insert the hazard lane witnessed against real
+        // Postgres (HAZARD finding CR4-M3P12-03). The adapter now makes the
+        // check inside its transaction, so the two agree again. The wordings
+        // differ deliberately, because the adapter's check is over a BATCH
+        // and names that; both say "does not belong to the household".
+        for (const insert of input.inserts) {
+          // THE ADAPTER ISSUES A CREATE, NOT AN UPSERT (fix round five,
+          // CRITERIA finding CR5-M3P12-04). Routing an insert through
+          // upsertRule made this fake WEAKER than its subject on exactly the
+          // constraint the update path above models and explains: the adapter
+          // calls tx.merchantRule.create, which under
+          // @@unique([householdId, kind, pattern]) rejects a submission that
+          // upsertRule would quietly repoint. So the collision is modelled
+          // here, with the same message the update path throws, and the
+          // ownership check the adapter's insert loop gained in fix round
+          // four is made first, in the same order.
+          //
+          // THIRD FINDING ON THIS ONE SEAM, which is why the modelling is now
+          // written out rather than delegated: the fake was weaker on the
+          // unique key (CR2-M3P12-02), then stricter on tenancy
+          // (CR4-M3P12-03), now weaker on the unique key one method along.
+          const owned = merchants.some(
+            (merchant) =>
+              merchant.householdId === context.householdId &&
+              merchant.id === insert.merchantId,
+          );
+          if (!owned) {
+            throw new Error(
+              "applyRuleWrites: one or more inserted rules point at a merchant that does not belong to the household",
+            );
+          }
+          const clash = rules.find(
+            (rule) =>
+              rule.householdId === context.householdId &&
+              rule.kind === insert.kind &&
+              rule.pattern === insert.pattern,
+          );
+          if (clash !== undefined) {
+            throw new Error(
+              "Unique constraint failed on the fields: (householdId,kind,pattern)",
+            );
+          }
+          declarationWriteCount += 1;
+          rules.push({
+            id: id("rule"),
+            householdId: context.householdId,
+            merchantId: insert.merchantId,
+            kind: insert.kind,
+            pattern: insert.pattern,
+          });
+        }
+      } catch (error) {
+        rules.length = 0;
+        rules.push(...snapshot);
+        declarationWriteCount = writesBefore;
+        throw error;
       }
-      declarationWriteCount += 1;
-      const updated = { ...existing, pattern: input.pattern };
-      rules[rules.indexOf(existing)] = updated;
-      return updated;
     },
     upsertRule: async (context, input) => {
       // Finding CR-401, mirrored from the adapter: the merchant the rule
@@ -544,6 +648,7 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
           id: stored.id,
           flow: stored.flow === "INCOME" ? ("INCOME" as const) : ("SPEND" as const),
           amountCents: stored.amountCents,
+          bookingDate: stored.bookingDate,
           description: stored.description,
           ...(stored.counterpartyName === undefined
             ? {}

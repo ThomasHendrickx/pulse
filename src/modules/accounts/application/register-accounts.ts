@@ -12,6 +12,7 @@
 // imported: registering the siblings is a change to the DECLARED SETS, and
 // every already-imported row is reclassified against them.
 
+import { canonicalAccountNumber } from "@/platform/account-number";
 import type { HouseholdContext } from "@/platform/tenancy";
 import { err, ok, type Result } from "@/platform/result";
 import {
@@ -39,16 +40,29 @@ export const registerAccounts = async (
     return err({ kind: "invalid", problems: validated.error });
   }
 
-  // Already-registered numbers are refused rather than merged: the
-  // per-household uniqueness constraint would refuse the write anyway, and
-  // a named refusal is what the screen can render.
+  // Already-registered numbers are refused rather than merged, and the
+  // known set is built over CANONICAL forms (M3-P18, criterion 18.5): a
+  // stored declaration written before M3-P14 holds whatever rendering the
+  // import path wrote, so comparing stored strings let the same account,
+  // typed canonically, pass both this check and the unique index (which
+  // compares stored strings too) and become a second row. The typed side
+  // arrives canonical from validation; canonicalising the stored side is
+  // what closes the pair. After the canonical backfill migration the
+  // unique index is a true backstop for every backfilled row, and this
+  // check is what covers the named collision pair the backfill left as it
+  // was. A named refusal, pointing at the offending row, is what the
+  // screen can render.
   const existing = await deps.accounts.listAccounts(context);
   const known = new Set(
     existing.flatMap((account) =>
-      account.iban === undefined ? [] : [account.iban],
+      account.iban === undefined
+        ? []
+        : [canonicalAccountNumber(account.iban)],
     ),
   );
-  const clash = validated.value.findIndex((row) => known.has(row.iban));
+  const clash = validated.value.findIndex((row) =>
+    known.has(canonicalAccountNumber(row.iban)),
+  );
   if (clash !== -1) {
     return err({ kind: "already-registered", row: clash });
   }
