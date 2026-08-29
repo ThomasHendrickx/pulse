@@ -7,6 +7,7 @@ import { join } from "node:path";
 // before. See test/e2e/phone-helpers.ts.
 import {
   ensureRegistered,
+  registerAccounts,
   FIXTURE_ACCOUNT_A,
   FIXTURE_ACCOUNT_B,
 } from "./setup-accounts";
@@ -71,10 +72,12 @@ const signUp = async (page: Page, prefix: string): Promise<void> => {
 // CORRECTED RATHER THAN QUIETLY REWRITTEN (clause R-087). This helper used
 // to carry a `ring` parameter, added in the M3-P7 fix round so a committed
 // fixture could be declared under RESERVE through the import path. That
-// path is gone: a savings account's statement is not imported in v1
-// (decision D-55), so the reserve arm is now witnessed by REGISTERING the
-// partner account as savings and importing only the pot side, which is what
-// a household actually does.
+// path is gone: the ring is answered at setup, so the reserve arm is
+// witnessed by REGISTERING the partner account as savings and importing the
+// pot side. (This comment used to add that a savings statement is not
+// imported in v1 under decision D-55; DR-0030 superseded that in M3-P18,
+// and a savings account's OWN statement is now accepted and shown held,
+// witnessed below under criterion 18.2.)
 const FIXTURE_ACCOUNT: Record<string, string> = {
   "mv-partial.csv": FIXTURE_ACCOUNT_A,
   "mv-dense.csv": FIXTURE_ACCOUNT_A,
@@ -1366,4 +1369,191 @@ test("the reserve rows are measured by the same bar as the spend rows", async ({
   // two states that can both be absent.
   await expect(page.getByTestId("no-reserves")).toHaveCount(0);
   await expect(page.getByTestId("reserves-net")).toBeVisible();
+});
+
+// ---------------------------------------------------------------------
+// M3-P18, criterion 18.2 (DR-0030, decision D-60): a savings statement's
+// rows are SHOWN, MARKED HELD and COUNTED NOWHERE.
+//
+// Fixture arithmetic (test/fixtures/savings-statement.csv, derived by
+// hand and never read back from the implementation): base rate interest
+// +11,03 (BASISRENTE) and loyalty premium +6,42 (GETROUWHEIDSPREMIE),
+// a transfer to the household's OTHER savings account -250,00, a payment
+// straight out of savings -89,90, and two ordinary rows (+150,00 in from
+// the current account, +20,00 deposit). The counted baseline is
+// test/fixtures/setup-current.csv over the registered current account
+// with every own-movement counterparty UNREGISTERED, so all ten rows
+// classify without gaps and the books CLOSE: income 2.500,00, spend
+// 1.473,97 (86,47 + 12,50 + 300 + 150 + 75 + 500 + 200 + 100 + 50),
+// reserves 0,00, pot change 1.026,03.
+// ---------------------------------------------------------------------
+test("held rows are shown under the account's label, in every locale, and nothing moves", async ({
+  page,
+  baseURL,
+}) => {
+  await signUp(page, "mv-held");
+  await registerAccounts(page, [
+    {
+      label: "Daily account",
+      bank: "Demobank",
+      accountNumber: "BE73900000000001",
+      ring: "POT",
+    },
+    {
+      label: "Savings",
+      bank: "Demobank",
+      accountNumber: "BE27910000000004",
+      ring: "RESERVE",
+    },
+    {
+      label: "Holiday savings",
+      bank: "Demobank",
+      accountNumber: "BE97910000000005",
+      ring: "RESERVE",
+    },
+  ]);
+
+  // The counted baseline: the current account's statement.
+  await page.goto("/import");
+  await page
+    .getByLabel("Bank export file")
+    .setInputFiles(join(FIXTURES, "setup-current.csv"));
+  await page.getByRole("button", { name: "Upload" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Confirm the detected format" }),
+  ).toBeVisible();
+  await page.getByLabel("Format name").fill("Demobank current account");
+  await page.getByTestId("confirm-import").click();
+  await expect(page.getByTestId("import-result")).toBeVisible();
+  await expect(page.getByTestId("rows-added")).toHaveText("10");
+
+  // FIVE: the baseline figures, captured BEFORE the savings statement is
+  // imported, against the hand-derived arithmetic above. The books CLOSE.
+  await page.goto("/?month=2026-08");
+  const figureIds = [
+    "recon-income",
+    "recon-spend",
+    "recon-reserves",
+    "recon-pot",
+  ] as const;
+  const before: Record<string, string> = {};
+  for (const id of figureIds) {
+    before[id] = (await page.getByTestId(id).innerText()).trim();
+  }
+  expect(before["recon-income"]).toBe("2.500,00");
+  expect(before["recon-spend"]).toBe("1.473,97");
+  expect(before["recon-reserves"]).toBe("0,00");
+  expect(before["recon-pot"]).toBe("1.026,03");
+  await expect(page.getByTestId("recon-verdict")).toHaveText("Books close");
+  await expect(page.getByTestId("recon-difference")).toHaveCount(0);
+  await expect(page.getByTestId("recon-cause-uninterpreted")).toHaveCount(0);
+  const rowCountBefore = (
+    await page.getByTestId("month-meta").innerText()
+  ).trim();
+  await expect(page.getByTestId("held-rows")).toHaveCount(0);
+
+  // The savings account's OWN statement, accepted under DR-0030.
+  //
+  // NO CONFIRMATION STEP IS DRIVEN HERE, and that is the product's rule
+  // rather than a shortcut (slow-gate repair round). The statement above
+  // taught this household the format, and upload-statement.ts asks ONCE:
+  // when a stored profile matches the detected spec and the file's own
+  // account resolves, the import is created PARSED and its rows are
+  // ingested in the same request, so no declaration screen is rendered.
+  // The savings statement is the same Demobank export in the same shape,
+  // so it lands directly. The spec used to wait for the confirmation
+  // heading here and timed out on a page already reading "Import
+  // complete": it drove a step the product had removed.
+  await page.goto("/import");
+  await page
+    .getByLabel("Bank export file")
+    .setInputFiles(join(FIXTURES, "savings-statement.csv"));
+  await page.getByRole("button", { name: "Upload" }).click();
+  await expect(page.getByTestId("import-result")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Confirm the detected format" }),
+  ).toHaveCount(0);
+  await expect(page.getByTestId("rows-added")).toHaveText("6");
+
+  await page.goto("/?month=2026-08");
+
+  // ONE: the rows are on the page, one line per held row, under the
+  // LABEL the household typed, never a number. Only the account that
+  // holds rows this month renders a block: the sibling savings account
+  // holds none, so exactly one block appears.
+  const held = page.getByTestId("held-rows");
+  await expect(held).toHaveCount(1);
+  await expect(held.getByRole("heading", { name: "Savings" })).toBeVisible();
+  await expect(held.getByTestId("held-row")).toHaveCount(6);
+  // The three shapes the current-account side cannot carry, each with
+  // the amount the fixture gives it, byte compared:
+  const shapes = [
+    { text: "BASISRENTE", amount: "11,03" },
+    { text: "GETROUWHEIDSPREMIE", amount: "6,42" },
+    { text: "Eigen spaarrekening", amount: "-250,00" },
+    { text: "Keukenwinkel Centrum", amount: "-89,90" },
+  ] as const;
+  for (const shape of shapes) {
+    const row = held.getByTestId("held-row").filter({ hasText: shape.text });
+    await expect(row).toHaveCount(1);
+    await expect(row.getByTestId("held-amount")).toHaveText(shape.amount);
+  }
+  // Booking dates render on each row.
+  await expect(
+    held.getByTestId("held-row").filter({ hasText: "2026-08-03" }).first(),
+  ).toBeVisible();
+  // No account-shaped string reaches the rendered block (the same
+  // requirement criterion 14.1 makes of the reserve rows, for the same
+  // reason): the heading is the label and the rows carry text, date and
+  // amount only.
+  const heldText = await held.innerText();
+  expect(heldText).not.toMatch(/[A-Z]{2}\s?[0-9]{2}[0-9 ]{10,}/);
+
+  // TWO: the words, visible text, not an attribute.
+  await expect(held.getByTestId("held-note")).toHaveText(
+    "These rows are held because this account is registered in the savings ring. They are no part of this month's income, spend or reserves.",
+  );
+
+  // THREE: nothing is summed. No per-account total, no grand total: the
+  // held block renders no card-total element at all.
+  await expect(held.locator(".month-card-total")).toHaveCount(0);
+
+  // FOUR: the money path. Every held amount renders through the one
+  // mandatory treatment (mono, tabular) the rest of the month uses: six
+  // amount slots, each carrying the .pulse-amount token class.
+  await expect(held.getByTestId("held-amount")).toHaveCount(6);
+  await expect(held.locator(".month-row-amount.pulse-amount")).toHaveCount(6);
+
+  // FIVE: nothing moves. Income, spend, net to reserves, the change in
+  // the pot, the difference, the uninterpreted count and the row count
+  // are each byte identical to the captured baseline, and the verdict
+  // still reads as books closing.
+  for (const id of figureIds) {
+    await expect(page.getByTestId(id)).toHaveText(before[id] ?? "");
+  }
+  await expect(page.getByTestId("recon-verdict")).toHaveText("Books close");
+  await expect(page.getByTestId("recon-difference")).toHaveCount(0);
+  await expect(page.getByTestId("recon-cause-uninterpreted")).toHaveCount(0);
+  await expect(page.getByTestId("month-meta")).toHaveText(rowCountBefore);
+
+  // The note renders in each locale (criterion 18.2 arm two).
+  const noteByLocale = [
+    {
+      locale: "nl",
+      note: "Deze rijen worden aangehouden omdat deze rekening als spaarrekening is geregistreerd. Ze tellen niet mee in de inkomsten, de uitgaven of de reserves van deze maand.",
+    },
+    {
+      locale: "fr",
+      note: "Ces lignes sont mises en attente parce que ce compte est enregistré comme compte d'épargne. Elles ne comptent ni dans les revenus, ni dans les dépenses, ni dans les réserves de ce mois.",
+    },
+  ] as const;
+  for (const { locale, note } of noteByLocale) {
+    await page.context().addCookies([
+      { name: "locale", value: locale, url: baseURL ?? "http://127.0.0.1:3000" },
+    ]);
+    await page.goto("/?month=2026-08");
+    await expect(
+      page.getByTestId("held-rows").getByTestId("held-note"),
+    ).toHaveText(note);
+  }
 });
