@@ -1,3 +1,4 @@
+import { plainDate } from "@/platform/plain-date";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -12,7 +13,10 @@ import { statementParser } from "../../src/modules/import/adapters/statement-par
 import { recomputeInterpretation } from "../../src/modules/ledger/application/interpret-window";
 import {
   RederiveRecomputeError,
+  assignmentSet,
+  baselineKeyOfRow as baselineKeyOfCountedRow,
   formatDecisionReport,
+  identityKeyOfRow,
   rederiveMerchantRules,
 } from "../../src/modules/merchants/application/rederive-rules";
 import type { RederiveDependencies } from "../../src/modules/merchants/application/rederive-rules";
@@ -82,6 +86,14 @@ const ingestFixture = async (): Promise<World> => {
   if (!detected.ok) {
     throw new Error("detection failed");
   }
+  // SETUP FIRST (M3-P14): the account a statement belongs to is registered
+  // before the file is confirmed. A card carries no own-account column and
+  // registers nothing.
+  await world.registerAccountForStatement(context, bytes, detected.value, {
+    label: "Daily account",
+    bank: "Belfius",
+    role: "POT",
+  });
   const confirmed = await confirmImport(context, world.deps, {
     importId: uploaded.importId,
     profileName: "belfius-current-account-nl",
@@ -279,6 +291,29 @@ const deps = (world: World) => ({
     recomputeInterpretation(ctx, world.ledgerDeps),
 });
 
+// WHAT AN OPERATOR ACTUALLY DOES, and what the acknowledge path now costs
+// (criterion 12.7, fix round six). A loss is accepted by the PAIR of rule id
+// and transaction id and never by the rule alone, because one rule can hold a
+// real loss on one row and an ordinary claimant-merchant report on another.
+// So a test that wants a blocked seed to proceed runs it once to LEARN what
+// blocks, exactly as a person would, and accepts what it was told. A blocked
+// run writes nothing, so the world is untouched by the learning run.
+const learnAcknowledgements = async (
+  world: World,
+): Promise<{
+  acceptedRuleIds: readonly string[];
+  acceptedLosses: readonly { ruleId: string; transactionId: string }[];
+}> => {
+  const blocked = await rederiveMerchantRules(context, deps(world), {});
+  return {
+    acceptedRuleIds: blocked.conflicts,
+    acceptedLosses: blocked.lostAssignments.map((lost) => ({
+      ruleId: lost.ruleId,
+      transactionId: lost.transactionId,
+    })),
+  };
+};
+
 const assignmentPairs = (world: World): ReadonlySet<string> =>
   new Set(
     world.transactions
@@ -303,13 +338,15 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
   // produce under the NEW key. Both are asserted below, and the recompute
   // pair is asserted too, as the window closing.
   test("the after assignment set is a SUPERSET of the pre-migration one, and the recompute that follows restores every assignment the deploy window suspended", async () => {
-    const { world, ruleIds } = await seedWorld();
+    const { world } = await seedWorld();
     const rulesBefore = world.rules.length;
     const observedBefore = assignmentPairs(world);
 
-    const report = await rederiveMerchantRules(context, deps(world), {
-      acceptedRuleIds: [ruleIds.promotableIntoConflict],
-    });
+    const report = await rederiveMerchantRules(
+      context,
+      deps(world),
+      await learnAcknowledgements(world),
+    );
     await recomputeInterpretation(context, world.ledgerDeps);
     const observedAfter = assignmentPairs(world);
 
@@ -343,7 +380,7 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
   });
 
   test("the routine issues NO update and NO delete against an account-namespaced pattern, and never rewrites a descriptor pattern into an account one", async () => {
-    const { world, ruleIds } = await seedWorld();
+    const { world } = await seedWorld();
     const updates: { ruleId: string; pattern: string }[] = [];
     const deletes: string[] = [];
     const patternsBefore = new Map(
@@ -378,7 +415,7 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
       // actually issued. Since the fix round a blocked run writes nothing at
       // all (finding HZ-M3P12-03), so without this the assertions below
       // would pass over an empty list and measure nothing.
-      { acceptedRuleIds: [ruleIds.promotableIntoConflict] },
+      await learnAcknowledgements(world),
     );
     expect(deletes).toEqual([]);
     expect(updates.length).toBeGreaterThan(0);
@@ -400,9 +437,11 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
 
   test("the promotion ADDS a rule beside the naming and the naming survives verbatim, and the broadening is a printed number", async () => {
     const { world, ruleIds } = await seedWorld();
-    const report = await rederiveMerchantRules(context, deps(world), {
-      acceptedRuleIds: [ruleIds.promotableIntoConflict],
-    });
+    const report = await rederiveMerchantRules(
+      context,
+      deps(world),
+      await learnAcknowledgements(world),
+    );
     const promotable = world.rules.find(
       (rule) => rule.id === ruleIds.promotable,
     );
@@ -434,9 +473,11 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
 
   test("a rule that could not be promoted, for either reason, is printed, counted and does NOT block", async () => {
     const { world, ruleIds } = await seedWorld();
-    const report = await rederiveMerchantRules(context, deps(world), {
-      acceptedRuleIds: [ruleIds.promotableIntoConflict],
-    });
+    const report = await rederiveMerchantRules(
+      context,
+      deps(world),
+      await learnAcknowledgements(world),
+    );
     const outcomes = new Map(
       report.decisions
         .filter((decision) => decision.pass === "two")
@@ -463,9 +504,11 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
   test("pass one leaves an already-namespaced pattern and an empty pattern exactly as they are, on the FIRST run", async () => {
     const { world, ruleIds } = await seedWorld();
     const before = new Map(world.rules.map((rule) => [rule.id, rule.pattern]));
-    const report = await rederiveMerchantRules(context, deps(world), {
-      acceptedRuleIds: [ruleIds.promotableIntoConflict],
-    });
+    const report = await rederiveMerchantRules(
+      context,
+      deps(world),
+      await learnAcknowledgements(world),
+    );
     const after = new Map(world.rules.map((rule) => [rule.id, rule.pattern]));
     expect(after.get(ruleIds.alreadyNamespaced)).toBe(
       before.get(ruleIds.alreadyNamespaced),
@@ -507,21 +550,37 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
     expect(stillBlocked.conflicts).toEqual([wrongId.ruleIds.promotableIntoConflict]);
     expect(stillBlocked.exitCode).toBe(1);
 
-    // Accepting the named id clears exactly that one.
+    // Accepting the named id clears exactly that one. A CONFLICT is still
+    // cleared by RULE ID: it is a property of a rule, not of a row, and
+    // criterion 12.7 keeps that granularity for conflicts and changes only
+    // the granularity for losses.
     const acceptedRun = await seedWorld();
-    const cleared = await rederiveMerchantRules(
+    const conflictOnly = await rederiveMerchantRules(
       context,
       deps(acceptedRun.world),
       { acceptedRuleIds: [acceptedRun.ruleIds.promotableIntoConflict] },
     );
-    expect(cleared.conflicts).toEqual([]);
-    expect(cleared.acceptedConflicts).toEqual([
+    expect(conflictOnly.conflicts).toEqual([]);
+    expect(conflictOnly.acceptedConflicts).toEqual([
       acceptedRun.ruleIds.promotableIntoConflict,
     ]);
+    // AND IT STILL BLOCKS, on the loss the same seed carries, because
+    // accepting a conflict says nothing about a row (criterion 12.7, fix
+    // round six). Before this the rule id cleared both and a person who
+    // accepted an ambiguity silently accepted a lost naming with it.
+    expect(conflictOnly.lostAssignments.length).toBeGreaterThan(0);
+    expect(conflictOnly.exitCode).toBe(1);
+
+    const cleared = await rederiveMerchantRules(
+      context,
+      deps(acceptedRun.world),
+      await learnAcknowledgements(acceptedRun.world),
+    );
+    expect(cleared.conflicts).toEqual([]);
     expect(cleared.exitCode).toBe(0);
   });
 
-  test("BLOCKING CONDITION TWO, a lost assignment: it blocks, and the acknowledge path clears ONLY the rule that held it", async () => {
+  test("BLOCKING CONDITION TWO, a lost assignment: it blocks, and the acknowledge path clears ONLY the PAIR it names", async () => {
     const lossy = await seedLossyWorld();
     const blocked = await rederiveMerchantRules(
       context,
@@ -538,22 +597,65 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
     }
     expect(blocked.exitCode).toBe(1);
 
-    const wrongId = await seedLossyWorld();
+    // NO FLAG FORM CLEARS A LOSS BY RULE ALONE (criterion 12.7, fix round
+    // six). The rule id that held every one of these losses, passed as the
+    // conflict flag, clears nothing: one rule can hold a real loss on one row
+    // and an ordinary claimant-merchant report on another, so a flag that
+    // cleared the rule would clear rows the person never saw.
+    const byRule = await seedLossyWorld();
+    const notCleared = await rederiveMerchantRules(
+      context,
+      deps(byRule.world),
+      { acceptedRuleIds: [byRule.ruleId] },
+    );
+    expect(notCleared.lostAssignments.length).toBe(blocked.lostAssignments.length);
+    expect(notCleared.acceptedLostAssignments).toEqual([]);
+    expect(notCleared.exitCode).toBe(1);
+
+    const wrongPair = await seedLossyWorld();
     const stillBlocked = await rederiveMerchantRules(
       context,
-      deps(wrongId.world),
-      { acceptedRuleIds: ["some-other-rule-id"] },
+      deps(wrongPair.world),
+      {
+        acceptedLosses: [
+          { ruleId: wrongPair.ruleId, transactionId: "not-a-transaction" },
+        ],
+      },
     );
     expect(stillBlocked.lostAssignments.length).toBeGreaterThan(0);
     expect(stillBlocked.exitCode).toBe(1);
+
+    // ONE PAIR CLEARS ONE ROW and leaves every other row of the SAME rule
+    // blocking, which is the granularity the criterion exists to buy.
+    const onePair = await seedLossyWorld();
+    const partial = await rederiveMerchantRules(
+      context,
+      deps(onePair.world),
+      {
+        acceptedLosses: [
+          {
+            ruleId: onePair.ruleId,
+            transactionId: blocked.lostAssignments[0]?.transactionId ?? "",
+          },
+        ],
+      },
+    );
+    expect(partial.acceptedLostAssignments.length).toBe(1);
+    expect(partial.lostAssignments.length).toBe(
+      blocked.lostAssignments.length - 1,
+    );
+    expect(partial.exitCode).toBe(1);
 
     const acceptedRun = await seedLossyWorld();
     const cleared = await rederiveMerchantRules(
       context,
       deps(acceptedRun.world),
-      { acceptedRuleIds: [acceptedRun.ruleId] },
+      await learnAcknowledgements(acceptedRun.world),
     );
     expect(cleared.lostAssignments).toEqual([]);
+    expect(cleared.acceptedLostAssignments.length).toBe(
+      blocked.lostAssignments.length,
+    );
     expect(cleared.exitCode).toBe(0);
     // AND NOTHING WAS DELETED to achieve that: the rule is still there.
     expect(
@@ -564,8 +666,8 @@ describe("CRITERION 12.7: no naming the owner made is discarded, measured as EFF
 
 describe("CRITERION 12.8: the re-derivation is idempotent, and idempotent means the same ANSWER", () => {
   test("a second run rewrites zero patterns, adds zero rules, prints the same decision report byte for byte and returns the same exit code", async () => {
-    const { world, ruleIds } = await seedWorld();
-    const accepted = { acceptedRuleIds: [ruleIds.promotableIntoConflict] };
+    const { world } = await seedWorld();
+    const accepted = await learnAcknowledgements(world);
 
     const first = await rederiveMerchantRules(context, deps(world), accepted);
     const tableAfterFirst = world.rules
@@ -638,7 +740,7 @@ describe("CRITERION 12.8: the re-derivation is idempotent, and idempotent means 
 
 describe("CRITERION 12.9: facts are not rewritten; the change is a derivation plus a recompute", () => {
   test("the re-derivation issues NO write against the transactions table at all", async () => {
-    const { world, ruleIds } = await seedWorld();
+    const { world } = await seedWorld();
     const factSnapshot = (): string =>
       JSON.stringify(
         world.transactions.map((row) => ({
@@ -661,7 +763,7 @@ describe("CRITERION 12.9: facts are not rewritten; the change is a derivation pl
       // ACCEPTED so the run APPLIES its writes: since the fix round a blocked
       // run issues none, and "no transaction was written" is only worth
       // asserting over a run that wrote everything it was going to write.
-      { acceptedRuleIds: [ruleIds.promotableIntoConflict] },
+      await learnAcknowledgements(world),
     );
     expect(factSnapshot()).toBe(before);
   });
@@ -757,7 +859,7 @@ describe("HZ-M3P12-02: --dry-run writes NOTHING", () => {
       .map((rule) => `${rule.id}|${rule.pattern}`)
       .sort();
     const previewed = await rederiveMerchantRules(context, dryRun.deps, {
-      acceptedRuleIds: [dry.ruleIds.promotableIntoConflict],
+      ...(await learnAcknowledgements(dry.world)),
       dryRun: true,
     });
 
@@ -777,9 +879,11 @@ describe("HZ-M3P12-02: --dry-run writes NOTHING", () => {
     // reading. Measured against a SECOND identical seed run for real.
     const wet = await seedWorld();
     const realRun = countingDeps(wet.world);
-    const applied = await rederiveMerchantRules(context, realRun.deps, {
-      acceptedRuleIds: [wet.ruleIds.promotableIntoConflict],
-    });
+    const applied = await rederiveMerchantRules(
+      context,
+      realRun.deps,
+      await learnAcknowledgements(wet.world),
+    );
     console.log(
       `real run: updates ${realRun.log.updates.length}, inserts ${realRun.log.inserts.length}, recomputes ${realRun.log.recomputes.count}, applied ${String(applied.applied)}`,
     );
@@ -803,7 +907,9 @@ describe("HZ-M3P12-02: --dry-run writes NOTHING", () => {
       "utf8",
     );
     expect(script).toMatch(/dryRun/);
-    expect(script).toMatch(/\{ acceptedRuleIds: accepted, dryRun \}/);
+    expect(script).toMatch(
+      /\{ acceptedRuleIds: accepted, acceptedLosses, dryRun \}/,
+    );
     // The substitution that made the flag a lie.
     expect(script).not.toMatch(/recompute: dryRun/);
   });
@@ -866,9 +972,17 @@ describe("HZ-M3P12-03: a blocking condition blocks BEFORE any write", () => {
     expect(counting.log.inserts).toEqual([]);
     expect(blocked.conflicts).toEqual([seed.ruleIds.promotableIntoConflict]);
 
-    // And accepting exactly those ids on the SAME world then applies.
+    // AND ACCEPTING EXACTLY WHAT THE DRY RUN NAMED then applies: the
+    // conflicts by rule id and the losses by PAIR, which is what the dry run
+    // prints and therefore what a person can act on (criterion 12.7, fix
+    // round six).
+    expect(blocked.lostAssignments.length).toBeGreaterThan(0);
     const cleared = await rederiveMerchantRules(context, counting.deps, {
       acceptedRuleIds: blocked.conflicts,
+      acceptedLosses: blocked.lostAssignments.map((lost) => ({
+        ruleId: lost.ruleId,
+        transactionId: lost.transactionId,
+      })),
     });
     expect(cleared.exitCode).toBe(0);
     expect(cleared.applied).toBe(true);
@@ -879,9 +993,11 @@ describe("HZ-M3P12-03: a blocking condition blocks BEFORE any write", () => {
 describe("CR-M3P12-01: an accepted loss is printed, counted and named", () => {
   test("acceptance removes a lost assignment from the BLOCKING decision and from nothing else", async () => {
     const accepted = await seedLossyWorld();
-    const report = await rederiveMerchantRules(context, deps(accepted.world), {
-      acceptedRuleIds: [accepted.ruleId],
-    });
+    const report = await rederiveMerchantRules(
+      context,
+      deps(accepted.world),
+      await learnAcknowledgements(accepted.world),
+    );
     console.log(
       `accepted-loss run: lost ${report.lostAssignments.length}, accepted-lost ${report.acceptedLostAssignments.length}, exit ${report.exitCode}`,
     );
@@ -1282,10 +1398,24 @@ describe("CR2-M3P12-03: the write set is applied ALL OR NOTHING", () => {
       ),
       "utf8",
     );
-    expect(adapter).toContain("prisma.$transaction(async (tx)");
+    // SCOPED TO THE FUNCTION, not searched over the file (fix round eight,
+    // CRITERIA finding CR6-M3P12-03). This asserted the transaction against
+    // the WHOLE adapter, and that exact string occurs three times in it, in
+    // three different functions, only one of which is this one. So the pin
+    // held even if applyRuleWrites lost its transaction entirely: it matched
+    // the SHAPE of the file containing the words rather than the IDENTITY of
+    // the function using the construct. The next two lines already knew how to
+    // scope; this was the one of the three left unscoped.
+    const start = adapter.indexOf("export const applyRuleWrites");
+    expect(start).toBeGreaterThan(-1);
+    const nextExport = adapter.indexOf("\nexport const ", start + 1);
+    const block = adapter.slice(
+      start,
+      nextExport === -1 ? adapter.length : nextExport,
+    );
+    expect(block).toContain("prisma.$transaction(async (tx)");
     // Every statement in it still carries the household id: the update's
     // where clause and the insert's data both name it.
-    const block = adapter.slice(adapter.indexOf("export const applyRuleWrites"));
     expect(block).toContain("where: { id: update.ruleId, householdId: context.householdId }");
     expect(block).toContain("householdId: context.householdId,");
   });
@@ -1316,8 +1446,8 @@ describe("CR2-M3P12-03: the write set is applied ALL OR NOTHING", () => {
 
 describe("HZ-M3P12-R2-03: the superset guard is alive on every run, not only the first", () => {
   test("the SECOND run's before-set equals the FIRST run's after-set, rather than reading 0", async () => {
-    const { world, ruleIds } = await seedWorld();
-    const accepted = { acceptedRuleIds: [ruleIds.promotableIntoConflict] };
+    const { world } = await seedWorld();
+    const accepted = await learnAcknowledgements(world);
     const first = await rederiveMerchantRules(context, deps(world), accepted);
     const second = await rederiveMerchantRules(context, deps(world), accepted);
     console.log(
@@ -1413,7 +1543,12 @@ describe("CR2-M3P12-04: a database error is never printed raw", () => {
 // that never happened, escapable only by a person passing --accept for that
 // rule id on every future run.
 describe("CR3-M3P12-01: a superseded rule is not counted as a live assignment", () => {
-  test("the before-set excludes it, so no loss is reported for a row whose merchant the owner changed", async () => {
+  // NAME CORRECTED IN PLACE, fix round five, CRITERIA finding CR5-M3P12-02
+  // (clause R-087). It used to say "the before-set excludes it", which was
+  // true of round three and stopped being true in round four when the
+  // dismissal moved to the comparison. The assertions did not change and
+  // that is exactly why nothing caught the drift.
+  test("the superseded rule's claim is dismissed at the comparison, so no loss is reported for a row whose merchant the owner changed", async () => {
     const seed = await seedDeployWindowWorld();
     const rival = await seed.world.merchantsPort.createMerchant(context, "Gamma");
     const twin = seed.world.rules.find((rule) => rule.id === seed.twinRuleId);
@@ -1430,14 +1565,18 @@ describe("CR3-M3P12-01: a superseded rule is not counted as a live assignment", 
     expect(report.exitCode).toBe(0);
     // The rows are held by the NAMESPACED rule both before and after, which
     // is what production sees, so nothing is lost and the after-set is a
-    // superset. Before this round the before-set also credited the DEAD
-    // un-namespaced rule, and the difference was reported as a loss.
+    // superset. In ROUND TWO the dead un-namespaced rule's claim was compared
+    // with no exemption at all and the difference was reported as a loss;
+    // since round five the claim is dismissed only where the row's coverage
+    // descends from the claimant, which here it does.
     expect(report.assignmentsAfter).toBeGreaterThanOrEqual(
       report.assignmentsBefore,
     );
   });
 
-  test("ONLY superseded ids are excluded: on a FIRST run every rule is un-namespaced and the before-set is the whole point of criterion 12.7", async () => {
+  // NAME CORRECTED IN PLACE for the same reason (CRITERIA finding
+  // CR5-M3P12-02): nothing is excluded from the before-set any more.
+  test("NOTHING is excluded from the before-set: on a FIRST run every rule is un-namespaced and the before-set is the whole point of criterion 12.7", async () => {
     const seed = await seedWorld();
     const report = await rederiveMerchantRules(context, deps(seed.world), {
       acceptedRuleIds: [seed.ruleIds.promotableIntoConflict],
@@ -1525,7 +1664,7 @@ describe("CR3-M3P12-02: a recompute failure is reported as what it is", () => {
           },
           recompute: async () => undefined,
         },
-        { acceptedRuleIds: [seed.ruleIds.promotableIntoConflict] },
+        await learnAcknowledgements(seed.world),
       );
     } catch (error) {
       caught = error;
@@ -1554,12 +1693,28 @@ describe("CR3-M3P12-02: a recompute failure is reported as what it is", () => {
     expect(script).toContain("the failure was before or inside the rule writes");
   });
 
-  test("the command states that it cannot be pointed at a local database (CR3-M3P12-05)", () => {
+  // INVERTED WITH THE INTERLOCK WITHDRAWAL (clause R-087, decision D-62,
+  // criterion 12.23). This test used to pin the header claim "CANNOT BE
+  // POINTED AT A LOCAL DATABASE" (CR3-M3P12-05), which was true of the
+  // withdrawn host-and-ref interlock and is now FALSE: the routine is held
+  // to the repository's local-only guard, so local is the ONE target it can
+  // open without a hatch. The pin now holds the corrected contract: the
+  // withdrawn sentence survives only inside the quotation the correction
+  // carries, and the header states the inversion in its own words.
+  test("the command's header states the local-only posture, and the withdrawn claim survives only as quotation (D-62)", () => {
     const script = readFileSync(
       join(repositoryRoot, "scripts", "rederive-merchant-rules.ts"),
       "utf8",
     );
-    expect(script).toContain("CANNOT BE POINTED AT A LOCAL DATABASE");
+    const occurrences = script.split("CANNOT BE POINTED AT A LOCAL DATABASE").length - 1;
+    expect(occurrences).toBe(1);
+    const quoted = script
+      .split("\n")
+      .filter((line) => line.includes("CANNOT BE POINTED AT A LOCAL DATABASE"));
+    expect(quoted).toHaveLength(1);
+    expect(quoted[0]).toContain('"');
+    expect(script).toContain("pointed at NOTHING BUT a local database");
+    expect(script).toContain("A LOCAL RUN IS NOW POSSIBLE");
   });
 });
 
@@ -1611,6 +1766,241 @@ describe("CR3-M3P12-07: there is ONE write path for a declaration", () => {
 // IDENTITY keys split: one descriptor-basis row the claimant covers, and two
 // account-basis rows on DIFFERENT trusted accounts, which pass two refuses to
 // promote ("not-promoted-several-accounts") and which nothing else covers.
+// M3-P12 FIX ROUND SIX. THE TIE-BREAK BETWEEN THE TWO KEY SPACES, pinned
+// because the criterion is about to pin it and because nothing here checked
+// it: the tie-break WITHIN a space is the matcher's own specificity rule and
+// is tested elsewhere, while the choice BETWEEN the baseline space and the
+// identity space lived only in the order of a ?? in assignmentSet.
+//
+// IT IS THE BASELINE SPACE, and it has to be. The before set models what the
+// owner's declarations meant BEFORE the migration, and before the migration
+// the un-namespaced rule is the declaration. Give the identity space
+// precedence and a row both spaces reach is credited to the same rule on both
+// sides, nothing appears to change hands, and a loss that really happened is
+// hidden: that is what the H12.31 regression in this file catches, and it is
+// the reachability of the supersede exception at stake.
+// CRITERION 12.7's OWN TESTS OF THE BEFORE SET, added in fix round six when
+// the amendment landed. The criterion fixes the before set here rather than
+// leaving it to the routine, because the shipped matcher is handed identity
+// keys only and a before set produced that way over a seed of baseline rules
+// is EMPTY BY CONSTRUCTION, which makes every clause of the criterion vacuous
+// while the run still writes.
+// CRITERION 12.7's TWO STATEMENTS ABOUT THE PUBLISHED LINEAGE ITSELF, pinned
+// in fix round six.
+describe("the published lineage: its placeholder form and its place outside the decision report", () => {
+  test("a promotion placeholder is a form NO database id of this schema can take", () => {
+    // CORRECTED IN PLACE, fix round seven, hazard finding HZ6-M3P12-02
+    // (clause R-087). This said: "The schema's ids are cuids: a lowercase
+    // letter followed by alphanumerics, with no hyphen anywhere. `pending-<n>`
+    // carries one, so the two spaces cannot collide." BOTH HALVES WERE FALSE.
+    // Every id in prisma/schema is `@default(uuid()) @db.Uuid`, not a cuid,
+    // and the canonical uuid form CONTAINS hyphens, so "carries a hyphen" was
+    // never a separation argument at all. The regex it rested on was applied
+    // only to the three invented placeholder strings and never to anything
+    // shaped like a real id, which is why nothing caught it.
+    //
+    // WHAT ACTUALLY SEPARATES THEM: a uuid is exactly 36 characters, five
+    // lowercase-hex groups of 8-4-4-4-12 with hyphens at fixed positions.
+    // `pending-<n>` fails that on its first character, and a uuid fails the
+    // placeholder form on its own. Both directions are asserted, and a real
+    // canonical uuid is put through both so the claim is checked against the
+    // id scheme the schema actually uses rather than a different one.
+    const placeholder = /^pending-[1-9][0-9]*$/;
+    const databaseId =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    for (const candidate of ["pending-1", "pending-2", "pending-17"]) {
+      expect(placeholder.test(candidate)).toBe(true);
+      expect(databaseId.test(candidate)).toBe(false);
+    }
+    // An invented uuid of the canonical shape, in both directions.
+    const invented = "550e8400-e29b-41d4-a716-446655440000";
+    expect(invented).toHaveLength(36);
+    expect(databaseId.test(invented)).toBe(true);
+    expect(placeholder.test(invented)).toBe(false);
+    // AND THE SCHEMA REALLY DOES DECLARE IT THAT WAY, so the correction is
+    // pinned against the schema and not against a second belief about it.
+    const schema = readFileSync(
+      join(repositoryRoot, "prisma", "schema", "merchants.prisma"),
+      "utf8",
+    );
+    expect(schema).toMatch(/id\s+String\s+@id @default\(uuid\(\)\) @db\.Uuid/);
+    expect(schema).not.toContain("cuid(");
+    // And the routine's own source builds it that way, so the pin is on the
+    // construction and not only on three strings.
+    const source = readFileSync(
+      join(
+        repositoryRoot,
+        "src",
+        "modules",
+        "merchants",
+        "application",
+        "rederive-rules.ts",
+      ),
+      "utf8",
+    );
+    expect(source).toContain("`pending-${pendingInserts.length}`");
+  });
+
+  test("the lineage is NOT part of the decision report criterion 12.8 compares byte for byte", async () => {
+    const seed = await seedDeployWindowWorld();
+    const report = await rederiveMerchantRules(context, deps(seed.world), {});
+    expect(report.supersededBy.length).toBeGreaterThan(0);
+    const formatted = formatDecisionReport(report);
+    // A promotion is named by its placeholder on the run that inserts it and
+    // by its database id on every run after, so the lineage legitimately
+    // differs between two runs whose DECISIONS are identical. If it were in
+    // the compared report, a correct second run would go red: that is hazard
+    // H12.27's shape.
+    //
+    // ASSERTED ON THE SHAPE OF EVERY LINE rather than on the absence of an id,
+    // because a claimant is itself a rule this run touched and its id belongs
+    // in the report as the subject of its OWN decision line. What must not be
+    // there is the RELATION.
+    const lines = formatted.split("\n").filter((line) => line !== "");
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) {
+      expect(line).toMatch(
+        /^[^ ]+ pass=(one|two) basis=(descriptor|account) outcome=[a-z-]+$/,
+      );
+    }
+    expect(formatted).not.toContain("pending-");
+  });
+});
+
+describe("the before set over a seed of un-namespaced rules", () => {
+  const TEXT = "PRE PHASE COUNTERPARTY TEXT";
+  const preRow = (id: string, account?: string): CountedTransaction => ({
+    id,
+    flow: "SPEND",
+    amountCents: cents(-1_000),
+    bookingDate: plainDate("2026-03-02"),
+    description: TEXT,
+    ...(account === undefined ? {} : { counterpartyAccount: account }),
+  });
+
+  // THE PRE-PHASE KEY IS BASIS-AGNOSTIC: the normalised counterparty text of
+  // EVERY row, including one that takes the ACCOUNT basis after this phase,
+  // because that text is what the rule was compared against when the owner
+  // wrote it. A bare rule therefore claims two kinds of row, one the
+  // namespaced claimant matches by construction and one it can NEVER match,
+  // and dropping the second is how round three's wholesale exclusion hid a
+  // real loss.
+  test("ONE un-namespaced rule and two rows, one per basis: the before set contains BOTH and resolves both to that rule's merchant", () => {
+    const rows = [
+      preRow("descriptorRow"),
+      preRow("accountRow", IDENTITY_FIXTURE_ACCOUNTS.counterparty2),
+    ];
+    const rules = [
+      { id: "bare", merchantId: "alpha", kind: "EXACT" as const, pattern: TEXT },
+    ];
+    // The two rows really do take different bases, so this is a split and not
+    // two rows of one kind.
+    expect(identityKeyOfRow(rows[0] as CountedTransaction)).toBe(
+      `${DESCRIPTOR_NAMESPACE}${TEXT}`,
+    );
+    expect(identityKeyOfRow(rows[1] as CountedTransaction)).toBe(
+      `${ACCOUNT_NAMESPACE}${IDENTITY_FIXTURE_ACCOUNTS.counterparty2}`,
+    );
+
+    const before = assignmentSet(rows, rules);
+    expect(before.size).toBe(2);
+    expect(before.get("descriptorRow")?.merchantId).toBe("alpha");
+    expect(before.get("accountRow")?.merchantId).toBe("alpha");
+  });
+
+  test("the before set is NON-EMPTY and its size is the number of rows those rules reach under the pre-phase key", () => {
+    const rows = [
+      preRow("descriptorRow"),
+      preRow("accountRow", IDENTITY_FIXTURE_ACCOUNTS.counterparty2),
+      // A row no un-namespaced rule reaches, so the size is a measurement
+      // rather than the row count.
+      {
+        id: "unreached",
+        flow: "SPEND" as const,
+        amountCents: cents(-1_000),
+        bookingDate: plainDate("2026-03-04"),
+        description: "SOME OTHER COUNTERPARTY TEXT",
+      },
+    ];
+    const rules = [
+      { id: "bare", merchantId: "alpha", kind: "EXACT" as const, pattern: TEXT },
+    ];
+    const reached = rows.filter(
+      (row) => baselineKeyOfCountedRow(row) === TEXT,
+    ).length;
+    expect(reached).toBe(2);
+    const before = assignmentSet(rows, rules);
+    expect(before.size).toBeGreaterThan(0);
+    expect(before.size).toBe(reached);
+    // AND THE READING THAT WOULD MAKE EVERY CLAUSE VACUOUS, measured beside
+    // it: the same rules handed identity keys only reach nothing at all.
+    expect(assignmentSet(rows, rules, identityKeyOfRow).size).toBe(0);
+  });
+});
+
+describe("the before set breaks a tie between the two key spaces toward the BASELINE space", () => {
+  const SHARED_TIE = "TIE BREAK COUNTERPARTY TEXT";
+  const tieRow = (id: string, account?: string): CountedTransaction => ({
+    id,
+    flow: "SPEND",
+    amountCents: cents(-1_000),
+    bookingDate: plainDate("2026-03-02"),
+    description: SHARED_TIE,
+    ...(account === undefined ? {} : { counterpartyAccount: account }),
+  });
+
+  test("a row BOTH spaces reach is credited to the un-namespaced rule, so it changes hands", () => {
+    const rows = [tieRow("descriptorRow")];
+    const rules = [
+      { id: "dead", merchantId: "alpha", kind: "EXACT" as const, pattern: SHARED_TIE },
+      {
+        id: "claimant",
+        merchantId: "beta",
+        kind: "EXACT" as const,
+        pattern: `${DESCRIPTOR_NAMESPACE}${SHARED_TIE}`,
+      },
+    ];
+    // Both spaces really do reach it, which is what makes this a tie rather
+    // than a preference nothing exercises.
+    expect(baselineKeyOfCountedRow(rows[0] as CountedTransaction)).toBe(SHARED_TIE);
+    expect(identityKeyOfRow(rows[0] as CountedTransaction)).toBe(
+      `${DESCRIPTOR_NAMESPACE}${SHARED_TIE}`,
+    );
+
+    const before = assignmentSet(rows, rules);
+    const after = assignmentSet(rows, rules, identityKeyOfRow);
+    expect(before.get("descriptorRow")?.ruleId).toBe("dead");
+    expect(before.get("descriptorRow")?.merchantId).toBe("alpha");
+    expect(after.get("descriptorRow")?.merchantId).toBe("beta");
+    // Which is the whole point: the row changes hands, so the supersede
+    // exception has something to be an exception TO.
+    expect(after.get("descriptorRow")?.merchantId).not.toBe(
+      before.get("descriptorRow")?.merchantId,
+    );
+  });
+
+  test("where only ONE space reaches the row, that space answers, whichever it is", () => {
+    const rows = [tieRow("accountRow", IDENTITY_FIXTURE_ACCOUNTS.counterparty2)];
+    const onlyBare = [
+      { id: "dead", merchantId: "alpha", kind: "EXACT" as const, pattern: SHARED_TIE },
+    ];
+    // An account-basis row: the bare rule reaches it under the baseline key,
+    // which is basis-agnostic, and no namespaced rule exists at all.
+    expect(assignmentSet(rows, onlyBare).get("accountRow")?.ruleId).toBe("dead");
+    const onlyNamespaced = [
+      {
+        id: "unrelated",
+        merchantId: "gamma",
+        kind: "EXACT" as const,
+        pattern: `${ACCOUNT_NAMESPACE}${IDENTITY_FIXTURE_ACCOUNTS.counterparty2}`,
+      },
+    ];
+    expect(assignmentSet(rows, onlyNamespaced).get("accountRow")?.ruleId).toBe(
+      "unrelated",
+    );
+  });
+});
+
 describe("CR4-M3P12-01 (hazard): the superseded exclusion is narrowed to the rows the claimant reaches", () => {
   const SHARED = "SHARED COUNTERPARTY TEXT";
 
@@ -1621,6 +2011,7 @@ describe("CR4-M3P12-01 (hazard): the superseded exclusion is narrowed to the row
     id,
     flow: "SPEND",
     amountCents: cents(-1_000),
+    bookingDate: plainDate("2026-03-02"),
     description: SHARED,
     ...(account === undefined ? {} : { counterpartyAccount: account }),
   });
@@ -1703,20 +2094,98 @@ describe("CR4-M3P12-01 (hazard): the superseded exclusion is narrowed to the row
   // AND THE LOSS HAS THE ORDINARY ACKNOWLEDGE PATH, so an operator who has
   // looked at it can proceed. A hidden loss has no such path, which is what
   // made hiding it worse than blocking on it.
-  test("the acknowledge path clears it, and clears only the rule it names", async () => {
-    const report = await rederiveMerchantRules(
-      context,
-      world([
-        row("accountRowB", IDENTITY_FIXTURE_ACCOUNTS.counterparty2),
-        row("accountRowC", IDENTITY_FIXTURE_ACCOUNTS.counterparty3),
-      ]),
-      { acceptedRuleIds: ["dead"] },
-    );
-    expect(report.lostAssignments).toEqual([]);
+  test("the acknowledge path clears it BY THE PAIR, and one pair leaves the other row blocking", async () => {
+    const rows = [
+      row("accountRowB", IDENTITY_FIXTURE_ACCOUNTS.counterparty2),
+      row("accountRowC", IDENTITY_FIXTURE_ACCOUNTS.counterparty3),
+    ];
+    // ONE PAIR, and the OTHER row of the SAME rule still blocks. This is the
+    // granularity criterion 12.7 buys: a person who looked at one row has not
+    // thereby accepted the other, which a rule-level flag would have decided
+    // for them.
+    const partial = await rederiveMerchantRules(context, world(rows), {
+      acceptedLosses: [{ ruleId: "dead", transactionId: "accountRowB" }],
+    });
     expect(
-      report.acceptedLostAssignments.map((lost) => lost.transactionId).sort(),
+      partial.acceptedLostAssignments.map((lost) => lost.transactionId),
+    ).toEqual(["accountRowB"]);
+    expect(partial.lostAssignments.map((lost) => lost.transactionId)).toEqual([
+      "accountRowC",
+    ]);
+    expect(partial.exitCode).toBe(1);
+
+    // The rule id alone clears NOTHING.
+    const byRule = await rederiveMerchantRules(context, world(rows), {
+      acceptedRuleIds: ["dead"],
+    });
+    expect(byRule.acceptedLostAssignments).toEqual([]);
+    expect(byRule.lostAssignments.length).toBe(2);
+    expect(byRule.exitCode).toBe(1);
+
+    const both = await rederiveMerchantRules(context, world(rows), {
+      acceptedLosses: [
+        { ruleId: "dead", transactionId: "accountRowB" },
+        { ruleId: "dead", transactionId: "accountRowC" },
+      ],
+    });
+    expect(both.lostAssignments).toEqual([]);
+    expect(
+      both.acceptedLostAssignments.map((lost) => lost.transactionId).sort(),
     ).toEqual(["accountRowB", "accountRowC"]);
-    expect(report.exitCode).toBe(0);
+    expect(both.exitCode).toBe(0);
+  });
+
+  // THE HAZARD LANE'S OWN ROUND-FIVE WITNESS, kept as a named regression
+  // beside the property that generalises it (HAZ5-1). A row claimed by the
+  // superseded rule moves to the account basis, the claimant cannot reach it,
+  // and a THIRD rule with no relationship to either picks it up. Round four's
+  // exemption asked only whether something covered the row and so reported
+  // exit 0 with an empty loss set while the row silently changed merchant.
+  test("A ROW TAKEN OVER BY AN UNRELATED RULE IS A REPORTED CHANGE, not a silent reassignment", async () => {
+    const unrelated = {
+      id: "unrelated",
+      merchantId: "gamma",
+      kind: "EXACT" as const,
+      pattern: `${ACCOUNT_NAMESPACE}${IDENTITY_FIXTURE_ACCOUNTS.counterparty2}`,
+    };
+    const rows = [
+      row("accountRowB", IDENTITY_FIXTURE_ACCOUNTS.counterparty2),
+      row("accountRowC", IDENTITY_FIXTURE_ACCOUNTS.counterparty3),
+    ];
+    const base = world(rows);
+    const withUnrelated = {
+      ...base,
+      merchants: {
+        ...base.merchants,
+        listRules: async () => [
+          { id: "dead", merchantId: "alpha", kind: "EXACT" as const, pattern: SHARED },
+          {
+            id: "claimant",
+            merchantId: "beta",
+            kind: "EXACT" as const,
+            pattern: `${DESCRIPTOR_NAMESPACE}${SHARED}`,
+          },
+          unrelated,
+        ],
+      },
+    } as unknown as Parameters<typeof rederiveMerchantRules>[1];
+
+    const report = await rederiveMerchantRules(context, withUnrelated, {});
+
+    console.log(
+      `HAZ5-1: exit ${report.exitCode}, lost ${report.lostAssignments.length}`,
+    );
+    // The row an unrelated declaration took over is reported, and so is the
+    // one nothing covers. Neither may be silent.
+    expect(report.lostAssignments.map((lost) => lost.transactionId).sort()).toEqual([
+      "accountRowB",
+      "accountRowC",
+    ]);
+    expect(report.exitCode).toBe(1);
+    // AND THE LINEAGE IS PUBLISHED, which is what the exemption now reads.
+    expect(report.supersededBy).toEqual([
+      { ruleId: "dead", claimantRuleId: "claimant" },
+    ]);
   });
 
   // AND WHERE THE PROMOTION *DOES* COVER THE ROW there is no loss to report,

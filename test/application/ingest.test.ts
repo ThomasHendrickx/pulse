@@ -54,6 +54,16 @@ const uploadAndDeclare = async (
   if (uploaded.kind !== "awaiting-declaration") {
     throw new Error("unreachable");
   }
+  // SETUP FIRST (M3-P14): the account a statement belongs to is registered
+  // before the file is confirmed, because confirmImport now refuses a file
+  // whose own account is not one the household registered. A card carries no
+  // own-account column and registers nothing.
+  await world.registerAccountForStatement(
+    ctx,
+    fixture(name),
+    detectedSpec(name),
+    declaration,
+  );
   const confirmed = await confirmImport(ctx, world.deps, {
     importId: uploaded.importId,
     profileName: `${name} profile`,
