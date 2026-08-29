@@ -1,8 +1,20 @@
+import Link from "next/link";
+import { LinkPending } from "@/platform/ui/link-pending";
 import { getTranslations } from "next-intl/server";
-import { IMPORT_STATUS_KEYS, isKnownImportStatus } from "./status-keys";
+import { IMPORT_STATUS_KEYS, isKnownImportStatus, type KnownImportStatus } from "./status-keys";
 
 // Localized status line for the import screens, driven by whitelisted
 // ?status= values. Unknown values render nothing.
+//
+// ONE STATUS CARRIES A LINK (M3-P14, criterion 14.5; narrowed by M3-P18
+// under DR-0030, which removed the account-in-savings-ring refusal and
+// its membership here). A refusal that names the setup screen without a
+// way to reach it is copy that describes an action instead of offering
+// it, which is the same defect the empty state fixed in M3-P1. The link
+// target is a route, not translated content: URL paths are English only.
+const SETUP_LINKED: ReadonlySet<KnownImportStatus> = new Set<KnownImportStatus>([
+  "account-not-registered",
+]);
 
 export const ImportStatusLine = async ({
   status,
@@ -13,9 +25,19 @@ export const ImportStatusLine = async ({
     return null;
   }
   const t = await getTranslations();
+  const key = IMPORT_STATUS_KEYS[status];
   return (
     <p className="import-status" data-testid="import-status">
-      {t(IMPORT_STATUS_KEYS[status])}
+      {SETUP_LINKED.has(status)
+        ? t.rich(key, {
+            setup: (chunks) => (
+              <Link href="/accounts">
+                {chunks}
+                <LinkPending />
+              </Link>
+            ),
+          })
+        : t(key)}
     </p>
   );
 };
