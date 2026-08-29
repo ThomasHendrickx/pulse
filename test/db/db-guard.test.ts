@@ -27,8 +27,16 @@ describe("assessDestructiveDbTarget", () => {
     });
     expect(verdict.allowed).toBe(false);
     if (!verdict.allowed) {
+      // THE ASSERTION ON THE HOSTNAME IS INVERTED (M3-P12 interlock
+      // withdrawal, criterion 12.23 measurement FIVE, finding R2-M0P14-02).
+      // This test used to assert the resolved hostname INTO the refusal
+      // reason; the reason now names the VARIABLE only, because this
+      // repository is public, so the hostname must be absent.
       expect(verdict.reason).toContain("DATABASE_URL");
-      expect(verdict.reason).toContain("aws-1-eu-north-1.pooler.supabase.com");
+      expect(verdict.reason).not.toContain(
+        "aws-1-eu-north-1.pooler.supabase.com",
+      );
+      expect(verdict.reason).not.toContain("secret");
     }
   });
 
@@ -233,9 +241,12 @@ describe("the guard's reading and the Prisma CLI's differ on the EMPTY case, and
   // AND THE COMMENTS SAY THE SAME THING THE TEST DOES. A corrected sentence
   // that drifts back is the shape clause R-087 exists for, so the wording is
   // pinned rather than trusted.
+  // gate-target.ts left this list with the withdrawn target interlock
+  // (decision D-62, criterion 12.23); the two files that remain are the ones
+  // that still read the .env location.
   test("no comment in the database platform directory still says the reader looks at the package root", () => {
     const dbDir = join(__dirname, "..", "..", "src", "platform", "db");
-    for (const name of ["gate-target.ts", "resolve-env.ts", "guard-cli.ts"]) {
+    for (const name of ["resolve-env.ts", "guard-cli.ts"]) {
       const source = readFileSync(join(dbDir, name), "utf-8");
       // The phrase survives only where it is QUOTED as the old, false
       // wording, which is how clause R-087 requires a correction to be
@@ -321,22 +332,15 @@ describe("a non-production server may not open a deployed database", () => {
     }
   });
 
-  // THE ONE CONTEXT THAT IS NOT PRODUCTION AND MAY STILL OPEN A DEPLOYED
-  // DATABASE, and the reason it is not a flag. The re-derivation command
-  // requires an explicit host AND project ref on its own command line and
-  // resolves the connection it would actually open before matching them; when
-  // that has happened, this predicate honours the fact rather than an
-  // assertion. See src/platform/db/runtime-target.ts.
-  test("an INTERLOCK that has already matched this process's target is honoured, and only by name", () => {
-    const verdict = assessNonProductionDbTarget({
-      NODE_ENV: undefined,
-      DATABASE_URL: REMOTE,
-      interlockApproval: "rederive-merchant-rules",
-    });
-    expect(verdict.allowed).toBe(true);
-    expect(verdict.reason).toContain("rederive-merchant-rules");
-    // And with no interlock, the identical environment is refused, so the
-    // approval is what carries it and not the environment.
+  // THE INTERLOCK-APPROVAL CASES THAT STOOD HERE ARE WITHDRAWN, loudly
+  // (clause R-087, decision D-62, criterion 12.23). They witnessed the
+  // approval-register branch of this predicate, the pair recorded by the
+  // re-derivation command's host-and-ref interlock and honoured here; that
+  // branch, the register (src/platform/db/runtime-target.ts) and the
+  // interlock itself left the tree together. What replaces the admitted
+  // path is a per-run hatch pair the deployed run sets inline (M3-P16), and
+  // the environment-only refusal below is what remains of these cases.
+  test("a deployed target with NOTHING set is refused: no in-process record can admit one any more", () => {
     expect(
       assessNonProductionDbTarget({ NODE_ENV: undefined, DATABASE_URL: REMOTE })
         .allowed,
@@ -346,10 +350,12 @@ describe("a non-production server may not open a deployed database", () => {
   // THE FAST GATE IS NOT MADE TO REFUSE, and this is the cost the old narrow
   // predicate was protecting against. It is answered by the client being LAZY
   // rather than by the guard being inert: a run that issues no query
-  // constructs no client, so the predicate is never consulted. Asserted by
-  // counting the client's own startup line over a real fast-gate run in
-  // test/db/gate-target.test.ts; here we only pin that the predicate itself
-  // WOULD refuse, so the two halves cannot both drift.
+  // constructs no client, so the predicate is never consulted. The
+  // behavioural witness is the import-constructs-nothing test at the bottom
+  // of this file (the startup-line count over a whole fast-gate run left
+  // with the withdrawn test/db/gate-target.test.ts, decision D-62); here we
+  // only pin that the predicate itself WOULD refuse, so the two halves
+  // cannot both drift.
   test("under vitest the predicate refuses a deployed target, so laziness is what keeps the gate green", () => {
     expect(process.env.NODE_ENV).not.toBe("production");
     expect(
@@ -435,12 +441,33 @@ describe("a non-production server may not open a deployed database", () => {
   // own startup line 18 times in one `npm test` run, from thirteen distinct
   // files; the lazy module prints it 0 times.
   test("importing the application client constructs NOTHING, so no test opens a target nobody named", async () => {
+    // The trap-touching half below CONSTRUCTS, so the target is pinned to an
+    // INVENTED local value first. Without it this test measures the ambient
+    // environment rather than the module.
+    const env = process.env as Record<string, string | undefined>;
+    const previous = env["DATABASE_URL"];
+    env["DATABASE_URL"] = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+    try {
     const clientModule = await import("../../src/platform/db/client");
     expect(clientModule.prismaHasBeenConstructed()).toBe(false);
-    // And the binding is still there to be used: this asserts the module
-    // loaded rather than that the import silently failed.
-    expect(typeof clientModule.prisma).toBe("object");
-    expect(clientModule.prismaHasBeenConstructed()).toBe(false);
+    // AND THE BINDING IS STILL USABLE, asserted by something that TOUCHES the
+    // proxy (fix round twelve, HAZARD finding HZ11-M3P12-07). This used to
+    // read `typeof clientModule.prisma`, which is answered by the proxy's
+    // TARGET and invokes no trap at all: the target is an empty object
+    // literal, so the assertion was a statement about `{}` and passed in a
+    // process where every real property access throws. Reading a property
+    // goes through the trap, so it proves both halves at once, that the module
+    // loaded and that the lazy binding resolves. The target here is the local
+    // one pinned in beforeEach.
+    expect("account" in clientModule.prisma).toBe(true);
+    expect(clientModule.prismaHasBeenConstructed()).toBe(true);
+    } finally {
+      if (previous === undefined) {
+        delete env["DATABASE_URL"];
+      } else {
+        env["DATABASE_URL"] = previous;
+      }
+    }
   });
 
   // The source-level half, kept beside it so a refactor that reintroduces a

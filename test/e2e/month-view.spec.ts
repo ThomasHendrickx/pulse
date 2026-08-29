@@ -1,5 +1,22 @@
 import { expect, test, type Page } from "@playwright/test";
 import { join } from "node:path";
+// THE PHONE MEASUREMENTS MOVED TO A SHARED MODULE (M3-P14). They were
+// defined in this file; a second phone spec now measures with the SAME
+// instruments rather than a second copy of them, and tapTargetOffenders
+// grew an axes argument whose default is exactly what this file measured
+// before. See test/e2e/phone-helpers.ts.
+import {
+  ensureRegistered,
+  registerAccounts,
+  FIXTURE_ACCOUNT_A,
+  FIXTURE_ACCOUNT_B,
+} from "./setup-accounts";
+import {
+  applyTextScale,
+  clippingOffenders,
+  horizontalOverflow,
+  tapTargetOffenders,
+} from "./phone-helpers";
 
 // The month view's dangerous states (criteria 4.2, 4.3, 4.4), each on a
 // fresh household. The webServer's clock is fixed at 2026-09-15T12:00:00Z
@@ -46,30 +63,67 @@ const signUp = async (page: Page, prefix: string): Promise<void> => {
   await expect(page.getByTestId("household-context")).toHaveText(unique);
 };
 
-// The RING is a parameter and not a constant (M3-P7 fix round, finding
-// CR-M3P7-01). It was hardcoded to POT here, and the first round of this
-// phase read that as a limit on the FIXTURES rather than on this helper, and
-// recorded an impossibility that was not one: declaring an existing
-// committed fixture under RESERVE produces a reserve row from zero new
-// fixtures, which is what witnesses the reserve arm of criterion 7.14.
+// SETUP COMES FIRST (M3-P14). An account is registered before the statement
+// that belongs to it is imported, because the confirm step now refuses a
+// file whose own account is not one the household registered. The ring is
+// answered at setup and no longer on the confirmation screen, which is why
+// this helper no longer fills a Label, a Bank or a Ring there.
+//
+// CORRECTED RATHER THAN QUIETLY REWRITTEN (clause R-087). This helper used
+// to carry a `ring` parameter, added in the M3-P7 fix round so a committed
+// fixture could be declared under RESERVE through the import path. That
+// path is gone: the ring is answered at setup, so the reserve arm is
+// witnessed by REGISTERING the partner account as savings and importing the
+// pot side. (This comment used to add that a savings statement is not
+// imported in v1 under decision D-55; DR-0030 superseded that in M3-P18,
+// and a savings account's OWN statement is now accepted and shown held,
+// witnessed below under criterion 18.2.)
+const FIXTURE_ACCOUNT: Record<string, string> = {
+  "mv-partial.csv": FIXTURE_ACCOUNT_A,
+  "mv-dense.csv": FIXTURE_ACCOUNT_A,
+  "mv-unresolved.csv": FIXTURE_ACCOUNT_A,
+  "mv-gapped-a.csv": FIXTURE_ACCOUNT_A,
+  "mv-gapped-b.csv": FIXTURE_ACCOUNT_B,
+  "mv-transit-a.csv": FIXTURE_ACCOUNT_A,
+  "mv-transit-b.csv": FIXTURE_ACCOUNT_B,
+  "mv-cancel-a.csv": FIXTURE_ACCOUNT_A,
+  "mv-cancel-b.csv": FIXTURE_ACCOUNT_B,
+};
+
 const uploadPotFile = async (
   page: Page,
   file: string,
   label: string,
   expectedAdded: string,
-  ring: "POT" | "RESERVE" = "POT",
 ): Promise<void> => {
+  const accountNumber = FIXTURE_ACCOUNT[file];
+  if (accountNumber === undefined) {
+    throw new Error(`no registered account is declared for ${file}`);
+  }
+  await ensureRegistered(page, {
+    label,
+    bank: "Demobank",
+    accountNumber,
+    ring: "POT",
+  });
   await page.goto("/import");
   await page.getByLabel("Bank export file").setInputFiles(join(FIXTURES, file));
   await page.getByRole("button", { name: "Upload" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Confirm the detected format" }),
-  ).toBeVisible();
-  await page.getByLabel("Format name").fill("Demobank current account");
-  await page.getByLabel("Label").fill(label);
-  await page.getByLabel("Bank").fill("Demobank");
-  await page.getByLabel("Ring").selectOption(ring);
-  await page.getByTestId("confirm-import").click();
+  // TWO LANDINGS, BOTH CORRECT (M3-P14). The FIRST file of a household
+  // stops at the confirmation screen because its format has no name yet.
+  // The SECOND file of the same format lands straight on the result: its
+  // account was registered at setup and a spec-identical profile already
+  // exists, so nothing is left to ask. Before this phase the second file
+  // always stopped, because its account was unknown until it introduced
+  // itself, which is exactly what setup removes.
+  const confirming = page.getByRole("heading", {
+    name: "Confirm the detected format",
+  });
+  await expect(confirming.or(page.getByTestId("import-result"))).toBeVisible();
+  if ((await confirming.count()) > 0) {
+    await page.getByLabel("Format name").fill("Demobank current account");
+    await page.getByTestId("confirm-import").click();
+  }
   await expect(page.getByTestId("import-result")).toBeVisible();
   await expect(page.getByTestId("rows-added")).toHaveText(expectedAdded);
 };
@@ -353,7 +407,6 @@ const DESK = { width: 1280, height: 720 } as const;
 // belong in a spec: the ban on literals is a ban on literals in
 // COMPONENTS (CLAUDE.md non-negotiable 4), and a measurement that read its
 // own bar out of the stylesheet it is measuring would be a mirror.
-const TAP_MIN = 44;
 const NAME_RATIO_MIN = 0.55;
 const NAME_FLOOR = { 390: 180, 360: 160 } as const;
 const FOLD = 700;
@@ -361,7 +414,6 @@ const ROW_TESTIDS = ["spend-group", "income-group", "reserve-group"] as const;
 const LABEL_MIN_LENGTH = 28;
 const DENSE_SPEND_GROUPS = 23;
 
-const INTERACTIVE = "a, button, input:not([type=hidden]), select, [role=button]";
 
 // ---------------------------------------------------------------------
 // M3-P7 FIX ROUND. Everything from here to the reserve test closes findings
@@ -541,33 +593,6 @@ const collectHiding = (page: Page) =>
 
 // Finding HZ-M3P7-04. One shot of a text-size preference over the rendered
 // page: every element's own computed size multiplied by the factor.
-const applyTextScale = (page: Page, factor: number) =>
-  page.evaluate((scale) => {
-    // SNAPSHOT FIRST, THEN APPLY. Reading a computed size after an ancestor
-    // has already been written compounds the factor down the tree, because
-    // font-size inherits: the first draft of this helper did exactly that
-    // and reported a document 17 times too wide. A platform text-scaling
-    // setting multiplies each element's own size once.
-    const elements = [...document.querySelectorAll("*")].filter(
-      (element): element is HTMLElement => element instanceof HTMLElement,
-    );
-    const sizes = elements.map((element) =>
-      parseFloat(getComputedStyle(element).fontSize),
-    );
-    elements.forEach((element, index) => {
-      const size = sizes[index];
-      if (size !== undefined && Number.isFinite(size)) {
-        element.style.fontSize = `${size * scale}px`;
-      }
-    });
-  }, factor);
-
-const horizontalOverflow = (page: Page) =>
-  page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-  }));
-
 // FINDING HZ2-03. The whole sweep under a device text-size preference, not
 // the horizontal half of it. The fold is included because criterion 7.8 is
 // the criterion this phase exists for and it was the one axis the scaled
@@ -613,38 +638,6 @@ const seedDense = async (page: Page): Promise<void> => {
   await uploadPotFile(page, "mv-dense.csv", "Daily account", "25");
 };
 
-// Criterion 7.5. Every interactive control in the shell header and in main
-// is at least TAP_MIN tall, and the failure message names each offender.
-const tapTargetOffenders = (page: Page): Promise<string[]> =>
-  page.evaluate(
-    ({ selector, min }) => {
-      const roots = [
-        document.querySelector("header.app-header"),
-        document.querySelector("main"),
-      ];
-      const offenders: string[] = [];
-      for (const root of roots) {
-        if (root === null) {
-          continue;
-        }
-        for (const element of root.querySelectorAll(selector)) {
-          const rect = element.getBoundingClientRect();
-          if (rect.width === 0 && rect.height === 0) {
-            continue;
-          }
-          if (rect.height < min) {
-            const name =
-              element.getAttribute("data-testid") ??
-              (element.textContent ?? "").trim().slice(0, 40);
-            offenders.push(`${name}: ${Math.round(rect.height)}px`);
-          }
-        }
-      }
-      return offenders;
-    },
-    { selector: INTERACTIVE, min: TAP_MIN },
-  );
-
 // Criterion 7.6. Every element carrying a data-testid, as the pair of its
 // testid and its trimmed text, sorted, with its box and its hiding.
 const collectTestids = (page: Page) =>
@@ -668,42 +661,6 @@ const collectTestids = (page: Page) =>
         `${a.testId} ${a.text}`.localeCompare(`${b.testId} ${b.text}`),
       ),
   );
-
-// Criterion 7.7 (a) and (b). Horizontal clipping over everything inside
-// main that is not .visually-hidden, and vertical clipping over the
-// elements that actually clip: an element with visible overflow reports
-// content height it is not hiding.
-const clippingOffenders = (page: Page) =>
-  page.evaluate(() => {
-    const horizontal: string[] = [];
-    const vertical: string[] = [];
-    const main = document.querySelector("main");
-    if (main === null) {
-      return { horizontal: ["no main element"], vertical: [] };
-    }
-    const name = (element: Element): string =>
-      element.getAttribute("data-testid") ??
-      (element.textContent ?? "").trim().slice(0, 40);
-    for (const element of main.querySelectorAll("*")) {
-      if (!(element instanceof HTMLElement)) {
-        continue;
-      }
-      if (
-        !element.matches(".visually-hidden") &&
-        element.scrollWidth > element.clientWidth + 1
-      ) {
-        horizontal.push(`${name(element)} (horizontal)`);
-      }
-      const overflowY = getComputedStyle(element).overflowY;
-      if (
-        ["hidden", "clip", "scroll", "auto"].includes(overflowY) &&
-        element.scrollHeight > element.clientHeight + 1
-      ) {
-        vertical.push(`${name(element)} (vertical)`);
-      }
-    }
-    return { horizontal, vertical };
-  });
 
 // Criterion 7.14, the criterion this phase exists for. Track count, name
 // width against the row's BORDER box, and the two lines. The border box is
@@ -1373,8 +1330,19 @@ test("the reserve rows are measured by the same bar as the spend rows", async ({
 }) => {
   test.setTimeout(180_000);
   await signUp(page, "mv-reserve-phone");
+  // The savings account is REGISTERED and its statement is never imported,
+  // which is what a household actually does: a reserve account is
+  // registered for its account number only (pulse-domain section 1,
+  // decision D-55). The reserve row on the month view comes from the POT
+  // side, which is the only side there is. Zero new fixtures, exactly as
+  // before.
+  await ensureRegistered(page, {
+    label: "Savings account",
+    bank: "Demobank",
+    accountNumber: FIXTURE_ACCOUNT_B,
+    ring: "RESERVE",
+  });
   await uploadPotFile(page, "mv-gapped-a.csv", "Daily account", "3");
-  await uploadPotFile(page, "mv-gapped-b.csv", "Savings account", "1", "RESERVE");
 
   for (const viewport of [PHONE, NARROW_PHONE] as const) {
     await page.setViewportSize(viewport);
@@ -1401,4 +1369,191 @@ test("the reserve rows are measured by the same bar as the spend rows", async ({
   // two states that can both be absent.
   await expect(page.getByTestId("no-reserves")).toHaveCount(0);
   await expect(page.getByTestId("reserves-net")).toBeVisible();
+});
+
+// ---------------------------------------------------------------------
+// M3-P18, criterion 18.2 (DR-0030, decision D-60): a savings statement's
+// rows are SHOWN, MARKED HELD and COUNTED NOWHERE.
+//
+// Fixture arithmetic (test/fixtures/savings-statement.csv, derived by
+// hand and never read back from the implementation): base rate interest
+// +11,03 (BASISRENTE) and loyalty premium +6,42 (GETROUWHEIDSPREMIE),
+// a transfer to the household's OTHER savings account -250,00, a payment
+// straight out of savings -89,90, and two ordinary rows (+150,00 in from
+// the current account, +20,00 deposit). The counted baseline is
+// test/fixtures/setup-current.csv over the registered current account
+// with every own-movement counterparty UNREGISTERED, so all ten rows
+// classify without gaps and the books CLOSE: income 2.500,00, spend
+// 1.473,97 (86,47 + 12,50 + 300 + 150 + 75 + 500 + 200 + 100 + 50),
+// reserves 0,00, pot change 1.026,03.
+// ---------------------------------------------------------------------
+test("held rows are shown under the account's label, in every locale, and nothing moves", async ({
+  page,
+  baseURL,
+}) => {
+  await signUp(page, "mv-held");
+  await registerAccounts(page, [
+    {
+      label: "Daily account",
+      bank: "Demobank",
+      accountNumber: "BE73900000000001",
+      ring: "POT",
+    },
+    {
+      label: "Savings",
+      bank: "Demobank",
+      accountNumber: "BE27910000000004",
+      ring: "RESERVE",
+    },
+    {
+      label: "Holiday savings",
+      bank: "Demobank",
+      accountNumber: "BE97910000000005",
+      ring: "RESERVE",
+    },
+  ]);
+
+  // The counted baseline: the current account's statement.
+  await page.goto("/import");
+  await page
+    .getByLabel("Bank export file")
+    .setInputFiles(join(FIXTURES, "setup-current.csv"));
+  await page.getByRole("button", { name: "Upload" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Confirm the detected format" }),
+  ).toBeVisible();
+  await page.getByLabel("Format name").fill("Demobank current account");
+  await page.getByTestId("confirm-import").click();
+  await expect(page.getByTestId("import-result")).toBeVisible();
+  await expect(page.getByTestId("rows-added")).toHaveText("10");
+
+  // FIVE: the baseline figures, captured BEFORE the savings statement is
+  // imported, against the hand-derived arithmetic above. The books CLOSE.
+  await page.goto("/?month=2026-08");
+  const figureIds = [
+    "recon-income",
+    "recon-spend",
+    "recon-reserves",
+    "recon-pot",
+  ] as const;
+  const before: Record<string, string> = {};
+  for (const id of figureIds) {
+    before[id] = (await page.getByTestId(id).innerText()).trim();
+  }
+  expect(before["recon-income"]).toBe("2.500,00");
+  expect(before["recon-spend"]).toBe("1.473,97");
+  expect(before["recon-reserves"]).toBe("0,00");
+  expect(before["recon-pot"]).toBe("1.026,03");
+  await expect(page.getByTestId("recon-verdict")).toHaveText("Books close");
+  await expect(page.getByTestId("recon-difference")).toHaveCount(0);
+  await expect(page.getByTestId("recon-cause-uninterpreted")).toHaveCount(0);
+  const rowCountBefore = (
+    await page.getByTestId("month-meta").innerText()
+  ).trim();
+  await expect(page.getByTestId("held-rows")).toHaveCount(0);
+
+  // The savings account's OWN statement, accepted under DR-0030.
+  //
+  // NO CONFIRMATION STEP IS DRIVEN HERE, and that is the product's rule
+  // rather than a shortcut (slow-gate repair round). The statement above
+  // taught this household the format, and upload-statement.ts asks ONCE:
+  // when a stored profile matches the detected spec and the file's own
+  // account resolves, the import is created PARSED and its rows are
+  // ingested in the same request, so no declaration screen is rendered.
+  // The savings statement is the same Demobank export in the same shape,
+  // so it lands directly. The spec used to wait for the confirmation
+  // heading here and timed out on a page already reading "Import
+  // complete": it drove a step the product had removed.
+  await page.goto("/import");
+  await page
+    .getByLabel("Bank export file")
+    .setInputFiles(join(FIXTURES, "savings-statement.csv"));
+  await page.getByRole("button", { name: "Upload" }).click();
+  await expect(page.getByTestId("import-result")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Confirm the detected format" }),
+  ).toHaveCount(0);
+  await expect(page.getByTestId("rows-added")).toHaveText("6");
+
+  await page.goto("/?month=2026-08");
+
+  // ONE: the rows are on the page, one line per held row, under the
+  // LABEL the household typed, never a number. Only the account that
+  // holds rows this month renders a block: the sibling savings account
+  // holds none, so exactly one block appears.
+  const held = page.getByTestId("held-rows");
+  await expect(held).toHaveCount(1);
+  await expect(held.getByRole("heading", { name: "Savings" })).toBeVisible();
+  await expect(held.getByTestId("held-row")).toHaveCount(6);
+  // The three shapes the current-account side cannot carry, each with
+  // the amount the fixture gives it, byte compared:
+  const shapes = [
+    { text: "BASISRENTE", amount: "11,03" },
+    { text: "GETROUWHEIDSPREMIE", amount: "6,42" },
+    { text: "Eigen spaarrekening", amount: "-250,00" },
+    { text: "Keukenwinkel Centrum", amount: "-89,90" },
+  ] as const;
+  for (const shape of shapes) {
+    const row = held.getByTestId("held-row").filter({ hasText: shape.text });
+    await expect(row).toHaveCount(1);
+    await expect(row.getByTestId("held-amount")).toHaveText(shape.amount);
+  }
+  // Booking dates render on each row.
+  await expect(
+    held.getByTestId("held-row").filter({ hasText: "2026-08-03" }).first(),
+  ).toBeVisible();
+  // No account-shaped string reaches the rendered block (the same
+  // requirement criterion 14.1 makes of the reserve rows, for the same
+  // reason): the heading is the label and the rows carry text, date and
+  // amount only.
+  const heldText = await held.innerText();
+  expect(heldText).not.toMatch(/[A-Z]{2}\s?[0-9]{2}[0-9 ]{10,}/);
+
+  // TWO: the words, visible text, not an attribute.
+  await expect(held.getByTestId("held-note")).toHaveText(
+    "These rows are held because this account is registered in the savings ring. They are no part of this month's income, spend or reserves.",
+  );
+
+  // THREE: nothing is summed. No per-account total, no grand total: the
+  // held block renders no card-total element at all.
+  await expect(held.locator(".month-card-total")).toHaveCount(0);
+
+  // FOUR: the money path. Every held amount renders through the one
+  // mandatory treatment (mono, tabular) the rest of the month uses: six
+  // amount slots, each carrying the .pulse-amount token class.
+  await expect(held.getByTestId("held-amount")).toHaveCount(6);
+  await expect(held.locator(".month-row-amount.pulse-amount")).toHaveCount(6);
+
+  // FIVE: nothing moves. Income, spend, net to reserves, the change in
+  // the pot, the difference, the uninterpreted count and the row count
+  // are each byte identical to the captured baseline, and the verdict
+  // still reads as books closing.
+  for (const id of figureIds) {
+    await expect(page.getByTestId(id)).toHaveText(before[id] ?? "");
+  }
+  await expect(page.getByTestId("recon-verdict")).toHaveText("Books close");
+  await expect(page.getByTestId("recon-difference")).toHaveCount(0);
+  await expect(page.getByTestId("recon-cause-uninterpreted")).toHaveCount(0);
+  await expect(page.getByTestId("month-meta")).toHaveText(rowCountBefore);
+
+  // The note renders in each locale (criterion 18.2 arm two).
+  const noteByLocale = [
+    {
+      locale: "nl",
+      note: "Deze rijen worden aangehouden omdat deze rekening als spaarrekening is geregistreerd. Ze tellen niet mee in de inkomsten, de uitgaven of de reserves van deze maand.",
+    },
+    {
+      locale: "fr",
+      note: "Ces lignes sont mises en attente parce que ce compte est enregistré comme compte d'épargne. Elles ne comptent ni dans les revenus, ni dans les dépenses, ni dans les réserves de ce mois.",
+    },
+  ] as const;
+  for (const { locale, note } of noteByLocale) {
+    await page.context().addCookies([
+      { name: "locale", value: locale, url: baseURL ?? "http://127.0.0.1:3000" },
+    ]);
+    await page.goto("/?month=2026-08");
+    await expect(
+      page.getByTestId("held-rows").getByTestId("held-note"),
+    ).toHaveText(note);
+  }
 });

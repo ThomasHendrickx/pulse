@@ -23,6 +23,8 @@ export type { OverviewDependencies, OverviewRepositoryPort, Period } from "./por
 export type {
   CountedGroupRow,
   GapRow,
+  HeldAccountBlock,
+  HeldRow,
   MonthFigures,
   OverviewGroup,
   OverviewGroupKind,
@@ -52,6 +54,7 @@ const liveDependencies: OverviewDependencies = {
     listReserveMovements: repository.listReserveMovements,
     monthFigures: repository.monthFigures,
     listGapRows: repository.listGapRows,
+    listHeldRows: repository.listHeldRows,
     hasAnyTransactions: repository.hasAnyTransactions,
   },
   // Lazy on purpose: platform/config's build-safe contract forbids env

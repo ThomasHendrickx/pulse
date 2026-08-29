@@ -13,6 +13,7 @@
 
 import { prisma } from "@/platform/db/client";
 import type { Cents } from "@/platform/money";
+import { plainDateFromDbDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
 import type { MerchantRuleKind, MerchantRuleLike } from "../domain/merchant-rule";
 import type {
@@ -328,6 +329,10 @@ export const listCountedTransactions = async (
       id: true,
       flow: true,
       amountCents: true,
+      // M3-P13: the review shows the transactions behind a group, each on
+      // its own booking date. The column was already the ORDER of this read
+      // and was not selected, so the rows arrived dated by nothing.
+      bookingDate: true,
       description: true,
       counterpartyName: true,
       // M3-P12: the review keys on the counterparty IDENTITY, whose account
@@ -350,6 +355,10 @@ export const listCountedTransactions = async (
         id: row.id,
         flow: row.flow,
         amountCents: row.amountCents as Cents,
+        // The DATE column comes back as a Date at UTC midnight; the one
+        // conversion to the branded calendar string is platform's
+        // (pulse-typescript section 2).
+        bookingDate: plainDateFromDbDate(row.bookingDate),
         description: row.description,
         ...(row.counterpartyName === null
           ? {}
