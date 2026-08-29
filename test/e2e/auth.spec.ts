@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
-import { assertGateApiTargetIsLocal } from "@/platform/db/gate-target";
 
 // Criterion 0.3: signs up with email and password, signs out, signs in
 // again, and asserts an authenticated household context renders. Runs in the
@@ -78,7 +77,9 @@ test("a wrong password surfaces the localized sign-in failure line", async ({
 // rather than a write, but it was still a red gate on a correct run and
 // nothing in the fast gate could see it. The deploy-verify skip is now
 // explicit and comes FIRST, the way test/e2e/merchant-rule-write.spec.ts
-// already does it.
+// already does it. THE TARGET ASSERTION THAT PARAGRAPH DESCRIBES HAS SINCE
+// BEEN WITHDRAWN (decision D-62, criterion 12.23); the explicit skip stays,
+// because a deploy-verify run still must not construct users of its own.
 test("an auth user without a household link recovers to sign-in instead of looping", async ({
   page,
 }) => {
@@ -94,15 +95,16 @@ test("an auth user without a household link recovers to sign-in instead of loopi
     "needs the local service role key to construct the orphan auth user",
   );
 
-  // THIS SPEC OPENS A PROJECT WITH A SERVICE ROLE KEY, SO IT SAYS WHICH ONE
-  // (M3-P12 fix round five, CRITERIA finding CR5-M3P12-08). A service-role
-  // key against a project API creates users and writes rows exactly as a
-  // connection string does, and this was the one such construction in the
-  // tree with nothing in front of it. The gate's config already pins the
-  // target; this refuses for itself, which is what covers the spec being run
-  // by something other than `playwright test`.
-  assertGateApiTargetIsLocal();
-
+  // THE GATE-TARGET ASSERTION THAT STOOD HERE IS WITHDRAWN, loudly (clause
+  // R-087, decision D-62, criterion 12.23). assertGateApiTargetIsLocal from
+  // src/platform/db/gate-target.ts refused a non-local Supabase API before
+  // this admin client was constructed (M3-P12 fix round five, CRITERIA
+  // finding CR5-M3P12-08); that module left the tree with the target
+  // interlock D-62 withdrew, so this spec opens whichever project the
+  // invoking shell's Supabase variables name. The gate is run against the
+  // local stack with those variables pinned by the operator, and the settled
+  // posture for entry points outside criterion 12.23's scope is the plan's
+  // parked question, not something this spec asserts.
   const admin = createClient(supabaseUrl ?? "", serviceRoleKey ?? "", {
     auth: { autoRefreshToken: false, persistSession: false },
   });

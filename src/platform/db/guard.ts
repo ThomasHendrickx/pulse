@@ -28,10 +28,13 @@ export type DbGuardVerdict =
   | { readonly allowed: true; readonly reason: string }
   | { readonly allowed: false; readonly reason: string };
 
-// EXPORTED so the gate interlock beside this one (gate-target.ts, M3-P12 fix
-// round four) asks the same question of a hostname that this guard asks.
-// One list, not two that agree until somebody edits one.
-export const LOCAL_DB_HOSTS: ReadonlySet<string> = new Set([
+// NO LONGER EXPORTED, and the correction is loud (clause R-087, decision
+// D-62). This set used to be exported for the gate interlock beside this one
+// (gate-target.ts, M3-P12 fix round four); decision D-62 withdrew that
+// interlock and its three sibling modules, so the one list has exactly the
+// two consumers in this file again and the export would be an invitation to
+// grow a second guard around it.
+const LOCAL_DB_HOSTS: ReadonlySet<string> = new Set([
   "127.0.0.1",
   "localhost",
   "::1",
@@ -71,9 +74,15 @@ export const assessDestructiveDbTarget = (env: DbGuardEnv): DbGuardVerdict => {
 
     const normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase();
     if (!LOCAL_HOSTS.has(normalized)) {
+      // THE HOSTNAME IS DELIBERATELY NOT PRINTED (M3-P12 interlock
+      // withdrawal, criterion 12.23 measurement FIVE, finding PR1-M0P14-05).
+      // This reason used to interpolate the resolved hostname; this
+      // repository is public and its sibling assessment below already states
+      // the practice twice: name the VARIABLE, never the value. The refusal
+      // logic is unchanged.
       return {
         allowed: false,
-        reason: `${name} points at non-local host "${hostname}"; refusing to run a destructive database command against it. Set PULSE_ALLOW_REMOTE_DB_DESTRUCTION=1 only for a deliberate remote reset.`,
+        reason: `${name} points at a non-local host; refusing to run a destructive database command against it. The resolved value is deliberately not printed: this repository is public. Set PULSE_ALLOW_REMOTE_DB_DESTRUCTION=1 only for a deliberate remote reset.`,
       };
     }
   }
@@ -125,13 +134,22 @@ export const assessDestructiveDbTarget = (env: DbGuardEnv): DbGuardVerdict => {
 // rather than an argument: src/platform/db/client.ts constructs LAZILY. The
 // fast gate imports the adapters and never issues a query, so no client is
 // constructed and this predicate is never consulted, which removes the first
-// cost entirely rather than trading it away. And the re-derivation reaches
-// construction only through a repository call, which happens after its own
-// interlock has proved host and ref, which removes the second: that interlock
-// records its approval in ./runtime-target and this predicate honours it.
+// cost entirely rather than trading it away.
 //
-// THE PREDICATE IS NOW: production is untouched; an interlock that has already
-// named and matched this process's target is honoured; otherwise a present
+// THE APPROVAL REGISTER THAT USED TO BE CONSULTED HERE IS WITHDRAWN, loudly
+// (clause R-087, decision D-62, criterion 12.23). Until that withdrawal this
+// predicate honoured an in-process interlockApproval pair recorded by the
+// re-derivation command's own host-and-ref interlock (./runtime-target),
+// which is what let that one command open a deployed database without the
+// override below. D-62 measured that a non-production process proving its own
+// entitlement at run time cannot be made sound: the prover and the proven are
+// the same process. The re-derivation now stands behind the same posture as
+// everything else: local-only by default, and the deployed run sets BOTH
+// per-run hatches inline (this predicate's PULSE_ALLOW_REMOTE_DB_IN_DEV and
+// the destructive assessment's PULSE_ALLOW_REMOTE_DB_DESTRUCTION), which is
+// M3-P16's step to make.
+//
+// THE PREDICATE IS NOW: production is untouched; otherwise a present
 // connection string must name a local host, with the one explicit override
 // below.
 //
@@ -144,16 +162,6 @@ export type NonProductionDbGuardEnv = {
   readonly NODE_ENV?: string | undefined;
   readonly DATABASE_URL?: string | undefined;
   readonly PULSE_ALLOW_REMOTE_DB_IN_DEV?: string | undefined;
-  // AN APPROVAL IS A PAIR, NOT A NAME (fix round twelve, CRITERIA finding
-  // CR11-M3P12-04). What used to be here was the NAME of an interlock, and
-  // presence alone admitted any target, so an approval obtained for one
-  // database admitted a different one and a caller that had resolved nothing
-  // could produce it. The approval now carries the exact connection string an
-  // interlock re-verified, and this predicate admits only when the connection
-  // it is being asked about IS that one.
-  readonly interlockApproval?:
-    | { readonly source: string; readonly connection: string }
-    | undefined;
 };
 
 export const assessNonProductionDbTarget = (
@@ -164,28 +172,6 @@ export const assessNonProductionDbTarget = (
       allowed: true,
       reason:
         "production: this is the server that serves real traffic and the deployed database is the target it exists to open",
-    };
-  }
-  const approval = env.interlockApproval;
-  if (approval !== undefined) {
-    // THE COMPARISON IS THE POINT. Presence used to be enough, so the guard
-    // skipped its host check without re-establishing what was being opened.
-    if (
-      env.DATABASE_URL !== undefined &&
-      env.DATABASE_URL !== "" &&
-      env.DATABASE_URL === approval.connection
-    ) {
-      return {
-        allowed: true,
-        reason: `${approval.source} resolved THIS connection and matched it against a host and project ref named on its own command line`,
-      };
-    }
-    // An approval for a different connection is not an approval for this one,
-    // and saying so is more useful than falling silently through to the host
-    // check, which would refuse with a reason about ambient values.
-    return {
-      allowed: false,
-      reason: `an interlock approval recorded by ${approval.source} exists in this process, but it names a DIFFERENT connection from the one about to be opened. Refusing: an approval is a statement about one database. The resolved values are deliberately not printed: this repository is public.`,
     };
   }
   if (env.PULSE_ALLOW_REMOTE_DB_IN_DEV === "1") {
@@ -216,7 +202,7 @@ export const assessNonProductionDbTarget = (
     return {
       allowed: false,
       reason:
-        "this process is not production and DATABASE_URL points at a non-local host. Refusing to open it: nothing outside production serves real traffic, and in a shared container the ambient value belongs to somebody else's deployment. Pin DATABASE_URL to the local stack, run the command that carries its own host-and-ref interlock, or set PULSE_ALLOW_REMOTE_DB_IN_DEV=1 for a deliberate remote session. The resolved value is deliberately not printed: this repository is public.",
+        "this process is not production and DATABASE_URL points at a non-local host. Refusing to open it: nothing outside production serves real traffic, and in a shared container the ambient value belongs to somebody else's deployment. Pin DATABASE_URL to the local stack, or set PULSE_ALLOW_REMOTE_DB_IN_DEV=1 for a deliberate remote session. The resolved value is deliberately not printed: this repository is public.",
     };
   }
   return {

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LinkPending } from "@/platform/ui/link-pending";
 import { getTranslations } from "next-intl/server";
 import type { ImportFailureReason, ImportRecord } from "../application/ports";
 
@@ -33,7 +34,10 @@ export const ImportResult = async ({
       <section className="import-screen" data-testid="import-failed">
         <h1>{t("importFailedTitle")}</h1>
         <p className="import-lead">{t(reasonKey)}</p>
-        <Link href="/import">{t("backToImportLink")}</Link>
+        <Link href="/import">
+          {t("backToImportLink")}
+          <LinkPending />
+        </Link>
       </section>
     );
   }
@@ -63,7 +67,10 @@ export const ImportResult = async ({
           </dd>
         </div>
       </dl>
-      <Link href="/import">{t("importAgainLink")}</Link>
+      <Link href="/import">
+        {t("importAgainLink")}
+        <LinkPending />
+      </Link>
     </section>
   );
 };

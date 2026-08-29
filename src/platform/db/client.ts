@@ -1,7 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { databaseUrlDiagnostic, isProduction } from "../config";
 import { assessNonProductionDbTarget } from "./guard";
-import { approvalSource, approvedConnection } from "./runtime-target";
 
 // One PrismaClient per process, in EVERY environment including production,
 // because more than one exhausts the database's connections. The dev server
@@ -51,21 +50,21 @@ const announce = (): void => {
 
 // NOTHING OUTSIDE PRODUCTION MAY OPEN A TARGET NOBODY NAMED. See
 // assessNonProductionDbTarget in ./guard for the contract and for why
-// production is deliberately untouched, and ./runtime-target for why an
-// interlock's own approval is honoured and an environment flag is not. This
-// runs before the client is constructed, so a refused process opens nothing.
+// production is deliberately untouched. This runs before the client is
+// constructed, so a refused process opens nothing.
+//
+// THE APPROVAL REGISTER CONSULTATION THAT STOOD HERE IS WITHDRAWN, loudly
+// (clause R-087, decision D-62, criterion 12.23): this call used to pass an
+// interlockApproval pair read from ./runtime-target, which admitted the
+// re-derivation command's deployed target. The register left the tree with
+// the target interlock; the one deployed run sets PULSE_ALLOW_REMOTE_DB_IN_DEV=1
+// inline for itself instead (M3-P16), and every other non-production process
+// is refused a non-local target exactly as before.
 const assertTargetAllowed = (): void => {
   const verdict = assessNonProductionDbTarget({
     NODE_ENV: process.env.NODE_ENV,
     DATABASE_URL: process.env.DATABASE_URL,
     PULSE_ALLOW_REMOTE_DB_IN_DEV: process.env.PULSE_ALLOW_REMOTE_DB_IN_DEV,
-    interlockApproval: (() => {
-      const connection = approvedConnection();
-      const source = approvalSource();
-      return connection === undefined || source === undefined
-        ? undefined
-        : { source, connection };
-    })(),
   });
   if (!verdict.allowed) {
     console.error(`[pulse:db] ${verdict.reason}`);
