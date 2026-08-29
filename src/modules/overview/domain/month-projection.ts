@@ -306,6 +306,57 @@ export type ReserveMovementGroup = {
   readonly rowCount: number;
 };
 
+// A HELD row (M3-P18, DR-0030): a fact row of the requested period on an
+// account whose ring is SAVINGS, shown on that account and counted in no
+// total. KEYED ON THE RING ALONE, with no flow condition at all: a
+// savings account's rows are held by construction, because the
+// interpretation window is built from the pot account ids alone, so a
+// flow test here would be a third null-flow read where criterion 18.3
+// requires exactly two. Carries the account's typed LABEL so the screen
+// never heads the block with a number.
+export type HeldRow = {
+  readonly id: string;
+  readonly accountId: string;
+  readonly accountLabel: string;
+  readonly bookingDate: PlainDate;
+  readonly text: string;
+  readonly amountCents: Cents;
+};
+
+// One savings account's held rows, for the block the month view renders
+// under that account's label. NOTHING IS SUMMED here or anywhere
+// downstream (decision D-60): a total of the rows Pulse happens to hold
+// resembles a balance, and a transfer into savings is already counted on
+// the current-account side, so any total would show the same euro under
+// two headings on one screen.
+export type HeldAccountBlock = {
+  readonly accountId: string;
+  readonly label: string;
+  readonly rows: readonly HeldRow[];
+};
+
+// Group the repository's flat held rows per account, preserving the
+// repository's ordering (label, then booking date, then id). Pure fold,
+// no arithmetic on the amounts at all.
+export const groupHeldRows = (
+  rows: readonly HeldRow[],
+): readonly HeldAccountBlock[] => {
+  const blocks = new Map<string, { label: string; rows: HeldRow[] }>();
+  for (const row of rows) {
+    const existing = blocks.get(row.accountId);
+    if (existing === undefined) {
+      blocks.set(row.accountId, { label: row.accountLabel, rows: [row] });
+    } else {
+      existing.rows.push(row);
+    }
+  }
+  return [...blocks.entries()].map(([accountId, block]) => ({
+    accountId,
+    label: block.label,
+    rows: block.rows,
+  }));
+};
+
 // A surfaced gap row, one of four kinds (fix round 1 grew this from
 // two): an unmatched INTERNAL leg waiting for its other side's export,
 // an UNRESOLVED row no rule can classify, a matched leg whose partner

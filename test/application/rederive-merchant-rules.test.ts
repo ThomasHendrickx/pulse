@@ -1,3 +1,4 @@
+import { plainDate } from "@/platform/plain-date";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -85,6 +86,14 @@ const ingestFixture = async (): Promise<World> => {
   if (!detected.ok) {
     throw new Error("detection failed");
   }
+  // SETUP FIRST (M3-P14): the account a statement belongs to is registered
+  // before the file is confirmed. A card carries no own-account column and
+  // registers nothing.
+  await world.registerAccountForStatement(context, bytes, detected.value, {
+    label: "Daily account",
+    bank: "Belfius",
+    role: "POT",
+  });
   const confirmed = await confirmImport(context, world.deps, {
     importId: uploaded.importId,
     profileName: "belfius-current-account-nl",
@@ -1389,10 +1398,24 @@ describe("CR2-M3P12-03: the write set is applied ALL OR NOTHING", () => {
       ),
       "utf8",
     );
-    expect(adapter).toContain("prisma.$transaction(async (tx)");
+    // SCOPED TO THE FUNCTION, not searched over the file (fix round eight,
+    // CRITERIA finding CR6-M3P12-03). This asserted the transaction against
+    // the WHOLE adapter, and that exact string occurs three times in it, in
+    // three different functions, only one of which is this one. So the pin
+    // held even if applyRuleWrites lost its transaction entirely: it matched
+    // the SHAPE of the file containing the words rather than the IDENTITY of
+    // the function using the construct. The next two lines already knew how to
+    // scope; this was the one of the three left unscoped.
+    const start = adapter.indexOf("export const applyRuleWrites");
+    expect(start).toBeGreaterThan(-1);
+    const nextExport = adapter.indexOf("\nexport const ", start + 1);
+    const block = adapter.slice(
+      start,
+      nextExport === -1 ? adapter.length : nextExport,
+    );
+    expect(block).toContain("prisma.$transaction(async (tx)");
     // Every statement in it still carries the household id: the update's
     // where clause and the insert's data both name it.
-    const block = adapter.slice(adapter.indexOf("export const applyRuleWrites"));
     expect(block).toContain("where: { id: update.ruleId, householdId: context.householdId }");
     expect(block).toContain("householdId: context.householdId,");
   });
@@ -1670,12 +1693,28 @@ describe("CR3-M3P12-02: a recompute failure is reported as what it is", () => {
     expect(script).toContain("the failure was before or inside the rule writes");
   });
 
-  test("the command states that it cannot be pointed at a local database (CR3-M3P12-05)", () => {
+  // INVERTED WITH THE INTERLOCK WITHDRAWAL (clause R-087, decision D-62,
+  // criterion 12.23). This test used to pin the header claim "CANNOT BE
+  // POINTED AT A LOCAL DATABASE" (CR3-M3P12-05), which was true of the
+  // withdrawn host-and-ref interlock and is now FALSE: the routine is held
+  // to the repository's local-only guard, so local is the ONE target it can
+  // open without a hatch. The pin now holds the corrected contract: the
+  // withdrawn sentence survives only inside the quotation the correction
+  // carries, and the header states the inversion in its own words.
+  test("the command's header states the local-only posture, and the withdrawn claim survives only as quotation (D-62)", () => {
     const script = readFileSync(
       join(repositoryRoot, "scripts", "rederive-merchant-rules.ts"),
       "utf8",
     );
-    expect(script).toContain("CANNOT BE POINTED AT A LOCAL DATABASE");
+    const occurrences = script.split("CANNOT BE POINTED AT A LOCAL DATABASE").length - 1;
+    expect(occurrences).toBe(1);
+    const quoted = script
+      .split("\n")
+      .filter((line) => line.includes("CANNOT BE POINTED AT A LOCAL DATABASE"));
+    expect(quoted).toHaveLength(1);
+    expect(quoted[0]).toContain('"');
+    expect(script).toContain("pointed at NOTHING BUT a local database");
+    expect(script).toContain("A LOCAL RUN IS NOW POSSIBLE");
   });
 });
 
@@ -1834,6 +1873,7 @@ describe("the before set over a seed of un-namespaced rules", () => {
     id,
     flow: "SPEND",
     amountCents: cents(-1_000),
+    bookingDate: plainDate("2026-03-02"),
     description: TEXT,
     ...(account === undefined ? {} : { counterpartyAccount: account }),
   });
@@ -1878,6 +1918,7 @@ describe("the before set over a seed of un-namespaced rules", () => {
         id: "unreached",
         flow: "SPEND" as const,
         amountCents: cents(-1_000),
+        bookingDate: plainDate("2026-03-04"),
         description: "SOME OTHER COUNTERPARTY TEXT",
       },
     ];
@@ -1903,6 +1944,7 @@ describe("the before set breaks a tie between the two key spaces toward the BASE
     id,
     flow: "SPEND",
     amountCents: cents(-1_000),
+    bookingDate: plainDate("2026-03-02"),
     description: SHARED_TIE,
     ...(account === undefined ? {} : { counterpartyAccount: account }),
   });
@@ -1969,6 +2011,7 @@ describe("CR4-M3P12-01 (hazard): the superseded exclusion is narrowed to the row
     id,
     flow: "SPEND",
     amountCents: cents(-1_000),
+    bookingDate: plainDate("2026-03-02"),
     description: SHARED,
     ...(account === undefined ? {} : { counterpartyAccount: account }),
   });

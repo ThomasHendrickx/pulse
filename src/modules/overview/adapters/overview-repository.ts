@@ -9,6 +9,7 @@
 // the declaration tables (accounts, merchants, merchant_tags, tags).
 
 import { Prisma } from "@prisma/client";
+import { ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS } from "@/platform/account-number";
 import { prisma } from "@/platform/db/client";
 import { cents } from "@/platform/money";
 import {
@@ -20,6 +21,7 @@ import { CASH_WITHDRAWAL_PATTERNS } from "@/modules/ledger/application";
 import type {
   CountedGroupRow,
   GapRow,
+  HeldRow,
   RawMonthFigures,
   ReserveMovementGroup,
 } from "../domain/month-projection";
@@ -157,6 +159,34 @@ export const listSpendGroups = (
 ): Promise<readonly CountedGroupRow[]> =>
   countedGroups(context, period, "SPEND");
 
+// THE RESERVES JOIN CANONICALISES BOTH SIDES (M3-P14, criterion 14.1 and
+// 14.4). It used to compare the stored strings raw, so a savings account
+// registered compact and a transfer row whose counterparty column the
+// source printed SPACED joined to nothing and the row rendered under its
+// account number instead of the label the household typed. The stored fact
+// column is never rewritten to fix that (pulse-domain section 2, rule 1);
+// the comparison canonicalises instead, the same rule as the ledger's
+// declared-set lookups. The SQL form mirrors canonicalAccountNumber in
+// src/platform/account-number.ts: uppercase, every whitespace removed.
+//
+// THE WHITESPACE CLASS IS THE SHARED PLATFORM CONSTANT, BOUND AS A
+// PARAMETER, and this paragraph has been corrected TWICE, both times
+// loudly (clause R-087). FIRST correction (M3-P14): a backslash-s in a
+// Prisma tagged template literal is not a recognised JavaScript escape
+// and collapses to a bare `s`, so the join once stripped the letter s
+// from both sides; the fix then was the POSIX class [[:space:]], which
+// carries no backslash. SECOND correction (M3-P18 fix round, hazard
+// finding HZ-M3P18-01), superseded wording quoted: "THE WHITESPACE CLASS
+// IS WRITTEN [[:space:]] AND NOT \s ON PURPOSE" was itself wrong one
+// level up, because POSIX [[:space:]] retains U+00A0, U+202F and U+FEFF
+// where the platform canonical form's \s strips them, so an NBSP-spaced
+// counterparty column joined to nothing exactly like the original
+// defect. The one class both corrections converge on is
+// ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS (src/platform/account-number.ts):
+// the POSIX class unioned with the remaining ECMAScript whitespace, as
+// visible ARE escapes, passed as a BIND parameter so no template-literal
+// escaping can eat it (the first correction's lesson, kept by
+// construction rather than by avoiding backslashes).
 export const listReserveMovements = async (
   context: HouseholdContext,
   period: Period,
@@ -170,13 +200,16 @@ export const listReserveMovements = async (
     }[]
   >`
     SELECT
-      t."counterpartyIban"          AS "counterpartyIban",
+      upper(regexp_replace(t."counterpartyIban", ${ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS}, '', 'g'))
+                                    AS "counterpartyIban",
       a."label"                     AS "label",
       SUM(t."amountCents")::bigint  AS "totalCents",
       COUNT(*)::bigint              AS "rowCount"
     FROM "transactions" t
     LEFT JOIN "accounts" a
-      ON a."iban" = t."counterpartyIban" AND a."householdId" = t."householdId"
+      ON upper(regexp_replace(a."iban", ${ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS}, '', 'g'))
+         = upper(regexp_replace(t."counterpartyIban", ${ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS}, '', 'g'))
+     AND a."householdId" = t."householdId"
     WHERE t."householdId" = ${context.householdId}::uuid
       AND t."flow" = 'RESERVE'::"Flow"
       AND t."counterpartyIban" IS NOT NULL
@@ -230,9 +263,10 @@ export const monthFigures = async (
         WHERE t."flow" = 'INTERNAL' AND ${inTransitExists(period)}), 0)::bigint         AS "inTransitCents",
       COUNT(*) FILTER (
         WHERE t."flow" = 'INTERNAL' AND ${inTransitExists(period)})::bigint             AS "inTransitCount",
-      COUNT(*) FILTER (WHERE t."flow" IS NULL)::bigint                                  AS "uninterpretedCount",
+      COUNT(*) FILTER (WHERE t."flow" IS NULL AND a."role" = 'POT'::"AccountRole")::bigint AS "uninterpretedCount",
       COUNT(*) FILTER (WHERE t."flow" IS NOT NULL)::bigint                              AS "rowCount"
     FROM "transactions" t
+    JOIN "accounts" a ON a."id" = t."accountId" AND a."householdId" = t."householdId"
     WHERE t."householdId" = ${context.householdId}::uuid
       AND t."bookingDate" >= ${plainDateToDbDate(period.from)}
       AND t."bookingDate" <= ${plainDateToDbDate(period.to)}
@@ -243,6 +277,18 @@ export const monthFigures = async (
   // every surface with a green panel. The named sums, changeInPot and
   // rowCount each filter on flow themselves, so the figures over
   // interpreted rows are unchanged.
+  //
+  // THE UNINTERPRETED COUNT IS SCOPED BY THE ACCOUNT'S RING (M3-P18,
+  // decision D-56 relived; DR-0030). A null flow on a POT account is
+  // still a gap and goes on holding the verdict open, exactly as CR-502
+  // requires; a null flow on a SAVINGS account is a row DELIBERATELY not
+  // counted, held by construction because the interpretation window is
+  // built from the pot account ids alone, and it is returned by the held
+  // read (listHeldRows) instead. The scoping is written by the RING
+  // PREDICATE and never by dropping the null-flow condition, and
+  // listGapRows below is scoped the same way: scoping one read and not
+  // the other makes the cause block vanish with its rows while the
+  // repository goes on returning them.
   const row = rows[0];
   if (row === undefined) {
     throw new Error("Aggregate query returned no row");
@@ -295,19 +341,76 @@ export const listGapRows = async (
       AND t."bookingDate" >= ${plainDateToDbDate(period.from)}
       AND t."bookingDate" <= ${plainDateToDbDate(period.to)}
       AND (
-        t."flow" IS NULL
+        (t."flow" IS NULL AND a."role" = 'POT'::"AccountRole")
         OR t."flow" = 'UNRESOLVED'::"Flow"
         OR (t."flow" = 'INTERNAL'::"Flow" AND NOT ${MATCHED_LINK_EXISTS})
         OR (t."flow" = 'INTERNAL'::"Flow" AND ${inTransitExists(period)})
       )
     ORDER BY t."bookingDate" ASC, t."id" ASC
   `;
+  // THE NULL-FLOW ARM IS SCOPED BY THE ACCOUNT'S RING, exactly as the
+  // uninterpreted count above and for the same reason (M3-P18, decision
+  // D-56; DR-0030): a savings account's rows keep no flow by
+  // construction and belong to the held read, while a null flow on a POT
+  // account is a REAL gap that must stay listed here and go on holding
+  // the verdict open. Written by the ring predicate, never by dropping
+  // the null-flow condition (finding CR-502 held, not undone).
   return rows.map((row) => ({
     id: row.id,
     gap: parseGapKind(row.gap),
     bookingDate: plainDateFromDbDate(row.bookingDate),
     text: row.text,
     accountLabel: row.accountLabel,
+    amountCents: cents(row.amountCents),
+  }));
+};
+
+// THE HELD READ (M3-P18, DR-0030): every fact row of the period on an
+// account whose ring is SAVINGS, with that account's typed LABEL, so the
+// month view can show what a savings account holds without heading the
+// block with a number. KEYED ON THE RING ALONE, deliberately: it carries
+// NO flow condition (a savings row is held by construction, never by a
+// flag), so it is correctly absent from criterion 18.3's enumeration of
+// null-flow reads. And it SUMS NOTHING (decision D-60): a total of the
+// rows Pulse happens to hold resembles a balance, and a transfer into
+// savings is already counted on the current-account side and rendered in
+// the reserves block above, so any per-account or grand total would show
+// the same euro under two headings on one screen.
+export const listHeldRows = async (
+  context: HouseholdContext,
+  period: Period,
+): Promise<readonly HeldRow[]> => {
+  const rows = await prisma.$queryRaw<
+    readonly {
+      id: string;
+      accountId: string;
+      accountLabel: string;
+      bookingDate: Date;
+      text: string;
+      amountCents: number;
+    }[]
+  >`
+    SELECT
+      t."id"                                          AS "id",
+      t."accountId"                                   AS "accountId",
+      a."label"                                       AS "accountLabel",
+      t."bookingDate"                                 AS "bookingDate",
+      ${COUNTERPARTY_TEXT_SQL}                        AS "text",
+      t."amountCents"                                 AS "amountCents"
+    FROM "transactions" t
+    JOIN "accounts" a ON a."id" = t."accountId" AND a."householdId" = t."householdId"
+    WHERE t."householdId" = ${context.householdId}::uuid
+      AND a."role" = 'RESERVE'::"AccountRole"
+      AND t."bookingDate" >= ${plainDateToDbDate(period.from)}
+      AND t."bookingDate" <= ${plainDateToDbDate(period.to)}
+    ORDER BY a."label" ASC, t."bookingDate" ASC, t."id" ASC
+  `;
+  return rows.map((row) => ({
+    id: row.id,
+    accountId: row.accountId,
+    accountLabel: row.accountLabel,
+    bookingDate: plainDateFromDbDate(row.bookingDate),
+    text: row.text,
     amountCents: cents(row.amountCents),
   }));
 };

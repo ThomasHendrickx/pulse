@@ -1,0 +1,663 @@
+# Round FOUR adversarial plan review of the M0-P6 plan iteration: phases
+# M3-P14 and M3-P15 of delivery/plan/pulse-v02.yaml, reviewer worktree
+# wt-m0p6-adv, branch claude/m0-p6-plan-review, fix-round head 542c570
+# merged at 10f2ccf. Round one returned 7 high, 7 medium, 1 low; round two
+# 5, 5, 1; round three 4, 4, 1.
+#
+# WHY THIS IS AGAIN A FINDING SET. `--type verdict` was attempted first at
+# this head and refused for the same structural reason as in all three
+# earlier rounds. Captured:
+#
+#   $ npx tiphys validate --type verdict --context /home/user/wt-m0p6-adv \
+#       delivery/review/m0-p6-plan-review-round4.yaml
+#   INVALID #/criteria required property criteria is missing
+#   INVALID #/deviations-judged required property deviations-judged is missing
+#   INVALID #/framing required property framing is missing
+#   INVALID #/phase required property phase is missing
+#   INVALID #/review-contract required property review-contract is missing
+#   INVALID #/kind value "finding" does not equal the required constant
+#     "verdict"
+#   INVALID #/findings/0/concrete-edit property concrete-edit is not permitted
+#     here
+#   INVALID #/findings/0/concrete-fix required property concrete-fix is missing
+#   (the last pair repeated for each finding)
+#
+# A verdict judges an IMPLEMENTED phase against a work history and demands
+# `concrete-fix`, a fix to CODE. Neither phase has been built. Validated as
+# `--type finding`.
+#
+# EVERY ROUND-THREE FINDING IS ANSWERED, and four of them well. R3-001 by the
+# two named arms of criterion 14.16, which is the right repair and whose
+# second arm I walked again below. R3-003 by the re-invention clause now
+# added to criterion 15.1's second arm and to M3-P15's step 1. R3-005 by step
+# 1 baseline ONE now capturing listGapRows beside MonthFigures. R3-006 by
+# criterion 14.11 witness TWO's refusal of a reserve declaration with no
+# account number, with hazard H14.20. R3-007 by witness TWO losing its count
+# and witness FIVE's grep widening to the accounts module. R3-008 by witness
+# THREE now saying "BY TRANSACTION ... keyed on each row's own rendered
+# identity". R3-009 by the corrected conflicts-with entry, which now says in
+# its own words that the sentence it replaced belonged to the superseded form
+# of D-55. R3-002 and R3-004 were answered by building new machinery, and
+# that machinery is where this round's findings are.
+#
+# ==========================================================================
+# MY OWN GREP, RUN RATHER THAN QUOTED, BECAUSE THE DISPATCH ASKED FOR IT AND
+# BECAUSE THE ANSWER DECIDES FINDING R4-001.
+#
+#   $ grep -rn 'flow" IS NULL' src/
+#   src/modules/overview/adapters/overview-repository.ts:230:      COUNT(*)
+#     FILTER (WHERE t."flow" IS NULL)::bigint  AS "uninterpretedCount",
+#   src/modules/overview/adapters/overview-repository.ts:280:        WHEN
+#     t."flow" IS NULL THEN 'uninterpreted'
+#   src/modules/overview/adapters/overview-repository.ts:295:        t."flow"
+#     IS NULL
+#
+# THREE conditions in TWO reads, which is what the plan says of the base and
+# is correct. But :280 is a CASE label and :295 is the WHERE that admits the
+# row; they belong to ONE read, listGapRows. So the base is three conditions
+# across two reads, and adding a third read adds at least a fourth condition.
+# Criterion 14.14 case FIVE asserts "there are exactly three, in three
+# reads". That cannot be true after the phase, and it is finding R4-001.
+#
+# A wider grep, because the criterion does not pin its pattern, finds two
+# more absence-of-flow tests in TypeScript rather than SQL:
+#   src/modules/ledger/application/interpret-window.ts:153 (flow === undefined)
+#   src/modules/ledger/domain/reconciliation.ts:62 (flow === undefined)
+# so "every null-flow condition under src/" is five or three depending on a
+# pattern the criterion never states.
+#
+# THE PARTITION, ATTACKED RATHER THAN ACCEPTED. It does not hold as written,
+# and the reason is not an edge case, it is the criterion's own sibling. Case
+# THREE requires that a null-flow row on a POT account is "STILL counted as
+# uninterpreted, STILL returned by listGapRows" -- both reads, by design,
+# because the cause block is gated on the count while its rows come from the
+# listing. Case FIVE requires that each row is "returned by exactly one of
+# the three and never by two". A pot null-flow row is in two. The two cases
+# contradict each other eight lines apart. I have to record that the wording
+# of case FIVE is MINE: it is the concrete-edit of round-three finding
+# R3-002, adopted verbatim, and it was wrong when I wrote it. What partitions
+# is the RING PREDICATE across two classes of read, not the rows across three
+# reads.
+#
+# I also looked for the siblings of R3-006's numberless reserve account, as
+# instructed. A card account is a POT account with no account number
+# (src/modules/ledger/domain/ledger-transaction.ts:63 through :69), so it
+# falls in the pot class and partitions cleanly. An account with role RESERVE
+# and no account number is now refused at the confirm path by criterion 14.11
+# witness TWO. AccountRole has exactly two members
+# (prisma/schema/accounts.prisma:5 through :8), so there is no third ring and
+# no unresolvable one, and every transaction carries a non-null accountId
+# with a foreign key to accounts, so no row can fall outside both classes. A
+# row outside the requested period is outside all three reads together, which
+# is a partition of the period's rows and is what the criterion means. I
+# could not construct a row that falls into none of the three classes or into
+# both classes. The partition of RINGS is sound; the partition of READS as
+# case FIVE states it is not.
+#
+# ==========================================================================
+# THE SECOND ARM OF 14.16, WALKED BY HAND AGAINST classify-flow.ts,
+# corrections.ts AND month-projection.ts, AS THE DISPATCH ASKED.
+#
+# Let the pot statement carry income +I, outside spend -A, and outgoing
+# transfers to the savings account S summing to -X.
+#   BEFORE the reserve import, S is undeclared. The transfers match nothing
+#   in deriveDeclaredSets (ledger-transaction.ts:56 through :61), miss
+#   classify-flow.ts:62 and :73, and take the negative branch at :102 as
+#   SPEND. incomeSigned = I, spendSigned = -(A+X), reserveSigned = 0,
+#   changeInPot = I-A-X. spend = A+X, netToReserves = 0.
+#   difference = (I-A-X) - (I - (A+X) - 0) = 0. Books close.
+#   AFTER the import declares S in the reserve ring, classify-flow.ts:62
+#   fires. incomeSigned = I, spendSigned = -A, reserveSigned = -X,
+#   changeInPot = I-A-X (every row still carries a flow, so
+#   overview-repository.ts:219 is unmoved). spend = A, netToReserves = +X.
+#   difference = (I-A-X) - (I - A - X) = 0.
+# SO: spend falls by exactly X, netToReserves rises by exactly X, income and
+# changeInPot and difference are byte identical, reconciles stays true. The
+# arm's arithmetic is EXACT, not approximate, and change in pot really is
+# unmoved by a declaration that reclassifies rows, because the reclassified
+# rows never leave the non-null-flow set.
+#
+# THE ONE CONSTRUCTION IN WHICH IT IS NOT EXACT, which is finding R4-005. A
+# POSITIVE pot-side row referencing S, a drawdown from savings. After the
+# declaration it takes classify-flow.ts:66 and corrections.ts:129 through
+# :137 and is RESERVE with a positive amount, pushing netToReserves DOWN.
+# Before the declaration it depends on the refund arm: corrections.ts:165
+# through :174 makes it SPEND when the counterparty key is in the outgoing
+# history, and counterpartyKey uses the IBAN when the row carries one
+# (corrections.ts:197 through :200), while the history is read over the whole
+# ledger for all pot accounts (interpret-window.ts:80 through :82). So a
+# household that has ever transferred TO S has its drawdown classified SPEND
+# beforehand, and spend and netToReserves still move by the same amount. A
+# household that has only ever drawn DOWN has no such history, the drawdown
+# is INCOME at classify-flow.ts:121, and the arm's assertion that incomeCents
+# is byte identical is false. The arm holds for the fixture the plan points
+# at and the criterion should say so rather than leave it to hold by luck.
+#
+# ==========================================================================
+# D-60 AND THE COUNTS, checked in both phases. The accounts-screen witness
+# now carries "NO accumulated count and NO amount" (14.15 witness TWO); the
+# new read is specified "per account, over the requested period ... never an
+# amount and never a sum outside the period"; witness FIVE's grep now covers
+# the overview module AND the accounts module. month-accounts' row count is
+# bounded to the requested period by witness ONE. I found no accumulated
+# total, no amount and no out-of-period sum anywhere in either phase. D-60 is
+# held.
+#
+# THE SWEEP, A FIFTH TIME, over every criterion in both phases. 14.14 case
+# TWO now has its listGapRows baseline (R3-005 closed). 14.7 has its absolute
+# bound for the added link. 14.11 witness FOUR and 15.1's second arm both
+# have the mod-97 measurement, captured in each phase's own step 1. 14.16's
+# two arms record within the test run or compute from fixture arithmetic.
+# 14.15 and month-accounts assert on elements that do not exist at the base,
+# so they need no baseline and correctly have none. 15.4 was fixed in round
+# two and is unchanged. I found NO new instance of the
+# evidence-outside-the-tree shape this round, which is the first round of
+# four in which that is true.
+#
+# SCOPE DISCIPLINE. No queue, cron, event bus, cache, state library,
+# component library, per-transaction override, goal or budget. One port
+# method, one MonthOverview field, one rendered element. Nothing to report.
+#
+# HOUSE RULES. `git diff a1bbb29 542c570 -- delivery/plan/pulse-v02.yaml |
+# grep '^+' | grep -c '—'` returns 0. The fix-round commit message carries no
+# amount, no counterparty, no date from a row and no identifier. English
+# throughout. No identifier shape appears in this document.
+kind: finding
+verdict: FIX-ROUND-NEEDED
+produced-by: claude (Opus 5, claude-opus-5)
+findings:
+  - id: R4-001
+    severity: high
+    evidence:
+      - >-
+        Criterion 14.14 case FIVE asserts "there are exactly three [null-flow
+        conditions], in three reads, and that they PARTITION rather than
+        overlap ... An application test over a household holding one null-flow
+        row on a pot account and one on a reserve account asserts each row is
+        returned by exactly one of the three and never by two and never by
+        none."
+      - >-
+        Criterion 14.14 case THREE, eight lines above it in the same
+        criterion, asserts the opposite for the pot row: "a row on a POT
+        account with a null flow is STILL counted as uninterpreted, STILL
+        returned by listGapRows and STILL holds the verdict open". That row is
+        in TWO of the three by design, and the design is deliberate: the cause
+        block is gated on the count
+        (src/modules/overview/ui/month-view.tsx:354) while the rows beneath it
+        come from the listing
+        (src/modules/overview/application/month-overview.ts:167), which is
+        why case FOUR requires the two to move together. Case FIVE and case
+        THREE cannot both pass.
+      - >-
+        The count is also wrong. Executed: grep -rn 'flow" IS NULL' src/
+        returns three lines, at overview-repository.ts:230, :280 and :295, but
+        :280 is a CASE label and :295 is the WHERE of the SAME read,
+        listGapRows. The base is three conditions in TWO reads. Adding a third
+        read adds at least a fourth condition, so "exactly three, in three
+        reads" is arithmetically impossible after the phase.
+      - >-
+        The assertion is ill-typed besides. The three reads do not return the
+        same kind of thing: uninterpretedCount returns a bigint
+        (overview-repository.ts:211 and :230), listGapRows returns rows
+        (:302 through :309), and the new held read returns counts per account
+        by its own specification in the ACCEPT step. "Each row is returned by
+        exactly one of the three" cannot be evaluated against two reads that
+        return no rows at all.
+      - >-
+        The pattern is unpinned, so even the base count is not reproducible: a
+        grep for "every null-flow condition under src/" also reaches
+        src/modules/ledger/application/interpret-window.ts:153 and
+        src/modules/ledger/domain/reconciliation.ts:62, both testing flow ===
+        undefined, which makes the answer five rather than three.
+      - >-
+        The wording is this reviewer's own, adopted verbatim from round three
+        finding R3-002's concrete-edit. It was wrong when written, for the
+        reason case THREE gives.
+    concrete-edit: >-
+      Replace criterion 14.14 case FIVE with: "FIVE, THE RING PREDICATE
+      PARTITIONS THE ROWS, WHICH IS NOT THE SAME AS THE READS PARTITIONING.
+      The held state criterion 14.15 renders needs a read and it is a THIRD
+      null-flow condition carrying the INVERSE ring predicate, so case FOUR's
+      same-predicate sentence does not reach it. A grep with a stated pattern,
+      the SQL string 'flow\" IS NULL', records every occurrence under src/ and
+      the test asserts each occurrence sits in one of exactly three reads: the
+      uninterpreted count, the gap listing, and the held read. Every row with
+      no flow then falls in exactly one of TWO CLASSES by the ring of its
+      account, and the test asserts the classes rather than the reads. An
+      application test over a household holding one null-flow row on a pot
+      account and one on a reserve account asserts: the POT row is counted by
+      uninterpretedCount AND returned by listGapRows AND absent from the held
+      read; the RESERVE row is absent from uninterpretedCount AND absent from
+      listGapRows AND present in the held read's count for its account; and
+      neither row is absent from all three. A held read written with no ring
+      filter puts the pot row in all three and fails here, and this case
+      together with criterion 14.15 witness THREE is what catches it." And
+      change the criterion's title from "THE TWO READS THAT CAN SEE A HELD ROW
+      ARE SCOPED THE SAME WAY" to "EVERY READ THAT CAN SEE A ROW WITH NO FLOW
+      IS SCOPED BY THE RING, AND THE THREE AGREE".
+    analysis: >-
+      The most important criterion in the phase is the one that cannot pass,
+      and it cannot pass against its own sibling case rather than against the
+      code. An implementer meeting case FIVE red has exactly one cheap repair,
+      which is to stop the count and the listing from both covering the pot
+      row, and that repair is finding CR-502 undone, the defect two earlier
+      rounds of this plan were spent holding shut. I have to own the wording:
+      the plan adopted my round-three edit verbatim, and the fix round did not
+      read it against case THREE. That is worth saying beyond this finding,
+      because it means a reviewer's concrete-edit is now entering the plan
+      with less scrutiny than the plan's own sentences get.
+  - id: R4-002
+    severity: high
+    evidence:
+      - >-
+        The ACCEPT step specifies the new read: "this phase adds exactly ONE
+        read, a THIRD null-flow condition carrying the INVERSE ring predicate
+        of the other two: per account, over the requested period, the number
+        of rows carrying a flow and the number carrying none ON ACCOUNTS THAT
+        ARE NOT POT ACCOUNTS."
+      - >-
+        Nine lines later the same step says "AND THE SAME READ CARRIES THE
+        COUNTED SIDE, because the dangerous answer is the one that renders
+        nothing: a savings account answered as a spending account has its
+        interest credits taken as INCOME ... and nothing on the month view
+        differs from a correct month."
+      - >-
+        A savings account answered as a spending account IS A POT ACCOUNT. It
+        is declared with role POT at
+        src/modules/import/application/confirm-import.ts:96 and
+        src/modules/ledger/domain/ledger-transaction.ts:63 puts it in
+        potAccountIds. A read restricted to accounts that are not pot accounts
+        cannot see it, cannot count its rows and cannot produce its entry.
+      - >-
+        Criterion 14.15 witness SIX depends on exactly that entry: "A
+        Playwright test over a household that answered the SPENDING ring for a
+        savings statement asserts that account appears in month-accounts with
+        data-state counted and its row count." Witness ONE depends on it more
+        broadly, requiring "one entry per account that has rows in the
+        requested period", which for any ordinary household is mostly pot
+        accounts.
+      - >-
+        The obvious repair, widening the read to all accounts, is forbidden by
+        criterion 14.14 case FIVE, which requires the held read to take non-pot
+        accounts so the three null-flow conditions partition. So the plan as it
+        stands specifies one read that must be non-pot-only and one element
+        that must cover pot accounts, and names the same read as the source of
+        both.
+      - >-
+        Witness SIX is, by the plan's own sentence, "the only detection in
+        either phase for the answer criterion 15.9 calls the mistake the
+        product cannot otherwise catch". The contradiction lands on the one
+        thing this round was added to build.
+    concrete-edit: >-
+      Replace the "AND THE SAME READ CARRIES THE COUNTED SIDE" sentence of the
+      ACCEPT step with: "AND THE COUNTED SIDE NEEDS A SECOND READ, WHICH DOES
+      NOT DISTURB THE PARTITION BECAUSE IT CARRIES NO NULL-FLOW CONDITION AT
+      ALL. month-accounts covers every account with rows in the period, and
+      most of them are pot accounts, so the phase adds TWO methods on the
+      overview port: the HELD read, rows with no flow on accounts that are not
+      pot accounts, counted per account over the period, which is the third
+      null-flow condition criterion 14.14 case FIVE governs; and the COUNTED
+      read, rows WITH a flow grouped per account over the period, which has no
+      null-flow condition and is therefore outside that case entirely. Both
+      return counts per account and never an amount and never a sum outside
+      the period, which is decision D-60. MonthOverview gains one field
+      carrying both, one entry per account with its label, its period row
+      count and its state." Amend criterion 14.15 witness ONE to say the
+      entries come from those two reads and that an account appearing in both
+      is a defect the partition case catches.
+    analysis: >-
+      This is the same defect as round three's R3-002 one turn further on: the
+      screen state DR-0030 pays for still has no data path for its more
+      important half. The repair correctly added a read and then bound it with
+      a predicate that excludes the case the read was added for. The
+      resolution is cheap and it is not a widening: the counted side needs no
+      null-flow condition, so it sits outside the partition argument
+      completely, and saying that in one sentence keeps both criteria true.
+      Left as it is, an implementer will either widen the held read and redden
+      14.14, or narrow month-accounts to held accounts only and quietly delete
+      the only detection this plan has for its worst silent failure.
+  - id: R4-003
+    severity: high
+    evidence:
+      - >-
+        Criterion 14.15 witness ONE specifies the entry as "the account's
+        label, its row count for that period and a state of either counted or
+        held, READABLE FROM THE MARKUP AS data-state". A data attribute is
+        invisible to a reader.
+      - >-
+        Witness SIX, which is the detection, asserts "that account appears in
+        month-accounts with data-state counted and its row count, that the
+        copy naming the counted state is PRESENT IN ALL THREE CATALOGUES, and
+        that it links to the accounts screen where the ring is changed".
+        Presence in a catalogue is a catalogue-completeness assertion, the same
+        form witness FOUR uses, and it does not require the string to be
+        rendered anywhere.
+      - >-
+        So an implementation rendering, for each account, a label, a number and
+        an invisible data-state attribute, with the explanatory copy sitting
+        unused in messages/en.json, messages/nl.json and messages/fr.json,
+        satisfies witnesses ONE and SIX in full. What the household sees is an
+        account name beside a row count, which tells them nothing about
+        whether those rows were counted as ordinary income and spend or held.
+      - >-
+        The stake is the whole of R3-004's repair. The plan's own words are
+        that this element "is the state that differs, and it is a fact the
+        household can check rather than a warning it would learn to ignore",
+        and that a wrongly ringed savings account leaves a month in which
+        "nothing else on the page differs from a correct month". A fact the
+        household can check has to be legible to the household.
+      - >-
+        The pulse-frontend rule the phase's own grounding cites is that a
+        screen never hides an unknown
+        (.claude/skills/pulse-frontend/SKILL.md:105). A state encoded only in
+        an attribute the reader cannot see is hidden in the sense that rule
+        means.
+    concrete-edit: >-
+      Amend criterion 14.15 witness ONE to: "each entry carrying the account's
+      label, its row count for that period, and its state RENDERED AS WORDS
+      the reader can see, from all three catalogues, saying for a counted
+      account that its rows are counted in this month's income and spend and
+      for a held account that its rows are kept and counted in no month. The
+      state is ALSO exposed as data-state so the tests can key on it, but the
+      data attribute is the test's handle and never the reader's signal, and a
+      test asserts the visible text of each entry contains the state copy for
+      that entry's state." Amend witness SIX's second clause from "that the
+      copy naming the counted state is present in all three catalogues" to
+      "that the copy naming the counted state is RENDERED IN THAT ENTRY, in
+      the reader's own language, asserted against each of the three catalogues
+      by running the test in each locale, and not merely present as a key".
+    analysis: >-
+      Three rounds of this review have been about states the household cannot
+      see, and the repair for the last one is specified as a machine-readable
+      attribute. The tests would be green, the element would be on the page,
+      and the household would learn nothing. It is worth noticing that this is
+      the third time in this plan that a promise landed as a data-testid: the
+      difference between a testid the spec queries and a sentence the reader
+      reads is exactly the difference between the criterion passing and the
+      product working, and this criterion currently specifies only the former.
+  - id: R4-004
+    severity: high
+    evidence:
+      - >-
+        Criterion 14.15 renamed the element this round. It is now
+        month-accounts, with "one entry per account that has rows in the
+        requested period", each entry carrying a state of counted or held.
+      - >-
+        Criterion 15.2 in the sibling phase still names the old element twice:
+        "those rows are NAMED AS HELD after the correction, in the held-rows
+        element criterion 14.15 introduces, with the account and the count",
+        and "a second correction back into the pot returns them to the counted
+        set and removes them from the held-rows element". Criterion 14.15 no
+        longer introduces an element with that testid, so a Playwright test
+        written from 15.2 queries a data-testid no implementation produces.
+      - >-
+        The rename also changed the SEMANTICS and 15.2 inherited the old ones.
+        Under the old held-rows element, an account whose rows stopped being
+        held left the element. Under month-accounts, an account with rows in
+        the period always has an entry; correcting its ring back into the pot
+        changes its state from held to counted, it does not remove it.
+      - >-
+        So 15.2's assertion that the correction "removes them from the
+        held-rows element" and 14.15 witness ONE's specification of "one entry
+        per account that has rows in the requested period" cannot both hold.
+        The account still has rows in the period. One of the two criteria must
+        fail whichever way it is implemented.
+    concrete-edit: >-
+      Replace both references in criterion 15.2. First: "those rows are NAMED
+      AS HELD after the correction, in the month-accounts element criterion
+      14.15 introduces, the account's entry carrying data-state held with its
+      period row count and the held state rendered as words". Second: "and
+      that a second correction back into the pot returns them to the counted
+      set and flips that account's month-accounts entry from held to counted,
+      the entry REMAINING on the page because the account still has rows in
+      the period, which is what criterion 14.15 witness ONE requires; an
+      implementation that removes the entry instead fails both criteria."
+      Then grep the whole plan for held-rows and confirm no reference survives.
+    analysis: >-
+      A rename made in one phase and not propagated to the other, with a
+      semantic change riding along inside it. It is mechanical and it is
+      cheap, and it is the second consecutive round in which a repair left a
+      fossil in the sibling phase, R3-009 having been the first. The semantic
+      half is the part that matters: "removed from the element" and "one entry
+      per account with rows" are opposite instructions about the same moment,
+      and the moment is the one criterion 15.9's whole journey ends on.
+  - id: R4-005
+    severity: medium
+    evidence:
+      - >-
+        Criterion 14.16's second arm asserts "spendCents FALLS and
+        netToReservesCents RISES by the same hand-written string computed from
+        the fixture's own arithmetic, incomeCents, changeInPotCents and
+        differenceCents are byte identical".
+      - >-
+        Walked by hand, that is exactly true for OUTGOING transfers to the
+        savings account: before the declaration they take
+        src/modules/ledger/domain/classify-flow.ts:102 as SPEND, after it they
+        take :62 as RESERVE, so spendSigned rises by their magnitude and
+        reserveSigned falls by the same magnitude, income and changeInPot and
+        the difference do not move. I could not break that half.
+      - >-
+        A POSITIVE pot-side row referencing the same account, a drawdown from
+        savings, does not behave the same way. After the declaration it takes
+        classify-flow.ts:66 and src/modules/ledger/domain/corrections.ts:129
+        through :137 and is RESERVE with a positive amount, pushing
+        netToReserves DOWN rather than up.
+      - >-
+        What it was BEFORE the declaration depends on history rather than on
+        the row. corrections.ts:165 through :174 makes a positive row SPEND
+        when its counterparty key is in the outgoing history, and
+        counterpartyKey takes the IBAN when the row carries one
+        (corrections.ts:197 through :200), while that history is read over the
+        whole ledger for every pot account
+        (src/modules/ledger/application/interpret-window.ts:80 through :82).
+        So a household that has ever transferred TO the account has its
+        drawdown as SPEND beforehand and the two movements stay equal; a
+        household that has only ever drawn DOWN has it as INCOME at
+        classify-flow.ts:121, and the arm's assertion that incomeCents is byte
+        identical is then false.
+      - >-
+        The criterion does not constrain the fixture, so whether it passes
+        depends on a property of the fixture nobody is asked to check.
+    concrete-edit: >-
+      Add to criterion 14.16's second arm, after the sentence naming
+      classify-flow.ts:102: "The fixture for this arm carries OUTGOING
+      transfers to that account only, and the criterion says so rather than
+      relying on it: a POSITIVE pot-side row referencing the same account is
+      RESERVE with a positive amount after the declaration
+      (src/modules/ledger/domain/corrections.ts:129 through :137) and is
+      SPEND or INCOME before it depending on whether the outgoing history
+      carries that counterparty (corrections.ts:165 through :174 and :197
+      through :200), so with a drawdown present the two movements are no
+      longer the same magnitude and incomeCents may move. A THIRD ARM covers
+      the drawdown explicitly, over a fixture whose only pot-side row
+      referencing the account is positive and whose household has no prior
+      outgoing transfer to it, asserting that incomeCents FALLS and
+      netToReservesCents FALLS by the same hand-written string while
+      spendCents, changeInPotCents and differenceCents are byte identical."
+    analysis: >-
+      The arm is right and I could not break its stated case, which is worth
+      saying plainly after three rounds of finding arithmetic that did not
+      hold. What it lacks is the precondition that makes it right. A criterion
+      that passes because of an unstated property of a fixture is a criterion
+      that will be extended by someone who adds a realistic drawdown row to
+      that fixture and then weakens the assertion to make it green again,
+      which is how a hard-won equality turns into a range.
+  - id: R4-006
+    severity: medium
+    evidence:
+      - >-
+        M3-P15's verification-first step still carries the reversed decision as
+        its premise: "M3-P14 closed the interface route into that state under
+        decision D-55, so reach it the way a household that imported before
+        M3-P14 is already in it: put rows on an account through the ordinary
+        import path and then set that account's role to RESERVE by a direct
+        declaration write against a scratch database, never through shipped
+        code."
+      - >-
+        Under DR-0030 M3-P14 does the opposite of closing that route. The ring
+        question stays on the import screen offering both rings, a reserve
+        account's statement is accepted, and its rows are held. The state of "a
+        row with no flow on an account that is not a pot account" is reachable
+        through shipped code in two clicks after M3-P14 lands.
+      - >-
+        The instruction still produces a valid observation, because the state
+        M3-P15 actually needs is a row that WAS interpreted on a pot account
+        and whose account then left the pot, which no shipped path reaches at
+        this phase's base. But the reason given for it is a decision that no
+        longer exists, and an implementer who reads the premise will conclude
+        the product cannot reach a non-pot null-flow row at all and will not
+        test the route that now can.
+      - >-
+        This is the same class as round three's R3-009, which the fix round
+        closed in M3-P14's conflicts-with with an explicit note that the
+        sentence belonged to the superseded form of D-55. The same sweep did
+        not reach M3-P15's step 1.
+    concrete-edit: >-
+      Replace that passage with: "Under DR-0030 a reserve account's statement
+      is ACCEPTED and its rows are held, so a row with no flow on a non-pot
+      account is reachable through shipped code as soon as M3-P14 lands, and
+      the step observes BOTH routes. FIRST, the shipped one: upload a statement
+      answering the savings ring, and record the flow column on those rows,
+      whether they appear in the month's totals or on the merchant review
+      screen, the uninterpreted count, whether listGapRows returns them,
+      whether the held read counts them, and whether the month view says the
+      books close. SECOND, the state no shipped path reaches at this phase's
+      base and which this phase exists for: a row INTERPRETED on a pot account
+      whose account then leaves the pot, reached by importing through the
+      ordinary path and then setting that account's role to RESERVE by a direct
+      declaration write against a scratch database, never through shipped code
+      and never committed as a code path. Record the same list for it. The two
+      differ in exactly the way this phase's clearing step must close."
+    analysis: >-
+      A verification-first step is the one place in a phase where a wrong
+      premise costs a real observation rather than a paragraph. This one tells
+      the implementer that a route is closed which the previous phase opens
+      deliberately, and the consequence is not that they do the wrong thing,
+      it is that they do half the right thing and never look at the half that
+      DR-0030 introduced.
+  - id: R4-007
+    severity: medium
+    evidence:
+      - >-
+        The ACCEPT step and criterion 14.15 witness SIX both assert, as the
+        ground for the whole month-accounts element, that a savings account
+        answered as a spending account leaves a month where "nothing on the
+        month view differs from a correct month" and "nothing else on the page
+        differs from a correct month".
+      - >-
+        That is true of the month view and false of the product. The rows on
+        that account are on a POT account and are interpreted, so its interest
+        credits are INCOME and its outgoings are SPEND, and
+        src/modules/ledger/application/interpret-window.ts:100 through :128
+        resolves merchants for exactly the INCOME and SPEND rows. Their
+        counterparties therefore reach the merchant review screen as
+        unresolved groups.
+      - >-
+        The month view itself changes too, in the header:
+        src/modules/overview/application/month-overview.ts:134 through :136
+        sums the unresolved counted groups into unresolvedCounterpartyCount,
+        which the header renders as the review pill. A wrongly ringed savings
+        account raises that number.
+      - >-
+        This matters beyond accuracy. Those groups invite a naming, and every
+        naming made there writes a MerchantRule against the household's own
+        savings account. When the ring is later corrected through criterion
+        15.9's journey, those rows become held, interpretation writes them no
+        merchant, and decision D-49 KEEPS every one of those rules. That is
+        decision D-52's own argument, made against M3-P12, arriving through a
+        door this plan opens itself and naming no criterion.
+    concrete-edit: >-
+      Correct the claim in both places to: "nothing on the month view's
+      FIGURES differs from a correct month: no cause block appears, the
+      reserves card reads zero with its empty note, and the verdict reads that
+      the books close. Two things elsewhere DO differ and neither is legible
+      as a signal: the account's own counterparties reach the merchant review
+      screen as unresolved groups
+      (src/modules/ledger/application/interpret-window.ts:100 through :128),
+      and the header's review pill rises with them
+      (src/modules/overview/application/month-overview.ts:134 through :136).
+      Both invite a naming against the household's own savings account, and
+      decision D-49 keeps every rule so written once the ring is corrected."
+      Then add to criterion 15.9's journey, after the correction: "and asserts
+      that any merchant rule the household wrote against that account's own
+      counterparties before the correction is reported to them by name and
+      count, per decision D-49 and criterion 15.6, so the naming they made in
+      the wrong state is not left silently inert."
+    analysis: >-
+      The plan under-describes its own failure and the under-description is
+      load-bearing, because "nothing differs" is the sentence that justifies
+      building a new element rather than reaching for a signal that already
+      exists. The signals that do exist are worse than nothing on their own,
+      since they invite the household to name their own savings account as a
+      merchant, but they should be named in the plan rather than denied, and
+      the naming they invite has a consequence two criteria already cover and
+      neither is pointed at it.
+  - id: R4-008
+    severity: medium
+    evidence:
+      - >-
+        Criterion 14.16's FIRST arm asserts seven figures unchanged:
+        "incomeCents, spendCents, netToReservesCents, changeInPotCents,
+        differenceCents, uninterpretedCount and rowCount are each byte
+        identical to the recorded values".
+      - >-
+        The SECOND arm asserts six and omits rowCount: "incomeCents,
+        changeInPotCents and differenceCents are byte identical, reconciles is
+        still true, uninterpretedCount is unchanged".
+      - >-
+        rowCount is unchanged in the second arm too, and for the same reason
+        it is unchanged in the first: it is COUNT(*) FILTER (WHERE t."flow" IS
+        NOT NULL) at src/modules/overview/adapters/overview-repository.ts:231,
+        the held rows carry no flow, and the reclassified pot rows carry one
+        before and after.
+      - >-
+        An omission that looks deliberate teaches the wrong thing. The second
+        arm is the arm where figures DO move, so a reader takes the shorter
+        list as the plan's statement of which figures are allowed to move, and
+        rowCount is not one of them.
+    concrete-edit: >-
+      Add rowCount to criterion 14.16's second arm assertion list, so it reads
+      "incomeCents, changeInPotCents, differenceCents and rowCount are byte
+      identical, reconciles is still true, uninterpretedCount is unchanged",
+      and add one clause naming why: "rowCount cannot move here either,
+      because it counts rows carrying a flow
+      (src/modules/overview/adapters/overview-repository.ts:231), the held rows
+      carry none and the reclassified rows carry one on both sides of the
+      declaration; the two arms therefore assert the same seven figures and
+      differ only in which two are allowed to move."
+    analysis: >-
+      The smallest of the mediums and included because the two arms are meant
+      to be read together and their only difference should be the two figures
+      that move. A missing seventh figure in one list is the kind of asymmetry
+      that gets copied forward into a test and then into an implementer's
+      mental model of what the invariant covers.
+  - id: R4-009
+    severity: low
+    evidence:
+      - >-
+        Criterion 14.14's title still reads "THE TWO READS THAT CAN SEE A HELD
+        ROW ARE SCOPED THE SAME WAY, SO A HELD ROW IS NEVER REPORTED AS A
+        GAP", and its opening paragraph still describes the base state, "a
+        grep for a null-flow condition in src/ returns THREE lines in two
+        reads".
+      - >-
+        The criterion now has five cases and case FIVE is entirely about a
+        THIRD read, whose scoping is deliberately the INVERSE of the other
+        two, so neither "two reads" nor "scoped the same way" describes what
+        the criterion governs after the phase.
+      - >-
+        Titles in this plan are read as the criterion's summary by anyone
+        scanning it, and this one now says the opposite of case FIVE's whole
+        content.
+    concrete-edit: >-
+      Retitle criterion 14.14 to "EVERY READ THAT CAN SEE A ROW WITH NO FLOW
+      IS SCOPED BY THE RING, AND THE THREE AGREE", and change the opening
+      paragraph's last sentence to "at the phase base that grep returns three
+      lines in TWO reads, the count and the gap listing; this phase adds a
+      third read with the inverse ring predicate, so after it there are three
+      reads and the cases below govern all of them."
+    analysis: >-
+      The only low. It costs nothing and it is worth doing in the same edit as
+      R4-001, because the title is what the fix round will scan when checking
+      whether it addressed the finding, and a title describing two reads is
+      how a five-case criterion about three reads gets half-read.

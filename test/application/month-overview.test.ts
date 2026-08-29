@@ -14,6 +14,7 @@ import { getMonthOverviewWith } from "@/modules/overview/application";
 import type {
   CountedGroupRow,
   GapRow,
+  HeldRow,
   OverviewDependencies,
   OverviewRepositoryPort,
   Period,
@@ -49,6 +50,7 @@ type MonthData = {
   readonly reserves?: readonly ReserveMovementGroup[];
   readonly figures?: RawMonthFigures;
   readonly gaps?: readonly GapRow[];
+  readonly held?: readonly HeldRow[];
 };
 
 const fakeWorld = (byMonth: Record<string, MonthData>) => {
@@ -66,6 +68,7 @@ const fakeWorld = (byMonth: Record<string, MonthData>) => {
     monthFigures: async (_context, period) =>
       dataFor(period).figures ?? emptyFigures,
     listGapRows: async (_context, period) => dataFor(period).gaps ?? [],
+    listHeldRows: async (_context, period) => dataFor(period).held ?? [],
     hasAnyTransactions: async () => Object.keys(byMonth).length > 0,
   };
   const deps: OverviewDependencies = {
