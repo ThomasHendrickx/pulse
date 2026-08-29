@@ -102,6 +102,18 @@ export const canonicalAccountNumber = (value: string): string =>
 //   permanently unmatchable by the canonical lookup, and the original
 //   rendering is gone, so nothing repairs it by re-running anything.
 //
+//   RE-MEASURED INDEPENDENTLY when this fix was harvested onto main, on
+//   a DIFFERENT cluster (Postgres 17.6), because a measurement taken
+//   once on one server is a claim about that server and not about the
+//   expression. Same sweep, same two collations, same result: 25 under
+//   libc C.utf8, 30 under ICU "und", the extra five exactly as listed
+//   above. AND ONE THING THAT MEASUREMENT ADDS: on that cluster the
+//   DATABASE'S OWN default locale provider is ICU, so the sweep under no
+//   COLLATE clause at all also returned 30. The over-stripping is
+//   therefore what an ordinary connection gets by default on a cluster
+//   provisioned that way, not something only an explicit COLLATE can
+//   reach.
+//
 // THE RULE THIS ESTABLISHES, recorded at the mechanism's definition and
 // binding on every sibling in the two lists above: A SQL MIRROR OF
 // canonicalAccountNumber ENUMERATES CODE POINTS AND NEVER NAMES A POSIX

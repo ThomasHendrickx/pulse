@@ -79,6 +79,14 @@ export const INTERPRETATION_WINDOW_PADDING_DAYS =
 // under two different destinations on two surfaces. Whoever adds a
 // pattern carrying \s, or meets such a description in real data, owes it
 // the treatment the account-number class got.
+//
+// RE-MEASURED when this note was harvested onto main, on a DIFFERENT
+// cluster (Postgres 17.6): the same disagreement, the same two sets. And
+// one thing that measurement adds, which sharpens what is at stake here:
+// on that cluster the DATABASE'S OWN default locale provider is ICU, so
+// the wider behaviour is what an ordinary connection gets rather than
+// something an explicit COLLATE has to reach. If this shorthand ever
+// bites, it will bite by default, not exotically.
 export const CASH_WITHDRAWAL_PATTERNS: readonly RegExp[] = [
   /GELDOPNAME/i,
   /GELDAFHALING/i,

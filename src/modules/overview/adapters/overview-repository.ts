@@ -213,6 +213,17 @@ export const listSpendGroups = (
 // then arbitrary but stable; naming the pair to the household is the
 // parked merge's work, and scripts/detect-account-collisions.ts is what
 // names it to an operator today.
+//
+// WHERE "FIX ROUND TWO" ABOVE POINTS, so the numbering is not read as a
+// round of this branch's. Both corrections in this comment were made on
+// the unmerged phase branch, in ITS second fix round, after the phase had
+// already merged to main, and they reached main in a later harvest round
+// that took these two defects and re-witnessed each one here before
+// porting it. A third change sitting in the same source commit, a
+// relaxation of the ring-change guard, was deliberately left behind: the
+// ring freeze is the owner's decision DR-0031 and nothing supersedes it.
+// delivery/work-history/m3-p18.yaml carries both witnesses and the
+// exclusion.
 export const listReserveMovements = async (
   context: HouseholdContext,
   period: Period,

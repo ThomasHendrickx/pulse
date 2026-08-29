@@ -81,6 +81,9 @@ files-touched:
   - src/modules/overview/domain/month-projection.ts
   - src/modules/overview/ui/month-view.tsx
   - src/modules/ledger/domain/ledger-transaction.ts
+  # Added in the harvest round: the cash pattern list carries the unswept
+  # sibling of the whitespace mirror and now says so at its definition.
+  - src/modules/ledger/domain/constants.ts
   - src/platform/account-number.ts
   - prisma/schema/migrations/20260827120000_canonical_account_iban_backfill/migration.sql
   - scripts/detect-account-collisions.ts
@@ -116,6 +119,13 @@ per-step-commits:
     subject: "history: the M3-P18 work history with captured witnesses"
   - sha: 20b6b07
     subject: "fix: the SQL whitespace class mirrors the platform canonical form exactly"
+  # The harvest round, on claude/m3-p18-harvest, cut from main after the
+  # phase merged. A third change from the same source commit, the ring
+  # relaxation, was deliberately not taken; see the fix-round entries.
+  - sha: d569f16
+    subject: "fix: the SQL whitespace mirror enumerates code points and names no POSIX class"
+  - sha: 613ba32
+    subject: "fix: the reserves join matches at most one account row per transaction"
 key-decisions:
   - decision: >-
       The mandated mechanism-index lookup was answered with "the index does
@@ -419,6 +429,105 @@ gate-evidence:
       container must run, with the local supabase stack up and
       DATABASE_URL/DIRECT_URL/NEXT_PUBLIC_SUPABASE_* pinned to it, is: npm
       run test:e2e. The slice does not close until it passes somewhere.
+  # ---------------------------------------------------------------------
+  # FIX ROUND THREE, THE HARVEST ROUND, run at the committed head of
+  # claude/m3-p18-harvest. Every gate ran HERE, against a local Supabase
+  # stack, with DATABASE_URL, DIRECT_URL and E2E_DATABASE_URL pinned to
+  # loopback and the parsed host asserted before each command. The slow
+  # gate is the real npm run test:e2e, not a single spec.
+  - gate: typecheck-fix-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: lint-fix-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-fast-fix-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 753
+    passed: 753
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-privacy-fix-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-decisions-fix-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: gate-tokens-fix-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: migrate-deploy-local-fix-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 7
+    passed: 7
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: build-fix-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: suite-e2e-fix-round-3
+    result: green
+    wrapper-exit-code: 0
+    discovered: 125
+    passed: 124
+    failed: 0
+    skipped: 1
+    todo: 0
+    did-not-run: 0
+    note: >-
+      The whole slow gate, npm run test:e2e, spawned in this container
+      against the local Supabase stack under a Docker daemon started for
+      it. This is the first M3-P18 record whose e2e line is the FULL
+      suite rather than a single spec: the earlier rounds ran in
+      containers with no Docker daemon and said so. It carries the two
+      arms this round ports, the migration-class agreement swept in
+      Postgres under two collations and the preserved collision pair's
+      reserves invariant, and it carries unchanged the accounts arm that
+      asserts an account carrying its own rows cannot have its ring
+      changed, which is the behaviour DR-0031 fixes and which this round
+      deliberately did not relax.
 claims:
   - id: M3P18-C1
     kind: coverage
@@ -723,6 +832,211 @@ fix-round:
       re-read confirm-import.ts, status-keys.ts, import-status-line.tsx,
       month-view.tsx and the three catalogues for the same premise,
       finding none.
+  # ---------------------------------------------------------------------
+  # FIX ROUND THREE, THE HARVEST ROUND (branch claude/m3-p18-harvest).
+  #
+  # WHAT THIS ROUND IS. The phase merged to main at a620ae2 and an agent
+  # kept working on the phase branch afterwards, producing five commits
+  # that never reached main. Two of the defects those commits fix are
+  # REAL and were still present on main; this round ports those two, with
+  # their code, their tests and the superseded-wording comment
+  # corrections that belong to them, onto a branch cut from main.
+  #
+  # A THIRD CHANGE IN THE SAME SOURCE COMMIT WAS DELIBERATELY EXCLUDED,
+  # and the exclusion is recorded here rather than left to be inferred
+  # from an absence. See the entry "what was deliberately not harvested"
+  # below.
+  #
+  # NOTHING HERE WAS TRUSTED FROM THE SOURCE BRANCH. Each defect was
+  # reproduced on main as a red witness before the port and measured
+  # again after, on this container's own cluster, and one of the two
+  # measurements came back STRONGER than the source branch recorded it.
+  - mechanism: >-
+      A cross-language mirror whose membership is owned by the DEPLOYED
+      CLUSTER rather than by the committed text. The shared SQL
+      whitespace class still named the POSIX class inside itself with the
+      missing ECMAScript escapes bolted onto it, so what it stripped was
+      a property of the cluster's ctype and collation. The derived
+      agreement test that claims the class mirrors the platform canonical
+      form could not see this, because it reads the committed string and
+      never executes it.
+    derivation:
+      command: >-
+        A full Unicode sweep executed IN Postgres, on the local stack, of
+        the class extracted VERBATIM from the committed migration (not
+        from a reimplementation), under two collations, compared against
+        the set the platform function removes: for cp in 1..1114111 with
+        surrogates skipped, SELECT cp WHERE regexp_replace(chr(cp)
+        [COLLATE ...], '<the committed class>', '', 'g') = ''. Run at
+        main's head before any edit (RED) and again at the ported head
+        over the class the migration then carries (GREEN).
+      output: |
+        Cluster: PostgreSQL 17.6. Database locale provider: ICU (en_US.UTF-8).
+        Platform side: canonicalAccountNumber removes 25 code points.
+
+        RED, the class as committed on main, extracted from migration.sql.
+        It opens with the POSIX space class and then bolts on the escapes
+        u00a0, u1680, u2000 to u200a, u2028, u2029, u202f, u205f, u3000
+        and ufeff:
+          COLLATE "C.utf8"     strips 25   agrees with the platform set
+          COLLATE "und-x-icu"  strips 30   OVER-strips U+001C U+001D U+001E U+001F U+0085
+          no COLLATE clause    strips 30   OVER-strips the same five
+          under-strips: none, under any of the three
+          comparison exit 1 (disagreement reported)
+
+        GREEN, the class as committed after the port. It names no POSIX
+        class and enumerates u0009, u000a, u000b, u000c, u000d, u0020 and
+        the same ten escapes above:
+          COLLATE "C.utf8"     strips 25   agrees
+          COLLATE "und-x-icu"  strips 25   agrees
+          no COLLATE clause    strips 25   agrees
+          comparison exit 0
+          four inlined regexp_replace patterns in the migration, one
+          distinct value among them, no POSIX class in any spelling
+    not-covered: >-
+      Reading of the output first, and ONE THING IT SAYS THAT THE SOURCE
+      BRANCH DID NOT. The source branch measured on Postgres 16.13 and
+      recorded the over-stripping under an explicitly named ICU
+      collation. On this container's cluster the DATABASE'S OWN default
+      locale provider is ICU, so the sweep under no COLLATE clause at all
+      returned the over-stripping set too. That makes the defect the
+      DEFAULT behaviour on a cluster provisioned that way rather than a
+      case an explicit COLLATE has to reach, which is a stronger reading
+      than the source branch's and is the reason this port was worth
+      taking rather than dismissing as exotic. Both definition sites now
+      carry the re-measurement beside the inherited one, rather than
+      inheriting a claim about a server this round never touched.
+      What the derivation did NOT cover: it sweeps ONE cluster of ONE
+      major version under TWO collations. A third provider, a different
+      ICU version, or a libc build with a different ctype could strip a
+      different set again and nothing here would see it. What the fix
+      buys is not a result for every cluster but that the committed class
+      no longer ASKS the cluster, so the question stops being
+      cluster-dependent rather than being answered cluster by cluster. It
+      also covers the WHITESPACE half of the mirror only: upper() against
+      toUpperCase() was not swept, and the cash withdrawal pattern list
+      still carries a whitespace shorthand, left standing on purpose with
+      the stake and the debt written at its definition rather than
+      changed inside a fix round.
+  - mechanism: >-
+      A join with nothing restricting it to one row on the side being
+      joined TO, over a population this phase deliberately creates. The
+      reserves query joined accounts on canonical equality, and this
+      phase's own migration PRESERVES collision pairs, two account rows
+      of one household sharing a canonical number. So one transaction
+      matched both members, the grouping produced one group per member
+      each carrying the FULL amount, and the month view sums the groups.
+      The screen read double what moved. The reconciliation banner is
+      computed from a query that does NOT join, so it read the movement
+      once and still said the books close: nothing on screen contradicted
+      the doubled block.
+    derivation:
+      command: >-
+        A probe seeding ONE household through this phase's own pre-phase
+        harness (which creates the preserved collision pair), booking a
+        SINGLE pot-side RESERVE-flow row whose counterparty column is
+        written spaced so the canonical comparison is what matches, then
+        calling the REAL repository methods listReserveMovements and
+        monthFigures and comparing the block's net against the
+        reconciliation's own net to reserves. Run against main's
+        repository (RED) and against the ported one (GREEN).
+      output: |
+        RED, main's repository:
+          preserved collision pair rows present: 2
+          one reserve movement booked
+          reserves block groups:              2
+          each group carries the FULL movement
+          reserves block net (the screen):    twice the movement
+          reconciliation net to reserves:     the movement, once
+          rows summed across groups:          2, for one booked row
+          INVARIANT BROKEN, probe exit 1
+
+        GREEN, the ported repository:
+          preserved collision pair rows present: 2
+          reserves block groups:              1
+          reserves block net (the screen):    the movement, once
+          reconciliation net to reserves:     the movement, once
+          rows summed across groups:          1
+          INVARIANT HOLDS, probe exit 0
+    not-covered: >-
+      Reading of the output first: the pair is still BOTH rows after the
+      fix, so this is measured over the population the migration
+      preserves and not over a repaired one, and the fan-out is closed by
+      the query rather than by removing the pair.
+      What the derivation did NOT cover: it exercises a pair of TWO. A
+      larger collision set would have fanned out further, and the lateral
+      closes it the same way by construction, but no measurement here has
+      more than two members. It does not answer WHICH label a household
+      should see for a pair either: the lateral makes the choice
+      deterministic by lowest account id and therefore stable, and it is
+      arbitrary between the pair's two labels. Naming the pair to the
+      household stays the parked merge's work, and the collision
+      detection script is what names it to an operator today. Finally,
+      the invariant asserted is the reserves block against the
+      reconciliation, so a fan-out in any OTHER joining read would not
+      redden this arm; no other overview read joins this way today.
+  - mechanism: >-
+      WHAT WAS DELIBERATELY NOT HARVESTED, recorded as work rather than
+      left as an absence for a later reader to discover. The source
+      commit carrying the two defects above carries a THIRD change in the
+      same commit: a relaxation of the ring-change guard in
+      src/modules/accounts/application/change-account-ring.ts so that a
+      savings-ring account carrying imported rows of its own can be moved
+      back into the pot, together with its port comment, its screen copy,
+      and a fast-gate test asserting the relaxed behaviour.
+    derivation:
+      command: >-
+        The exclusion was enforced BY CONSTRUCTION rather than by review
+        after the fact: the port was applied as a file-scoped patch
+        naming only the files belonging to the two defects, and the
+        accounts module and its tests were then asserted untouched.
+        Verified with sha256sum of change-account-ring.ts against
+        origin/main, with a diff of the whole accounts module and of
+        test/application/account-setup.test.ts against origin/main, and
+        with a grep of the harvested diff for ring-relaxation language.
+      output: |
+        change-account-ring.ts sha256, this branch and origin/main: identical
+        git diff origin/main -- src/modules/accounts
+                                test/application/account-setup.test.ts
+          (no output)
+        grep of the harvested diff for ring-relaxation language: none
+        files changed against origin/main: the backfill migration, the
+          collision detection script, the ledger constants note, the
+          overview repository, the platform account-number module, and
+          four test files. No file under src/modules/accounts.
+    not-covered: >-
+      WHY IT WAS EXCLUDED, which is the part no gate can decide and the
+      reason it is written here. The ring freeze once an account carries
+      imported rows of its own is the OWNER'S decision, DR-0031, and it
+      is decided. The source branch's argument is that DR-0030 falsified
+      the premise DR-0031 rested on, because a savings statement is now
+      accepted and such an account acquires rows of its own at the first
+      confirm. That argument may well be right, and it is already PARKED
+      on the plan awaiting a new owner record. It is a lane's inference,
+      not an owner record, and no record superseding DR-0031 exists.
+      CLAUDE.md non-negotiable 9 settles what to do with that: a decided
+      decision is reversed only by the owner, in a NEW record naming the
+      one it supersedes, and a reviewer who thinks a decided decision is
+      wrong records the consequence against the WORK and leaves the
+      decision standing. So the guard, its comment and its screen copy
+      are exactly as main has them, and the source branch's test
+      asserting the relaxed behaviour was left behind with them. This
+      round did not re-open the question, did not put it back to the
+      owner, and did not weigh it again.
+      WHAT THE EXCLUSION COSTS, stated rather than hidden: if the parked
+      argument is correct, a household that answered a ring wrongly at
+      setup and then uploaded that account's statement still has no
+      remedy anywhere in the product. That consequence belongs to the
+      owner's next record and is not repaired here.
+      What the exclusion did NOT cover: the later source commits were
+      read for ring-relaxation content and carried none, but two further
+      changes on that branch were also left behind because they belong to
+      neither defect: a ring predicate moved into the WHERE of two
+      overview queries (a separate hazard finding, a behavioural no-op on
+      any household the product can produce today), and a comment about
+      the held row meta line's date form. Main had already made, on its
+      own, the door-opens journey correction that branch also carries, so
+      nothing was lost by leaving that one behind either.
 environment-warnings:
   - warning: >-
       The ambient DATABASE_URL in this container points at a deployed

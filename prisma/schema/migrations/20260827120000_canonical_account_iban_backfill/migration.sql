@@ -50,6 +50,16 @@
 --   and the original rendering would be gone, so no re-run could repair
 --   it, while the migration reported success.
 --
+--   RE-MEASURED INDEPENDENTLY when this fix was harvested onto main, on
+--   a DIFFERENT cluster (Postgres 17.6): the same sweep returned the
+--   same 25 under libc C.utf8 and the same 30 under ICU "und". That
+--   cluster's DATABASE default locale provider is ICU, so the sweep
+--   under no COLLATE clause returned 30 as well, which says the
+--   over-stripping is what an ordinary connection gets by default on a
+--   cluster provisioned that way rather than something only an explicit
+--   COLLATE reaches. A migration runs on whatever cluster the household
+--   is deployed to, and this file cannot see which.
+--
 -- THE CLASS BELOW therefore enumerates exactly the 25 members of \s as
 -- visible ARE escapes and nothing else (U+200B is deliberately absent:
 -- \s does not match it). The one authoritative copy for importable code
