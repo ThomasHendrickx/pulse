@@ -102,20 +102,22 @@ while read -r file; do
   fi
 done < <(decided_records)
 
-# Rule 2: at most two adversarial review rounds per plan iteration.
+# Rule 2: at most two review rounds per lane, plan review and clean-room
+# review alike. A lane is a review stem with its round suffix removed, so the
+# criteria lane and the hazard lane are counted separately, which is what dual
+# review requires, and a third round on either one fails.
 review_dir="delivery/review"
 if [ -d "$review_dir" ]; then
   while read -r stem; do
     [ -n "$stem" ] || continue
-    rounds=$(ls "$review_dir" 2>/dev/null | grep "^${stem}" | grep -c 'round[0-9]')
-    base=$(ls "$review_dir" 2>/dev/null | grep -c "^${stem}\.yaml$")
-    total=$((rounds + base))
+    total=$(ls "$review_dir" 2>/dev/null |
+      sed 's/\.yaml$//; s/-round[0-9]*$//' | grep -cx -- "$stem")
     if [ "$total" -gt 2 ]; then
-      echo "gate:decisions: plan iteration '$stem' carries $total adversarial review rounds, the cap is 2." >&2
+      echo "gate:decisions: review lane '$stem' carries $total rounds, the cap is 2." >&2
       echo "  What round two leaves open is carried into the implementer's brief as work, not into a third round." >&2
       status=1
     fi
-  done < <(ls "$review_dir" 2>/dev/null | grep -- '-plan-review' | sed 's/-plan-review.*$/-plan-review/' | sort -u)
+  done < <(ls "$review_dir" 2>/dev/null | sed 's/\.yaml$//; s/-round[0-9]*$//' | sort -u)
 fi
 
 if [ "$status" -eq 0 ]; then

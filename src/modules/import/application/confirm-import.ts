@@ -24,12 +24,13 @@ export type ConfirmOutcome =
         // M3-P14: the file's own account number is not one the household
         // registered at setup. Nothing is written and no account is
         // created; the message names the setup screen and links to it.
-        | "account-not-registered"
-        // M3-P14, decision D-55: the file's own account IS registered,
-        // but in the savings ring, whose statements are not imported in
-        // v1. Same refusal, different message: this one names the ring
-        // correction and what that correction costs.
-        | "account-in-savings-ring";
+        //
+        // THE account-in-savings-ring REFUSAL THAT STOOD BESIDE THIS ONE
+        // IS REMOVED ROOT AND BRANCH (M3-P18, DR-0030 superseding D-55):
+        // a statement whose own account sits in the SAVINGS ring is now
+        // ACCEPTED, its rows stored as facts, shown on that account
+        // marked held and counted in no total.
+        | "account-not-registered";
     };
 
 export const confirmImport = async (
@@ -97,8 +98,11 @@ export const confirmImport = async (
   // Two arms, and a card is the only thing declared at first sight:
   //
   //   the file carries an own account -> it must resolve to an account
-  //   registered at setup, in the POT ring. Anything else is a refusal
-  //   with nothing written.
+  //   registered at setup, in EITHER ring (DR-0030): a savings account's
+  //   own statement is accepted and its rows are held by construction,
+  //   because the interpretation window is built from the pot account
+  //   ids alone. An UNREGISTERED account is a refusal with nothing
+  //   written.
   //
   //   the file carries NO own account -> it is a card (decision D-48: a
   //   card statement carries no account number and is recognised through
@@ -114,12 +118,10 @@ export const confirmImport = async (
     if (existing === null) {
       return { kind: "rejected", reason: "account-not-registered" };
     }
-    if (existing.role === "RESERVE") {
-      // Decision D-55: reserve accounts are registered for their account
-      // number only and their statements are not imported in v1. The
-      // remedy is the ring correction, and the message names its price.
-      return { kind: "rejected", reason: "account-in-savings-ring" };
-    }
+    // A RESERVE-ring account's own statement is accepted like any other
+    // (M3-P18, DR-0030, superseding D-55's refusal): its rows land as
+    // facts on that account and keep no flow, because interpretation
+    // runs over the pot accounts alone. Accepting is not interpreting.
     accountId = existing.id;
   } else {
     accountId = existingProfile?.accountId;
