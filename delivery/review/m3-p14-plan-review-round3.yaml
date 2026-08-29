@@ -1,0 +1,1066 @@
+# THIRD adversarial plan review of phase M3-P14 (account setup), the
+# single-phase form of the M0-P6 iteration.
+#
+# ON THE FILENAME, because the review directory records two different phase
+# shapes. delivery/review/ carries m0-p6-plan-review.yaml and rounds two
+# through five, which review the TWO-PHASE form (M3-P14 plus M3-P15) that no
+# longer exists, and m3-p14-plan-review.yaml plus round2, which review the
+# current single-phase form. This document is the third review of the
+# single-phase form and takes the next number in THAT sequence. Nothing was
+# overwritten.
+#
+# WHAT THIS REVIEWS. delivery/plan/pulse-v02.yaml at 2fe5521, phase M3-P14,
+# THIRTEEN acceptance criteria and FIFTEEN hazard classes, read in the
+# reviewer worktree /home/user/wt-m0p6-adv on branch claude/m0-p6-plan-review
+# at 946ba0b. Confirmed the plan file at that head is byte identical to
+# 2fe5521:
+#
+#   $ git diff --stat 2fe5521 HEAD -- delivery/plan/pulse-v02.yaml
+#   (no output)
+#
+# The predecessor round is delivery/review/m3-p14-plan-review-round2.yaml,
+# five high, five medium, one low, against the ELEVEN-criterion form.
+#
+# ==========================================================================
+# EVERY ROUND-TWO FINDING IS FIXED. Checked one at a time against the current
+# text rather than against the fix round's summary of itself.
+#
+#   R3-001 ring freeze .......... FIXED, by a mechanism the reviewer did not
+#                                 propose. See the note below.
+#   R3-002 clearing/scoping
+#          contradiction ........ FIXED. Criterion 14.8 now says the phase
+#                                 carries a targeted clear AND carries read
+#                                 scoping, and step 4 agrees.
+#   R3-003 the held read ........ FIXED. Step 4 names one port method and one
+#                                 MonthOverview field, keyed on the ring with
+#                                 no flow condition; both files are in
+#                                 files-to-touch.
+#   R3-004 e2e migration ........ FIXED as a step, with criterion 14.9
+#                                 extended and four specs added to
+#                                 files-to-touch. One spec is still missing:
+#                                 finding R4-007.
+#   R3-005 the household that
+#          already imported ..... ADDRESSED by criterion 14.13, which cannot
+#                                 be executed. Findings R4-001 and R4-004.
+#   R3-006 the skill file ....... FIXED, in files-to-touch and in 14.9.
+#   R3-007 the nav baseline ..... FIXED. Step 1 now captures it at the phase
+#                                 base, which is evidence that exists.
+#   R3-008 the review step ...... FIXED, inside criterion 14.2.
+#   R3-009 14.10's fixture ...... FIXED, validity test and allow list both.
+#   R3-010 the double-presentation
+#          reason ............... FIXED, decision D-60 now carries it.
+#
+# Nothing was parked without a reason and nothing was dropped. That is a
+# clean fix round by the measure this visibility exists to apply, and most of
+# what follows is about the two mechanisms the repair introduced.
+#
+# ==========================================================================
+# ON THE INTERPRETATION CLEAR, WHERE THE DISPATCH ASKED ME TO ATTACK HARDEST
+# AND WHERE I AGREE WITH THE PLAN-WRITER AGAINST MY PREDECESSOR.
+#
+# I re-derived the mechanism from the code rather than from either document
+# and the plan-writer's inversion is correct.
+#
+#   src/modules/ledger/adapters/ledger-repository.ts:171 takes the ids it was
+#   handed and writes only those: the flow write at :194 and the merchant
+#   write at :213 are both scoped `id: { in: ... }` over lists built from
+#   `input.flows` and `input.merchants`.
+#
+#   src/modules/ledger/application/interpret-window.ts:35 through :39 builds
+#   the window from `sets.potAccountIds` alone, and :144 derives
+#   transactionIds from exactly the rows that load.
+#
+# So an account leaving the pot stops being loaded and keeps whatever flow it
+# was last stamped with. That flow is NOT null, so neither null-flow read can
+# see it: the count at src/modules/overview/adapters/overview-repository.ts:230
+# is `COUNT(*) FILTER (WHERE t."flow" IS NULL)` and listGapRows admits a row
+# at :295 on the same condition. The refusal my predecessor proposed would
+# therefore have frozen the ring of every mis-marked savings account the
+# moment its statement landed, which under DR-0030 is the normal case. The
+# direction is settled and I do not relitigate it.
+#
+# WHAT I DO ATTACK IS THE CLEAR ITSELF, and the five questions put to me:
+#
+#   IS IT A FACT REWRITE IN DISGUISE? No, and I could not construct a reading
+#   where it is. `flow` and `merchantId` are declared interpretation columns
+#   in the schema's own words (prisma/schema/import.prisma:133 through :141)
+#   and in the pulse-domain layer table (.claude/skills/pulse-domain/SKILL.md
+#   section 2), and criterion 14.8 already asserts no raw column changes. Nor
+#   does it write to the declarations layer: it writes interpretation from a
+#   declaration use case, which is the direction rule 3 does not govern.
+#
+#   DOES IT LEAVE ANYTHING ELSE STALE? Yes, two things, and that is finding
+#   R4-006. The clear names two columns; the interpretation layer is three
+#   stores.
+#
+#   IS THE ORDER FORCED? It is stated twice, in 14.8 and in 14.12, and it
+#   cannot fail. That is finding R4-003, together with the question the
+#   ordering is standing in for, which is atomicity.
+#
+#   WHAT IF THE CLEAR SUCCEEDS AND THE RECOMPUTE FAILS? Nothing recovers it.
+#   src/modules/ledger/ui/actions.ts:15 through :21 throws in production, so
+#   the household has no recompute button at all. Finding R4-003.
+#
+#   AND WHERE DOES IT LIVE? Nowhere the plan permits. Finding R4-002.
+#
+# ==========================================================================
+# THE MEASUREMENTS, RUN IN THIS WORKTREE RATHER THAN QUOTED.
+#
+# THE MOD-97 MEASUREMENT, using the privacy gate's own scan scope, both
+# pattern arms, its skip list and its normalisation:
+#
+#   TREE distinct=17 pass=7 fail=10
+#
+# The plan's figure is right and I confirm it at this head. The allow list is
+# a different and larger set, as round two said; the plan now says TREE
+# explicitly, which settles the dispute rather than continuing it.
+#
+# THE NULL-FLOW READS:
+#
+#   $ grep -rn 'flow" IS NULL' src/
+#   overview-repository.ts:230, :280, :295
+#   $ grep -rn "flow: null" src/
+#   (no output)
+#
+# THREE occurrences in TWO reads, exactly as criterion 14.11 states. The
+# enumeration is right about today and porous about tomorrow: finding R4-008.
+#
+# THE UPLOAD SURFACE, counted per file in this worktree:
+#
+#   golden-journey setInputFiles=2   import     setInputFiles=6
+#   merchants      setInputFiles=2   month-view uploadPotFile=16
+#   navigation     uploadPotFile=1, setInputFiles=2
+#   prod-smoke     setInputFiles=1
+#
+# Six specs, seventeen helper calls, matching the plan. prod-smoke is named
+# in the plan's own migration step and is absent from files-to-touch:
+# finding R4-007.
+#
+# ONE ATTACK I BUILT AND COULD NOT LAND, recorded because a review that lists
+# only what stuck is not a report of what was done. I expected the reserve arm
+# of criterion 7.14, witnessed at test/e2e/month-view.spec.ts:1371 by
+# declaring an existing committed fixture under the RESERVE ring on the import
+# screen this phase deletes, to be left unreachable by a migration the plan
+# describes as mechanical. It is not. That fixture's own account is the
+# counterparty of a transfer in its sibling pot fixture, so registering it as
+# a savings account at setup reproduces the reserve group the test asserts,
+# and what the migration owes it is only that the number be re-invented valid,
+# which the step already requires. The witness survives. I looked for a second
+# such casualty across the other five specs and found none.
+#
+# ==========================================================================
+# THE STANDING SWEEP, run as instructed over all THIRTEEN criteria: a
+# criterion resting on evidence that cannot exist in the phase's own tree, or
+# that is red before the phase starts.
+#
+# COUNT FOUND THIS ROUND: ONE. It is criterion 14.13, the criterion the last
+# fix round added to close R3-005, and it is the SIXTH instance in this plan's
+# life. The pattern is now stable enough to name as a pattern: every one of
+# the six has been a criterion added BY A REPAIR, asserting against a state
+# the repair itself removes from the tree. 14.13 requires a test to build a
+# household through the import-screen declaration path that criterion 14.5's
+# grep deletes and step 4's gate closes. Finding R4-001.
+#
+# The other twelve were walked individually. 14.7, the fifth instance last
+# round, is genuinely repaired: step 1 now captures the navigation baseline at
+# the phase base, which is this phase's own tree, and the capture is
+# obtainable there. 14.11's "THREE occurrences in TWO reads" holds both before
+# and after the phase, since the scoping edits those lines rather than adding
+# or removing them. 14.9's verification-first requirement and 14.8's diff grep
+# both rest on the phase's own diff. 14.1, 14.10 and 14.12 rest on fixtures
+# the phase writes, and the card and current-account fixtures criterion 14.6
+# needs are already committed.
+#
+# ==========================================================================
+# SCOPE DISCIPLINE, checked against CLAUDE.md's list. No queue, no cron, no
+# event bus, no cache, no state management library, no component library, no
+# per-transaction override, no goal and no budget feature. The multi-step
+# setup form with a review step and a back button (criterion 14.2) is the one
+# place a state library would be reached for and the plan does not reach for
+# one. The clear is per-ACCOUNT and it clears rather than sets, so it is not a
+# per-transaction override. Against the round-two accounting, the phase's true
+# cost has grown by exactly one item, the clear itself, and the plan names it
+# as scope rather than absorbing it. That is the right behaviour; where it
+# fails is in not saying which module owns it.
+#
+# ==========================================================================
+# WHY THIS IS A FINDING SET AND NOT A VERDICT. `--type verdict` was attempted
+# first, as the dispatch requires, and refused for the same structural reason
+# as in every earlier round. Captured at this head:
+#
+#   $ npx tiphys validate --type verdict --context /home/user/wt-m0p6-adv \
+#       delivery/review/m3-p14-plan-review-round3.yaml
+#   INVALID #/criteria required property criteria is missing
+#   INVALID #/deviations-judged required property deviations-judged is missing
+#   INVALID #/framing required property framing is missing
+#   INVALID #/phase required property phase is missing
+#   INVALID #/review-contract required property review-contract is missing
+#   INVALID #/kind value "finding" does not equal the required constant
+#     "verdict"
+#   INVALID #/findings/0/concrete-edit property concrete-edit is not
+#     permitted here
+#   INVALID #/findings/0/concrete-fix required property concrete-fix is
+#     missing
+#   (the last pair repeated for each finding)
+#
+# A verdict judges an IMPLEMENTED phase against a work history and demands
+# `concrete-fix`, a fix to CODE. M3-P14 has not been built, so the finding
+# schema is the correct one and the precedent set by the earlier rounds is
+# followed rather than departed from.
+#
+# HOUSE RULES. No long dash anywhere in this document. No account number, no
+# card number, no amount, no counterparty and no date from any row appears in
+# it: every identifier is referred to by its role. English throughout, npm
+# throughout.
+kind: finding
+verdict: FIX-ROUND-NEEDED
+produced-by: claude (Opus 5, claude-opus-5)
+findings:
+  - id: R4-001
+    severity: high
+    evidence:
+      - >-
+        Criterion 14.13 names the state its test must construct: "this one
+        begins where the owner actually is, with accounts created one file at a
+        time through src/modules/import/application/confirm-import.ts:96, rings
+        answered on an import screen this phase deletes, and rows already
+        ingested. A Playwright test BUILDS A HOUSEHOLD THAT WAY and then loads
+        the setup screen".
+      - >-
+        A Playwright test drives the product's own screens, and both screens
+        that state requires are removed by this same phase. Criterion 14.5 ends
+        "A grep asserts the ring control is gone from
+        src/modules/import/ui/profile-confirmation.tsx", so the ring can no
+        longer be answered on the import screen at all.
+      - >-
+        The account creation path is closed too. Read at the head this phase is
+        built on, confirm-import.ts:92 through :100 creates an account only when
+        `accountId === undefined`, and :86 through :91 sets accountId from
+        `findAccountByIban` whenever the file carries its own account number.
+        Step 4 then gates that path: "The confirm path accepts a file whose own
+        account number resolves to a REGISTERED account, or a file carrying no
+        own-account column at all ... Anything else is refused with one new
+        machine reason". After this phase a file that carries its own account
+        number and is not already registered is REFUSED, so confirm-import.ts:96
+        can no longer create the numbered, ring-answered accounts 14.13
+        describes.
+      - >-
+        What survives is the card shape only, a file with no own-account column,
+        which by construction has no number and no ring answered on the deleted
+        control. That is not the household 14.13 names.
+      - >-
+        So criterion 14.13's Playwright test has no way to reach its own
+        starting state in the tree the phase leaves behind. The criterion cannot
+        be made to pass honestly, and the two ways out are both unstated: seed
+        the pre-phase shape directly into the database, which no step names and
+        for which files-to-touch carries no harness, or keep a legacy
+        declaration path alive, which criterion 14.5's grep forbids.
+      - >-
+        This is the same defect shape recorded five times before in this plan,
+        each time in a criterion added by a repair, and each time the repair
+        removed from the tree the state its new criterion asserts against. 14.13
+        was added by the last fix round to close finding R3-005.
+    concrete-edit: >-
+      Replace criterion 14.13's second sentence with: "A test builds that
+      household through a SEED HARNESS rather than through the product, because
+      this phase removes both screens the pre-phase household was made on: the
+      ring control is deleted by criterion 14.5 and the numbered-account
+      creation at confirm-import.ts:96 is closed by the gate in step 4. The
+      harness writes Account rows directly with a label, a bank, a ring and a
+      stored account number left exactly as the pre-phase import path wrote it,
+      including at least one whose stored form is not canonical, at least one
+      whose stored number FAILS the validity test of criterion 14.3, and at
+      least one card account with no number at all, plus ingested Transaction
+      rows against them, and it lives beside the existing e2e helpers. A
+      Playwright test then loads the setup screen over that household and
+      asserts:" and keep the existing assertion list. Add the harness file to
+      files-to-touch beside test/e2e/accounts.spec.ts. Add to step 1, as a
+      further claim to re-establish with captured output: "that once the gate in
+      step 4 lands no product screen can still create a numbered account outside
+      the setup form, which is why criterion 14.13's household is seeded rather
+      than driven."
+    analysis: >-
+      The sixth instance of the standing defect and the cleanest so far,
+      because the criterion names its own impossibility in the same sentence: it
+      asks a test to answer a ring "on an import screen this phase deletes". The
+      repair is not to weaken the criterion, which is the right criterion and
+      covers the one household that certainly exists, but to say how its
+      precondition is built. That the plan has produced this shape six times,
+      always in a repair, is the finding behind the finding: a fix round writes
+      its new criterion against the world it is fixing rather than against the
+      world it is creating, and nothing in the phase's structure re-reads a new
+      criterion against the steps surrounding it.
+  - id: R4-002
+    severity: high
+    evidence:
+      - >-
+        Step 6 names the clear's implementation shape precisely: "That is a
+        targeted interpretation write over one account's rows, not the general
+        clearing machinery earlier drafts carried, and it touches no fact
+        column. It is named here as scope rather than absorbed: IT IS ONE
+        REPOSITORY FUNCTION AND ONE CALL."
+      - >-
+        files-to-touch names exactly one ledger file,
+        src/modules/ledger/domain/ledger-transaction.ts, which is a pure domain
+        module. It carries no ledger adapter, no
+        src/modules/ledger/application/ports.ts and no
+        src/modules/ledger/application/index.ts, so no listed file can hold a
+        ledger repository function, its port declaration or its publication.
+      - >-
+        The one repository file it does carry is
+        src/modules/accounts/adapters/account-repository.ts, and criterion 14.8
+        forbids putting the function there in as many words: "the accounts
+        module's repository exports no function that updates a transaction".
+      - >-
+        The remaining placement is forbidden too. The module rule is
+        "Cross-module calls go through the neighbour's published application
+        interface, never its repository and never its tables"
+        (.claude/skills/pulse-domain/SKILL.md:168), so the accounts module may
+        not call a ledger repository function directly. The working pattern
+        already in the tree is an injected published dependency:
+        src/modules/merchants/application/assign-merchant.ts:69 calls
+        `deps.recompute`, wired at src/modules/merchants/ui/actions.ts:29.
+      - >-
+        Nothing in the plan says which module publishes the clear, what the port
+        member is called, or that the ledger's published application interface
+        grows by one member. Criterion 14.8 asserts the behaviour and criterion
+        14.12 asserts the use case calls it, and neither says where it may live.
+      - >-
+        The consequence is not stylistic. The two placements an implementer can
+        reach from files-to-touch alone are the two the plan forbids, so the
+        first honest reading of the phase produces a diff that either reddens
+        criterion 14.8 or breaks the module boundary the phase is careful about
+        everywhere else: step 2 puts the canonical form in src/platform for
+        exactly this reason, with the rule and the citation given.
+    concrete-edit: >-
+      Add to step 6, after "it is one repository function and one call": "THE
+      CLEAR IS THE LEDGER'S, NOT THE ACCOUNTS MODULE'S. The function lives in
+      src/modules/ledger/adapters/ledger-repository.ts beside
+      replaceInterpretation, is declared on the ledger repository port at
+      src/modules/ledger/application/ports.ts, and is published through the
+      ledger's application interface as one new member taking a household
+      context and one account id. The accounts use case receives it as an
+      injected dependency exactly as
+      src/modules/merchants/application/assign-merchant.ts:69 receives
+      recompute, wired in the accounts module's server action, because
+      .claude/skills/pulse-domain/SKILL.md:168 forbids the accounts module
+      reaching a neighbour's repository and criterion 14.8 forbids the accounts
+      repository updating a transaction." Add
+      src/modules/ledger/adapters/ledger-repository.ts,
+      src/modules/ledger/application/ports.ts and
+      src/modules/ledger/application/index.ts to files-to-touch. Add to
+      criterion 14.8: "and a test asserts the clearing function is reached
+      through the ledger's published application interface, with a grep showing
+      the accounts module imports no ledger adapter and no table the ledger
+      owns."
+    analysis: >-
+      The mechanism the whole repair rests on has no address. The plan is
+      unusually careful about module placement everywhere else, which is what
+      makes the omission legible rather than accidental: step 2 states the rule
+      and cites it for the canonical form, and step 6 then introduces a
+      cross-module interpretation write with neither. An implementer who reads
+      files-to-touch as the answer to "what am I allowed to edit" has exactly one
+      repository to put this in and a criterion telling them not to.
+  - id: R4-003
+    severity: high
+    evidence:
+      - >-
+        The correction is three writes. Step 6: the ring can be changed, and
+        "the correction CLEARS the interpretation columns of that account's own
+        rows, flow and merchant, in the same use case and BEFORE THE RECOMPUTE".
+        So: write the declaration, clear, recompute. Nothing makes them one
+        transaction and no criterion mentions the partial states.
+      - >-
+        The two partial states are asymmetric and both are silently wrong. If
+        the declaration and the clear land and the recompute does not, the
+        account is savings and its own rows are held correctly, while the
+        CURRENT account's transfers into it still carry INTERNAL from the last
+        stamping, so they go on pairing as internal movement, contribute nothing
+        to the reserves block, and the household is told it saved nothing. If
+        the declaration lands and the clear does not, that is hazard H14.15 in
+        full, which is the hazard criterion 14.12 exists to address.
+      - >-
+        Neither state heals. Recompute is unbounded over pot accounts
+        (src/modules/ledger/application/interpret-window.ts:192 calls
+        interpretWindow with an empty window), so a later recompute WOULD repair
+        the first state, but the household can cause no later recompute: the
+        only published triggers are a merchant naming
+        (src/modules/merchants/application/assign-merchant.ts:69) and a further
+        import, and the dev action throws outright in production
+        (src/modules/ledger/ui/actions.ts:15 through :21, "Recompute is a
+        dev-only action"). The second state never heals at all, because after
+        the ring change that account is never loaded by any recompute again,
+        which is the whole premise of step 6.
+      - >-
+        The asymmetry that matters: recompute is idempotent and self-healing,
+        and the clear is a ONE-SHOT keyed on a TRANSITION rather than on a
+        STATE. A transition-keyed write that misses has no second chance, while
+        the same write keyed on the account's CURRENT ring would be re-runnable
+        and would converge.
+      - >-
+        The ordering the plan does state cannot fail. Criterion 14.8 says the
+        change "CLEARS the interpretation columns of that account's own rows
+        BEFORE RECOMPUTING, asserted at the application level", and criterion
+        14.12 repeats it. The end state is identical under either order, because
+        the recompute provably cannot touch those rows: the window is built from
+        pot account ids alone (interpret-window.ts:35 through :39) and the
+        repository writes only the ids handed to it (ledger-repository.ts:171,
+        :194, :213). So an application test asserting the end state passes
+        whichever order the code used, and the criterion names a property no
+        observation of the system can falsify.
+    concrete-edit: >-
+      Replace the ordering sentence in step 6 with: "The correction is ONE unit
+      of work: the ring declaration, the clear of that account's own
+      interpretation, and the recompute either all land or none do, and the use
+      case returns a named error rather than a partial state. The clear is keyed
+      on the account's CURRENT ring rather than on the transition, so it is
+      re-runnable and converges: clearing the interpretation of every row on an
+      account that is not in the pot is a no-op whenever it has already been
+      done. This is not the general clearing machinery earlier drafts carried,
+      which cleared everything on every path; it is the same one function with a
+      selector that cannot miss." Replace criterion 14.8's "before recomputing,
+      asserted at the application level" with "in the same unit of work as the
+      ring declaration and the recompute, asserted at the application level by a
+      test in which the recompute dependency THROWS: the test asserts the
+      account's ring is unchanged afterwards, that its rows still carry the flow
+      they carried before, and that the household is shown a named error in all
+      three catalogues, so the criterion can fail." Add to criterion 14.12,
+      after the clearing assertion: "and a second application test runs the same
+      use case TWICE over the same account and asserts the second run changes
+      nothing and errors on nothing, which is what makes the correction
+      recoverable in a product whose only recompute action throws in production
+      (src/modules/ledger/ui/actions.ts:15 through :21)."
+    analysis: >-
+      The plan asserts an ordering that cannot be observed and leaves unasserted
+      the property the ordering was standing in for. What matters about
+      clear-then-recompute is not the sequence, since the recompute demonstrably
+      cannot touch the cleared rows in either order, but that neither half can
+      land without the other. This is the one place in the phase where a failure
+      is permanent rather than repairable by re-running something, because the
+      account has left the window forever and the product ships no recompute
+      button. The fix is mostly a change of key: a clear that asks "is this
+      account outside the pot" rather than "did this account just leave the pot"
+      is idempotent, survives a crash, and can be asserted by a test that runs it
+      twice.
+  - id: R4-004
+    severity: high
+    evidence:
+      - >-
+        A card account is an account with NO number.
+        prisma/schema/accounts.prisma:16 through :20: "Card exports carry no
+        IBAN: those accounts are recognised through their bound SourceProfile
+        instead, so iban is optional." The ledger domain agrees and depends on
+        it: src/modules/ledger/domain/ledger-transaction.ts:64 reads "if
+        (account.iban === undefined) { cardAccountIds.add(account.id); }", so an
+        account's cardness IS the absence of a number and nothing else.
+      - >-
+        Criterion 14.13 requires the setup screen to list "every existing
+        account ... with its label, its NUMBER and its ring". A pre-existing
+        household holds card accounts, because decision D-48 and criterion 14.6
+        say cards are declared at first sight and every card in the tree arrives
+        that way. Those rows have no number to list.
+      - >-
+        Criterion 14.2 requires the form to take "a label, a bank, an account
+        number and a ring for each" row, and criterion 14.3 makes the server
+        refuse "an account number that is empty after canonicalisation ... with
+        a named error in all three catalogues naming WHICH row is wrong". So a
+        listed card row is a row the form both demands a number for and refuses
+        empty.
+      - >-
+        Criterion 14.13's own escape hatch makes it worse rather than better:
+        "an existing account whose stored number would FAIL the validity test of
+        criterion 14.3 is named to the household with what to do". An empty
+        stored number is exactly 14.3's first refusal, so a correct card is
+        named to the household as a problem, and there is nothing they can do,
+        because D-48 says a card is correct without a number.
+      - >-
+        If an implementer resolves it the other way and lets the row be filled
+        in, the damage is measurable and silent. Giving a card account a number
+        removes it from cardAccountIds at ledger-transaction.ts:64, which (a)
+        moves it out of the unbounded card load at
+        src/modules/ledger/application/interpret-window.ts:54 through :58 into
+        the windowed pot load at :49, which is finding CR-301's exact hazard as
+        that code comment records it, (b) breaks settlement matching, since
+        correctCardSettlement resolves against cardAccountIds, and (c) turns off
+        the card refund arm at
+        src/modules/ledger/domain/classify-flow.ts:113 through :117, so every
+        card refund classifies INCOME at :121, restoring finding HZ-M3P3-06.
+      - >-
+        The plan also uses three names for what files-to-touch shows is one
+        route: "the setup screen" (step 3), "the accounts screen" (criterion
+        14.12) and "the accounts list" (criterion 14.6), against a single new
+        route src/app/(app)/accounts/. Criterion 14.6's "the accounts list shows
+        card accounts once they exist, with their ring" and criterion 14.2's "a
+        label, a bank, an account number and a ring for each" are requirements
+        on the same screen and they disagree about whether a row may lack a
+        number.
+    concrete-edit: >-
+      Add to criterion 14.6, after the sentence on the accounts list: "AND THE
+      CARD IS A ROW WITH NO NUMBER, WHICH THE SCREEN MUST ADMIT. A card account
+      is exactly an account whose number is absent
+      (prisma/schema/accounts.prisma:16 through :20), and that absence is what
+      the ledger reads as cardness
+      (src/modules/ledger/domain/ledger-transaction.ts:64). So a card account is
+      listed as already known WITHOUT a number, is not a row the validity test
+      of criterion 14.3 is applied to, is not counted among the rows the
+      household must complete before submitting, and NO control on this route
+      can give an existing card account a number. A Playwright test over a
+      household holding a card account asserts setup submits without touching
+      that row and that the account's stored number is still absent afterwards;
+      an application test asserts the setup use case rejects any submission that
+      would write a number onto an account bound to a SourceProfile, because
+      doing so moves it out of the unbounded card load
+      (src/modules/ledger/application/interpret-window.ts:54 through :58,
+      finding CR-301), breaks settlement matching, and turns off the card refund
+      arm at src/modules/ledger/domain/classify-flow.ts:113 through :117
+      (finding HZ-M3P3-06)." Amend criterion 14.13's first assertion to "with
+      its label, its ring, and its number where it has one, a card account being
+      listed without one under criterion 14.6", and amend its validity-test
+      assertion to "an existing account that HAS a stored number and whose
+      stored number would fail the validity test". Add hazard class H14.16: "The
+      setup screen is built for accounts that have numbers, so a pre-existing
+      household's card is either refused as an incomplete row or given a number,
+      and a card with a number stops being a card at
+      src/modules/ledger/domain/ledger-transaction.ts:64, silently taking
+      settlement matching and the card refund correction with it", addressed-by
+      criterion 14.6.
+    analysis: >-
+      The phase reasons about accounts that have numbers, because that is what
+      it exists to collect, and the card is the account this product
+      deliberately identifies by the absence of one. Criterion 14.6 knows cards
+      are special and says so about the import path; criterion 14.13 was written
+      against the pre-existing household without re-reading 14.6, and criterion
+      14.2's "for each" then quietly applies a number requirement to a row that
+      must not have one. The consequence is not a rejected form: it is that the
+      obvious way to make the form submit destroys three shipped mechanisms at
+      once, all of them invisible on the screen where the mistake is made, and
+      two of them findings this project has already paid to fix.
+  - id: R4-005
+    severity: high
+    evidence:
+      - >-
+        Step 2 states a safety property as fact: "The import path's own
+        declaration at confirm-import.ts:93 through :99 stores the canonical
+        form too, SO THE PER-HOUSEHOLD UNIQUENESS CONSTRAINT at
+        prisma/schema/accounts.prisma:28 IS A REAL BACKSTOP."
+      - >-
+        That constraint is `@@unique([householdId, iban])` on the STORED string.
+        It is a real backstop only for rows written after this phase. The
+        migrations note deliberately excludes every earlier row: "Normalising a
+        declaration on the way in and comparing canonically at read time is
+        deliberately chosen over a data migration of stored values."
+      - >-
+        So for the population criterion 14.13 covers, which is the owner's own
+        household, the stated backstop does not hold. A pre-existing account
+        stored in a spaced rendering and the same account registered again
+        through the setup form in canonical rendering are two different strings,
+        the unique index does not fire, and the household ends with TWO Account
+        rows for one real account.
+      - >-
+        It is reachable through the very screen 14.13 describes rather than only
+        in theory. The owner has ten accounts, is transcribing numbers by hand
+        from paper on a phone, which is criterion 14.3's own stated ground, and
+        the listed rows show a rendering their document need not match. Nothing
+        in 14.13 asks the screen to refuse a typed row that already exists.
+      - >-
+        The consequence is silent and it is money. Step 2 requires every
+        comparison to normalise both sides, so both rows land in
+        deriveDeclaredSets against the same normalised value
+        (src/modules/ledger/domain/ledger-transaction.ts:48 through :72). If the
+        two rows carry different rings, the same account is in reserveIbans AND
+        potIbans, and src/modules/ledger/domain/classify-flow.ts:62 tests the
+        reserve set FIRST, so every movement to that account classifies RESERVE
+        and the pot side loses it entirely. If the two rows carry the same ring,
+        the reserves block double presents: the join at
+        src/modules/overview/adapters/overview-repository.ts:175 through :176 is
+        a LEFT JOIN on the account number and once step 2 normalises it BOTH
+        account rows match, so the GROUP BY at :182 emits two groups each
+        carrying the full sum, while the netToReserves figure, read from the
+        flow column at :218, does not double. The block and the figure then
+        disagree on one screen.
+      - >-
+        No criterion admits either state. Criterion 14.4 asserts one canonical
+        form and one validity test; nothing asserts one ACCOUNT per number.
+    concrete-edit: >-
+      Correct step 2's claim to: "The import path's own declaration at
+      confirm-import.ts:93 through :99 stores the canonical form too, so the
+      per-household uniqueness constraint at prisma/schema/accounts.prisma:28 is
+      a backstop FOR ROWS WRITTEN FROM THIS PHASE ONWARD. It is NOT a backstop
+      for rows a pre-existing household already carries, because the migrations
+      note deliberately leaves stored values alone, so uniqueness for those is
+      enforced in the use case over the CANONICAL form rather than by the
+      index." Add to criterion 14.13, as a further assertion: "and a typed row
+      whose canonical form equals the canonical form of an account the household
+      ALREADY holds is refused with a named error in all three catalogues
+      pointing at the listed row it duplicates, rather than creating a second
+      Account for one real account. An application test asserts this over a
+      household whose stored number is in a non-canonical rendering and whose
+      typed number is canonical, since the index at
+      prisma/schema/accounts.prisma:28 compares stored strings and does not fire
+      on that pair. A domain test states what would otherwise follow: the
+      reserve set is tested first at
+      src/modules/ledger/domain/classify-flow.ts:62, so a duplicate answered
+      with two different rings sends every movement to that account to RESERVE,
+      and the reserves join at
+      src/modules/overview/adapters/overview-repository.ts:175 through :176
+      matches both rows and emits the same sum under two group labels." Add
+      hazard class H14.17: "A household that already imported registers one of
+      its accounts a second time at setup because the stored rendering does not
+      match the paper, the stored-string uniqueness index does not fire, and one
+      real account exists twice in two rings, so the reserve arm of
+      classification wins every movement to it and the reserves block double
+      presents against a net figure that does not", addressed-by criterion
+      14.13.
+    analysis: >-
+      This is the R3-002 shape one round on: a false statement about a safety
+      property, which reads as a decision rather than as a gap. The sentence is
+      true of the world the phase creates and false of the world it inherits,
+      and the phase's own criterion 14.13 exists precisely because the inherited
+      world is the one the owner is in. The repair is one clause of honesty in
+      step 2 and one refusal in the use case, and it earns a high because the
+      failure it prevents is unsignposted in both of its shapes: a wrong ring
+      that wins by evaluation order, and a reserves block that disagrees with the
+      figure printed beside it.
+  - id: R4-006
+    severity: medium
+    evidence:
+      - >-
+        Step 6 names two columns and only two: "the correction CLEARS the
+        interpretation columns of that account's own rows, FLOW AND MERCHANT".
+        Criteria 14.8 and 14.12 both repeat the pair.
+      - >-
+        The interpretation layer is three stores, not two columns. The
+        pulse-domain layer table names the merchant column, the flow column AND
+        the paired-transaction relation as interpretation
+        (.claude/skills/pulse-domain/SKILL.md section 2), and the schema is
+        emphatic: prisma/schema/ledger.prisma:1 through :5 says of TransferLink
+        "PURE INTERPRETATION: every row here is derived by the engine and fully
+        rebuildable from facts plus declarations".
+      - >-
+        A link CAN survive the correction. replaceInterpretation deletes links
+        by `outgoingTransactionId in ids OR incomingTransactionId in ids`
+        (src/modules/ledger/adapters/ledger-repository.ts:173 through :182)
+        where ids are the loaded pot rows, so a link BOTH of whose ends sit
+        outside that set is untouched. Such a link exists: a settlement link
+        carries a null incoming end whenever no mirror row was found
+        (src/modules/ledger/domain/interpret.ts:200 selects the mirror from a
+        candidate list that can be empty, and prisma/schema/ledger.prisma:17
+        makes the field optional), so a settlement debit paid out of an account
+        that then leaves the pot keeps a link nothing will ever delete.
+      - >-
+        That link is then unreachable by any future recompute, which is the same
+        property the clear exists to remove one column over: after the ring
+        change the row is never loaded again, so nothing can rebuild or delete
+        it. It falsifies the schema's own stated invariant while criterion
+        14.8's rebuildability test cannot see it, because that test is worded
+        over "every interpretation COLUMN" and TransferLink is a table.
+      - >-
+        The second stale store is the Import row. replaceInterpretation moves
+        imports INGESTED to INTERPRETED for `interpretedImportIds`
+        (ledger-repository.ts:231 through :238), derived at
+        src/modules/ledger/application/interpret-window.ts:145 through :147 from
+        the loaded transactions alone. So an accepted savings statement stays at
+        INGESTED forever, and after a ring change out of the pot its import
+        silently reverts to meaning "not interpreted". Criterion 14.10's fifth
+        assertion enumerates seven figures and none of them is a status.
+      - >-
+        I could not demonstrate present harm from either and I looked: the only
+        delete in the entire src tree is the one at ledger-repository.ts:173, so
+        no re-parse path trips the foreign key, and no read under src/ tests
+        Import.status for INGESTED alone. The harm is a broken stated invariant
+        and a landmine for the next read.
+    concrete-edit: >-
+      Replace the clearing sentence in step 6 with: "the correction CLEARS THAT
+      ACCOUNT'S INTERPRETATION ENTIRELY: the flow and merchant columns of its
+      own rows, and every TransferLink row naming one of those rows on either
+      side, because prisma/schema/ledger.prisma:1 through :5 declares that table
+      pure interpretation and fully rebuildable, and a link whose only end sits
+      outside the pot is reachable by no future recompute
+      (src/modules/ledger/adapters/ledger-repository.ts:173 deletes links only
+      by the ids the window loaded, and a settlement link can carry a null
+      incoming end)." Extend criterion 14.8's rebuildability sentence to "a test
+      asserts running recompute twice afterwards leaves every interpretation
+      column AND the whole transfer_links table identical, which is the
+      rebuildability test the domain sets
+      (.claude/skills/pulse-domain/SKILL.md:35)", and extend its clearing
+      assertion to "a test asserts no raw column on any of those rows changed
+      while flow and merchant became null and no transfer_links row names any of
+      them". Add to criterion 14.10, as a sixth assertion: "SIX, THE IMPORT SAYS
+      WHAT HAPPENED TO IT. An accepted savings statement's Import row carries a
+      terminal status meaning accepted-and-held rather than awaiting
+      interpretation, the phase states which value that is, and a test asserts
+      it, because accepting is not interpreting and the Import row is where the
+      product records the difference."
+    analysis: >-
+      The clear is correct about the two columns it names and incomplete about
+      the layer it belongs to. The interesting part is that the plan's own
+      argument generalises without change: the reason a flow goes stale on an
+      account leaving the pot is that nothing loads it again, and that reason is
+      a property of the ROW, not of the column, so every interpretation artifact
+      keyed on that row goes stale by the same mechanism. I record this as medium
+      rather than high because I could not build a present harm out of it, and I
+      want that limit on the record rather than dressed up: one surviving link is
+      invisible to every read in the tree today. What it costs is that the
+      schema's promise stops being true, and the next person to write a read over
+      that table will believe it.
+  - id: R4-007
+    severity: medium
+    evidence:
+      - >-
+        The migration step names six specs: "six e2e specs upload files,
+        PROD-SMOKE, golden-journey, navigation, import, merchants and
+        month-view".
+      - >-
+        files-to-touch names five of them plus the new one:
+        test/e2e/accounts.spec.ts, test/e2e/month-view.spec.ts,
+        test/e2e/golden-journey.spec.ts, test/e2e/import.spec.ts,
+        test/e2e/merchants.spec.ts and test/e2e/navigation.spec.ts.
+        test/e2e/prod-smoke.spec.ts is absent.
+      - >-
+        It is not a spec that merely happens to upload. Measured in this
+        worktree it drives the deleted control directly: it asserts the
+        declaration fieldset is visible, fills the label and the bank, and
+        selects the ring on that fieldset before confirming, over a freshly
+        signed up household whose account is therefore not registered. Under
+        step 4's gate that upload is refused and under criterion 14.5's grep
+        that control does not exist, so the spec fails twice over.
+      - >-
+        It is also the spec with the least margin for a late discovery. Its own
+        header says it runs against a real production build via the
+        chromium-prod project and against the deployed URL in deploy-verify, and
+        it exists because a production-only failure once reached the owner with
+        no witness. A phase that leaves it red discovers that at the
+        deploy-verify gate rather than at npm run test:e2e.
+      - >-
+        Criterion 14.9 does require "the work history records, PER SPEC, that
+        every e2e upload path was migrated", so the criterion covers it while
+        the file list does not. An implementer working from files-to-touch
+        touches five specs and meets a red sixth.
+    concrete-edit: >-
+      Add test/e2e/prod-smoke.spec.ts to files-to-touch. Add to the migration
+      step, after the sentence listing the six specs: "prod-smoke is the one to
+      migrate FIRST rather than last: it drives the declaration fieldset and the
+      ring control directly over a freshly signed up household, it runs against
+      a real production build and against the deployed URL in deploy-verify, and
+      a production-only failure with no witness is the incident it exists to
+      prevent. Its migration completes setup for the account its PDF fixture
+      carries, whose number is re-invented through
+      test/fixtures/generate-pdf-fixtures.ts so the emitted PDF stays
+      uncompressed and readable by npm run gate:privacy."
+    analysis: >-
+      A one-line omission with a poor failure position. The migration step is
+      right about the surface and files-to-touch lost one entry off the end of
+      the same sentence, which is the sort of thing that survives review by
+      looking like a list already checked. What makes it worth writing down is
+      which spec it is: the only one that runs outside next dev, added after a
+      defect that reached the owner in production, so the phase's own gate
+      criterion goes green while the one guard against that class of failure is
+      red somewhere the fast gate does not look.
+  - id: R4-008
+    severity: medium
+    evidence:
+      - >-
+        Criterion 14.11 defines its enumeration by SPELLING: "a grep with a
+        stated pattern records every occurrence under src/ of a test for an
+        absent flow IN A DATABASE QUERY, in BOTH styles this codebase writes,
+        the SQL string form matched case-insensitively ... and the Prisma client
+        form in which the same condition is written as a null flow inside a
+        where clause".
+      - >-
+        The boundary it then draws is behavioural: "no third read CARRYING A
+        FLOW CONDITION appears", and the held read is excused because it
+        "carries NO flow condition, being keyed on the account's ring alone".
+      - >-
+        For the case the criterion actually argues about, a held read written as
+        an absent flow on an account outside the pot, the boundary is applicable
+        without judgement and the criterion says outright which of the two
+        criteria such a read breaks. That half is sound and I could not break
+        it.
+      - >-
+        Three constructions see a held row, are genuinely bad, and satisfy the
+        criterion as written. ONE, a SQL predicate that is not the pinned
+        string: a COALESCE or a CASE over the flow column compared to a sentinel
+        is a test for an absent flow and matches neither arm. TWO, a second
+        Prisma spelling: the pinned form is the literal null assignment, and an
+        equals-null object or an in-list carrying null is the same condition in
+        text the grep does not contain. Round two ran the Prisma arm and got no
+        output, so that arm has never matched a real occurrence and its
+        narrowness has never been exercised. THREE, and this one the criterion
+        excludes by its own scope: a read that loads a period's rows and filters
+        the flow property in TypeScript is not "in a database query" at all, so
+        it can count held rows as gaps, deny the verdict forever, and leave
+        14.11 green.
+      - >-
+        The criterion's closing application test is the instrument that would
+        catch all three, and it is scoped to two reads by name: "asserts the
+        spending row is counted by uninterpretedCount AND returned by
+        listGapRows AND holds the verdict open, while the savings row is in
+        neither". A third read is outside its reach because it is named nowhere.
+    concrete-edit: >-
+      Extend criterion 14.11's grep sentence with: "and the grep's arms are
+      three rather than two, the SQL string form, a SQL COALESCE or CASE over
+      the flow column compared to a sentinel, and the Prisma client form in ALL
+      its spellings, a bare null, an equals-null object and an in-list carrying
+      null, because the pinned literal is one of several texts for one
+      condition." Replace its closing application test with: "AND THE SCOPING
+      MAY NOT SWALLOW A REAL GAP, MEASURED OVER THE WHOLE PORT RATHER THAN OVER
+      TWO NAMED READS. An application test over a household holding one
+      null-flow row on a SPENDING account and one on a SAVINGS account calls
+      EVERY method the overview port publishes
+      (src/modules/overview/application/ports.ts) and asserts, per method, which
+      of the two rows it returns or counts: the spending row is counted by
+      uninterpretedCount AND returned by listGapRows AND holds the verdict open,
+      the savings row is returned by the held read of criterion 14.10 and by
+      NOTHING ELSE, and a method added later that returns the savings row
+      anywhere else fails this test whatever it is written in. The grep is the
+      floor and this is the ceiling, because a read that filters the flow
+      property in TypeScript after the query is invisible to any grep over SQL
+      and is exactly the third read this criterion exists to prevent."
+    analysis: >-
+      A grep pins a spelling where the criterion needs to pin a behaviour, and
+      the plan already half knows this, because the boundary sentence it writes
+      is behavioural while the instrument underneath it is lexical. The gap is
+      narrow and it is the kind that widens: today the codebase writes one form
+      and the second arm has never matched anything, so the arm is untested and
+      its narrowness is invisible. The repair costs one test that already almost
+      exists inside the criterion, moved from two named reads to the published
+      port, which is also the enumeration that stays true when the port grows.
+  - id: R4-009
+    severity: high
+    evidence:
+      - >-
+        Criterion 14.12 hand-measures two figures: "income-total and spend-total
+        have each fallen by exactly the rows concerned, against strings written
+        by hand in the spec from the fixture's own arithmetic". Everything else
+        about the money is qualitative: "that none of those rows appears in any
+        month figure", "that the current account's transfers into it have MOVED
+        OUT OF THE INTERNAL PAIRING AND INTO THE RESERVES BLOCK", and "that the
+        verdict still reads as books closing".
+      - >-
+        The figure the correction exists to repair is net to reserves, and it is
+        not among the two. Walked by hand against the code: while the account is
+        wrongly in the pot, the current account's transfers into it take the pot
+        arm at src/modules/ledger/domain/classify-flow.ts:73 and classify
+        INTERNAL; after the correction they take the reserve arm at :62 and
+        classify RESERVE, so net to reserves RISES by them. In the same movement
+        the account's own transfer to the household's second savings account,
+        which criterion 14.10's fixture carries and which classified RESERVE at
+        :62 while the account was in the pot, becomes held and LEAVES net to
+        reserves. The figure moves in both directions at once and the criterion
+        asserts neither.
+      - >-
+        "The verdict still reads as books closing" cannot stand in for it, and
+        this is arithmetic rather than opinion. From
+        src/modules/overview/domain/month-projection.ts:196 through :201, income
+        is the INCOME sum, spend is the negated SPEND sum, net to reserves is
+        the negated RESERVE sum, and the difference is the change in the pot
+        minus (income minus spend minus net to reserves). From
+        src/modules/overview/adapters/overview-repository.ts:219, the change in
+        the pot is the sum over every row whose flow is NOT NULL. Substituting,
+        the INCOME, SPEND and RESERVE sums appear on both sides and cancel, and
+        the difference reduces to the INTERNAL sum plus the UNRESOLVED sum. The
+        verdict is therefore INSENSITIVE to any misallocation among income,
+        spend and reserves: an implementation that puts the corrected transfers
+        in the wrong one of those three buckets reconciles exactly as cleanly as
+        one that puts them in the right one.
+      - >-
+        The reserves BLOCK is a different read from the net-to-reserves FIGURE
+        and 14.12 pins neither. The block comes from the LEFT JOIN at
+        overview-repository.ts:175 through :176, keyed on the account number,
+        and its label falls back to the account number itself when the join
+        misses (:187). So a correction that leaves the join missing still
+        renders a group, 14.12's "moved into the reserves block" is satisfied,
+        and what appears on the screen is the household's own account number.
+        Criterion 14.1 pins exactly this trap for the setup journey, by hand and
+        byte compared; 14.12 inherits none of it.
+      - >-
+        The reverse direction is asserted in one clause and measured in none:
+        "The REVERSE direction, savings to spending, is asserted to need no
+        clearing and to classify those rows on the ordinary recompute." No
+        figure, no fixture, no arithmetic.
+    concrete-edit: >-
+      Replace criterion 14.12's assertion list with: "asserts with no further
+      upload: that none of those rows appears in any month figure; that they
+      render as held under criterion 14.10 with their dates and amounts; that
+      income-total, spend-total AND NET-TO-RESERVES are each byte identical to
+      strings written by hand in the spec from the fixture's own arithmetic, net
+      to reserves being the figure this correction exists to repair and the one
+      the reconciliation identity cannot check, because substituting
+      src/modules/overview/adapters/overview-repository.ts:216 through :219 into
+      src/modules/overview/domain/month-projection.ts:196 through :201 cancels
+      the income, spend and reserve sums on both sides and leaves the difference
+      equal to the internal sum plus the unresolved sum, so a misallocation
+      among those three reconciles perfectly; that the reserves block renders
+      one group for that account carrying the LABEL the household typed and not
+      its number, which fails if the join at
+      src/modules/overview/adapters/overview-repository.ts:175 through :176
+      compares raw stored strings, since the label falls back to the account
+      number at :187; and that the verdict still reads as books closing."
+      Replace its last sentence with: "The REVERSE direction, savings to
+      spending, is measured and not merely asserted: a second Playwright arm
+      registers the same account as SAVINGS, imports the same statement, changes
+      its ring to spending, and asserts with no further upload that the held
+      block for it is gone, that its rows now carry a flow, that income-total,
+      spend-total and net-to-reserves are each byte identical to hand-written
+      strings, and that no clearing call was made. Neither direction is refused;
+      a phase that refuses either fails this criterion."
+    analysis: >-
+      The criterion measures the two figures that fall and not the one that
+      moves. That would be a medium if the verdict backstopped it, and the
+      dispatch asked me to walk the arithmetic, so I did: the reconciliation
+      identity puts the income, spend and reserve sums on both sides of the
+      subtraction and they cancel, which means the difference is blind to
+      exactly the misallocation this criterion is about. So the phase's most
+      load-bearing correction, the remedy for its worst hazard, is measured by
+      two hand-written figures neither of which is the reserves figure, and
+      guarded by a verdict that provably cannot see the error. The neighbouring
+      criteria show the standard the plan already holds itself to: 14.1 byte
+      compares a spend total and names the raw-string join trap, and 14.10 byte
+      compares seven figures. 14.12 should be written to that standard, and it
+      is the criterion that needs it most.
+  - id: R4-010
+    severity: medium
+    evidence:
+      - >-
+        The phase intent states: "Ring is fixed at setup."
+      - >-
+        Criterion 14.12 states the opposite, in its title: "A RING ANSWERED
+        WRONGLY AT SETUP IS RECOVERABLE, IN BOTH DIRECTIONS, AFTER THE STATEMENT
+        HAS LANDED ... Neither direction is refused; a phase that refuses either
+        fails this criterion."
+      - >-
+        Step 6 agrees with 14.12 and not with the intent: "THE RULE IS NOW: the
+        ring can be changed either way". Hazard H14.4 agrees with 14.12 too:
+        "criterion 14.12's ring change is the remedy, in both directions and
+        after the statement has landed."
+      - >-
+        So the intent is the surviving text of the rule the last fix round
+        removed, and it is the first paragraph an implementer reads. Three of
+        the four statements agree; the one that disagrees is the one at the top.
+      - >-
+        The same paragraph carries the phase's other naming drift. Step 3 calls
+        it "the setup screen", criterion 14.12 "the accounts screen", criterion
+        14.6 "the accounts list", and files-to-touch names one new route,
+        src/app/(app)/accounts/. Nothing says these are one screen, and the
+        requirements attached to the three names differ, which is how criterion
+        14.2's per-row number requirement came to apply to criterion 14.6's card
+        rows (finding R4-004).
+    concrete-edit: >-
+      Replace the intent's sentence "Ring is fixed at setup." with "The ring is
+      ANSWERED at setup and stays correctable afterwards in both directions on
+      the same screen, which is criterion 14.12 and decision D-51 as rewritten
+      under DR-0030." Add to step 3, after its first sentence: "One route,
+      src/app/(app)/accounts/, is the whole of it, and the plan's three names
+      for it, the setup screen, the accounts screen and the accounts list, are
+      three states of that one route: entering the accounts not yet known,
+      reviewing what is about to be written, and listing what the household
+      holds with each account's ring changeable in place under criterion 14.12."
+    analysis: >-
+      The smallest finding in the set and the one most likely to mislead,
+      because it sits where an implementer starts. A fix round rewrote a
+      decision in the steps, the criteria and the hazard table and did not
+      revisit the four-word summary of the old rule at the top of the phase. The
+      three names for one route are the same defect in a milder form: the plan
+      knows there is one route, because files-to-touch says so, and never says it
+      in the prose, so a requirement written under one name silently applies
+      under the others.
+  - id: R4-011
+    severity: medium
+    evidence:
+      - >-
+        Criterion 14.10's first assertion places the held rows but does not
+        identify the account: "an element with data-testid held-rows renders
+        UNDER THAT ACCOUNT, one line per held row of the requested period
+        carrying its booking date, its counterparty text and its amount".
+      - >-
+        The read step 4 specifies returns no label: "returning the rows of the
+        requested period on accounts whose ring is savings, per account, with
+        booking date, counterparty text and amount".
+      - >-
+        Criterion 14.1 requires the label of the neighbouring block, explicitly
+        and for a stated reason: the reserve-group elements must "each render
+        the LABEL the household typed rather than an account number".
+      - >-
+        So the phase requires a label where it already had one and leaves it
+        unstated on the block it is adding, on the screen directly beside it.
+        The natural implementation of "under that account", given a read that
+        carries no label, heads the block with the account number, because that
+        is the only account-identifying value the read returns. The precedent in
+        the tree points the same way: the reserves join already falls back to
+        rendering the number when it cannot find a label
+        (src/modules/overview/adapters/overview-repository.ts:187).
+      - >-
+        The cost is specific to this repository. The point of the phase is that
+        the household names its accounts once so its own accounts stop appearing
+        as unnamed identifiers, the repository is public, and there is a
+        standing rule that no identifier reaches a note, a report or a commit
+        message. A screenshot of the month view is a normal thing to paste into
+        a work history.
+    concrete-edit: >-
+      Extend criterion 14.10's first assertion with: "and the block is headed by
+      the LABEL the household typed for that account, never by its number, which
+      the port method returns alongside the rows; a Playwright test asserts the
+      heading is the typed label and a grep asserts the rendered block carries no
+      account-shaped string. This is the same requirement criterion 14.1 makes of
+      the reserve-group elements beside it, for the same reason: the household
+      named its accounts so that its own accounts stop being shown to it as
+      identifiers." Extend step 4's description of the new read to "returning the
+      rows of the requested period on accounts whose ring is savings, per account
+      and carrying that account's LABEL, with booking date, counterparty text and
+      amount."
+    analysis: >-
+      An omission by proximity: the criterion beside this one already states the
+      rule and gives the reason, and the new criterion arrived with DR-0030
+      without inheriting it, which is the same inheritance failure the last round
+      found in 14.10's fixture conditions. The read is the place to fix it rather
+      than the component, because a component handed only a number cannot render
+      a label however the criterion is worded.
+  - id: R4-012
+    severity: low
+    evidence:
+      - >-
+        Criterion 14.9 pins the skill correction to one sentence:
+        ".claude/skills/pulse-domain/SKILL.md:22, WHICH SAYS A RESERVE ACCOUNT'S
+        STATEMENTS ARE NOT IMPORTED IN V1, is corrected in this phase's commit
+        to record DR-0030, WITH A GREP ASSERTING THE SUPERSEDED SENTENCE IS
+        GONE".
+      - >-
+        Line 22 of that file is one line carrying THREE sentences: that reserve
+        accounts are registered for their account number only, that their
+        statements are not imported in v1, and that a reserve movement is
+        classified entirely from the pot side.
+      - >-
+        DR-0030 reaches all three. Under this phase a reserve account is
+        registered for its number AND its statement is imported, so "registered
+        for their account number only" is false; and interest, a movement
+        between two savings accounts and a payment made straight out of savings
+        are the three things criterion 14.10 exists to show, none of which is
+        visible from the pot side at all, so the third sentence is at best half
+        true.
+      - >-
+        A grep asserting one sentence is gone passes over a line whose two
+        remaining sentences contradict the shipped behaviour, on the one file
+        CLAUDE.md guarantees is read before any work touching accounts or flow.
+        That guarantee is the whole reason round two raised this.
+    concrete-edit: >-
+      Replace criterion 14.9's skill clause with: ".claude/skills/pulse-domain/
+      SKILL.md:22 carries THREE sentences and DR-0030 reaches all three, that a
+      reserve account is registered for its account number only, that its
+      statements are not imported in v1, and that a reserve movement is
+      classified entirely from the pot side. All three are corrected in this
+      phase's commit to record what the product now does: the statement is
+      imported, its rows are stored as facts and shown marked held and counted
+      in no total, and the pot side remains the only place a reserve movement is
+      CLASSIFIED while the savings side is where interest, a movement between
+      two savings accounts and a payment made straight out of savings become
+      visible at all. A grep asserts each of the three superseded sentences is
+      gone and a grep asserts the file names the held state."
+    analysis: >-
+      The only low, and it sharpens a correction the last round already won
+      rather than reopening it. A grep for one sentence is a fine instrument
+      when the sentence stands alone, and these three share a line and a
+      subject, so removing the middle one leaves a paragraph that reads as
+      current and is wrong in both remaining halves. The file is the one
+      document guaranteed to be read before the next change to this area, which
+      is what makes a partial correction worse than none: a half-corrected
+      paragraph looks like it has been checked.
