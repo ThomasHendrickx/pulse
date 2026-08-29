@@ -74,7 +74,14 @@ const ingest = async (
   );
   const confirmed = await confirmImport(context, world.deps, {
     importId: uploaded.importId,
-    profileName: "kbc-mastercard-uitgavenstaat",
+    // ONE NAME PER SOURCE. This helper used to give every file in a world
+    // the SAME format name, and several of the tests below ingest a card
+    // and its companion account statement, which are two different
+    // formats. The fake repository accepted that; the real (householdId,
+    // name) index on source_profiles never would, and the confirm use
+    // case now refuses it by value like the database does. Naming per
+    // file is what the reader does at the format question.
+    profileName: `${name} profile`,
     spec: detected.value,
     declaration,
   });

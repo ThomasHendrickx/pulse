@@ -12,6 +12,9 @@ export const IMPORT_STATUS_KEYS = {
   // one is removed with its refusal (M3-P18, DR-0030): a savings
   // account's own statement is accepted and its rows are shown held.
   "account-not-registered": "importAccountNotRegistered",
+  // The format question answered twice with the same name: refused as a
+  // value by the confirm use case, routed here like every other refusal.
+  "profile-name-taken": "importProfileNameTaken",
 } as const;
 
 export type KnownImportStatus = keyof typeof IMPORT_STATUS_KEYS;
