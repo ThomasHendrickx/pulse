@@ -50,6 +50,22 @@ import type { NamingCopy } from "./merchant-row";
 // value. A DIGEST answers both: it carries no identifier, and it stays
 // injective wherever the key is, so no claim can land on a sibling row.
 //
+// WHAT THE DIGEST IS NOT, AND THIS IS THE PART A LATER PHASE WILL NEED
+// (round two, finding HZ2-M3P13-03). IT IS A STABLE OPAQUE ROW IDENTITY. IT
+// IS NOT A REDACTION. The value hashed has low entropy and the same row
+// displays the masked label, which round one measured as leaving about
+// 1.03e6 candidate accounts for the Belgian length, so anyone holding the
+// markup can hash a million candidates in seconds and recover the account
+// from this attribute. That costs nothing TODAY only because the same row
+// carries the account in plaintext in the hidden naming field by design, so
+// this digest is not the weakest link on the row.
+//
+// THE DAY THAT CHANGES: if a later phase makes the hidden identity field
+// opaque, believing the row is then clean, this digest becomes the whole
+// exposure and the account will simply have moved from one attribute to
+// another. That change must give this digest a PER-HOUSEHOLD SALT held
+// server side, in the same commit, or it does not do what it thinks it does.
+//
 // Every consumer needs stability and uniqueness and nothing else: criterion
 // 11.3's sweep compares the sequence to itself (test/e2e/busy-state.spec.ts),
 // the optimistic-naming spec captures a value and uses it to re-find its own

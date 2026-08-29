@@ -320,3 +320,112 @@ Classified INTERMITTENT rather than a regression of this phase, on evidence:
 
 TWO INDEPENDENT SIGHTINGS NOW. It is worth a phase of its own: two lanes and
 one implementer have each lost a run to it, and the next one will too.
+
+---
+
+# SETTLE ROUND (2026-08-28)
+
+Both lanes closed APPROVE (criteria ce76ec3, hazard 392cefc). Seven findings
+directed settled before merge. Both round-two documents read in full and every
+claim verified in this worktree before any change.
+
+## RED-THEN-GREEN, item 1: the separator rule closes rather than lists
+
+Verified first with a direct probe against the committed mask:
+
+    zero-width space U+200B    masked=false
+    word joiner U+2060         masked=false
+    soft hyphen U+00AD         masked=false
+    en dash U+2013             masked=false
+    underscore                 masked=false
+    solidus                    masked=false
+    country-space-check        masked=false
+    glued prefix               masked=false
+
+RED, witness committed before the fix:
+
+    $ npx vitest run test/domain/identity-on-review.test.ts
+    × an account grouped with zero-width space U+200B is redacted, not printed
+    × an account grouped with word joiner U+2060 is redacted, not printed
+    × an account grouped with soft hyphen U+00AD is redacted, not printed
+    × an account grouped with en dash U+2013 is redacted, not printed
+    × an account grouped with underscore is redacted, not printed
+    × an account grouped with solidus is redacted, not printed
+    × an account grouped with comma is redacted, not printed
+    × an account grouped with middle dot U+00B7 is redacted, not printed
+    × a separator between the country code and the check digits does not defeat the mask
+    × two non-whitespace separators in one gap are NOT crossed
+    ✓ a doubled WHITESPACE separator still masks
+      Tests  12 failed | 33 passed (45)      EXIT 1
+
+The doubled-whitespace row passing is load-bearing: it is the property the
+directed fix would have broken (see the deviation below).
+
+GREEN after stating the rule as a closure:
+
+    $ npx vitest run test/domain/identity-on-review.test.ts
+      Tests  47 passed (47)                  EXIT 0
+    $ npx tsx <the same probe>
+      all six separators and the country-space-check: masked=true
+
+DEVIATION FROM THE DIRECTED FIX, recorded because the deviation is the
+interesting part. The finding asked for "any single non-alphanumeric character
+between run characters, bounded to ONE consecutive separator". The CLOSURE half
+is taken as written. The BOUND is not: a flat bound of one would stop masking an
+account written with a DOUBLED SPACE, which round one's own probe recorded as
+masked at that head, so obeying it literally would have traded one fail-open for
+another. Implemented instead: whitespace unbounded, at most ONE non-whitespace
+separator per gap. That keeps the doubled space masked and still stops the scan
+walking across arbitrary punctuation, which is the reason the bound was asked
+for. Both directions are pinned.
+
+## RED-THEN-GREEN, item 2: the fallback has exactly one candidate
+
+Verified first:
+
+    trials=40000 masked=2035 swallowed-a-word=428
+    sample: MANDAAT ZZ89 **** OORD
+
+RED: `the unregistered-country fallback never eats a following word` and
+`the swallow rule holds on the UNREGISTERED path too` both failed.
+
+GREEN: `trials=40000 masked=0 swallowed-a-word=0`, and the two tests pass.
+
+DEVIATION, and this one is a correction of the proposed remedy rather than a
+preference. The finding proposed walking to the end of the maximal run and
+asking for that length once, claiming this makes word-swallowing impossible.
+The single-candidate half is right and is taken. The impossibility does NOT
+follow: a space separates the groups of one account AND separates two words, so
+a maximal run that crosses spaces reaches the end of the sentence, and the one
+remaining candidate then still swallows every following word on its
+one-in-ninety-seven draw. Measured before choosing. So the fallback DOES NOT
+CROSS WHITESPACE AT ALL: its run ends at the first space, which makes swallowing
+impossible by construction rather than rare. The cost, pinned by a test: an
+account of a country the registry does not carry, written in space-separated
+groups, is not redacted. Whether that branch has a known member today rests on
+the round-one hazard lane's record that the pinned table is complete against
+ISO 13616 as published, which is attributed here rather than measured by me.
+What I did measure is the other side: crossing spaces cost 428 eaten words in
+40,000 constructed descriptors, on three shipped screens.
+
+## Per-item disposition
+
+| Item | Finding | Disposition |
+|---|---|---|
+| 1 | HZ2-M3P13-01 | FIXED as a closure, witness above. Country-space-check also fixed by widening the candidate anchor. Glued prefix recorded at the definition as a known limit AND pinned by a test. |
+| 2 | HZ2-M3P13-02 | FIXED, witness above. The swallow test now exercises the unregistered path, so its name is true of both branches. |
+| 3 | HZ2-M3P13-03 | DONE. Two paragraphs at `groupDomId`: it is a stable opaque row identity and NOT a redaction, with the ~1.03e6-candidate figure and why it costs nothing today; and the per-household salt required in the same commit as any change that opaques the hidden field. |
+| 4 | CR2-M3P13-01 | FIXED. `DESCRIPTOR_FIELDS` renamed `SENSITIVE_FIELDS` and given iban, counterpartyIban, counterpartyAccount, accountAlias, accountNumber. The walk went from 16 sites to 19; all three new ones disposed of explicitly. The accounts list's own number is NOT masked and is now an exclusion with its reason. The masker's authority claim is corrected to say the vocabulary is the walk's reach. |
+| 5 | CR2-M3P13-02 | DONE. C13-4 and C13-5 rewritten as closed remedies, each quoting what it used to say, naming the change that closed it. C13-5 states the one genuine residual so the record does not overclaim in the other direction. |
+| 6 | CR2-M3P13-03 | FIXED. The RF family is refused BY NAME in the fallback, and the false claim is corrected in both places with the superseded sentence quoted. Pinned at lengths 16, 20 and 24. |
+| 7 | CR2-M3P13-04 | FIXED. One `renderingsOf` helper feeds the primary sweep, the dev assertion and the production page-source assertion, so all three test five shapes. |
+| n/a | CR2-M3P13-05 | NOT TOUCHED, by instruction. It has its own phase. |
+
+## A third surface the widened vocabulary found
+
+Beyond the accounts list the finding named, the walk newly collected the
+reserves list's `key={group.counterpartyIban}`. It is a React key, which React
+does not emit into the DOM, so it reaches no markup, attribute or screenshot.
+Declared with that reason rather than masked. It is the clearest evidence the
+widening was worth doing: before it, nobody could have said whether that
+surface existed.

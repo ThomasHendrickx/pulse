@@ -306,6 +306,112 @@ describe("criterion 13.2 and hazard H13.2: the display mask redacts an account a
     );
   });
 
+  // ROUND TWO, FINDING HZ2-M3P13-02. THE FALLBACK MUST CONSUME THE WHOLE
+  // TOKEN OR NOTHING. Round one's fail-closed branch looped from the
+  // registry's longest length down to its shortest and took the first run
+  // whose checksum held, and runOfLength crosses separators, so on
+  // space-separated text SEVERAL lengths reached a legal end and each got a
+  // one-in-ninety-seven draw, longest first. Measured over 40,000
+  // constructed reference-shaped descriptors before the fix: 2,035 masked
+  // with no account present, 428 of those with a following word eaten into
+  // the mask, output of the shape "MANDAAT ZZnn **** OORD". That is the
+  // greediness this file's own header says it was rewritten to avoid, and it
+  // is visible to the reader as silently deleted text.
+  test("the unregistered-country fallback never eats a following word", () => {
+    const swallowed: string[] = [];
+    let masked = 0;
+    for (let seed = 0; seed < 4000; seed += 1) {
+      const body =
+        String(seed).padStart(4, "0") +
+        "1234" +
+        String(seed % 10000).padStart(4, "0") +
+        "5678" +
+        String((seed * 7) % 10000).padStart(4, "0");
+      const groups = body.match(/.{4}/g) ?? [];
+      const text = `MANDAAT ZZ${String(seed % 100).padStart(2, "0")} ${groups.join(" ")} DEMO WOORD`;
+      const out = maskAccountNumbers(text);
+      if (out !== text) {
+        masked += 1;
+        if (!out.includes("DEMO") || !out.includes("WOORD")) {
+          swallowed.push(out);
+        }
+      }
+    }
+    expect(
+      swallowed.slice(0, 3),
+      `${swallowed.length} of ${masked} masked descriptors ate a following word`,
+    ).toEqual([]);
+  });
+
+  test("the swallow rule holds on the UNREGISTERED path too, not only the known-country one", () => {
+    const body = IDENTITY_FIXTURE_ACCOUNTS.counterparty1.slice(4);
+    const value = unregistered(body);
+    expect(maskAccountNumbers(`NAAR ${value} DEMO WOORD`)).toBe(
+      `NAAR ${value.slice(0, 4)} **** ${value.slice(-4)} DEMO WOORD`,
+    );
+    // A token one character longer than a real one is not an account of any
+    // registry length that also checks out, so it is left whole rather than
+    // partly eaten.
+    const longer = `${value}7`;
+    expect(maskAccountNumbers(`NAAR ${longer} DEMO WOORD`)).toContain("DEMO WOORD");
+  });
+
+  // THE TWO COSTS OF THE ROUND-TWO RULES, PINNED RATHER THAN ONLY WRITTEN
+  // DOWN, so a later reader meets them as checked facts and a later change
+  // that alters either one is red rather than silent.
+  test("an unregistered-country account written in SPACE-separated groups is not redacted, which is what buys the no-swallowing guarantee", () => {
+    const body = IDENTITY_FIXTURE_ACCOUNTS.counterparty1.slice(4);
+    const value = unregistered(body);
+    const spaced = value.replace(/(.{4})(?=.)/g, "$1 ");
+    expect(maskAccountNumbers(spaced)).toBe(spaced);
+    // ...while the same account grouped with a NON-whitespace separator, or
+    // written compactly, is redacted. Words are separated by spaces and
+    // identifiers are not, which is the whole of the distinction.
+    const hyphenated = value.replace(/(.{4})(?=.)/g, "$1-");
+    expect(maskAccountNumbers(hyphenated)).toBe(
+      `${value.slice(0, 4)} **** ${value.slice(-4)}`,
+    );
+    expect(maskAccountNumbers(value)).toBe(
+      `${value.slice(0, 4)} **** ${value.slice(-4)}`,
+    );
+  });
+
+  test("an account GLUED to a preceding word is not redacted, because the scan anchors on a word boundary", () => {
+    const compact = IDENTITY_FIXTURE_ACCOUNTS.counterparty1;
+    expect(maskAccountNumbers(`NAAR${compact}`)).toBe(`NAAR${compact}`);
+    // The same account with a boundary in front of it IS redacted, so this
+    // is about the anchor and not about the mask being inert.
+    expect(maskAccountNumbers(`NAAR ${compact}`)).toBe(
+      `NAAR ${compact.slice(0, 4)} **** ${compact.slice(-4)}`,
+    );
+  });
+
+  // ROUND TWO, FINDING CR2-M3P13-03. The ISO 11649 structured creditor
+  // reference is RF, two check digits and an alphanumeric body, and its check
+  // is the SAME mod-97 over the same rearrangement, so it satisfies the
+  // fallback's grammar and its arithmetic by construction. It is excluded by
+  // name.
+  test("an ISO 11649 creditor reference is left alone, because it shares this checksum by construction", () => {
+    const rfWithLength = (length: number): string => {
+      const body = "1234567890".repeat(4).slice(0, length - 4);
+      for (let candidate = 0; candidate < 100; candidate += 1) {
+        const value = `RF${String(candidate).padStart(2, "0")}${body}`;
+        if (accountNumberChecksumHolds(value)) {
+          return value;
+        }
+      }
+      throw new Error("no check digits satisfy the checksum for this body");
+    };
+    for (const length of [16, 20, 24]) {
+      const reference = rfWithLength(length);
+      expect(accountNumberChecksumHolds(reference)).toBe(true);
+      expect(
+        maskAccountNumbers(`MEDEDELING ${reference} DEMO`),
+        `an RF reference of length ${length} was redacted`,
+      ).toBe(`MEDEDELING ${reference} DEMO`);
+    }
+  });
+
   test("an unregistered-country token whose checksum does NOT hold is left alone, so the fallback is a grammar test and not a shape test", () => {
     const body = IDENTITY_FIXTURE_ACCOUNTS.counterparty1.slice(4);
     const valid = unregistered(body);
@@ -361,6 +467,60 @@ describe("criterion 13.2 and hazard H13.2: the display mask redacts an account a
       ).toBe(`OVERSCHRIJVING NAAR ${expected} DEMO COUNTERPARTY`);
     },
   );
+
+  // ROUND TWO, FINDING HZ2-M3P13-01. THE SEPARATOR RULE MUST CLOSE, NOT
+  // ENUMERATE. Round one replaced one literal with a set, which fixed the
+  // members it named and left every member nobody had thought of returning
+  // the account VERBATIM. These are the shapes the lane measured at 2a0cc03,
+  // and the point of the table is that the rule below it is stated as "any
+  // character that is not a letter or a digit" rather than as a list, so a
+  // character nobody has thought of is covered too.
+  test.each([
+    ["zero-width space U+200B", "​"],
+    ["word joiner U+2060", "⁠"],
+    ["soft hyphen U+00AD", "­"],
+    ["en dash U+2013", "–"],
+    ["underscore", "_"],
+    ["solidus", "/"],
+    ["comma", ","],
+    ["middle dot U+00B7", "·"],
+  ])(
+    "an account grouped with %s is redacted, not printed",
+    (_name, separator) => {
+      const compact = IDENTITY_FIXTURE_ACCOUNTS.counterparty1;
+      const expected = `${compact.slice(0, 4)} **** ${compact.slice(-4)}`;
+      const rendered = compact.replace(/(.{4})(?=.)/g, `$1${separator}`);
+      expect(maskAccountNumbers(rendered)).toBe(expected);
+    },
+  );
+
+  test("a separator between the country code and the check digits does not defeat the mask", () => {
+    const compact = IDENTITY_FIXTURE_ACCOUNTS.counterparty1;
+    const expected = `${compact.slice(0, 4)} **** ${compact.slice(-4)}`;
+    expect(maskAccountNumbers(`${compact.slice(0, 2)} ${compact.slice(2)}`)).toBe(
+      expected,
+    );
+  });
+
+  // THE BOUND, AND IT IS THE OTHER HALF OF CLOSING THE RULE. Once ANY
+  // non-alphanumeric character separates run characters, an unbounded run of
+  // them would let the scan cross arbitrary punctuation between unrelated
+  // tokens. Whitespace stays unbounded, because a doubled space is a real
+  // rendering this mask already handled and unmasking it would be a new
+  // fail-open; at most ONE non-whitespace separator is crossed per gap.
+  test("a doubled WHITESPACE separator still masks, because unmasking it would be a new leak", () => {
+    const compact = IDENTITY_FIXTURE_ACCOUNTS.counterparty1;
+    const expected = `${compact.slice(0, 4)} **** ${compact.slice(-4)}`;
+    expect(maskAccountNumbers(compact.replace(/(.{4})(?=.)/g, "$1  "))).toBe(
+      expected,
+    );
+  });
+
+  test("two non-whitespace separators in one gap are NOT crossed, so the scan cannot walk across punctuation between unrelated tokens", () => {
+    const compact = IDENTITY_FIXTURE_ACCOUNTS.counterparty1;
+    const glued = `${compact.slice(0, 8)}--${compact.slice(8)}`;
+    expect(maskAccountNumbers(glued)).toBe(glued);
+  });
 
   test("the separator set the mask accepts is the set the canonical form removes, plus the two the card mask already tolerates", () => {
     // ONE ANSWER, NOT TWO (finding HZ-M3P13-01). This file used to hold a
