@@ -205,6 +205,53 @@ export const accountNumberProblem = (
   return undefined;
 };
 
+// THE WHITESPACE CLASS THIS MODULE REMOVES, PUBLISHED SO A SECOND CONSUMER
+// REUSES IT RATHER THAN WRITING A THIRD ANSWER (M3-P13 fix round, finding
+// HZ-M3P13-01). canonicalAccountNumber strips /\s/, which includes the three
+// no-break spaces; the display masker in src/platform/ui/mask-account-number.ts
+// had its own separator rule that accepted the ASCII space alone, so the tree
+// held two different answers to what separates an account number and the
+// masker FAILED OPEN on the difference. It now asks this predicate. Anything
+// else that needs the question answered asks here too.
+export const isAccountNumberWhitespace = (character: string): boolean =>
+  /\s/.test(character);
+
+// The registry's shortest and longest entries, DERIVED from the table rather
+// than written down beside it, so a country added to the table cannot leave
+// a hand-written bound stale.
+export const ACCOUNT_NUMBER_LENGTH_BOUNDS: {
+  readonly shortest: number;
+  readonly longest: number;
+} = {
+  shortest: Math.min(...ACCOUNT_NUMBER_LENGTH_BY_COUNTRY.values()),
+  longest: Math.max(...ACCOUNT_NUMBER_LENGTH_BY_COUNTRY.values()),
+};
+
+// THE ISO 7064 CHECK ALONE, over an already-canonical value, with no country
+// and no length test in front of it (M3-P13 fix round, finding HZ-M3P13-04).
+// It exists so the display masker can FAIL CLOSED on a country this registry
+// does not carry.
+//
+// CORRECTED LOUDLY IN ROUND TWO (clause R-087, finding CR2-M3P13-03). This
+// paragraph used to say: "a checksum is a grammar test rather than a shape
+// test, so it cannot fire on a mandate reference, a card number or a phone
+// number". THE MANDATE-REFERENCE HALF WAS FALSE, and not marginally: the ISO
+// 11649 structured creditor reference is RF, two check digits and an
+// alphanumeric body, and its check is THIS check, over the same
+// rearrangement, so a valid RF reference satisfies this predicate by
+// construction. Probe-confirmed at lengths 16, 20 and 24. What is true: this
+// predicate cannot fire on a value carrying no country-code grammar at all,
+// which is what keeps a card number and a phone number intact, and the one
+// family that shares the arithmetic is the RF family, which the masker
+// refuses BY NAME rather than by hoping it cannot arise
+// (src/platform/ui/mask-account-number.ts, CREDITOR_REFERENCE_PREFIX). It is NOT a validity test and no registration
+// path may use it: DR-0028 requires all four tests, and accountNumberProblem
+// above is the only place that answers "is this an account number".
+export const accountNumberChecksumHolds = (value: string): boolean => {
+  const compact = canonicalAccountNumber(value);
+  return /^[A-Z]{2}[0-9]{2}[A-Z0-9]+$/.test(compact) && mod97(compact) === 1;
+};
+
 // The same four tests read as a predicate. This is what the merchants
 // trust gate and the ledger comparisons consult; nothing re-derives it.
 export const isValidAccountNumber = (value: string | undefined): boolean =>

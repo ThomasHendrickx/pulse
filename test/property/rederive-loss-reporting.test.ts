@@ -1,3 +1,4 @@
+import { plainDate } from "@/platform/plain-date";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { cents } from "../../src/platform/money";
@@ -183,6 +184,7 @@ const makeRow = (
   id,
   flow: "SPEND",
   amountCents: cents(-1_000),
+  bookingDate: plainDate("2026-03-02"),
   description,
   ...(account === undefined ? {} : { counterpartyAccount: account }),
 });

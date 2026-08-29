@@ -648,6 +648,7 @@ export const makeFakeImportWorld = (): FakeImportWorld => {
           id: stored.id,
           flow: stored.flow === "INCOME" ? ("INCOME" as const) : ("SPEND" as const),
           amountCents: stored.amountCents,
+          bookingDate: stored.bookingDate,
           description: stored.description,
           ...(stored.counterpartyName === undefined
             ? {}
