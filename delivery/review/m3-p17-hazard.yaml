@@ -1,0 +1,450 @@
+# Clean-room review, HAZARD contract, phase M3-P17 (deployed build stamp),
+# ROUND ONE.
+#
+# Head reviewed: 12c20f3 on claude/m3-p17-deployed-build-stamp, in an
+# isolated worktree at /home/user/wt-m3p17-haz on branch
+# claude/m3-p17-rev-haz. The code under review is the code at 8dc9678;
+# 12c20f3 adds only delivery/work-history/m3-p17.yaml.
+#
+# HEADER DISCLOSURES. Claude-family verdict, review-contract hazard,
+# framing destructive-paths. The implementation session was not read. The
+# criteria lane's verdict was not read; none exists on this branch at the
+# time of writing. The work history delivery/work-history/m3-p17.yaml was
+# read AFTER the central build probe had already produced its result,
+# because clause R-087 requires its claims checked; nothing below rests on
+# it and every claim carries a command this lane ran.
+#
+# CONTRACT ORDER. Started from the phase's five declared hazard classes
+# (H17.1 through H17.5) and the dispatch's five attack directions
+# (unauthenticated disclosure, unstamped masking a misconfiguration,
+# module-scope env reads, vacuous e2e assertion, database guard paths).
+# The acceptance criteria were read last, as one more input.
+#
+# DATABASE SAFETY. The ambient DATABASE_URL in this container resolves to a
+# deployed pooler belonging to a DIFFERENT project of the owner's. Every
+# command that could reach a database ran with DATABASE_URL and DIRECT_URL
+# pinned in the invoking shell to an invented 127.0.0.1:54322 string, the
+# parsed host printed before the first run. Playwright collection used the
+# five PULSE_GATE_* names pinned to invented local values. No database was
+# opened by anything this lane ran: the fast suite constructs its one lazy
+# client and connects nowhere, --list starts no server, and the two next
+# start probes served only the version route, which reads no database.
+#
+# NO DATA. No account number, no counterparty, no amount and no date from
+# any real document appears in this file. No connection string appears
+# here; the pinned strings above are described, not quoted in full.
+#
+# EXPERIMENT DISCLOSURE (clause R-009b, edit-nothing). One controlled,
+# fully reverted experiment was run, because the central finding needed its
+# concrete fix validated and the running production server could not be
+# probed at all without it: the marker constant was temporarily moved to a
+# sibling non-route module and the three imports adjusted, the build and
+# the route unit tests run, the built server probed over HTTP, and every
+# temporary edit reverted with git checkout plus rm. git status after
+# reversion carries exactly one untracked file, this document. Nothing of
+# the head's code is changed by this review.
+#
+# ==========================================================
+# GATES, RUN BY THIS LANE AT 12c20f3, Node v26.8.1 from /opt/nvm
+# ==========================================================
+#   npm run typecheck     EXIT=0  in the fresh worktree (no .next). See
+#                                 finding HZ-M3P17-01: EXIT=2 the moment
+#                                 .next/types exists.
+#   npm run lint          EXIT=0
+#   npm test              EXIT=0  49 files, 756 tests, 0 skipped
+#   npm run gate:privacy  EXIT=0  "gate:privacy clean"
+#   npm run gate:decisions EXIT=1 six review lanes over the two-round cap.
+#                                 Re-run at the phase base f19984b in the
+#                                 same worktree: the identical six lanes,
+#                                 so pre-existing at the branch point.
+#                                 origin/main's tip dc18484 prunes those
+#                                 rounds; the merge base of this branch and
+#                                 origin/main is f19984b.
+#   npm run build         EXIT=1  THE CENTRAL RESULT, finding HZ-M3P17-01.
+#   npm run test:e2e      NOT RUN HERE: no Docker in this container, so no
+#                                 local Supabase stack exists to run it
+#                                 against, and this lane does not point a
+#                                 writing gate at anything ambient. What
+#                                 that leaves unwitnessed is recorded
+#                                 below, and at this head the question is
+#                                 moot: the chromium-prod web server runs
+#                                 "npm run build && npx next start -p
+#                                 3100" (playwright.config.ts:155), and
+#                                 npm run build exits 1, so the slow gate
+#                                 cannot pass in ANY container at 12c20f3.
+#
+# WHAT THE MISSING SLOW GATE LEAVES UNWITNESSED IN THIS LANE, recorded
+# rather than assumed: the full journey of the prod-smoke spec (sign-up,
+# PDF upload, reconciliation) against a locally built server, and the new
+# assertion executing end to end. Collection of the spec WAS witnessed
+# (below, H17.3), and the route's own runtime behaviour WAS witnessed over
+# the experiment build.
+#
+# ==========================================================
+# HAZARD-BY-HAZARD RECORD: what was probed, what was found,
+# and what was probed and NOT found
+# ==========================================================
+#
+# H17.1 (unstamped confusable with a real value). PROBED, NOT REACHED. The
+# fallback at src/app/api/health/version/route.ts:36 maps undefined and the
+# empty string to the literal "unstamped"; the unit test covers set, unset,
+# empty and mixed cases and asserts the marker is not a hexadecimal string
+# (test/app/health-version.test.ts:66). Live witness over the built server:
+# both fields answer exactly "unstamped" with no platform variables set.
+# Residue, below a finding: a whitespace-only value such as a single space
+# passes through verbatim; no evidence the platform can produce one, and
+# the smoke shape assertion rejects it where it runs.
+#
+# H17.2 (wrong variable name, third field, environment probe). PROBED, NOT
+# REACHED. grep over the route shows exactly two process.env reads, by the
+# two pinned names, both inside GET (src/app/api/health/version/route.ts:41
+# and :42), none at module scope, and no other file in the diff reads any
+# VERCEL name. Live probes of the built server: the 200 body carries
+# exactly the two fields; POST and PUT answer 405; HEAD 200; OPTIONS 204
+# with allow GET, HEAD, OPTIONS; a subpath answers 404; query strings are
+# ignored; response headers carry content-type, vary, date and connection
+# only, nothing env-derived. A hostile value planted in the two variables
+# is reflected verbatim but JSON-encoded under content-type
+# application/json, so nothing executes and disclosure is bounded to the
+# two platform values themselves.
+#
+# H17.3 (assertion green by never executing). PROBED, PARTIALLY RESOLVED,
+# AND INVERTED BY THE CENTRAL FINDING. npx playwright test --list with the
+# PULSE_GATE_* pin: EXIT=0, 90 tests in 11 files, prod-smoke listed exactly
+# once, under chromium-prod only (testIgnore on chromium at
+# playwright.config.ts:80, testMatch on chromium-prod at
+# playwright.config.ts:85), and the spec's alias import of the route module
+# resolves under Playwright. So the assertion is collected, not silently
+# skipped. But it can never RUN at this head: the project's web server
+# fails at npm run build. Red by never executing rather than green by
+# never executing; loud, and fatal to criterion 17.3.
+#
+# H17.4 (platform stamps nothing, undecidable here). NOT DECIDABLE IN THIS
+# CONTAINER, as the plan itself records; the route makes the case visible
+# with a marker no sha can collide with, which is what this phase owes.
+# One interaction found and folded into HZ-M3P17-01: while the build
+# failure stands, the production origin keeps serving the PREVIOUS build,
+# so M3-P16 would see 404 on the route, not "unstamped", and would wait on
+# a deploy that can never land.
+#
+# H17.5 (instrument grows into infrastructure). PROBED, NOT REACHED. The
+# diff against the phase base is four added files with no deletions; no
+# dependency, package.json and package-lock.json byte-identical to the
+# base (git diff --stat empty); no scheduler, poller, queue, cron or
+# persisted record anywhere in the diff; no Prisma model, no migration.
+#
+# DATABASE GUARD PATHS (dispatch direction five). PROBED, NOT REACHED. The
+# diff touches nothing under src/platform/db and nothing in
+# playwright.config.ts; the new spec import chain reaches next/server and
+# nothing Prisma; the fast suite's own client-construction counter ran
+# green inside npm test. The gate-target refusal machinery was untouched
+# and the --list run only proceeded after the pin was supplied.
+#
+# R-087 SWEEP. Every line-numbered citation in the new route's comment
+# block resolves: src/platform/config.ts:1-10 does state the build-safety
+# contract the comment claims, src/app/api/health/db/route.ts:16-22 does
+# record the owner-accepted disclosure level, and the request-time-read
+# claim matches the grep. The work history's gate-evidence is honest where
+# it could have lied: e2e is recorded as error with the GateDbTargetRefused
+# text, gate:decisions as red with the six lanes captured. No false claim
+# found. What the work history MISSES rather than misstates is that the
+# phase never ran npm run build, which needs no database and no Docker and
+# would have caught HZ-M3P17-01 in the implementer's own container.
+#
+# VALIDATION RECORD, commands run by this lane against this file.
+#   npx --prefix /home/user/pulse-fleet tiphys validate --type verdict
+#     --context delivery delivery/review/m3-p17-hazard.yaml  EXIT=1 with
+#     ZERO schema-level INVALID lines; the three INVALIDs are the Kind B
+#     cross-document checks (verdict-criteria-complete,
+#     verdict-deviations-judged, verdict-hazard-classes-addressed), each
+#     failing only because this repository keeps its plan at
+#     delivery/plan/pulse-v02.yaml and its work histories under
+#     delivery/work-history/, not at the fixed delivery/plan.yaml and
+#     delivery/work-history.yaml paths the validator's context expects.
+#     The MERGED precedent delivery/review/m3-p12-hazard-round13.yaml
+#     returns the identical EXIT=1 with the identical three lines under
+#     the same command, so this is the standing repository layout
+#     condition and not a property of this document.
+#   The same command without --context: EXIT=1, zero INVALID, all four
+#     context checks SKIPPED.
+#   Fallback per dispatch, npx --prefix /home/user/pulse-fleet tiphys
+#     validate --type finding --context delivery <file>: EXIT=1 on the
+#     kind constant alone, as expected for a kind verdict document; the
+#     dispatch requires kind verdict, which this document carries.
+
+kind: verdict
+phase: M3-P17
+verdict: FIX-ROUND-NEEDED
+produced-by: claude-fable
+framing: destructive-paths
+review-contract: hazard
+findings:
+  - id: HZ-M3P17-01
+    severity: critical
+    analysis: >-
+      The head cannot produce a production build, which defeats the
+      phase's entire purpose and would break every deploy of the
+      application if merged. The route file exports a constant besides its
+      handler, and Next's route export validation refuses it during
+      "checking validity of types": next build exits 1 naming UNSTAMPED as
+      an invalid Route export field. Three consequences chain from the one
+      line. First, Vercel runs this same build, so the deploy that M3-P16
+      exists to observe can never land; the production origin keeps
+      serving the previous build, the new route answers 404 there, and the
+      consumer phase waits forever on a stamp that cannot arrive, while
+      every OTHER change to the product is also blocked from deploying.
+      Second, npm run test:e2e cannot pass in any container at this head,
+      because the chromium-prod web server's command is npm run build
+      followed by next start, so criterion 17.3 is unsatisfiable, not
+      merely unwitnessed in a Dockerless container. Third, the defect is
+      invisible to every gate the implementer ran: tsc --noEmit is green
+      in a worktree that has never built, and goes red with TS2344 on the
+      generated route type the moment .next/types exists, so any developer
+      tree that has ever run a build or the dev server sees typecheck fail
+      too. The fix was validated by a reverted experiment in this
+      worktree: with the marker moved to a sibling non-route module and
+      the three imports adjusted, npm run build exits 0, the six route
+      unit tests pass, and the built server answers exactly the two-field
+      body.
+    evidence:
+      - >-
+        npm run build at 12c20f3, Next 15.5.23 from the tree's own
+        untouched lockfile, DATABASE_URL and DIRECT_URL pinned local:
+        EXIT=1, Type error, Route "src/app/api/health/version/route.ts"
+        does not match the required types of a Next.js Route, "UNSTAMPED"
+        is not a valid Route export field.
+      - >-
+        The offending line is the export at
+        src/app/api/health/version/route.ts:34; the unit test imports it
+        from the route at test/app/health-version.test.ts:2 and the smoke
+        spec at test/e2e/prod-smoke.spec.ts:4, which is why the export
+        exists.
+      - >-
+        npm run typecheck immediately after the failed build: EXIT=2,
+        TS2344 in the generated type file under .next/types naming
+        property UNSTAMPED, because tsconfig.json includes .next/types. In
+        the fresh worktree with no .next the same command exits 0, which
+        is exactly the state the implementer's green typecheck was
+        measured in per the work history's gate-evidence block.
+      - >-
+        npm run test:e2e cannot pass at this head anywhere: the
+        chromium-prod project's web server command at
+        playwright.config.ts:155 is npm run build then npx next start on
+        port 3100, and the build half exits 1. Criterion 17.3 requires
+        that command to exit 0 with these tests in it.
+      - >-
+        Fix validated and reverted in this worktree: marker moved to a
+        sibling module under src/app/api/health/version/, three imports
+        adjusted, npm run build EXIT=0, npx vitest run
+        test/app/health-version.test.ts EXIT=0 with 6 passed, GET on the
+        built server answered 200 with exactly the two fields. git status
+        after reversion carries only this review file.
+    concrete-fix: >-
+      Move the marker into a sibling non-route module, for example
+      src/app/api/health/version/unstamped.ts carrying export const
+      UNSTAMPED = "unstamped", which stays inside the phase's declared
+      files-to-touch (src/app/api/health/). Import it in the route and
+      remove the export from route.ts; point
+      test/app/health-version.test.ts and test/e2e/prod-smoke.spec.ts at
+      the new module. The marker keeps one source of truth, which is what
+      the plan pinned. Then witness npm run build EXIT=0 in the fix round
+      and run the full slow gate where a local stack exists, capturing the
+      output in the work history, since criterion 17.3 is currently
+      unwitnessed as well as unsatisfiable.
+  - id: HZ-M3P17-02
+    severity: low
+    analysis: >-
+      The route's 200 carries no cache-control header at all, witnessed
+      against the built server. force-dynamic stops Next's own static
+      caching but emits no freshness header in this Next version, so what
+      an intermediary may do is decided by defaults the route does not
+      control: HTTP caching rules permit a shared cache to apply heuristic
+      freshness to a 200 with no explicit directive, and the dispatch
+      names a stale sha as the attack, since M3-P16's terminal decision
+      turns on exactly this body. On the deployed platform the edge adds
+      its own non-cacheable default for function responses, which is why
+      this is low rather than higher, but the instrument's freshness
+      should be its own property rather than a platform default,
+      especially for a route whose whole job is telling a waiting phase
+      which build is live.
+    evidence:
+      - >-
+        curl -i against the built server on 127.0.0.1: the 200 response
+        headers are vary, content-type, date, connection and keep-alive;
+        no cache-control header is present.
+      - >-
+        src/app/api/health/version/route.ts:40 returns the JSON body with
+        no headers argument, and a case-insensitive grep for cache over
+        the route file returns no hits.
+    concrete-fix: >-
+      Return the body with an explicit cache-control no-store header via
+      the second argument of NextResponse.json, and add one unit
+      assertion that the handler's response carries it, so a later edit
+      cannot drop it silently.
+  - id: HZ-M3P17-03
+    severity: low
+    analysis: >-
+      npm run gate:decisions exits 1 at this head, and CLAUDE.md's gate
+      sentence includes it in what must pass before a slice is done. This
+      lane re-ran the gate at the phase base f19984b and got the identical
+      six over-cap lanes, so the phase introduced none of it, and the work
+      history records the red honestly with an open question for the
+      orchestrator. It is a finding at low because the condition is real
+      at the head under review and has a mechanical resolution the branch
+      can take without touching any review record itself: origin/main's
+      tip dc18484 already prunes the over-cap rounds, and the merge base
+      of this branch with origin/main is f19984b, one commit behind that
+      fix.
+    evidence:
+      - >-
+        npm run gate:decisions at 12c20f3: EXIT=1, six lanes named
+        (m0-p6-plan-review 5 rounds, m3-p14-criteria 3, m3-p14-plan-review
+        4, m3-p16-plan-review 5, m3-p3-criteria 3, m3-p3-hazard 3).
+      - >-
+        The same command at f19984b in the same worktree, clean checkout:
+        EXIT=1 with the identical six lanes, so pre-existing at the branch
+        point.
+      - >-
+        git merge-base origin/main 12c20f3 is f19984b, and origin/main's
+        tip is dc18484, whose subject says it keeps at most two rounds per
+        lane on main, removing the over-cap files.
+    concrete-fix: >-
+      In the fix round HZ-M3P17-01 already requires, rebase the branch
+      onto current origin/main (or merge it in) so the pruned
+      delivery/review/ state is in the tree, then witness npm run
+      gate:decisions EXIT=0 at the new head and capture it in the work
+      history beside the other gates.
+criteria:
+  - id: "17.1"
+    quote: >-
+      THE ROUTE ANSWERS WITH THE BUILD'S FACTS OR SAYS IT HAS NONE, AND
+      THE TWO CANNOT BE CONFUSED. A unit test asserts both branches of
+      both fields over the handler; with either unset or empty, that
+      field is exactly the marker unstamped, the literal lowercase word,
+      carrying characters that are not hexadecimal digits.
+    evidence:
+      - >-
+        test/app/health-version.test.ts covers set (line 34), unset (line
+        46), empty (line 55), mixed (line 71) and non-hex marker (line
+        66) cases over the handler; npm test EXIT=0 with all six passing.
+      - >-
+        Live witness over the experiment build: both fields answer
+        exactly unstamped with no platform variables in the server's
+        environment, and exactly the planted values with them set.
+    met: true
+  - id: "17.2"
+    quote: >-
+      IT DISCLOSES TWO BUILD FACTS AND NOTHING ELSE. The response body
+      carries those two fields and no others, asserted by a test over the
+      parsed response's key set, and grep of the route shows it reads
+      exactly the two environment variables step 1 names, BY THOSE NAMES,
+      and no third. There is no auth.
+    evidence:
+      - >-
+        test/app/health-version.test.ts:81 asserts the sorted key set is
+        exactly deploymentEnvironment and sha; grep of
+        src/app/api/health/version/route.ts shows exactly two process.env
+        reads, VERCEL_GIT_COMMIT_SHA at line 41 and VERCEL_ENV at line
+        42, and no third; no auth check exists in the route, matching the
+        sibling probe's owner-accepted disclosure level at
+        src/app/api/health/db/route.ts:16 through :22.
+      - >-
+        Destructive probes of the built server disclosed nothing beyond
+        the two fields: 405 on POST and PUT, 204 on OPTIONS, 404 on a
+        subpath, no env-derived header, hostile env values reflected only
+        JSON-encoded under content-type application/json.
+    met: true
+  - id: "17.3"
+    quote: >-
+      THE GATE THAT RUNS THE SPEC IS THE GATE THIS CRITERION NAMES. npm
+      run typecheck, npm run lint, npm test AND npm run test:e2e all exit
+      0 with these tests in them, each with its captured output in the
+      phase work history.
+    evidence:
+      - >-
+        npm run test:e2e cannot exit 0 at this head in any environment:
+        the chromium-prod web server command at playwright.config.ts:155
+        begins with npm run build, which exits 1 (finding HZ-M3P17-01).
+        The work history's own gate-evidence records e2e as error with
+        wrapper-exit-code 1, so no captured passing output exists either.
+      - >-
+        The spec IS collected by the named gate when the build is fixed:
+        npx playwright test --list EXIT=0 lists prod-smoke exactly once,
+        under chromium-prod only.
+    met: false
+  - id: "17.4"
+    quote: >-
+      THE PHASE ADDS ONE INSTRUMENT AND NOTHING ELSE. git diff
+      --name-only against the phase base shows exactly one new route
+      under src/app/api/health, its unit test, and the one-assertion
+      change to test/e2e/prod-smoke.spec.ts, and no other file at all; no
+      dependency added to package.json; npm run gate:privacy exits 0 and
+      the branch's commit messages carry no data of any kind.
+    evidence:
+      - >-
+        git diff --stat f19984b..12c20f3 lists exactly the route, its
+        unit test, the prod-smoke addition and
+        delivery/work-history/m3-p17.yaml (the standing work-history
+        extra); package.json and package-lock.json are byte-identical to
+        the base (empty git diff --stat); no Prisma file, no scheduler,
+        no persisted record anywhere in the diff.
+      - >-
+        npm run gate:privacy EXIT=0 at 12c20f3; the two branch commit
+        subjects name the change and carry no amount, no counterparty, no
+        date, no account and no host.
+    met: true
+deviations-judged: []
+hazard-classes-addressed:
+  - class-id: H17.1
+    probed: >-
+      Drove the handler through all four env states in the unit suite and
+      over a real built server (unset, empty, set, mixed), planted a
+      whitespace-only value and a hostile string, and checked the marker
+      against the hexadecimal shape both in the test and by regex.
+    cleared-because: >-
+      Unset and empty both answer the exact lowercase non-hexadecimal
+      word unstamped in both fields; a set value passes through verbatim;
+      the two cannot collide. Residue below finding level: a
+      whitespace-only value passes verbatim, with no evidence the
+      platform can produce one and the smoke shape assertion rejecting it
+      where it runs.
+  - class-id: H17.2
+    probed: >-
+      Inventoried every process.env read in the diff and in src/, then
+      attacked the built route over HTTP: methods POST, PUT, HEAD,
+      OPTIONS, a subpath, query strings and hostile env values, reading
+      the full response headers each time.
+    cleared-because: >-
+      Exactly two reads, by the plan's two pinned names, both at request
+      time inside GET (src/app/api/health/version/route.ts:41 and :42);
+      the body carries exactly two fields; no header, error path or
+      method answer discloses anything env-derived beyond them.
+  - class-id: H17.3
+    probed: >-
+      Ran npx playwright test --list under the PULSE_GATE_* local pin to
+      witness collection and project membership, then ran the gate's own
+      build half, npm run build, which the chromium-prod web server
+      command begins with.
+    finding: HZ-M3P17-01
+  - class-id: H17.4
+    probed: >-
+      Confirmed the undecidability claim's premises in this container
+      (no platform settings access) and probed what M3-P16 would actually
+      observe while the build failure stands: the previous build keeps
+      serving, so the route answers 404 rather than unstamped.
+    cleared-because: >-
+      The class is declared addressed-by M3-P16 and the route does its
+      own half, making the unanswerable case visible with a marker no sha
+      can be confused with. The 404-not-unstamped interaction is folded
+      into finding HZ-M3P17-01, which must be fixed before M3-P16 can
+      observe anything at all.
+  - class-id: H17.5
+    probed: >-
+      Walked the full diff for infrastructure shapes: dependencies,
+      lockfile, Prisma schema and migrations, schedulers, pollers,
+      queues, persisted records, config changes.
+    cleared-because: >-
+      The diff is four added files with no deletions; package.json and
+      package-lock.json are byte-identical to the base; no model, no
+      migration, no scheduler, no poller, no persisted record and no
+      module outside the route was changed.

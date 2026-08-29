@@ -137,6 +137,21 @@ export const listCardStatementTotals = async (
   );
 };
 
+// Whether an account carries imported FACT ROWS of its own (M3-P14,
+// criterion 14.8). A READ, published so the accounts module can refuse a
+// ring change on an account whose rows would otherwise keep a flow
+// computed against the old ring. Nothing here writes.
+export const hasImportedRows = async (
+  context: HouseholdContext,
+  accountId: string,
+): Promise<boolean> => {
+  const row = await prisma.transaction.findFirst({
+    where: { householdId: context.householdId, accountId },
+    select: { id: true },
+  });
+  return row !== null;
+};
+
 export const importPeriod = async (
   context: HouseholdContext,
   importId: string,
