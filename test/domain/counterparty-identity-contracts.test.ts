@@ -178,14 +178,31 @@ describe("CRITERION 12.19: the governing document says what the code does", () =
   const HISTORICAL_SENTENCE =
     'This is the whole point of the chain and it used to be wrong here: the first step said "exact match on normalised counterparty string", and for a transfer row that string is the whole description, communication and per-transaction reference included, so a naming matched the one row it was written from and never the next one.';
 
-  test("the resolution chain carries the forbidden phrase EXACTLY ONCE, in the sentence that negates it", () => {
+  // AND THE COUNT IS OVER THE WHOLE DOCUMENT (fix round nine, CRITERIA
+  // finding CR7-M3P12-03). The section slice narrowed the hole a third time
+  // rather than closing it: criterion 12.19's second clause is about the FILE,
+  // "shows no remaining sentence saying the key is the normalised counterparty
+  // string", and a reintroduction one section away passed while the document
+  // carried two occurrences. The two sibling pins in this same block already
+  // read the whole document, so the narrow one was the odd member.
+  //
+  // THREE ASSERTIONS ON TEXT ALREADY READ, and together they are strictly
+  // stronger than the slice was: the phrase occurs exactly once in the
+  // DOCUMENT, that occurrence is inside the merchant-resolution section, and
+  // it is the known historical sentence pinned by its full text.
+  test("the forbidden phrase occurs EXACTLY ONCE in the WHOLE document, inside section 7, in the sentence that negates it", () => {
     const section = skill.slice(skill.indexOf("## 7. Merchant resolution"));
     const body = section.slice(0, section.indexOf("\n## ", 1));
     // The section really was read, so nothing below can pass by having sliced
     // the wrong text.
     expect(body.length).toBeGreaterThan(500);
-    const occurrences = body.match(/normalised counterparty string/gi) ?? [];
-    expect(occurrences).toHaveLength(1);
+
+    const documentOccurrences = skill.match(/normalised counterparty string/gi) ?? [];
+    expect(documentOccurrences).toHaveLength(1);
+
+    const sectionOccurrences = body.match(/normalised counterparty string/gi) ?? [];
+    expect(sectionOccurrences).toHaveLength(1);
+
     expect(body).toContain(HISTORICAL_SENTENCE);
   });
 });

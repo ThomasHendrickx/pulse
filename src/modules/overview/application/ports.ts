@@ -12,6 +12,7 @@ import type {
   CountedGroupIdentity,
   CountedGroupRow,
   GapRow,
+  HeldRow,
   RawMonthFigures,
   ReserveMovementGroup,
 } from "../domain/month-projection";
@@ -52,6 +53,16 @@ export type OverviewRepositoryPort = {
     context: HouseholdContext,
     period: Period,
   ) => Promise<readonly GapRow[]>;
+  // THE HELD READ (M3-P18, DR-0030): the rows of the requested period on
+  // accounts whose ring is savings, per account and carrying that
+  // account's LABEL, with booking date, counterparty text and amount. It
+  // carries NO flow condition at all and is keyed on the RING alone,
+  // which is why it is correctly absent from criterion 18.3's null-flow
+  // enumeration. It returns rows, never a sum (decision D-60).
+  readonly listHeldRows: (
+    context: HouseholdContext,
+    period: Period,
+  ) => Promise<readonly HeldRow[]>;
   // The empty state runs before the first import ever lands; one EXISTS.
   readonly hasAnyTransactions: (context: HouseholdContext) => Promise<boolean>;
 };

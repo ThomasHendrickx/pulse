@@ -48,6 +48,16 @@ const ingestKbcFixture = async (
   if (!detected.ok) {
     throw new Error("unreachable");
   }
+  // SETUP FIRST (M3-P14): the account a statement belongs to is registered
+  // before the file is confirmed, because confirmImport now refuses a file
+  // whose own account is not one the household registered. A card carries no
+  // own-account column and registers nothing.
+  await world.registerAccountForStatement(
+    context,
+    fixture("kbc-statement-a.pdf"),
+    detected.value,
+    { label: "Credit card", bank: "KBC", role: "POT" },
+  );
   const confirmed = await confirmImport(context, world.deps, {
     importId: uploaded.importId,
     profileName: "kbc-mastercard-uitgavenstaat",
@@ -83,6 +93,16 @@ const ingestCompanionFixture = async (
   if (!detected.ok) {
     throw new Error("unreachable");
   }
+  // SETUP FIRST (M3-P14): the account a statement belongs to is registered
+  // before the file is confirmed, because confirmImport now refuses a file
+  // whose own account is not one the household registered. A card carries no
+  // own-account column and registers nothing.
+  await world.registerAccountForStatement(
+    context,
+    fixture("belfius-settlement-companion.pdf"),
+    detected.value,
+    { label: "Daily account", bank: "Belfius", role: "POT" },
+  );
   const confirmed = await confirmImport(context, world.deps, {
     importId: uploaded.importId,
     profileName: "belfius-current-account-nl",
@@ -246,6 +266,12 @@ describe("the settlement pairing needs the STORED figure, not a derivation (crit
     if (!detected.ok) {
       throw new Error("unreachable");
     }
+    await world.registerAccountForStatement(
+      context,
+      fixture(name),
+      detected.value,
+      declaration,
+    );
     const confirmed = await confirmImport(context, world.deps, {
       importId: uploaded.importId,
       profileName,
