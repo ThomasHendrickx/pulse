@@ -8,6 +8,7 @@ import type { HouseholdContext } from "@/platform/tenancy";
 import { appClock } from "@/platform/clock";
 import {
   counterpartyIdentity,
+  isBareIdentityKey,
   normaliseCounterparty,
 } from "@/modules/merchants/application";
 import * as repository from "../adapters/overview-repository";
@@ -22,6 +23,8 @@ export type { OverviewDependencies, OverviewRepositoryPort, Period } from "./por
 export type {
   CountedGroupRow,
   GapRow,
+  HeldAccountBlock,
+  HeldRow,
   MonthFigures,
   OverviewGroup,
   OverviewGroupKind,
@@ -51,6 +54,7 @@ const liveDependencies: OverviewDependencies = {
     listReserveMovements: repository.listReserveMovements,
     monthFigures: repository.monthFigures,
     listGapRows: repository.listGapRows,
+    listHeldRows: repository.listHeldRows,
     hasAnyTransactions: repository.hasAnyTransactions,
   },
   // Lazy on purpose: platform/config's build-safe contract forbids env
@@ -59,6 +63,7 @@ const liveDependencies: OverviewDependencies = {
   // the read at request time.
   clock: { now: () => appClock().now() },
   counterpartyIdentity,
+  isBareIdentityKey,
   normaliseCounterparty,
 };
 

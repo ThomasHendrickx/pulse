@@ -7,12 +7,14 @@ import { plainDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
 import {
   counterpartyIdentity,
+  isBareIdentityKey,
   normaliseCounterparty,
 } from "@/modules/merchants/application";
 import { getMonthOverviewWith } from "@/modules/overview/application";
 import type {
   CountedGroupRow,
   GapRow,
+  HeldRow,
   OverviewDependencies,
   OverviewRepositoryPort,
   Period,
@@ -48,6 +50,7 @@ type MonthData = {
   readonly reserves?: readonly ReserveMovementGroup[];
   readonly figures?: RawMonthFigures;
   readonly gaps?: readonly GapRow[];
+  readonly held?: readonly HeldRow[];
 };
 
 const fakeWorld = (byMonth: Record<string, MonthData>) => {
@@ -65,12 +68,14 @@ const fakeWorld = (byMonth: Record<string, MonthData>) => {
     monthFigures: async (_context, period) =>
       dataFor(period).figures ?? emptyFigures,
     listGapRows: async (_context, period) => dataFor(period).gaps ?? [],
+    listHeldRows: async (_context, period) => dataFor(period).held ?? [],
     hasAnyTransactions: async () => Object.keys(byMonth).length > 0,
   };
   const deps: OverviewDependencies = {
     overview,
     clock: fixedClock(new Date("2026-09-15T12:00:00Z")),
     counterpartyIdentity,
+    isBareIdentityKey,
     normaliseCounterparty,
   };
   return { deps, reads };

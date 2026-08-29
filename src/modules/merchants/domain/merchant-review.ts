@@ -7,9 +7,12 @@
 // groups are, which is what the e2e asserts stays fixed across a naming.
 
 import type { Cents } from "@/platform/money";
+import type { PlainDate } from "@/platform/plain-date";
 import {
   counterpartyIdentity,
+  identityRemainder,
   isBareIdentityKey,
+  type CounterpartyIdentityBasis,
 } from "./counterparty-identity";
 import {
   counterpartyText,
@@ -27,6 +30,10 @@ export type CountedRow = {
   readonly id: string;
   readonly flow: "INCOME" | "SPEND";
   readonly amountCents: Cents;
+  // M3-P13: the row's own booking date, carried through to the lines behind
+  // a group so that two purposes paid to one counterparty read as two dated
+  // lines rather than as one opaque total (DR-0027, hazard H13.3).
+  readonly bookingDate: PlainDate;
   readonly description: string;
   readonly counterpartyName?: string;
   // The counterparty ACCOUNT as the importer stored it, unvalidated. M3-P12:
@@ -43,6 +50,19 @@ export type MerchantNameLike = {
   readonly name: string;
 };
 
+// ONE TRANSACTION BEHIND A GROUP (M3-P13). Facts only, exactly as the
+// engine stored them: no interpretation is added here and nothing is
+// rewritten (CLAUDE.md non-negotiable 5). The description is raw source
+// text, so the RENDERING masks it; the mask is never applied here, because
+// this value is a fact and because a masked value must never reach a key
+// (criterion 13.2, hazard H13.1).
+export type ReviewGroupRow = {
+  readonly id: string;
+  readonly bookingDate: PlainDate;
+  readonly amountCents: Cents;
+  readonly description: string;
+};
+
 export type ReviewGroup = {
   // Merchant id for resolved groups, the namespaced counterparty IDENTITY
   // key for unresolved ones (M3-P12): stable within a household either way.
@@ -55,6 +75,31 @@ export type ReviewGroup = {
   // this field is the wire contract of the shipped form and the server action
   // reads it by this name; the comment is what says it is no longer a text.
   readonly counterpartyText?: string;
+  // WHY THIS GROUP CANNOT BE NAMED (fix round two, findings CR2-M3P12-07 and
+  // HZ-M3P12-R2-04). Withholding the form was right and leaving the row blank
+  // was not: the reader met a list item with an empty label, a row count and
+  // an amount, no control and no sentence, counted in the number the screen
+  // prints as work they are being asked to do. The screen renders this where
+  // the form would have been.
+  readonly unnameableReason?: "no-counterparty-text";
+  // WHAT JOINED THESE TRANSACTIONS (M3-P13, criterion 13.1). Read straight
+  // off M3-P12's identity, never re-derived here: `account` means the rows
+  // share a counterparty account, `descriptor` means they share a
+  // description. Present on UNRESOLVED groups only, because a resolved
+  // group is joined by the household's own naming and says so by carrying
+  // the merchant's name.
+  readonly basis?: CounterpartyIdentityBasis;
+  // THE ACCOUNT AN ACCOUNT-BASIS GROUP IS RECOGNISED BY, UNMASKED, and
+  // present ONLY when no row of the group carries a counterparty name
+  // (decision D-41). The screen renders it MASKED; this field is the
+  // unmasked input to that display rule and must never reach a key, which
+  // is the hazard H13.1 that criterion 13.2 pins. A group whose rows carry
+  // a name has that name in `label` instead and carries nothing here.
+  readonly accountAlias?: string;
+  // THE TRANSACTIONS BEHIND THE GROUP, in the order the read returned them.
+  // The same read that builds the groups (M3-P13 step 5): no second query,
+  // no new server action.
+  readonly rows: readonly ReviewGroupRow[];
   readonly totalCents: Cents;
   readonly count: number;
 };
@@ -85,29 +130,60 @@ const groupDirection = (
 ): readonly ReviewGroup[] => {
   const groups = new Map<
     string,
-    { label: string; merchantId?: string; counterpartyText?: string; total: number; count: number }
+    {
+      label: string;
+      merchantId?: string;
+      counterpartyText?: string;
+      unnameableReason?: "no-counterparty-text";
+      basis?: CounterpartyIdentityBasis;
+      // The counterparty name an account-basis group is labelled by
+      // (decision D-41), chosen as the lexicographically SMALLEST non-empty
+      // name any of its rows carries. Smallest rather than first for the
+      // same reason the descriptor label is: the rows arrive from SQL in no
+      // guaranteed order, so first-wins would label one group two ways on
+      // two screens.
+      counterpartyName?: string;
+      accountAlias?: string;
+      rows: ReviewGroupRow[];
+      total: number;
+      count: number;
+    }
   >();
   for (const row of rows) {
     const merchantId = row.merchantId;
     const identity = counterpartyIdentity(row);
-    // THE UNRESOLVED LABEL IS UNCHANGED BY THIS PHASE: it is still the
-    // normalised counterparty text. What changed is that an account-basis
-    // group now holds SEVERAL such texts, so "the label" needs a rule; the
-    // rule is the lexicographically smallest, which is deterministic
-    // whatever order the rows arrive in and is therefore the same on this
-    // screen and on the month view, whose rows come out of SQL in no
-    // guaranteed order. Naming the group properly (the carried counterparty
-    // name, or the masked account) is decision D-41 and belongs to M3-P13
-    // with the basis and the row count; putting a bare account number here
-    // would be that phase's work done badly and early.
+    // THE UNRESOLVED LABEL IS UNCHANGED BY THIS PHASE FOR A DESCRIPTOR
+    // GROUP: it is still the normalised counterparty text. What M3-P13 adds
+    // is the ACCOUNT-BASIS label decision D-41 fixes, below: the carried
+    // counterparty name where a row has one, and otherwise the account,
+    // which travels UNMASKED in accountAlias and is masked by the screen.
+    // A bare account number is never put in `label`, because `label` is
+    // what the rendering masks with the CARD mask and an account is not a
+    // card number.
     const unresolvedLabel = normaliseCounterparty(counterpartyText(row));
     const key = merchantId ?? identity.key;
+    const line: ReviewGroupRow = {
+      id: row.id,
+      bookingDate: row.bookingDate,
+      amountCents: row.amountCents,
+      description: row.description,
+    };
+    const carriedName = row.counterpartyName?.trim();
     const entry = groups.get(key);
     if (entry !== undefined) {
       entry.total += row.amountCents;
       entry.count += 1;
+      entry.rows.push(line);
       if (merchantId === undefined && unresolvedLabel < entry.label) {
         entry.label = unresolvedLabel;
+      }
+      if (
+        carriedName !== undefined &&
+        carriedName !== "" &&
+        (entry.counterpartyName === undefined ||
+          carriedName < entry.counterpartyName)
+      ) {
+        entry.counterpartyName = carriedName;
       }
       continue;
     }
@@ -128,24 +204,57 @@ const groupDirection = (
       // the two guards agree.
       ...(merchantId === undefined
         ? isBareIdentityKey(identity.key)
-          ? {}
+          ? { unnameableReason: "no-counterparty-text" as const }
           : { counterpartyText: identity.key }
         : { merchantId }),
+      // The basis is M3-P12's, read off the identity and never re-derived
+      // (M3-P13 grounding: this phase adds no derivation of its own). It is
+      // recorded for UNRESOLVED groups only: a resolved group is joined by
+      // the household's own naming.
+      ...(merchantId === undefined ? { basis: identity.basis } : {}),
+      ...(carriedName === undefined || carriedName === ""
+        ? {}
+        : { counterpartyName: carriedName }),
+      rows: [line],
       total: row.amountCents,
       count: 1,
     });
   }
   return [...groups.entries()]
-    .map(([key, entry]) => ({
-      key,
-      label: entry.label,
-      ...(entry.merchantId === undefined ? {} : { merchantId: entry.merchantId }),
-      ...(entry.counterpartyText === undefined
-        ? {}
-        : { counterpartyText: entry.counterpartyText }),
-      totalCents: entry.total as Cents,
-      count: entry.count,
-    }))
+    .map(([key, entry]) => {
+      // DECISION D-41, APPLIED AT ONE PLACE. An account-basis group that is
+      // still unresolved is labelled by the counterparty name where any of
+      // its rows carries one, and otherwise it hands the screen the account
+      // to render in masked display form. The account comes off the KEY
+      // rather than off a row, so the label can never disagree with what
+      // decided membership.
+      const remainder =
+        entry.merchantId === undefined && entry.basis === "account"
+          ? identityRemainder(key)
+          : undefined;
+      const named =
+        remainder === undefined ? undefined : entry.counterpartyName;
+      const alias =
+        remainder === undefined || remainder === "" || named !== undefined
+          ? undefined
+          : remainder;
+      return {
+        key,
+        label: named ?? entry.label,
+        ...(entry.merchantId === undefined ? {} : { merchantId: entry.merchantId }),
+        ...(entry.counterpartyText === undefined
+          ? {}
+          : { counterpartyText: entry.counterpartyText }),
+        ...(entry.unnameableReason === undefined
+          ? {}
+          : { unnameableReason: entry.unnameableReason }),
+        ...(entry.basis === undefined ? {} : { basis: entry.basis }),
+        ...(alias === undefined ? {} : { accountAlias: alias }),
+        rows: entry.rows,
+        totalCents: entry.total as Cents,
+        count: entry.count,
+      };
+    })
     .sort(byGroupOrder);
 };
 

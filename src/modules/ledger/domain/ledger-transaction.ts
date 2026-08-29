@@ -32,10 +32,14 @@ export type DeclaredAccount = {
   readonly iban?: string;
 };
 
-// Derived, not declared: the sets classification runs against. Reserve
-// accounts are registered by IBAN only (their statements are not imported),
-// so the reserve set is a set of IBANs. Pot accounts with an IBAN form the
-// pot set; pot accounts WITHOUT an IBAN are card accounts (the observed
+// Derived, not declared: the sets classification runs against. The
+// reserve set is a set of IBANs: a reserve account's own rows never enter
+// the interpretation window, so classification only ever meets a reserve
+// account as a COUNTERPARTY. (This sentence used to say reserve statements
+// are not imported; DR-0030 made that false in M3-P18, corrected here
+// rather than quietly deleted: a savings statement's rows are now imported
+// as HELD facts, still outside the window.) Pot accounts with an IBAN form
+// the pot set; pot accounts WITHOUT an IBAN are card accounts (the observed
 // card export shape carries no own-account identifier; such accounts are
 // recognised through their bound SourceProfile at import time).
 export type DeclaredSets = {
