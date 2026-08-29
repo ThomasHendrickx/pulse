@@ -526,9 +526,12 @@ describe("criterion 6.10, the SQL half: the merchant-source rule is written ONCE
     );
   });
 
-  test("both SQL reads use the shared fragment rather than their own copy", () => {
+  test("every SQL read uses the shared fragment rather than its own copy", () => {
     const uses = repositorySource.match(/\$\{COUNTERPARTY_TEXT_SQL\}/g) ?? [];
-    expect(uses).toHaveLength(2);
+    // THREE since M3-P18: the grouped counted read, the gap read, and the
+    // HELD read (DR-0030), which shows a savings account's rows under the
+    // same one-definition rule (decision D-11).
+    expect(uses).toHaveLength(3);
   });
 
   // CORRECTED RATHER THAN QUIETLY RENAMED (clause R-087, fix round 2,
@@ -656,14 +659,39 @@ describe("every rendering surface that shows descriptor text is derived, not rem
   // must either pass through maskCardNumbers or appear in the EXCLUSIONS
   // table below with its reason.
 
-  // A field whose value is, or can be, text a counterparty controls.
-  const DESCRIPTOR_FIELDS = [
+  // A field whose value is, or can be, an IDENTIFIER OR TEXT A COUNTERPARTY
+  // CONTROLS.
+  //
+  // RENAMED AND WIDENED IN ROUND TWO (finding CR2-M3P13-01), and the rename
+  // matters as much as the widening. It was DESCRIPTOR_FIELDS, and every
+  // member was a descriptor name: description, counterpartyText,
+  // counterpartyName, rawLine, label, text, identityKey. NOT ONE OF THEM IS
+  // AN ACCOUNT-BEARING NAME. The fix round then deleted the residue LIST from
+  // src/platform/ui/mask-account-number.ts and named this walk as the
+  // authority in its place, on the ground that a list is a second source. The
+  // walk could not carry that weight: a surface that renders an ACCOUNT
+  // without touching a descriptor field was invisible to it, and the tree
+  // holds one (the accounts list's number cell), while group.accountAlias was
+  // caught only by accident, because it shares one JSX expression with
+  // group.label.
+  const SENSITIVE_FIELDS = [
     "description",
     "counterpartyText",
     "counterpartyName",
     "rawLine",
     "label",
     "text",
+    // M3-P11: the review form's subject travels into the client leaf as
+    // naming.identityKey, so the field name joins the list or the walk
+    // goes blind on the one surface that is deliberately unmasked.
+    "identityKey",
+    // THE ACCOUNT-BEARING NAMES (round two, finding CR2-M3P13-01). Without
+    // these the walk cannot see the surface it is now the authority for.
+    "iban",
+    "counterpartyIban",
+    "counterpartyAccount",
+    "accountAlias",
+    "accountNumber",
   ] as const;
 
   // Keyed by FILE and EXPRESSION TEXT, never by a line number, because a
@@ -679,19 +707,42 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     readonly why: string;
   }[] = [
     {
-      file: "modules/merchants/ui/merchant-review.tsx",
-      expression: "group.counterpartyText",
-      why: "The hidden field the review form submits. It becomes the EXACT MerchantRule pattern, and a masked subject would match nothing (decision D-12, hazard H6.4).",
+      file: "modules/merchants/ui/merchant-row.tsx",
+      expression: "predictedLabel ?? label",
+      why: "The row's rendered label inside the client leaf. It arrives ALREADY MASKED from the server component, which passes label={maskCardNumbers(group.label)}, and the predicted alternative is the string the reader typed into this row a moment ago. Masking here a second time would be masking a masked value (M3-P11 fix round, finding HZ-M3P11-03).",
     },
     {
-      file: "modules/overview/ui/month-view.tsx",
-      expression: "group.label",
-      why: "The RESERVES group label, which is the household's own declared account label or a counterparty IBAN, never a descriptor: the reserves query requires counterpartyIban IS NOT NULL and falls back to the account's declared label.",
+      // MOVED IN M3-P11 (was merchant-review.tsx, group.counterpartyText):
+      // the review row is now the MerchantGroupRow client leaf and the
+      // identity key reaches the hidden field through its naming prop. The
+      // walk's KNOWN blind spot after this move, stated rather than left
+      // to be found: the server component hands group.counterpartyText to
+      // the leaf inside a JSX SPREAD attribute, which is a
+      // JsxSpreadAttribute and not the JsxExpression this walk visits, so
+      // that hand-off is invisible here; the surface the DOM actually
+      // renders is the one below and it is what this table excuses.
+      file: "modules/merchants/ui/merchant-row.tsx",
+      expression: "naming.identityKey",
+      why: "The hidden field the review form submits. It becomes the EXACT MerchantRule pattern, and a masked subject would match nothing (decision D-12, hazard H6.4).",
     },
+    // REMOVED IN THE M3-P13 FIX ROUND (finding HZ-M3P13-02). This entry
+    // excused the RESERVES group label on the ground that it is "the
+    // household's own declared account label or a counterparty IBAN, never a
+    // descriptor". The second half of that sentence is the defect: an IBAN
+    // rendered bare IS an account number on screen, and the exclusion was
+    // reasoning about whether the value is DESCRIPTOR text rather than about
+    // whether it can carry an identifier. The surface now passes through
+    // maskAccountNumbers, which leaves a typed label untouched, so it needs
+    // no exclusion at all.
     {
       file: "modules/overview/ui/month-view.tsx",
       expression: "part.label",
       why: "The reconciliation part label: translated copy from t(), never counterparty text.",
+    },
+    {
+      file: "modules/overview/ui/month-view.tsx",
+      expression: "account.label",
+      why: "The HELD block's heading (M3-P18, DR-0030): the household's own declared account label, typed at setup and never parsed from a statement line. Heading the block with the label instead of a number is criterion 18.2's own requirement.",
     },
     {
       file: "app/(app)/import/[id]/page.tsx",
@@ -712,6 +763,25 @@ describe("every rendering surface that shows descriptor text is derived, not rem
       file: "modules/accounts/ui/accounts-screen.tsx",
       expression: "account.label",
       why: "The account's DECLARED label on the accounts list, typed by the household at setup, never parsed from a statement line (M3-P14).",
+    },
+    // THE THREE SURFACES THE WIDENED VOCABULARY NEWLY REACHES (round two,
+    // finding CR2-M3P13-01). Each is disposed of here with its reason rather
+    // than left unseen, which is the whole point of the widening: before it,
+    // the walk could not have said any of these three existed.
+    {
+      file: "modules/accounts/ui/accounts-screen.tsx",
+      expression: 'account.iban ?? t("accountsCardNoNumber")',
+      why: "THE HOUSEHOLD'S OWN REGISTERED ACCOUNT NUMBER, SHOWN BACK TO THEM, and it is correct behaviour rather than a leak: the owner types these at setup and must be able to check what they typed against their own statement, which a masked value defeats. It is their own number on their own screen, not a counterparty's, and the account mask is deliberately NOT applied. Named here so the derivation can say so; before this round it could not see the surface at all.",
+    },
+    {
+      file: "modules/accounts/ui/account-setup-form.tsx",
+      expression: "row.accountNumber",
+      why: "The setup form's own input value, which is the string the household is typing at this moment. Masking a field while it is being filled would make it impossible to correct, and the value has not left the browser yet.",
+    },
+    {
+      file: "modules/overview/ui/month-view.tsx",
+      expression: "group.counterpartyIban",
+      why: "A React key, not rendered text: React does not emit the key prop into the DOM, so this value reaches no markup, no attribute and no screenshot. It is collected because the walk reads JSX expressions rather than knowing which props render, which is the right way round for a guard.",
     },
   ];
 
@@ -734,6 +804,7 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     readonly file: string;
     readonly expression: string;
     readonly masked: boolean;
+    readonly accountMasked: boolean;
   };
 
   const surfaces: Surface[] = [];
@@ -764,17 +835,59 @@ describe("every rendering surface that shows descriptor text is derived, not rem
       ts.forEachChild(node, look);
       return found;
     };
+    // A JSX expression that renders a descriptor-derived value HELD IN A
+    // VARIABLE rather than read off an object, which is the shape a value
+    // takes once it has been passed to a component as a prop and
+    // destructured (M3-P11 fix round, finding HZ-M3P11-03). It is decided
+    // on the AST and not on the text: only an identifier from the field
+    // list, or a coalescing or conditional expression one of whose
+    // branches is such an identifier, counts. A textual rule would drag in
+    // an object literal's key, a translation argument and a class-name
+    // ternary that merely contain the word, and an exclusion table full of
+    // those stops meaning anything.
+    const rendersBareDescriptorIdentifier = (node: ts.Node): boolean => {
+      if (ts.isParenthesizedExpression(node)) {
+        return rendersBareDescriptorIdentifier(node.expression);
+      }
+      if (ts.isIdentifier(node)) {
+        return (SENSITIVE_FIELDS as readonly string[]).includes(node.text);
+      }
+      if (ts.isConditionalExpression(node)) {
+        return (
+          rendersBareDescriptorIdentifier(node.whenTrue) ||
+          rendersBareDescriptorIdentifier(node.whenFalse)
+        );
+      }
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken
+      ) {
+        return (
+          rendersBareDescriptorIdentifier(node.left) ||
+          rendersBareDescriptorIdentifier(node.right)
+        );
+      }
+      return false;
+    };
     const visit = (node: ts.Node): void => {
       if (ts.isJsxExpression(node) && node.expression !== undefined) {
         const expression = node.expression.getText(sourceFile);
-        const readsDescriptor = DESCRIPTOR_FIELDS.some((field) =>
-          new RegExp(`\\.${field}\\b`).test(expression),
-        );
+        const readsDescriptor =
+          SENSITIVE_FIELDS.some((field) =>
+            new RegExp(`\\.${field}\\b`).test(expression),
+          ) || rendersBareDescriptorIdentifier(node.expression);
         if (readsDescriptor && !containsJsx(node.expression)) {
           surfaces.push({
             file: relative(srcRoot, file),
             expression: expression.replace(/\s+/g, " ").trim(),
             masked: expression.includes("maskCardNumbers("),
+            // M3-P13 FIX ROUND (findings HZ-M3P13-02 and CR-M3P13-03). The
+            // walk used to ask ONE question, does this surface pass through
+            // the card mask, and the phase that added a second mask left
+            // five surfaces rendering an account number in full while this
+            // test stayed green. It now records both answers, and the two
+            // assertions below ask them separately.
+            accountMasked: expression.includes("maskAccountNumbers("),
           });
         }
       }
@@ -800,13 +913,81 @@ describe("every rendering surface that shows descriptor text is derived, not rem
     // FLOOR, so the recorded number could drift from the measured one with
     // nothing going red: the same mechanism this test exists to eliminate,
     // one level up. The assertion is now EXACT.
-    expect(surfaces.length).toBe(12);
-    expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(6);
-    expect(surfaces.filter((surface) => surface.masked).length).toBe(5);
+    //
+    // UPDATED IN M3-P18 (was twelve, five masked): the held block
+    // (DR-0030) renders each held row's counterparty text MASKED, and the
+    // block's heading is the account's own declared label, which joins the
+    // exclusion table with its reason. Fourteen sites, six files.
+    //
+    // UPDATED IN M3-P11 (was fourteen sites in six files, and briefly
+    // thirteen while the review row moved): the review row is now the
+    // MerchantGroupRow client leaf. The masked label surface became the
+    // leaf's label attribute in merchant-review.tsx, and the identity-key
+    // surface moved into merchant-row.tsx's hidden field, where it is the
+    // declared exclusion above.
+    //
+    // UPDATED AGAIN IN THE M3-P11 FIX ROUND (finding HZ-M3P11-03): the
+    // walk now also sees a descriptor value rendered from a VARIABLE
+    // rather than from a property access, which is the shape it takes once
+    // a component receives it as a prop. That shape existed at the head
+    // this file last counted and was invisible, which is exactly the blind
+    // spot this test exists to refuse. Fifteen sites, seven files, six
+    // masked; the fifteenth is the leaf's own label render, declared above
+    // with the reason it is not masked twice.
+    //
+    // UPDATED IN M3-P13 (was fifteen sites, six masked): the review screen
+    // now renders the TRANSACTIONS BEHIND A GROUP, and each line renders
+    // that transaction's own raw description. That is a sixteenth leaf
+    // site, in a file already on this list, and it masks. The group label
+    // beside it is still one site: its expression grew an account mask
+    // around the card mask, and the walk reads the whole expression.
+    //
+    // UPDATED IN THE M3-P13 FIX ROUND (findings HZ-M3P13-02 and
+    // CR-M3P13-03): the count of sites is unchanged at sixteen and the count
+    // of CARD-masked sites is unchanged at seven, which is exactly why this
+    // test could not see the defect. What changed is that eight sites now
+    // pass through the ACCOUNT mask as well, the eighth being the reserves
+    // label, which used to be a declared exclusion.
+    //
+    // UPDATED IN ROUND TWO (finding CR2-M3P13-01): the vocabulary gained the
+    // account-bearing field names, so the walk now reaches NINETEEN sites in
+    // the same seven files. The three it newly sees are the accounts list's
+    // number cell, the setup form's number input and the reserves list's
+    // React key, and all three are declared exclusions with their reasons.
+    // The card and account counts are unchanged, which is the point: the
+    // widening added no masking work, it added SIGHT.
+    expect(surfaces.length).toBe(19);
+    expect(new Set(surfaces.map((surface) => surface.file)).size).toBe(7);
+    expect(surfaces.filter((surface) => surface.masked).length).toBe(7);
+    expect(surfaces.filter((surface) => surface.accountMasked).length).toBe(8);
+  });
+
+  // THE INVERTED DERIVATION (M3-P13 fix round, findings HZ-M3P13-02 and
+  // CR-M3P13-03). The test below asks whether an UNMASKED surface is
+  // declared. This one asks the other question, which is the one the phase
+  // that added the account mask got wrong: every surface that IS masked must
+  // be masked against BOTH identifiers. A transfer descriptor carries the
+  // counterparty account exactly as the statement prints it, so a surface
+  // that runs the card mask and not the account mask prints an account in
+  // full, and five of them did while this file stayed green.
+  test("every surface that masks a descriptor masks it against the ACCOUNT as well as the card", () => {
+    const cardOnly = surfaces.filter(
+      (surface) => surface.masked && !surface.accountMasked,
+    );
+    expect(
+      cardOnly.map((surface) => `${surface.file}: ${surface.expression}`),
+      "these surfaces run the card mask and not the account mask, so a transfer descriptor prints the counterparty account in full",
+    ).toEqual([]);
   });
 
   test("every unmasked descriptor surface is a DECLARED exclusion with a reason", () => {
-    const unmasked = surfaces.filter((surface) => !surface.masked);
+    // UNMASKED MEANS NEITHER MASK (M3-P13 fix round). It used to mean "does
+    // not call the card mask", which since this round would count the
+    // reserves label as unmasked while it is redacted against the identifier
+    // that surface can actually carry.
+    const unmasked = surfaces.filter(
+      (surface) => !surface.masked && !surface.accountMasked,
+    );
     expect(unmasked.length).toBe(EXCLUSIONS.length);
     for (const surface of unmasked) {
       const declared = EXCLUSIONS.find(
@@ -828,12 +1009,19 @@ describe("every rendering surface that shows descriptor text is derived, not rem
       "merchant-review.tsx",
       "month-view.tsx",
     ];
+    // Each of the three must carry at least one ACCOUNT-masked surface too
+    // (M3-P13 fix round): the check above was satisfiable by the card mask
+    // alone, which is the state the fix round found.
     for (const file of mustMask) {
       const inFile = surfaces.filter((surface) => surface.file.endsWith(file));
       expect(inFile.length, file).toBeGreaterThan(0);
       expect(
         inFile.some((surface) => surface.masked),
         file,
+      ).toBe(true);
+      expect(
+        inFile.some((surface) => surface.accountMasked),
+        `${file} carries no account-masked surface`,
       ).toBe(true);
     }
     // The confirm preview is the screen the owner photographed: BOTH of its

@@ -1,10 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
 import { fixedClock } from "../src/platform/clock";
-import {
-  assertGateApiTargetIsLocal,
-  assertGateDbTargetIsLocal,
-} from "../src/platform/db/gate-target";
 
 // Seed for local development and tests: ONE household with ONE user
 // (charter: one user per household in v1). Deterministic on purpose: fixed
@@ -21,44 +17,29 @@ const SEED_HOUSEHOLD_ID = "00000000-0000-4000-8000-000000000001";
 const SEED_USER_ID = "00000000-0000-4000-8000-000000000002";
 const SEED_CLOCK = fixedClock(new Date("2026-08-01T08:00:00.000Z"));
 
-// THE TARGET INTERLOCK, BEFORE A CLIENT EXISTS (M3-P12 fix round eight,
-// CRITERIA finding CR7-M3P12-01).
-//
-// This file was the one door in the tree that carried no interlock of any
-// kind, and it is the worst one to leave open: it creates an AUTH USER
-// through the service-role admin API and writes a household. It is the
-// registered Prisma seed hook, so it runs inside db:reset and db:migrate, and
-// the guard those two scripts do run (src/platform/db/guard-cli.ts) checks
-// DATABASE_URL and DIRECT_URL and NOTHING ELSE: the Supabase API URL and the
-// service role key travel unchecked on that path. An operator who pinned the
-// two connection strings to a local stack, exactly as instructed, still
-// created an auth user in whichever project the ambient Supabase variables
-// named. In this fleet's containers those ambient variables are present and
-// belong to a different project.
-//
-// SO THE REFUSAL IS TOTAL AND IT IS FAIL CLOSED. This seed is for local
-// development and tests, and it says so in its own first line; there is no
-// legitimate deployed target for it, so there is no override flag here. A
-// flag asserting the target is right is the assertion being checked.
-//
-// ORDER IS THE CONTRACT: both assertions run before the client they guard is
-// constructed, so a refused run has opened nothing at all. The database
-// assertion sits at module scope, ahead of `new PrismaClient()`; the API
-// assertion sits immediately ahead of `createClient`, after the presence
-// check, because an absent key opens no door and keeps the existing
-// seed-the-household-only behaviour.
-//
-// SIBLING IMPLEMENTATIONS of this same mechanism, so the next reader knows
-// the rule is not local: test/e2e/merchant-rule-write.spec.ts (Prisma door),
-// test/e2e/auth.spec.ts (admin door), playwright.config.ts
-// (enforceGateDbTarget at module scope), scripts/rederive-merchant-rules.ts
-// (its own stricter host-and-ref interlock, src/platform/db/target-guard.ts),
-// and src/platform/db/client.ts, which is the application's own client and
-// deliberately carries a DIFFERENT guard (assessNonProductionDbTarget) because
-// production is the one target it may legitimately open. The scan that holds
-// all of these to the rule is test/db/gate-target.test.ts, and it reads the
-// tracked tree.
-assertGateDbTargetIsLocal(process.env, "prisma/seed.ts");
+// THE GATE-TARGET ASSERTIONS THAT STOOD HERE ARE WITHDRAWN, loudly (clause
+// R-087, decision D-62, criterion 12.23). This file called
+// assertGateDbTargetIsLocal at module scope ahead of `new PrismaClient()`
+// and assertGateApiTargetIsLocal ahead of `createClient` (M3-P12 fix round
+// eight, CRITERIA finding CR7-M3P12-01); both came from
+// src/platform/db/gate-target.ts, which left the tree with the target
+// interlock D-62 withdrew. What guards this file now is the interlock the
+// repository already has: this is the registered Prisma seed hook, it runs
+// inside db:reset and db:migrate, and both of those run guard-cli.ts FIRST,
+// which refuses unless DATABASE_URL and DIRECT_URL both name the local
+// stack. THE SUPABASE API DOOR IS NOT COVERED BY THAT GUARD and after this
+// withdrawal nothing refuses it here: guard-cli checks the two connection
+// strings and nothing else, so the service-role key and API URL travel
+// unchecked, exactly the state CR7-M3P12-01 found before the withdrawn
+// assertion was added. Criterion 12.23 confines itself to the routine and
+// the destructive database commands and says so; the settled posture for
+// every other non-production entry point is the question the plan's parked
+// surface carries (the assessNonProductionDbTarget entry), and this comment
+// exists so the next reader finds the open door stated rather than papered
+// over. The practical mitigation stands one step earlier: a db:reset whose
+// connection strings are pinned local is being run by an operator who has
+// pinned the environment, and the seed warns and skips when the service-role
+// key is absent.
 
 const prisma = new PrismaClient();
 
@@ -73,10 +54,9 @@ const seedAuthUser = async (email: string, password: string): Promise<string | n
   }
 
   // A service-role key against a project API is a door to a database exactly
-  // as a connection string is, and this one CREATES A USER. Refuse before the
-  // client exists.
-  assertGateApiTargetIsLocal(process.env, "prisma/seed.ts");
-
+  // as a connection string is, and this one CREATES A USER. The gate-target
+  // assertion that refused a non-local API here left with decision D-62; the
+  // withdrawal note at the top of this file states what that leaves open.
   const admin = createClient(url, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });

@@ -64,6 +64,7 @@ export const AccountsScreen = async ({
     errorNumberChecksum: t("accountsErrorNumberChecksum"),
     errorDuplicate: t("accountsErrorDuplicate"),
     errorAlreadyRegistered: t("accountsErrorAlreadyRegistered"),
+    errorSubmitFailed: t("accountsErrorSubmitFailed"),
   };
 
   return (
