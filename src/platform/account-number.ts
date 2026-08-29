@@ -66,33 +66,79 @@
 export const canonicalAccountNumber = (value: string): string =>
   value.replace(/\s/g, "").toUpperCase();
 
-// THE ONE SQL WHITESPACE CLASS THE MIRRORS STRIP, NOT BARE [[:space:]].
-// Corrected in the M3-P18 fix round under HAZARD finding HZ-M3P18-01 and
-// stated loudly (clause R-087): the sibling note above used to let the
-// mirrors stand on the POSIX class alone, and the delivered mirror tests
-// exercised ASCII renderings only, over which [[:space:]] and
-// JavaScript's \s happen to agree. Witnessed live on Postgres 16.13
-// (C.utf8): POSIX [[:space:]] does NOT match U+00A0, U+202F or U+FEFF,
-// all of which \s strips, and U+00A0 is the single byte 0xA0 in
-// Windows-1252, the encoding common for Belgian exports, so the
-// divergence sat exactly on the population the backfill exists for (a
-// stored NBSP-spaced rendering stayed at its SQL fixed point, the
-// canonical lookup still missed it, and the canonical duplicate check
-// refused the retype: a full lockout).
+// THE ONE SQL WHITESPACE CLASS THE MIRRORS STRIP. IT NAMES NO POSIX
+// CLASS AT ALL, and that absence is the rule rather than a style choice.
 //
-// The class below unions the POSIX class with every remaining member of
-// ECMAScript's WhiteSpace and LineTerminator productions (the definition
-// of \s): U+00A0, U+1680, U+2000..U+200A, U+2028, U+2029, U+202F,
-// U+205F, U+3000, U+FEFF. It deliberately does NOT include U+200B, which
-// \s does not match. Written as VISIBLE Postgres ARE escapes, never raw
-// characters, so the source shows what it strips; consumers pass it as a
-// bind parameter or splice it into SQL text, and the migration, which
-// cannot import anything, inlines the same class with a pin in
-// test/domain/canonical-backfill.test.ts asserting byte equality. The
-// same test derives the \s set by sweeping EVERY Unicode code point and
-// asserts this class enumerates exactly that set.
+// CORRECTED TWICE, BOTH TIMES LOUDLY (clause R-087). Both superseded
+// forms are quoted here, because a class whose history is invisible is a
+// class the next reader will get wrong for a third time.
+//
+//   FIRST FORM (M3-P14): bare [[:space:]]. Superseded wording: "THE
+//   WHITESPACE CLASS IS WRITTEN [[:space:]] AND NOT \s ON PURPOSE". It
+//   was written that way to dodge a template-literal escaping trap, and
+//   it UNDER-stripped: witnessed on Postgres 16.13 under the libc
+//   C.utf8 ctype, [[:space:]] does not match U+00A0, U+202F or U+FEFF,
+//   all of which \s strips. U+00A0 is the single byte 0xA0 in
+//   Windows-1252, the encoding common for Belgian exports, so the gap
+//   sat exactly on the population the backfill exists for.
+//
+//   SECOND FORM (the M3-P18 fix round's first attempt, hazard finding
+//   HZ-M3P18-01): the POSIX class with the missing escapes bolted onto
+//   it. Superseded wording: "the class below UNIONS THE POSIX CLASS with
+//   every remaining member of ECMAScript's WhiteSpace and LineTerminator
+//   productions". That closed the under-stripping and opened
+//   OVER-stripping, because what [[:space:]] matches is a property of
+//   the DEPLOYED CLUSTER'S ctype and not of the committed SQL. MEASURED
+//   in this project's container on one Postgres 16.13 cluster, sweeping
+//   every code point from 1 to U+10FFFF through the committed
+//   expression, twice, under two collations:
+//     libc C.utf8:  25 code points stripped, exactly the \s set.
+//     ICU "und":    30 code points stripped, the \s set PLUS U+001C,
+//                   U+001D, U+001E, U+001F and U+0085, none of which \s
+//                   matches.
+//   An OVER-stripping mirror is worse than an under-stripping one. The
+//   migration rewrites a stored declaration into a form
+//   canonicalAccountNumber can never produce, so the row becomes
+//   permanently unmatchable by the canonical lookup, and the original
+//   rendering is gone, so nothing repairs it by re-running anything.
+//
+//   RE-MEASURED INDEPENDENTLY when this fix was harvested onto main, on
+//   a DIFFERENT cluster (Postgres 17.6), because a measurement taken
+//   once on one server is a claim about that server and not about the
+//   expression. Same sweep, same two collations, same result: 25 under
+//   libc C.utf8, 30 under ICU "und", the extra five exactly as listed
+//   above. AND ONE THING THAT MEASUREMENT ADDS: on that cluster the
+//   DATABASE'S OWN default locale provider is ICU, so the sweep under no
+//   COLLATE clause at all also returned 30. The over-stripping is
+//   therefore what an ordinary connection gets by default on a cluster
+//   provisioned that way, not something only an explicit COLLATE can
+//   reach.
+//
+// THE RULE THIS ESTABLISHES, recorded at the mechanism's definition and
+// binding on every sibling in the two lists above: A SQL MIRROR OF
+// canonicalAccountNumber ENUMERATES CODE POINTS AND NEVER NAMES A POSIX
+// CLASS. A POSIX class's membership belongs to the cluster; an explicit
+// escape's membership belongs to the committed text.
+//
+// The class below is exactly the 25 members of ECMAScript's WhiteSpace
+// and LineTerminator productions (the definition of \s): U+0009, U+000A,
+// U+000B, U+000C, U+000D, U+0020, U+00A0, U+1680, U+2000..U+200A,
+// U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF. It deliberately does
+// NOT carry U+200B, which \s does not match.
+//
+// Written as VISIBLE Postgres ARE escapes, never raw characters, so the
+// source shows what it strips; consumers pass it as a bind parameter or
+// splice it into SQL text, and the migration, which cannot import
+// anything, inlines it at EVERY one of its sites, with a pin in
+// test/domain/canonical-backfill.test.ts asserting every inlined
+// occurrence is byte-equal to this constant. That same fast test parses
+// this class from its own text with NO assumption about a POSIX head and
+// asserts it enumerates exactly the set a full Unicode sweep of \s
+// produces. The EXECUTED agreement, in Postgres, over the UNION of both
+// sets rather than over a chosen sample, is the slow-gate arm in
+// test/e2e/canonical-backfill.spec.ts.
 export const ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS =
-  "[[:space:]\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]";
+  "[\\u0009\\u000a\\u000b\\u000c\\u000d\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]";
 
 // THE PINNED COUNTRY-LENGTH TABLE. Source: the ISO 13616 IBAN Registry
 // published by SWIFT as the registration authority, which assigns each

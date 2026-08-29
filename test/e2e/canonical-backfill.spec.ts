@@ -402,3 +402,118 @@ const spacedStoredPairValue = (): string => {
   }
   return value;
 };
+
+// M3-P18 FIX ROUND TWO. THE MIRROR IS AGREED CODE POINT BY CODE POINT,
+// OVER THE UNION OF BOTH SETS, EXECUTED IN POSTGRES.
+//
+// WHY THE UNION AND NOT A SAMPLE. Every earlier form of this arm compared
+// the two expressions over "every rendering the seed harness writes",
+// which is a population the phase chooses, so it can only ever confirm
+// the classes agree on characters somebody already thought of. Twice it
+// did exactly that while the classes disagreed: first on U+00A0, U+202F
+// and U+FEFF, which the bare POSIX class did not strip, and then on
+// U+001C through U+001F and U+0085, which "[[:space:]" plus escapes DID
+// strip under an ICU collation while JavaScript's \s does not. The union
+// of the two ACTUAL sets is the only population that cannot be chosen to
+// avoid a disagreement: a character either side strips is in it by
+// construction.
+//
+// AND THE SWEEP RUNS UNDER TWO COLLATIONS, because that is the specific
+// thing a POSIX class breaks: what [[:space:]] matches belongs to the
+// cluster's ctype, not to the committed SQL, so a mirror that agrees on
+// the local database can still over-strip on the deployed one. The
+// committed class enumerates code points and names no POSIX class, so the
+// two sweeps must return the same set; if a POSIX class is ever
+// reintroduced, this arm reddens under the ICU collation.
+//
+// This test drives NO browser: it needs a database and nothing else.
+test("the migration's own class strips exactly what canonicalAccountNumber strips, over the union of both sets and under two collations", async () => {
+  // The class the MIGRATION actually runs, extracted from the committed
+  // file rather than imported, because a reimplementation agreeing with
+  // the platform function says nothing about the committed SQL.
+  const patterns = [
+    ...migrationStatements().matchAll(/regexp_replace\([^,]+,\s*'([^']*)'/g),
+  ].map((match) => match[1] ?? "");
+  expect(patterns).toHaveLength(4);
+  const migrationClass = patterns[0] ?? "";
+  for (const pattern of patterns) {
+    expect(pattern).toBe(migrationClass);
+  }
+  // And it names no POSIX class, which is what makes the two sweeps below
+  // comparable at all.
+  expect(migrationClass).not.toMatch(/\[:[a-z]+:\]/);
+
+  // THE JAVASCRIPT SIDE: every code point canonicalAccountNumber removes,
+  // asked of the platform function itself rather than of a copy of its
+  // regex.
+  const platformSet = new Set<number>();
+  for (let code = 1; code <= 0x10ffff; code += 1) {
+    if (code >= 0xd800 && code <= 0xdfff) {
+      continue;
+    }
+    if (canonicalAccountNumber(String.fromCodePoint(code)) === "") {
+      platformSet.add(code);
+    }
+  }
+
+  // THE SQL SIDE, EXECUTED: every code point the committed class removes,
+  // under the database's own collation and under an ICU collation.
+  const literal = migrationClass.replace(/'/g, "''");
+  const sweep = async (collate: string): Promise<Set<number>> => {
+    const rows = await prismaClient().$queryRawUnsafe<
+      readonly { cp: number }[]
+    >(
+      `WITH cps AS (SELECT generate_series(1, 1114111) AS cp),
+            f AS (SELECT cp FROM cps WHERE cp NOT BETWEEN 55296 AND 57343)
+       SELECT cp FROM f
+       WHERE regexp_replace(chr(cp)${collate}, '${literal}', '', 'g') = ''
+       ORDER BY cp`,
+    );
+    return new Set(rows.map((row) => Number(row.cp)));
+  };
+
+  const icu = await prismaClient().$queryRawUnsafe<
+    readonly { collname: string }[]
+  >(
+    `SELECT collname FROM pg_collation
+      WHERE collprovider = 'i' AND collname = 'und-x-icu' LIMIT 1`,
+  );
+
+  const collations = [
+    { name: "database default", clause: "" },
+    ...(icu.length === 0
+      ? []
+      : [{ name: "und-x-icu", clause: ` COLLATE "und-x-icu"` }]),
+  ];
+  // The ICU half is what catches a POSIX class; record loudly if the
+  // cluster cannot offer one rather than letting the arm quietly shrink.
+  expect(
+    collations.length,
+    "no ICU collation on this cluster: the locale-independence half of this arm did not run",
+  ).toBe(2);
+
+  for (const collation of collations) {
+    const sqlSet = await sweep(collation.clause);
+    const union = [...new Set([...sqlSet, ...platformSet])].sort(
+      (a, b) => a - b,
+    );
+    const strippedBySqlOnly = union.filter(
+      (code) => sqlSet.has(code) && !platformSet.has(code),
+    );
+    const strippedByPlatformOnly = union.filter(
+      (code) => platformSet.has(code) && !sqlSet.has(code),
+    );
+    // THE ASSERTION, per member of the union rather than per sample.
+    expect(
+      { collation: collation.name, strippedBySqlOnly, strippedByPlatformOnly },
+      `${collation.name}: the SQL mirror and canonicalAccountNumber disagree`,
+    ).toEqual({
+      collation: collation.name,
+      strippedBySqlOnly: [],
+      strippedByPlatformOnly: [],
+    });
+    // And the set is the 25 members of the \s productions, stated so a
+    // future change that shrinks BOTH sides together still reddens.
+    expect(union).toHaveLength(25);
+  }
+});

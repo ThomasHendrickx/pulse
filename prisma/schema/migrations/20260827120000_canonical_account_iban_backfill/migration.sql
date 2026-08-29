@@ -17,27 +17,62 @@
 -- THE CANONICAL FORM IS AN SQL MIRROR of canonicalAccountNumber in
 -- src/platform/account-number.ts: uppercase, every whitespace character
 -- removed, where "whitespace" means EXACTLY the set JavaScript's \s
--- matches. CORRECTED IN THE M3-P18 FIX ROUND (hazard finding
--- HZ-M3P18-01, clause R-087), and the superseded wording is quoted
--- rather than deleted: this comment used to say "The whitespace class is
--- written [[:space:]] and not a backslash-s on purpose" and the
--- statement below stripped bare [[:space:]]. That was NOT a mirror:
--- witnessed live on Postgres 16.13 (C.utf8), [[:space:]] retains U+00A0,
--- U+202F and U+FEFF, all of which \s strips, so an NBSP-spaced stored
--- rendering (0xA0 is one byte in Windows-1252, the common Belgian export
--- encoding) stayed at its SQL fixed point, the canonical lookup still
--- missed it, and the new canonical duplicate check refused the retype: a
--- full lockout for exactly the household this migration exists to let
--- back in. The class now unions the POSIX class with every remaining
--- ECMAScript WhiteSpace and LineTerminator member, as visible ARE
--- escapes (U+200B is deliberately absent: \s does not match it). The
--- one authoritative copy for importable code is
--- ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS in src/platform/account-number.ts;
--- this file cannot import, so test/domain/canonical-backfill.test.ts
--- asserts this inlined class is byte-equal to that constant, and the
--- agreement with the platform function is asserted BY TEST over the
--- committed SQL (test/e2e/canonical-backfill.spec.ts) over renderings
--- that include the divergent characters, never by reading.
+-- matches. THE CLASS NAMES NO POSIX CLASS; it enumerates code points.
+--
+-- CORRECTED TWICE, BOTH TIMES LOUDLY (clause R-087), with both
+-- superseded wordings quoted rather than deleted.
+--
+--   FIRST (M3-P14, superseded wording): "The whitespace class is written
+--   [[:space:]] and not a backslash-s on purpose". The statement stripped
+--   bare [[:space:]] and that was not a mirror: witnessed on Postgres
+--   16.13 under the libc C.utf8 ctype, [[:space:]] retains U+00A0,
+--   U+202F and U+FEFF, all of which \s strips, so an NBSP-spaced stored
+--   rendering (0xA0 is one byte in Windows-1252, the common Belgian
+--   export encoding) stayed at its SQL fixed point, the canonical lookup
+--   still missed it, and the canonical duplicate check refused the
+--   retype: a full lockout for exactly the household this migration
+--   exists to let back in.
+--
+--   SECOND (the M3-P18 fix round's first attempt, hazard finding
+--   HZ-M3P18-01; superseded wording): "The class now UNIONS THE POSIX
+--   CLASS with every remaining ECMAScript WhiteSpace and LineTerminator
+--   member". Keeping [[:space:]] inside the class kept the mirror
+--   locale-dependent, because what a POSIX class matches is a property
+--   of the CLUSTER'S ctype and not of this file. MEASURED on one
+--   Postgres 16.13 cluster, sweeping every code point from 1 to
+--   U+10FFFF through the committed expression under two collations: the
+--   libc C.utf8 collation stripped exactly the 25 \s members, while the
+--   ICU "und" collation stripped 30, adding U+001C, U+001D, U+001E,
+--   U+001F and U+0085, none of which \s matches. Over-stripping is the
+--   worse failure of the two: this migration would rewrite a stored
+--   declaration into a form canonicalAccountNumber can never produce,
+--   the row would be permanently unmatchable by the canonical lookup,
+--   and the original rendering would be gone, so no re-run could repair
+--   it, while the migration reported success.
+--
+--   RE-MEASURED INDEPENDENTLY when this fix was harvested onto main, on
+--   a DIFFERENT cluster (Postgres 17.6): the same sweep returned the
+--   same 25 under libc C.utf8 and the same 30 under ICU "und". That
+--   cluster's DATABASE default locale provider is ICU, so the sweep
+--   under no COLLATE clause returned 30 as well, which says the
+--   over-stripping is what an ordinary connection gets by default on a
+--   cluster provisioned that way rather than something only an explicit
+--   COLLATE reaches. A migration runs on whatever cluster the household
+--   is deployed to, and this file cannot see which.
+--
+-- THE CLASS BELOW therefore enumerates exactly the 25 members of \s as
+-- visible ARE escapes and nothing else (U+200B is deliberately absent:
+-- \s does not match it). The one authoritative copy for importable code
+-- is ACCOUNT_NUMBER_SQL_WHITESPACE_CLASS in
+-- src/platform/account-number.ts; this file cannot import, so
+-- test/domain/canonical-backfill.test.ts extracts EVERY regexp_replace
+-- pattern below, asserts there are exactly four of them, and asserts
+-- each one is byte-equal to that constant (a pin holding one occurrence
+-- let single-site drift through, hazard finding HZ2-M3P18-01). The
+-- EXECUTED agreement with the platform function is asserted by test over
+-- this committed SQL (test/e2e/canonical-backfill.spec.ts), over the
+-- UNION of the two whitespace sets code point by code point rather than
+-- over a chosen sample, never by reading.
 --
 -- EDITED IN PLACE RATHER THAN FOLLOWED UP: at the time of this fix round
 -- the migration existed only on the unmerged phase branch and had been
@@ -72,15 +107,15 @@
 -- untouched throughout.
 
 UPDATE "accounts" a
-SET "iban" = upper(regexp_replace(a."iban", '[[:space:]\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]', '', 'g'))
+SET "iban" = upper(regexp_replace(a."iban", '[\u0009\u000a\u000b\u000c\u000d\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]', '', 'g'))
 WHERE a."iban" IS NOT NULL
-  AND a."iban" IS DISTINCT FROM upper(regexp_replace(a."iban", '[[:space:]\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]', '', 'g'))
+  AND a."iban" IS DISTINCT FROM upper(regexp_replace(a."iban", '[\u0009\u000a\u000b\u000c\u000d\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]', '', 'g'))
   AND NOT EXISTS (
     SELECT 1
     FROM "accounts" b
     WHERE b."householdId" = a."householdId"
       AND b."id" <> a."id"
       AND b."iban" IS NOT NULL
-      AND upper(regexp_replace(b."iban", '[[:space:]\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]', '', 'g'))
-          = upper(regexp_replace(a."iban", '[[:space:]\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]', '', 'g'))
+      AND upper(regexp_replace(b."iban", '[\u0009\u000a\u000b\u000c\u000d\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]', '', 'g'))
+          = upper(regexp_replace(a."iban", '[\u0009\u000a\u000b\u000c\u000d\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]', '', 'g'))
   );

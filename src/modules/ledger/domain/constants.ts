@@ -57,6 +57,36 @@ export const INTERPRETATION_WINDOW_PADDING_DAYS =
 // same dialect), and the case-insensitivity lives in the `i` flag here
 // and in `~*` there. One pattern list, two engines, so a new pattern is
 // checked against both at the definition, which is this comment's job.
+//
+// AND ONE CORRECTION, LOUDLY (M3-P18 fix round two, clause R-087). The
+// sentence above lists \s+ among the constructs carrying "the same
+// meaning" in both engines. THAT IS NOT EXACTLY TRUE, and the same
+// mechanism cost this project two fix rounds elsewhere: in Postgres ARE,
+// \s is the POSIX space class, whose membership belongs to the CLUSTER'S
+// ctype, while in JavaScript \s is a fixed 25 code point set. Measured on
+// one Postgres 16.13 server, the two disagree on U+00A0, U+202F and
+// U+FEFF under the libc C.utf8 collation, and on U+0085 and the four
+// ASCII information separators under an ICU collation. The rule recorded
+// at src/platform/account-number.ts is that a SQL mirror enumerates code
+// points and never names a POSIX class, and the account-number mirrors
+// were rewritten to obey it. THESE PATTERNS WERE NOT: they still carry
+// \s+, left standing deliberately rather than changed inside a fix round,
+// because narrowing or widening a cash pattern moves real money between
+// two headings on the month view, which is a decision rather than a
+// repair. WHAT IS AT STAKE if it ever bites: a description separating
+// CASH from WITHDRAWAL with an exotic space would be cash to the
+// TypeScript predicate and not cash to the SQL, so one row would group
+// under two different destinations on two surfaces. Whoever adds a
+// pattern carrying \s, or meets such a description in real data, owes it
+// the treatment the account-number class got.
+//
+// RE-MEASURED when this note was harvested onto main, on a DIFFERENT
+// cluster (Postgres 17.6): the same disagreement, the same two sets. And
+// one thing that measurement adds, which sharpens what is at stake here:
+// on that cluster the DATABASE'S OWN default locale provider is ICU, so
+// the wider behaviour is what an ordinary connection gets rather than
+// something an explicit COLLATE has to reach. If this shorthand ever
+// bites, it will bite by default, not exotically.
 export const CASH_WITHDRAWAL_PATTERNS: readonly RegExp[] = [
   /GELDOPNAME/i,
   /GELDAFHALING/i,
