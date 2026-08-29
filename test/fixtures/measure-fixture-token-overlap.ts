@@ -20,17 +20,22 @@
 // parsed in memory through the shipped path and nothing parsed from them is
 // printed or written to disk.
 //
-// EXCEPT THAT IT ALSO PRINTS A LABEL PER CORPUS FILE, and until fix round
-// eight that label was `measurementLabel(path)`, which is the same defect
-// CRITERIA finding CR6-M3P12-02 found in the convergence harness one file
-// over: eight characters is safe only for a file carrying this fleet's
-// eight-hex renaming handle, and a real bank export's file name LEADS with an
-// account number, so those eight characters were eight characters of it. The
-// sentence above says nothing parsed from a corpus is printed, and it was true
-// of the CONTENTS and false of the NAME. Both harnesses now derive the label
-// through one function, measurementLabel, which emits the basename only for a
-// committed fixture, the handle only when the leading eight characters really
-// are hex, and a fixed placeholder otherwise.
+// EXCEPT THAT IT ALSO PRINTS A LABEL PER CORPUS FILE, and that label has been
+// wrong twice. Until fix round eight it was `basename(path).slice(0, 8)`,
+// which for a real bank export is eight characters of an account number. Fix
+// round eight routed it through measurementLabel, which then accepted any
+// leading eight characters shaped like hex, and this file's four call sites
+// inherited that hole with it: HAZARD finding CR7-M3P12-01 showed the same
+// account digits surviving in lower case, because Belgium's country code
+// lowercases into the hex alphabet. The sentence above says nothing parsed
+// from a corpus is printed; it was true of the CONTENTS and false of the NAME,
+// twice.
+//
+// SINCE FIX ROUND NINE nothing is derived from an outside file name at all.
+// measurementLabel labels a committed fixture by its basename and any other
+// path by its ORDINAL POSITION in the invocation, which the operator chose and
+// which carries no byte of the document. All four call sites here pass that
+// ordinal.
 //
 // WHAT "NAME-LIKE" MEANS HERE, which is the thing that was missing:
 //
@@ -96,16 +101,17 @@ export const fixtureDescriptions = (): readonly string[] =>
 // The corpus text, held in memory and NEVER printed.
 const corpusText = async (paths: readonly string[]): Promise<string> => {
   const chunks: string[] = [];
-  for (const path of paths) {
+  for (const [index, path] of paths.entries()) {
+    const ordinal = index + 1;
     const bytes = new Uint8Array(readFileSync(path));
     const detected = await statementParser.detect(bytes);
     if (!detected.ok) {
-      console.log(`corpus ${measurementLabel(path)}: unparsed (detect)`);
+      console.log(`corpus ${measurementLabel(path, ordinal)}: unparsed (detect)`);
       continue;
     }
     const parsed = await statementParser.parse(bytes, detected.value);
     if (!parsed.ok) {
-      console.log(`corpus ${measurementLabel(path)}: unparsed (parse)`);
+      console.log(`corpus ${measurementLabel(path, ordinal)}: unparsed (parse)`);
       continue;
     }
     for (const row of parsed.value.rows) {
@@ -114,7 +120,7 @@ const corpusText = async (paths: readonly string[]): Promise<string> => {
         chunks.push(row.counterpartyName.toUpperCase());
       }
     }
-    console.log(`corpus ${measurementLabel(path)}: rows ${parsed.value.rows.length}`);
+    console.log(`corpus ${measurementLabel(path, ordinal)}: rows ${parsed.value.rows.length}`);
   }
   return chunks.join("\n");
 };

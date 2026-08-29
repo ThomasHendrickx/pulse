@@ -1,3 +1,4 @@
+import { plainDate } from "@/platform/plain-date";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -347,12 +348,14 @@ describe("CRITERION 12.6: a row matching no family is not guessed at", () => {
           id: "t1",
           flow: "SPEND" as const,
           amountCents: cents(-1234),
+          bookingDate: plainDate("2026-03-02"),
           description: "",
         },
         {
           id: "t2",
           flow: "SPEND" as const,
           amountCents: cents(-7543),
+          bookingDate: plainDate("2026-03-03"),
           description: "   ",
         },
       ];

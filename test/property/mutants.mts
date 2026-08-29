@@ -28,6 +28,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { scoreMutantRun } from "./mutant-scoring";
 
 const root = join(import.meta.dirname, "..", "..");
 const target = join(
@@ -185,7 +186,16 @@ const digest = (text: string): string =>
 
 const runProperty = (): { failed: boolean; report: string } => {
   try {
-    execFileSync("npx", ["vitest", "run", propertyFile], {
+    // THE REPORTER IS NAMED RATHER THAN INHERITED. The mechanism index entry
+    // "Parsing another program's reporter output" says to PIN the format as a
+    // controlled input rather than to widen the parse, on the ground that a
+    // format-agnostic regex is a union of the formats known on the day. This
+    // is the weak form of that: naming the default stops a later reporter
+    // added to vitest.config.ts from silently changing what this parses. THE
+    // STRONG FORM IS NOT DONE and is handed on as an open question: reading a
+    // machine-readable reporter instead of the human one would remove the
+    // parse entirely.
+    execFileSync("npx", ["vitest", "run", "--reporter=default", propertyFile], {
       cwd: root,
       encoding: "utf-8",
       stdio: "pipe",
@@ -197,54 +207,47 @@ const runProperty = (): { failed: boolean; report: string } => {
   }
 };
 
-// The two properties, named so the record says WHICH one caught each mutant.
-const FIRST = "the loss set and the claimant-merchant class";
-const SECOND = "every published claimant pair and every published promotion pair";
-
-// ATTRIBUTION READS THE FAILURE LINES AND NOT THE WHOLE OUTPUT. Vitest prints
-// every test's title on a pass as well as a failure, so a substring search
-// over the report says both properties caught every mutant, which is the
-// opposite of the thing this harness exists to establish.
-// A CRASH IS NOT A CATCH (fix round eight, CRITERIA finding CR6-M3P12-01).
-// This file's own comment on M1 already stated the principle, that a mutant
-// which crashes proves nothing about the properties, and then left it as
-// prose: the only thing that decided a catch was vitest exiting non-zero, and
-// a file that DIES exits non-zero exactly as readily as one whose assertion
-// fired. A compile error, an import failure, a timeout or a throw inside
-// runOnce all satisfied it, and the harness reported "counted as CAUGHT" and
-// exited 0.
+// THE SCORING IS A PURE FUNCTION IN ITS OWN MODULE (fix round nine, HAZARD
+// finding CR7-M3P12-02), so all FIVE of its branches are reachable from the
+// fast gate rather than only from a run of this harness. The SELF entry below
+// still exercises the crash branch LIVE, because a canned report cannot show
+// that a real crash produces no AssertionError; the two checks are
+// complementary rather than duplicates.
 //
-// THAT IS THE SHAPE-NOT-IDENTITY ERROR, in the instrument built to defend
-// against it: the check matched the SHAPE of a failure, a FAIL line bearing
-// the right title, rather than its IDENTITY, an assertion raised by the
-// property. So the identity is what is now required. A catch needs an
-// AssertionError; a non-zero exit without one is a HARNESS failure, counted
-// and reported as the mutant having died rather than having been caught.
-const summarise = (
-  report: string,
-): { properties: string[]; message: string; assertionFired: boolean } => {
-  const failed = report
-    .split("\n")
-    .filter((line) => line.trimStart().startsWith("FAIL"))
-    .map((line) => line.trim());
-  const properties: string[] = [];
-  if (failed.some((line) => line.includes(FIRST))) {
-    properties.push("FIRST biconditional");
+// WHAT THAT ANSWERS AND WHAT IT DOES NOT, said plainly rather than left for a
+// tenth round to work out. HAZARD finding CR7-M3P12-03 asked for a second LIVE
+// self-check, a SELF2 that makes an assertion fire outside both named
+// properties so the "unattributed" branch is exercised the way SELF exercises
+// "dies". It is answered here by the extraction instead: every branch,
+// unattributed included, is driven from test/property/mutant-scoring.test.ts
+// with canned reports, so no branch is code nothing takes. THE RESIDUE IS
+// REAL AND IS NOT CLOSED: the canned reports are transcripts somebody wrote
+// down, so if vitest changes the SHAPE of its output the unit tests keep
+// passing against the old shape while this harness misreads the new one. Only
+// SELF is immune to that, because it reads a real run. The two partial-run
+// transcripts added in fix round nine were captured from real runs for that
+// reason rather than composed.
+
+// THE POSITIVE PRECONDITION, RUN BEFORE ANY MUTATION (fix round nine, CRITERIA
+// finding CR7-M3P12-04). The SELF entry expects "dies", and "dies" is any
+// non-zero exit with no assertion, which is ALSO what vitest returns when the
+// property file has been renamed or deleted, and what execFileSync produces
+// when the runner cannot launch at all. In both of those states SELF passes
+// while proving nothing about the discriminator. So the harness first runs the
+// property file UNMUTATED and requires it GREEN. A red or missing baseline is a
+// broken harness reported as one, and it makes every later "dies" mean the
+// mutation rather than the weather.
+{
+  const baseline = runProperty();
+  if (baseline.failed) {
+    console.error(
+      "BASELINE IS NOT GREEN. The property file must pass against the unmutated module before any mutant means anything: a run that cannot launch, or a file that is missing, dies exactly as a mutated module does and would score every entry as expected while proving nothing.",
+    );
+    console.error(baseline.report);
+    process.exit(1);
   }
-  if (failed.some((line) => line.includes(SECOND))) {
-    properties.push("SECOND, the lineage check");
-  }
-  const assertion = report
-    .split("\n")
-    .map((l) => l.trim())
-    .find((l) => l.includes("AssertionError:"))
-    ?.replace(/^Caused by: /, "");
-  return {
-    properties,
-    message: assertion ?? "(no assertion line found)",
-    assertionFired: assertion !== undefined,
-  };
-};
+  console.log(`baseline: ${propertyFile} passes unmutated\n`);
+}
 
 let failures = 0;
 try {
@@ -258,17 +261,22 @@ try {
       }
       mutated = mutated.replace(from, to);
     }
+    // A NO-OP EDIT IS A STALE MUTANT, NOT A DEFECT IN THE PROPERTIES (fix
+    // round nine, CRITERIA finding CR7-M3P12-04). The anchor check above
+    // proves the anchor was FOUND; it never compared the result with the
+    // source, so a mutant whose replacement had drifted back to equal its
+    // anchor left the file untouched, scored "green", and was reported as
+    // "a defect in the properties, not a passing mutant", which is a
+    // confident and wrong diagnosis.
+    if (mutated === original) {
+      throw new Error(
+        `${mutant.id}: its edits left the source BYTE-IDENTICAL, so this entry mutates nothing. The mutant record is stale and must be repaired before it is trusted.`,
+      );
+    }
     writeFileSync(target, mutated);
     const { failed, report } = runProperty();
-    const { properties, message, assertionFired } = summarise(report);
+    const { outcome, properties, message } = scoreMutantRun(failed, report);
     console.log(`--- ${mutant.id}: ${mutant.what} (${mutant.shipped}) ---`);
-    const outcome = !failed
-      ? "green"
-      : !assertionFired
-        ? "dies"
-        : properties.length === 0
-          ? "unattributed"
-          : "caught";
     if (outcome !== mutant.expect) {
       failures += 1;
     }
@@ -290,6 +298,12 @@ try {
           "  AN ASSERTION FIRED BUT NEITHER PROPERTY OWNS IT: the failure could not be attributed to a named property, so the record would say nothing about which check caught this.",
         );
         break;
+      case "partial":
+        console.log(
+          "  HALF THE INSTRUMENT CRASHED: one property asserted while another failing test produced no assertion at all. This is NOT a catch, because the test that died proved nothing.",
+        );
+        console.log(`  ${message}`);
+        break;
       case "caught":
         console.log(`  red on: ${properties.join(" and ")}`);
         console.log(`  ${message}`);
@@ -305,7 +319,7 @@ try {
 
 if (failures > 0) {
   console.log(
-    `\n${failures} mutant(s) were not CAUGHT by an assertion: left green, died, or unattributed.`,
+    `\n${failures} mutant(s) were not CAUGHT by an assertion: left green, died, unattributed, or partial.`,
   );
   process.exitCode = 1;
 }

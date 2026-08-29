@@ -11,6 +11,7 @@
 // rule, by construction (criterion 3.2, hazard H3.1).
 
 import type { Cents } from "@/platform/money";
+import type { PlainDate } from "@/platform/plain-date";
 import type { HouseholdContext } from "@/platform/tenancy";
 import type { MerchantRuleKind, MerchantRuleLike } from "../domain/merchant-rule";
 
@@ -37,6 +38,12 @@ export type CountedTransaction = {
   readonly id: string;
   readonly flow: "INCOME" | "SPEND";
   readonly amountCents: Cents;
+  // The row's OWN booking date (M3-P13). The review screen shows the
+  // transactions behind a group, and a line without its own date cannot be
+  // told from its neighbour: DR-0027's accepted cost is that two purposes
+  // paid to one counterparty land in one group, and the lines are what let
+  // the owner see that rather than distrust the grouping (hazard H13.3).
+  readonly bookingDate: PlainDate;
   readonly description: string;
   readonly counterpartyName?: string;
   // The stored counterparty account, unvalidated (M3-P12). The identity

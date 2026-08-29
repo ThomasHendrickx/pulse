@@ -1,5 +1,9 @@
+import Link from "next/link";
+import { LinkPending } from "@/platform/ui/link-pending";
 import { getTranslations } from "next-intl/server";
 import { Amount } from "@/platform/ui/amount";
+import { SubmitButton } from "@/platform/ui/submit-button";
+import { maskAccountNumbers } from "@/platform/ui/mask-account-number";
 import { maskCardNumbers } from "@/platform/ui/mask-card-number";
 import type { ParsedRow } from "../domain/parse-statement";
 import { confirmImportAction, previewImportAction } from "./actions";
@@ -39,6 +43,7 @@ export const ProfileConfirmation = async ({
   specJson,
   previewRows,
   landingLabel,
+  carriesOwnAccount,
   parseFailed,
   status,
 }: {
@@ -56,11 +61,19 @@ export const ProfileConfirmation = async ({
   // account will be declared here (finding F1: the landing account is
   // named everywhere the user sees the import).
   readonly landingLabel: string | undefined;
+  // Whether the FILE ITSELF carries an own-account column (M3-P14). A file
+  // that does is a current-account statement and its account must have
+  // been registered at setup; a file that does not is a card (decision
+  // D-48) and its account is declared here at first sight. This is what
+  // decides whether the declaration fieldset renders at all.
+  readonly carriesOwnAccount: boolean;
   readonly parseFailed: boolean;
   readonly status: string | undefined;
 }) => {
   const t = await getTranslations();
-  const needsDeclaration = landingLabel === undefined;
+  // Only the card shape is declared here now (M3-P14, decision D-48).
+  const needsDeclaration = landingLabel === undefined && !carriesOwnAccount;
+  const unregistered = landingLabel === undefined && carriesOwnAccount;
   const isPdfLayout = specKind === "pdf-layout";
   return (
     <section className="import-screen">
@@ -71,7 +84,22 @@ export const ProfileConfirmation = async ({
           : t("confirmBody")}
       </p>
       <ImportStatusLine status={status} />
-      {landingLabel === undefined ? (
+      {unregistered ? (
+        /* THE UNKNOWN IS NOT HIDDEN (pulse-frontend section 5): the file
+           names an account this household never registered, and the screen
+           says so BEFORE the submit that will refuse it, naming the setup
+           screen and linking to it. */
+        <p className="import-note" data-testid="landing-unregistered">
+          {t.rich("landingUnregistered", {
+            setup: (chunks) => (
+              <Link href="/accounts">
+                {chunks}
+                <LinkPending />
+              </Link>
+            ),
+          })}
+        </p>
+      ) : landingLabel === undefined ? (
         <p className="import-note" data-testid="landing-new">
           {t("landingNew")}
         </p>
@@ -112,13 +140,28 @@ export const ProfileConfirmation = async ({
                       whole. The parsed row itself is untouched, the stored
                       rawLine keeps the number the bank printed, and nothing
                       here reaches a key, a rule subject or a fact. */}
+                  {/* THE ACCOUNT MASK JOINS THE CARD MASK HERE (M3-P13 fix
+                      round, findings HZ-M3P13-02 and CR-M3P13-03). This cell
+                      falls back to the counterparty ACCOUNT when the row
+                      carries no name, so it is a dedicated account column,
+                      and the card mask beside it does not touch an account
+                      number: every previewed transfer printed the
+                      counterparty's account whole, on the screen the comment
+                      above records the owner photographing. The descriptor
+                      cell has the same defect for a transfer line, whose
+                      descriptor carries the account exactly as the statement
+                      prints it. Display only, exactly as the card mask is:
+                      the parsed row, the stored rawLine and every key are
+                      untouched. */}
                   <td>
-                    {maskCardNumbers(
-                      row.counterpartyName ?? row.counterpartyIban ?? "",
+                    {maskAccountNumbers(
+                      maskCardNumbers(
+                        row.counterpartyName ?? row.counterpartyIban ?? "",
+                      ),
                     )}
                   </td>
                   <td className="preview-descriptor">
-                    {maskCardNumbers(row.description)}
+                    {maskAccountNumbers(maskCardNumbers(row.description))}
                   </td>
                   <td className="preview-amount-cell">
                     <Amount cents={row.amountCents} />
@@ -157,9 +200,9 @@ export const ProfileConfirmation = async ({
                 defaultValue={specJson}
                 spellCheck={false}
               />
-              <button type="submit" formAction={previewImportAction}>
+              <SubmitButton formAction={previewImportAction}>
                 {t("previewAgain")}
-              </button>
+              </SubmitButton>
             </details>
           </>
         )}
@@ -176,20 +219,21 @@ export const ProfileConfirmation = async ({
               <span>{t("accountBankField")}</span>
               <input type="text" name="accountBank" required />
             </label>
-            <label className="import-field">
-              <span>{t("accountRingField")}</span>
-              <select name="accountRole" required defaultValue="">
-                <option value="" disabled />
-                <option value="POT">{t("ringPot")}</option>
-                <option value="RESERVE">{t("ringReserve")}</option>
-              </select>
-            </label>
+            {/* NO RING CONTROL HERE (M3-P14, criterion 14.5). The ring is
+                answered once, at setup, and a second place to answer it is
+                a second place to answer it wrongly. This fieldset is now
+                reached only by a file with no own-account column, which is
+                a card, and a card is a POT account by definition
+                (pulse-domain section 1: the pot ring is current accounts
+                and cards). That is forced by the shape, not inferred from
+                a name, so nothing is defaulted here that the household
+                could have answered differently. */}
           </fieldset>
         ) : null}
 
-        <button type="submit" className="import-primary" data-testid="confirm-import">
+        <SubmitButton className="import-primary" testId="confirm-import">
           {t("confirmAndImport")}
-        </button>
+        </SubmitButton>
       </form>
     </section>
   );
