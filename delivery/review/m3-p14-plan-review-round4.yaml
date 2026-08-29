@@ -1,0 +1,1250 @@
+# FOURTH adversarial plan review of the M0-P6 iteration, now TWO phases:
+# M3-P14 (the household starting fresh) and M3-P17 (account migration).
+#
+# WHAT THIS REVIEWS. delivery/plan/pulse-v02.yaml at a6972e7, read in the
+# reviewer worktree /home/user/wt-m0p6-adv on branch claude/m0-p6-plan-review
+# at 9b24e40. M3-P14 at plan line 7687, TWELVE criteria and THIRTEEN hazard
+# classes; M3-P17 at plan line 8480, THREE criteria and SIX hazard classes.
+# The predecessor is delivery/review/m3-p14-plan-review-round3.yaml, six high,
+# five medium and one low against the single thirteen-criterion phase.
+#
+# HOW THE FINDINGS ARE LABELLED. P14-nnn belongs to M3-P14, P17-nnn to
+# M3-P17. Two findings are one mechanism divided by the seam and say so.
+#
+# ==========================================================================
+# THE THREE PLAIN ANSWERS FIRST, because the rest is why.
+#
+# IS M3-P14 SAFE TO DEPLOY ALONE ON A LIVE HOUSEHOLD WITH EXISTING DATA?
+# NO, not as written, and the reason is not a gap in criterion 14.12's
+# ambition but a state it does not seed. Finding P14-001: the owner's
+# household can already hold TWO Account rows for ONE real account, because
+# the delimited parse stores an account cell VERBATIM
+# (src/modules/import/domain/parse-statement.ts:114 through :123, the
+# optionalText call for accountIban) while the Belfius PDF template COMPACTS
+# it (src/modules/import/domain/belfius-current-account-template.ts:90), and
+# the lookup that decides whether an account already exists is an EXACT match
+# (src/modules/accounts/adapters/account-repository.ts:56 through :58,
+# findFirst on the stored string). Today those two rows never collide and each
+# import lands on its own row deterministically. M3-P14 changes that
+# comparison to a CANONICAL one, which MERGES them, and findFirst carries no
+# orderBy, so which row an import lands on becomes arbitrary, and that row's
+# RING decides whether the imported statement is counted or held. Criterion
+# 14.12 promises the household "keeps working EXACTLY AS IT DOES TODAY" and
+# on this pair the phase makes it strictly worse than today. The plan already
+# knows both renderings reach storage: criterion 14.4 says so in as many
+# words. It draws the duplicate conclusion only for a number a household
+# TYPES, and never for the pair the import path itself has already been able
+# to create since before this work started.
+#
+# Two further reasons, each on its own enough to hold the deploy: finding
+# P14-002, the card's ring has no answerer once criterion 14.5's grep deletes
+# the ring control, while NewAccount.role is a REQUIRED field
+# (src/modules/accounts/application/ports.ts:16 through :21) and
+# .claude/skills/pulse-domain/SKILL.md:20 forbids defaulting it in as many
+# words; and finding P14-005, nothing in 14.12 requires its first claim to be
+# exercised THROUGH THE UI, so a route guard implementing step 3's "a
+# household that has registered nothing is sent here before the import screen
+# will accept a file" can lock a pre-existing household out of importing while
+# an application-level test of the same claim passes.
+#
+# IS THE SEAM RIGHT? The CONSTRAINT is right and is the best thing in this
+# round: making M3-P14 safe to deploy while M3-P17 does not exist is exactly
+# the question, and criterion 14.12 is a real attempt at a real guarantee. The
+# CUT is defensible and I can make it work, but I think a different one is
+# better and it does not reopen DR-0030. See THE SEAM, below.
+#
+# IS EITHER PHASE DISPATCHABLE NOW? No, neither. M3-P14 has six highs, three
+# of which break a live instance. M3-P17 has five, of which two leave its
+# riskiest mechanism measured by prose alone.
+#
+# ==========================================================================
+# WHAT THE SPLIT GOT RIGHT, said before the attack.
+#
+# Round three's R4-001 (a criterion whose household could not be built),
+# R4-002 (the clear with no legal home), R4-005 (the false backstop claim) and
+# R4-009 (the reconciliation identity cannot see a reserves misallocation) are
+# all genuinely repaired, and three of the four are repaired in the artifact
+# rather than in a summary. Step 2 of M3-P14 now states the index is a
+# backstop only for rows written from this phase onward and says why. Step 3
+# of M3-P17 puts the clear in the ledger, beside replaceInterpretation, on the
+# ledger port, injected exactly as assign-merchant receives recompute. 17.1
+# now byte compares NET TO RESERVES and carries the identity argument in full.
+# And M3-P14's verification-first step now captures, from the phase base and
+# before any edit, the full MonthFigures of a seeded pre-phase household,
+# which is the fourth thing the dispatch asked me to check and which is
+# PRESENT and correctly placed. Criterion 14.9 carries it too, in the clause
+# requiring one captured block per claim AND PER BASELINE. That is the sweep
+# defect's favourite hiding place and it is not hiding there this time.
+#
+# ==========================================================================
+# THE FIVE ATTACKS ON CRITERION 14.12, in the order they were put to me.
+#
+# ONE, THE CANONICAL GATE. The stored form that does NOT resolve is the one
+# that resolves TWICE, which is finding P14-001 above. I also probed the
+# single-row case and could not break it: canonicalisation as specified,
+# uppercase with whitespace removed, maps both a spaced Belgian rendering and
+# a compact one onto the same string, and no path in the tree stores an
+# account with any other separator, measured. The one narrowing worth writing
+# down is that the privacy gate's own normalisation strips SPACES AND DASHES
+# while the platform canonical form as specified strips whitespace only, so
+# the two normalisations in this repository will not agree on a hyphenated
+# value; nothing stores one today, so it is a note and not a finding.
+#
+# TWO, THE VALIDITY TEST ON A STORED NUMBER. There is a path and it is the
+# one this codebase's own conventions push an implementer down. Finding
+# P14-006.
+#
+# THREE, THE WAYS INTO A READ-ONLY ROUTE THAT ARE NOT READ ONLY. There is no
+# server-side refusal anywhere in 14.12, which is finding P14-004, and the
+# predicate that selects read-only mode cannot be expressed against a schema
+# the phase's own migrations note freezes, which is finding P14-009.
+#
+# FOUR, THE MONTHFIGURES CAPTURE. Present, correctly placed in the
+# verification-first step, and enforced by 14.9. No finding. This is the one
+# attack the dispatch named that came back empty, and that is worth as much as
+# the ones that did not.
+#
+# FIVE, THE CARD IN M3-P14 ALONE. It cannot acquire a number: criterion 14.6
+# forbids any control that would give one, and its application arm asserts the
+# use case rejects such a submission, which is server side and correct. It
+# cannot be refused for its absent number: 14.12's second claim scopes the
+# validity test to typed numbers only. Both halves hold. What does NOT hold is
+# what ring a NEW card gets when it is declared at first sight with the ring
+# control deleted, which is finding P14-002, and whether a household holding a
+# card can reach the submit that criterion 14.6's own Playwright arm requires,
+# which is finding P14-003.
+#
+# ==========================================================================
+# THE STANDING SWEEP. A criterion satisfiable while its precondition sat in
+# the same phase, no longer satisfiable once the precondition moved.
+#
+# COUNT FOUND THIS ROUND: THREE, taking the running count for this plan to
+# TEN.
+#
+#   1. Criterion 14.6's Playwright arm requires a household HOLDING A CARD
+#      ACCOUNT to SUBMIT the setup form. Criterion 14.12 makes that route read
+#      only for any household that holds accounts and says outright it "does
+#      not offer them a blank form". No household can satisfy both. Finding
+#      P14-003.
+#   2. Criterion 14.12's third claim, the read-only route and its temporary
+#      copy in three catalogues, is a STANDING acceptance criterion of M3-P14
+#      that M3-P17's step 4 is required to violate, and no supersession is
+#      recorded anywhere in either phase. Finding P17-003.
+#   3. The seed harness. The plan-writer reports this as one of two fixes and
+#      the intended shape is right, M3-P14 seeding inline and M3-P17
+#      promoting, but that is not what the artifact says: M3-P17 step 2 says
+#      BUILD, its files-to-touch marks the file "(new, the seed harness)", and
+#      M3-P14 lists no helper at all. Finding P17-006.
+#
+# THE PLAN-WRITER'S OWN TWO, verified as asked. The E2E MIGRATION fix is
+# GENUINE and complete: the migration step stayed in M3-P14, all six uploading
+# specs including prod-smoke are in its files-to-touch, and criterion 14.9
+# still requires the per-spec record. The SEED HARNESS fix is stated in the
+# dispatch and absent from the plan, which is item 3 above.
+#
+# ==========================================================================
+# THE SEAM, judged as the coordinator's decision.
+#
+# THE CONSTRAINT IS RIGHT. "M3-P14 must be safe to deploy while M3-P17 does
+# not exist, on a household that already holds imported data" is the correct
+# question to have made load-bearing, and criterion 14.12 is a real guarantee
+# rather than a gesture at one. Nothing below takes that back.
+#
+# THE CUT LEAKS IN THREE PLACES, and the leaks are why five of M3-P14's six
+# highs exist. The seam is drawn on the POPULATION, fresh against
+# pre-existing, and the population is not separable: the pre-existing
+# household's files flow through M3-P14's gate, so M3-P14 must handle them
+# (14.12 claim one); the duplicate pair is created by the IMPORT path rather
+# than by typing, so it is in M3-P14's half by origin and in M3-P17's half by
+# assignment (findings P14-001 and P17-009); and M3-P14 must build a
+# pre-phase seed to prove 14.12 at all, which is M3-P17's named deliverable.
+#
+# A DIFFERENT SEAM, offered because the dispatch asked for one rather than a
+# complaint, and it does not touch DR-0030. CUT ON THE MECHANISM, NOT THE
+# POPULATION. M3-P14 keeps everything with NO interpretation write behind it,
+# which is everything it has now PLUS the two declaration-layer pieces
+# currently in M3-P17: the pre-existing household may ADD the accounts it
+# never imported, and a typed row whose canonical form equals one the
+# household already holds is refused. Both are pure declaration-layer
+# comparisons with zero ledger involvement, and putting them in M3-P14 puts
+# the duplicate check in the phase that CREATES the ambiguity. M3-P17 then
+# shrinks to exactly ONE mechanism, the ring correction with its ledger clear,
+# atomicity, idempotence and transfer links, which is what a second phase
+# ought to be.
+#
+# WHAT THAT SEAM BUYS, item by item: the read-only mode disappears, and with
+# it finding P14-003 (14.6 has a submit again), finding P14-004 (no read-only
+# state to enforce server side), finding P14-009 (no unexpressible predicate),
+# finding P17-003 (no standing criterion for the next phase to violate) and
+# the temporary copy in three catalogues plus its removal. Finding P14-001
+# still needs its seeded duplicate pair, but it is answered in the same phase
+# that introduces canonical comparison rather than one phase later. WHAT IT
+# COSTS: M3-P14 grows by an add-accounts flow for a household that already has
+# some, which is the same form it already builds for a household that has
+# none, plus one canonical uniqueness check in the use case. That is smaller
+# than what it removes.
+#
+# I do not think the chosen seam is WRONG in the sense of unworkable. I think
+# it costs five highs that the mechanism seam does not, and the coordinator
+# asked to be told which.
+#
+# ==========================================================================
+# THE MEASUREMENTS, RUN IN THIS WORKTREE.
+#
+#   $ grep -n "findAccountByIban" -A 8 src/modules/accounts/adapters/account-repository.ts
+#   52: export const findAccountByIban = async (
+#   56:   const row = await prisma.account.findFirst({
+#   57:     where: { householdId: context.householdId, iban },
+#
+# findFirst, exact string, no orderBy. This is the whole of finding P14-001.
+#
+#   $ grep -n "NewAccount" -A 5 src/modules/accounts/application/ports.ts
+#   16: export type NewAccount = {
+#   19:   readonly role: AccountRole;      <- required, not optional
+#   20:   readonly iban?: string;
+#
+#   $ sed -n '20p' .claude/skills/pulse-domain/SKILL.md
+#   `Account.role` is `POT` or `RESERVE`. The user declares it at first sight.
+#   Never infer it, never guess it from the account name, never default it.
+#
+# Together these are finding P14-002: a required field, its only answerer
+# deleted, and a governing document forbidding the obvious substitute.
+#
+#   $ sed -n '90p' src/modules/import/domain/belfius-current-account-template.ts
+#   const compactIban = (text: string): string => text.replace(/\s/g, "");
+#
+# against parse-statement.ts's optionalText("accountIban"), which stores the
+# cell as it stands. Two writers, two renderings, one exact-match reader.
+#
+# M3-P17 files-to-touch, checked for the allow list the phase's own criterion
+# 17.3 requires: ABSENT. Finding P17-007.
+#
+# HOUSE RULES. No long dash anywhere in this document. No account number, no
+# card number, no amount, no counterparty and no date from any row appears in
+# it. English throughout, npm throughout. Scope discipline was checked against
+# CLAUDE.md's list across both phases: no queue, no cron, no event bus, no
+# cache, no state library, no component library, no per-transaction override,
+# no goal and no budget. The one place scope could grow unbudgeted is finding
+# P17-004, where one reading of criterion 17.2 requires a control that edits a
+# stored account number, which carries a recompute behind it.
+# THE VERDICT FIELD carries the closed vocabulary of the verdict contract,
+# APPROVE or FIX-ROUND-NEEDED, and not a sentence, because the finding schema
+# leaves it a free string precisely so that a second vocabulary is not invented
+# here. Read per phase it is FIX-ROUND-NEEDED for M3-P14 and FIX-ROUND-NEEDED
+# for M3-P17, and M3-P14 additionally does not meet the deploy-alone constraint
+# its own criterion 14.12 sets. Findings P14-nnn belong to M3-P14 and P17-nnn to
+# M3-P17.
+kind: finding
+verdict: FIX-ROUND-NEEDED
+produced-by: claude (Opus 5, claude-opus-5)
+findings:
+  - id: P14-001
+    severity: high
+    evidence:
+      - >-
+        M3-P14. Criterion 14.12's first claim rests on one comparison: "the
+        gate of criterion 14.5 compares CANONICAL forms and admits an account
+        that already exists however it was created, so a stored spaced
+        rendering and a file's compact one resolve to the same account".
+      - >-
+        A pre-existing household can already hold TWO Account rows for ONE real
+        account, and the plan's own criterion 14.4 states both halves of the
+        cause without joining them: "the delimited parse stores such a cell
+        verbatim (src/modules/import/domain/parse-statement.ts:114 through
+        :123) and the PDF path compacts it
+        (belfius-current-account-template.ts:90)". Confirmed at this head:
+        parse-statement's optionalText call writes the accountIban cell as it
+        stands, and belfius-current-account-template.ts:90 is
+        `text.replace(/\s/g, "")`.
+      - >-
+        Nothing stops the pair existing. The uniqueness index
+        `@@unique([householdId, iban])` at prisma/schema/accounts.prisma:28
+        compares stored strings, so a spaced row and a compact row of the same
+        account do not collide, and the lookup that decides whether an account
+        already exists is an EXACT match:
+        src/modules/accounts/adapters/account-repository.ts:56 through :58 is
+        `prisma.account.findFirst({ where: { householdId, iban } })`. So the
+        same real account imported once through a delimited export and once
+        through the Belfius PDF template produces two rows today.
+      - >-
+        TODAY THAT IS STABLE AND M3-P14 MAKES IT UNSTABLE. Under the exact
+        match, a spaced file finds the spaced row and a compact file finds the
+        compact row, deterministically, every time. Under the canonical
+        comparison this phase introduces, both rows match one file, findFirst
+        carries NO orderBy, and Postgres returns rows in no guaranteed order,
+        so which Account an import lands on becomes arbitrary between runs.
+      - >-
+        The consequence is money and it is silent. The winning row's RING
+        decides everything downstream: if the pair was declared once as POT and
+        once as RESERVE, which is entirely possible because each was answered
+        by hand at first sight on the screen this phase deletes, then the same
+        statement is INGESTED AND COUNTED on one run and INGESTED AND HELD on
+        the next, with income, spend and the reserves block all moving and the
+        reconciliation identity closing either way (the argument criterion 17.1
+        spells out: a misallocation among income, spend and reserves cancels on
+        both sides of the difference).
+      - >-
+        Criterion 14.12 does not seed the pair. Its harness carries "stored
+        numbers left in whatever rendering they carry including a non-canonical
+        one, at least one CARD account with no number at all" and no second row
+        for one account, so no test in the phase ever sees the state, and the
+        criterion that promises "EXACTLY AS IT DOES TODAY" is measured over a
+        household that cannot exhibit the one behaviour the phase changes for
+        the worse.
+    concrete-edit: >-
+      Extend criterion 14.12's harness to "stored numbers left in whatever
+      rendering they carry including a non-canonical one, at least one CARD
+      account with no number at all, AND A PAIR OF ACCOUNT ROWS THAT ARE ONE
+      REAL ACCOUNT, one written spaced as the delimited parse stores it
+      (src/modules/import/domain/parse-statement.ts:114 through :123) and one
+      written compact as the Belfius template stores it
+      (belfius-current-account-template.ts:90), answered with two different
+      rings, because the exact-match lookup at
+      src/modules/accounts/adapters/account-repository.ts:56 through :58 lets
+      that pair exist today and the canonical comparison this phase introduces
+      is what first makes them collide". Add to the same criterion, as a fifth
+      claim: "FIVE, AN AMBIGUOUS ACCOUNT IS NAMED, NEVER GUESSED. Where two
+      Account rows of one household share a canonical number, the gate REFUSES
+      the import with a named machine reason in all three catalogues saying the
+      household holds the same account twice and that repairing it arrives in
+      M3-P17, rather than resolving to whichever row the database returns
+      first; a test asserts the refusal, asserts no rows were ingested, and
+      asserts the refusal is stable across repeated runs. Silently picking one
+      row is refused because the row's ring decides whether the statement is
+      counted or held, so the same file would produce two different months."
+      Add hazard class H14.21: "A household already holds one real account as
+      two rows because one import wrote it spaced and another compact, and the
+      canonical comparison this phase introduces makes the two collide, so
+      which account an import lands on, and therefore whether its rows are
+      counted or held, depends on the order the database returns rows in",
+      addressed-by criterion 14.12.
+    analysis: >-
+      This is the finding that answers the dispatch's actual question, and it
+      is not a gap in what criterion 14.12 tries to do but a state it never
+      constructs. The plan has the two halves of the cause written down in
+      criterion 14.4 and reads them as an argument for canonical comparison,
+      which they are; what it does not do is turn round and ask what canonical
+      comparison does to a household that has been running against the exact
+      match for months. The answer is that a distinction the old code enforced
+      accidentally becomes a collision the new code resolves arbitrarily. The
+      right behaviour here is a refusal rather than a repair, because repairing
+      it means merging two Account rows and their transactions, which is real
+      migration work and belongs where the plan already put the duplicate
+      question; but a refusal has to be WRITTEN, because the default behaviour
+      of findFirst is to pick one and say nothing.
+  - id: P14-002
+    severity: high
+    evidence:
+      - >-
+        M3-P14. Criterion 14.5 requires the card path to keep working: "A third
+        case uploads a card statement, which carries no own-account column, and
+        asserts it is ACCEPTED and its account DECLARED AT FIRST SIGHT."
+      - >-
+        The same criterion deletes the only place the ring of such an account
+        is answered: "A grep asserts the ring control is gone from
+        src/modules/import/ui/profile-confirmation.tsx". That control is the
+        select at profile-confirmation.tsx:180 through :186, inside the
+        account-declaration fieldset, and it is the sole input for the ring on
+        the first-sight path.
+      - >-
+        The field it fills is REQUIRED, not optional:
+        src/modules/accounts/application/ports.ts:16 through :21 declares
+        `NewAccount` with `readonly role: AccountRole` and only `iban` optional.
+        So after the control is deleted, `declareAccount` at
+        confirm-import.ts:96 cannot be called without a role coming from
+        somewhere.
+      - >-
+        The obvious substitute is forbidden in as many words by the one
+        document CLAUDE.md guarantees is read first:
+        .claude/skills/pulse-domain/SKILL.md:20 reads "`Account.role` is `POT`
+        or `RESERVE`. The user declares it at first sight. Never infer it,
+        never guess it from the account name, NEVER DEFAULT IT."
+      - >-
+        So the phase leaves exactly two implementations, and it forbids both.
+        Default the role to POT and the diff contradicts the skill file the
+        same phase is editing under criterion 14.9. Keep asking for it and
+        criterion 14.5's grep fails. No criterion, step or hazard in either
+        phase resolves it.
+      - >-
+        It reaches the live instance. The owner holds a card and a card
+        statement re-uploaded with no spec-identical stored profile falls
+        through `existingProfile?.accountId` being undefined at
+        confirm-import.ts:90 to the declaration branch at :92 through :100,
+        which is the branch with no answerer.
+    concrete-edit: >-
+      Add to criterion 14.6, after the sentence on cards never being entered at
+      setup: "AND A CARD'S RING IS NOT AN ANSWER, IT IS A DEFINITION, which is
+      what lets criterion 14.5's grep delete the ring control without leaving
+      `NewAccount.role` (src/modules/accounts/application/ports.ts:16 through
+      :21) unanswered on the first-sight path. A card is in the POT ring by
+      construction, because
+      src/modules/ledger/domain/ledger-transaction.ts:63 through :65 puts every
+      non-reserve account in potAccountIds and reads a POT account with no
+      number as a card, so there is no second possibility to choose between and
+      nothing is being inferred, guessed or defaulted. An application test
+      asserts a first-sight declaration from a file with no own-account column
+      is created in the POT ring with no ring supplied by any caller, and a
+      grep asserts no call site supplies a role for that path." Add to
+      criterion 14.9's skill clause: "and the sentence at
+      .claude/skills/pulse-domain/SKILL.md:20 forbidding a defaulted ring is
+      NARROWED in the same commit to say that the ring is declared at first
+      sight for every account that has a number and is POT by definition for a
+      card, which has none, with a grep asserting the narrowing is present,
+      because that sentence otherwise forbids the only implementation criterion
+      14.5 leaves available."
+    analysis: >-
+      Round three missed this and I own that: criterion 14.5's grep and the
+      first-sight card path sat side by side in the single-phase form too, and
+      I read the grep as being about the setup screen's authority rather than
+      about a required field losing its only input. It survives the split
+      unchanged. The resolution is not to soften the domain rule but to notice
+      that the rule is about a CHOICE, and a card has none: cardness in this
+      codebase IS the absence of a number, so the ring is determined rather
+      than defaulted. That distinction has to be written into the skill file in
+      this phase's commit, because the phase is already editing that file and
+      the next agent reads it before the plan.
+  - id: P14-003
+    severity: high
+    evidence:
+      - >-
+        M3-P14, and a standing-sweep instance. Criterion 14.6 requires a
+        SUBMIT: "A Playwright test over a household HOLDING A CARD ACCOUNT
+        asserts SETUP SUBMITS without touching that row and that its stored
+        number is still absent afterwards."
+      - >-
+        Criterion 14.12 removes the submit for exactly that household: "THE
+        SETUP ROUTE IS HONEST FOR THEM: it lists every account they already
+        hold ... READ ONLY ... It DOES NOT OFFER THEM A BLANK FORM, because a
+        household that retyped an account it already holds would create a
+        second row for one real account, and the check that would prevent that
+        belongs to M3-P17."
+      - >-
+        A household holding a card account is a household that holds accounts,
+        so 14.12 selects it and the route renders read only. There is no
+        household in this phase that both holds a card account and can submit
+        the setup form: a fresh household holds nothing until it submits, and
+        after it submits it holds accounts and becomes read only.
+      - >-
+        This was satisfiable before the split. In the single-phase form the
+        pre-existing household could add accounts and submit, so 14.6's arm had
+        a household to run over. 14.12's read-only rule is new with the split
+        and is what removes it. That is the defect class this plan has now
+        produced ten times: a criterion satisfiable while its precondition sat
+        in the same phase, unsatisfiable once the precondition moved or
+        changed.
+      - >-
+        The application arm of 14.6 is unaffected and correct: "an application
+        test asserts the setup use case rejects any submission that would write
+        a number onto an account bound to a SourceProfile" runs below the UI.
+        Only the Playwright arm has no household.
+    concrete-edit: >-
+      Replace criterion 14.6's Playwright arm with: "A Playwright test over a
+      FRESH household completes setup, then imports a card statement so a card
+      account is declared at first sight, then RETURNS to the accounts route
+      and asserts the card is listed with its ring and WITHOUT a number, that
+      the route offers no control that could give it one, and that its stored
+      number is still absent; the household holds accounts by then, so the
+      route is in the listing state criterion 14.12 describes and this arm
+      asserts the listing rather than a submission." If instead the seam is
+      redrawn as this review proposes, restore the original wording, since a
+      pre-existing household regains its submit.
+    analysis: >-
+      The split moved a rule about what the route offers and did not re-read
+      the criterion that needed the route to offer it. The repair is cheap
+      because 14.6's real subject is the LISTING, not the submission: what it
+      wants proved is that a card survives contact with the accounts screen
+      without gaining a number, and that is observable in the state the phase
+      actually ships. It is worth noticing that this is the second time a card
+      row has been the thing a criterion about accounts failed to admit, which
+      says the phase's model of an account still has a number in it by default.
+  - id: P14-004
+    severity: high
+    evidence:
+      - >-
+        M3-P14. Criterion 14.12's third claim states the protection as a
+        property of the SCREEN: the route is "READ ONLY, and says in copy
+        present in all three catalogues that adding and changing accounts
+        arrives in the next phase. It does not OFFER them a blank form".
+      - >-
+        The reason given is a data-integrity reason, not a presentation one: "a
+        household that retyped an account it already holds would create a
+        second row for one real account, and the check that would prevent that
+        belongs to M3-P17."
+      - >-
+        The setup submission action must exist and must accept writes in this
+        phase, because criteria 14.1, 14.2 and 14.3 require a fresh household
+        to submit eight accounts through it. So the write path is live and the
+        only thing standing between a pre-existing household and a duplicate
+        Account row is that the route did not render a form.
+      - >-
+        A server action in this codebase is an HTTP endpoint. It is reachable
+        without the screen that renders its control, and the phase itself
+        treats that as the standard elsewhere: the ring refusal in the same
+        phase is enforced BOTH ways, with step 7 requiring that "the accounts
+        route offers no control that changes a ring, THE SERVER REFUSES ANY
+        ATTEMPT with a named error in all three catalogues", and criterion 14.8
+        asserting the server half. 14.12 has no server half at all.
+      - >-
+        The asymmetry is exactly backwards with respect to consequence. A
+        refused ring change costs the household a feature they are told is
+        coming. An accepted duplicate submission costs them a second Account
+        row for one real account, which is the corruption the plan names in
+        H17.4 and whose detection it defers by design, so nothing in the
+        shipped product would notice.
+    concrete-edit: >-
+      Replace criterion 14.12's third claim's final sentence with: "It does not
+      offer them a blank form, AND THE SERVER REFUSES A SUBMISSION FROM THEM
+      RATHER THAN RELYING ON THE ABSENT CONTROL: the setup use case refuses any
+      submission that would create an Account for a household that already
+      holds one, with a named error in all three catalogues saying adding
+      accounts arrives in the next phase, and an application test asserts the
+      refusal by calling the use case directly with a household that already
+      holds accounts, never through the screen. This is enforced the same way
+      the ring refusal of criterion 14.8 is enforced, in both places rather
+      than one, because the reason for it is a data-integrity reason: a
+      household that retyped an account it already holds would create a second
+      row for one real account, and the check that would prevent that belongs
+      to M3-P17."
+    analysis: >-
+      The phase knows how to write this, because it writes it correctly twelve
+      lines earlier for the ring. What happened is that the read-only mode was
+      introduced as a description of a screen rather than as a rule about a use
+      case, and a screen is not where an invariant lives. The finding is not
+      that someone will maliciously post a form; it is that the plan states an
+      integrity guarantee and then locates it in the one layer that cannot hold
+      one, in a phase whose whole purpose is to be safe to deploy alone.
+  - id: P14-005
+    severity: high
+    evidence:
+      - >-
+        M3-P14. Step 3 ends: "A household that HAS REGISTERED NOTHING is sent
+        here before the import screen will accept a file."
+      - >-
+        Criterion 14.12's third claim makes the destination of that redirect
+        READ ONLY for a pre-existing household, with no submit and no way to
+        complete anything.
+      - >-
+        The word "registered" is used in this phase for two different things
+        and is never defined. In criteria 14.1, 14.2 and 14.5 it means "entered
+        through the setup form". In 14.12's first claim it must mean "holds an
+        Account row", because that claim's whole point is that the gate "admits
+        an account that already exists HOWEVER IT WAS CREATED". Step 3's
+        predicate is the same word with neither meaning fixed.
+      - >-
+        If an implementer reads step 3's predicate as setup-completion, which
+        is the reading four of the phase's criteria support, a pre-existing
+        household is redirected to a read-only route it can never complete and
+        is therefore permanently unable to import. That is the live instance
+        stopping, which is the exact hazard H14.20 names.
+      - >-
+        Criterion 14.12's first claim would catch it ONLY if exercised through
+        the UI, and the criterion never says it is. It says "A test builds a
+        household the pre-phase way ... a test asserts the import completes and
+        its rows are ingested and classified exactly as they are today". Its
+        second claim reads as an application test, its fourth claim needs the
+        month view. Nothing pins the first claim to the browser, so an
+        application-level test calling confirmImport directly passes with the
+        route guard fully in place.
+      - >-
+        Criterion 14.5's own wording pushes the wrong way too: it describes the
+        gate as admitting "a statement whose own account number is ... among the
+        REGISTERED ones", which an implementer building the gate reads before
+        they reach 14.12.
+    concrete-edit: >-
+      Replace step 3's last sentence with: "A household that HOLDS NO ACCOUNT
+      ROW is sent here before the import screen will accept a file. The
+      predicate is the existence of an Account row and never setup completion,
+      because a household created before this phase holds accounts it never
+      entered here and must not be redirected to a route criterion 14.12 makes
+      read only for it." Restate criterion 14.5's gate predicate as "a file
+      whose own account number, canonically compared, matches an Account row
+      this household holds, however that row was created" wherever it currently
+      says "registered". Add to criterion 14.12's first claim: "asserted
+      THROUGH THE BROWSER over that seeded household, navigating to the import
+      screen and uploading, so that a route guard or a redirect implementing
+      step 3 is exercised rather than bypassed; an application-level assertion
+      on the confirm use case alone does not satisfy this claim, because the
+      failure this claim exists to catch is a household being sent away from
+      the import screen before the use case is ever reached."
+    analysis: >-
+      One undefined word carrying two meanings, in the one sentence that
+      decides whether a live household can reach the import screen at all. The
+      criterion that would catch the wrong reading is the right criterion and
+      is simply not pinned to the layer where the failure happens, which is a
+      pattern worth naming on its own: a guarantee about a live instance has to
+      be measured at the outermost layer that instance actually touches, and
+      three of 14.12's four claims can be satisfied below it.
+  - id: P14-006
+    severity: high
+    evidence:
+      - >-
+        M3-P14. Criterion 14.12's second claim is a scoping promise: "the
+        validity test of criterion 14.3 is applied ONLY to a number typed into
+        the setup form, NEVER TO A STORED ONE, so an existing account whose
+        stored number would fail it goes on working".
+      - >-
+        Criterion 14.4 pushes toward a single entry point: "a unit test
+        enumerates the call sites and asserts EXACTLY ONE DEFINITION under src/
+        of the canonical form, of the pinned country-length table and of the
+        mod-97 implementation, all three in the platform module, WITH EVERY
+        CONSUMER IMPORTING THEM."
+      - >-
+        The conventions of this codebase then close the trap. The
+        pulse-typescript skill mandates branded types for identifiers and
+        validation at the boundary, so the idiomatic shape for "one canonical
+        form and one validity test in one platform module" is a single
+        constructor that canonicalises AND validates and returns a branded
+        value, with every consumer taking the branded type. That is what "every
+        consumer importing them" reads as.
+      - >-
+        The moment the declared-set derivation or the gate takes a branded
+        value, EVERY STORED NUMBER MUST PASS VALIDATION TO BE USABLE, and the
+        phase's own measurement is that 10 of the 17 distinct account-shaped
+        values in the tree fail the mod-97 check. For a live household the
+        consequence is not a rejected form: it is that an account whose stored
+        number is invalid drops out of reserveIbans and potIbans at
+        src/modules/ledger/domain/deriveDeclaredSets, so every transfer to it
+        falls to the sign rule at classify-flow.ts:102 and lands in spend or
+        income. That is the phase's own root cause, reintroduced by its own
+        repair.
+      - >-
+        Nothing forbids it. 14.12's second claim is stated as a property of the
+        SETUP FORM ("applied only to a number typed into the setup form"), not
+        as a property of the platform module, so a module whose only export
+        validates satisfies the sentence as written while breaking the promise
+        behind it.
+    concrete-edit: >-
+      Add to criterion 14.4, after the one-definition sentence: "AND THE TWO
+      ARE SEPARABLE, which is what criterion 14.12's second claim rests on. The
+      platform module exports canonicalisation and validation as two
+      INDEPENDENT functions; canonicalisation is TOTAL and returns a string for
+      any input, never a Result and never a branded value that only a valid
+      number can inhabit, so that a stored number which fails the validity test
+      can still be canonicalised and compared. A unit test asserts
+      canonicalisation of a number that FAILS the mod-97 check returns its
+      canonical form rather than an error, and a grep asserts that no read
+      path, the declared-set derivation and the import gate named explicitly,
+      calls the validity test at all; only the setup form's write path does."
+      Add to criterion 14.12's second claim: "and this is a property of the
+      platform module rather than of the form: a tree in which the canonical
+      form can only be obtained by first passing the validity test fails this
+      claim, however the setup form is written."
+    analysis: >-
+      The dispatch asked me to find the path where a stored number reaches the
+      validity test, and the path is not an oversight in the gate but the
+      shape this codebase's own conventions produce when told to put one
+      canonical form and one validity test in one module and have every
+      consumer import them. A branded identifier with a validating constructor
+      is the right pattern for a value a user types and the wrong one for a
+      value already sitting in a column that predates the rule. The separation
+      costs one sentence and it has to be stated at the module, because that is
+      where the coupling would be introduced, and 14.12's promise is written
+      one layer too far out to prevent it.
+  - id: P14-007
+    severity: medium
+    evidence:
+      - >-
+        M3-P14. The intent says the ring "is ANSWERED at setup and STAYS
+        CORRECTABLE afterwards IN BOTH DIRECTIONS on the same screen, which is
+        criterion 14.12 and decision D-51."
+      - >-
+        Criterion 14.12 is not that criterion. It is the pre-existing
+        household's safety guarantee and contains no ring change; the ring
+        correction is M3-P17's criterion 17.1.
+      - >-
+        Step 3 agrees with the intent and not with the phase: the accounts
+        route lists "what the household holds with EACH RING CHANGEABLE IN
+        PLACE under criterion 14.12."
+      - >-
+        Step 7 says the opposite in its title: "REFUSE a ring change in this
+        phase and say why ... Here the accounts route offers NO CONTROL that
+        changes a ring, the server refuses any attempt", and criterion 14.8
+        enforces the refusal.
+      - >-
+        So two of the four statements in M3-P14 say the ring is changeable
+        here, including the intent, which is the first paragraph an implementer
+        reads, and both cite a criterion number that says something else. This
+        is the third consecutive round in which the phase's top-of-file summary
+        contradicts its own criteria about the ring, having been wrong in the
+        opposite direction last round.
+    concrete-edit: >-
+      Replace the intent's ring sentence with: "The ring is ANSWERED at setup
+      and is FIXED for the life of this phase: correcting it afterwards needs a
+      ledger clear behind it and is M3-P17's criterion 17.1, which decision
+      D-51 records as owed rather than optional. This phase refuses a ring
+      change, in the screen and in the server, which is criterion 14.8."
+      Replace step 3's clause "with each ring changeable in place under
+      criterion 14.12" with "with each ring shown and not changeable, the
+      correction being M3-P17's under decision D-51".
+    analysis: >-
+      The same four words at the top of the phase have now been wrong in both
+      directions across two rounds, which stops being an editing slip and
+      starts being a property of how this phase is revised: the criteria and
+      the steps are rewritten carefully and the intent is treated as prose. It
+      matters more after the split than before, because the intent is now the
+      main place a reader learns which of the two phases they are in, and both
+      wrong sentences cite criterion numbers, which makes them read as checked.
+  - id: P14-008
+    severity: medium
+    evidence:
+      - >-
+        M3-P14. Criterion 14.8 still contains, after the split: "THIS PLAN
+        CARRIES NO GENERAL CLEARING MACHINERY, ONLY THAT TARGETED WRITE,
+        because no other path leaves an interpreted row outside the pot."
+      - >-
+        There is no targeted write in M3-P14 any more. The clear moved to
+        M3-P17 step 3 and criterion 17.1, and the same criterion 14.8 says so
+        four lines earlier: "a grep asserts the accounts module publishes no
+        use case that updates Account.role and imports no ledger adapter, so
+        the clearing machinery M3-P17 owns cannot be half-built here."
+      - >-
+        So one criterion both denies the mechanism exists here and refers to
+        "that targeted write" as though it does, in consecutive sentences.
+      - >-
+        files-to-touch points the same way: it still lists
+        src/modules/ledger/application/ports.ts and
+        src/modules/ledger/application/index.ts, which were added in the
+        previous round precisely to give the clear a legal home. Nothing left
+        in M3-P14 needs either file: the held read is on the OVERVIEW port and
+        the recompute is already published. Listing them invites exactly the
+        half-building the same criterion greps against.
+    concrete-edit: >-
+      Delete from criterion 14.8 the sentence "THIS PLAN CARRIES NO GENERAL
+      CLEARING MACHINERY, only that targeted write, because no other path
+      leaves an interpreted row outside the pot", and replace it with "THIS
+      PLAN CARRIES NO CLEARING MACHINERY AT ALL, targeted or general, because
+      it refuses the one change that would strand an interpreted row outside
+      the pot; the clear is M3-P17's under decision D-51." Remove
+      src/modules/ledger/application/ports.ts and
+      src/modules/ledger/application/index.ts from M3-P14's files-to-touch,
+      since M3-P17 already lists both.
+    analysis: >-
+      Split residue, and the kind that is read as a decision rather than as a
+      leftover, which is the same shape round two caught in this exact
+      criterion. A grep that forbids the clearing machinery being half-built
+      here is a good guard, and it sits four lines from a sentence describing
+      the clearing machinery as something this plan carries, with two of its
+      files still on the list of what the phase may edit.
+  - id: P14-009
+    severity: medium
+    evidence:
+      - >-
+        M3-P14. Criterion 14.12 requires the accounts route to behave in two
+        different ways for two populations: read only, with temporary copy, for
+        a household that already holds accounts, and, per its last sentence, "A
+        household with NO ACCOUNTS is unaffected by this criterion and gets the
+        full setup flow of criteria 14.2 and 14.3."
+      - >-
+        The migrations note forecloses any column that could record which
+        population a household is in: "none. The Account model already carries
+        label, bank, role and an optional account number ... so setup needs no
+        new column, no new table and no enum change."
+      - >-
+        So the predicate must be structural, and the only structural signal
+        available is whether the household holds any Account row.
+      - >-
+        Under that predicate the read-only mode is not scoped to pre-existing
+        households at all: a FRESH household that completes setup under
+        criterion 14.2 holds accounts from that moment and the route becomes
+        read only for it too, permanently, until M3-P17. So the household that
+        opens a ninth account next month has no way to add it, and the copy
+        they are shown says adding arrives in the next phase, which is at least
+        honest but is nowhere stated as an outcome of this phase.
+      - >-
+        No criterion catches the flip, because every setup submission in the
+        phase happens exactly once per household: 14.1's two arms, 14.2 and
+        14.7 all submit and never return.
+    concrete-edit: >-
+      Add to criterion 14.12, before its last sentence: "THE PREDICATE IS
+      NAMED, because the schema cannot record which population a household is
+      in and the migrations note keeps it that way: the route is in its LISTING
+      state exactly when the household holds at least one Account row, and in
+      its ENTRY state exactly when it holds none. This is not scoped to
+      households that predate the phase, and the plan states the consequence
+      rather than discovering it: a household that completes setup under
+      criterion 14.2 is in the listing state from then on, so ADDING A NINTH
+      ACCOUNT AFTER SETUP ALSO ARRIVES IN M3-P17, and the copy that says adding
+      and changing accounts arrives next is shown to them for the same reason
+      it is shown to a pre-existing household. A Playwright test asserts a
+      fresh household that has completed setup sees the listing state and that
+      copy."
+    analysis: >-
+      A rule written for one population that the data model cannot restrict to
+      that population. The outcome is defensible and probably even correct for
+      a phase that ships alone, since adding accounts and changing rings are
+      the same deferred capability, but it is a real product consequence of
+      M3-P14 that appears in no criterion, no hazard and no copy decision, and
+      it was reachable only by asking what predicate the read-only mode could
+      possibly be built on given the phase's own migrations note.
+  - id: P17-001
+    severity: high
+    evidence:
+      - >-
+        M3-P17. Step 3 states the atomicity requirement clearly: "THE
+        CORRECTION IS ONE UNIT OF WORK: declaration, clear and recompute all
+        land or none do, with a NAMED ERROR rather than a partial state."
+      - >-
+        No criterion measures it. Criterion 17.1 carries three tests and all
+        three are happy paths: a Playwright journey that succeeds, an
+        application test asserting the clear happened and the rows are null,
+        and a second application test that runs the use case twice and asserts
+        the second run "changes nothing and errors on nothing". Nothing injects
+        a failure into any of the three writes.
+      - >-
+        Hazard H17.2 names the failure precisely: "The change lands its
+        declaration and then fails before its clear or its recompute, leaving
+        an account whose ring says one thing and whose rows say another, WITH
+        NO PATH THAT HEALS IT", and points at criterion 17.1, which never
+        exercises it.
+      - >-
+        The hazard is not theoretical in this product. The published recompute
+        throws outright in production (src/modules/ledger/ui/actions.ts:15
+        through :21, "Recompute is a dev-only action"), so a household that
+        lands in the split state has no button that re-runs anything, which is
+        the sentence 17.1 itself alludes to in "a product whose recompute can
+        throw" without testing.
+      - >-
+        A requirement that lives only in a step is a requirement an implementer
+        may satisfy or not without any criterion turning red, and the round
+        three review asked specifically for a test in which the recompute
+        dependency throws. The atomicity half of that edit landed in the step
+        and the test it named did not land anywhere.
+    concrete-edit: >-
+      Add to criterion 17.1, after the run-twice test: "AND THE UNIT OF WORK IS
+      MEASURED BY BREAKING IT. Three application tests, one per write, each
+      making that write throw and asserting the household is left in the state
+      it started in and is shown a named error in all three catalogues: with
+      the CLEAR throwing, the account's ring is unchanged and its rows still
+      carry the flow they carried before; with the RECOMPUTE throwing, the same;
+      with the DECLARATION throwing, nothing was cleared. A tree in which the
+      declaration is committed and the clear or the recompute is not fails this
+      criterion, because src/modules/ledger/ui/actions.ts:15 through :21 throws
+      in production and no household can re-run anything by hand."
+    analysis: >-
+      The single riskiest mechanism in the plan has its safety property written
+      in prose and its correctness measured only where it works. This is the
+      thing a second phase exists to get right: M3-P14 was split off precisely
+      so this one could be built carefully, and the criterion that carries it
+      tests the happy path twice and the failure path never. The edit is three
+      tests and they are cheap, because the dependency is already injected: the
+      clear arrives as an injected port member by step 3's own design, so
+      making it throw is a fake, not a fault injection framework.
+  - id: P17-002
+    severity: high
+    evidence:
+      - >-
+        M3-P17. Step 3 makes the transfer links half of the clear explicit and
+        gives the reason: "OUT OF the pot clears that account's interpretation
+        ENTIRELY, the flow and merchant of its own rows AND EVERY TRANSFERLINK
+        NAMING ONE OF THEM ON EITHER SIDE, because
+        prisma/schema/ledger.prisma:1 through :5 declares that table pure
+        interpretation while ledger-repository.ts:173 deletes links only by the
+        ids the window loaded."
+      - >-
+        Criterion 17.1's application test measures only the two columns: it
+        "asserts the same use case CLEARS THE FLOW AND MERCHANT of that
+        account's own rows before recomputing, that every one of those rows
+        carries a null flow afterwards, and that no raw column on any of them
+        changed." No assertion mentions transfer_links.
+      - >-
+        M3-P14's criterion 14.8 does not cover it either: its rebuildability
+        test is scoped to columns, "a test asserts running recompute twice
+        afterwards leaves every interpretation COLUMN identical". A table is
+        not a column, and the round three review's edit asking for "every
+        interpretation column AND the whole transfer_links table" landed in
+        neither phase.
+      - >-
+        So the half of the clear that is genuinely hard is measured nowhere in
+        either phase. The link that survives is reachable: replaceInterpretation
+        deletes by `outgoingTransactionId in ids OR incomingTransactionId in
+        ids` (src/modules/ledger/adapters/ledger-repository.ts:173 through
+        :182), and a settlement link can carry a null incoming end
+        (prisma/schema/ledger.prisma:17), so a link whose only end is on the
+        departing account matches neither term and is left behind, unreachable
+        by every future recompute because that account is never loaded again.
+      - >-
+        No hazard class names it. H17.1 names the stale FLOW, H17.2 the partial
+        write, H17.3 the reserves figure, H17.4 the duplicate, H17.5 the card.
+        The links have neither a criterion nor a hazard.
+    concrete-edit: >-
+      Extend criterion 17.1's application test to: "asserts the same use case
+      clears the flow and merchant of that account's own rows, THAT NO
+      TRANSFER_LINKS ROW NAMES ANY OF THOSE ROWS ON EITHER SIDE AFTERWARDS,
+      that every one of those rows carries a null flow, and that no raw column
+      on any of them changed. The link half is asserted over a household seeded
+      so that the departing account carries a link that replaceInterpretation
+      cannot reach, a settlement link whose incoming end is null
+      (prisma/schema/ledger.prisma:17), because
+      src/modules/ledger/adapters/ledger-repository.ts:173 deletes links only
+      by the ids the window loaded and such a link matches neither term. A
+      further test asserts that after the correction a full recompute leaves
+      the transfer_links table identical, which is the rebuildability the
+      schema claims for it at prisma/schema/ledger.prisma:1 through :5." Add
+      hazard class H17.7: "The clear removes the flow and the merchant and
+      leaves a transfer link naming a row on the departed account, which no
+      future recompute can reach or rebuild, so a table the schema declares
+      fully rebuildable stops being so and the next read written over it
+      believes the claim", addressed-by criterion 17.1.
+    analysis: >-
+      The step is right, names the mechanism, cites both lines and gives the
+      reason, and then the criterion measures two thirds of what the step
+      describes. The pattern is the same one as P17-001 and they are worth
+      reading together: the split gave this phase the hard mechanism and the
+      hard parts of the mechanism are the parts that stayed in prose. What
+      makes this one worth a high rather than a medium is that the seeded state
+      needed to catch it is not obvious, so an implementer writing tests from
+      the criterion alone will not stumble into it, and the failure is
+      permanent by construction.
+  - id: P17-003
+    severity: high
+    evidence:
+      - >-
+        A standing-sweep instance, spanning both phases. M3-P14's criterion
+        14.12 asserts, as a permanent acceptance criterion of that phase, that
+        the accounts route for a pre-existing household is "READ ONLY, and says
+        in copy present in all three catalogues that adding and changing
+        accounts arrives in the next phase."
+      - >-
+        M3-P17's step 4 is required to make that false: "Open the setup route
+        to a pre-existing household: it MAY ADD the accounts it never imported
+        and CHANGE THE RING of any it holds ... The temporary copy M3-P14
+        rendered, saying adding and changing arrive next, IS REMOVED in the
+        same change."
+      - >-
+        Nothing records the supersession. M3-P14's criterion 14.12 carries no
+        note that its third claim expires; M3-P17 carries no statement that it
+        supersedes it; decision D-51 is cited by both for the ring refusal and
+        says nothing about the read-only listing or its copy.
+      - >-
+        The mechanical consequence is a red suite. M3-P14 commits a test
+        asserting that copy and that read-only state, in three catalogues.
+        M3-P17's criterion 17.3 requires "npm run test:e2e exits 0", and its
+        step 5 scopes the migration to "what its own work touches", which does
+        not obviously include deleting a sibling phase's committed assertions.
+      - >-
+        The human consequence is worse than the mechanical one. A criterion
+        that is not marked as expiring is read as a standing guarantee: the
+        cheapest way to a green suite in M3-P17 is to leave the copy in and
+        keep the route read only for the pre-existing household, which is
+        precisely the phase's reason for existing.
+    concrete-edit: >-
+      Add to M3-P14's criterion 14.12, at the end of its third claim: "THIS
+      CLAIM IS TEMPORARY AND EXPIRES WITH M3-P17, which opens the route and
+      removes this copy under decision D-51; the test that asserts it is
+      written so that M3-P17 deletes it rather than edits it, and is marked in
+      the spec with the phase that retires it." Add to M3-P17's step 4, after
+      the sentence removing the copy: "and the assertions M3-P14 committed for
+      its criterion 14.12 third claim, the read-only listing and the temporary
+      copy in three catalogues, are DELETED in the same change rather than
+      worked around; criterion 14.12's other three claims are permanent and
+      stay." Add to M3-P17's criterion 17.2: "and a grep asserts no assertion
+      of the read-only state or of the temporary copy survives anywhere in the
+      suite, because leaving them green is the cheapest way to a passing gate
+      and is the one outcome this phase exists to prevent."
+    analysis: >-
+      The split created a criterion whose truth has a scheduled end and did not
+      write the end down. This is the same defect class as the other two sweep
+      hits, running in the other direction: instead of a criterion losing its
+      precondition, a criterion becomes an obstacle to the phase that owes it.
+      It is the most dangerous of the three, because the failure mode is not a
+      test that cannot be written but a test that stays green by the work not
+      being done, and the plan's own gate criterion rewards exactly that.
+  - id: P17-004
+    severity: high
+    evidence:
+      - >-
+        M3-P17. Criterion 17.2 requires: "an existing account whose stored
+        number would FAIL the validity test of M3-P14 criterion 14.3 is NAMED
+        TO THE HOUSEHOLD WITH WHAT TO DO, rather than silently accepted or
+        silently refused, since the migrations note deliberately leaves stored
+        values alone."
+      - >-
+        There is nothing to do. The migrations note of M3-P17 repeats that
+        stored values are left as they are; step 4 lists what the opened route
+        offers, adding accounts, changing rings, refusing duplicates, and no
+        control that edits a stored number; and M3-P14's criterion 14.12 second
+        claim has already established that such an account "GOES ON WORKING",
+        because the validity test applies only to typed numbers.
+      - >-
+        So the two phases disagree about whether a stored-invalid number is a
+        defect. M3-P14 says it is a non-event and asserts imports keep working
+        over exactly such an account. M3-P17 says the household must be told
+        about it and told what to do.
+      - >-
+        The reading that resolves the contradiction in M3-P17's favour is
+        unbudgeted scope with a ledger consequence: correcting a stored account
+        number is a DECLARATION edit that changes which transactions
+        classification matches, at
+        src/modules/ledger/domain/classify-flow.ts:62 and :73, so it needs its
+        own recompute and its own uniqueness check, and it is named in no step,
+        no file and no hazard.
+      - >-
+        The reading that resolves it in M3-P14's favour needs the criterion
+        reworded, because "with what to do" cannot be satisfied by "nothing".
+    concrete-edit: >-
+      Replace that clause of criterion 17.2 with: "and an existing account
+      whose stored number would FAIL the validity test of M3-P14 criterion 14.3
+      is SHOWN AS IT IS, marked as created before the check existed and
+      explicitly not a problem to fix, in copy present in all three catalogues,
+      because M3-P14 criterion 14.12's second claim already establishes that
+      such an account goes on working and the migrations note of both phases
+      deliberately leaves stored values alone. This phase adds NO control that
+      edits a stored account number: doing so is a declaration edit that
+      changes which rows classification matches at
+      src/modules/ledger/domain/classify-flow.ts:62 and :73 and would need its
+      own recompute and its own uniqueness check, and it is out of scope for
+      both phases. A Playwright test asserts the row renders with that note and
+      that no control on the route can change its number."
+    analysis: >-
+      A sentence inherited from the single-phase form, where it was written
+      before criterion 14.12 existed to answer it. After the split M3-P14
+      settles the question and M3-P17 still asks it, and the gap between them
+      is a control nobody has costed that would reach into classification. The
+      honest answer is the boring one: the stored number is fine, say so, and
+      say why no button is offered, because "named to the household with what
+      to do" with no answer is how an implementer talks themselves into
+      building the button.
+  - id: P17-005
+    severity: medium
+    evidence:
+      - >-
+        M3-P17. Step 3 carries the property that makes the correction
+        recoverable: "the clear is KEYED ON THE ACCOUNT'S CURRENT RING so it is
+        re-runnable and converges."
+      - >-
+        Criterion 17.1's test cannot distinguish that from the alternative: "A
+        second application test runs the same use case TWICE over the same
+        account and asserts the second run changes nothing and errors on
+        nothing."
+      - >-
+        A clear keyed on the TRANSITION passes that test. On the second run the
+        account is already in the target ring, so no transition occurs, so a
+        transition-keyed implementation does nothing, errors on nothing, and
+        the assertion holds. The two implementations are indistinguishable by
+        this test and only one of them survives a failed first run, which is
+        the whole point of the property.
+      - >-
+        The criterion also retains the ordering clause the previous round asked
+        to have replaced: "asserts the same use case CLEARS the flow and
+        merchant of that account's own rows BEFORE RECOMPUTING". The end state
+        is identical under either order, because the recompute cannot touch
+        those rows once the account has left the pot
+        (src/modules/ledger/application/interpret-window.ts:35 through :39 and
+        src/modules/ledger/adapters/ledger-repository.ts:171), so no
+        observation of the system can falsify it.
+    concrete-edit: >-
+      Replace criterion 17.1's second application test with: "A second
+      application test asserts the clear is keyed on the account's CURRENT ring
+      rather than on the transition, by running the correction over an account
+      that is ALREADY in the target ring and whose rows still carry a stale
+      flow, the state a first run that died between its writes would leave, and
+      asserting the run clears them and converges. Running the use case twice
+      over the same account and finding the second run quiet does not satisfy
+      this, because a transition-keyed clear passes it too by doing nothing."
+      Replace the ordering clause "CLEARS the flow and merchant of that
+      account's own rows before recomputing" with "CLEARS the flow and merchant
+      of that account's own rows in the same unit of work as the declaration
+      and the recompute", since the relative order of the clear and the
+      recompute is unobservable and the property that matters is measured by
+      the tests P17-001 adds.
+    analysis: >-
+      The right property was written into the step and the test that would
+      witness it was written to observe the wrong thing. Running a converging
+      operation twice from a good state proves nothing about convergence; the
+      test has to start from the BAD state, which is exactly the state a
+      half-completed correction leaves and exactly what P17-001's failure
+      injection produces. The two edits are worth applying together, since one
+      manufactures the state the other needs.
+  - id: P17-006
+    severity: medium
+    evidence:
+      - >-
+        A standing-sweep instance. The seed harness is reported as one of the
+        plan-writer's two seam fixes, with M3-P14 seeding inline in its own
+        spec and M3-P17 promoting it. The plan does not say that.
+      - >-
+        M3-P17 step 2 describes it as new work with a new justification: "BUILD
+        the seed harness that constructs a pre-phase household, since M3-P14
+        removed both screens such a household was made on", and its
+        files-to-touch marks the file "test/e2e/seed-pre-phase-household.ts
+        (new, the seed harness)".
+      - >-
+        M3-P14 needs the same construction twice, in its verification-first
+        step ("CAPTURE, over a household seeded the way a pre-phase household
+        actually is") and in criterion 14.12 ("A test builds a household the
+        pre-phase way, with Account rows written directly"), and its
+        files-to-touch names no helper, only test/e2e/accounts.spec.ts and
+        test/fixtures/.
+      - >-
+        So the artifact describes two independent constructions of "a pre-phase
+        household", one inline in M3-P14 and one new in M3-P17, and the two
+        phases' guarantees rest on them separately: 14.12's deploy-alone
+        promise on the first, 17.2's migration promise on the second. Two
+        harnesses drift, and the shape of the seeded household is the thing
+        both guarantees are measured against.
+    concrete-edit: >-
+      Add to M3-P14's files-to-touch: "test/e2e/seed-pre-phase-household.ts
+      (new, the seeding helper criterion 14.12 and the verification-first step
+      both use)", and add to criterion 14.12, after "A test builds a household
+      the pre-phase way": "through a committed helper at
+      test/e2e/seed-pre-phase-household.ts rather than inline, because the
+      verification-first step builds the same household to capture the
+      MonthFigures baseline this criterion asserts against and the two must be
+      the same household." Replace M3-P17 step 2's first clause with "EXTEND
+      the seed harness M3-P14 committed at
+      test/e2e/seed-pre-phase-household.ts, which already writes Account rows
+      directly with a label, a bank, a ring and a stored number left as the
+      import path wrote it; this phase adds to it whatever criterion 17.2's
+      cases need and changes no existing behaviour, so the household M3-P14's
+      guarantee was measured over and the household this phase migrates are one
+      construction." Change its files-to-touch entry from "(new, the seed
+      harness)" to "(extended)".
+    analysis: >-
+      The intended fix is right and it is the third sweep instance only because
+      it never reached the document. It is the mildest of the three, and it is
+      worth recording at the same weight as the others because of what the
+      other two show: a split multiplies the number of places a precondition
+      can live, and the only defence is to name the file rather than to
+      describe the state.
+  - id: P17-007
+    severity: medium
+    evidence:
+      - >-
+        M3-P17. Criterion 17.3 requires "npm run gate:privacy" to exit 0 and
+        that "every account-shaped identifier the phase adds is in
+        test/fixtures/allowed-identifiers.txt with a note saying how it was
+        invented".
+      - >-
+        The phase certainly adds them. Step 2's harness writes "a stored number
+        left exactly as the import path wrote it, including at least one
+        non-canonical rendering, at least one number that fails the validity
+        test, and at least one CARD account with no number", and criterion
+        17.2 repeats it. A non-canonical rendering and a validity-failing
+        number are both new account-shaped values that do not exist in the tree.
+      - >-
+        files-to-touch carries neither test/fixtures/ nor
+        test/fixtures/allowed-identifiers.txt. Checked against the phase's
+        thirteen entries at plan lines 8585 through 8599: the closest are
+        test/e2e/seed-pre-phase-household.ts and test/e2e/accounts.spec.ts.
+      - >-
+        The consequence is not a lint warning. scripts/gate-privacy.sh scans
+        every tracked file and reports any account shape that is not on the
+        list, so the phase's own gate criterion fails on its own harness, and
+        the file it must edit to pass is one it is not listed as touching.
+    concrete-edit: >-
+      Add test/fixtures/allowed-identifiers.txt and test/fixtures/ to M3-P17's
+      files-to-touch. Add to criterion 17.3: "and every account-shaped value the
+      seed harness introduces, the non-canonical rendering, the number that
+      fails the validity test and any counterparty they carry, is added to
+      test/fixtures/allowed-identifiers.txt with a written provenance note in
+      the same commit, because scripts/gate-privacy.sh scans the whole tree and
+      a harness carrying an unlisted shape fails the gate rather than a test."
+    analysis: >-
+      A file list that lost the one entry the phase's own gate criterion
+      requires it to edit. It is mechanical and it is the second time in two
+      rounds that a files-to-touch entry has gone missing off the end of a list
+      whose prose is correct, which suggests the two are being revised
+      separately.
+  - id: P17-009
+    severity: high
+    evidence:
+      - >-
+        M3-P17, and the other half of finding P14-001. Criterion 17.2's
+        duplicate check is scoped to numbers a household TYPES: "a typed row
+        whose CANONICAL form equals the canonical form of an account the
+        household already holds is refused with a named error ... rather than
+        creating a second Account for one real account".
+      - >-
+        Hazard H17.4 scopes it the same way: "A pre-existing household RE-TYPES
+        its own account number canonically, the stored row holds a spaced
+        rendering, the unique index does not fire, and one real account becomes
+        two rows whose rings may disagree."
+      - >-
+        The duplicate does not need anyone to type. It is produced by the
+        import path itself: the delimited parse stores an account cell verbatim
+        and the Belfius PDF template compacts it
+        (belfius-current-account-template.ts:90), while
+        src/modules/accounts/adapters/account-repository.ts:56 through :58
+        matches the stored string exactly, so importing one real account
+        through both paths has created two Account rows since long before this
+        work started.
+      - >-
+        Neither phase detects or repairs a pair that already exists. M3-P14
+        refuses the import if finding P14-001's edit is taken, which stops the
+        harm and does not remove it. M3-P17 refuses new typed duplicates and
+        says nothing about the pair the household is already holding, so the
+        household ends the second phase still holding one account as two rows,
+        with no path to merge them, and the ring of whichever row wins still
+        deciding what its statements mean.
+      - >-
+        This is the population the split exists to serve, and it is the one
+        state in that population that neither phase's criteria construct.
+    concrete-edit: >-
+      Add to M3-P17's criterion 17.2, after the typed-duplicate clause: "AND A
+      DUPLICATE THAT ALREADY EXISTS IS FOUND AND REPAIRED, because the import
+      path can create one with nobody typing anything: the delimited parse
+      stores an account cell verbatim
+      (src/modules/import/domain/parse-statement.ts:114 through :123) while the
+      Belfius template compacts it
+      (belfius-current-account-template.ts:90) and the lookup at
+      src/modules/accounts/adapters/account-repository.ts:56 through :58
+      matches stored strings exactly, so one real account imported through both
+      paths is two rows today. Over a household seeded with such a pair, the
+      accounts route NAMES the pair to the household as one account held twice
+      and offers to merge them into the row the household chooses, moving the
+      other row's transactions onto it and deleting the emptied row, in one
+      unit of work followed by the published recompute; an application test
+      asserts the merge moves every transaction, leaves no Account row without
+      transactions behind it, writes no raw transaction column other than the
+      account reference, and that the resulting month figures equal those of a
+      household that only ever held one row. A phase that only refuses NEW
+      duplicates fails this criterion." Restate hazard H17.4 to cover both
+      origins, typed and imported, and add H17.8: "The two phases ship, the
+      household stops being able to create a duplicate, and the duplicate it
+      was already holding is never named, so one real account stays two rows
+      whose rings decide differently what its statements mean", addressed-by
+      criterion 17.2.
+    analysis: >-
+      The plan reasoned about the duplicate from the direction it was
+      discovered, which was a household typing a number at a new screen, and
+      assigned it to the phase that owns typing. Its actual origin is two
+      writers of one column that have disagreed since before this work started,
+      which puts an instance of it in the owner's data now rather than
+      hypothetically. Naming it is cheap and the merge is real work, and I would
+      rather see the merge scoped and costed here than see both phases ship
+      with the pre-existing pair unmentioned, because after P14-001's refusal
+      lands the household will meet it as a blocked import with no remedy.
+  - id: P17-008
+    severity: low
+    evidence:
+      - >-
+        M3-P17. Criterion 17.2 opens with two sentences carried over from the
+        single-phase form and not re-read against the split.
+      - >-
+        "Every criterion above begins at sign-up" is false here: the criteria
+        above it are 17.1, which begins at setup with a mis-answered ring, and
+        nothing else. The sentence described the eleven criteria that preceded
+        the old 14.13.
+      - >-
+        "rings answered on an import screen THIS PHASE DELETES" names the wrong
+        phase. M3-P14's criterion 14.5 deletes the ring control; M3-P17 deletes
+        nothing of the sort, and the next sentence of the same criterion gets
+        it right, "the ring control being deleted by M3-P14 criterion 14.5".
+      - >-
+        The sentences matter more than their size because they carry the REASON
+        the seed harness exists, and a reason attached to the wrong phase is
+        the kind of thing a later reader repairs by changing the mechanism
+        rather than the sentence.
+    concrete-edit: >-
+      Replace criterion 17.2's opening two sentences with: "M3-P14's criteria
+      begin at sign-up; this one begins where the owner actually is, with
+      accounts created one file at a time through
+      src/modules/import/application/confirm-import.ts:96, rings answered on
+      the import screen M3-P14 deleted under its criterion 14.5, and rows
+      already ingested."
+    analysis: >-
+      The only low, and it is split residue of the same family as findings
+      P14-007 and P14-008: prose that was correct in the single-phase form and
+      was moved rather than rewritten. Three instances in one split is enough
+      to suggest a mechanical pass over every sentence containing "this phase"
+      in both phases before dispatch.
