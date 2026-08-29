@@ -1,34 +1,21 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { assessDestructiveDbTarget, type DbGuardEnv } from "./guard";
+import { resolveDbEnv } from "./resolve-env";
 
 // CLI wrapper around the destructive-database interlock; see guard.ts for
-// the contract. Run by db:reset and db:migrate BEFORE any prisma command.
+// the contract. Run by db:reset, db:migrate and rederive:merchant-rules
+// BEFORE the command each of those guards.
 //
-// Environment resolution mirrors Prisma's: a variable set in the shell wins,
-// and only a variable missing from the shell falls back to the .env file at
-// the package root. Reading process.env directly here is deliberate (the
-// one exemption beside src/platform/config.ts): the guard must see exactly
-// the environment the prisma command after it will see.
+// Environment resolution mirrors Prisma's and lives in ONE place: see
+// resolve-env.ts for the reading and for why a shell variable carrying the
+// empty string falls back. EXTRACTED IN M3-P12's SECOND FIX ROUND under
+// criterion 12.23, which requires an interlock to resolve the way the
+// command it guards resolves; two copies that agree today is not that. This
+// file guards Prisma CLI commands, so it imports resolveDbEnv, the CLI's
+// shell-first, dot-env-fallback reading; the re-derivation routine guards a
+// client construction, so it imports resolveClientDbUrl from the SAME module
+// (finding CR3-M3P12-03, pinned by finding R2-M0P14-03).
 
-const dotEnvFallback = (name: string): string | undefined => {
-  const dotEnvPath = join(process.cwd(), ".env");
-  if (!existsSync(dotEnvPath)) {
-    return undefined;
-  }
-  for (const line of readFileSync(dotEnvPath, "utf-8").split("\n")) {
-    const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
-    if (match && match[1] === name && match[2] !== undefined) {
-      return match[2].replace(/^["']|["']$/g, "");
-    }
-  }
-  return undefined;
-};
-
-const resolved = (name: string): string | undefined =>
-  process.env[name] !== undefined && process.env[name] !== ""
-    ? process.env[name]
-    : dotEnvFallback(name);
+const resolved = resolveDbEnv;
 
 const env: DbGuardEnv = {
   DATABASE_URL: resolved("DATABASE_URL"),

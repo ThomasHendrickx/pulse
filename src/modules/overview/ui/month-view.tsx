@@ -2,6 +2,7 @@ import Link from "next/link";
 import { LinkPending } from "@/platform/ui/link-pending";
 import { getLocale, getTranslations } from "next-intl/server";
 import { Amount, formatCents } from "@/platform/ui/amount";
+import { maskAccountNumbers } from "@/platform/ui/mask-account-number";
 import { maskCardNumbers } from "@/platform/ui/mask-card-number";
 import type { HouseholdContext } from "@/platform/tenancy";
 import { getMonthOverview, nextMonth as nextMonthOf } from "../application";
@@ -96,7 +97,18 @@ const GroupLabel = async ({ group }: { readonly group: OverviewGroup }) => {
       }
       data-testid="group-label"
     >
-      {group.kind === "cash" ? t("cash") : maskCardNumbers(group.label)}
+      {/* A GROUP THAT CANNOT BE NAMED STILL NEEDS A NAME ON THE SCREEN (fix
+          round three, finding CR3-M3P12-06, THE FIFTH CONSUMER). Its label is
+          the normalised counterparty text, and for rows that carry none there
+          is none, so the month view rendered a row with an amount, a row
+          count and nothing to read. The merchant review was repaired in fix
+          round two and this, its sibling screen, was not. Same copy, same
+          reason, so the two screens say the same thing about the same rows. */}
+      {group.kind === "cash"
+        ? t("cash")
+        : group.unnameableReason === undefined
+          ? maskAccountNumbers(maskCardNumbers(group.label))
+          : t("unnameableLabel")}
     </span>
   );
 };
@@ -232,7 +244,17 @@ const ReservesBlock = async ({
             className="month-row"
             data-testid="reserve-group"
           >
-            <span className="month-group-label">{group.label}</span>
+            {/* THE RESERVES LABEL IS THE DECLARED ACCOUNT LABEL OR A
+                COUNTERPARTY ACCOUNT NUMBER, and it used to be rendered bare
+                on the second reading (M3-P13 fix round, finding
+                HZ-M3P13-02). The reserves read falls back to the account
+                number when the household has declared no label, so this
+                span printed an account in full. The mask leaves a typed
+                label untouched, because a label is not an account number,
+                so nothing is lost by applying it here. */}
+            <span className="month-group-label">
+              {maskAccountNumbers(group.label)}
+            </span>
             <span
               className="month-row-amount pulse-amount"
               data-testid="group-total"
@@ -256,6 +278,69 @@ const ReservesBlock = async ({
   );
 };
 
+// THE HELD BLOCKS (M3-P18, DR-0030): one card per savings account holding
+// rows in the viewed month. HEADED BY THE LABEL the household typed for
+// that account, never by its number (the same requirement M3-P14's
+// criterion 14.1 makes of the reserve-group rows above, for the same
+// reason), with the note saying plainly that these rows are held and
+// counted in no total. NOTHING IS SUMMED, per account or in total
+// (decision D-60): a transfer into savings is already counted on the
+// current-account side and rendered in the reserves block, so any total
+// here would show the same euro under two headings on one screen. Even a
+// clearly labelled partial total is refused for that reason.
+const HeldBlocks = async ({
+  overview,
+}: {
+  readonly overview: MonthOverview;
+}) => {
+  const t = await getTranslations();
+  if (overview.held.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      {overview.held.map((account) => (
+        <section
+          key={account.accountId}
+          className="month-card"
+          data-testid="held-rows"
+        >
+          <header className="month-card-header">
+            <div>
+              <h2>{account.label}</h2>
+              <div className="pulse-eyebrow">{t("heldOnSavings")}</div>
+            </div>
+          </header>
+          <p className="month-note" data-testid="held-note">
+            {t("heldNote")}
+          </p>
+          <ul className="month-list">
+            {account.rows.map((row) => (
+              <li key={row.id} className="month-row" data-testid="held-row">
+                {/* The counterparty text is UNNORMALISED source text, so it
+                    is masked here exactly as the gap rows below mask theirs
+                    (M3-P6, decision D-12). */}
+                <span className="month-group-label">
+                  {maskAccountNumbers(maskCardNumbers(row.text))}
+                </span>
+                <span
+                  className="month-row-amount pulse-amount"
+                  data-testid="held-amount"
+                >
+                  <Amount cents={row.amountCents} />
+                </span>
+                <span className="month-row-count month-row-meta">
+                  {row.bookingDate}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </>
+  );
+};
+
 const GapList = ({
   rows,
   testId,
@@ -274,7 +359,7 @@ const GapList = ({
             strip pattern has run on it: masked here for the same reason the
             group label above is (M3-P6 fix round 1, finding CR-M3P6-03). */}
         <span className={tone === "flag" ? "month-group-unresolved" : undefined}>
-          {maskCardNumbers(row.text)}
+          {maskAccountNumbers(maskCardNumbers(row.text))}
         </span>
         <span className="month-row-meta">
           {row.bookingDate}
@@ -556,6 +641,11 @@ export const MonthScreen = async ({
         <SpendBlock overview={overview} locale={locale} />
         <ReservesBlock overview={overview} />
       </div>
+
+      {/* Held rows come AFTER the counted blocks: they are part of no
+          total, and rendering them below the reconciliation story keeps
+          the counted month readable first (M3-P18, DR-0030). */}
+      <HeldBlocks overview={overview} />
     </div>
   );
 };

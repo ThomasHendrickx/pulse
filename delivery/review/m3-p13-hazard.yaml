@@ -1,0 +1,748 @@
+# Clean-room review, HAZARD contract, phase M3-P13 (identity on the review
+# screen), ROUND ONE of at most two.
+#
+# Head reviewed: 936fcda on claude/m3-p13-identity-on-review, in an isolated
+# worktree at /home/user/wt-m3p13-haz on branch claude/m3-p13-rev-haz. 936fcda
+# adds only work history; the code under review is the code at 2af30f1.
+#
+# HEADER DISCLOSURES. Claude-family verdict, review-contract hazard, framing
+# destructive-paths. The implementation session was not read. The criteria
+# lane's verdict was not read at all, at any point. The work
+# history delivery/work-history/m3-p13.yaml was read AFTER every probe below
+# had produced its result, because clause R-087 requires its claims checked;
+# nothing below rests on it and every claim carries a command this lane ran.
+#
+# CONTRACT ORDER. Started from the eight declared hazard classes (H13.1
+# through H13.8) and the dispatch attack directions, listed below with what
+# each one produced. The acceptance criteria were walked LAST.
+#
+# DATABASE SAFETY. The ambient DATABASE_URL in this container points at a
+# deployed pooler for a DIFFERENT project of the owner's. Every command below
+# that could reach a database ran with DATABASE_URL, DIRECT_URL and
+# E2E_DATABASE_URL each exported SEPARATELY to a loopback string on
+# 127.0.0.1 port 54322 (the local Supabase stack), and a node one-liner parsed
+# all three and printed 127.0.0.1 before the command ran. prisma migrate reset
+# was never run and its consent variable was never set. The dev and
+# production servers this gate starts ALSO need NEXT_PUBLIC_SUPABASE_URL and
+# NEXT_PUBLIC_SUPABASE_ANON_KEY, which no .env file in this tree supplies and
+# which are absent from the ambient environment; both were pinned to the local
+# stack (http://127.0.0.1:54321 and the local demo anon key read from
+# node_modules/.bin/supabase status), the Supabase host was parsed and
+# asserted to be 127.0.0.1 alongside the three database variables, and the
+# ambient PULSE_DATABASE_URL and PULSE_DIRECT_URL, which point elsewhere, were
+# unset in the gate's own shell. One measured trap,
+# recorded for the next lane: writing the three in ONE export statement
+# (export A=x B=$A) leaves the second empty, because bash expands every word
+# before it assigns any of them, and prisma then failed loudly with P1012
+# rather than silently reaching the ambient target.
+#
+# NO DATA. No account number, no counterparty, no amount and no date from any
+# real document appears in this file. Probe values were invented or were the
+# published ISO 13616 specification example; they lived only in a scratchpad
+# outside the repository and none is quoted here, so nothing in this document
+# adds an identifier shape to the tree.
+#
+# EDIT-NOTHING. No source file, test or document of the head was changed. The
+# only file this branch adds is this one.
+#
+# CONTAINER NOTE, since the slow gate depends on it: the root filesystem was
+# at 91 percent (3.4 GB free) on arrival and fell to 1.4 GB while preparing
+# the gate, which is the exact condition playwright.config.ts records as the
+# cause of moving renderer crashes. docker image prune reclaimed nothing (all
+# four images are the running Supabase stack). What reclaimed 20 GB was
+# deleting node_modules, .next and .next-prod from the twenty-two worktrees
+# under /home/user last touched on 2026-08-27; no tracked file in any of them
+# was touched. The slow gate then ran with 22 GB free.
+#
+# ==========================================================
+# ATTACK DIRECTIONS, and what each produced
+# ==========================================================
+# A1. Rendered markup, compact and spaced shapes. PROBED, two ways: the
+#     phase's own sweep (test/e2e/identity-on-review.spec.ts:145 through
+#     :180) over document.body markup, run by this lane in the slow gate, and
+#     a direct call sweep of the mask over nineteen renderings of one account
+#     (probe P1 below). The ASCII shapes are clean; the others are not, which
+#     is HZ-M3P13-01.
+# A2. data-group-key on the row. PROBED: it carries the UNMASKED namespaced
+#     identity key (src/modules/merchants/ui/merchant-review.tsx:123 and
+#     :185, both maskCardNumbers only). Excluded by the implementer as
+#     necessary; refuted, HZ-M3P13-05.
+# A3. Hidden form fields. PROBED: input[name=counterpartyText] carries the
+#     unmasked key (src/modules/merchants/ui/merchant-row.tsx:346 through
+#     :350). Excluded as necessary; the exclusion HOLDS, see A14.
+# A4. Serialised RSC payload. PROBED: the identity key reaches the client
+#     leaf MerchantGroupRow as the naming.identityKey prop and the groupKey
+#     prop, so it is serialised into the flight payload. Excluded as
+#     necessary; the exclusion holds for as long as A3 does, since the same
+#     value must reach the same form.
+# A5. aria, title and data attributes. PROBED: the row carries data-testid,
+#     data-group-key, data-unconfirmed and aria-describedby only; the two
+#     aria ids come from React useId and the describedby targets are
+#     generated ids. No title attribute is set anywhere on this screen. Only
+#     data-group-key carries the account (A2).
+# A6. Page JSON payloads and anything logged. PROBED: grep for console.,
+#     logger and process.stdout over src/ returns eleven call sites, none in
+#     src/modules/merchants and none carrying a counterparty value (all are
+#     platform config, db client and pdf extractor diagnostics). No JSON
+#     endpoint serves this screen.
+# A7. Does the mask identify by the pinned registry rather than by shape?
+#     PROBED: yes. src/platform/ui/mask-account-number.ts:80 reads
+#     ACCOUNT_NUMBER_LENGTH_BY_COUNTRY from src/platform/account-number.ts
+#     and consumes exactly the registry length; a run of digits alone is
+#     never masked, and a token that continues into another alphanumeric is
+#     refused (mask-account-number.ts:106 through :108).
+# A8. Malformed, empty, wrong-length and unknown-country values. PROBED:
+#     empty and wrong-length pass through unchanged, which is correct because
+#     neither is an account number. An UNKNOWN COUNTRY also passes through
+#     unchanged, in full, which is HZ-M3P13-04.
+# A9. Can two accounts mask to one displayed string, and does anything treat
+#     them as one? PROBED: yes to the first, no to the second. The rendered
+#     form is the first four characters, a fixed four-asterisk run whatever
+#     the country length, and the last four, so two accounts sharing country,
+#     check digits and last four characters render identically. Nothing
+#     downstream reads the rendered label as identity: the group key
+#     (merchant-review.ts, the groups map), the row identity data-group-key
+#     and the naming subject are all the UNMASKED key, and the client's claim
+#     record matches on direction plus the TYPED name rendered through the
+#     card mask (naming-claims.ts claimNaming), never on the account label.
+#     Recorded, not raised as a finding: two accounts still render one string
+#     to the READER, but they remain two rows with their own counts and
+#     totals and their own form, so no naming can reach the wrong one.
+# A10. Can the mask be inverted or narrowed? PROBED by computation (P2
+#     below). From the masked label ALONE, for the Belgian length, 1,030,927
+#     of 100,000,000 candidate accounts are consistent, and the two check
+#     digits the mask shows contribute NOTHING: the national check already
+#     forces the ISO 7064 check to the same value, so the sweep that adds the
+#     ISO test removes one further candidate out of a million. So the label
+#     is not invertible. Combined with what the naming form submits the
+#     question is moot rather than answered: the hidden field carries the
+#     whole account, so anyone holding the DOM holds the account. That is the
+#     excluded channel A3, not a new one, and it is why hazard H13.2 is
+#     written about what is RENDERED.
+# A11. Interaction with M3-P11's optimistic naming. PROBED: clean.
+#     recordNaming and forgetNaming key on the (rowKey, direction) pair and
+#     claimNaming matches on direction plus the typed name; the account label
+#     is never a claim key, and the predicted label is the reader's own typed
+#     string. The three detail slots are rendered by the SERVER component and
+#     passed as ReactNode children, so the leaf still imports no catalogue
+#     and no domain type.
+# A12. Interaction with M3-P18's held rows. PROBED: clean. A held row is a
+#     fact row on a SAVINGS-ring account, keyed on the ring alone with no
+#     flow condition (src/modules/overview/domain/month-projection.ts:309
+#     through :317), and the review read filters flow in (INCOME, SPEND)
+#     (src/modules/merchants/adapters/merchant-repository.ts:323 through
+#     :327), so no held row reaches a group, a reach count or a transaction
+#     line on this screen.
+# A13. Can the new e2e spec go vacuous? PROBED: no, on both shapes this
+#     project has been bitten by. PROJECT MEMBERSHIP: the file matches the
+#     chromium project, whose testIgnore is /prod-smoke|optimistic-naming/,
+#     so it is collected and it ran in this lane's own slow gate. LOCATOR
+#     AFTER A PRESS: the naming journey re-finds the row through a different
+#     locator (testid merchant-group filtered by the typed name) rather than
+#     through a key that changes when the group resolves. And the sweep
+#     itself carries two anti-vacuity assertions of its own: the masked form
+#     must still be present in the clone, and the untouched page source must
+#     still contain the account, so neither an empty clone nor an over-broad
+#     removal can pass it.
+# A14. Is each excluded channel necessary? PROBED, one at a time.
+#     THE HIDDEN FIELD: necessary as the design stands. The submitted value
+#     IS the rule subject, M3-P12 refuses a subject that is not the canonical
+#     namespaced key (the non-canonical-counterparty refusal), and the action
+#     takes the subject from the form rather than re-deriving it. Replacing
+#     it with an opaque handle is a change to the M3-P12 contract and to the
+#     action, not a fix inside this phase. NOT REFUTED.
+#     THE RSC PAYLOAD: necessary for as long as the hidden field is, because
+#     the field is rendered by a client component and its value must cross as
+#     a prop. NOT REFUTED.
+#     data-group-key: REFUTED. See HZ-M3P13-05.
+# A15. A fourth channel the implementer missed. PROBED: FOUND, and it is a
+#     rendered one. See HZ-M3P13-02.
+# A16. Is the review read scoped to the month the reach sentence names?
+#     PROBED: it is NOT. See HZ-M3P13-03.
+#
+# ==========================================================
+# LIVE PROBES, in the order run
+# ==========================================================
+# P1. THE SEPARATOR SWEEP. A scratchpad script called maskAccountNumbers
+#     directly on nineteen renderings of ONE account of a known country
+#     (the published ISO 13616 example, never committed), through
+#     `npx tsx` in the worktree. Result: the compact form, the ASCII-spaced
+#     form, an ASCII-spaced form inside a transfer descriptor, a lowercase
+#     form and a double-ASCII-spaced form are all masked. The forms
+#     separated by the no-break space U+00A0, the narrow no-break space
+#     U+202F, the thin space U+2002, a tab, a newline, a full stop or a
+#     hyphen are ALL RETURNED UNCHANGED, in full. So is a form whose country
+#     code and check digits are separated by a space, and one glued to a
+#     preceding word with no boundary. HZ-M3P13-01.
+# P2. THE NARROWING COMPUTATION. A scratchpad node script swept all
+#     100,000,000 completions of the eight characters the mask hides for the
+#     Belgian length and counted those consistent with the national check
+#     and with ISO 7064: 1,030,927, which is 100,000,000 divided by 97 to
+#     within one. The second constraint is therefore not independent of the
+#     first and the displayed check digits leak nothing. Recorded under A10.
+# P3. THE CALL-SITE SWEEP. grep for maskCardNumbers and maskAccountNumbers
+#     over src/ returned every rendering that touches counterparty text.
+#     Three surfaces render it with the CARD mask only:
+#     src/modules/overview/ui/month-view.tsx:109, :313 and :351, and
+#     src/modules/import/ui/profile-confirmation.tsx:143 and :148. The first
+#     is disclosed in the new mask's own residue note; the second is not, and
+#     :143 is a dedicated counterparty-account column. HZ-M3P13-02.
+# P4. THE SCOPE READ. src/modules/merchants/adapters/merchant-repository.ts
+#     listCountedTransactions filters on householdId and flow only, with no
+#     period bound; src/modules/merchants/application/merchant-review.ts
+#     passes no period; src/app/(app)/merchants/page.tsx passes no month.
+#     The reach copy added by this phase says "of this month" in all three
+#     catalogues. HZ-M3P13-03.
+#
+# ==========================================================
+# GATES, RUN BY THIS LANE AT 936fcda, Node 26.8.1 from /opt/nvm, every
+# database variable pinned and asserted to 127.0.0.1 first
+# ==========================================================
+#   npm run typecheck       EXIT=0
+#   npm run lint            EXIT=0
+#   npm test                EXIT=0   55 files, 719 tests, 0 skipped
+#   npm run gate:privacy    EXIT=0   "gate:privacy clean"
+#   npm run gate:decisions  EXIT=0   "gate:decisions clean"
+#   npm run gate:tokens     EXIT=0
+#   npx prisma migrate deploy EXIT=0 "No pending migrations to apply."
+#   npm run test:e2e        EXIT=0   122 discovered, 121 passed, 0 failed,
+#                           1 skipped by the touch project's own condition,
+#                           31.5 minutes, four projects, against the local
+#                           Supabase stack. This reproduces the branch's own
+#                           claim exactly (main is green at 118; this branch
+#                           claims 121, and this lane measured 121).
+#
+# SCHEMA VALIDATION, command and exit recorded as dispatched:
+#   npx --prefix /home/user/pulse-fleet tiphys validate --type verdict \
+#     --context delivery delivery/review/m3-p13-hazard.yaml
+#   EXIT=1, with exactly four lines, all of them cross-document rather than
+#   schema: verdict-criteria-complete, verdict-deviations-judged and
+#   verdict-hazard-classes-addressed each report that delivery/plan.yaml and
+#   delivery/work-history.yaml do not exist (this repository keeps them at
+#   delivery/plan/pulse-v02.yaml and delivery/work-history/m3-p13.yaml), and
+#   dual-review-decorrelation reports that delivery/ declares no delivery
+#   mode. The document itself raises no schema error. BASELINE ESTABLISHED
+#   RATHER THAN ASSUMED: the accepted precedent on main,
+#   delivery/review/m3-p18-hazard.yaml, produces the SAME four lines and the
+#   same exit 1 under the same command, run by this lane.
+#
+kind: verdict
+phase: M3-P13
+verdict: FIX-ROUND-NEEDED
+produced-by: claude
+framing: destructive-paths
+review-contract: hazard
+
+findings:
+  - id: HZ-M3P13-01
+    severity: high
+    analysis: >-
+      THE DISPLAY MASK FAILS OPEN ON EVERY SEPARATOR EXCEPT THE ASCII SPACE,
+      and one of the separators it does not tolerate is the exact character
+      this tree has already witnessed inside stored account renderings. The
+      scan in src/platform/ui/mask-account-number.ts consumes registry-length
+      alphanumerics and tolerates a separator only where the character equals
+      a plain ASCII space (mask-account-number.ts:97). Anything else breaks
+      the run, the run is then short of the registry length, accountSpanAt
+      returns undefined and the whole token is copied through UNMASKED. This
+      is the failure direction that costs: an unrecognised rendering is
+      PRINTED rather than redacted. Measured in probe P1 for the no-break
+      space U+00A0, the narrow no-break space U+202F, the thin space U+2002,
+      a tab, a newline, a full stop and a hyphen, both bare and inside a
+      transfer descriptor. The same file imports canonicalAccountNumber from
+      src/platform/account-number.ts, whose whitespace removal is the
+      JavaScript \s class and therefore DOES strip all three of those spaces,
+      so the phase's own file holds two different answers to what separates
+      an account number. That U+00A0 in particular is not hypothetical here
+      is recorded in this repository by M3-P18's own hazard finding
+      HZ-M3P18-01, quoted at src/platform/account-number.ts: U+00A0 is the
+      single byte 0xA0 in Windows-1252, "the encoding common for Belgian
+      exports", and stored account renderings carrying it were witnessed
+      live. Windows-1252 is one of exactly two encodings the importer
+      accepts (src/modules/import/domain/source-profile.ts:11, decoded at
+      src/modules/import/domain/delimited-text.ts:11), so a statement whose
+      descriptor groups the account with that byte lands in the database
+      carrying U+00A0 and renders in full on the screen this phase built.
+      WHERE THE EXPOSURE ACTUALLY SITS, checked rather than assumed: the
+      account-basis group's LABEL is safe, because accountAlias comes off the
+      identity key and an account-basis key exists only for a value that
+      passed isTrustedCounterpartyAccount, which is isValidAccountNumber, so
+      that alias is always compact and always of a registry country
+      (src/modules/merchants/domain/counterparty-identity.ts:221 and :244).
+      The exposure is on the two surfaces carrying RAW source text: the
+      descriptor-derived label of any other unresolved group, and the
+      description on every transaction line this phase added. Those are
+      exactly the surfaces the phase reports as having printed a counterparty
+      account in full before this change, so for a statement whose descriptors
+      group the account with anything other than an ASCII space, the defect
+      this phase was built to close is not closed.
+      The phase's own slow-gate sweep cannot see it: it compares against a
+      spaced form built with ASCII spaces
+      (test/e2e/identity-on-review.spec.ts:106) and reads the visible text
+      through innerText, so an account spaced with U+00A0 satisfies both
+      not-toContain assertions while being fully legible on the screen.
+    evidence:
+      - "probe P1: npx tsx on a scratchpad script calling maskAccountNumbers over nineteen renderings of one account, run in /home/user/wt-m3p13-haz; MASKED=false and the input returned verbatim for the U+00A0, U+202F, U+2002, tab, newline, full stop and hyphen separated forms, and for the same forms embedded in a transfer descriptor"
+      - "src/platform/ui/mask-account-number.ts:97, the separator test, character === \" \" and nothing else"
+      - "src/platform/account-number.ts, canonicalAccountNumber, value.replace(/\\s/g, \"\"), which strips all three no-break spaces, and the M3-P18 HZ-M3P18-01 note above it recording U+00A0 as byte 0xA0 in Windows-1252 in this project's own exports"
+      - "src/modules/import/domain/source-profile.ts:11 (windows-1252 is an accepted encoding) and src/modules/import/domain/delimited-text.ts:11 (TextDecoder over it)"
+      - "test/e2e/identity-on-review.spec.ts:106, the spaced form the sweep compares against, built with ASCII spaces by /(.{4})(?=.)/g"
+    concrete-fix: >-
+      In src/platform/ui/mask-account-number.ts, replace the separator test
+      at line 97 with a class rather than a literal space, and make it the
+      SAME class the canonical form removes plus the two punctuation
+      separators the sibling card mask already tolerates: accept a character
+      matching /[\s.-]/ between run characters, still refusing one at the
+      start or the end of the run. Then pin it in
+      test/domain/identity-on-review.test.ts with a table over the
+      separators, U+00A0, U+202F, U+2002, tab, full stop and hyphen at
+      minimum, asserting the masked form comes back for each, and add the
+      U+00A0-spaced rendering to the e2e sweep's not-toContain list so the
+      slow gate can see this class of leak at all.
+  - id: HZ-M3P13-02
+    severity: high
+    analysis: >-
+      A FOURTH RENDERING SURFACE CARRIES THE COUNTERPARTY ACCOUNT IN FULL,
+      AND THE PHASE'S OWN RESIDUE STATEMENT SAYS THERE IS ONLY ONE. The new
+      mask's header enumerates what it does not reach and names exactly one
+      remaining surface: the month view's gap rows and held rows. Probe P3
+      finds a second. src/modules/import/ui/profile-confirmation.tsx renders
+      the import preview table, and its counterparty column prints
+      row.counterpartyName ?? row.counterpartyIban through maskCardNumbers
+      only (:143 through :146), with the descriptor column beside it doing
+      the same (:148). So for every previewed row that carries no
+      counterparty name, that column is the counterparty ACCOUNT, printed
+      whole, in a table cell of its own. This is not a leak this phase
+      introduced, but it is a leak the phase's own enumeration denies, and
+      the denial is what makes it a finding against this work: a later reader
+      of mask-account-number.ts is told the month view is the residue, and
+      will not look here. It matters more than the disclosed one, on the
+      screen's own evidence: the comment directly above the leaking cell
+      (profile-confirmation.tsx:136 through :141) records that this is "the
+      screen the owner photographed", which is hazard H13.2's scenario
+      stated as something that already happened once on this exact page.
+      Every import passes through it.
+    evidence:
+      - "probe P3: grep -rn \"maskCardNumbers|maskAccountNumbers\" src/ in /home/user/wt-m3p13-haz, five call sites outside the merchants review, none of them the account mask"
+      - "src/modules/import/ui/profile-confirmation.tsx:143 through :146, the counterparty column, maskCardNumbers over counterpartyName ?? counterpartyIban"
+      - "src/modules/import/ui/profile-confirmation.tsx:148, the descriptor column, maskCardNumbers only"
+      - "src/modules/import/ui/profile-confirmation.tsx:136 through :141, the comment recording that this screen was photographed by the owner"
+      - "src/platform/ui/mask-account-number.ts, the WHERE THIS IS APPLIED note, whose RESIDUE paragraph names the month view and nothing else"
+      - "src/modules/overview/ui/month-view.tsx:109, :313 and :351, the disclosed surface, for comparison"
+    concrete-fix: >-
+      Wrap the two import-preview cells in maskAccountNumbers exactly as
+      src/modules/merchants/ui/merchant-review.tsx:84 already does:
+      maskAccountNumbers(maskCardNumbers(...)) at
+      profile-confirmation.tsx:143 and :148. It is a display-layer change
+      only, the previewed row and the stored rawLine stay untouched, and the
+      mask is already in src/platform/ui where that module may import from.
+      Then correct the RESIDUE paragraph in
+      src/platform/ui/mask-account-number.ts to enumerate what actually
+      remains after that change (the three month-view call sites), and pin
+      the enumeration with a fast-gate test of the same shape as the existing
+      "the account mask is not called anywhere in the merchants domain or
+      application" test, but inverted: every call site that renders
+      unnormalised counterparty text must call the account mask.
+  - id: HZ-M3P13-03
+    severity: high
+    analysis: >-
+      THE REACH SENTENCE PROMISES A MONTH THE SCREEN DOES NOT HAVE. This
+      phase's own reason for existing is decision D-36's question, what does
+      a naming match, and the answer it puts on screen is a sentence
+      containing the words "of this month" in all three languages. The screen
+      has no month. Probe P4: listCountedTransactions filters on householdId
+      and flow only, with no period bound of any kind; listMerchantReview
+      passes no period; the route at src/app/(app)/merchants/page.tsx reads
+      only the status query parameter and passes no month. So group.count,
+      which the reach line renders, is the count of that counterparty's
+      counted transactions across EVERY month the household has ever
+      imported. With one statement imported the two readings coincide, which
+      is why the fixture-driven spec asserting the number 3 passes; with two
+      statements imported the sentence is simply false, and the product
+      plainly supports two, since the month view compares one closed month
+      against the one before it. This is declared hazard H13.6 landing: not
+      that the number is a guess, it is an honest count, but that the screen
+      makes a promise about a scope it does not carry, and the reader's
+      trust in the number is exactly what the phase set out to buy. It is
+      also the more dangerous direction of the two: the naming actually
+      applies to every matching row in every month, so a reader told "this
+      month" understates what they are about to do.
+    evidence:
+      - "probe P4: src/modules/merchants/adapters/merchant-repository.ts:320 through :330, prisma.transaction.findMany with where { householdId, flow: { in: [INCOME, SPEND] } } and no date bound"
+      - "src/modules/merchants/application/merchant-review.ts, listMerchantReview takes a HouseholdContext and nothing else"
+      - "src/app/(app)/merchants/page.tsx, the route reads only searchParams.status"
+      - "messages/en.json groupReach, messages/nl.json groupReach, messages/fr.json groupReach, each carrying the month claim"
+      - "test/e2e/identity-on-review.spec.ts asserts the English, Dutch and French sentences verbatim against a household with exactly one imported statement, so the gate cannot separate the two readings"
+    concrete-fix: >-
+      Change the copy rather than the read, because scoping the review to a
+      month is a projection change this phase's plan does not carry and
+      criterion 13.5's totals depend on the read as it is. Replace the three
+      groupReach values with a sentence that states what is true of the
+      screen: the naming applies to this many transactions now in the review,
+      with no month word, keeping the ICU plural. Then add a fast-gate
+      assertion over the three catalogues that the reach string contains no
+      month token, so the claim cannot come back, and record in
+      src/modules/merchants/application/merchant-review.ts that this read is
+      household-wide and that any copy written against it must not name a
+      period.
+  - id: HZ-M3P13-04
+    severity: low
+    analysis: >-
+      AN ACCOUNT WHOSE COUNTRY THE REGISTRY DOES NOT CARRY IS PRINTED IN
+      FULL. accountSpanAt returns undefined when
+      ACCOUNT_NUMBER_LENGTH_BY_COUNTRY has no entry for the two leading
+      letters (mask-account-number.ts:80 through :85), and the caller then
+      copies the token through unchanged. For the VALIDITY test in
+      src/platform/account-number.ts that behaviour is right, because
+      refusing an unknown country is what DR-0028 asks for and the cost of
+      being wrong is a refused registration the owner can see. Here the cost
+      of being wrong is the opposite sign: the value is shown. The registry
+      is currently complete against ISO 13616 as published, so the exposure
+      today is narrow, a country that joins the registry before this table is
+      updated or a SEPA-adjacent code that never joins it; probe P1
+      confirmed two such codes pass through whole. It is recorded low rather
+      than dismissed because the failure is silent, and because the file's
+      own stated rule, identify by grammar and never by shape, admits a fix
+      that does not weaken it.
+    evidence:
+      - "src/platform/ui/mask-account-number.ts:80 through :85, the registry lookup returning undefined and the caller leaving the token untouched"
+      - "probe P1: two country codes absent from the registry returned MASKED=false with the value verbatim"
+      - "src/platform/account-number.ts, the pinned table and its note that a country code the table does not carry is refused"
+    concrete-fix: >-
+      In accountSpanAt, when the registry has no length for the country,
+      fall back to a GRAMMAR test rather than to silence: consume the maximal
+      run of alphanumerics allowing the separator class from HZ-M3P13-01,
+      and mask it only if its length is between the registry's smallest and
+      largest entries AND it satisfies ISO 7064 mod-97. That is a checksum,
+      not a shape, so it cannot fire on a mandate reference, a card number
+      or a phone number, and it leaves the pinned table as the fast path.
+      Pin it in test/domain/identity-on-review.test.ts with an
+      unregistered-country value that passes mod-97 (masked) and one that
+      does not (untouched).
+  - id: HZ-M3P13-05
+    severity: low
+    analysis: >-
+      data-group-key IS EXCLUDED AS NECESSARY AND IT IS NOT NECESSARY. The
+      work history's resolution of criterion 13.2 names three channels that
+      must carry the unmasked account, and gives for this one that two
+      accounts sharing country, check digits and last four characters would
+      mask to one string and collide. That argument refutes MASKING the key,
+      which is right and is hazard H13.1, but it does not establish that the
+      RAW key must be the attribute's value. Every consumer of the attribute
+      needs stability and uniqueness and nothing else: criterion 11.3's
+      sweep compares the sequence to itself
+      (test/e2e/busy-state.spec.ts:561 through :581), the optimistic-naming
+      spec captures a key and uses it to re-find its own row, the client's
+      claim record uses it only as half of an equality
+      (src/modules/merchants/ui/naming-claims.ts isSameRow), and the new
+      spec's use of it as a locator is that spec's own choice. A stable
+      one-way digest of the key satisfies all four and collides no more often
+      than the key does. The practical gain is small while the hidden field
+      stands one element away, which is why this is low rather than medium;
+      what it buys is that the account stops being in the markup of rows the
+      naming form is not on, and that the excluded set shrinks from three to
+      two, which is the direction a screen carrying an account should move.
+    evidence:
+      - "src/modules/merchants/ui/merchant-review.tsx:123 and :185, data-group-key set to maskCardNumbers(group.key), which leaves an account key untouched"
+      - "test/e2e/busy-state.spec.ts:561 through :581, the criterion 11.3 sequence read, which compares the sequence to itself"
+      - "src/modules/merchants/ui/naming-claims.ts, isSameRow, an equality on rowKey and direction"
+      - "delivery/work-history/m3-p13.yaml, the criterion 13.2 deviation, which asserts the collision argument for this channel"
+    concrete-fix: >-
+      Render data-group-key as a stable digest of group.key rather than the
+      key itself: a hex SHA-256 computed in the server component beside the
+      existing maskCardNumbers call, so the value stays constant across
+      renders of the same group, stays unique where the key is unique, and
+      carries no account. Update the two specs that read the attribute as a
+      value (test/e2e/identity-on-review.spec.ts, which addresses the group
+      by THREE_ROW_KEY, to address it by the same digest or by a testid), and
+      state at the attribute that its value is deliberately opaque so a later
+      phase does not helpfully restore the key.
+
+criteria:
+  - id: "13.1"
+    quote: >-
+      npm run test:e2e exits 0 with a spec that loads /merchants for a
+      household imported from test/fixtures/belfius-counterparty-identity.pdf
+      at a 390 by 844 viewport and asserts, by testid, that the group holding
+      3 transactions of one counterparty renders a count of 3 and a basis line
+      whose text is the catalogue string for the shared-account basis, and
+      that a descriptor-basis group renders the catalogue string for the
+      shared-description basis.
+    evidence:
+      - "test/e2e/identity-on-review.spec.ts:74 through :98: PHONE is 390 by 844, setViewportSize before the journey, group-count asserted to \"3 rows\" and group-basis to the shared-account catalogue string by testid, and a descriptor-basis group counted greater than zero"
+      - "the assertions are on the rendered page through Playwright locators, never on the catalogue"
+      - "slow gate run by this lane: EXIT=0, and the owning test passed by name, test/e2e/identity-on-review.spec.ts, criteria 13.1 arm included"
+    met: true
+  - id: "13.2"
+    quote: >-
+      THE ACCOUNT NEVER LEAVES THE DISPLAY LAYER UNMASKED AND NEVER ENTERS THE
+      KEY. For an account-basis group whose rows carry no counterparty name,
+      the rendered HTML of /merchants contains the masked form and does NOT
+      contain the unmasked account anywhere, asserted over the full page
+      source; and the hidden field the naming form submits carries the
+      unmasked namespaced identity key, asserted on the same page. A test
+      asserts the same masking function is not called anywhere in
+      src/modules/merchants/domain or src/modules/merchants/application.
+    evidence:
+      - "the self-contradiction in this criterion was settled by the orchestrator before this lane ran and is not re-litigated here; what is judged is the resolution"
+      - "the never-enters-the-key half is MET and independently probed: src/modules/merchants/domain/merchant-review.ts sets accountAlias from identityRemainder(key) unmasked, and test/domain/identity-on-review.test.ts:162 through :185 walks src/modules/merchants/domain and src/modules/merchants/application asserting no call to either mask"
+      - "the rendered half is MET for the ASCII shapes: test/e2e/identity-on-review.spec.ts:145 through :180 sweeps document.body markup with scripts, the hidden subject and data-group-key removed, and asserts the masked form IS present and the untouched source DOES carry the account, so neither arm is vacuous"
+      - "it is NOT met for other renderings of the same account: probe P1, finding HZ-M3P13-01"
+      - "of the three excluded channels, two are necessary and one is not: attack directions A14 and finding HZ-M3P13-05"
+    met: false
+  - id: "13.3"
+    quote: >-
+      THE ROWS BEHIND A GROUP ARE VISIBLE. The same spec opens the group
+      holding 3 transactions and asserts 3 rows render, each with a distinct
+      description, a distinct booking date and its own amount, and that the
+      three amounts sum to the group total shown on the group row, compared in
+      integer cents.
+    evidence:
+      - "test/e2e/identity-on-review.spec.ts:182 through :199: the disclosure summary is clicked, group-row asserted to count 3, dates and descriptions asserted distinct through Set size, and the amounts summed through centsOf and compared to the group total in integer cents"
+      - "src/modules/merchants/ui/merchant-review.tsx:66 through :96, a native details disclosure with no new client component and no new server action, fed from the same read (src/modules/merchants/domain/merchant-review.ts, entry.rows)"
+      - "slow gate run by this lane: EXIT=0, and the owning test passed by name, test/e2e/identity-on-review.spec.ts, criteria 13.3 arm included"
+    met: true
+  - id: "13.4"
+    quote: >-
+      THE REACH IS STATED BEFORE THE NAMING. The naming form for that group
+      renders the catalogue string carrying the number 3, and the form for a
+      group of 1 renders the same string carrying 1, asserted on the rendered
+      page in English and, with the locale switched, in Dutch and in French.
+    evidence:
+      - "test/e2e/identity-on-review.spec.ts:202 through :265: the three-row reach, the one-row reach chosen by rendered count rather than by fixture text, the reach asserted to sit inside form.merchant-name-form, and both sentences re-asserted under the nl and fr locale cookies"
+      - "src/modules/merchants/ui/merchant-review.tsx:44 through :55 renders the count the row itself carries, so the number cannot disagree with the count beside it (hazard H13.6's first half)"
+      - "the criterion as written is met on the page; the SENTENCE it renders is untrue of any household with more than one imported month, which is finding HZ-M3P13-03, and is recorded against this criterion rather than passed over because the reach line is the whole purpose of the criterion"
+    met: false
+  - id: "13.5"
+    quote: >-
+      A NAMING STILL MOVES NO TOTAL. The existing hazard H3.2 journey stays
+      green: the spec reads both direction totals before and after a naming and
+      asserts they are byte-identical, so this screen change cannot have moved
+      a cent between income and spend.
+    evidence:
+      - "test/e2e/identity-on-review.spec.ts:268 through :301: income-total and spend-total textContent captured before the naming and compared with toBe after it, plus the named group asserted to carry the count it promised and to carry no basis line"
+      - "the pre-existing H3.2 journey in test/e2e/merchants.spec.ts was not modified by this branch (git diff --stat origin/main...HEAD lists no change to it)"
+      - "slow gate run by this lane: EXIT=0, and the owning test passed by name, test/e2e/identity-on-review.spec.ts, criteria 13.5 arm included"
+    met: true
+  - id: "13.6"
+    quote: >-
+      TOKENS ONLY. grep over the files this phase touches finds no literal hex
+      colour, no rgb() or hsl() literal, no px or rem font size and no px or
+      rem spacing value outside styles/tokens.css, and any token added is
+      declared in styles/tokens.css in the same commit.
+    evidence:
+      - "npm run gate:tokens EXIT=0 in this worktree"
+      - "git diff origin/main...HEAD -- src/app/globals.css: every added declaration uses var(--text-sm), var(--color-ink-muted), var(--color-ink-subtle), var(--leading-normal), var(--space-2), var(--space-3), var(--focus-ring) or var(--radius-md); the only bare values are flex-basis 100%, margin 0, flex 1, min-width 0 and list-style none, none of which is a colour, a font size or a spacing value"
+      - "styles/tokens.css is unchanged on this branch, consistent with no new token being needed"
+    met: true
+  - id: "13.7"
+    quote: >-
+      THREE LANGUAGES, NO ORPHANS. Every key added to messages/en.json exists
+      in messages/nl.json and messages/fr.json, asserted by the existing copy
+      gate, and no user-facing string is hardcoded in a component, asserted by
+      grep over src/modules/merchants/ui/merchant-review.tsx.
+    evidence:
+      - "git diff origin/main...HEAD -- messages/: the same four keys, groupBasisAccount, groupBasisDescriptor, groupReach and groupRowsShow, added to all three catalogues, with groupReach carrying the ICU plural in each"
+      - "npm test EXIT=0, 719 tests, which includes the copy gate over the three catalogues"
+      - "src/modules/merchants/ui/merchant-review.tsx renders every one of the three new pieces through getTranslations, and the client leaf receives already-resolved strings as props"
+    met: true
+  - id: "13.8"
+    quote: >-
+      THE STANDING GATE. npm run typecheck, npm run lint, npm test and npm run
+      gate:privacy all exit 0, and npm run test:e2e exits 0, each with its
+      captured output in the phase work history.
+    evidence:
+      - "run by this lane at 936fcda: typecheck EXIT=0, lint EXIT=0, npm test EXIT=0 with 55 files and 719 tests, gate:privacy EXIT=0 \"gate:privacy clean\", gate:decisions EXIT=0, gate:tokens EXIT=0"
+      - "npm run test:e2e run by this lane at 936fcda: EXIT=0, 121 passed, 0 failed, 1 skipped, 31.5 minutes"
+      - "delivery/work-history/m3-p13.yaml gate-evidence records the same six fast gates green and the slow gate at 122 discovered, 121 passed, 1 skipped"
+    met: true
+  - id: "13.9"
+    quote: >-
+      NOTHING OF THE OWNER'S DATA REACHES THE REPOSITORY. Every string,
+      identifier and amount used in the new spec and in any new fixture is
+      invented, listed in test/fixtures/allowed-identifiers.txt where the
+      privacy gate requires it, and the phase work history quotes no
+      descriptor, counterparty, place, amount or date from either real
+      document. The branch's commit messages carry no data of any kind.
+    evidence:
+      - "npm run gate:privacy EXIT=0 in this worktree, which decides commit messages on the branch, the identifier allow list and tracked PDF streams"
+      - "test/e2e/identity-on-review.spec.ts takes both account values from test/e2e/identity-fixture-facts.ts rather than writing them, and derives the spaced and masked forms; the one-row group is selected by its rendered COUNT rather than by any descriptor"
+      - "the twenty-four commit messages on this branch, read in full through git log --format=%s%n%b origin/main..936fcda, carry no amount, no counterparty, no date and no account"
+      - "this gate cannot see a merchant name or a place sitting inside a file, per CLAUDE.md non-negotiable 8; the spec and fixture-facts files were read by this lane and carry no value that reads as drawn from a real document"
+    met: true
+
+deviations-judged:
+  - deviation: >-
+      Criterion 13.2, "the rendered HTML of /merchants contains the masked form
+      and does NOT contain the unmasked account anywhere, asserted over the
+      full page source; and the hidden field the naming form submits carries
+      the unmasked namespaced identity key, asserted on the same page."
+    serves-plan-intent: true
+    reasoning: >-
+      The contradiction is real and was settled by the orchestrator before
+      this lane ran; what this lane judged is the RESOLUTION, and the
+      resolution serves the intent. Reporting the contradiction rather than
+      quietly asserting the weaker half is the behaviour the plan wants, and
+      the asserted form is genuinely strong: the sweep is over rendered
+      markup rather than raw source, it removes exactly three named channels,
+      and it carries two anti-vacuity assertions so it cannot pass on an
+      empty clone. Two of the three exclusions are necessary and this lane
+      could not refute them (attack direction A14); the third is not, which
+      is recorded as HZ-M3P13-05 against the WORK rather than against the
+      resolution. What the resolution does not reach, and what keeps
+      criterion 13.2 unmet, is a different question from the contradiction:
+      the mask itself fails open on renderings the sweep never tries
+      (HZ-M3P13-01).
+  - deviation: >-
+      files-to-touch, which declares test/domain/ and test/e2e/ but neither
+      test/application/ nor test/property/, and which declares
+      src/modules/merchants/application/merchant-review.ts but not that
+      module's index.ts.
+    serves-plan-intent: true
+    reasoning: >-
+      Checked rather than accepted. The four files are exactly the ones a
+      REQUIRED new field on CountedTransaction forces: three construct that
+      type in a test and one re-exports ReviewGroupRow through the module's
+      published interface, which is the only route the UI may import through
+      under pulse-domain section 9. The diff of all four was read; none
+      changes behaviour, and the alternative, an optional bookingDate, would
+      have let a row reach the screen dated by nothing, which is the defect
+      the repository change at merchant-repository.ts:332 exists to fix.
+      Reporting it rather than amending a declaration read from the merge
+      base is the right handling.
+  - deviation: >-
+      Step 5, "Let the transactions behind a group be seen".
+    serves-plan-intent: true
+    reasoning: >-
+      Applying the disclosure to resolved groups as well as unresolved ones
+      goes beyond what criterion 13.3 exercises, and it serves the intent
+      rather than stretching it: DR-0027's accepted cost is that two purposes
+      paid to one counterparty land in one group, and that cost does not stop
+      applying once the group has been named. The extra surface costs no new
+      client component and no new server action, and it was checked for the
+      one thing it could have cost: the rows on a resolved group go through
+      the same two masks as the rows on an unresolved one
+      (src/modules/merchants/ui/merchant-review.tsx:84 is reached from both
+      branches), so it opens no channel the unresolved case does not already
+      have.
+
+hazard-classes-addressed:
+  - class-id: H13.1
+    probed: >-
+      Followed the account from the identity key to every place it is
+      consumed. Read src/modules/merchants/domain/merchant-review.ts at the
+      map that builds accountAlias from identityRemainder(key), confirmed the
+      alias is never written back into key or counterpartyText, and confirmed
+      the hidden field and the stored rule subject carry the unmasked
+      namespaced key. Then ran the fast gate, whose
+      test/domain/identity-on-review.test.ts:162 walks every file under
+      src/modules/merchants/domain and src/modules/merchants/application and
+      fails on any call to either mask; npm test EXIT=0, 719 tests. Also
+      checked the direction the class does not name: that the DISPLAY mask
+      cannot reach a key by accident, which the same walk decides.
+    cleared-because: >-
+      No masked value can reach a key, a rule subject or a dedup input. The
+      mask is called at four rendering sites only, all in
+      src/modules/merchants/ui/merchant-review.tsx, and the walking test
+      makes a fifth call from the domain or application layer red rather than
+      silent.
+  - class-id: H13.2
+    probed: >-
+      Attacked every channel by which the unmasked account can reach the
+      client, listed as attack directions A1 through A6 and A15 above:
+      rendered markup in both the compact and the spaced shape, the row's
+      data-group-key, the hidden field, the serialised flight payload, aria,
+      title and data attributes, page JSON, and anything logged. Then
+      attacked the MASK itself rather than its call sites, with a
+      nineteen-case direct-call sweep over one account rendered with every
+      separator a bank statement plausibly uses (probe P1), and swept every
+      other rendering of counterparty text in the tree for a surface the
+      phase's own residue note misses (probe P3).
+    finding: HZ-M3P13-01
+  - class-id: H13.3
+    probed: >-
+      Opened the disclosure in the slow gate and read what it renders:
+      test/e2e/identity-on-review.spec.ts asserts three rows, three DISTINCT
+      descriptions, three distinct booking dates and three amounts summing to
+      the group total in integer cents. Checked the source of each line
+      against the domain (src/modules/merchants/domain/merchant-review.ts,
+      ReviewGroupRow carries id, bookingDate, amountCents and description and
+      adds no interpretation), and checked that the amounts render through
+      the mandatory Amount component rather than a local format. Also checked
+      the direction the class does not name: that the disclosure is a native
+      details element, so it opens with no JavaScript.
+    cleared-because: >-
+      A group holding two purposes now reads as dated, described, separately
+      priced lines the owner can point at, which is the form DR-0027's
+      accepted cost has to take to stop reading as a mistake, and the sum
+      identity is asserted in cents so the lines cannot silently disagree
+      with the total above them.
+  - class-id: H13.4
+    probed: >-
+      Read the three catalogue diffs side by side and confirmed the same four
+      keys exist in en, nl and fr with the ICU plural present in each; read
+      src/modules/merchants/ui/merchant-review.tsx for a hardcoded
+      user-facing string in the three new pieces and found every one resolved
+      through getTranslations in the server component; confirmed the client
+      leaf receives resolved strings as props and imports no catalogue. Ran
+      the fast gate, which carries the copy gate, EXIT=0.
+    cleared-because: >-
+      A Dutch or French reader meets their own language on the basis line,
+      the reach line and the disclosure summary; nothing on the new surface
+      is an English literal in a component.
+  - class-id: H13.5
+    probed: >-
+      Ran the slow gate and with it the criterion 13.5 journey, which reads
+      income-total and spend-total before a naming made on the account-basis
+      group and compares them after it. Separately checked that the change
+      cannot move a figure by construction: the phase adds no arithmetic, the
+      group total and the direction totals come from the same fold as before
+      (src/modules/merchants/domain/merchant-review.ts, entry.total
+      untouched), and the transaction lines are read from the rows the fold
+      already held rather than from a second query.
+    cleared-because: >-
+      The totals are byte-identical across a naming in the run this lane made,
+      and no code path added by this phase performs arithmetic on an amount.
+  - class-id: H13.6
+    probed: >-
+      Checked the two halves separately. First, whether the number is the
+      group's own row count rather than a prediction: it is, the reach line
+      renders group.count, the same field the count beside it renders, so the
+      two cannot disagree. Second, whether the SENTENCE the number sits in is
+      true, which is what a promise the screen cannot keep would look like
+      here: traced the read backwards from the reach line to
+      listCountedTransactions and to the route (probe P4).
+    finding: HZ-M3P13-03
+  - class-id: H13.7
+    probed: >-
+      Established the merge state rather than trusting the record: read the
+      diff of src/modules/merchants/ui/merchant-row.tsx against origin/main
+      (27 lines, all additive: the three detail slots and their rendering
+      points) and confirmed no line of M3-P8's or M3-P11's row was removed or
+      rewritten. Checked the two existing specs this branch touches
+      (test/e2e/accounts.spec.ts and test/e2e/pressed-and-disabled.spec.ts):
+      both are STRENGTHENED rather than relaxed, the first replacing a
+      substring match on a normalised descriptor with an exact match on the
+      counterparty name, the second raising the pinned control count from 21
+      to 22 with the new disclosure summary added to the enumeration and the
+      literal deliberately not replaced by ENUMERATION.length. Confirmed the
+      phone project still reaches merchants.spec.ts and
+      pressed-and-disabled.spec.ts, and ran the whole suite.
+    cleared-because: >-
+      Nothing of the rebuilt phone row is reverted, the new pieces sit inside
+      it through slots rather than beside it, and the control sweep was
+      amended rather than narrowed, which is what criterion 9.2(a) requires
+      when a sweep and its enumeration disagree.
+  - class-id: H13.8
+    probed: >-
+      Read every added line of src/app/globals.css directly rather than
+      trusting the gate, and confirmed each colour, font size, spacing, focus
+      ring and radius is a var() reference; confirmed styles/tokens.css is
+      unchanged on this branch, which is consistent with no new token being
+      needed rather than with one being skipped. Ran npm run gate:tokens,
+      EXIT=0.
+    cleared-because: >-
+      No literal colour, font size or spacing value was added; the only bare
+      values in the new rules are layout primitives (flex-basis, flex,
+      min-width, margin zero, list-style none) which the non-negotiable does
+      not reach.
