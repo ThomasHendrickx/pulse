@@ -3,6 +3,7 @@ import { LinkPending } from "@/platform/ui/link-pending";
 import { getTranslations } from "next-intl/server";
 import { Amount } from "@/platform/ui/amount";
 import { SubmitButton } from "@/platform/ui/submit-button";
+import { maskAccountNumbers } from "@/platform/ui/mask-account-number";
 import { maskCardNumbers } from "@/platform/ui/mask-card-number";
 import type { ParsedRow } from "../domain/parse-statement";
 import { confirmImportAction, previewImportAction } from "./actions";
@@ -139,13 +140,28 @@ export const ProfileConfirmation = async ({
                       whole. The parsed row itself is untouched, the stored
                       rawLine keeps the number the bank printed, and nothing
                       here reaches a key, a rule subject or a fact. */}
+                  {/* THE ACCOUNT MASK JOINS THE CARD MASK HERE (M3-P13 fix
+                      round, findings HZ-M3P13-02 and CR-M3P13-03). This cell
+                      falls back to the counterparty ACCOUNT when the row
+                      carries no name, so it is a dedicated account column,
+                      and the card mask beside it does not touch an account
+                      number: every previewed transfer printed the
+                      counterparty's account whole, on the screen the comment
+                      above records the owner photographing. The descriptor
+                      cell has the same defect for a transfer line, whose
+                      descriptor carries the account exactly as the statement
+                      prints it. Display only, exactly as the card mask is:
+                      the parsed row, the stored rawLine and every key are
+                      untouched. */}
                   <td>
-                    {maskCardNumbers(
-                      row.counterpartyName ?? row.counterpartyIban ?? "",
+                    {maskAccountNumbers(
+                      maskCardNumbers(
+                        row.counterpartyName ?? row.counterpartyIban ?? "",
+                      ),
                     )}
                   </td>
                   <td className="preview-descriptor">
-                    {maskCardNumbers(row.description)}
+                    {maskAccountNumbers(maskCardNumbers(row.description))}
                   </td>
                   <td className="preview-amount-cell">
                     <Amount cents={row.amountCents} />
