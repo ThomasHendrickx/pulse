@@ -1,0 +1,312 @@
+# Clean-room CRITERIA review of M3-P4 at be990d3 (phase base 03625ee).
+# Reviewer did not see the implementation session. Read-only: typecheck, lint,
+# npm test, gate:privacy, gate:decisions and gate:tokens were run inside the
+# review tree at be990d3; Playwright was NOT run (orchestrator logs read as
+# evidence instead). The node_modules symlink added to run them was removed.
+#
+# WHAT THIS CONTRACT DID NOT REACH. "All criteria met" below is one input and
+# not completeness. Not reached: (1) the slow gate itself, which is taken from
+# the orchestrator's log and not re-executed; (2) import screens outside the
+# PDF journey the criterion names (the CSV format question, the unregistered
+# account branch, the import failure screen), which no phone measurement
+# covers, see CR-M3P4-01; (3) the red half of criterion 4.1, which exists only
+# as prose, see CR-M3P4-03; (4) the hazard classes H4.1 to H4.3 as a starting
+# question, which is the sibling hazard lane's contract.
+kind: verdict
+phase: M3-P4
+head: be990d3d99d6f676084eec2fbdb7a6b6e1c4ae4f
+produced-by: claude
+framing: criteria-contract
+review-contract: criteria
+verdict: FIX-ROUND-NEEDED
+
+findings:
+  - id: CR-M3P4-01
+    severity: medium
+    evidence:
+      - >-
+        src/app/globals.css:408 and src/app/globals.css:409, added by this
+        phase, state in the present tense "every control on the import
+        screens clears the phone tap target, the file picker included". The
+        rule it sits in (src/app/globals.css:398 to :411) reaches only
+        .import-field input and .import-field select.
+      - >-
+        The confirmation screen this phase declares mobile-first renders
+        controls that no rule sizes: the format-question branch's disclosure
+        summary, styled at src/app/globals.css:496 with a small font and no
+        min-height or padding; the class-less "preview again" SubmitButton at
+        src/modules/import/ui/profile-confirmation.tsx:203 (submit-button.tsx
+        forwards a className only when one is given,
+        src/platform/ui/submit-button.tsx:142, and globals.css carries no
+        element-level button min-height); the inline setup link on the
+        unregistered-account branch at
+        src/modules/import/ui/profile-confirmation.tsx:95; and the setup link
+        in the status line at src/modules/import/ui/import-status-line.tsx:34.
+        Each matches the INTERACTIVE selector of test/e2e/phone-helpers.ts:14.
+      - >-
+        None of these branches is measured at the phone width: the only
+        phone measurement of the import screens is
+        test/e2e/mobile-import.spec.ts:95, whose journey takes the recognised
+        PDF path (no format question) and a registered account (no
+        unregistered note). The unregistered branch is exercised only for
+        visibility (test/e2e/accounts.spec.ts:432) and the format-question
+        disclosure only for press and busy state
+        (test/e2e/pressed-and-disabled.spec.ts:1454,
+        test/e2e/busy-state.spec.ts:657), never for size.
+      - >-
+        The same false universal is in the commit message of 787055b ("Every
+        control on the import, declaration, confirmation and result screens
+        now clears the 44px phone tap target"), which cannot be corrected, so
+        the comment is the place where the record has to be put right.
+    concrete-fix: >-
+      Either (a) make the claim true: give .spec-editor summary, the preview
+      SubmitButton (a class such as .import-secondary) and the two inline
+      setup links a --tap-target-min box, and extend
+      test/e2e/mobile-import.spec.ts with a CSV upload that reaches the
+      format question and an upload of a statement whose account is not
+      registered, each run through measureScreen; or (b) narrow the comment
+      at src/app/globals.css:408 to what the rule does ("the file picker and
+      the text fields clear the phone tap target") and record the
+      unmeasured branches as owed work in the work history. Shipped
+      behaviour at risk: on a phone, the owner who uploads a statement for
+      an unregistered account, or a CSV with an unknown layout, meets
+      controls under 44px on the screen this phase declares phone-first, and
+      the comment tells the next reader that cannot happen.
+    analysis: >-
+      Criterion 4.1 is met as written, because it names the synthetic-PDF
+      journey's screens and those are measured and green. This is a clause
+      R-087 finding against a present-tense comment the phase added, and it
+      is ranked medium rather than low because the comment is false in the
+      direction that hides a phone usability defect on exactly the surface
+      the phase intent names ("the import and confirmation screens
+      redesigned mobile-first"), and because the one realistic phone case
+      among them (a PDF for an account not yet registered) is the owner's
+      primary import path. The heights of the unmeasured controls were not
+      measured by this review (Playwright was out of bounds); that they fall
+      under 44px is inferred from the CSS cited, which gives them no box
+      sizing at all.
+
+  - id: CR-M3P4-02
+    severity: low
+    evidence:
+      - >-
+        src/app/globals.css:1590 still says "Four of them are bare
+        anchors" and explains that the import result screen's two anchors
+        needed no display rule because they are flex items of .import-screen.
+        Since this phase those two anchors carry className="import-next"
+        (src/modules/import/ui/import-result.tsx:37 and :70), whose rule at
+        src/app/globals.css:424 declares display: inline-flex, so at
+        be990d3 only two of the swept anchors are bare, and the enumeration
+        at test/e2e/pressed-and-disabled.spec.ts:113 and :114 now keys them
+        a.import-next.
+      - >-
+        Pre-existing and not this phase's doing, recorded so the same edit
+        fixes it: the same comment cites .import-screen at
+        src/app/globals.css:299, but .import-screen is declared at
+        src/app/globals.css:339 at both 03625ee and be990d3.
+    concrete-fix: >-
+      Amend the comment above the element-level a rule
+      (comment from src/app/globals.css:1580, rule at src/app/globals.css:1606) to say that two of the swept
+      anchors are bare (the auth cross-links), that the import result
+      screen's two links carry .import-next with their own inline-flex box
+      since M3-P4, and correct the .import-screen citation to line 339.
+
+  - id: CR-M3P4-03
+    severity: low
+    evidence:
+      - >-
+        delivery/work-history/m3-p4.yaml:101 to :107 claims the new spec
+        fails on the pre-phase styles (two offenders on the import screen,
+        a third on the result screens) and concludes "the spec fails on the
+        pre-phase tree and is not vacuous". No command, exit code or
+        captured output backs it, the claims section
+        (delivery/work-history/m3-p4.yaml:200 to :227) carries no entry for
+        it, and no witness record exists in the tree (find over the tree for
+        witness-records*.json outside node_modules printed nothing).
+      - >-
+        The sentence is also internally loose: the offenders it lists were
+        captured in two different states (the import screen before any
+        style change, the result screen "after the form fix"), so no single
+        run of the pre-phase tree is described, although the 787055b commit
+        message restates it as "Before the style change it failed on three
+        undersized controls".
+    concrete-fix: >-
+      Record the red run as evidence: check out 03625ee's src/app/globals.css
+      and src/modules/import/ui/import-result.tsx under the new spec, run
+      npx playwright test test/e2e/mobile-import.spec.ts --project
+      chromium-phone, and add the captured exit code and the soft-assertion
+      offender list to the work history as a claims entry (or a red-witness
+      record), replacing the prose sentence.
+    analysis: >-
+      The claim is plausible from the diff (the base rule for the file input
+      and the result links carried no min-height), so this is not a finding
+      that the spec is vacuous. It is a finding that the only red half of
+      criterion 4.1 in the record is an assertion a reader cannot resolve,
+      which the clean-room checklist probe test-red-without-the-fix names as
+      not accepted.
+
+criteria:
+  - id: "4.1"
+    quote: >-
+      STRENGTHENED in the M0-P3 fix round (finding MPR-007). ... npm run
+      test:e2e exits 0 including the synthetic-PDF import journey run under
+      the phone project M3-P7 added, asserting as before that
+      document.documentElement.scrollWidth does not exceed the viewport
+      width on the import, declaration, result and month screens; and at 390
+      by 844 those same screens satisfy the three standing phone
+      measurements M3-P7 introduced: every element matching "a, button,
+      input:not([type=hidden]), select, [role=button]" inside main with a
+      non-zero bounding box has a bounding height of at least 44 CSS pixels;
+      the sorted collection of every data-testid paired with its trimmed
+      textContent is deeply equal at 1280 by 720 and at 390 by 844, with
+      every collected element non-zero in size at the phone width; and the
+      clipping sweep of criterion 7.7 returns an empty offender list on both
+      axes. FALSIFIED BY one offender in any of the three, or by the journey
+      failing under the phone project.
+    evidence:
+      - >-
+        playwright.config.ts:129 adds mobile-import to the chromium-phone
+        project's testMatch (project declared at playwright.config.ts:104:
+        Pixel 5, isMobile, hasTouch, viewport 390 by 844 at
+        playwright.config.ts:109).
+      - >-
+        test/e2e/mobile-import.spec.ts:95 measures upload (:118),
+        declaration (:131), card result (:140), confirmation (:156), account
+        result (:163) and month (:171), each through measureScreen
+        (test/e2e/mobile-import.spec.ts:51 to :93), which asserts
+        scrollWidth of documentElement against its clientWidth (:54, helper
+        test/e2e/phone-helpers.ts:86 to :92), tapTargetOffenders over header
+        and main with the criterion's selector and 44px (:60, helper
+        test/e2e/phone-helpers.ts:12 to :59), the clipping sweep on both
+        axes (:63), and the sorted testid and trimmed-text pairs at 1280 by
+        720 against 390 by 844 (:69 and :72) plus the non-zero size check at
+        the phone width (:85). Soft assertions fail the test at its end.
+      - >-
+        The viewport guard at test/e2e/mobile-import.spec.ts:117 asserts
+        window.innerWidth is 390 on /import; under the phone project's
+        isMobile emulation that holds only if a meta viewport is honoured.
+      - >-
+        Slow gate evidence (orchestrator log e2e-full2.txt, not re-run by
+        this review): line 548 "[chromium-phone] test/e2e/mobile-import.spec.ts:95:5
+        the PDF import journey is usable at 390 by 844, screen by screen"
+        passed; line 250 the same test under [chromium] passed; totals at
+        lines 906 and 907 "1 skipped", "126 passed", and "wrapper exit 0"
+        on the last line. The log carries no head sha; its attribution to
+        fdedf35 rests on timing (log mtime 20:53, run 27.2 minutes, fdedf35
+        committed 20:26:38) and on the orchestrator's statement.
+      - >-
+        git diff --stat be990d3 fdedf35 prints only
+        delivery/work-history/m3-p4.yaml (253 lines), and be990d3's parent
+        is fdedf35, so the green run covers the reviewed code.
+      - >-
+        Red half: evidenced only by prose in the work history (see
+        CR-M3P4-03). The criterion's green half is fully evidenced.
+    met: true
+
+  - id: "4.2"
+    quote: >-
+      grep -n "desk activity" .claude/skills/pulse-frontend/SKILL.md exits 1
+      and the file contains a mobile-first import stance line citing the
+      v0.2 addendum.
+    evidence:
+      - >-
+        In the tree at be990d3: grep -n "desk activity"
+        .claude/skills/pulse-frontend/SKILL.md printed nothing, exit 1.
+      - >-
+        .claude/skills/pulse-frontend/SKILL.md:113 opens "Mobile first
+        (DR-0022). Every screen, the import included, is designed at 390 by
+        844 first" and names pulse-v0.2-pdf-addendum.md as "a phone stance".
+    met: true
+
+  - id: "4.3"
+    quote: >-
+      npm run typecheck && npm run lint && npm test exit 0, npm run test:e2e
+      exits 0 including the unmodified desktop golden journey, and grep -rE
+      "oklch\(|#[0-9a-fA-F]{3,8}" over src/ excluding the token and theme
+      files exits 1.
+    evidence:
+      - >-
+        Run by this review in the tree at be990d3: npm run typecheck exit 0;
+        npm run lint exit 0; npm test exit 0 with "Test Files 55 passed
+        (55)" and "Tests 758 passed (758)".
+      - >-
+        grep -rE "oklch\(|#[0-9a-fA-F]{3,8}" src/ exit 1 with no output,
+        over ALL of src/ (the token and theme files live in styles/, not
+        src/), which is stronger than the criterion asks.
+      - >-
+        git diff --stat 03625ee be990d3 -- test/e2e/golden-journey.spec.ts
+        prints nothing, so the golden journey is unmodified; e2e-full2.txt
+        line 234 "[chromium] test/e2e/golden-journey.spec.ts:91:5 golden
+        journey" passed, within the 126 passed, 1 skipped, wrapper exit 0
+        run (the skip is line 280, the touch test on [chromium], which is
+        not this phase's).
+      - >-
+        Also run, beyond the criterion: npm run gate:privacy exit 0
+        ("gate:privacy clean"), npm run gate:decisions exit 0
+        ("gate:decisions clean"), npm run gate:tokens exit 0.
+    met: true
+
+  - id: "4.4"
+    quote: >-
+      ADDED by the M0-P3 mobile round (decision D-15). At this phase's base,
+      grep -n "Desktop first" .claude/skills/pulse-frontend/SKILL.md exits 1,
+      grep -n "desk activity" over the same file exits 1, and the file
+      contains the literal string DR-0022; and git diff --name-only against
+      this phase's base over .claude/skills/pulse-frontend/SKILL.md prints
+      nothing, so this phase consumes the constraint M3-P7 wrote and does
+      not rewrite it a second time. FALSIFIED BY either grep exiting 0, by
+      DR-0022 being absent from the file, or by the diff printing the skill
+      path.
+    evidence:
+      - >-
+        git show 03625ee:.claude/skills/pulse-frontend/SKILL.md saved to a
+        scratch file: grep -n "Desktop first" exit 1; grep -n "desk activity"
+        exit 1; grep -c "DR-0022" prints 1.
+      - >-
+        git diff --name-only 03625ee be990d3 --
+        .claude/skills/pulse-frontend/SKILL.md printed nothing, exit 0.
+    met: true
+
+deviations-judged:
+  - deviation: "branch: claude/m3-p4-mobile-import"
+    serves-plan-intent: true
+    reasoning: >-
+      The branch name is a delivery vehicle, not part of the phase's intent.
+      The reviewed commits sit directly on 03625ee (git log shows 787055b,
+      fdedf35, be990d3 on top of it) and the phase content does not depend on
+      the name. No conflict declared in the plan (M3-P9 runs strictly before)
+      turns on the branch name.
+  - deviation: "files-to-touch (styles/tokens.css named; src/app/globals.css not named)"
+    serves-plan-intent: true
+    reasoning: >-
+      The import screens' rules are in src/app/globals.css, so step 2's
+      responsive layout could only land there. Every added value is a token
+      (var(--tap-target-min), var(--text-base)), --tap-target-min already
+      exists at styles/tokens.css:158, the colour grep over src/ exits 1, and
+      grep -c "@media" src/app/globals.css prints 1, so no new media
+      condition was introduced. This is the token-only styling step 2 asks
+      for.
+  - deviation: "files-to-touch (test/e2e/ (mobile import spec))"
+    serves-plan-intent: true
+    reasoning: >-
+      All three extra files are under the declared test/e2e/ directory. The
+      move of collectTestids and collectHiding into test/e2e/phone-helpers.ts
+      is, on reading the diff, the same bodies with export added, and it
+      makes the new spec measure with the month view's instruments, which is
+      what "the three standing phone measurements M3-P7 introduced" asks. The
+      enumeration change in test/e2e/pressed-and-disabled.spec.ts:113 and
+      :114 re-keys the same two controls and does not narrow the sweep; the
+      red run it answers (e2e-full.txt, four failures, all "the swept control
+      set is not the enumeration", the diff showing exactly the two re-keyed
+      links) confirms that reading.
+  - deviation: "files-to-touch (src/app/layout.tsx, messages/en.json, messages/nl.json, messages/fr.json)"
+    serves-plan-intent: true
+    reasoning: >-
+      Declared but untouched: git diff --name-only 03625ee be990d3 over
+      src/app/layout.tsx, messages and styles prints nothing. Step 2 asks the
+      viewport meta be "verified present or added"; no file under src/
+      declares one (the grep the work history quotes exits 1 here too), and
+      the phone project's innerWidth guard at
+      test/e2e/mobile-import.spec.ts:117 passing under isMobile is executable
+      evidence that a meta viewport is served. No user-facing copy was added,
+      so no catalogue entry was needed.

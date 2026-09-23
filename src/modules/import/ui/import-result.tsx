@@ -34,7 +34,7 @@ export const ImportResult = async ({
       <section className="import-screen" data-testid="import-failed">
         <h1>{t("importFailedTitle")}</h1>
         <p className="import-lead">{t(reasonKey)}</p>
-        <Link href="/import">
+        <Link href="/import" className="import-next">
           {t("backToImportLink")}
           <LinkPending />
         </Link>
@@ -67,7 +67,7 @@ export const ImportResult = async ({
           </dd>
         </div>
       </dl>
-      <Link href="/import">
+      <Link href="/import" className="import-next">
         {t("importAgainLink")}
         <LinkPending />
       </Link>

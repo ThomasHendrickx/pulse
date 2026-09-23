@@ -1,0 +1,466 @@
+# Clean-room HAZARD review of M3-P4, ROUND 2 (the last round this lane gets),
+# at dd6adff. Base 03625ee; fix round code at 593c2e5; dd6adff adds records
+# only (git show --stat dd6adff: delivery/review/m3-p4-criteria.yaml,
+# delivery/review/m3-p4-hazard.yaml, delivery/work-history/m3-p4.yaml, nothing
+# else).
+#
+# Order of work: hazard classes H4.1, H4.2, H4.3 and the fix round's own
+# changes first, then the round 1 hazard findings, then the work history, then
+# the acceptance criteria last.
+#
+# Commands run (read-only, tree as cwd; node_modules was ABSENT in the tree,
+# symlinked in by this reviewer to /home/user/pulse/node_modules and removed
+# afterwards):
+#   npx tsc --noEmit            -> exit 0
+#   npm run lint                -> exit 0
+#   npm test                    -> Test Files 55 passed (55), Tests 758 passed (758), exit 0
+#   npm run gate:privacy        -> "gate:privacy clean", exit 0
+#   npm run gate:decisions      -> "gate:decisions clean", exit 0
+#   grep -rEl 'oklch\(|#[0-9a-fA-F]{3,8}' src/   -> no output, exit 1
+#   grep -o '@media[^{]*' src/app/globals.css | sort -u  -> one line, "@media (min-width: 768px)"
+#   git diff 03625ee dd6adff -- src | grep '^+' | grep -E 'px|#hex|oklch|rgb(|rem|em|@media'  -> no hit
+# Slow gate read from the orchestrator logs (not executed; Playwright is out of
+# bounds for this review): e2e-full3.txt at 593c2e5, "Running 129 tests",
+# "1 skipped", "128 passed (28.1m)", "wrapper exit 0", zero failure marks;
+# witness-red.txt, 2 failed under chromium-phone.
+kind: verdict
+phase: M3-P4
+head: dd6adff6815e30adb9986186754668559442e0c1
+produced-by: claude
+framing: regression-and-leak-paths
+review-contract: hazard
+verdict: FIX-ROUND-NEEDED
+
+findings:
+  - id: HZ-M3P4-R2-01
+    severity: medium
+    evidence:
+      - >-
+        Claim C-4.1-red-at-base, delivery/work-history/m3-p4.yaml:295 to :322,
+        is the only red half of criterion 4.1 on record and states at
+        delivery/work-history/m3-p4.yaml:300 that the run used the two base
+        files "and everything else at the fix round 1 tree". The spec it ran
+        was NOT the committed one. The captured log (scratchpad
+        witness-red.txt, mtime 21:07) names the tests at
+        test/e2e/mobile-import.spec.ts:115 and :194 and the measureScreen calls
+        of journey two at :215, :219, :229 and :239. At 593c2e5 (commit time
+        21:10) and at dd6adff the same tests sit at
+        test/e2e/mobile-import.spec.ts:116 and :195 and the calls at :216,
+        :228, :238 and :248, and the green log e2e-full3.txt cites :116 and
+        :195. The eight added lines between the closed and the open format
+        question screen are the summary-height assertion at
+        test/e2e/mobile-import.spec.ts:221 to :224.
+      - >-
+        So the ONE instrument measuring the description toggle (a hard
+        expect, because the shared INTERACTIVE selector at
+        test/e2e/phone-helpers.ts:14 does not match summary) was added after
+        the red run and has never been seen red. witness-red.txt contains no
+        "description toggle height" line (grep, no match), and it could not:
+        the spec that produced it did not contain the assertion.
+      - >-
+        The settled-by output at delivery/work-history/m3-p4.yaml:313 to :322
+        is not captured output. The raw log prints the unnamed inputs as
+        '": 30px tall"' (witness-red.txt lines 24, 47, 48, 149, 197), the claim
+        prints "file picker 30px tall" and "two fields 30px tall"; the raw log
+        repeats the open-description offenders in full (lines 188 to 234), the
+        claim prints "format question, description open: the same" at
+        delivery/work-history/m3-p4.yaml:320.
+      - >-
+        The statement at delivery/work-history/m3-p4.yaml:302 says both
+        journeys fail "naming undersized controls on all eight measured
+        screens". The spec measures ten screens; the log reports offenders on
+        nine (import, declaration, result (card), confirmation, result
+        (account), format question, format question with description open,
+        unregistered account, refusal) and none on month. Eight matches
+        neither count.
+    concrete-fix: >-
+      Re-run the construction exactly as the claim describes it: at dd6adff,
+      git show 03625ee:src/app/globals.css > src/app/globals.css and the same
+      for src/modules/import/ui/import-result.tsx, then npx playwright test
+      mobile-import --project=chromium-phone, and paste the reporter output
+      verbatim (it will now stop journey two at the hard "description toggle
+      height" expect at test/e2e/mobile-import.spec.ts:222, which is itself
+      the red half of the summary fix and should be recorded as such). Restore
+      the two files and record git diff --stat as empty. Replace the output
+      block at delivery/work-history/m3-p4.yaml:313 to :322 with that capture
+      and correct "all eight measured screens" to the count the new capture
+      shows. If journey two stopping early loses the unregistered and refusal
+      screens' red, keep the old capture as a second, separately labelled
+      construction naming the spec revision it ran against. Records only; no
+      code change.
+    analysis: >-
+      Clause R-087 plus the hazard checklist's contract-avoidance probe. The
+      settled-by block is shaped as an executed construction, which is the
+      form that tells a reader "this was run and this is what it printed",
+      and in this case it was neither the construction described nor the text
+      printed. The substance is very probably still true: at the base styles
+      the summary has no min-height and renders at one line of --text-sm
+      (well under 44px), so the committed assertion should fail there, and I
+      found no route by which boundingBox() returning null passes it (null
+      maps to 0 and fails). That is reasoning, not a run, and the whole point
+      of a red witness is that it is not reasoning. Ranked medium rather than
+      low because this claim is the recorded settlement of criterion 4.1's
+      falsification direction and the fix round cites it in key-decisions as
+      the closure of round 1 finding CR-M3P4-03, so a false settlement here
+      silently re-opens a closed finding. The fix is a re-run and a paste.
+
+  - id: HZ-M3P4-R2-02
+    severity: low
+    evidence:
+      - >-
+        The fix round removed align-self: flex-start from .import-next
+        (src/app/globals.css:423 to :427 at dd6adff), so the two links, as
+        items of the column flex .import-screen (src/app/globals.css:339 to
+        :344, no align-items), now stretch to the column width again. The
+        comment directly above it at src/app/globals.css:420 to :422 still
+        says the link is "sized to the phone tap target and no wider than its
+        label". That is false at every width, and it contradicts the work
+        history's own statement at delivery/work-history/m3-p4.yaml:89 ("the
+        column width they had before this phase").
+      - >-
+        Round 1 HZ-M3P4-03's concrete fix asked for
+        test/e2e/pressed-and-disabled.spec.ts:109 and :110 to be narrowed to
+        "no new pressed, disabled or busy appearance". The file is unchanged
+        by 593c2e5 (git show --stat 593c2e5 lists only globals.css,
+        layout.tsx, link-pending.tsx and mobile-import.spec.ts), and
+        test/e2e/pressed-and-disabled.spec.ts:110 still reads "so the class
+        adds no new appearance". The class still changes the box: min-height
+        var(--tap-target-min) takes the link from 24px (witness-red.txt line
+        71) to 44px, so the pressed surface band is now 44px tall.
+      - >-
+        delivery/work-history/m3-p4.yaml:83 cites "a:active,
+        src/app/globals.css:1670"; at dd6adff the rule is at
+        src/app/globals.css:1698.
+    concrete-fix: >-
+      Rewrite src/app/globals.css:420 to :422 to "a link, so it keeps the link
+      colour and the column width it had before this phase; only its height
+      grows, to the phone tap target." Reword
+      test/e2e/pressed-and-disabled.spec.ts:109 to :110 to "declared at element
+      scope, so the class adds no new pressed, disabled or busy appearance
+      (it does make the box taller)." Replace the line number at
+      delivery/work-history/m3-p4.yaml:83 with the rule's name only
+      (a:active in src/app/globals.css), since a line number there has now
+      gone stale twice.
+    analysis: >-
+      Clause R-087, first shape: a present-tense comment the fix round itself
+      made false by removing the property it described. No behavioural harm:
+      the base width is restored, which is what round 1 asked for.
+
+  - id: HZ-M3P4-R2-03
+    severity: low
+    evidence:
+      - >-
+        .import-note a and .import-status a (src/app/globals.css:433 to :438)
+        make the setup link an atomic inline-flex box with min-height
+        var(--tap-target-min) (44px, styles/tokens.css:158), at every width:
+        the rule sits outside the one media condition, so the desk at 1280 and
+        every width between 390 and 768 get it too. In a paragraph of
+        --text-sm at --leading-normal (src/app/globals.css:359 to :364 for
+        .import-note), the line holding the link grows to about 44px while
+        the sentence's other lines keep their normal height, so the two
+        paragraphs that carry it (landing-unregistered at
+        src/modules/import/ui/profile-confirmation.tsx:92 and the refusal
+        status at src/modules/import/ui/import-status-line.tsx:30) get uneven
+        leading on the desk as well as the phone. The comment at
+        src/app/globals.css:430 to :432 says the line box grows but does not
+        say this applies to the desk, and the work history does not declare
+        it as a desk change.
+      - >-
+        French copy puts the link directly after an elided article with no
+        space: messages/fr.json:167 "Ajoutez-le sur l'<setup>écran des
+        comptes</setup> puis" and messages/fr.json:168 "Ajoutez-le sur
+        l'<setup>écran des comptes</setup> avant". Around an atomic inline the
+        line breaker has a break opportunity that "l'écran" as plain text does
+        not, so at the phone width "l'" can end one line and the boxed "écran
+        des comptes" start the next. Reasoned from the CSS and the copy, not
+        rendered: this review may not run a browser. The English and Dutch
+        strings (messages/en.json:167 and :168, messages/nl.json:167 and :168)
+        have a space before the link and are unaffected by this half.
+      - >-
+        Nothing measures either: measureScreen in
+        test/e2e/mobile-import.spec.ts:72 checks tap height, overflow,
+        clipping and the testid/text comparison, and all four pass whether or
+        not a line is uneven or an article is orphaned; the second journey
+        runs in English only.
+    concrete-fix: >-
+      Move the elided article inside the link in messages/fr.json:167 and
+      :168 ("Ajoutez-le sur <setup>l'écran des comptes</setup> puis ..." and
+      the same for "avant d'importer"), which removes the orphan break
+      without touching the CSS. Then either declare the desk line-height
+      change in the work history's key-decisions as accepted, or scope the
+      min-height of the in-sentence links to the base width only by moving
+      the desk reset into the existing @media (min-width: 768px) block (no
+      new media condition).
+    analysis: >-
+      H4.1 asks what trades one surface for another. This is the only desk
+      visible change the fix round made, and it is cosmetic: the link stays
+      in the sentence, overflow cannot occur (an atomic inline wider than the
+      line shrinks to the line and wraps inside), and the tap target it buys
+      on the phone is real. Low.
+
+  - id: HZ-M3P4-R2-04
+    severity: low
+    evidence:
+      - >-
+        The H4.3 provenance comment at test/e2e/mobile-import.spec.ts:37 to :40
+        says "both PDFs are generated by test/fixtures/generate-pdf-fixtures.ts,
+        and the account number registered below is invented and listed". After
+        the fix round the spec uploads THREE PDFs and one CSV
+        (test/e2e/mobile-import.spec.ts:53 to :66) and registers TWO account
+        numbers (BELFIUS_PDF_ACCOUNT at test/e2e/mobile-import.spec.ts:52 and
+        FIXTURE_ACCOUNT_A from test/e2e/setup-accounts.ts:105).
+      - >-
+        The facts are fine, only the sentence is stale: all three PDFs are
+        generated at test/fixtures/generate-pdf-fixtures.ts:1869, :1874 and
+        :1880; the CSV test/fixtures/belfius-account-a.csv is a pre-existing
+        synthetic fixture last changed by 3aed6dc; both account numbers are on
+        the allow list (test/fixtures/allowed-identifiers.txt:89 and :54).
+    concrete-fix: >-
+      Rewrite test/e2e/mobile-import.spec.ts:37 to :40 to: "Only committed
+      synthetic fixtures are uploaded (hazard H4.3): the three PDFs are
+      generated by test/fixtures/generate-pdf-fixtures.ts, the CSV is the
+      committed synthetic belfius-account-a.csv, and both account numbers
+      registered below are invented and listed with their provenance in
+      test/fixtures/allowed-identifiers.txt."
+    analysis: >-
+      Clause R-087. The comment is the H4.3 provenance statement for the
+      spec, so it is exactly the sentence a later reader relies on when adding
+      a fourth fixture.
+
+hazard-classes-addressed:
+  - class-id: H4.1
+    probed: >-
+      What the fix round could regress on the desk and between 390 and 768.
+      Grepped all of src/ for .import-note, .import-status, .spec-editor and
+      .import-next: the only users are src/modules/import/ui (import-result,
+      profile-confirmation, import-status-line); no month-view or other
+      screen carries them, and the import route pages under
+      src/app/(app)/import render no control of their own. Rule by rule:
+      (1) .import-next lost font-size and align-self, which restores the base
+      font and column width (round 1 HZ-M3P4-03's aim) but left its comment
+      false (HZ-M3P4-R2-02). (2) .import-note a, .import-status a,
+      inline-flex at all widths: no overflow path (atomic inline shrinks to
+      the line), but uneven leading on the desk and an orphan break after
+      "l'" in French (HZ-M3P4-R2-03). (3) .spec-editor summary min-height with
+      align-content: center keeps display list-item, so the marker is
+      unaffected; it shares no property with summary:active,
+      summary[aria-disabled] or summary[aria-busy] (src/app/globals.css:1698,
+      :1754, :1847), so the specificity balance recorded at
+      src/app/globals.css:1727 to :1747 is untouched. (4) .spec-editor button
+      at (0,1,1) sets align-self, min-height and padding; none of those is set
+      by button:active, button:disabled or [aria-busy] rules, so no state rule
+      is overridden, and the busy sweep's "pressing preview-again submit"
+      passes in e2e-full3.txt. The align-self may be inert if the engine
+      slots the details children into a ::details-content box, which is
+      harmless: the button is label-width either way. (5) field-sizing:
+      content on the textarea: at the desk, with .import-form at
+      align-items: flex-start inside the one media block, the details is
+      shrink-to-fit, so a long unbreakable line could widen it; the spec is
+      serialised with JSON.stringify(spec, null, 2) at
+      src/app/(app)/import/[id]/page.tsx:105, so lines are short and
+      space-separated and no such run exists. Without field-sizing support
+      the rows attribute still applies, as declared. The pressed sweep
+      enumeration: keys "button|Preview again" and "summary|Detected format
+      description" are unchanged at test/e2e/pressed-and-disabled.spec.ts:73
+      and :96 because no class was added; the sweep is green on chromium and
+      chromium-phone in e2e-full3.txt (tests 66, 67, 114, 115). The golden
+      journey is unmodified (git diff --name-only 03625ee dd6adff -- test/
+      does not list it) and green (e2e-full3.txt test 23).
+    finding: HZ-M3P4-R2-03
+  - class-id: H4.2
+    probed: >-
+      Grepped every added line under src/ between 03625ee and dd6adff for px,
+      rem, em, hex, oklch, rgb( and @media: no hit. Every new size is
+      var(--tap-target-min) (styles/tokens.css:158) or an existing
+      --space-* token. The desk reset for .import-form sits inside the
+      pre-existing @media (min-width: 768px) block; globals.css still carries
+      exactly one distinct media condition. field-sizing: content and
+      align-content: center are keywords, not literal values. The oklch and
+      hex grep over src/ exits 1.
+    cleared-because: >-
+      No literal breakpoint, spacing, size or colour entered a component or
+      stylesheet in the fix round or the phase; every value added is a token
+      reference or a keyword, and no media condition was added.
+  - class-id: H4.3
+    probed: >-
+      Read every added line of the phase diff for data shapes (IBAN, card
+      number, amounts with decimal separators, currency marks) and read both
+      phase commit messages and the records commit message. The only
+      identifiers added are BE72012345678944 (test/e2e/mobile-import.spec.ts:52,
+      on test/fixtures/allowed-identifiers.txt:89) and the import of
+      FIXTURE_ACCOUNT_A (test/e2e/setup-accounts.ts:105, on
+      test/fixtures/allowed-identifiers.txt:54). The four uploaded fixtures are
+      committed and synthetic: three PDFs generated at
+      test/fixtures/generate-pdf-fixtures.ts:1869, :1874 and :1880, and a
+      Demobank CSV whose names are invented (Acme Salaris BV). No screenshot
+      or trace is committed. Commit messages carry no amount, counterparty,
+      date from a row, or account number. gate:privacy is clean at dd6adff.
+      The round 1 verdict files landed by dd6adff quote no data either.
+    cleared-because: >-
+      Nothing real reaches the tree: every fixture the spec uploads is
+      generated or synthetic and every identifier is on the allow list. The
+      spec's own provenance sentence is stale about how many fixtures and
+      accounts it uses, which is recorded as HZ-M3P4-R2-04 (a comment defect,
+      not a leak).
+
+criteria:
+  - id: "4.1"
+    quote: >-
+      npm run test:e2e exits 0 including the synthetic-PDF import journey run
+      under the phone project M3-P7 added, asserting as before that
+      document.documentElement.scrollWidth does not exceed the viewport width
+      on the import, declaration, result and month screens; and at 390 by 844
+      those same screens satisfy the three standing phone measurements M3-P7
+      introduced: every element matching "a, button, input:not([type=hidden]),
+      select, [role=button]" inside main with a non-zero bounding box has a
+      bounding height of at least 44 CSS pixels; the sorted collection of
+      every data-testid paired with its trimmed textContent is deeply equal at
+      1280 by 720 and at 390 by 844, with every collected element non-zero in
+      size at the phone width; and the clipping sweep of criterion 7.7
+      returns an empty offender list on both axes. FALSIFIED BY one offender
+      in any of the three, or by the journey failing under the phone project.
+    evidence:
+      - >-
+        e2e-full3.txt at 593c2e5: "Running 129 tests", "128 passed (28.1m)",
+        "1 skipped", "wrapper exit 0", no failure mark; the PDF journey at
+        test/e2e/mobile-import.spec.ts:116 passes as test 86 under
+        chromium-phone and 38 under chromium. dd6adff differs from 593c2e5
+        only under delivery/, so the run holds for the reviewed head.
+      - >-
+        measureScreen at test/e2e/mobile-import.spec.ts:72 asserts all three
+        measurements plus overflow on import, declaration, result (card),
+        confirmation, result (account) and month (lines 139 to 192).
+      - >-
+        Falsification direction: witness-red.txt shows the journey failing
+        under chromium-phone at the base styles, but against an earlier spec
+        revision and recorded in the work history as though it were the
+        committed one (HZ-M3P4-R2-01). The criterion's red half for the PDF
+        journey screens is nonetheless present in that log.
+    met: true
+  - id: "4.2"
+    quote: >-
+      grep -n "desk activity" .claude/skills/pulse-frontend/SKILL.md exits 1
+      and the file contains a mobile-first import stance line citing the v0.2
+      addendum.
+    evidence:
+      - >-
+        grep -c "desk activity" .claude/skills/pulse-frontend/SKILL.md prints
+        0 at dd6adff. The stance line is .claude/skills/pulse-frontend/SKILL.md:113
+        per work history verification-first[0] and round 1 reviews; the file
+        is untouched by the phase (4.4).
+    met: true
+  - id: "4.3"
+    quote: >-
+      npm run typecheck && npm run lint && npm test exit 0, npm run test:e2e
+      exits 0 including the unmodified desktop golden journey, and grep -rE
+      "oklch\(|#[0-9a-fA-F]{3,8}" over src/ excluding the token and theme
+      files exits 1.
+    evidence:
+      - >-
+        Run here at dd6adff: npx tsc --noEmit exit 0; npm run lint exit 0; npm
+        test 55 files, 758 passed, exit 0.
+      - >-
+        test/e2e/golden-journey.spec.ts not in git diff --name-only 03625ee
+        dd6adff; green as test 23 in e2e-full3.txt; that log exits 0.
+      - >-
+        grep -rEl "oklch\(|#[0-9a-fA-F]{3,8}" src/ prints nothing, exit 1.
+    met: true
+  - id: "4.4"
+    quote: >-
+      At this phase's base, grep -n "Desktop first"
+      .claude/skills/pulse-frontend/SKILL.md exits 1, grep -n "desk activity"
+      over the same file exits 1, and the file contains the literal string
+      DR-0022; and git diff --name-only against this phase's base over
+      .claude/skills/pulse-frontend/SKILL.md prints nothing, so this phase
+      consumes the constraint M3-P7 wrote and does not rewrite it a second
+      time.
+    evidence:
+      - >-
+        At dd6adff (file unchanged since 03625ee): grep -c "Desktop first"
+        prints 0, grep -c "desk activity" prints 0, grep -c "DR-0022" prints 1.
+      - >-
+        git diff --name-only 03625ee dd6adff -- .claude/ prints nothing.
+    met: true
+
+deviations-judged:
+  - deviation: "branch: claude/m3-p4-mobile-import"
+    serves-plan-intent: true
+    reasoning: >-
+      Branch name only; the phase content and base are as planned, and the
+      session is bound to its own branch. No reviewable harm.
+  - deviation: "files-to-touch (styles/tokens.css named; src/app/globals.css not named)"
+    serves-plan-intent: true
+    reasoning: >-
+      The import rules live in src/app/globals.css, so the sizing could only
+      land there; the one token needed already exists at
+      styles/tokens.css:158, and adding nothing to tokens.css is the
+      token-only outcome step 2 asks for. H4.2 probe confirms no literal
+      entered.
+  - deviation: "files-to-touch (test/e2e/ (mobile import spec))"
+    serves-plan-intent: true
+    reasoning: >-
+      Moving collectTestids and collectHiding into test/e2e/phone-helpers.ts
+      keeps one instrument rather than two copies, which is what "the SAME
+      standing measurements" needs; the pressed-sweep key amendment follows
+      that spec's own amend-not-narrow rule. The residual comment defect in
+      that file is HZ-M3P4-R2-02, a finding against the work, not against the
+      deviation.
+  - deviation: "files-to-touch (src/app/layout.tsx, messages/en.json, messages/nl.json, messages/fr.json)"
+    serves-plan-intent: true
+    reasoning: >-
+      Declared files left untouched is not a harm: no copy changed and the
+      viewport tag is present by framework default. src/app/layout.tsx
+      changed by one comment only (diff read in full), and the M3-P9 press
+      listener it hosts is not removed, moved or wrapped, so the declared
+      conflict with M3-P9 is respected. HZ-M3P4-R2-03 proposes a French copy
+      change that would bring messages/fr.json into the phase; that is a
+      recommendation, not a judgement of this deviation.
+  - deviation: "files-to-touch (src/platform/ui/link-pending.tsx not named)"
+    serves-plan-intent: true
+    reasoning: >-
+      A single comment correction answering round 1 HZ-M3P4-02; the diff
+      touches no code in the file.
+
+# ROUND 1 HAZARD FINDINGS, status at dd6adff.
+#
+# HZ-M3P4-01 (medium): CLOSED in substance. The status-line link, the
+# unregistered-note link, the Preview again button and the disclosure summary
+# are all sized to var(--tap-target-min) (src/app/globals.css:433 to :438,
+# :513, :517 to :521), and the second journey
+# (test/e2e/mobile-import.spec.ts:195) measures the format question closed and
+# open, the unregistered note and the refusal, green under chromium and
+# chromium-phone. The false comment at the file-input rule is now true for
+# every control the fix round's own enumeration lists. Declared residue,
+# accepted: the failure screen's link is sized by the same rule but not
+# visited by any journey, and the textarea is not height-measured. Its record
+# half is not closed: the red witness offered for it is HZ-M3P4-R2-01.
+#
+# HZ-M3P4-02 (low): CLOSED. src/app/layout.tsx:59 to :60 and
+# src/platform/ui/link-pending.tsx:36 now name test/e2e/phone-helpers.ts.
+#
+# HZ-M3P4-03 (low): PARTLY CLOSED. font-size and align-self were dropped, so
+# the links keep their base size and width. The requested rewording of
+# test/e2e/pressed-and-disabled.spec.ts:109 to :110 was not done, and the
+# drop made the comment at src/app/globals.css:420 to :422 false. Carried as
+# HZ-M3P4-R2-02.
+#
+# HZ-M3P4-04 (low): CLOSED on the R-087 axis. The header at
+# test/e2e/mobile-import.spec.ts:18 to :21 now says the spec also runs under
+# the desk project and that the isMobile guard is meaningful only under the
+# phone project. The guard itself stays unconditional, which the round 1 fix
+# offered as the lesser option; it witnesses nothing on the desk run, and the
+# header now says so.
+#
+# PROBED AND NOT FOUND (so the next reviewer need not spend budget here):
+# a literal value in any added rule; a new media condition; a changed sweep
+# key for the preview button or the summary; a state rule (pressed, disabled,
+# busy) overridden by the new .spec-editor button or summary declarations; any
+# user of the four selectors outside the import module; horizontal overflow
+# from an inline-flex link wider than the line; a desk widening of the
+# details from the field-sized textarea; a data leak in the spec, the
+# fixtures, the commit messages or the landed review files; a code change
+# hidden in the records commit dd6adff; a regression in the golden journey or
+# the month view. The fix-round derivation block
+# (delivery/work-history/m3-p4.yaml, fix-round[0].derivation) is annotated
+# rather than raw, but its every line number matches a re-run of the named
+# grep at dd6adff, so it is not raised.

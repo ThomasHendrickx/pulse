@@ -33,7 +33,7 @@ import { useLinkStatus } from "next/link";
 //
 // THE MARKER IS data-link-pending AND DELIBERATELY NOT data-testid, for the
 // reason M3-P9 recorded at src/app/layout.tsx for data-press-feedback: the
-// helper collectTestids at test/e2e/month-view.spec.ts sweeps every
+// helper collectTestids (test/e2e/phone-helpers.ts since M3-P4) sweeps every
 // data-testid in the document and then requires a non-zero bounding rect
 // from everything it collects, so a transient marker in that sweep is a
 // failure waiting for a race. Any stable attribute serves the spec here

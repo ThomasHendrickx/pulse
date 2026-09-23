@@ -56,7 +56,8 @@ export const metadata: Metadata = {
 // THE MARKER IS data-press-feedback AND DELIBERATELY NOT data-testid. The
 // rename landed in the plan amendment of 2026-08-24 on this phase's own
 // escalation, and the reason is measured rather than stylistic: the
-// pre-existing helper collectTestids at test/e2e/month-view.spec.ts:650
+// pre-existing helper collectTestids (then in test/e2e/month-view.spec.ts,
+// in test/e2e/phone-helpers.ts since M3-P4)
 // sweeps every data-testid in the WHOLE document and then requires a
 // non-zero bounding rect from everything it collects, while a script
 // element computes display none and reports 0 by 0. Taken one attribute

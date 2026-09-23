@@ -156,3 +156,65 @@ export const navLinkLineCounts = (
     }
     return counts;
   });
+
+// MOVED HERE FROM test/e2e/month-view.spec.ts (M3-P4), for the reason at
+// the top of this file: the import spec compares desk and phone with the
+// same two instruments the month view does.
+//
+// Criterion 7.6. Every element carrying a data-testid, as the pair of its
+// testid and its trimmed text, sorted, with its box and its hiding.
+export const collectTestids = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll("[data-testid]")]
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+          testId: element.getAttribute("data-testid") ?? "",
+          text: (element.textContent ?? "").trim(),
+          width: rect.width,
+          height: rect.height,
+          hidden:
+            style.display === "none" ||
+            style.visibility === "hidden" ||
+            element.classList.contains("visually-hidden"),
+        };
+      })
+      .sort((a, b) =>
+        `${a.testId} ${a.text}`.localeCompare(`${b.testId} ${b.text}`),
+      ),
+  );
+
+// Finding CR-M3P7-02. The hidden-state half of criterion 7.6 was compared
+// only over elements carrying a testid, so an element without one could be
+// hidden at one width and shown at the other and nothing would say so. Keyed
+// by a structural path rather than by testid, which is what lets it cover
+// everything inside main.
+export const collectHiding = (page: Page) =>
+  page.evaluate(() => {
+    const main = document.querySelector("main");
+    if (main === null) {
+      return ["no main element"];
+    }
+    const pathOf = (element: Element): string => {
+      const parts: string[] = [];
+      let node: Element | null = element;
+      while (node !== null && node !== main) {
+        const parent: Element | null = node.parentElement;
+        if (parent === null) {
+          break;
+        }
+        parts.unshift(String([...parent.children].indexOf(node)));
+        node = parent;
+      }
+      return parts.join(".");
+    };
+    return [...main.querySelectorAll("*")].map((element) => {
+      const style = getComputedStyle(element);
+      const hidden =
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        element.classList.contains("visually-hidden");
+      return `${pathOf(element)}:${element.tagName}:${hidden}`;
+    });
+  });
