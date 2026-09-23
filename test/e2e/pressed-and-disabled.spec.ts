@@ -103,11 +103,15 @@ const ENUMERATION: readonly string[] = [
   // rules in this product are declared at ELEMENT scope for summary, and this
   // one's own class rules sit one specificity step below them.
   "summary.merchant-row-detail-summary|Show these transactions",
-  // The four remaining links.
+  // The four remaining links. AMENDED IN M3-P4: the two links back to the
+  // upload now carry .import-next, which sizes them to the phone tap target
+  // (criterion 4.1). Same two controls, same journey; only the key the sweep
+  // derives from their class changed, and the appearance rules for links are
+  // declared at element scope, so the class adds no new appearance.
   "a|Create household",
   "a|Sign in",
-  "a|Import another file",
-  "a|Back to import",
+  "a.import-next|Import another file",
+  "a.import-next|Back to import",
 ];
 
 // The magnitudes. Both were put into the criteria after a review round
