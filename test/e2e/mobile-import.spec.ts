@@ -5,13 +5,20 @@ import {
   collectHiding,
   collectTestids,
   horizontalOverflow,
+  TAP_MIN,
   tapTargetOffenders,
 } from "./phone-helpers";
-import { registerCurrentAccount, signUpFresh } from "./setup-accounts";
+import {
+  FIXTURE_ACCOUNT_A,
+  registerCurrentAccount,
+  signUpFresh,
+} from "./setup-accounts";
 
 // THE PHONE IMPORT JOURNEY (M3-P4, criterion 4.1, DR-0022).
 //
-// The whole PDF import runs at 390 by 844 under the chromium-phone project:
+// The whole PDF import runs at 390 by 844 (the chromium-phone project, and
+// also the desk project, where the spec sets the phone viewport itself; the
+// isMobile width guard below is only meaningful under the phone project):
 // upload, the declaration a card asks at first sight, the confirmation a
 // registered account gets, the result, and the month the two statements
 // close. Every one of those screens is held to the three standing phone
@@ -32,11 +39,25 @@ import { registerCurrentAccount, signUpFresh } from "./setup-accounts";
 // number registered below is invented and listed with its provenance in
 // test/fixtures/allowed-identifiers.txt.
 
+// The second journey (fix round 1, findings CR-M3P4-01 and HZ-M3P4-01)
+// reaches the branches the PDF journey never shows: the format question a
+// CSV from an unseen format asks, with its description disclosure opened,
+// the note on a file whose account the household never registered, and the
+// refusal line the confirm step then returns. Each carries a control the
+// first journey could not measure.
+
 const PHONE = { width: 390, height: 844 } as const;
 const DESK = { width: 1280, height: 720 } as const;
 
 const BELFIUS_PDF_ACCOUNT = "BE72012345678944";
 const KBC_FIXTURE = join(__dirname, "..", "fixtures", "kbc-statement-a.pdf");
+const CSV_FIXTURE = join(__dirname, "..", "fixtures", "belfius-account-a.csv");
+const UNREGISTERED_PDF_FIXTURE = join(
+  __dirname,
+  "..",
+  "fixtures",
+  "belfius-statement-a.pdf",
+);
 const COMPANION_FIXTURE = join(
   __dirname,
   "..",
@@ -169,4 +190,60 @@ test("the PDF import journey is usable at 390 by 844, screen by screen", async (
     "ok",
   );
   await measureScreen(page, "month");
+});
+
+test("the format question, the unregistered account and the refusal are usable at 390 by 844", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize(PHONE);
+
+  await signUpFresh(page, "mobile-import-branches");
+  // Only the CSV's own account is registered, so the PDF uploaded after it
+  // names an account this household never entered.
+  await registerCurrentAccount(page, FIXTURE_ACCOUNT_A);
+
+  // An unseen CSV format: the format question with its description
+  // disclosure, measured closed and then open, where the preview action
+  // becomes reachable.
+  await page.goto("/import");
+  await page.getByLabel("Bank export file").setInputFiles(CSV_FIXTURE);
+  await page.getByRole("button", { name: "Upload" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Confirm the detected format" }),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByLabel("Format name")).toBeVisible();
+  await measureScreen(page, "format question");
+
+  // The disclosure toggle is a control, but the shared INTERACTIVE selector
+  // does not match summary, so the sweep above cannot see it; it is
+  // measured here directly, at the same minimum.
+  const summaryBox = await page.locator(".spec-editor summary").boundingBox();
+  expect(summaryBox?.height ?? 0, "description toggle height").toBeGreaterThanOrEqual(
+    TAP_MIN,
+  );
+
+  await page.locator(".spec-editor summary").click();
+  await expect(page.getByRole("button", { name: "Preview again" })).toBeVisible();
+  await measureScreen(page, "format question, description open");
+
+  // A PDF for an account nobody registered: the note says so before the
+  // submit and links to setup.
+  await page.goto("/import");
+  await page.getByLabel("Bank export file").setInputFiles(UNREGISTERED_PDF_FIXTURE);
+  await page.getByRole("button", { name: "Upload" }).click();
+  await expect(page.getByTestId("landing-unregistered")).toBeVisible({
+    timeout: 30_000,
+  });
+  await measureScreen(page, "unregistered account");
+
+  // The confirm step refuses it, and the refusal line links to setup.
+  await page.getByTestId("confirm-import").click();
+  await expect(page.getByTestId("import-status")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(
+    page.getByTestId("import-status").getByRole("link"),
+  ).toBeVisible();
+  await measureScreen(page, "refusal");
 });
