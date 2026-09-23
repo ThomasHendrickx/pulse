@@ -106,8 +106,9 @@ const ENUMERATION: readonly string[] = [
   // The four remaining links. AMENDED IN M3-P4: the two links back to the
   // upload now carry .import-next, which sizes them to the phone tap target
   // (criterion 4.1). Same two controls, same journey; only the key the sweep
-  // derives from their class changed, and the appearance rules for links are
-  // declared at element scope, so the class adds no new appearance.
+  // derives from their class changed. The class grows each link's box to the
+  // tap target (24px to 44px tall) and adds no new PRESSED, DISABLED or BUSY
+  // appearance, because those rules for links are declared at element scope.
   "a|Create household",
   "a|Sign in",
   "a.import-next|Import another file",
