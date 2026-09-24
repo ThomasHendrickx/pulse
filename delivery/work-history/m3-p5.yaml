@@ -1,0 +1,242 @@
+kind: work-history
+phase: M3-P5
+prompt: |
+  todo:
+
+  * Add a CI workflow to pulse.
+  * Merge one pulse phase at exactly the commit its reviewers approved.
+  pulse fleet also needs to update to 0.2.1
+files-touched:
+  - src/app/manifest.ts
+  - src/app/(app)/import/share/route.ts
+  - src/middleware.ts
+  - src/modules/import/ui/share-target.ts
+  - src/modules/import/ui/index.ts
+  - scripts/generate-app-icons.ts
+  - public/icons/icon-192.png
+  - public/icons/icon-512.png
+  - test/app/share-target-manifest.test.ts
+  - test/app/share-route.test.ts
+  - test/e2e/share-target.spec.ts
+  - test/e2e/phone-helpers.ts
+  - playwright.config.ts
+  - delivery/work-history/m3-p5.yaml
+per-step-commits:
+  - sha: fada6fb
+    subject: "M3-P5: share a PDF from the phone straight into the import flow"
+key-decisions:
+  - decision: >-
+      Run by the orchestrator session directly, the second phase under the
+      kernel's current verdict contract, with the two clean-room reviews
+      dispatched to separate agents that did not write the code. The
+      owner's instruction, verbatim above, sets the merge rule for this
+      phase: the pull request merges at exactly the commit both reviewers
+      approved. So this work history is committed BEFORE review, the
+      reviewed head is the merged head, and the two verdicts land on main
+      afterwards in a separate records change rather than on this branch.
+    why: >-
+      A verdict names the commit it reviewed, and committing the verdict
+      onto the branch makes a new commit that no verdict names. Kernel
+      0.2.1 admits delivery-only commits after the reviewed head, but the
+      owner asked for the exact commit, so nothing follows it on the
+      branch.
+  - decision: >-
+      Every redirect the share route issues is a 303 with a RELATIVE
+      Location. The household boundary's thrown redirect (a missing or
+      half-made session) is caught and re-issued the same way.
+    why: >-
+      A 307, which a redirect() thrown in a route handler produces, makes
+      the browser repeat the POST with the shared file in its body at the
+      new location; a 303 turns it into a GET with no body, which is what
+      decision D-10's no-preservation contract needs. The Location is
+      relative because the first working version built it from
+      request.url, which the dev server reports as localhost for a request
+      the browser made to 127.0.0.1: the redirect crossed hosts, the
+      session cookie stayed behind, and the share landed on sign-in. The
+      e2e spec caught it (verification-first). The catch uses two helpers
+      from Next's internals (isRedirectError, getURLFromRedirectError);
+      test/app/share-route.test.ts pins that conversion, so a Next upgrade
+      that moves them goes red in the fast gate.
+  - decision: >-
+      The middleware answers an unauthenticated POST to the share path
+      with a 303 to sign-in (absolute, as middleware requires; a relative
+      Location there answered 500), and manifest.webmanifest is excluded
+      from the middleware's matcher.
+    why: >-
+      The unauthenticated share never reaches the route: the middleware
+      runs first, and its default 307 would carry the file to the sign-in
+      page. The manifest exclusion is needed because the browser fetches
+      the manifest without the session cookie; answered with a redirect to
+      sign-in, the app cannot be installed and the share target never
+      appears in the share sheet. Both were witnessed red against the
+      pre-phase middleware (claim C-5-middleware-red).
+  - decision: >-
+      A cross-site POST (an Origin header naming another host) is answered
+      403 before the session or the body is read.
+    why: >-
+      Hazard H5.2 is the share route becoming a write path for someone
+      else's page. The session cookies are SameSite Lax, so such a POST
+      normally arrives without a session and the middleware already sends
+      it to sign-in; the Origin check makes the route's refusal its own
+      rather than a property of a cookie attribute set elsewhere.
+  - decision: >-
+      No service worker, no theme_color, no background_color. The icons are
+      generated PNGs, drawn from the design tokens by
+      scripts/generate-app-icons.ts and committed with a byte-equality test.
+    why: >-
+      Current Chromium installs a site with a manifest carrying a name, a
+      start URL, a display mode and 192 and 512 pixel icons, without a
+      service worker, so step 1's condition for admitting one ("unless
+      installability on the owner's platform measurably requires one") is
+      not met, and hazard H5.1 stays closed. The two manifest colours are
+      literals, which CLAUDE.md non-negotiable 4 keeps out of source; the
+      icon colours are read from styles/tokens.css at generation time and
+      converted from oklch() to sRGB, the only colour space a PNG carries.
+      The mark sits inside the maskable safe zone, so each file serves the
+      "any" and the "maskable" purpose. Installation on the owner's own
+      device is not something this container can witness.
+  - decision: >-
+      The phone measurements for criterion 5.5 are a new shared helper,
+      measurePhoneScreen in test/e2e/phone-helpers.ts, composed only from
+      the instruments already there. test/e2e/mobile-import.spec.ts keeps
+      its own identical local composition and is not rewritten to call it.
+    why: >-
+      Criterion 5.3 requires the M3-P4 mobile journey to pass unmodified,
+      so that spec is not touched; the new spec should not grow a third
+      copy either. Converging mobile-import.spec.ts onto the helper is
+      follow-up work outside this phase.
+verification-first:
+  - finding: >-
+      At the base (585ee6a, then main) there is no manifest, no public/
+      directory and no share-target surface: `ls public` fails and
+      `grep -rn "share_target\|manifest" src/app` finds nothing. The
+      middleware (src/middleware.ts) redirects every request without a
+      session that is not an auth path to /sign-in with NextResponse's
+      default 307, and its matcher does not exclude manifest.webmanifest.
+      Both matter to this phase and both were confirmed by test before any
+      change was made to them (claim C-5-middleware-red).
+    contradicts-plan: false
+  - finding: >-
+      Next.js 15's MetadataRoute.Manifest type carries share_target
+      (node_modules/next/dist/lib/metadata/types/manifest-types.d.ts), so
+      the manifest is src/app/manifest.ts and Next links it from every page
+      and serves it at /manifest.webmanifest.
+    contradicts-plan: false
+  - finding: >-
+      The first run of the authenticated share test failed: the share
+      returned 303 to the new import, and opening that page showed sign-in.
+      Printing the Location showed http://localhost:3000/import/... while
+      the suite's base URL and the session cookie are on 127.0.0.1:3000.
+      The route had built the Location from request.url. Fixed by a
+      relative Location (key-decisions), after which all eight share tests
+      pass under both projects.
+    contradicts-plan: false
+deviations:
+  - plan-clause: "branch: claude/m3-p5-share-target"
+    why: >-
+      Built on claude/tender-albattani-2btl5u, the branch this session is
+      bound to push to. The phase content is unaffected.
+  - plan-clause: "files-to-touch (src/app/, src/modules/import/ui/, messages, test/e2e/)"
+    why: >-
+      Outside the declared list: src/middleware.ts (the unauthenticated
+      share and the manifest must be handled before any route runs; see
+      key-decisions), public/icons/ and scripts/generate-app-icons.ts (the
+      manifest's icons and their generator; installability needs them),
+      test/app/ (the manifest, icon and route unit tests), and
+      playwright.config.ts (the share spec joins the phone project, which
+      criterion 5.5 asks for). No messages catalogue changed: the share
+      path adds no user-facing sentence, reusing the existing no-file
+      status and the existing import screens.
+gate-evidence:
+  - gate: "typecheck (npm run typecheck; tree d776545, the tree of fada6fb)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "lint (npm run lint; tree d776545)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 0
+    passed: 0
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "fast suite (npm test; tree d776545; 57 files)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 774
+    passed: 774
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "slow gate (npx playwright test, all four projects; tree d776545, run as commit 6bf1864 before the rebase onto main, whose tree is identical to fada6fb's; the M3-P4 mobile journey passed unmodified; the skip is the touch test's own hasTouch guard on the desk project)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 137
+    passed: 136
+    failed: 0
+    skipped: 1
+    todo: 0
+    did-not-run: 0
+claims:
+  - id: C-5-middleware-red
+    kind: coverage
+    statement: >-
+      The manifest test and the unauthenticated-share test fail against the
+      pre-phase middleware and pass against the phase's. With
+      src/middleware.ts restored to its base content and everything else at
+      the phase tree, both fail on the status code; with the phase's
+      middleware both pass. The file was copied back afterwards and its
+      diff against the base checked.
+    settled-by:
+      executed-construction:
+        command: >-
+          git show HEAD:src/middleware.ts > src/middleware.ts; npx
+          playwright test share-target --project=chromium -g
+          "manifest|unauthenticated"; then the phase's middleware restored
+        exit-code: 1
+        output: |
+          ✘  1 [chromium] › test/e2e/share-target.spec.ts:54:5 › the manifest is served without a session and declares a PDF share target (93ms)
+          ✘  2 [chromium] › test/e2e/share-target.spec.ts:82:5 › an unauthenticated share goes to sign-in with a 303 and nothing is kept (170ms)
+              Expected: 200
+              Received: 307
+              Expected: 303
+              Received: 307
+            2 failed
+  - id: C-5.2-no-cache
+    kind: coverage
+    statement: >-
+      No caching API and no service worker exist in the tree.
+    settled-by:
+      executed-construction:
+        command: "grep -rE \"caches\\.|CacheStorage|workbox\" src/"
+        exit-code: 1
+        output: "(no output); and no sw.js or service-worker file exists outside node_modules"
+  - id: C-5-no-literal-colour
+    kind: coverage
+    statement: >-
+      No literal oklch() or hex colour exists anywhere under src/.
+    settled-by:
+      executed-construction:
+        command: "grep -rE \"oklch\\(|#[0-9a-fA-F]{3,8}\" src/"
+        exit-code: 1
+        output: "(no output)"
+environment-warnings:
+  - warning: >-
+      The Docker daemon did not survive the session resume: dockerd failed
+      with "failed to start containerd: timeout waiting for containerd to
+      start" until the stale containerd pid and socket files under
+      /var/run/docker were removed. The local Supabase stack then came back
+      with its data, migrations included. Every e2e run pinned the six
+      connection variables to that local stack.
+    evidence: >-
+      dockerd log: "Daemon shutdown complete" error="failed to start
+      containerd: timeout waiting for containerd to start"; after removing
+      the stale files, docker info succeeded and supabase start reported
+      the four kept services healthy.
