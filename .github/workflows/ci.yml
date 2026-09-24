@@ -1,0 +1,105 @@
+# Pulse CI. Two jobs, the two gates CLAUDE.md names:
+#
+#   fast  typecheck, lint, the unit and property tests, and the two
+#         repository gates (privacy, decisions). Required before a slice
+#         is done.
+#   e2e   the Playwright slow gate, against a local Supabase stack started
+#         inside the runner. Required before a slice is closed.
+#
+# Node 22 is the version package.json's engines field pins and the one the
+# deployed build runs on. @tiphys/kernel declares Node 26 or later; it is
+# delivery tooling that no application code imports, and npm ci only warns
+# about its engine.
+#
+# No job reaches a deployed database. The e2e job's connection strings are
+# the ones `supabase status` prints for the stack this job starts, and the
+# repository's own guard (src/platform/db/guard-cli.ts) refuses anything
+# that is not a local host before migrations run.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fast:
+    name: fast gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Full history: gate:privacy reads every commit message between the
+      # merge base with origin/main and HEAD.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run gate:privacy
+      - run: npm run gate:decisions
+
+  e2e:
+    name: slow gate (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      # Only the services the app uses: the database, auth, and the gateway
+      # in front of them.
+      - name: Start the local Supabase stack
+        run: >-
+          supabase start -x
+          realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+      - name: Point the app at the local stack
+        run: |
+          supabase status -o json > "$RUNNER_TEMP/supabase.json"
+          node -e '
+            const s = require(process.argv[1]);
+            const db = s.DB_URL;
+            const env = {
+              DATABASE_URL: db,
+              DIRECT_URL: db,
+              E2E_DATABASE_URL: db,
+              NEXT_PUBLIC_SUPABASE_URL: s.API_URL,
+              NEXT_PUBLIC_SUPABASE_ANON_KEY: s.ANON_KEY,
+              SUPABASE_SERVICE_ROLE_KEY: s.SERVICE_ROLE_KEY,
+            };
+            for (const [k, v] of Object.entries(env)) {
+              if (!v) { console.error(`supabase status gave no value for ${k}`); process.exit(1); }
+              console.log(`${k}=${v}`);
+            }
+          ' "$RUNNER_TEMP/supabase.json" >> "$GITHUB_ENV"
+      - name: Apply migrations to the local database
+        run: npx tsx src/platform/db/guard-cli.ts && npx prisma migrate deploy
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7
