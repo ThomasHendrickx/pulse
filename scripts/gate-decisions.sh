@@ -106,18 +106,26 @@ done < <(decided_records)
 # review alike. A lane is a review stem with its round suffix removed, so the
 # criteria lane and the hazard lane are counted separately, which is what dual
 # review requires, and a third round on either one fails.
+#
+# A verdict may be YAML (every review written before kernel 0.2.1) or JSON
+# (the clean-room reviewer role writes delivery/review/<phase>-<lane>.json
+# from 0.2.1 on). Both extensions are stripped before the lane is taken, so
+# a JSON round counts against the same cap as a YAML one; stripping only
+# .yaml let every JSON round form a lane of its own and pass unseen.
 review_dir="delivery/review"
+lane_of() {
+  sed -E 's/\.(yaml|json)$//; s/-round[0-9]*$//'
+}
 if [ -d "$review_dir" ]; then
   while read -r stem; do
     [ -n "$stem" ] || continue
-    total=$(ls "$review_dir" 2>/dev/null |
-      sed 's/\.yaml$//; s/-round[0-9]*$//' | grep -cx -- "$stem")
+    total=$(ls "$review_dir" 2>/dev/null | lane_of | grep -cxF -- "$stem")
     if [ "$total" -gt 2 ]; then
       echo "gate:decisions: review lane '$stem' carries $total rounds, the cap is 2." >&2
       echo "  What round two leaves open is carried into the implementer's brief as work, not into a third round." >&2
       status=1
     fi
-  done < <(ls "$review_dir" 2>/dev/null | sed 's/\.yaml$//; s/-round[0-9]*$//' | sort -u)
+  done < <(ls "$review_dir" 2>/dev/null | lane_of | sort -u)
 fi
 
 if [ "$status" -eq 0 ]; then
