@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
 // THE PHONE MEASUREMENTS, ONE DEFINITION (M3-P7, extended in M3-P14).
 //
@@ -218,3 +218,61 @@ export const collectHiding = (page: Page) =>
       return `${pathOf(element)}:${element.tagName}:${hidden}`;
     });
   });
+
+const PHONE_VIEWPORT = { width: 390, height: 844 } as const;
+const DESK_VIEWPORT = { width: 1280, height: 720 } as const;
+
+// ONE SCREEN, THE THREE STANDING PHONE MEASUREMENTS (criterion 4.1, reused
+// by 5.5), composed from the instruments above: tap targets of at least
+// TAP_MIN over header and main, the testid-and-text collection equal at the
+// desk and the phone with every entry non-zero at the phone, the hiding
+// state equal at both widths, the clipping sweep empty on both axes, and no
+// sideways scroll. Soft assertions, so one call names every offender on the
+// screen. The page is left at the phone width.
+//
+// ADDED IN M3-P5 for the share spec. test/e2e/mobile-import.spec.ts carries
+// the same composition locally and is deliberately NOT rewritten to call
+// this one, because criterion 5.3 requires the M3-P4 mobile journey to pass
+// unmodified; converging the two is recorded as follow-up work.
+export const measurePhoneScreen = async (
+  page: Page,
+  screen: string,
+): Promise<void> => {
+  await page.setViewportSize(PHONE_VIEWPORT);
+
+  const overflow = await horizontalOverflow(page);
+  expect
+    .soft(overflow.scrollWidth, `${screen}: document scrolls sideways`)
+    .toBeLessThanOrEqual(overflow.clientWidth);
+  expect
+    .soft(await tapTargetOffenders(page), `${screen}: tap targets under ${TAP_MIN}px`)
+    .toEqual([]);
+  const clipping = await clippingOffenders(page);
+  expect.soft(clipping.horizontal, `${screen}: horizontal clipping`).toEqual([]);
+  expect.soft(clipping.vertical, `${screen}: vertical clipping`).toEqual([]);
+
+  const phone = await collectTestids(page);
+  const phoneHiding = await collectHiding(page);
+  await page.setViewportSize(DESK_VIEWPORT);
+  const desk = await collectTestids(page);
+  const deskHiding = await collectHiding(page);
+  await page.setViewportSize(PHONE_VIEWPORT);
+
+  expect
+    .soft(
+      phone.map((entry) => [entry.testId, entry.text]),
+      `${screen}: testid and text differ between desk and phone`,
+    )
+    .toEqual(desk.map((entry) => [entry.testId, entry.text]));
+  expect
+    .soft(
+      phone
+        .filter((entry) => entry.width <= 0 || entry.height <= 0)
+        .map((entry) => entry.testId),
+      `${screen}: testid elements with no size at the phone width`,
+    )
+    .toEqual([]);
+  expect
+    .soft(phoneHiding, `${screen}: hiding state differs between widths`)
+    .toEqual(deskHiding);
+};

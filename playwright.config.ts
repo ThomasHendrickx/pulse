@@ -126,7 +126,7 @@ export default defineConfig({
       // journey here signs up and none can run. The widening is recorded
       // as owed execution in delivery/work-history/m3-p10.yaml rather
       // than claimed green.
-      testMatch: /(month-view|navigation|pressed-and-disabled|busy-state|merchants|mobile-import)\.spec\.ts/,
+      testMatch: /(month-view|navigation|pressed-and-disabled|busy-state|merchants|mobile-import|share-target)\.spec\.ts/,
     },
     // THE PRODUCTION-MODE PHONE PROJECT (M3-P10, decision D-34). The same
     // chromium mobile descriptor as the project above, bound to the server
