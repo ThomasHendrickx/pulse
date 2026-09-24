@@ -5,7 +5,7 @@
 //
 // It writes public/icons/icon-192.png and public/icons/icon-512.png. The
 // fast gate asserts byte-for-byte equality between buildAppIcon() and the
-// committed files (test/app/app-icons.test.ts), so the committed bytes are
+// committed files (test/app/share-target-manifest.test.ts), so the committed bytes are
 // reproducible and cannot drift from this source or from the tokens.
 //
 // THE COLOURS ARE READ FROM styles/tokens.css, never written here (CLAUDE.md

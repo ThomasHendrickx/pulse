@@ -16,7 +16,11 @@ import {
 // installs a site that has a manifest with a name, a start URL, a display
 // mode and 192 and 512 pixel icons, without one, and the plan admits one
 // only if installability measurably requires it (hazard H5.1), because a
-// service worker is where caching, which the charter bans, gets in.
+// service worker is where caching, which the charter bans, gets in. That
+// installability is Chromium's documented behaviour, NOT something this
+// repository has measured: installing on the owner's own phone is owed
+// evidence, recorded in delivery/work-history/m3-p5.yaml (fix round 1,
+// finding CR-M3P5-02).
 //
 // The icons are generated from the design tokens by
 // scripts/generate-app-icons.ts; the mark sits in the maskable safe zone, so

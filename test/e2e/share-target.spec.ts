@@ -138,11 +138,21 @@ test("a shared PDF lands in the import flow, usable at 390 by 844", async ({ pag
   await expect(page.getByTestId("import-result")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("rows-added")).toHaveText("9");
 
+  // The walk ends where criterion 2.5's does (fix round 1, finding
+  // CR-M3P5-03): the shared statement's month, whose books close.
+  await page.goto("/?month=2026-05");
+  await expect(page.getByTestId("recon-panel")).toHaveAttribute("data-state", "ok");
+
   // Second share, followed through its redirect chain the way the browser
   // follows it: the layout is known now, so the chain ends on the result
-  // with the fixture's rows added and nothing asked.
+  // with the fixture's rows added and nothing asked. It carries the two
+  // headers shipped Android Chrome sends on a share, a navigation with no
+  // initiator (fix round 1, findings CR-M3P5-01 and HZ-001): the first
+  // version of the route refused exactly this request, and nothing here
+  // sent it.
   const second = await page.request.post(SHARE_PATH, {
     multipart: sharedFile(COMPANION),
+    headers: { origin: "null", "sec-fetch-site": "none" },
   });
   expect(second.status()).toBe(200);
   const secondLanding = new URL(second.url()).pathname;

@@ -104,6 +104,35 @@ describe("the share route", () => {
     expect(uploadStatement).not.toHaveBeenCalled();
   });
 
+  // FIX ROUND 1 (findings CR-M3P5-01, HZ-001). Shipped Android Chrome sends
+  // a share as a navigation with no initiator: "Origin: null" and
+  // "Sec-Fetch-Site: none". The first version refused it.
+  test("the phone's own share (Origin null, Sec-Fetch-Site none) is accepted", async () => {
+    const response = await POST(
+      share(withFile(), { origin: "null", "sec-fetch-site": "none" }),
+    );
+    expect(response.status).toBe(303);
+    expect(uploadStatement).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(["cross-site", "same-site"])(
+    "Sec-Fetch-Site %s is refused even with no usable Origin",
+    async (fetchSite) => {
+      const response = await POST(
+        share(withFile(), { origin: "null", "sec-fetch-site": fetchSite }),
+      );
+      expect(response.status).toBe(403);
+      expect(requireHouseholdContext).not.toHaveBeenCalled();
+      expect(uploadStatement).not.toHaveBeenCalled();
+    },
+  );
+
+  test("an Origin that is neither a URL nor null is refused", async () => {
+    const response = await POST(share(withFile(), { origin: "not a url" }));
+    expect(response.status).toBe(403);
+    expect(uploadStatement).not.toHaveBeenCalled();
+  });
+
   test("a POST carrying this site's own Origin is accepted", async () => {
     const response = await POST(share(withFile(), { origin: "http://127.0.0.1:3000" }));
     expect(response.status).toBe(303);

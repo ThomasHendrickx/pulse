@@ -69,7 +69,9 @@ export const config = {
     // manifest.webmanifest is excluded (M3-P5): the browser fetches the
     // manifest without the session cookie, and a manifest answered with a
     // redirect to sign-in makes the app uninstallable. The icons it names
-    // are PNGs, already excluded by extension.
-    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|api/health|.*\\.(?:svg|png|jpg|jpeg|gif|webp|css|js|ico)$).*)",
+    // are PNGs, already excluded by extension. The entry is anchored and its
+    // dot escaped (fix round 1, finding HZ-005), so it matches that one
+    // path and no path that merely begins with it.
+    "/((?!_next/static|_next/image|favicon.ico|manifest\\.webmanifest$|api/health|.*\\.(?:svg|png|jpg|jpeg|gif|webp|css|js|ico)$).*)",
   ],
 };

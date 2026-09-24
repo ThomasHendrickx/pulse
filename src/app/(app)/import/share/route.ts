@@ -25,12 +25,20 @@ import type { HouseholdContext } from "@/platform/tenancy";
 // created and no byte is read. After signing in, the owner shares again;
 // the share sheet is one tap away (decision D-10, finding PR2-005).
 //
-// A CROSS-SITE POST is refused. The share sheet POSTs from the installed
-// app, whose origin is this site. A POST carrying another site's Origin
-// header is a form on someone else's page aimed at this route, and it is
-// answered 403 before the body is read. (The session cookies are SameSite
-// Lax, so such a POST normally arrives without a session and the middleware
-// has already sent it to sign-in; this check does not rely on that.)
+// A CROSS-SITE POST is refused, and the refusal must not catch the phone.
+// CORRECTED IN FIX ROUND 1 (findings CR-M3P5-01 and HZ-001): this comment
+// said the share sheet POSTs with this site's origin. On shipped Android
+// Chrome it does not: the share navigation has no initiator, so the POST
+// carries "Origin: null", and the first version of this check, which
+// refused any Origin that is not a URL, answered every real share 403.
+// The decision now rests on Sec-Fetch-Site, which the browser sets and no
+// page can: "cross-site" and "same-site" are refused, while "none" (a
+// navigation the browser started, which is what a share is) and
+// "same-origin" pass. An Origin header is still read when it names a URL:
+// another host is refused. "null" and an absent Origin decide nothing on
+// their own. (The session cookies are SameSite Lax, so a cross-site POST
+// normally arrives without a session and the middleware has already sent
+// it to sign-in; this check does not rely on that.)
 
 // THE LOCATION IS RELATIVE, on purpose. An absolute URL built from
 // request.url names the host the server believes it is on, which is not
@@ -43,9 +51,15 @@ import type { HouseholdContext } from "@/platform/tenancy";
 const seeOther = (path: string): NextResponse =>
   new NextResponse(null, { status: 303, headers: { location: path } });
 
+const REFUSED_FETCH_SITES: ReadonlySet<string> = new Set(["cross-site", "same-site"]);
+
 const isCrossSite = (request: NextRequest): boolean => {
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite !== null && REFUSED_FETCH_SITES.has(fetchSite)) {
+    return true;
+  }
   const origin = request.headers.get("origin");
-  if (origin === null) {
+  if (origin === null || origin === "null") {
     return false;
   }
   try {
