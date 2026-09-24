@@ -1,0 +1,110 @@
+{
+  "kind": "verdict",
+  "phase": "M3-P5",
+  "head": "98b4f0e86d234cbe67fa6624c2801326582f97ff",
+  "tiphys-version": "0.2.1",
+  "produced-by": "claude",
+  "framing": "criteria-contract",
+  "review-contract": "criteria",
+  "verdict": "FIX-ROUND-NEEDED",
+  "findings": [
+    {
+      "id": "CR-M3P5-01",
+      "severity": "medium",
+      "evidence": [
+        "src/app/(app)/import/share/route.ts:46 isCrossSite: an Origin header that is present but does not parse as a URL is treated as cross-site (the catch at src/app/(app)/import/share/route.ts:54 returns true), and src/app/(app)/import/share/route.ts:59 answers it 403. The serialized opaque origin is the literal string null, and node -e 'new URL(\"null\")' throws ERR_INVALID_URL (captured in this review), so a share POST carrying Origin: null is refused 403 before the file is read.",
+        "src/app/(app)/import/share/route.ts:29 asserts as present-tense fact that the share sheet POSTs from the installed app, whose origin is this site. Nothing in the artifact witnesses what Origin header the Android share sheet's POST actually carries: the share sheet's request is a browser-initiated navigation with no initiating document, which is exactly the case where a browser is entitled to send an opaque origin.",
+        "No test reaches that case: test/app/share-route.test.ts:100 covers a foreign origin, test/app/share-route.test.ts:107 this site's own origin, and every e2e share in test/e2e/share-target.spec.ts:86, test/e2e/share-target.spec.ts:123 and test/e2e/share-target.spec.ts:144 is sent by Playwright's API client with no Origin header at all, the one shape the route never refuses.",
+        "delivery/work-history/m3-p5.yaml:96 concedes installation and use on the owner's device were not witnessed, so the only caller the route exists for has never been observed against this check."
+      ],
+      "concrete-fix": "In src/app/(app)/import/share/route.ts, decide the cross-site question from what the real caller sends rather than from an assumed Origin: treat an Origin of exactly null (and an absent Origin) as not cross-site when Sec-Fetch-Site is none or same-origin, refuse when Sec-Fetch-Site is cross-site or same-site, and keep the host comparison for a parseable Origin. Add unit cases in test/app/share-route.test.ts for Origin: null with Sec-Fetch-Site none (accepted) and with Sec-Fetch-Site cross-site (refused). Correct the comment at route.ts:29 so it states what is known, and record in the work history that the request headers of a real Android share were not captured, as owed on-device evidence.",
+      "analysis": "This is the phase intent's one caller. If the share sheet's POST carries Origin: null, every real share on the owner's phone is a 403 and the phase delivers nothing on the device it was built for, while all 137 e2e tests stay green, because the suite never sends that header. I could not construct the device request in this container, so I rank it medium rather than high; confirmed, it would be high. The check is also stricter than its own stated purpose: the comment says a foreign page's form is the threat, and a parse failure is not evidence of a foreign page."
+    },
+    {
+      "id": "CR-M3P5-02",
+      "severity": "low",
+      "evidence": [
+        "delivery/plan/pulse-v02.yaml:3099 step 1 requires the manifest be installable on the owner's device, and admits a service worker only if installability measurably requires one.",
+        "src/app/manifest.ts:15 and delivery/work-history/m3-p5.yaml:87 both state as present-tense fact that current Chromium installs a site with a name, start URL, display mode and 192/512 icons without a service worker. Neither cites a source or a measurement; delivery/work-history/m3-p5.yaml:96 says installation on the owner's device is not something this container can witness.",
+        "No installability probe exists anywhere in the diff (git diff dff0824 98b4f0e; test/app/share-target-manifest.test.ts:143 checks the manifest's fields, not that a browser installs it)."
+      ],
+      "concrete-fix": "Cite the source of the no-service-worker installability claim in src/app/manifest.ts:15 (the Chromium installability criteria and the version they apply from), or rephrase it as the assumption it is; and record in the work history an owed on-device check (install on the owner's Android phone, share one PDF, observe the landing) as open evidence for step 1 and for the phase intent, rather than leaving it only as an aside.",
+      "analysis": "Honestly declared, so not a hidden gap, but the phase intent (the phone's share sheet hands a PDF to Pulse) rests on two unwitnessed facts, this and the header in CR-M3P5-01. The criteria do not ask for device evidence, so this is outside every criterion; it is a finding against the intent."
+    },
+    {
+      "id": "CR-M3P5-03",
+      "severity": "low",
+      "evidence": [
+        "delivery/plan/pulse-v02.yaml:3118 step 3 asks for a test following the share's redirect to the same states criterion 2.5 walks; criterion 2.5 (delivery/plan/pulse-v02.yaml:2647) walks the declaration, the import detail with rows added, AND the month view for the fixture's month rendering its reconciliation panel with data-state ok.",
+        "test/e2e/share-target.spec.ts:114 walks declaration and result with rows added (test/e2e/share-target.spec.ts:139 and test/e2e/share-target.spec.ts:153) but never opens the month view; grep -n month test/e2e/share-target.spec.ts returns nothing."
+      ],
+      "concrete-fix": "Extend the journey at test/e2e/share-target.spec.ts:154 to open the month view for the fixture's month and assert the reconciliation panel's data-state is ok, as test/e2e/import.spec.ts does for criterion 2.5; or record in the work history that step 3 was narrowed to the import states, as a declared deviation.",
+      "analysis": "Criterion 5.1 itself asks only for an import state with the fixture's rows added, which is met, so this is a step-level shortfall. Since the route hands the bytes to uploadStatement unchanged the month view is very likely equal, which is why it is low."
+    }
+  ],
+  "criteria": [
+    {
+      "id": "5.1",
+      "quote": "curl -s against the deployed or dev manifest URL returns JSON whose share_target declares method POST, multipart/form-data and a files entry accepting application/pdf, and npm run test:e2e exits 0 including a spec that POSTs the synthetic fixture PDF as multipart form data to the share route and asserts the redirect chain ends on an import state with the fixture's rows added.",
+      "evidence": [
+        "Manifest half: I did not run curl (no dev server was run in this review). The equivalent unauthenticated GET is test/e2e/share-target.spec.ts:57 (Playwright API client, no cookies, maxRedirects 0) asserting status 200, JSON, method POST, enctype multipart/form-data and files [{name file, accept [application/pdf, .pdf]}] at test/e2e/share-target.spec.ts:68 to test/e2e/share-target.spec.ts:73; passed in scratchpad e2e-p5.txt:330 (chromium) and e2e-p5.txt:696 (chromium-phone). Source: src/app/manifest.ts:48. Unit: test/app/share-target-manifest.test.ts:132.",
+        "Spec half: test/e2e/share-target.spec.ts:144 POSTs the companion fixture PDF as multipart and follows the redirect chain (no maxRedirects), asserting it ends on /import/<uuid> (test/e2e/share-target.spec.ts:147 to test/e2e/share-target.spec.ts:149) and rows-added is 4 (test/e2e/share-target.spec.ts:153); the first share ends on the declaration and 9 rows after confirm (test/e2e/share-target.spec.ts:139).",
+        "e2e exit: scratchpad e2e-p5.txt:915 to e2e-p5.txt:917, 136 passed, 1 skipped, wrapper exit 0, run at 6bf1864 whose tree d77654510f45f0df96e46e823c0303f2b0a197f2 equals fada6fb's (git rev-parse 6bf1864^{tree} fada6fb^{tree} in /home/user/pulse); git diff --stat fada6fb 98b4f0e touches only delivery/work-history/m3-p5.yaml.",
+        "Judgement: met, with the curl half discharged by an equivalent cookie-less GET rather than curl itself; I record that substitution rather than hide it."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.2",
+      "quote": "grep -rE \"caches\\.|CacheStorage|workbox\" src/ exits 1, and if a service worker file exists it contains no fetch event listener, asserted by grep for \"fetch\" over that file exiting 1.",
+      "evidence": [
+        "grep -rE \"caches\\.|CacheStorage|workbox\" src/ run in the tree at 98b4f0e: no output, exit 1 (captured in this review).",
+        "No service worker exists: git ls-files | grep -iE \"(^|/)(sw|service-?worker)[^/]*\\.(js|ts)$\" exit 1; grep -rn serviceWorker src public exit 1; git ls-files public lists only public/icons/icon-192.png and public/icons/icon-512.png. The conditional second half is therefore vacuous and holds."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.3",
+      "quote": "npm run typecheck && npm run lint && npm test exit 0 and npm run test:e2e exits 0 at the phase head, including the unmodified M3-P4 mobile journey.",
+      "evidence": [
+        "Run in the tree at 98b4f0e in this review: npx tsc --noEmit exit 0; npm run lint exit 0; npm test exit 0 (Test Files 57 passed, Tests 774 passed); npm run gate:privacy exit 0; npm run gate:decisions exit 0.",
+        "e2e: scratchpad e2e-p5.txt:917 wrapper exit 0 at tree d776545, equal to fada6fb's; the phase head 98b4f0e differs from fada6fb only in delivery/work-history/m3-p5.yaml, so the e2e result applies to the head's code. The single skip is test/e2e/pressed-and-disabled.spec.ts:1799 under the desk project (e2e-p5.txt:281), matching the work history's account.",
+        "M3-P4 mobile journey unmodified: git diff dff0824 98b4f0e -- test/e2e/mobile-import.spec.ts is empty; it passed under chromium (e2e-p5.txt:250, e2e-p5.txt:251) and chromium-phone (e2e-p5.txt:552, e2e-p5.txt:553). It imports test/e2e/phone-helpers.ts (test/e2e/mobile-import.spec.ts:10), whose diff is additive only (one import line widened from type-only, one new export appended at test/e2e/phone-helpers.ts:225)."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.4",
+      "quote": "A test POSTs the fixture PDF as multipart form data to the share route with NO session and asserts: the response redirects to sign-in, no Import row is created, and no uploaded bytes are persisted anywhere (decision D-10's no-preservation contract; finding PR2-005).",
+      "evidence": [
+        "test/e2e/share-target.spec.ts:82 posts the statement fixture with the cookie-less API client, maxRedirects 0, and asserts 303 (test/e2e/share-target.spec.ts:92), Location path /sign-in (test/e2e/share-target.spec.ts:93) and Import count unchanged (test/e2e/share-target.spec.ts:96); passed at e2e-p5.txt:331 and e2e-p5.txt:697.",
+        "Bytes persisted anywhere: the only byte store is Import.rawContent (grep -rnE \"storage\\.from|writeFile|fs\\.write|createWriteStream|rawContent\" src finds rawContent only in the import module's use cases and repository, src/modules/import/application/upload-statement.ts:58), so no Import row means no bytes, as argued at test/e2e/share-target.spec.ts:35. The request never reaches the route: src/middleware.ts:53 answers it 303 before any body is read, and the 303 (not 307) means the browser does not re-POST the file to sign-in.",
+        "Red half witnessed: scratchpad share-red.txt shows this test failing with Received 307 against the pre-phase middleware.",
+        "The half-made-session path through the route's own catch is unit-tested at test/app/share-route.test.ts:57 (303 to the boundary's target, uploadStatement not called)."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.5",
+      "quote": "ADDED in the M0-P3 fix round (finding MPR-007): ... The share journey is run under the phone project M3-P7 added, and at 390 by 844 the screen the share target lands the user on satisfies the same three standing measurements criterion 4.1 names: every element matching \"a, button, input:not([type=hidden]), select, [role=button]\" inside main with a non-zero bounding box has a bounding height of at least 44 CSS pixels; the sorted testid-and-text collection is deeply equal at 1280 by 720 and at 390 by 844, with every collected element non-zero in size at the phone width; and the clipping sweep of criterion 7.7 returns an empty offender list on both axes. FALSIFIED BY one offender in any of the three.",
+      "evidence": [
+        "playwright.config.ts:129 adds share-target to the chromium-phone project (Pixel 5, isMobile, hasTouch, 390 by 844, playwright.config.ts:104 to playwright.config.ts:110); the journey passed there at e2e-p5.txt:699 and under the desk project at e2e-p5.txt:333.",
+        "The landing screens are measured at test/e2e/share-target.spec.ts:135 (declaration) and test/e2e/share-target.spec.ts:154 (result) by measurePhoneScreen, test/e2e/phone-helpers.ts:237: tap targets over header and main (a superset of main) via tapTargetOffenders, clipping on both axes via clippingOffenders, and the sorted testid-and-text collection compared at 390 by 844 and 1280 by 720 with every phone entry non-zero. Assertions are soft, which still fails the test at its end, so the pass at e2e-p5.txt:699 means zero offenders in all three.",
+        "Not reached by this criterion's measurement: the no-file landing (/import?status=no-file) and the sign-in landing of an unauthenticated share are not measured by this spec; the criterion names the screen the share lands on after a successful share, which is what is measured."
+      ],
+      "met": true
+    }
+  ],
+  "deviations-judged": [
+    {
+      "deviation": "branch: claude/m3-p5-share-target",
+      "serves-plan-intent": true,
+      "reasoning": "The branch name is logistics and carries none of the phase's behaviour; the reviewed commits dff0824..98b4f0e are the whole phase and nothing in the intent turns on the branch's name."
+    },
+    {
+      "deviation": "files-to-touch (src/app/, src/modules/import/ui/, messages, test/e2e/)",
+      "serves-plan-intent": true,
+      "reasoning": "Each extra file is needed by the intent and witnessed: src/middleware.ts is where an unauthenticated share is decided before any route runs, and share-red.txt shows both the manifest fetch (307 instead of 200) and the unauthenticated share (307 instead of 303) failing without the change, so without it the manifest would not load and D-10 would be broken by the browser re-POSTing the file. public/icons and scripts/generate-app-icons.ts supply the icons the manifest names, byte-pinned by test/app/share-target-manifest.test.ts:159. test/app holds the unit tests, and playwright.config.ts:129 is what puts the share journey under the phone project criterion 5.5 names. No messages file changed; the route reuses the existing no-file status and import screens, so no new copy exists to translate."
+    }
+  ]
+}

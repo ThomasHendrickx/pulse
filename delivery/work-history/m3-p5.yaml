@@ -24,6 +24,10 @@ files-touched:
 per-step-commits:
   - sha: fada6fb
     subject: "M3-P5: share a PDF from the phone straight into the import flow"
+  - sha: 98b4f0e
+    subject: "M3-P5: record the work history"
+  - sha: 31fd73d
+    subject: "M3-P5 fix round 1: accept the share the phone actually sends"
 key-decisions:
   - decision: >-
       Run by the orchestrator session directly, the second phase under the
@@ -71,14 +75,27 @@ key-decisions:
       appears in the share sheet. Both were witnessed red against the
       pre-phase middleware (claim C-5-middleware-red).
   - decision: >-
-      A cross-site POST (an Origin header naming another host) is answered
-      403 before the session or the body is read.
+      CORRECTED IN FIX ROUND 1 (findings CR-M3P5-01 medium, HZ-001 high;
+      R-087). This entry used to say a POST whose Origin names another host,
+      or is not a URL, is answered 403, and that the share sheet POSTs with
+      this site's origin. The second half was false for shipped Android
+      Chrome, which sends a share as a navigation with no initiator and so
+      carries "Origin: null": the check refused every real share. The route
+      now refuses on Sec-Fetch-Site cross-site or same-site, and on an
+      Origin that is a URL naming another host or is neither a URL nor
+      "null"; "null" and an absent Origin decide nothing on their own.
     why: >-
       Hazard H5.2 is the share route becoming a write path for someone
-      else's page. The session cookies are SameSite Lax, so such a POST
-      normally arrives without a session and the middleware already sends
-      it to sign-in; the Origin check makes the route's refusal its own
-      rather than a property of a cookie attribute set elsewhere.
+      else's page. Sec-Fetch-Site is set by the browser and cannot be set by
+      a page, so it separates a browser-started share ("none") from a form
+      on another site ("cross-site") in exactly the case where Origin is
+      "null" for both. The session cookies are SameSite Lax, so a
+      cross-site POST normally arrives without a session and the middleware
+      already sends it to sign-in; the route's refusal stays its own rather
+      than a property of a cookie attribute set elsewhere. The request
+      shape was established from Chromium's source by the hazard lane, not
+      from a device: it is covered by a unit test that fails against the
+      round one route and by the e2e share, which now sends those headers.
   - decision: >-
       No service worker, no theme_color, no background_color. The icons are
       generated PNGs, drawn from the design tokens by
@@ -93,8 +110,11 @@ key-decisions:
       icon colours are read from styles/tokens.css at generation time and
       converted from oklch() to sRGB, the only colour space a PNG carries.
       The mark sits inside the maskable safe zone, so each file serves the
-      "any" and the "maskable" purpose. Installation on the owner's own
-      device is not something this container can witness.
+      "any" and the "maskable" purpose. CORRECTED IN FIX ROUND 1 (finding
+      CR-M3P5-02): that Chromium installs without a service worker is its
+      documented behaviour, not something measured here; installing on the
+      owner's own phone and sharing one statement from it is OWED EVIDENCE,
+      recorded as open claim C-5-on-device.
   - decision: >-
       The phone measurements for criterion 5.5 are a new shared helper,
       measurePhoneScreen in test/e2e/phone-helpers.ts, composed only from
@@ -147,6 +167,46 @@ deviations:
       criterion 5.5 asks for). No messages catalogue changed: the share
       path adds no user-facing sentence, reusing the existing no-file
       status and the existing import screens.
+fix-round:
+  - mechanism: >-
+      FIX ROUND 1, answering both clean-room lanes at 98b4f0e (criteria:
+      CR-M3P5-01 medium, 02 and 03 low; hazard: HZ-001 high, 002 to 005
+      low). A request shape the platform sends and no test sent: the
+      share-sheet POST from shipped Android Chrome carries "Origin: null",
+      the cross-site check treated a non-URL Origin as foreign, and every
+      test posted without an Origin at all, so the whole suite was green
+      over a route that refused every real share. Fixed by deciding on
+      Sec-Fetch-Site and treating "null" like an absent Origin, with a
+      unit test and the e2e share sending the phone's exact headers. The
+      lows: the manifest matcher entry anchored and its dot escaped
+      (HZ-005); the share walk extended to the month view's reconciliation
+      panel (CR-M3P5-03); the generator's test path corrected (HZ-003); the
+      install claim recast as owed evidence (CR-M3P5-02); and a correction
+      to commit fada6fb's message (HZ-004), which says every redirect on
+      the way is a 303 with a relative Location: the middleware's 303 is
+      absolute, as its own comment says, because middleware refuses a
+      relative redirect. The commit stays as written; this entry is the
+      correction on record. NOT FIXED, with its reason: HZ-002 (the share
+      route reads a body of any size, where the upload server action is
+      capped by Next's default 1 MB). The route is reachable only with a
+      household session, and choosing a cap is a product decision with its
+      own user-facing refusal copy in three languages; it is recorded as
+      open claim C-5-body-size rather than decided inside a fix round.
+    derivation:
+      command: >-
+        git show 98b4f0e:"src/app/(app)/import/share/route.ts" over the
+        fixed route, then npx vitest run test/app/share-route.test.ts;
+        then the fixed route restored and the same command run again
+      output: |
+        round one route: Tests  1 failed | 12 passed (13)
+          x the share route > the phone's own share (Origin null, Sec-Fetch-Site none) is accepted
+        fixed route: Tests  13 passed (13)
+    not-covered: >-
+      The request shape comes from Chromium's source as read by the hazard
+      lane; no Android device was available, so the headers a real share
+      carries on the owner's phone are not witnessed (claim C-5-on-device).
+      Browsers other than Chromium do not implement share targets and are
+      not considered.
 gate-evidence:
   - gate: "typecheck (npm run typecheck; tree d776545, the tree of fada6fb)"
     result: green
@@ -176,6 +236,24 @@ gate-evidence:
     todo: 0
     did-not-run: 0
   - gate: "slow gate (npx playwright test, all four projects; tree d776545, run as commit 6bf1864 before the rebase onto main, whose tree is identical to fada6fb's; the M3-P4 mobile journey passed unmodified; the skip is the touch test's own hasTouch guard on the desk project)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 137
+    passed: 136
+    failed: 0
+    skipped: 1
+    todo: 0
+    did-not-run: 0
+  - gate: "FIX ROUND 1 typecheck, lint, fast suite (head 31fd73d; npm test 57 files)"
+    result: green
+    wrapper-exit-code: 0
+    discovered: 778
+    passed: 778
+    failed: 0
+    skipped: 0
+    todo: 0
+    did-not-run: 0
+  - gate: "FIX ROUND 1 slow gate (npx playwright test, all four projects, head 31fd73d; the M3-P4 mobile journey unmodified and passing; the skip is the touch test's own hasTouch guard on the desk project)"
     result: green
     wrapper-exit-code: 0
     discovered: 137
@@ -227,6 +305,25 @@ claims:
         command: "grep -rE \"oklch\\(|#[0-9a-fA-F]{3,8}\" src/"
         exit-code: 1
         output: "(no output)"
+  - id: C-5-on-device
+    kind: open-question
+    statement: >-
+      Pulse installs on the owner's Android phone and appears in its share
+      sheet for a PDF, and a share from the banking app lands in the import
+      flow.
+    still-open-because: >-
+      No Android device is reachable from the container. The manifest and
+      the route are checked against the request Chromium's source says a
+      share sends; the owner sharing one real statement is the witness.
+  - id: C-5-body-size
+    kind: open-question
+    statement: >-
+      Whether the share route should cap the size of a shared file the way
+      Next's default caps the upload server action at 1 MB.
+    still-open-because: >-
+      A cap needs a number and a refusal sentence in three catalogues; it
+      is a product choice, not a fix-round correction (finding HZ-002,
+      low). Reachable only with a household session.
 environment-warnings:
   - warning: >-
       The Docker daemon did not survive the session resume: dockerd failed
