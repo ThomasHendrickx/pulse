@@ -1,0 +1,144 @@
+{
+  "kind": "verdict",
+  "phase": "M3-P5",
+  "head": "98b4f0e86d234cbe67fa6624c2801326582f97ff",
+  "tiphys-version": "0.2.1",
+  "produced-by": "claude",
+  "framing": "unauthenticated-write-and-cache-paths",
+  "review-contract": "hazard",
+  "verdict": "FIX-ROUND-NEEDED",
+  "findings": [
+    {
+      "id": "HZ-001",
+      "severity": "high",
+      "evidence": [
+        "src/app/(app)/import/share/route.ts:46-56: isCrossSite returns false only for an ABSENT Origin; for any Origin that does not parse as a URL it returns true (the catch at src/app/(app)/import/share/route.ts:53-54), and the POST handler answers 403 on true. The literal Origin value null does not parse: node -e 'new URL(\"null\")' throws ERR_INVALID_URL (captured).",
+        "Chromium content/browser/renderer_host/navigation_request.cc (release tag 146.0.7680.0, lines 403-408, and main, lines 430-436): for a POST navigation the browser sets Origin to initiator_origin.value_or(url::Origin()), and a default url::Origin is opaque, so a POST navigation with no initiator carries the header Origin: null.",
+        "Chromium chrome/browser/android/webapk/webapk_post_share_target_navigator.cc, the code that turns an Android share into the share_target POST: at release tags 120.0.6099.0, 130.0.6723.0, 135.0.7049.0, 138.0.7204.0, 140.0.7339.0, 142.0.7444.0, 144.0.7559.0, 146.0.7680.0, 147.0.7727.0, 148.0.7778.0, 149.0.7827.0, 150.0.7871.0, 151.0.7922.0 and 152.0.7970.0 (every tag probed; 153.0.8020.0 does not exist on the mirror) it builds OpenURLParams browser-initiated with NO initiator_origin (tag 146 lines 33-40). Only unreleased main sets initiator_origin to the share target's own origin (main lines 35-46, with a comment explaining why). Fetched with curl from the public raw.githubusercontent.com chromium mirror during this review.",
+        "So on every Chrome release probed, a real share from the owner's Android phone arrives with Origin: null and a session (the navigation is browser-initiated, so the SameSite=Lax cookie is attached), passes the middleware, and is answered 403 with an empty body by src/app/(app)/import/share/route.ts:61-63. Nothing is imported.",
+        "No test sends Origin: null: grep for '\"null\"' and 'origin: \"null\"' over test/app/share-route.test.ts and test/e2e/share-target.spec.ts exits 1. The e2e share requests go through Playwright's API client, which sends no Origin header at all (test/e2e/share-target.spec.ts:123-126 and :144-146), so they take the absent-Origin branch at src/app/(app)/import/share/route.ts:48-49, which is not the branch the phone takes. This is why 136 of 136 e2e tests pass (e2e-p5.txt) while the phase's one deliverable is refused on its declared platform.",
+        "R-087: the comment at src/app/(app)/import/share/route.ts:28-29 states 'The share sheet POSTs from the installed app, whose origin is this site' as present-tense fact; on every shipped Chrome probed it is false. The work history key decision (delivery/work-history/m3-p5.yaml, the decision beginning 'A cross-site POST (an Origin header naming another host)') describes the rule as refusing a header naming another host, but the code also refuses an Origin that names no host at all."
+      ],
+      "concrete-fix": "Stop refusing the opaque origin, and let the browser's own fetch metadata carry the cross-site decision. In isCrossSite (src/app/(app)/import/share/route.ts:46-56): refuse when Sec-Fetch-Site is 'cross-site' or 'same-site'; otherwise treat an absent Origin AND the literal 'null' Origin as not cross-site, and keep the host comparison only for an Origin that parses. (A browser-initiated share navigation sends Sec-Fetch-Site: none today and same-origin once Chromium main ships; a POST from another site's page sends cross-site, and under SameSite=Lax arrives without a session anyway, so the middleware 303s it.) Add unit cases to test/app/share-route.test.ts: Origin 'null' with Sec-Fetch-Site 'none' is accepted and uploaded; Sec-Fetch-Site 'cross-site' is refused 403 before the context is read. Add an e2e case to test/e2e/share-target.spec.ts posting with headers {origin: 'null', 'sec-fetch-site': 'none'} from a signed-in page and asserting 303 to /import/<uuid>. Correct the comment at src/app/(app)/import/share/route.ts:28-29 to say what a real Android share sends (Origin: null on shipped Chrome, per the Chromium file named above) and correct the work history key decision to match.",
+      "analysis": "This is the hazard-contract case the kernel names: every criterion passes and the phase intent is not delivered. The mitigation added for H5.2 (the Origin check) is correct in its reason and wrong in its model of the legitimate caller: it assumes the share sheet presents this site's origin, and on Android Chrome it presents the opaque origin. It fails closed, so no data is exposed or lost; the harm is that the share target is unusable on the owner's phone, which is the H5.3 harm ('an unusable phase') reached through the request shape rather than the platform choice. DR-0021 (Android) is not questioned here and stands. Limit of this evidence: it is source-level, read from the Chromium mirror, and no device was available; the work history also records that installation on the owner's device was not witnessed. A single real share from the owner's phone before merge would settle it either way, and the fix above is correct under both outcomes."
+    },
+    {
+      "id": "HZ-002",
+      "severity": "low",
+      "evidence": [
+        "src/app/(app)/import/share/route.ts:76-90 reads the whole multipart body with request.formData() and copies the file again with file.arrayBuffer(), with no size limit anywhere on the path.",
+        "The upload action it mirrors (src/modules/import/ui/actions.ts:16-29) is a server action, and Next's server action handler caps its body at 1 MB by default (node_modules/next/dist/server/app-render/action-handler.js:478-480, and next.config.ts sets no serverActions.bodySizeLimit). A route handler has no such cap.",
+        "uploadStatement stores the bytes as Import.rawContent even when the file fails detection (src/modules/import/application/upload-statement.ts:54-62), so an arbitrarily large non-PDF body becomes a FAILED Import row holding all of it.",
+        "Reached only after the middleware and requireHouseholdContext have both accepted a session (src/app/(app)/import/share/route.ts:64-74 precedes the body read at :78), so no unauthenticated request reads a byte; the exposure is an authenticated household member's own request."
+      ],
+      "concrete-fix": "Before reading the body in src/app/(app)/import/share/route.ts, refuse a Content-Length above a declared limit, and after formData() refuse file.size above the same limit, answering 303 to /import with a status the import page already renders or a new too-large status with en, nl and fr copy. Declare the limit once beside SHARE_TARGET_FILE_FIELD in src/modules/import/ui/share-target.ts and set next.config.ts serverActions.bodySizeLimit from the same value so the two upload paths refuse the same files. Add a unit case posting a body one byte over the limit and asserting uploadStatement is not called."
+    },
+    {
+      "id": "HZ-003",
+      "severity": "low",
+      "evidence": [
+        "scripts/generate-app-icons.ts:7-8 says 'The fast gate asserts byte-for-byte equality between buildAppIcon() and the committed files (test/app/app-icons.test.ts)'. That file does not exist at 98b4f0e: ls test/app | grep -i icon prints nothing and git ls-tree finds no app-icons path. The assertion lives at test/app/share-target-manifest.test.ts:47-52.",
+        "R-087: a false present-tense pointer in a comment; a reader following it finds nothing and may conclude the icons are unpinned."
+      ],
+      "concrete-fix": "Change the parenthesis at scripts/generate-app-icons.ts:8 to name test/app/share-target-manifest.test.ts."
+    },
+    {
+      "id": "HZ-004",
+      "severity": "low",
+      "evidence": [
+        "Commit fada6fb message, paragraph 2: 'Every redirect on the way is a 303 with a relative Location, so the browser never repeats the POST with the file in its body and never changes host and loses the session.'",
+        "The middleware's share redirect, which is on the way for every unauthenticated share, is absolute, and its own comment says so: src/middleware.ts:46-53 ('The Location is absolute here, unlike the share route's'). The work history states the scoped and true version ('Every redirect the share route issues is a 303 with a RELATIVE Location').",
+        "R-087: a false statement in a commit message."
+      ],
+      "concrete-fix": "The commit is not rewritten. Record the correction in delivery/work-history/m3-p5.yaml (a corrections or honest-failures entry): the middleware's 303 for an unauthenticated share carries an absolute Location, harmless because that branch has no session; only the route's redirects are relative."
+    },
+    {
+      "id": "HZ-005",
+      "severity": "low",
+      "evidence": [
+        "src/middleware.ts:73 adds manifest.webmanifest to the negative lookahead unanchored and with an unescaped dot. Compiled with Next's bundled path-to-regexp (node, captured): /manifest.webmanifest excluded, /manifest.webmanifest/x excluded, /manifestXwebmanifest excluded, /manifest.webmanifestfoo excluded, /import/share MIDDLEWARE RUNS.",
+        "No route in src/app today starts with 'manifest', so nothing is exposed now; every such path would skip the session check the middleware provides. The pre-existing favicon.ico and api/health entries on the same line have the same shape."
+      ],
+      "concrete-fix": "Write the new entry as manifest\\\\.webmanifest$ inside the lookahead (the extension group on the same line already uses $), and add a unit case in test/app/ asserting the compiled matcher excludes /manifest.webmanifest and matches /manifest.webmanifest/x."
+    }
+  ],
+  "hazard-classes-addressed": [
+    {
+      "class-id": "H5.1",
+      "probed": "git grep over src, public, scripts, package.json and next.config.ts at 98b4f0e for serviceWorker, service-worker, caches., CacheStorage, workbox, next-pwa, sw.js, Cache-Control, revalidate, force-static, unstable_cache and 'use cache': the only hit is the pre-existing no-store header at src/app/api/health/version/route.ts:56. find outside node_modules for sw.js or *service-worker* prints nothing; public/ holds only public/icons/icon-192.png and icon-512.png. The plan's own grep (grep -rE 'caches\\.|CacheStorage|workbox' src/) exits 1. package.json and the lockfile are unchanged by the diff, so no PWA package entered. src/app/manifest.ts:26-61 carries no serviceworker member. The manifest is a static Next metadata route, which is ordinary HTTP delivery of a data-free document, not an application cache.",
+      "cleared-because": "No service worker, no cache API and no caching package exist in the tree or the diff, and nothing registers one; the manifest installs without one, as the work history's key decision states. The side door this class names is closed at this head. What stays unwitnessed is whether Android Chrome mints the WebAPK without a service worker on the owner's device; that is a delivery question the work history already records as unwitnessed, and if it were ever to require one, step 1's condition (no fetch handler, no cache API) governs it."
+    },
+    {
+      "class-id": "H5.2",
+      "probed": "Every path to uploadStatement: its only callers are src/modules/import/ui/actions.ts:25 and src/app/(app)/import/share/route.ts:87 (grep). Layer 1, the middleware: the matcher at src/middleware.ts:73, compiled with Next's path-to-regexp, runs for /import/share, /import/share/, /Import/Share and /import/%73hare; the new manifest exclusion opens only paths starting manifest.webmanifest (HZ-005, none routable). Without a user, src/middleware.ts:39-55 redirects before any body read; the 303 branch is keyed on the exact pathname, so every other request keeps its 307 and only GET or POST /import/share without a session changes (to 303, query dropped). Next is 15.5.23, past the x-middleware-subrequest bypass fix. Layer 2, the route: requireHouseholdContext runs at src/app/(app)/import/share/route.ts:64-74 BEFORE request.formData() at :78, and its redirect (no user, or the orphan half-session) is converted to a 303 to a relative same-site path, so even a middleware bypass reaches no body read and no write; its signOut cookies are merged into the custom response (node_modules/next/dist/server/route-modules/app-route/module.js:443,482 appendMutableCookies). The unit test at test/app/share-route.test.ts:57-66 drives the REAL next/navigation redirect() through the route and asserts 303, the location, and no upload, so a Next upgrade that moves isRedirectError or getURLFromRedirectError fails the import or that test (774/774 green in this tree). No 307 anywhere on the path: the route only issues 303 (seeOther) or 403. Origin check: a different host or port fails the host comparison (URL.host includes the port); a spoofed Host header needs a non-browser client, which carries no victim cookie; a missing Origin is accepted, which is safe because browsers send Origin on cross-origin POST and the Supabase cookies are SameSite=lax (node_modules/@supabase/ssr/dist/main/utils/constants.js:6), so the route comment's cookie claim is true; scheme is not compared, which matters only under an active network attacker. The null Origin is where the check goes wrong, in the refusing direction (HZ-001). Tenancy: the route adds no query; context flows from requireHouseholdContext into uploadStatement, whose createImport writes householdId from the context (src/modules/import/adapters/import-repository.ts:67-80). Red witness share-red.txt shows both middleware tests red at the base middleware (307 received) and e2e-p5.txt shows 8 share tests green across chromium and chromium-phone. Body size: HZ-002 (authenticated only).",
+      "cleared-because": "No request without an authenticated household context reaches uploadStatement or reads the request body: the middleware stops it first, and the route's own household boundary, which runs before the body is read, stops it again, both with a bodiless 303, so no file is forwarded, stored or handed off (D-10 holds). The Origin check adds a third layer for authenticated cross-site POSTs. The class's harm, an unauthenticated write path, is not reachable at this head. The findings nearby are HZ-001 (the Origin check refuses the legitimate caller, a usability failure and not a write path), HZ-002 (no size cap on the authenticated path) and HZ-005 (matcher precision)."
+    },
+    {
+      "class-id": "H5.3",
+      "probed": "DR-0021 (Android) is owner-decided and not re-opened. The question asked was the harm the class names, an unusable phase, reached by any route: I traced what the owner's Android Chrome actually sends when a PDF is shared to an installed WebAPK, from Chromium source (webapk_post_share_target_navigator.cc at every release tag from 120 through 152, and navigation_request.cc's Origin rule), and ran that request shape against the route's Origin check.",
+      "finding": "HZ-001"
+    }
+  ],
+  "criteria": [
+    {
+      "id": "5.1",
+      "quote": "curl -s against the deployed or dev manifest URL returns JSON whose share_target declares method POST, multipart/form-data and a files entry accepting application/pdf, and npm run test:e2e exits 0 including a spec that POSTs the synthetic fixture PDF as multipart form data to the share route and asserts the redirect chain ends on an import state with the fixture's rows added.",
+      "evidence": [
+        "test/e2e/share-target.spec.ts:54-80 GETs /manifest.webmanifest with no session and asserts 200, action /import/share, POST, multipart/form-data and files [{name: file, accept: [application/pdf, .pdf]}] (the curl-equivalent over HTTP, green in both projects in e2e-p5.txt).",
+        "test/e2e/share-target.spec.ts:144-153 POSTs the companion fixture, follows the redirect chain to 200 on /import/<uuid>, and asserts rows-added 4; e2e-p5.txt: 136 passed, 1 skipped, run at 6bf1864 whose tree d776545 equals fada6fb's (git rev-parse, captured).",
+        "Met as written; the request shape it uses sends no Origin, unlike a real Android share (HZ-001)."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.2",
+      "quote": "grep -rE \"caches\\.|CacheStorage|workbox\" src/ exits 1, and if a service worker file exists it contains no fetch event listener, asserted by grep for \"fetch\" over that file exiting 1.",
+      "evidence": [
+        "grep -rE 'caches\\.|CacheStorage|workbox' src/ in the review tree: exit 1 (captured).",
+        "No service worker file exists (find outside node_modules for sw.js or *service-worker*: no output), so the second half is vacuous."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.3",
+      "quote": "npm run typecheck && npm run lint && npm test exit 0 and npm run test:e2e exits 0 at the phase head, including the unmodified M3-P4 mobile journey.",
+      "evidence": [
+        "In the review tree at 98b4f0e: npx tsc --noEmit exit 0; npm run lint exit 0; npm test exit 0, 57 files, 774 tests passed; gate:privacy clean exit 0; gate:decisions clean exit 0 (all captured).",
+        "e2e-p5.txt: 136 passed, 1 skipped, exit 0, at a tree identical to fada6fb's; 98b4f0e adds only delivery/work-history/m3-p5.yaml.",
+        "test/e2e/mobile-import.spec.ts is absent from git diff --stat dff0824 98b4f0e, so the M3-P4 journey is unmodified."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.4",
+      "quote": "A test POSTs the fixture PDF as multipart form data to the share route with NO session and asserts: the response redirects to sign-in, no Import row is created, and no uploaded bytes are persisted anywhere (decision D-10's no-preservation contract; finding PR2-005).",
+      "evidence": [
+        "test/e2e/share-target.spec.ts:82-97 posts the statement fixture with no session and maxRedirects 0, asserts 303 with Location pathname /sign-in, and asserts the Import count is unchanged; Import.rawContent is where uploaded bytes are kept (upload-statement.ts:54-62), and the middleware returns before any body read (src/middleware.ts:39-54).",
+        "Red witness share-red.txt: at the base middleware this test received 307."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.5",
+      "quote": "The share journey is run under the phone project M3-P7 added, and at 390 by 844 the screen the share target lands the user on satisfies the same three standing measurements criterion 4.1 names ... FALSIFIED BY one offender in any of the three.",
+      "evidence": [
+        "playwright.config.ts:129 adds share-target to the chromium-phone project's testMatch.",
+        "test/e2e/share-target.spec.ts:135 and :154 call measurePhoneScreen on both landing screens; test/e2e/phone-helpers.ts:237-278 composes the tap-target, testid-and-text equality at 1280x720 and 390x844 with non-zero sizes, and both-axis clipping measurements as soft assertions.",
+        "e2e-p5.txt: chromium-phone share-target tests 120-123 all passed."
+      ],
+      "met": true
+    }
+  ],
+  "deviations-judged": [
+    {
+      "deviation": "branch: claude/m3-p5-share-target",
+      "serves-plan-intent": true,
+      "reasoning": "The branch name carries no product behaviour; the phase content at 98b4f0e is what the plan asks for, and the reviewed head is named by sha, so the review and merge evidence do not depend on the branch name. Serves the intent."
+    },
+    {
+      "deviation": "files-to-touch (src/app/, src/modules/import/ui/, messages, test/e2e/)",
+      "serves-plan-intent": true,
+      "reasoning": "src/middleware.ts had to change: the base middleware's 307 would carry the shared file to sign-in (red witness share-red.txt) and its redirect of the manifest made the app uninstallable, so D-10 and installability are unreachable without it. The icons and their generator are required by installability; test/app/ and playwright.config.ts hold the phase's own tests and the phone project criterion 5.5 names. The generator reads colours from styles/tokens.css (scripts/generate-app-icons.ts:28, :126-127) and the icons are pictures of an invented mark, so non-negotiables 4 and 8 hold. The untouched message catalogues are correct: the route reuses the existing no-file status. Serves the intent; HZ-003 and HZ-005 are small defects inside the added files, not reasons against adding them."
+    }
+  ]
+}
