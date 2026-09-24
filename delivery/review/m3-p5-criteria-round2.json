@@ -1,0 +1,111 @@
+{
+  "kind": "verdict",
+  "phase": "M3-P5",
+  "head": "98fbadc46e7018abc6480a8914c4ef92aeeb24dc",
+  "tiphys-version": "0.2.1",
+  "produced-by": "claude",
+  "framing": "criteria-contract",
+  "review-contract": "criteria",
+  "verdict": "APPROVE",
+  "findings": [
+    {
+      "id": "CR2-M3P5-01",
+      "severity": "low",
+      "evidence": [
+        "src/app/(app)/import/share/route.ts:39-41 says of the cross-site refusal: '(The session cookies are SameSite Lax, so a cross-site POST normally arrives without a session and the middleware has already sent it to sign-in; this check does not rely on that.)' delivery/work-history/m3-p5.yaml:92-95 says the same: 'the route's refusal stays its own rather than a property of a cookie attribute set elsewhere.'",
+        "At 98fbadc that is false for one request shape. src/app/(app)/import/share/route.ts:57-64: when Sec-Fetch-Site is absent and Origin is the literal null (or absent), isCrossSite returns false and the POST proceeds. A browser without Fetch Metadata (it is sent by Chromium and by current Firefox and Safari, but not by older Safari or Firefox) submitting a cross-site form from a sandboxed iframe, a data: URL or across a redirect sends exactly Origin: null with no Sec-Fetch-Site. For that shape the only thing between another site's page and the upload is the SameSite=Lax session cookie, which is the @supabase/ssr default (node_modules/@supabase/ssr/dist/main/utils/constants.js:6; nothing under src sets cookie options: grep -rn 'cookieOptions|sameSite' src finds only the comment).",
+        "Accepting Origin null is correct and required by the phase intent (the phone sends it); the fault is only the sentence claiming independence from the cookie attribute. Round one's route refused Origin null, so this dependence is new in the fix round and is not named anywhere."
+      ],
+      "concrete-fix": "Replace the last sentence of the comment at src/app/(app)/import/share/route.ts:39-41 and the matching sentence at delivery/work-history/m3-p5.yaml:92-95 with the true statement: where the browser sends Sec-Fetch-Site the route's refusal is its own; where it does not and the Origin is null or absent, the refusal rests on the session cookie being SameSite=Lax (the @supabase/ssr default), and the middleware then sends the POST to sign-in. Optionally pin that default with a unit assertion so a change to the cookie options is seen.",
+      "analysis": "R-087: a present-tense comment claim that nothing checks and that the fix round itself made untrue. No live exposure found: with Lax cookies the request reaches the middleware without a session and is answered 303 to sign-in, and a share target only exists on Chromium, which sends Fetch Metadata. Ranked low for that reason. ROUND 1 CRITERIA FINDINGS AT 98fbadc (recorded here because the verdict schema has no top-level analysis field; none of the three is re-raised). CR-M3P5-01 (medium): CLOSED. isCrossSite now refuses on Sec-Fetch-Site cross-site or same-site first (src/app/(app)/import/share/route.ts:54 and src/app/(app)/import/share/route.ts:57-60), treats Origin null like an absent Origin (src/app/(app)/import/share/route.ts:62-63), and keeps the host comparison for a parseable Origin (src/app/(app)/import/share/route.ts:65-66). Traced for the shipped Android Chrome share (Origin: null, Sec-Fetch-Site: none, session cookie attached): none is not in the refused set, null returns false, so the handler proceeds to requireHouseholdContext and uploadStatement. Unit case test/app/share-route.test.ts:110-116 asserts 303 and one upload; scratchpad route-red.txt shows it failing against the round one route (expected 403 to be 303, 1 failed 12 passed) and my run at 98fbadc passes it (npm test exit 0, 778 of 778). The e2e share at test/e2e/share-target.spec.ts:153-163 now sends origin null and sec-fetch-site none through the real middleware and route and passed under chromium and chromium-phone at the fix head (e2e-p5-fr1.txt:333 and e2e-p5-fr1.txt:699). The refusal side: test/app/share-route.test.ts:118-128 (Sec-Fetch-Site cross-site and same-site with Origin null, 403 before the context is read) and :100-105 (foreign Origin); the e2e cross-site case test/e2e/share-target.spec.ts:99-112 passed at e2e-p5-fr1.txt:332 and :698. The comment at src/app/(app)/import/share/route.ts:28-41 is corrected, and the on-device headers are recorded as owed evidence (delivery/work-history/m3-p5.yaml:204-207 and claim C-5-on-device at delivery/work-history/m3-p5.yaml:308-317). CR-M3P5-02 (low): CLOSED. src/app/manifest.ts:19-23 now states the no-service-worker installability as Chromium's documented behaviour, not measured, and points at owed evidence; delivery/work-history/m3-p5.yaml:113-117 says the same and C-5-on-device is an open claim. No source is cited in the comment, but I checked it: web.dev/articles/install-criteria (fetched in this review, HTTP 200) lists name or short_name, 192 and 512 icons, start_url, display and prefer_related_applications, and no service worker, so the recast statement is true. CR-M3P5-03 (low): CLOSED. test/e2e/share-target.spec.ts:141-144 opens /?month=2026-05 after the first share's confirm and asserts recon-panel data-state ok, the same month and assertion test/e2e/import.spec.ts:205 uses for criterion 2.5; passed at e2e-p5-fr1.txt:333 and e2e-p5-fr1.txt:699. PHASE INTENT AT 98fbadc: delivered, as far as a container can show. A real share from shipped Android Chrome (Origin: null, Sec-Fetch-Site: none, as the round one hazard verdict established from Chromium source) passes src/app/(app)/import/share/route.ts:57-64 and reaches the upload; witnessed by the unit case test/app/share-route.test.ts:110-116 (red against the round one route in route-red.txt) and by the e2e share at test/e2e/share-target.spec.ts:153-163 through the real middleware and route. The future Chromium shape (Origin: this site, Sec-Fetch-Site: same-origin) passes the host comparison at src/app/(app)/import/share/route.ts:66, as test/app/share-route.test.ts:136-140 shows for the Origin half. A genuine cross-site POST from a modern browser carries Sec-Fetch-Site: cross-site and is refused 403 before the session or body is read (src/app/(app)/import/share/route.ts:58-59, test/app/share-route.test.ts:118-128); with a foreign URL Origin it is refused by the host check (test/app/share-route.test.ts:100-105, e2e test/e2e/share-target.spec.ts:99-112 with a session present); and without a session it never reaches the route (src/middleware.ts:51-54). WHAT THIS CONTRACT DID NOT REACH: no Android device, so the headers a real share carries and the installability of the manifest are not witnessed (owed, claim C-5-on-device); the share tests run on the dev server only (the prod project's testMatch at playwright.config.ts:84 and :158 does not include share-target), so the route under next start with Origin null is unwitnessed; the e2e log carries no sha and was attributed to 31fd73d by timing; I did not run Playwright or start a server, so the curl half of 5.1 is a substitution; the hazard lane's own findings (HZ-002 body size, left open as claim C-5-body-size; HZ-005's requested matcher unit test, not added) are the hazard lane's to judge, and I checked only that the anchored matcher behaves as its comment says (path-to-regexp probe: /manifest.webmanifest excluded; /manifest.webmanifest/x, /manifestXwebmanifest and /import/share run the middleware). All criteria met is one input here, not a completeness claim."
+    },
+    {
+      "id": "CR2-M3P5-02",
+      "severity": "low",
+      "evidence": [
+        "delivery/work-history/m3-p5.yaml:36-46, key decision 1, at 98fbadc: 'So this work history is committed BEFORE review, the reviewed head is the merged head, and the two verdicts land on main afterwards in a separate records change rather than on this branch.' and 'the owner asked for the exact commit, so nothing follows it on the branch.'",
+        "Commit 98fbadc ('M3-P5: record fix round 1 and land the round one verdicts'), on claude/tender-albattani-2btl5u (git branch -a --contains 98fbadc), adds delivery/review/m3-p5-criteria.json and delivery/review/m3-p5-hazard.json to this branch after the fix commit 31fd73d (git diff --name-only 31fd73d 98fbadc lists those two plus the work history). So verdicts did land on this branch and a commit does follow the fix head, in the same document that says neither happens.",
+        "The fix round rewrote two other key decisions with a CORRECTED IN FIX ROUND 1 note (delivery/work-history/m3-p5.yaml:77-86 and :113-117) and left this one as written."
+      ],
+      "concrete-fix": "Amend key decision 1 in delivery/work-history/m3-p5.yaml:32-46 to what happened: round one's verdicts and the fix-round record were committed on the branch in a delivery-only commit after the fix head (98fbadc), the round two verdicts review 98fbadc, and the commit merged is the one both round two verdicts name. Keep the owner's instruction quoted as it is.",
+      "analysis": "R-087: a false statement in a work history. It concerns the merge procedure, not product behaviour, and the owner's rule (merge the exact approved commit) can still be kept by merging 98fbadc, so it is low."
+    },
+    {
+      "id": "CR2-M3P5-03",
+      "severity": "low",
+      "evidence": [
+        "delivery/work-history/m3-p5.yaml:174-178, fix-round mechanism: 'the cross-site check treated a non-URL Origin as foreign, and every test posted without an Origin at all, so the whole suite was green over a route that refused every real share.'",
+        "At 98b4f0e three tests did send an Origin: git show 98b4f0e:test/app/share-route.test.ts lines 101 (https://elsewhere.example) and 108 (http://127.0.0.1:3000), and git show 98b4f0e:test/e2e/share-target.spec.ts line 107 (https://elsewhere.example). What no test sent was Origin null; the success-path shares sent no Origin.",
+        "Commit 31fd73d's own message states it correctly: 'because no test sent that header.'"
+      ],
+      "concrete-fix": "In delivery/work-history/m3-p5.yaml:176-177 replace 'every test posted without an Origin at all' with 'no test sent Origin null, and every successful share in the suite was posted without an Origin'.",
+      "analysis": "R-087: an overstated universal in the mechanism field. The mechanism it names (a request shape the platform sends and no test sent) is right; only the quantifier is wrong. Low."
+    }
+  ],
+  "criteria": [
+    {
+      "id": "5.1",
+      "quote": "curl -s against the deployed or dev manifest URL returns JSON whose share_target declares method POST, multipart/form-data and a files entry accepting application/pdf, and npm run test:e2e exits 0 including a spec that POSTs the synthetic fixture PDF as multipart form data to the share route and asserts the redirect chain ends on an import state with the fixture's rows added.",
+      "evidence": [
+        "Manifest source unchanged in substance by the fix round (only a comment): src/app/manifest.ts:52-64 declares share_target action SHARE_TARGET_PATH (/import/share, src/modules/import/ui/share-target.ts:10), method POST, enctype multipart/form-data, files [{name file, accept [application/pdf, .pdf]}].",
+        "Manifest half: no curl run in this review (no server may be started here). The equivalent cookie-less GET is test/e2e/share-target.spec.ts:54-80 (maxRedirects 0, status 200, the four share_target fields at :68-73); passed at the fix head, e2e-p5-fr1.txt:330 (chromium) and e2e-p5-fr1.txt:696 (chromium-phone). The middleware still excludes the manifest after the anchoring: the matcher at src/middleware.ts:75 compiled with next/dist/compiled/path-to-regexp in this review leaves /manifest.webmanifest excluded. Recorded as a substitution for curl, as round one did.",
+        "Spec half: test/e2e/share-target.spec.ts:153-163 POSTs the companion fixture PDF as multipart, now with the phone's headers (origin null, sec-fetch-site none), follows the redirect chain (no maxRedirects), asserts 200 on /import/<uuid> (:157-159) and rows-added 4 (:163). Passed at e2e-p5-fr1.txt:333 and e2e-p5-fr1.txt:699.",
+        "e2e exit: e2e-p5-fr1.txt:5 'Running 137 tests', e2e-p5-fr1.txt:915-917 '1 skipped', '136 passed (29.8m)', 'wrapper exit 0'. The log carries no sha; I attribute it to 31fd73d from timing (commit 16:06:26, log mtime 16:36, 29.8 minutes run) and from the work history's claim (delivery/work-history/m3-p5.yaml:256-264). 98fbadc differs from 31fd73d only under delivery/ (git diff --name-only 31fd73d 98fbadc).",
+        "Judgement: met, with the curl half discharged by an equivalent cookie-less GET."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.2",
+      "quote": "grep -rE \"caches\\.|CacheStorage|workbox\" src/ exits 1, and if a service worker file exists it contains no fetch event listener, asserted by grep for \"fetch\" over that file exiting 1.",
+      "evidence": [
+        "Run in the tree at 98fbadc in this review: grep -rE \"caches\\.|CacheStorage|workbox\" src/ printed nothing, exit 1.",
+        "No service worker: git ls-files | grep -iE '(^|/)(sw|service-?worker)[^/]*\\.(js|ts|mjs)$' exit 1; grep -rn serviceWorker src public exit 1; git ls-files public lists only public/icons/icon-192.png and public/icons/icon-512.png. The conditional half is vacuous and holds."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.3",
+      "quote": "npm run typecheck && npm run lint && npm test exit 0 and npm run test:e2e exits 0 at the phase head, including the unmodified M3-P4 mobile journey.",
+      "evidence": [
+        "Run in the tree at 98fbadc (git rev-parse HEAD printed 98fbadc46e7018abc6480a8914c4ef92aeeb24dc) in this review: npx tsc --noEmit exit 0; npm run lint exit 0; npm test exit 0 with 'Test Files 57 passed (57)' and 'Tests 778 passed (778)'; npm run gate:privacy exit 0 ('gate:privacy clean'); npm run gate:decisions exit 0 ('gate:decisions clean').",
+        "e2e: e2e-p5-fr1.txt:915-917, 136 passed, 1 skipped, wrapper exit 0, at the fix head 31fd73d (attribution by timing, see 5.1); 98fbadc adds only delivery/ records. The skip is test/e2e/pressed-and-disabled.spec.ts:1799 on the desk project (e2e-p5-fr1.txt:281), as the work history says.",
+        "M3-P4 mobile journey unmodified: git diff dff0824 98fbadc -- test/e2e/mobile-import.spec.ts is 0 lines; it passed under chromium (e2e-p5-fr1.txt:250, e2e-p5-fr1.txt:251) and chromium-phone (e2e-p5-fr1.txt:552, e2e-p5-fr1.txt:553).",
+        "Not executed by me: the Playwright run itself (outside this review's permitted commands); I rely on the captured log."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.4",
+      "quote": "A test POSTs the fixture PDF as multipart form data to the share route with NO session and asserts: the response redirects to sign-in, no Import row is created, and no uploaded bytes are persisted anywhere (decision D-10's no-preservation contract; finding PR2-005).",
+      "evidence": [
+        "test/e2e/share-target.spec.ts:82-97, unchanged by the fix round: cookie-less API client, maxRedirects 0, asserts 303 (:92), Location path /sign-in (:93-95) and Import count unchanged (:96). Passed at e2e-p5-fr1.txt:331 and e2e-p5-fr1.txt:697.",
+        "The request is answered by src/middleware.ts:51-54 (303, search cleared) before the route runs; the fix round's matcher change (src/middleware.ts:75) only narrows the manifest exclusion, and the compiled matcher still runs the middleware for /import/share (path-to-regexp probe in this review).",
+        "Bytes: the only byte store is Import.rawContent (src/modules/import/application/upload-statement.ts:58, as round one established), so no Import row means no bytes kept; the 303 means the browser does not re-POST the file to sign-in. Red half: scratchpad share-red.txt, and claim C-5-middleware-red at delivery/work-history/m3-p5.yaml:266-289 (Received 307 against the pre-phase middleware)."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.5",
+      "quote": "ADDED in the M0-P3 fix round (finding MPR-007): this is the phase that makes the phone the entry point and it carried no phone-width measurement of any kind, while DR-0022 makes phone-width evidence a standing criterion on every UI phase. The share journey is run under the phone project M3-P7 added, and at 390 by 844 the screen the share target lands the user on satisfies the same three standing measurements criterion 4.1 names: every element matching \"a, button, input:not([type=hidden]), select, [role=button]\" inside main with a non-zero bounding box has a bounding height of at least 44 CSS pixels; the sorted testid-and-text collection is deeply equal at 1280 by 720 and at 390 by 844, with every collected element non-zero in size at the phone width; and the clipping sweep of criterion 7.7 returns an empty offender list on both axes. FALSIFIED BY one offender in any of the three.",
+      "evidence": [
+        "playwright.config.ts:129 includes share-target in the phone project's testMatch; the journey passed there at the fix head (e2e-p5-fr1.txt:699) and under chromium (e2e-p5-fr1.txt:333).",
+        "Landing screens measured: test/e2e/share-target.spec.ts:135 (confirmation, first share) and test/e2e/share-target.spec.ts:164 (result, second share, which now carries the phone's headers) via measurePhoneScreen (test/e2e/phone-helpers.ts, unchanged since round one: git diff 98b4f0e 98fbadc -- test/e2e/phone-helpers.ts is empty).",
+        "Not reached: the month view the fix round added to the walk (test/e2e/share-target.spec.ts:143) is not measured, and the criterion does not ask for it; the no-file and sign-in landings are not measured, as round one recorded."
+      ],
+      "met": true
+    }
+  ],
+  "deviations-judged": [
+    {
+      "deviation": "branch: claude/m3-p5-share-target",
+      "serves-plan-intent": true,
+      "reasoning": "Verified: 98fbadc is on claude/tender-albattani-2btl5u (git branch -a --contains 98fbadc). The branch name carries none of the phase's behaviour; dff0824..98fbadc is the whole phase and the fix round, and nothing in the intent turns on the name."
+    },
+    {
+      "deviation": "files-to-touch (src/app/, src/modules/import/ui/, messages, test/e2e/)",
+      "serves-plan-intent": true,
+      "reasoning": "The fix round added no file outside the list round one judged (git diff --stat 98b4f0e 31fd73d touches scripts/generate-app-icons.ts, the route, src/app/manifest.ts, src/middleware.ts and the two tests, all already declared). src/middleware.ts remains necessary (unauthenticated share 303 and manifest exclusion, both witnessed red in C-5-middleware-red); public/icons and the generator supply the icons installability needs; test/app holds the unit tests including the fix's red witness; playwright.config.ts:129 is what puts the journey under the phone project 5.5 names. No messages file changed and none needed to: the fix adds no user-facing copy (a 403 has no body). The one unlisted delivery path, delivery/review/*.json, is records."
+    }
+  ]
+}

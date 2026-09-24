@@ -1,0 +1,123 @@
+{
+  "kind": "verdict",
+  "phase": "M3-P5",
+  "head": "98fbadc46e7018abc6480a8914c4ef92aeeb24dc",
+  "tiphys-version": "0.2.1",
+  "produced-by": "claude",
+  "framing": "unauthenticated-write-and-cache-paths",
+  "review-contract": "hazard",
+  "verdict": "APPROVE",
+  "findings": [
+    {
+      "id": "HZ2-001",
+      "severity": "low",
+      "evidence": [
+        "src/app/(app)/import/share/route.ts:56-70: when Sec-Fetch-Site is absent and Origin is the literal null, isCrossSite returns false. Captured from a throwaway vitest probe driving the real POST handler (probe/matrix.probe.test.ts, household context and uploadStatement mocked as test/app/share-route.test.ts does): 'origin=null sfs=null -> 303 upload=1'.",
+        "Origin: null with no Sec-Fetch-Site is what a POST from a sandboxed iframe, a data: document or a cross-origin-redirected form on another site carries in a browser that predates Fetch Metadata (Chrome before 76, Firefox before 90, Safari before 16.4). In that browser class the only thing keeping the victim's session off such a POST is the SameSite=lax attribute (node_modules/@supabase/ssr/dist/main/utils/constants.js:6).",
+        "R-087, the comment: src/app/(app)/import/share/route.ts:39-41 says the SameSite cookies normally keep a cross-site POST sessionless 'this check does not rely on that'. R-087, the work history: delivery/work-history/m3-p5.yaml:94-95 says 'the route's refusal stays its own rather than a property of a cookie attribute set elsewhere'. Both are true for every browser that sends Sec-Fetch-Site and false for one that does not: there, a null-Origin cross-site POST passes the check and SameSite is the whole defence.",
+        "No write is reachable today: every current browser sends Sec-Fetch-Site, the matrix refuses same-site and cross-site under every Origin, and a cross-site POST under SameSite=lax carries no session, so the middleware 303s it to sign-in (src/middleware.ts:39-54). What is left is a comment claiming more independence than the code has. That is why this is low."
+      ],
+      "concrete-fix": "Make the claim true instead of softening it: in isCrossSite (src/app/(app)/import/share/route.ts:56-70), treat Origin 'null' as not cross-site only when Sec-Fetch-Site is present (that is, 'none' or 'same-origin'), and refuse 'null' when Sec-Fetch-Site is absent. The phone's share (Origin null, Sec-Fetch-Site none) stays accepted, and so does the e2e client's absent-Origin, absent-Sec-Fetch-Site request. Add a unit case to test/app/share-route.test.ts: Origin 'null' with no Sec-Fetch-Site is answered 403 and uploadStatement is not called. If the owner would rather keep the code, qualify both sentences instead (route.ts:39-41 and m3-p5.yaml:94-95): 'on a browser that sends Sec-Fetch-Site; on an older one a null-Origin cross-site POST passes this check and SameSite Lax alone keeps the session off it'.",
+      "analysis": "This is new in the fix round. The round one check refused a null Origin outright, so the independence claim was true then (and it also refused the phone, which was HZ-001). The fix correctly moved the decision to Sec-Fetch-Site but made null-with-no-Sec-Fetch-Site pass too, and it kept the round one sentence claiming independence from SameSite. The legitimate caller never sends that combination, so refusing it costs nothing."
+    },
+    {
+      "id": "HZ2-002",
+      "severity": "low",
+      "evidence": [
+        "src/middleware.ts:72-74 says that the anchored entry 'matches that one path and no path that merely begins with it'. That is true at this head: I compiled the matcher with Next 15.5.23's own getMiddlewareMatchers (node_modules/next/dist/build/analysis/get-page-static-info.js:251-290, throwaway probe/matcher.cjs) and it excludes /manifest.webmanifest and runs middleware for /manifest.webmanifest/, /manifest.webmanifest/x, /manifestXwebmanifest, /manifest.webmanifestfoo, /manifest.webmanifest.json, /manifest.webmanifest.rsc, /import/manifest.webmanifest, /manifest, /import/share and /.",
+        "Nothing in the tree checks it. grep for webmanifest over test/ finds only a comment at test/app/share-target-manifest.test.ts:14 and the e2e manifest GET at test/e2e/share-target.spec.ts:57, and that GET covers only the excluded half. Round 1's concrete fix for HZ-005 asked for a unit case asserting both halves, and the fix round did not add one.",
+        "R-087 shape: a present-tense comment that nothing keeps true. If someone drops the $ later, every path starting manifest.webmanifest silently skips the session check again, with every test still green."
+      ],
+      "concrete-fix": "Add a fast-gate test in test/app/ that imports config from src/middleware.ts, compiles config.matcher with getMiddlewareMatchers from next/dist/build/analysis/get-page-static-info (argument {} as nextConfig), and asserts: /manifest.webmanifest does not match; /manifest.webmanifest/x, /manifest.webmanifestfoo, /manifestXwebmanifest and /import/share do match."
+    },
+    {
+      "id": "HZ-002",
+      "severity": "low",
+      "evidence": [
+        "STILL OPEN from round 1, and deliberately so. src/app/(app)/import/share/route.ts:90-104 still reads the whole multipart body (formData, then arrayBuffer) with no size limit. The upload server action it mirrors is capped by Next's 1 MB default for server actions.",
+        "Dispositioned at delivery/work-history/m3-p5.yaml:189-194 (the fix-round mechanism) and as open claim C-5-body-size at delivery/work-history/m3-p5.yaml:318-326. The reason given is that a cap needs a number and three catalogues of refusal copy, which makes it a product choice.",
+        "The disposition is honest: its one factual premise holds at this head. requireHouseholdContext runs at route.ts:80-88, before request.formData() at route.ts:92, and the middleware stops a request with no session before that (src/middleware.ts:39-54). So the exposure is still an authenticated household member's own request. The matrix probe also shows every refused Origin and Sec-Fetch-Site combination answered 403 before the body is read (uploadStatement not called)."
+      ],
+      "concrete-fix": "Unchanged from round 1, carried as implementer work under CLAUDE.md rule 10. Declare one byte limit beside SHARE_TARGET_FILE_FIELD in src/modules/import/ui/share-target.ts. Refuse a Content-Length above it before reading the body, and a file.size above it after formData(), with a 303 to /import carrying a too-large status that has en, nl and fr copy. Set next.config.ts serverActions.bodySizeLimit from the same constant. Add a unit case one byte over the limit asserting uploadStatement is not called.",
+      "analysis": "Honest and adequate at low. The open claim names the gap, the reason and the reachability condition, and the reachability condition is true. What it leaves out: until the cap exists, the two import paths refuse different files. A PDF over 1 MB fails through the upload form but succeeds through the share sheet. That is a behaviour difference the owner could meet, not a hazard, and it belongs in the open claim's text."
+    }
+  ],
+  "hazard-classes-addressed": [
+    {
+      "class-id": "H5.1",
+      "probed": "At 98fbadc in the review tree: grep -rE 'caches\\.|CacheStorage|workbox' src/ exits 1. git grep -nE 'serviceWorker|service-worker|next-pwa|sw\\.js|unstable_cache|use cache|force-static' over src, public, scripts, package.json and next.config.ts exits 1. find outside node_modules for sw.js or *service-worker* prints nothing. git ls-files public lists only public/icons/icon-192.png and public/icons/icon-512.png. git diff --stat dff0824 HEAD over package.json, package-lock.json and next.config.ts is empty, so no PWA or caching package entered. src/app/manifest.ts:29-66 declares no serviceworker member. The fix round touched H5.1's surface in two places. src/app/manifest.ts:19-23 is comment only: the install claim is now recast as owed evidence C-5-on-device, which is honest. The middleware matcher change (src/middleware.ts:75) narrows what is excluded, which only adds middleware coverage and cannot add a cache.",
+      "cleared-because": "No service worker, cache API or caching package exists in the tree or entered through the fix round. Nothing registers one, and the manifest does not name one. The side door this class names is still shut. Whether Android Chrome mints the WebAPK without a service worker on the owner's phone is unwitnessed, and the work history records that honestly as open claim C-5-on-device (delivery/work-history/m3-p5.yaml:308-317). If a service worker ever turns out to be required, step 1's condition (no fetch handler, no cache API) governs it."
+    },
+    {
+      "class-id": "H5.2",
+      "probed": "(1) The full Origin by Sec-Fetch-Site matrix, run against the real POST handler with a throwaway vitest probe: Origin absent, null, own, own-host-other-scheme, foreign, same-host-other-port, garbage and empty, crossed with Sec-Fetch-Site absent, none, same-origin, same-site, cross-site and two non-browser spellings. Captured: same-site and cross-site answer 403 with no upload under every Origin. A foreign, other-port, garbage or empty Origin answers 403 under every Sec-Fetch-Site. Accepted (303, one upload): Origin absent, null or own with Sec-Fetch-Site absent, none or same-origin, plus own-host-other-scheme. (2) Which accepted combination a hostile page can produce WITH the victim's session. A top-level cross-site form POST carries Origin evil and Sec-Fetch-Site cross-site, and SameSite=lax withholds the session (node_modules/@supabase/ssr/dist/main/utils/constants.js:6 sets lax explicitly, so Chrome's two-minute Lax-allowing-unsafe exemption for default cookies does not apply). The middleware then 303s it to sign-in and the route would refuse it anyway. A sandboxed iframe, a data: document or a cross-origin redirect carries Origin null and Sec-Fetch-Site cross-site, so the route refuses it, and as a cross-site subframe or top-level POST it carries no Lax cookie either. Sec-Fetch-Site and Origin are forbidden header names, so no page can forge none or same-origin, and a non-browser client that can forge them holds no victim cookie. The only accepted combination a hostile page reaches is Origin null with no Sec-Fetch-Site, in a browser predating Fetch Metadata. There SameSite still withholds the session on a cross-site POST, which is HZ2-001: a false independence claim, not a reachable write. A same-site sibling host is refused by Sec-Fetch-Site same-site in current browsers. Sec-Fetch-Site none is produced only by browser-started navigations: a share-sheet share, where the user picks Pulse and the content is then the user's own choice, which is the feature. (3) The real Android share (Origin null, Sec-Fetch-Site none, per round 1's Chromium source reading) is accepted: 303, upload called. The red witness route-red.txt shows that exact case failing at the round one route (Tests 1 failed | 12 passed (13), 'expected 403 to be 303'), and the e2e share now sends those headers (test/e2e/share-target.spec.ts:153-156), green in e2e-p5-fr1.txt lines 333 and 699. Chromium main's future shape (own Origin, same-origin) is also accepted. (4) The unauthenticated path is unchanged by the fix (git diff 98b4f0e 31fd73d touches only the matcher line in src/middleware.ts). requireHouseholdContext still runs before formData (route.ts:80-92), and the matcher still runs middleware for /import/share and /import/share/ (compiled with Next's own getMiddlewareMatchers). (5) No in-app form posts to /import/share (grep for SHARE_TARGET_PATH and /import/share over src finds only the manifest, the middleware and the ui index), so refusing same-site breaks no legitimate caller. (6) Not found, and noted for the next reviewer: the host comparison ignores scheme, which matters only to an active network attacker (pre-existing). A proxy that rewrites Host would refuse Chromium main's future own-Origin share (pre-existing; today's null-Origin share does not reach the comparison).",
+      "cleared-because": "No request without an authenticated household context reaches uploadStatement or reads the body: the middleware and then the route's own household boundary stop it, both before formData, both with a bodiless 303, so D-10 holds. In every browser that sends Sec-Fetch-Site, no combination a hostile page can produce is accepted by the route. In older browsers, SameSite=lax keeps the session off a cross-site POST. That second fact is why HZ2-001 is a comment-truth finding rather than a write path. The class's harm, an unauthenticated write path or a write driven by another site's page, is not reachable at this head. Nearby lows: HZ2-001, HZ2-002 and HZ-002, the size cap that is still open."
+    },
+    {
+      "class-id": "H5.3",
+      "probed": "DR-0021 (Android) is owner-decided and not re-opened. I re-probed the class's harm, an unusable phase, through the route that round 1 found (HZ-001): the request shape a shipped Android Chrome share sends. At 98fbadc the handler answers Origin null with Sec-Fetch-Site none with 303 and calls uploadStatement once (matrix probe). The unit test test/app/share-route.test.ts:107-116 pins it and is witnessed red at the round one route (route-red.txt). The e2e share sends the same headers through the real middleware, household boundary and pipeline and lands on the result with rows-added 4 (test/e2e/share-target.spec.ts:153-165; e2e-p5-fr1.txt: 136 passed, 1 skipped, wrapper exit 0, file finished 16:36 against the 16:06 fix commit, though the log itself names no sha). The anchored manifest matcher still excludes /manifest.webmanifest, so the manifest the phone fetches without a cookie is not redirected (compiled matcher probe). No installability surface regressed.",
+      "cleared-because": "The request the owner's phone sends is now accepted end to end at the unit and e2e level, and the manifest stays reachable without a session. What stays unwitnessed is a real share from the owner's device, which no container can supply. The work history records it as open claim C-5-on-device (delivery/work-history/m3-p5.yaml:308-317), with the owner sharing one real statement named as the witness. That is honest, and it is the right residual for a platform decision already made."
+    }
+  ],
+  "criteria": [
+    {
+      "id": "5.1",
+      "quote": "curl -s against the deployed or dev manifest URL returns JSON whose share_target declares method POST, multipart/form-data and a files entry accepting application/pdf, and npm run test:e2e exits 0 including a spec that POSTs the synthetic fixture PDF as multipart form data to the share route and asserts the redirect chain ends on an import state with the fixture's rows added.",
+      "evidence": [
+        "test/e2e/share-target.spec.ts:54-80 GETs /manifest.webmanifest with no session and asserts the share_target members (the HTTP equivalent of the curl). It is green in both projects in e2e-p5-fr1.txt (lines 330 and 696).",
+        "test/e2e/share-target.spec.ts:153-165 POSTs the companion fixture with the phone's headers, follows the redirect chain to /import/<uuid> and asserts rows-added 4. e2e-p5-fr1.txt: 136 passed, 1 skipped, wrapper exit 0.",
+        "src/app/manifest.ts:52-64 declares POST, multipart/form-data and files [{name: file, accept: [application/pdf, .pdf]}]."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.2",
+      "quote": "grep -rE \"caches\\.|CacheStorage|workbox\" src/ exits 1, and if a service worker file exists it contains no fetch event listener, asserted by grep for \"fetch\" over that file exiting 1.",
+      "evidence": [
+        "grep -rE 'caches\\.|CacheStorage|workbox' src/ at 98fbadc: exit 1 (captured).",
+        "No service worker file exists: find outside node_modules prints nothing, so the second half is vacuous."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.3",
+      "quote": "npm run typecheck && npm run lint && npm test exit 0 and npm run test:e2e exits 0 at the phase head, including the unmodified M3-P4 mobile journey.",
+      "evidence": [
+        "In the review tree at 98fbadc: npx tsc --noEmit exit 0; npm run lint exit 0; npm test exit 0 with 57 files and 778 tests passed; gate:privacy clean, exit 0; gate:decisions clean, exit 0 (all captured).",
+        "e2e-p5-fr1.txt: 136 passed, 1 skipped, wrapper exit 0, run for 31fd73d. git diff --stat 31fd73d 98fbadc outside delivery/ is empty, so 98fbadc adds records only.",
+        "test/e2e/mobile-import.spec.ts does not appear in git diff --stat dff0824 98fbadc."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.4",
+      "quote": "A test POSTs the fixture PDF as multipart form data to the share route with NO session and asserts: the response redirects to sign-in, no Import row is created, and no uploaded bytes are persisted anywhere (decision D-10's no-preservation contract; finding PR2-005).",
+      "evidence": [
+        "test/e2e/share-target.spec.ts:82-97 asserts 303, a Location pathname of /sign-in and an unchanged Import count. Import.rawContent is where bytes are kept, and src/middleware.ts:39-54 returns before any body read. It is green at e2e-p5-fr1.txt lines 331 and 697.",
+        "The fix round did not change this path apart from the matcher anchor, which still runs middleware for /import/share (compiled matcher probe)."
+      ],
+      "met": true
+    },
+    {
+      "id": "5.5",
+      "quote": "The share journey is run under the phone project M3-P7 added, and at 390 by 844 the screen the share target lands the user on satisfies the same three standing measurements criterion 4.1 names ... FALSIFIED BY one offender in any of the three.",
+      "evidence": [
+        "test/e2e/share-target.spec.ts:135 and :164 call measurePhoneScreen on both landing screens under a 390 by 844 viewport (test/e2e/share-target.spec.ts:116).",
+        "e2e-p5-fr1.txt line 699: the chromium-phone share journey passed."
+      ],
+      "met": true
+    }
+  ],
+  "deviations-judged": [
+    {
+      "deviation": "branch: claude/m3-p5-share-target",
+      "serves-plan-intent": true,
+      "reasoning": "The branch name carries no product behaviour. The reviewed head is named by full sha, so neither the review nor the merge evidence depends on the branch name. Unchanged by the fix round."
+    },
+    {
+      "deviation": "files-to-touch (src/app/, src/modules/import/ui/, messages, test/e2e/)",
+      "serves-plan-intent": true,
+      "reasoning": "src/middleware.ts must change for D-10 (without it the 307 carries the file to sign-in) and for installability (the manifest exclusion). The fix round's change there narrows the exclusion, which is safer. scripts/generate-app-icons.ts changed only in a comment path (HZ-003). The tests in test/app/ are the phase's own. I grepped the fix-round files for literal colours or px values and found none, and they hold no data beyond the allow-listed invented account (test/fixtures/allowed-identifiers.txt:89), so non-negotiables 4 and 8 hold. The untouched catalogues are still correct: the fix round added no user-facing sentence."
+    }
+  ]
+}
